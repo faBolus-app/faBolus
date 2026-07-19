@@ -28,8 +28,9 @@ public final class PhoneRemoteHost {
             link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
                                     status: .awaitingConfirm, message: "Confirm on iPhone"))
         case .cancelBolus:
+            // The in-flight delivery loop echoes the single final status; no echo here (else the
+            // watch would flip cancelled → delivered when the bolus finishes first).
             Task { await model.cancelBolus() }
-            link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
         case .dismissAlert:
             if let id = cmd.alertId, let k = cmd.alertKind {
                 Task { await model.dismissAlert(id: id, kind: k); self.link.send(model.statusCommand(includeHistory: false)) }

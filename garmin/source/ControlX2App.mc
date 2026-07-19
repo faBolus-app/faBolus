@@ -5,6 +5,7 @@ using Toybox.Background;
 using Toybox.Time;
 using Toybox.System;
 using Toybox.Timer;
+using Toybox.Attention;
 using Toybox.Lang;
 
 // App entry. Glance-first: requests pump status from the phone on launch and every 30s, listens
@@ -13,6 +14,7 @@ using Toybox.Lang;
 // isn't open. Thin remote — the iPhone owns the pump connection.
 class ControlX2App extends App.AppBase {
     private var _timer as Timer.Timer?;
+    private var _lastAlertCount as Lang.Number = 0;
 
     function initialize() { AppBase.initialize(); }
 
@@ -60,8 +62,24 @@ class ControlX2App extends App.AppBase {
         if (data instanceof Lang.Dictionary) {
             AppState.handle(data as Lang.Dictionary);
             BgComplication.publishFromState();
+            notifyNewAlerts();
             Ui.requestUpdate();
         }
+    }
+
+    // When a new pump alert arrives, vibrate and show an actionable confirmation to clear it.
+    private function notifyNewAlerts() as Void {
+        var count = AppState.alerts.size();
+        if (count > _lastAlertCount && count > 0) {
+            if (Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(75, 400)]);
+            }
+            var a = AppState.alerts[0] as Lang.Dictionary;   // most-serious first
+            var title = a["title"];
+            Ui.pushView(new Ui.Confirmation("Pump alert: " + title + " — clear?"),
+                        new AlertConfirmDelegate(a["id"], a["kind"]), Ui.SLIDE_UP);
+        }
+        _lastAlertCount = count;
     }
 
     // Called when the background service exits with data (a fresh reading fetched off-screen).

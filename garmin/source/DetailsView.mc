@@ -31,7 +31,7 @@ class DetailsView extends Ui.View {
             "Active Insulin: " + f2(AppState.iob) + " U",
             "Reservoir: " + f2(AppState.reservoir) + " U",
             "Battery: " + n0(AppState.battery) + "%",
-            (alertCount > 0 ? ("Alerts: " + alertCount.toString() + " (swipe up)") : "No alerts")
+            (alertCount > 0 ? ("Alerts: " + alertCount.toString()) : "No alerts")
         ];
         var top = 0.28, bottom = 0.80;
         var step = (bottom - top) / (rows.size() - 1);

@@ -12,6 +12,10 @@ public final class AppModel {
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
+    /// Fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
+    /// notifications the user can act on.
+    public var onNotificationsChange: (@MainActor ([PumpNotification]) -> Void)?
+
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
     public func dismissNotification(_ n: PumpNotification) async { await source.dismissNotification(n); refresh() }
 
@@ -102,10 +106,12 @@ public final class AppModel {
     private func refresh() {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
+        let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory)
         pushStatusIfNeeded()
+        if alertsChanged { onNotificationsChange?(activeNotifications) }
     }
 
     public func connect() async { await source.connect(); refresh() }

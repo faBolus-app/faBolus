@@ -11,6 +11,7 @@ struct ControlX2App: App {
     #endif
     @State private var remoteHost: PhoneRemoteHost?
     @State private var garmin: GarminRemoteBridge?
+    @State private var notifier: PumpAlertNotifier?
 
     var body: some Scene {
         WindowGroup {
@@ -19,6 +20,7 @@ struct ControlX2App: App {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
+                    if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
                 }
                 .onOpenURL { url in
                     if url.scheme == ControlX2DeepLink.scheme {
