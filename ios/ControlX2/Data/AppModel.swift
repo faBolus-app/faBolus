@@ -9,6 +9,12 @@ public final class AppModel {
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public var lastError: String?
 
+    /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
+    public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
+    public var pendingRemoteBolus: PendingRemoteBolus?
+    /// Set by PhoneRemoteHost to echo status back to the remote.
+    public var remoteStatusEcho: (@MainActor (RemoteCommand) -> Void)?
+
     private let source: PumpDataSource
 
     public init(source: PumpDataSource) {
@@ -37,4 +43,35 @@ public final class AppModel {
     }
 
     public func cancelBolus() async { await source.cancelBolus(); refresh() }
+
+    // MARK: Remote (watch/Garmin) double-confirmation
+
+    public func presentRemoteBolus(requestId: String, units: Double) {
+        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units)
+    }
+
+    /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
+    public func confirmRemoteBolus() async {
+        guard let pending = pendingRemoteBolus else { return }
+        pendingRemoteBolus = nil
+        do {
+            let delivered = try await source.deliverBolus(units: pending.units)
+            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                                            status: .delivered, deliveredUnits: delivered))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                                            status: .failed, message: error.localizedDescription))
+        }
+        refresh()
+    }
+
+    public func rejectRemoteBolus() {
+        if let pending = pendingRemoteBolus {
+            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                                            status: .cancelled))
+        }
+        pendingRemoteBolus = nil
+    }
 }

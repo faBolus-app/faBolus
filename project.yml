@@ -1,21 +1,22 @@
 name: ControlX2
 options:
   bundleIdPrefix: com.zgranowitz.controlx2
-  deploymentTarget:
-    iOS: "17.0"
   createIntermediateGroups: true
 
 packages:
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
-    path: ../../PumpX2Kit
+    path: ../PumpX2Kit
 
 targets:
+  # iOS host app — owns the pump connection (PumpX2Kit) and the Loop-style HUD.
   ControlX2:
     type: application
     platform: iOS
+    deploymentTarget: "17.0"
     sources:
-      - ControlX2
+      - ios/ControlX2
+      - Shared
     dependencies:
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -31,7 +32,26 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
-        # Bench PoC BLE usage strings.
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+
+  # watchOS remote — a thin Loop-style remote (dial-to-bolus). Never touches the pump; relays
+  # commands to the iPhone host over WatchConnectivity (double-confirm).
+  ControlX2Watch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - watch/ControlX2Watch
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "4"
+        INFOPLIST_KEY_WKApplication: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Relays bolus commands to the ControlX2 iPhone app."

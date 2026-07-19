@@ -48,6 +48,14 @@ struct MainHUDView: View {
                 }
             }
             .sheet(isPresented: $showBolus) { BolusEntryView(model: model) }
+            .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
+                Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
+                    Task { await model.confirmRemoteBolus() }
+                }
+                Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
+            } message: {
+                Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)) of SALINE. Confirm to deliver on the bench.")
+            }
         }
     }
 
