@@ -6,13 +6,21 @@ struct MainHUDView: View {
     @Bindable var model: AppModel
     @State private var showBolus = false
     @State private var showPairing = false
+    @State private var windowHours = 3
+    private let windows = [3, 6, 12, 24]
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    GlucoseChartView(readings: model.glucoseHistory)
-                        .padding(.horizontal)
+                    VStack(spacing: 6) {
+                        GlucoseChartView(readings: model.glucoseHistory, windowHours: windowHours)
+                        Picker("Window", selection: $windowHours) {
+                            ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.horizontal)
 
                     StatusRingView(snapshot: model.snapshot)
 

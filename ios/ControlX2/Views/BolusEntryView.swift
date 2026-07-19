@@ -14,7 +14,8 @@ struct BolusEntryView: View {
     @State private var confirming = false
     @State private var delivering = false
 
-    private var overMax: Bool { units > Interlocks.maxBolusUnits }
+    private var maxUnits: Double { model.snapshot.maxBolusUnits }
+    private var overMax: Bool { units > maxUnits }
 
     var body: some View {
         NavigationStack {
@@ -25,7 +26,7 @@ struct BolusEntryView: View {
                             .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Blood glucose") {
-                        TextField("mg/dL (optional)", text: $bg)
+                        TextField("mg/dL", text: $bg)
                             .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
                     Button("Calculate recommendation") { Task { await calculate() } }
@@ -41,13 +42,13 @@ struct BolusEntryView: View {
                 }
 
                 Section("Deliver (saline, bench)") {
-                    Stepper(value: $units, in: 0...Interlocks.maxBolusUnits, step: 0.05) {
+                    Stepper(value: $units, in: 0...maxUnits, step: 0.05) {
                         Text(String(format: "%.2f U", units))
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(overMax ? LoopTheme.low : .primary)
                     }
                     if overMax {
-                        Label("Exceeds max of \(Int(Interlocks.maxBolusUnits)) U", systemImage: "exclamationmark.triangle.fill")
+                        Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(LoopTheme.low)
                     }
                     Button {
@@ -61,6 +62,10 @@ struct BolusEntryView: View {
                 }
             }
             .navigationTitle("Bolus")
+            .onAppear {
+                // Prefill BG with the current CGM reading (still editable).
+                if bg.isEmpty, let g = model.snapshot.glucose { bg = "\(g)" }
+            }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .confirmationDialog("Deliver \(String(format: "%.2f U", units)) of SALINE?",
                                 isPresented: $confirming, titleVisibility: .visible) {

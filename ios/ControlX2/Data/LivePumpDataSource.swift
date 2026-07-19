@@ -30,9 +30,10 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     /// Latest bolus-calculator settings (carb ratio / ISF / target) for recommendBolus.
     private var calcSnapshot: BolusCalcDataSnapshotResponse?
 
-    /// Pump time epoch is 2008-01-01 UTC.
-    private static let pumpEpoch: TimeInterval = 1_199_145_600
     private static let food2 = 8   // manual units-only bolus type
+    /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
+    /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
+    private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
 
     // Continuations bridging the delegate callbacks to async/await for the signed flow.
     private var timeCont: CheckedContinuation<TimeSinceResetResponse, Error>?
@@ -81,7 +82,9 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     public func deliverBolus(units: Double) async throws -> Double {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
-        guard units <= Interlocks.maxBolusUnits else { throw BolusError.exceedsMax(Interlocks.maxBolusUnits) }
+        guard units <= snapshot.maxBolusUnits, units <= Interlocks.absoluteMaxUnits else {
+            throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
+        }
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
 
@@ -147,7 +150,8 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     private func pollStatus() {
         for r: Message in [ControlIQIOBRequest(), InsulinStatusRequest(), CurrentBatteryV2Request(),
                            CurrentEgvGuiDataV2Request(), CurrentBasalStatusRequest(),
-                           LastBolusStatusV2Request(), BolusCalcDataSnapshotRequest()] {
+                           LastBolusStatusV2Request(), BolusCalcDataSnapshotRequest(),
+                           TimeSinceResetRequest()] {
             try? client.send(r)
         }
     }
@@ -203,14 +207,24 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             snapshot.trend = m.trendArrow
             if m.hasValidReading {
                 snapshot.glucose = m.cgmReading
-                glucoseHistory.append(GlucoseReading(date: Date(), mgdl: m.cgmReading))
-                if glucoseHistory.count > 72 { glucoseHistory.removeFirst() }
+                // De-dup: only append when the reading changes (CGM updates every ~5 min).
+                if glucoseHistory.last?.mgdl != m.cgmReading {
+                    glucoseHistory.append(GlucoseReading(date: Date(), mgdl: m.cgmReading))
+                    if glucoseHistory.count > 288 { glucoseHistory.removeFirst() }  // ~24h @ 5-min
+                }
             }
         case let m as LastBolusStatusV2Response:
             snapshot.lastBolusUnits = m.deliveredUnits
-            snapshot.lastBolusDate = Date(timeIntervalSince1970: Self.pumpEpoch + Double(m.timestamp))
-        case let m as BolusCalcDataSnapshotResponse: calcSnapshot = m
-        case let m as TimeSinceResetResponse: timeCont?.resume(returning: m); timeCont = nil
+            // Convert the pump timestamp using the pump↔phone clock anchor (timezone-agnostic).
+            if let a = pumpTimeAnchor {
+                snapshot.lastBolusDate = a.phone.addingTimeInterval(Double(Int64(m.timestamp) - Int64(a.pump)))
+            }
+        case let m as BolusCalcDataSnapshotResponse:
+            calcSnapshot = m
+            if m.maxBolusAmount > 0 { snapshot.maxBolusUnits = Double(m.maxBolusAmount) / 1000.0 }
+        case let m as TimeSinceResetResponse:
+            pumpTimeAnchor = (m.currentTime, Date())
+            timeCont?.resume(returning: m); timeCont = nil
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         default: break

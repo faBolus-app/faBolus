@@ -46,12 +46,14 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var glucose: Int? = nil
     public var trend: String = GlucoseTrend.flat.rawValue
     public var iobUnits: Double = 0          // Active Insulin
-    public var cobGrams: Double = 0          // Active Carbohydrates
     public var reservoirUnits: Double = 0
     public var batteryPercent: Int = 0
     public var cgmActive: Bool = false
     public var lastBolusUnits: Double? = nil
     public var lastBolusDate: Date? = nil
+    /// Pump's configured max bolus (units), read from the calculator snapshot. Governs the UI
+    /// cap instead of a hardcoded number. Falls back to the pump's absolute max.
+    public var maxBolusUnits: Double = 25
     public init() {}
 }
 

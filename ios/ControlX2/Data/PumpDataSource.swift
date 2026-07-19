@@ -32,7 +32,9 @@ public enum BolusError: Error, LocalizedError {
     }
 }
 
-/// Shared safety limit for the UI clamp (matches the interlock intent from the plan).
+/// Absolute defense-in-depth ceiling. The real cap is the pump's configured max bolus
+/// (`PumpSnapshot.maxBolusUnits`); this is only a final sanity bound so a bug can't request an
+/// absurd amount (the pump also rejects anything over its own limit).
 public enum Interlocks {
-    public static let maxBolusUnits: Double = 10.0
+    public static let absoluteMaxUnits: Double = 25.0
 }

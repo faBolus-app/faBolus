@@ -27,7 +27,6 @@ public final class MockPumpDataSource: PumpDataSource {
         glucoseHistory = readings
         snapshot.glucose = readings.last?.mgdl
         snapshot.iobUnits = 1.4
-        snapshot.cobGrams = 12
         snapshot.reservoirUnits = 142
         snapshot.batteryPercent = 78
         snapshot.cgmActive = true
@@ -63,7 +62,6 @@ public final class MockPumpDataSource: PumpDataSource {
         if glucoseHistory.count > 72 { glucoseHistory.removeFirst() }
         snapshot.glucose = last
         snapshot.iobUnits = max(0, snapshot.iobUnits - 0.02)
-        snapshot.cobGrams = max(0, snapshot.cobGrams - 0.3)
         onChange?()
     }
 
@@ -83,7 +81,7 @@ public final class MockPumpDataSource: PumpDataSource {
 
     public func deliverBolus(units: Double) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
-        guard units <= Interlocks.maxBolusUnits else { throw BolusError.exceedsMax(Interlocks.maxBolusUnits) }
+        guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
         snapshot.connection = .bolusing; onChange?()
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         snapshot.connection = .connected
