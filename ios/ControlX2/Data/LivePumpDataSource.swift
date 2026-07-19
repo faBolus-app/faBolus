@@ -46,11 +46,23 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
 
     public func disconnect() { client.disconnect() }
 
+    /// Latest bolus-calculator settings read from the pump (carb ratio, ISF, target BG).
+    private var calcSnapshot: BolusCalcDataSnapshotResponse?
+
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-        // TODO: drive the pump's bolus calculator (BolusCalcDataSnapshot) like controlX2.
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
-        rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
+        // Use the pump's own carb ratio / ISF / target when available (like controlX2's
+        // calculator), else a conservative fallback. VERIFY units against the pump before use.
+        if let s = calcSnapshot, s.carbRatio > 0 {
+            let carbUnits = carbsGrams / s.carbRatioGramsPerUnit
+            let correction = (bgMgdl != nil && s.isf > 0)
+                ? max(0, Double(bgMgdl! - s.targetBg) / Double(s.isf)) : 0
+            rec.recommendedUnits = max(0, carbUnits + correction - snapshot.iobUnits)
+        } else {
+            rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
+        }
+        rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
         return rec
     }
 
@@ -87,6 +99,7 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         try? client.send(CurrentEgvGuiDataV2Request())
         try? client.send(CurrentBasalStatusRequest())
         try? client.send(LastBolusStatusV2Request())
+        try? client.send(BolusCalcDataSnapshotRequest())
     }
 }
 
@@ -139,6 +152,8 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as LastBolusStatusV2Response:
             snapshot.lastBolusUnits = m.deliveredUnits
             snapshot.lastBolusDate = Date(timeIntervalSince1970: Self.pumpEpoch + Double(m.timestamp))
+        case let m as BolusCalcDataSnapshotResponse:
+            calcSnapshot = m   // feeds recommendBolus (carb ratio / ISF / target)
         default: break
         }
         onChange?()
