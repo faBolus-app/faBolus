@@ -18,8 +18,8 @@ class BolusEntryDelegate extends Ui.BehaviorDelegate {
     function onSelect() as Lang.Boolean {
         AppState.deliverUnits = AppState.computeUnits();
         if (AppState.deliverUnits < 0.05) { return true; }   // nothing to deliver
-        AppState.holdProgress = 0.0;
-        Ui.pushView(new HoldView(), new HoldDelegate(), Ui.SLIDE_LEFT);
+        var v = new HoldView();
+        Ui.pushView(v, new HoldDelegate(v), Ui.SLIDE_LEFT);
         return true;
     }
 }

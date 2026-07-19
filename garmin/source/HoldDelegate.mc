@@ -1,59 +1,20 @@
 using Toybox.WatchUi as Ui;
-using Toybox.Timer;
 using Toybox.Lang;
 
-// Press-and-hold the touchscreen for 3s to deliver (the venu3s has no holdable middle button).
-// Lifting early cancels. The ring in HoldView fills as the hold progresses.
+// Confirm-screen input: forward numbered-target taps to the view, which enforces the 1→2→3
+// order before delivering. Uses onSelectable because the venu3s delivers taps as high-level
+// events, not raw coordinates. BACK (swipe right / bottom button) exits.
 class HoldDelegate extends Ui.BehaviorDelegate {
-    private const HOLD_MS = 3000;
-    private const TICK_MS = 50;
-    private var _timer as Timer.Timer?;
-    private var _elapsed = 0;
-    private var _running = false;
+    private var _view as HoldView;
 
-    function initialize() { BehaviorDelegate.initialize(); }
+    function initialize(view as HoldView) {
+        BehaviorDelegate.initialize();
+        _view = view;
+    }
 
-    // Touch down / long-press anywhere starts the hold; lifting cancels. We handle both onPress
-    // and onHold because the venu3s may deliver either for a sustained touch.
-    function onPress(evt as Ui.ClickEvent) as Lang.Boolean { return startHold(); }
-    function onHold(evt as Ui.ClickEvent) as Lang.Boolean { return startHold(); }
-    function onRelease(evt as Ui.ClickEvent) as Lang.Boolean { cancelHold(); return true; }
-
-    private function startHold() as Lang.Boolean {
-        if (AppState.status != null || _running) { return true; }   // already sent / already holding
-        _running = true;
-        _elapsed = 0;
-        AppState.holdProgress = 0.0;
-        if (_timer == null) { _timer = new Timer.Timer(); }
-        _timer.start(method(:onTick), TICK_MS, true);
+    function onSelectable(event as Ui.SelectableEvent) as Lang.Boolean {
+        var inst = event.getInstance();
+        if (inst instanceof PinButton) { _view.tapped((inst as PinButton).num); }
         return true;
-    }
-
-    private function cancelHold() as Void {
-        _running = false;
-        if (_timer != null) { _timer.stop(); }
-        if (AppState.status == null) { AppState.holdProgress = 0.0; Ui.requestUpdate(); }
-    }
-
-    function onTick() as Void {
-        _elapsed += TICK_MS;
-        AppState.holdProgress = _elapsed.toFloat() / HOLD_MS;
-        if (_elapsed >= HOLD_MS) {
-            AppState.holdProgress = 1.0;
-            if (_timer != null) { _timer.stop(); }
-            deliver();
-        }
-        Ui.requestUpdate();
-    }
-
-    private function deliver() as Void {
-        var reqId = RemoteComm.newRequestId();
-        AppState.pendingRequestId = reqId;
-        if (!RemoteComm.phoneReachable()) {
-            AppState.status = "outOfRange"; AppState.message = "iPhone unreachable"; Ui.requestUpdate(); return;
-        }
-        AppState.status = "delivering";
-        RemoteComm.send(RemoteComm.bolusRequest(AppState.deliverUnits, reqId));
-        Ui.requestUpdate();
     }
 }
