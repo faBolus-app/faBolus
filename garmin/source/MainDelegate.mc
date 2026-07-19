@@ -33,9 +33,7 @@ class MainDelegate extends Ui.BehaviorDelegate {
         return false;
     }
 
-    // Swipe up → Alerts (one swipe from the glance), then up again for history, then details.
-    function onNextPage() as Lang.Boolean {
-        Ui.pushView(new AlertsListView(), new AlertsListDelegate(), Ui.SLIDE_UP);
-        return true;
-    }
+    // Swipe between screens in the user-configured order (default: glance → alerts → history → details).
+    function onNextPage() as Lang.Boolean { return Nav.goNext("glance"); }
+    function onPreviousPage() as Lang.Boolean { return Nav.goPrev("glance"); }
 }

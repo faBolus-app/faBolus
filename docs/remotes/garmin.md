@@ -4,11 +4,18 @@ A Connect IQ (Monkey C) companion for the **venu3s**. It's a **dumb remote**: it
 iPhone host via the **Connect IQ mobile SDK**; the phone runs the confirm interlock and
 dispatches through `PumpX2Kit`. Source: `garmin/`.
 
-## Screens (swipe up to move through them)
-1. **Glance** — current glucose + trend arrow (drawn, range-colored) and a **Bolus** button.
-2. **History** — a Dexcom-style plot; **tap to cycle** the window 3 → 6 → 12 → 24 h.
-3. **Details** — Last bolus, Active Insulin, Reservoir, Battery, and an alert count.
-4. **Alerts** — active pump alerts/alarms; **tap a row to clear** one.
+## Screens (swipe up/down to move through them)
+- **Glance** — current glucose + trend arrow (drawn, range-colored) and a **Bolus** button.
+- **Alerts** — active pump alerts/alarms; **tap a row to clear** one.
+- **History** — a Dexcom-style plot; **tap to cycle** the window 3 → 6 → 12 h.
+- **Details** — Last bolus, Active Insulin, Reservoir, Battery, and an alert count.
+
+### Reorder the screens / pick the default
+The **order** of these screens and **which one opens first** are configurable from the phone:
+**Settings → Garmin remote → Screen order**. Drag to reorder (Edit) and choose the screen that
+opens first. The layout is sent to the watch on its next status update and is remembered on the
+watch (it survives restarts and offline launches). Default order: Glance → Alerts → History →
+Details, opening on Glance.
 
 ## Input model (venu3s)
 The venu3s has two buttons and delivers screen taps as high-level events, so the app uses:

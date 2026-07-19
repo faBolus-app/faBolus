@@ -32,10 +32,7 @@ class AlertsListDelegate extends Ui.BehaviorDelegate {
         return true;
     }
 
-    // Swipe up → history plot; swipe down / back → glance.
-    function onNextPage() as Lang.Boolean {
-        Ui.pushView(new DexcomView(), new DexcomDelegate(), Ui.SLIDE_UP);
-        return true;
-    }
-    function onPreviousPage() as Lang.Boolean { Ui.popView(Ui.SLIDE_DOWN); return true; }
+    // Swipe between screens in the user-configured order.
+    function onNextPage() as Lang.Boolean { return Nav.goNext("alerts"); }
+    function onPreviousPage() as Lang.Boolean { return Nav.goPrev("alerts"); }
 }

@@ -21,6 +21,7 @@ class ControlX2App extends App.AppBase {
     function onStart(state as Lang.Dictionary?) as Void {
         Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
         AppState.loadPersisted();            // show last-known BG instantly (no "--" flash)
+        AppState.loadPrefs();                // restore configured screen order + default screen
         BgComplication.publish(null, null, 0);  // re-publish last-known reading to the complication
         requestStatus();
         _timer = new Timer.Timer();
@@ -33,7 +34,7 @@ class ControlX2App extends App.AppBase {
     }
 
     function getInitialView() {
-        return [ new MainView(), new MainDelegate() ];
+        return Nav.initialView();   // the user-configured default screen
     }
 
     // The background service that refreshes the complication when the app is closed.

@@ -57,9 +57,13 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   resets) so a stray tap can't dispense. The final tap hands the dose to the app to deliver
   through the validated signed path. Saline/bench only.
 
-## 6. Garmin: configurable screen order + default screen
-- A setting (phone-side, pushed to the watch) to choose the **default screen** (glance / history
-  / alerts / details) and the **swipe order** of the screens.
+## 6. Garmin: configurable screen order + default screen ✅
+- Phone setting (**Settings → Garmin remote → Screen order**): reorder the swipe screens (glance /
+  alerts / history / details) and pick which opens first. Pushed in the status payload
+  (`screenOrder` + `defaultScreen`); the Garmin app persists it (Storage) so it survives restarts
+  and offline launches.
+- Garmin nav refactored from a fixed push/pop stack to a **carousel** (`switchToView`) driven by
+  `AppState.screenOrder`; `getInitialView` opens `AppState.defaultScreen`. See `garmin/source/Nav.mc`.
 
 ## 7. Docs + build instructions (LoopDocs-style site)
 - Refresh the mkdocs site for all of the above (tabs/settings, IOB overlay, Siri, Garmin config).

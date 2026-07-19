@@ -32,6 +32,19 @@ struct SettingsView: View {
                     Toggle("Show insulin (IOB) axis", isOn: $settings.showIOBAxis)
                 }
 
+                Section {
+                    NavigationLink {
+                        GarminScreensView(settings: settings)
+                    } label: {
+                        LabeledContent("Screen order",
+                                       value: AppSettings.garminScreenLabel(settings.garminDefaultScreen).components(separatedBy: " (").first ?? settings.garminDefaultScreen)
+                    }
+                } header: {
+                    Text("Garmin remote")
+                } footer: {
+                    Text("Reorder the Garmin app's swipe screens and pick which one opens first. Applied on the watch's next update.")
+                }
+
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
                     if model.hasStoredPairing {
@@ -56,5 +69,42 @@ struct SettingsView: View {
 
     private func fmtU(_ v: Double) -> String {
         v < 0.1 ? String(format: "%.2f U", v) : (v < 1 ? String(format: "%.1f U", v) : String(format: "%.0f U", v))
+    }
+}
+
+/// Reorder the Garmin remote's swipe screens and choose which opens first. Drag to reorder (Edit),
+/// then pick the default. The new layout is pushed to the watch on its next status update.
+struct GarminScreensView: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Opens first", selection: $settings.garminDefaultScreen) {
+                    ForEach(settings.garminScreenOrder, id: \.self) { id in
+                        Text(AppSettings.garminScreenLabel(id)).tag(id)
+                    }
+                }
+            } footer: {
+                Text("The screen shown when the Garmin app launches.")
+            }
+
+            Section {
+                ForEach(settings.garminScreenOrder, id: \.self) { id in
+                    Label(AppSettings.garminScreenLabel(id),
+                          systemImage: id == settings.garminDefaultScreen ? "star.fill" : "line.3.horizontal")
+                        .foregroundStyle(id == settings.garminDefaultScreen ? Color.accentColor : .primary)
+                }
+                .onMove { from, to in
+                    settings.garminScreenOrder.move(fromOffsets: from, toOffset: to)
+                }
+            } header: {
+                Text("Swipe order (top → bottom)")
+            } footer: {
+                Text("Swiping up on the watch moves down this list; swiping down moves up.")
+            }
+        }
+        .navigationTitle("Garmin Screens")
+        .toolbar { EditButton() }
     }
 }

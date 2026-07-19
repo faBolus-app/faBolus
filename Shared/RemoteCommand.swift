@@ -60,6 +60,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var bolusMode: String?        // "carbs" | "units"
     public var bolusIncrement: Double?
     public var carbIncrement: Double?
+    // Garmin remote layout (statusRead reply): the swipe order of the screens and which one opens
+    // first. Screen ids: "glance" | "alerts" | "history" | "details".
+    public var screenOrder: [String]?
+    public var defaultScreen: String?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -70,7 +74,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
                 glucoseAgeSec: Double? = nil, history: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
-                bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil) {
+                bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
+                screenOrder: [String]? = nil, defaultScreen: String? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -83,6 +88,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.glucoseAgeSec = glucoseAgeSec; self.history = history
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
+        self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

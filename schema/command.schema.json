@@ -125,6 +125,29 @@
     "alertKind": {
       "type": "integer",
       "description": "The notification kind to clear (dismissAlert command)."
+    },
+    "bolusMode": {
+      "type": "string",
+      "enum": ["carbs", "units"],
+      "description": "Default bolus entry mode a remote should honor (statusRead reply)."
+    },
+    "bolusIncrement": {
+      "type": "number",
+      "description": "Units step for a remote's bolus entry (statusRead reply)."
+    },
+    "carbIncrement": {
+      "type": "number",
+      "description": "Grams step for a remote's carb entry (statusRead reply)."
+    },
+    "screenOrder": {
+      "type": "array",
+      "description": "Garmin remote swipe order (statusRead reply).",
+      "items": { "type": "string", "enum": ["glance", "alerts", "history", "details"] }
+    },
+    "defaultScreen": {
+      "type": "string",
+      "enum": ["glance", "alerts", "history", "details"],
+      "description": "Garmin remote screen shown first (statusRead reply)."
     }
   },
   "additionalProperties": false

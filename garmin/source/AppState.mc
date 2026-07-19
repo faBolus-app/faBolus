@@ -26,6 +26,40 @@ module AppState {
     var alerts as Lang.Array = [];        // active pump alerts: dicts {id, kind, title}
     var plotHours as Lang.Number = 3;     // history-plot window: 3 → 6 → 12 → 24 → 3
 
+    // Configurable layout (from phone settings, persisted so it survives restarts / offline launch).
+    // The swipe order of the screens and which one opens first. Ids: glance/alerts/history/details.
+    var screenOrder as Lang.Array = ["glance", "alerts", "history", "details"];
+    var defaultScreen as Lang.String = "glance";
+    const ALL_SCREENS = ["glance", "alerts", "history", "details"];
+
+    // Load persisted layout at launch (getInitialView needs defaultScreen before any phone message).
+    function loadPrefs() as Void {
+        var so = Storage.getValue("screenOrder");
+        if (so instanceof Lang.Array) { screenOrder = sanitizeOrder(so); }
+        var ds = Storage.getValue("defaultScreen");
+        if (ds instanceof Lang.String && contains(screenOrder, ds)) { defaultScreen = ds; }
+    }
+
+    // Keep only known ids, then append any missing ones so every screen stays reachable.
+    function sanitizeOrder(list as Lang.Array) as Lang.Array {
+        var out = [];
+        for (var i = 0; i < list.size(); i += 1) {
+            var v = list[i];
+            if (v instanceof Lang.String && contains(ALL_SCREENS, v) && !contains(out, v)) { out.add(v); }
+        }
+        for (var i = 0; i < ALL_SCREENS.size(); i += 1) {
+            if (!contains(out, ALL_SCREENS[i])) { out.add(ALL_SCREENS[i]); }
+        }
+        return out;
+    }
+
+    function contains(list as Lang.Array, v as Lang.String) as Lang.Boolean {
+        for (var i = 0; i < list.size(); i += 1) {
+            if (list[i] instanceof Lang.String && (list[i] as Lang.String).equals(v)) { return true; }
+        }
+        return false;
+    }
+
     function cyclePlotHours() as Void {
         if (plotHours == 3) { plotHours = 6; }
         else if (plotHours == 6) { plotHours = 12; }
@@ -145,6 +179,16 @@ module AppState {
             var bm = data["bolusMode"] as Lang.String?; if (bm != null) { defaultMode = bm; }
             var bi = flt(data["bolusIncrement"]); if (bi != null && bi > 0.0) { stepU = bi; }
             var ci = numOrNull(data["carbIncrement"]); if (ci != null && ci > 0) { stepC = ci; }
+            var so = data["screenOrder"];
+            if (so instanceof Lang.Array) {
+                screenOrder = sanitizeOrder(so);
+                Storage.setValue("screenOrder", screenOrder);
+            }
+            var ds = data["defaultScreen"] as Lang.String?;
+            if (ds != null && contains(screenOrder, ds)) {
+                defaultScreen = ds;
+                Storage.setValue("defaultScreen", ds);
+            }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {

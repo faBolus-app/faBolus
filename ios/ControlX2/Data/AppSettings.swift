@@ -17,8 +17,24 @@ public final class AppSettings {
     public var showGlucoseAxis: Bool { didSet { d.set(showGlucoseAxis, forKey: "showGlucoseAxis") } }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
 
+    /// Garmin remote layout: the swipe order of its screens and which one opens first. Pushed to
+    /// the watch in the status payload; the Garmin app persists it locally so it survives restarts.
+    public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
+    public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
+
     public static let bolusIncrements: [Double] = [0.01, 0.05, 0.1, 0.5, 1, 2]
     public static let carbIncrements: [Double] = [1, 5, 10, 15]
+    /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
+    public static let garminScreens: [String] = ["glance", "alerts", "history", "details"]
+    public static func garminScreenLabel(_ id: String) -> String {
+        switch id {
+        case "glance": return "Glance (glucose HUD)"
+        case "alerts": return "Alerts"
+        case "history": return "History plot"
+        case "details": return "Details"
+        default: return id
+        }
+    }
 
     private let d = UserDefaults.standard
 
@@ -30,5 +46,13 @@ public final class AppSettings {
         carbIncrement = ci ?? 5
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
+        // Restore the Garmin order, dropping any unknown ids and appending any missing known ones
+        // so every screen stays reachable even if the stored list is stale.
+        let stored = (d.array(forKey: "garminScreenOrder") as? [String]) ?? Self.garminScreens
+        var order = stored.filter { Self.garminScreens.contains($0) }
+        for s in Self.garminScreens where !order.contains(s) { order.append(s) }
+        garminScreenOrder = order
+        let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
+        garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
     }
 }
