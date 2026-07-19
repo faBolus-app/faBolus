@@ -18,14 +18,24 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     public var onChange: (@MainActor () -> Void)?
 
     private let client = PumpBLEClient()
+    private var coordinator: PairingCoordinator?
 
+    /// 6-digit JPAKE pairing code (from the pump screen). Set before `connect()`.
+    public var pairingCode: String = ""
     /// Set once pairing completes; required to sign insulin-affecting commands.
     public var authenticationKey: [UInt8] = []
     public var pumpTimeSinceReset: UInt32 = 0
     private var isPaired: Bool { !authenticationKey.isEmpty }
 
+    /// Read-only safety mode — mirrors `PumpBLEClient.readOnly`. Defaults ON: the app connects,
+    /// pairs, and reads status but cannot write a bolus until writes are explicitly enabled.
+    public var readOnly: Bool = true {
+        didSet { client.readOnly = readOnly }
+    }
+
     public override init() {
         super.init()
+        client.readOnly = readOnly
         client.delegate = self
     }
 
@@ -74,45 +84,50 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     }
 }
 
-// PumpBLEClient invokes its delegate on the main queue; hop into the actor to touch state.
+// PumpBLEClientDelegate is @MainActor; PumpBLEClient delivers all callbacks on the main actor.
 extension LivePumpDataSource: PumpBLEClientDelegate {
-    public nonisolated func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
-        MainActor.assumeIsolated {
-            switch state {
-            case .scanning: snapshot.connection = .scanning
-            case .connecting, .discovering: snapshot.connection = .connecting
-            case .ready: snapshot.connection = .connected
-            case .disconnected, .idle: snapshot.connection = .disconnected
-            case .bolusing: snapshot.connection = .bolusing
-            case .error: snapshot.connection = .error
-            default: break
-            }
-            onChange?()
+    public func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
+        switch state {
+        case .scanning: snapshot.connection = .scanning
+        case .connecting, .discovering: snapshot.connection = .connecting
+        case .ready: snapshot.connection = .connected
+        case .disconnected, .idle: snapshot.connection = .disconnected
+        default: break
         }
+        onChange?()
     }
 
-    public nonisolated func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
-        MainActor.assumeIsolated { c.connect(peripheral) }   // connect to the first pump found
+    public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
+        c.connect(peripheral)   // connect to the first pump found
     }
 
-    public nonisolated func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        MainActor.assumeIsolated { pollStatus() }
-    }
-
-    public nonisolated func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
-        MainActor.assumeIsolated {
-            guard let parsed = try? ResponseParser.parse(frame: frame) else { return }
-            switch parsed.message {
-            case let m as ControlIQIOBResponse: snapshot.iobUnits = m.iobUnits
-            case let m as InsulinStatusResponse: snapshot.reservoirUnits = Double(m.currentInsulinAmount)
-            case let m as CurrentBatteryV2Response: snapshot.batteryPercent = m.batteryPercent
-            default: break
-            }
-            onChange?()
+    public func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
+        // Pair over JPAKE (6-digit) if a code is set, then poll status once paired.
+        guard !pairingCode.isEmpty, let coord = try? PairingCoordinator(pairingCode: pairingCode) else {
+            pollStatus(); return
         }
+        coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION passes the read-only gate
+        coord.onPaired = { [weak self] key, _ in
+            self?.authenticationKey = key
+            self?.pollStatus()
+        }
+        coordinator = coord
+        coord.start()
     }
 
-    public nonisolated func pumpClient(_ c: PumpBLEClient, didError error: Error) {
-        MainActor.assumeIsolated { snapshot.connection = .error; onChange?() }
+    public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
+        if ch == .authorization { coordinator?.handle(frame: frame); return }
+        guard let parsed = try? ResponseParser.parse(frame: frame) else { return }
+        switch parsed.message {
+        case let m as ControlIQIOBResponse: snapshot.iobUnits = m.iobUnits
+        case let m as InsulinStatusResponse: snapshot.reservoirUnits = Double(m.currentInsulinAmount)
+        case let m as CurrentBatteryV2Response: snapshot.batteryPercent = m.batteryPercent
+        default: break
+        }
+        onChange?()
+    }
+
+    public func pumpClient(_ c: PumpBLEClient, didError error: Error) {
+        snapshot.connection = .disconnected; onChange?()
     }
 }
