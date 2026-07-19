@@ -37,7 +37,7 @@ struct BolusWidgetView: View {
                 Image(systemName: "drop.fill").font(.system(size: 30)).foregroundStyle(.white)
                 Text("Bolus").font(.title3.weight(.bold)).foregroundStyle(.white)
                 if let g = snap.glucose {
-                    Text("\(g) \(snap.trendAscii)").font(.caption).foregroundStyle(.white.opacity(0.85))
+                    Text("\(g) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

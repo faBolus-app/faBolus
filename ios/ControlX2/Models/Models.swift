@@ -15,23 +15,23 @@ public enum GlucoseTrend: String, Sendable {
     case flat = "→", up = "↑", down = "↓", upUp = "⇈", downDown = "⇊"
     case rising = "↗", falling = "↘"
 
-    /// Latin-safe arrow for remotes/complications that can't render Unicode arrows
-    /// (Garmin Face It requires Latin characters).
-    public var asciiArrow: String {
+    /// Stable ASCII token identifying the trend direction, sent to remotes (Garmin) which draw
+    /// their own arrow shape — their fonts can't render Unicode arrows.
+    public var token: String {
         switch self {
-        case .flat: return "->"
-        case .up: return "^"
-        case .upUp: return "^^"
-        case .rising: return "/"
-        case .down: return "v"
-        case .downDown: return "vv"
-        case .falling: return "\\"
+        case .flat: return "flat"
+        case .up: return "up"
+        case .upUp: return "upup"
+        case .rising: return "up45"
+        case .down: return "down"
+        case .downDown: return "downdown"
+        case .falling: return "down45"
         }
     }
 
-    /// Map a raw trend string (which may be a Unicode arrow) to its Latin-safe form.
-    public static func ascii(from raw: String) -> String {
-        (GlucoseTrend(rawValue: raw) ?? .flat).asciiArrow
+    /// Map a raw trend string (may be a Unicode arrow) to its direction token.
+    public static func token(from raw: String) -> String {
+        (GlucoseTrend(rawValue: raw) ?? .flat).token
     }
 }
 

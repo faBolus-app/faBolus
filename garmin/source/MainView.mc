@@ -26,12 +26,10 @@ class MainView extends Ui.View {
         var g = (AppState.glucose == null) ? "--" : (AppState.glucose as Lang.Number).toString();
         dc.setColor(AppState.glucoseColor(), Gfx.COLOR_TRANSPARENT);
         dc.drawText(cx, h * 0.36, Gfx.FONT_NUMBER_HOT, g, vc);
-        // Trend arrow (ASCII, from the phone) just right of the number.
+        // Trend arrow (drawn shape, from the phone's direction token) just right of the number.
         if (!AppState.trend.equals("")) {
             var gw = dc.getTextWidthInPixels(g, Gfx.FONT_NUMBER_HOT);
-            dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(cx + gw / 2 + 12, h * 0.36, Gfx.FONT_TINY, AppState.trend,
-                        Gfx.TEXT_JUSTIFY_LEFT | Gfx.TEXT_JUSTIFY_VCENTER);
+            TrendArrow.draw(dc, cx + gw / 2 + 24, h * 0.36, 13, AppState.trend, AppState.glucoseColor());
         }
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.drawText(cx, h * 0.55, Gfx.FONT_XTINY, "mg/dL", vc);

@@ -11,7 +11,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     public var glucose: Int?
-    public var trendAscii: String          // Latin-safe arrow ("^", "^^", "/", "->", "\\", "v", "vv")
+    public var trendArrow: String          // Unicode trend arrow (→ ↑ ↓ ⇈ ⇊ ↗ ↘), same as the app HUD
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
@@ -22,11 +22,11 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// Recent readings for a sparkline (oldest→newest, capped small for App Group size).
     public var recentPoints: [Point]
 
-    public init(glucose: Int? = nil, trendAscii: String = "", iobUnits: Double = 0,
+    public init(glucose: Int? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = []) {
-        self.glucose = glucose; self.trendAscii = trendAscii; self.iobUnits = iobUnits
+        self.glucose = glucose; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
         self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
@@ -45,7 +45,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var rangeCategory: Int { Self.rangeCategory(glucose) }
 
     public static let placeholder = WidgetSnapshot(
-        glucose: 124, trendAscii: "->", iobUnits: 1.2, reservoirUnits: 142, batteryPercent: 80,
+        glucose: 124, trendArrow: "→", iobUnits: 1.2, reservoirUnits: 142, batteryPercent: 80,
         lastBolusUnits: 2.5, lastBolusDate: Date().addingTimeInterval(-1800), connected: true,
         recentPoints: (0..<24).map { .init(t: Date().addingTimeInterval(Double($0 - 24) * 300), mgdl: 110 + ($0 % 6) * 8) })
 }

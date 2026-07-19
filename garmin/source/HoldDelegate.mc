@@ -9,26 +9,28 @@ class HoldDelegate extends Ui.BehaviorDelegate {
     private const TICK_MS = 50;
     private var _timer as Timer.Timer?;
     private var _elapsed = 0;
+    private var _running = false;
 
     function initialize() { BehaviorDelegate.initialize(); }
 
-    // Touch down anywhere on the screen starts the hold; lifting (or a drag-release) cancels.
-    function onPress(evt as Ui.ClickEvent) as Lang.Boolean {
-        if (AppState.status != null) { return false; }         // already sent
-        startHold(); return true;
-    }
-    function onRelease(evt as Ui.ClickEvent) as Lang.Boolean {
-        cancelHold(); return true;
-    }
+    // Touch down / long-press anywhere starts the hold; lifting cancels. We handle both onPress
+    // and onHold because the venu3s may deliver either for a sustained touch.
+    function onPress(evt as Ui.ClickEvent) as Lang.Boolean { return startHold(); }
+    function onHold(evt as Ui.ClickEvent) as Lang.Boolean { return startHold(); }
+    function onRelease(evt as Ui.ClickEvent) as Lang.Boolean { cancelHold(); return true; }
 
-    private function startHold() as Void {
+    private function startHold() as Lang.Boolean {
+        if (AppState.status != null || _running) { return true; }   // already sent / already holding
+        _running = true;
         _elapsed = 0;
         AppState.holdProgress = 0.0;
         if (_timer == null) { _timer = new Timer.Timer(); }
         _timer.start(method(:onTick), TICK_MS, true);
+        return true;
     }
 
     private function cancelHold() as Void {
+        _running = false;
         if (_timer != null) { _timer.stop(); }
         if (AppState.status == null) { AppState.holdProgress = 0.0; Ui.requestUpdate(); }
     }

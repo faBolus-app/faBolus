@@ -12,7 +12,7 @@ enum WidgetPublisher {
         let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         let snap = WidgetSnapshot(
             glucose: s.glucose,
-            trendAscii: GlucoseTrend.ascii(from: s.trend),
+            trendArrow: s.trend,          // Unicode arrow, same as the HUD
             iobUnits: s.iobUnits,
             reservoirUnits: s.reservoirUnits,
             batteryPercent: s.batteryPercent,

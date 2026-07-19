@@ -26,8 +26,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var status: Status?
     public var deliveredUnits: Double?
     public var message: String?
-    /// Latin-safe glucose trend indicator ("^", "^^", "/", "->", "\\", "v", "vv") for remotes
-    /// and Garmin complications (Face It requires Latin characters, not Unicode arrows).
+    /// Glucose trend direction token (flat/up/down/upup/downdown/up45/down45). Remotes draw
+    /// their own arrow shape from this — their fonts can't render Unicode arrows.
     public var trend: String?
     // Calculator settings the phone shares so a remote can compute carbs→units locally.
     public var carbRatio: Double?     // grams per unit

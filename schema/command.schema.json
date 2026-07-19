@@ -57,7 +57,8 @@
     },
     "trend": {
       "type": "string",
-      "description": "Latin-safe glucose trend arrow (\"^\", \"^^\", \"/\", \"->\", \"\\\\\", \"v\", \"vv\") for remote HUDs and Garmin complications (Face It requires Latin characters, not Unicode arrows)."
+      "enum": ["flat", "up", "upup", "up45", "down", "downdown", "down45"],
+      "description": "Glucose trend direction token. Remotes draw their own arrow shape from this; their fonts can't render Unicode arrows."
     },
     "carbRatio": {
       "type": "number",
