@@ -24,16 +24,25 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var recentPoints: [Point]
     /// Active pump alert titles (for the read-only Siri "alerts" query).
     public var activeAlerts: [String]
+    // Extra pump settings/status exposed to Siri + Apple Shortcuts.
+    public var cgmActive: Bool
+    public var carbRatio: Double     // g/U (0 = unknown)
+    public var isf: Int              // mg/dL per U (0 = unknown)
+    public var targetBg: Int         // mg/dL (0 = unknown)
+    public var maxBolusUnits: Double // pump's configured max
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
-                recentPoints: [Point] = [], activeAlerts: [String] = []) {
+                recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
+                carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
         self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
         self.activeAlerts = activeAlerts
+        self.cgmActive = cgmActive; self.carbRatio = carbRatio; self.isf = isf
+        self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
     }
 
     /// Loop-style glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
@@ -75,6 +84,15 @@ public enum WidgetStore {
     public static func save(_ s: WidgetSnapshot) {
         guard let data = try? JSONEncoder().encode(s) else { return }
         defaults?.set(data, forKey: key)
+    }
+
+    /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
+    /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
+    public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }
+    public static func takeOpenBolusRequest() -> Bool {
+        guard defaults?.bool(forKey: "openBolusRequest") == true else { return false }
+        defaults?.removeObject(forKey: "openBolusRequest")
+        return true
     }
     public static func load() -> WidgetSnapshot? {
         guard let data = defaults?.data(forKey: key) else { return nil }

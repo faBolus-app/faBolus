@@ -22,7 +22,12 @@ enum WidgetPublisher {
             connected: s.connection == .connected || s.connection == .bolusing,
             updatedAt: Date(),
             recentPoints: Array(points),
-            activeAlerts: alerts)
+            activeAlerts: alerts,
+            cgmActive: s.cgmActive,
+            carbRatio: s.carbRatio,
+            isf: s.isf,
+            targetBg: s.targetBg,
+            maxBolusUnits: s.maxBolusUnits)
         WidgetStore.save(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }

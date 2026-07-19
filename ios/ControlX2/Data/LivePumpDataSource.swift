@@ -431,12 +431,16 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
             var markers = bolusMarkers
             var iob = iobHistory
             let existingBolus = Set(bolusMarkers.map { $0.date.timeIntervalSince1970.rounded() })
+            var existingIOB = Set(iobHistory.map { $0.date.timeIntervalSince1970.rounded() })
             for b in backfillBoluses {
                 let date = pumpDate(b.pumpSec)
-                if !existingBolus.contains(date.timeIntervalSince1970.rounded()) {
+                let key = date.timeIntervalSince1970.rounded()
+                if !existingBolus.contains(key) {
                     markers.append(BolusMarker(date: date, units: b.units))
                 }
-                if b.iob > 0 { iob.append(IOBSample(date: date, iob: b.iob)) }
+                if b.iob > 0, !existingIOB.contains(key) {
+                    iob.append(IOBSample(date: date, iob: b.iob)); existingIOB.insert(key)
+                }
             }
             markers.sort { $0.date < $1.date }
             if markers.count > 100 { markers.removeFirst(markers.count - 100) }

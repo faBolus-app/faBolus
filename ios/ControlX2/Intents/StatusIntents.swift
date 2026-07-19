@@ -11,7 +11,7 @@ import Foundation
 
 // MARK: - Shared formatting
 
-private enum SiriFormat {
+enum SiriFormat {
     /// Spoken word for the Unicode trend arrow stored in the snapshot.
     static func trendWord(_ arrow: String) -> String {
         switch arrow {

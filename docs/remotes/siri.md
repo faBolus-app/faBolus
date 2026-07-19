@@ -37,6 +37,23 @@ Shortcuts app.
 - If the pump isn't connected, the pump-status answer notes the data may be out of date.
 - If the app has never connected, Siri asks you to open ControlX2 and connect first.
 
+## Apple Shortcuts (data actions)
+
+Beyond the spoken phrases, ControlX2 exposes a large set of **value-returning** actions in the
+**Shortcuts** app so you can build shortcuts and automations (e.g. *"if glucose > 180 and IOB < 1,
+send me a notification"*). Each returns a typed value you can pass to other actions:
+
+- **Glucose:** Get Glucose, Get Glucose Trend, Get Glucose Age (minutes), Get Recent Glucose Values
+- **Insulin:** Get Insulin on Board, Get Last Bolus (units), Get Last Bolus Age (minutes)
+- **Pump:** Get Reservoir, Get Pump Battery, Is Pump Connected, Is CGM Active
+- **Settings:** Get Carb Ratio, Get Correction Factor, Get Target Glucose, Get Max Bolus
+- **Alerts:** Get Active Alerts (list), Get Alert Count
+- **Summary:** Get Pump Summary (one-line string)
+- **Action:** Open Bolus Screen (opens the app to the bolus screen — you still confirm the dose)
+
+All data actions are **read-only** and read the last published snapshot (no Bluetooth), so they run
+instantly. They're safe to use in time-based or location automations.
+
 ## No voice bolus
 
 There is **no Siri bolus intent**, by design. A bolus is a deliberate, confirmed action; the

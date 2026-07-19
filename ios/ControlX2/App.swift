@@ -26,9 +26,13 @@ struct ControlX2App: App {
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     AppSettings.shared.syncWidgetConfig()
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
+                    if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { widgetBolus?.handlePending() }
+                    if phase == .active {
+                        widgetBolus?.handlePending()
+                        if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
+                    }
                 }
                 .onOpenURL { url in
                     if url.scheme == ControlX2DeepLink.scheme {
