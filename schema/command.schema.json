@@ -13,7 +13,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead"],
+      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert"],
       "description": "Command type."
     },
     "requestId": {
@@ -104,6 +104,27 @@
       "type": "array",
       "items": { "type": "integer" },
       "description": "Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot."
+    },
+    "alerts": {
+      "type": "array",
+      "description": "Active pump alerts/alarms (statusRead reply) for a remote to view.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "title"],
+        "properties": {
+          "id": { "type": "integer", "description": "Bitmap index / notification id." },
+          "kind": { "type": "integer", "description": "NotificationKind (alert=1, alarm=2, cgmAlert=3)." },
+          "title": { "type": "string" }
+        }
+      }
+    },
+    "alertId": {
+      "type": "integer",
+      "description": "The notification id to clear (dismissAlert command)."
+    },
+    "alertKind": {
+      "type": "integer",
+      "description": "The notification kind to clear (dismissAlert command)."
     }
   },
   "additionalProperties": false

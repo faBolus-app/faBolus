@@ -52,18 +52,22 @@ class DexcomView extends Ui.View {
             dc.drawText(plotR + w * 0.02, y, Gfx.FONT_XTINY, v.toString(), Gfx.TEXT_JUSTIFY_LEFT | Gfx.TEXT_JUSTIFY_VCENTER);
         }
 
-        // Data dots (Dexcom-style), oldest → newest across the width.
-        var hist = AppState.history;
-        var n = hist.size();
+        // Data dots (Dexcom-style), oldest → newest across the width. Window to the selected
+        // hours (~12 points/hour at 5-min spacing); newest points are at the end of the array.
+        var full = AppState.history;
+        var total = full.size();
+        var want = AppState.plotHours * 12;
+        var start = (total > want) ? (total - want) : 0;
+        var n = total - start;
         if (n >= 1) {
             var span = (n > 1) ? (plotR - plotL) / (n - 1) : 0;
-            for (var i = 0; i < n; i += 1) {
-                var val = hist[i];
+            for (var k = 0; k < n; k += 1) {
+                var val = full[start + k];
                 if (!(val instanceof Lang.Number) && !(val instanceof Lang.Float)) { continue; }
                 var vv = val.toFloat();
                 if (vv < VMIN) { vv = VMIN; }
                 if (vv > VMAX) { vv = VMAX; }
-                var px = plotL + span * i;
+                var px = plotL + span * k;
                 var py = plotB - ((vv - VMIN) / (VMAX - VMIN)) * plotH;
                 dc.setColor(AppState.rangeColor(val.toNumber()), Gfx.COLOR_TRANSPARENT);
                 dc.fillCircle(px, py, 2);
@@ -74,6 +78,6 @@ class DexcomView extends Ui.View {
         }
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, h * 0.90, Gfx.FONT_XTINY, "3 Hours", vc);
+        dc.drawText(cx, h * 0.90, Gfx.FONT_XTINY, AppState.plotHours.toString() + " Hours (tap)", vc);
     }
 }

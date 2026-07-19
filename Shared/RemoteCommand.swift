@@ -8,7 +8,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public static let schemaVersion = 1
 
     public enum Kind: String, Codable, Sendable {
-        case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead
+        case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead, dismissAlert
+    }
+
+    /// A pump alert/alarm summarized for a remote (id + kind + title).
+    public struct RemoteAlert: Codable, Equatable, Sendable {
+        public var id: Int
+        public var kind: Int      // NotificationKind rawValue (alert=1, alarm=2, cgmAlert=3)
+        public var title: String
+        public init(id: Int, kind: Int, title: String) { self.id = id; self.kind = kind; self.title = title }
     }
     public enum Status: String, Codable, Sendable {
         case pending, awaitingConfirm, delivering, delivered, cancelled, failed, outOfRange
@@ -43,6 +51,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var glucoseAgeSec: Double?
     /// Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot.
     public var history: [Int]?
+    /// Active pump alerts/alarms (statusRead reply), for a remote to view.
+    public var alerts: [RemoteAlert]?
+    /// The alert to clear (dismissAlert command): its id + kind from the alerts list.
+    public var alertId: Int?
+    public var alertKind: Int?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -51,7 +64,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
-                glucoseAgeSec: Double? = nil, history: [Int]? = nil) {
+                glucoseAgeSec: Double? = nil, history: [Int]? = nil,
+                alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -62,6 +76,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits
         self.glucoseAgeSec = glucoseAgeSec; self.history = history
+        self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

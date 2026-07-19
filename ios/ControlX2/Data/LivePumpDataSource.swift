@@ -14,7 +14,14 @@ import PumpX2BLE
 public final class LivePumpDataSource: NSObject, PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var activeNotifications: [PumpNotification] = []
     public var onChange: (@MainActor () -> Void)?
+
+    // Active notifications by kind (merged into `activeNotifications`, alarms first).
+    private var alarmList: [PumpNotification] = []
+    private var alertList: [PumpNotification] = []
+    private var cgmAlertList: [PumpNotification] = []
+    private func mergeNotifications() { activeNotifications = alarmList + alertList + cgmAlertList }
 
     // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
     // BLE events (with `bluetooth-central` background mode) and hands the connection back.
@@ -162,14 +169,39 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         snapshot.connection = .connected; onChange?()
     }
 
+    /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
+    /// message but does NOT modify insulin delivery, so it runs under `.allowNonDelivery`.
+    public func dismissNotification(_ notification: PumpNotification) async {
+        guard isPaired else { return }
+        // Fresh signing timestamp for the HMAC.
+        guard let time = try? await withCheckedThrowingContinuation({ (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
+            timeCont = cont
+            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
+        }) else { return }
+        signingTimestamp = time.currentTime
+
+        let previous = client.writePolicy
+        client.writePolicy = .allowNonDelivery
+        defer { client.writePolicy = previous }
+        _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
+                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        // Optimistically drop it locally; the next fastRead confirms via the bitmap.
+        alarmList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
+        alertList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
+        cgmAlertList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
+        mergeNotifications()
+        onChange?()
+    }
+
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
 
     private var pollTick = 0
 
-    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery.
+    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery, alerts/alarms.
     private func fastRead() {
         for r: Message in [ControlIQIOBRequest(), CurrentEgvGuiDataV2Request(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request()] {
+                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+                           AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest()] {
             try? client.send(r)
         }
     }
@@ -364,6 +396,9 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
             scheduleBackfillTick()   // debounce: page ends when frames stop arriving
+        case let m as AlertStatusResponse: alertList = m.notifications; mergeNotifications()
+        case let m as AlarmStatusResponse: alarmList = m.notifications; mergeNotifications()
+        case let m as CGMAlertStatusResponse: cgmAlertList = m.notifications; mergeNotifications()
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         default: break

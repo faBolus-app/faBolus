@@ -83,6 +83,11 @@ final class GarminRemoteBridge: NSObject {
         case .cancelBolus:
             Task { await model.cancelBolus() }
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
+        case .dismissAlert:
+            if let id = cmd.alertId, let k = cmd.alertKind,
+               let n = model.activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == k }) {
+                Task { await model.dismissNotification(n); sendStatus(model.snapshot) }
+            }
         case .statusRead:
             sendStatus(model.snapshot)
         default: break
@@ -93,8 +98,9 @@ final class GarminRemoteBridge: NSObject {
     private func sendStatus(_ s: PumpSnapshot) {
         // Age of the current reading (for "Nm ago" + staleness on the watch).
         let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
-        // Recent history for the watch plot: last ~3 h (36 points), oldest→newest.
-        let history = Array((model?.glucoseHistory ?? []).suffix(36).map { $0.mgdl })
+        // History for the watch plot: up to ~24 h (288 points, ~5-min spacing), oldest→newest,
+        // so the watch can switch its window (3/6/12/24 h) locally.
+        let history = Array((model?.glucoseHistory ?? []).suffix(288).map { $0.mgdl })
         send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
                            bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
                            trend: GlucoseTrend.token(from: s.trend),
@@ -106,7 +112,10 @@ final class GarminRemoteBridge: NSObject {
                            batteryPercent: Double(s.batteryPercent),
                            lastBolusUnits: s.lastBolusUnits,
                            glucoseAgeSec: age,
-                           history: history.isEmpty ? nil : history))
+                           history: history.isEmpty ? nil : history,
+                           alerts: (model?.activeNotifications ?? []).map {
+                               RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
+                           }))
     }
 }
 

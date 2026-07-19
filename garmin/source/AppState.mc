@@ -23,6 +23,15 @@ module AppState {
     var connection as Lang.String = "";   // e.g. "Connected"
     var readingEpoch as Lang.Number = 0;  // unix sec the current BG was taken (0 = unknown)
     var history as Lang.Array = [];       // recent mg/dL (Numbers), oldest → newest, for the plot
+    var alerts as Lang.Array = [];        // active pump alerts: dicts {id, kind, title}
+    var plotHours as Lang.Number = 3;     // history-plot window: 3 → 6 → 12 → 24 → 3
+
+    function cyclePlotHours() as Void {
+        if (plotHours == 3) { plotHours = 6; }
+        else if (plotHours == 6) { plotHours = 12; }
+        else if (plotHours == 12) { plotHours = 24; }
+        else { plotHours = 3; }
+    }
 
     // A cached BG older than 6 minutes must not be shown (per spec).
     function glucoseStale() as Lang.Boolean {
@@ -132,6 +141,7 @@ module AppState {
             var ag = flt(data["glucoseAgeSec"]);
             if (ag != null) { readingEpoch = Time.now().value() - ag.toNumber(); }
             var hs = data["history"]; if (hs instanceof Lang.Array) { history = hs; }
+            var al = data["alerts"]; if (al instanceof Lang.Array) { alerts = al; }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {

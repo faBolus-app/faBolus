@@ -26,6 +26,17 @@ module RemoteComm {
         return { "version" => SCHEMA_VERSION, "kind" => "statusRead", "requestId" => requestId };
     }
 
+    // Clears a pump alert on the phone (which sends the signed dismiss to the pump).
+    function dismissAlert(requestId as Lang.String, alertId as Lang.Number, alertKind as Lang.Number) as Lang.Dictionary {
+        return {
+            "version" => SCHEMA_VERSION,
+            "kind" => "dismissAlert",
+            "requestId" => requestId,
+            "alertId" => alertId,
+            "alertKind" => alertKind
+        };
+    }
+
     // True when the companion phone is reachable.
     function phoneReachable() as Lang.Boolean {
         return System.getDeviceSettings().phoneConnected;

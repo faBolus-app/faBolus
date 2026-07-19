@@ -1,4 +1,5 @@
 import Foundation
+import PumpX2Messages
 
 /// In-memory pump simulator so the HUD runs in the Simulator / SwiftUI previews with no
 /// hardware. Generates a plausible glucose trace and simple IOB/COB dynamics.
@@ -6,6 +7,14 @@ import Foundation
 public final class MockPumpDataSource: PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var activeNotifications: [PumpNotification] = [
+        PumpNotification(id: 0, kind: .alert, title: "Low insulin",
+                         detail: "Low amount of insulin remaining in the cartridge.")
+    ]
+    public func dismissNotification(_ notification: PumpNotification) async {
+        activeNotifications.removeAll { $0.id == notification.id && $0.kind == notification.kind }
+        onChange?()
+    }
     public var pairingCode: String = ""   // unused by the mock
     public var hasStoredPairing: Bool { false }
     public func forgetPairing() {}

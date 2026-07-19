@@ -25,6 +25,7 @@ class DetailsView extends Ui.View {
                     AppState.connection.equals("") ? "Pump status" : AppState.connection, vc);
 
         // Rows in the central band (0.20..0.84) so the round edges never clip the text.
+        var alertCount = AppState.alerts.size();
         var rows = [
             "Active Insulin: " + f2(AppState.iob) + " U",
             "Reservoir: " + f2(AppState.reservoir) + " U",
@@ -32,9 +33,10 @@ class DetailsView extends Ui.View {
             "Carb ratio: " + f2(AppState.carbRatio) + " g/U",
             "ISF: " + n0(AppState.isf) + " mg/dL/U",
             "Target: " + n0(AppState.targetBg) + " mg/dL",
-            "Last bolus: " + f2(AppState.lastBolus) + " U"
+            "Last bolus: " + f2(AppState.lastBolus) + " U",
+            (alertCount > 0 ? ("Alerts: " + alertCount.toString() + " (swipe up)") : "No alerts")
         ];
-        var top = 0.20, bottom = 0.84;
+        var top = 0.19, bottom = 0.85;
         var step = (bottom - top) / (rows.size() - 1);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         for (var i = 0; i < rows.size(); i += 1) {

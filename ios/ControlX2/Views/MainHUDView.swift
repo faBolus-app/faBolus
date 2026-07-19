@@ -30,6 +30,8 @@ struct MainHUDView: View {
                     }
                     .padding(.horizontal)
 
+                    AlertsBannerView(model: model)
+
                     StatusRingView(snapshot: model.snapshot)
 
                     if let u = model.snapshot.lastBolusUnits, let d = model.snapshot.lastBolusDate {

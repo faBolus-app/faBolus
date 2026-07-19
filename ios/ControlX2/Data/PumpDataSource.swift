@@ -1,4 +1,5 @@
 import Foundation
+import PumpX2Messages
 
 /// Abstraction over the pump so the UI runs in the simulator (mock) and, later, against a real
 /// pump via PumpX2Kit (live). Async streaming of snapshots keeps the HUD reactive.
@@ -6,6 +7,10 @@ import Foundation
 public protocol PumpDataSource: AnyObject {
     var snapshot: PumpSnapshot { get }
     var glucoseHistory: [GlucoseReading] { get }
+    /// Active pump alerts/alarms/CGM alerts (most severe first).
+    var activeNotifications: [PumpNotification] { get }
+    /// Dismiss (clear) one notification on the pump — a signed control command.
+    func dismissNotification(_ notification: PumpNotification) async
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
     var pairingCode: String { get set }
     /// True when a prior pairing was saved (Keychain) — connect can resume without a code.

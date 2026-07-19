@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PumpX2Messages
 
 /// Observable app state bridging a `PumpDataSource` to SwiftUI.
 @MainActor
@@ -7,7 +8,11 @@ import Observation
 public final class AppModel {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var activeNotifications: [PumpNotification] = []
     public var lastError: String?
+
+    /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
+    public func dismissNotification(_ n: PumpNotification) async { await source.dismissNotification(n); refresh() }
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
@@ -66,6 +71,7 @@ public final class AppModel {
     private func refresh() {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
+        activeNotifications = source.activeNotifications
         WidgetPublisher.publish(snapshot, history: glucoseHistory)
         pushStatusIfNeeded()
     }
