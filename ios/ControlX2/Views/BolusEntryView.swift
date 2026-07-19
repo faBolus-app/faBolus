@@ -11,17 +11,36 @@ struct BolusEntryView: View {
 
     @State private var mode: BolusMode = .carbs
     @State private var modeInitialized = false
-    @State private var carbs = 0.0
+    // Amounts are text-backed so an empty field shows a greyed placeholder "0" (nothing to delete
+    // before typing). The numeric values are derived; the +/- steppers write formatted text back.
+    @State private var carbsText = ""
     @State private var bg = ""
-    @State private var units = 0.0
+    @State private var unitsText = ""
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
+    private var carbs: Double { Double(carbsText) ?? 0 }
+    private var units: Double { Double(unitsText) ?? 0 }
     private var maxUnits: Double { model.snapshot.maxBolusUnits }
     private var overMax: Bool { units > maxUnits }
+
+    /// Stepper bindings: read the numeric value, write formatted text (empty at zero → placeholder).
+    private var carbsStep: Binding<Double> {
+        Binding(get: { carbs }, set: { carbsText = $0 <= 0 ? "" : String(Int($0)) })
+    }
+    private var unitsStep: Binding<Double> {
+        Binding(get: { units }, set: { unitsText = $0 <= 0 ? "" : Self.trimUnits($0) })
+    }
+    /// Compact units string: 1.00 → "1", 1.50 → "1.5", 0.05 → "0.05".
+    private static func trimUnits(_ v: Double) -> String {
+        var s = String(format: "%.2f", v)
+        while s.contains("."), s.hasSuffix("0") { s.removeLast() }
+        if s.hasSuffix(".") { s.removeLast() }
+        return s
+    }
 
     var body: some View {
         Group {
@@ -41,12 +60,12 @@ struct BolusEntryView: View {
             if mode == .carbs {
                 Section("Entry") {
                     HStack(spacing: 6) {
-                        TextField("0", value: $carbs, format: .number)
+                        TextField("0", text: $carbsText)
                             .keyboardType(.numberPad).fixedSize()
                             .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
                         Text("g carbs").foregroundStyle(.secondary)
                         Spacer()
-                        Stepper("", value: $carbs, in: 0...300, step: settings.carbIncrement).labelsHidden()
+                        Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
                     }
                     LabeledContent("Blood glucose") {
                         TextField("mg/dL", text: $bg).keyboardType(.numberPad)
@@ -71,13 +90,13 @@ struct BolusEntryView: View {
                     }.buttonStyle(.borderedProminent).tint(.red)
                 } else {
                     HStack(spacing: 6) {
-                        TextField("0", value: $units, format: .number.precision(.fractionLength(0...2)))
+                        TextField("0", text: $unitsText)
                             .keyboardType(.decimalPad).fixedSize()
                             .font(.title3.weight(.semibold)).focused($focus, equals: .units)
                             .foregroundStyle(overMax ? LoopTheme.low : .primary)
                         Text("U").foregroundStyle(.secondary)
                         Spacer()
-                        Stepper("", value: $units, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
+                        Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
                     }
                     if overMax {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
@@ -116,7 +135,7 @@ struct BolusEntryView: View {
     private func calculate() async {
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         recommendation = rec
-        units = rec.recommendedUnits
+        unitsText = rec.recommendedUnits > 0 ? Self.trimUnits(rec.recommendedUnits) : ""
     }
 
     private func deliver() async {
@@ -124,7 +143,7 @@ struct BolusEntryView: View {
         await model.deliverBolus(units: units)
         delivering = false
         if embedded {
-            units = 0; carbs = 0; recommendation = nil   // reset for the next one
+            unitsText = ""; carbsText = ""; recommendation = nil   // reset for the next one
         } else {
             dismiss()
         }
