@@ -34,11 +34,11 @@ class HoldView extends Ui.View {
     function onLayout(dc as Gfx.Dc) as Void {
         var w = dc.getWidth(), h = dc.getHeight();
         var r = (w * 0.12).toNumber();
-        // Scrambled positions: 1 = lower-left, 2 = top-center, 3 = lower-right.
+        // In order, left → right: 1, 2, 3.
         _btns = [
-            new PinButton(1, (w * 0.34).toNumber(), (h * 0.62).toNumber(), r),
-            new PinButton(2, (w * 0.50).toNumber(), (h * 0.33).toNumber(), r),
-            new PinButton(3, (w * 0.66).toNumber(), (h * 0.62).toNumber(), r)
+            new PinButton(1, (w * 0.26).toNumber(), (h * 0.50).toNumber(), r),
+            new PinButton(2, (w * 0.50).toNumber(), (h * 0.50).toNumber(), r),
+            new PinButton(3, (w * 0.74).toNumber(), (h * 0.50).toNumber(), r)
         ];
         setLayout(_btns);
     }

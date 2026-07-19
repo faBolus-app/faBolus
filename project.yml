@@ -45,6 +45,9 @@ targets:
         # without it, showDeviceSelection() often opens GCM with no picker.
         CFBundleDisplayName: ControlX2
         NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
+        # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
+        # goes through without the app being in the foreground.
+        UIBackgroundModes: [bluetooth-central]
         UILaunchScreen: {}
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.

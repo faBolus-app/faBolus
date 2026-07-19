@@ -79,6 +79,21 @@
       "type": "number",
       "minimum": 0,
       "description": "Pump's configured max bolus (units) — governs the remote's UI cap (statusRead reply)."
+    },
+    "reservoirUnits": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Insulin units remaining in the reservoir (statusRead reply, for a remote's detail screen)."
+    },
+    "batteryPercent": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Pump battery percent (statusRead reply, for a remote's detail screen)."
+    },
+    "lastBolusUnits": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Units of the most recent bolus (statusRead reply, for a remote's detail screen)."
     }
   },
   "additionalProperties": false

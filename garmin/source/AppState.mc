@@ -15,6 +15,11 @@ module AppState {
     var isf as Lang.Number = 0;           // mg/dL per unit
     var targetBg as Lang.Number = 0;      // mg/dL
     var maxUnits as Lang.Float = 25.0;
+    // Extra pump status (from phone) for the details screen.
+    var reservoir as Lang.Float = -1.0;   // units remaining (-1 = unknown)
+    var battery as Lang.Number = -1;      // percent (-1 = unknown)
+    var lastBolus as Lang.Float = -1.0;   // units of the last bolus (-1 = unknown)
+    var connection as Lang.String = "";   // e.g. "Connected"
 
     // Bolus entry
     var mode as Lang.String = "units";    // "units" | "carbs"
@@ -63,6 +68,9 @@ module AppState {
     }
 
     // The units that will actually be delivered (rounded to 0.05, clamped to the pump max).
+    // Matches the t:slim bolus calculator: carb bolus + a *signed* correction from the current
+    // CGM reading, with IOB subtracted from the whole (so a low BG or high IOB reduces — or
+    // zeroes — the dose). Units mode is a manual fixed dose (no correction / IOB).
     function computeUnits() as Lang.Float {
         var total;
         if (mode.equals("units")) {
@@ -71,10 +79,9 @@ module AppState {
             var food = (carbRatio > 0.0) ? (carbsValue.toFloat() / carbRatio) : 0.0;
             var correction = 0.0;
             if (isf > 0 && glucose != null) {
-                correction = (glucose - targetBg).toFloat() / isf.toFloat() - iob;
-                if (correction < 0.0) { correction = 0.0; }
+                correction = (glucose - targetBg).toFloat() / isf.toFloat();   // signed
             }
-            total = food + correction;
+            total = food + correction - iob;   // IOB reduces the total
         }
         total = Math.round(total * 20.0) / 20.0;   // 0.05 u steps
         if (total < 0.0) { total = 0.0; }
@@ -99,6 +106,10 @@ module AppState {
             var isfv = numOrNull(data["isf"]); if (isfv != null) { isf = isfv; }
             var tb = numOrNull(data["targetBg"]); if (tb != null) { targetBg = tb; }
             var mx = flt(data["maxBolusUnits"]); if (mx != null) { maxUnits = mx; }
+            var rv = flt(data["reservoirUnits"]); if (rv != null) { reservoir = rv; }
+            var bt = numOrNull(data["batteryPercent"]); if (bt != null) { battery = bt; }
+            var lb = flt(data["lastBolusUnits"]); if (lb != null) { lastBolus = lb; }
+            var cn = data["message"] as Lang.String?; if (cn != null) { connection = cn; }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {

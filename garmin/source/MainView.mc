@@ -21,6 +21,10 @@ class MainView extends Ui.View {
         dc.setColor(connected ? Gfx.COLOR_GREEN : Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
         dc.fillCircle(cx, h * 0.15, 5);
 
+        // Subtle "swipe up for details" chevron near the top edge.
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.fillPolygon([[cx, h * 0.045], [cx - 9, h * 0.075], [cx + 9, h * 0.075]]);
+
         // Glucose (large, range-colored), vertically centered so the glyph baseline can't
         // collide with the unit label below it.
         var g = (AppState.glucose == null) ? "--" : (AppState.glucose as Lang.Number).toString();

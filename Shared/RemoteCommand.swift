@@ -34,13 +34,18 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var isf: Double?           // correction factor, mg/dL per unit
     public var targetBg: Double?      // mg/dL
     public var maxBolusUnits: Double? // pump's configured max
+    // Extra pump status for a remote's detail screen.
+    public var reservoirUnits: Double?
+    public var batteryPercent: Double?
+    public var lastBolusUnits: Double?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
                 trend: String? = nil,
                 carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
-                maxBolusUnits: Double? = nil) {
+                maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
+                batteryPercent: Double? = nil, lastBolusUnits: Double? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -48,6 +53,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.trend = trend
         self.carbRatio = carbRatio; self.isf = isf; self.targetBg = targetBg
         self.maxBolusUnits = maxBolusUnits
+        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
+        self.lastBolusUnits = lastBolusUnits
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

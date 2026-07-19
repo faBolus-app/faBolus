@@ -97,7 +97,10 @@ final class GarminRemoteBridge: NSObject {
                            carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
                            isf: s.isf > 0 ? Double(s.isf) : nil,
                            targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                           maxBolusUnits: s.maxBolusUnits))
+                           maxBolusUnits: s.maxBolusUnits,
+                           reservoirUnits: s.reservoirUnits,
+                           batteryPercent: Double(s.batteryPercent),
+                           lastBolusUnits: s.lastBolusUnits))
     }
 }
 

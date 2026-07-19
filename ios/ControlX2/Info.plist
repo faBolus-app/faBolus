@@ -45,6 +45,10 @@
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

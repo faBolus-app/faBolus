@@ -32,4 +32,10 @@ class MainDelegate extends Ui.BehaviorDelegate {
         if (k == Ui.KEY_ENTER || k == Ui.KEY_START) { return openBolus(); }
         return false;
     }
+
+    // Swipe up → the pump details screen.
+    function onNextPage() as Lang.Boolean {
+        Ui.pushView(new DetailsView(), new DetailsDelegate(), Ui.SLIDE_UP);
+        return true;
+    }
 }
