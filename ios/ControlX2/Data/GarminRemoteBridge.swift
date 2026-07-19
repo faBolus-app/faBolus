@@ -85,6 +85,7 @@ final class GarminRemoteBridge: NSObject {
             let s = model.snapshot
             send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
                                bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
+                               trend: GlucoseTrend.ascii(from: s.trend),
                                carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
                                isf: s.isf > 0 ? Double(s.isf) : nil,
                                targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,

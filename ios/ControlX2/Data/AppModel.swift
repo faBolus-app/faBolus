@@ -42,9 +42,14 @@ public final class AppModel {
         source.onChange = { [weak self] in self?.refresh() }
     }
 
+    /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
+    /// the bolus-entry sheet.
+    public var openBolusRequested = false
+
     private func refresh() {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
+        WidgetPublisher.publish(snapshot, history: glucoseHistory)
     }
 
     public func connect() async { await source.connect(); refresh() }

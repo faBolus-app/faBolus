@@ -20,7 +20,14 @@ struct ControlX2App: App {
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                 }
-                .onOpenURL { url in garmin?.handleOpenURL(url) }   // Connect IQ device-selection callback
+                .onOpenURL { url in
+                    if url.scheme == ControlX2DeepLink.scheme {
+                        // Widget tap-to-bolus / open (controlx2://bolus). Opens the confirm flow.
+                        if url.host == "bolus" { model.openBolusRequested = true }
+                    } else {
+                        garmin?.handleOpenURL(url)   // Connect IQ device-selection callback
+                    }
+                }
         }
     }
 }

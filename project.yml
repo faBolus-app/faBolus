@@ -31,6 +31,13 @@ targets:
         product: PumpX2BLE
       - package: ConnectIQ
         product: ConnectIQ
+      # Embeds the WidgetKit extension (Lock Screen + Home Screen widgets).
+      - target: ControlX2Widgets
+    entitlements:
+      path: ios/ControlX2/ControlX2.entitlements
+      properties:
+        # Shared container the app writes and the widgets read.
+        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
     info:
       path: ios/ControlX2/Info.plist
       properties:
@@ -45,6 +52,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.zgranowitz.controlx2.ciq
             CFBundleURLSchemes: [controlx2ciq]
+          # Deep links from the widgets (controlx2://bolus, controlx2://open).
+          - CFBundleURLName: com.zgranowitz.controlx2.deeplink
+            CFBundleURLSchemes: [controlx2]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2
@@ -75,3 +85,32 @@ targets:
         TARGETED_DEVICE_FAMILY: "4"
         INFOPLIST_KEY_WKApplication: YES
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Relays bolus commands to the ControlX2 iPhone app."
+
+  # WidgetKit extension — Lock Screen (accessory) + Home Screen widgets + tap-to-bolus. Reads
+  # the snapshot the app publishes to the shared App Group; never touches Bluetooth itself.
+  ControlX2Widgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - ios/ControlX2Widgets
+      - path: Shared/WidgetShared.swift
+    info:
+      path: ios/ControlX2Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: ControlX2
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: ios/ControlX2Widgets/ControlX2Widgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"

@@ -28,6 +28,14 @@
 				<string>controlx2ciq</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.zgranowitz.controlx2.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>controlx2</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>

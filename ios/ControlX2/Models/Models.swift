@@ -14,6 +14,25 @@ public struct GlucoseReading: Identifiable, Sendable, Equatable {
 public enum GlucoseTrend: String, Sendable {
     case flat = "→", up = "↑", down = "↓", upUp = "⇈", downDown = "⇊"
     case rising = "↗", falling = "↘"
+
+    /// Latin-safe arrow for remotes/complications that can't render Unicode arrows
+    /// (Garmin Face It requires Latin characters).
+    public var asciiArrow: String {
+        switch self {
+        case .flat: return "->"
+        case .up: return "^"
+        case .upUp: return "^^"
+        case .rising: return "/"
+        case .down: return "v"
+        case .downDown: return "vv"
+        case .falling: return "\\"
+        }
+    }
+
+    /// Map a raw trend string (which may be a Unicode arrow) to its Latin-safe form.
+    public static func ascii(from raw: String) -> String {
+        (GlucoseTrend(rawValue: raw) ?? .flat).asciiArrow
+    }
 }
 
 /// Loop-style glucose ranges for coloring.

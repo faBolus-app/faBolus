@@ -1,3 +1,6 @@
 <strings>
     <string id="AppName">ControlX2</string>
+    <string id="ComplicationLong">Blood Glucose</string>
+    <string id="ComplicationShort">BG</string>
+    <string id="ComplicationFaceIt">ControlX2 BG</string>
 </strings>

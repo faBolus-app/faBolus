@@ -54,6 +54,30 @@
     "message": {
       "type": "string",
       "description": "Optional human-readable detail for display on the remote."
+    },
+    "trend": {
+      "type": "string",
+      "description": "Latin-safe glucose trend arrow (\"^\", \"^^\", \"/\", \"->\", \"\\\\\", \"v\", \"vv\") for remote HUDs and Garmin complications (Face It requires Latin characters, not Unicode arrows)."
+    },
+    "carbRatio": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Pump's carb ratio (grams per unit), shared so a remote can compute carbs→units locally (statusRead reply)."
+    },
+    "isf": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Pump's insulin sensitivity factor (mg/dL per unit) for local correction calc (statusRead reply)."
+    },
+    "targetBg": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Pump's correction target (mg/dL) for local correction calc (statusRead reply)."
+    },
+    "maxBolusUnits": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Pump's configured max bolus (units) — governs the remote's UI cap (statusRead reply)."
     }
   },
   "additionalProperties": false

@@ -15,12 +15,29 @@ relay confirmed commands to the phone.
 ## Layout
 
 ```
-ios/       # iOS host app — owns the pump connection, full UI (Milestone 2)
-watch/     # watchOS target — iPhone-hosted remote (Milestone 3), standalone config (Milestone 4)
-garmin/    # Connect IQ (Monkey C) remote companion (Milestone 2)
-schema/    # THE phone ↔ watch/garmin message contract — single source of truth
-docs/      # architecture + bench notes
+ios/ControlX2/        # iOS host app — owns the pump connection, full UI (Milestone 2)
+ios/ControlX2Widgets/ # WidgetKit extension — Lock Screen + Home Screen widgets + tap-to-bolus
+watch/                # watchOS target — iPhone-hosted remote (Milestone 3), standalone (Milestone 4)
+garmin/               # Connect IQ (Monkey C) remote + BG complication (Milestone 2)
+schema/               # THE phone ↔ watch/garmin message contract — single source of truth
+docs/                 # architecture + bench notes
 ```
+
+### iPhone widgets (WidgetKit)
+
+`ios/ControlX2Widgets/` provides three widgets that read a snapshot the app publishes to a
+shared **App Group** (`group.com.zgranowitz.controlx2`):
+
+- **Glucose** — Lock Screen (`accessoryInline`/`accessoryCircular`/`accessoryRectangular`, the
+  row under the clock) + Home Screen small. BG + trend arrow, range-colored.
+- **Pump Overview** — Home Screen medium: glucose trend + sparkline, Active Insulin, reservoir,
+  last bolus.
+- **Bolus** — Home Screen small + Lock Screen circular. A *link* into the app's bolus-entry +
+  confirm flow (`controlx2://bolus`); it never dispenses from the widget.
+
+Widgets can't drive Bluetooth, so they show the last value the app published (with an age when
+stale). On device the App Group capability must be enabled on both the app and the widget target
+(automatic signing usually registers it; the entitlements are generated from `project.yml`).
 
 - `ios/` and `watch/` are targets in one Xcode project (standalone watchOS is a build
   config, not a separate repo).

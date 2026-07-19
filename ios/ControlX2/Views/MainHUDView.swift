@@ -75,6 +75,9 @@ struct MainHUDView: View {
             }
             .sheet(isPresented: $showBolus) { BolusEntryView(model: model) }
             .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
+            .onChange(of: model.openBolusRequested) { _, requested in
+                if requested { showBolus = true; model.openBolusRequested = false }  // widget deep link
+            }
             .task { await autoReconnectIfNeeded() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await autoReconnectIfNeeded() } }

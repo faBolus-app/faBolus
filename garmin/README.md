@@ -30,6 +30,21 @@ app lives in the ControlX2iOS repo.
 > Not yet compiled here (no Connect IQ SDK in this environment). The double-confirmation,
 > out-of-range handling, and schema parity match the Apple Watch remote.
 
+## Blood-glucose complication (watch face)
+
+The app publishes a **public Connect IQ complication** (`resources/complications/complications.xml`,
+id 0) carrying the current glucose + a Latin-safe trend arrow (e.g. `124 ^`). Source:
+`source/BgComplication.mc`, updated on every phone status reply and re-published on launch.
+
+- Because it's `public`, Garmin **Face It** faces and CIQ watch faces that support complications
+  can show it. Stock Garmin faces cannot display third-party CIQ data — pick a Face It or a CIQ
+  face and add the *ControlX2 BG* complication to a field.
+- A background service (`source/ControlX2Background.mc`, temporal event ~every 5 min) re-publishes
+  the last-known reading and best-effort re-requests fresh data from the phone while the app is
+  closed. Field reachability of background phone messaging varies; opening the app/glance is the
+  reliable refresh path. Requires the `ComplicationPublisher` + `Background` permissions.
+- The 34×34 icon must be an SVG for a public complication (`resources/drawables/bg_complication.svg`).
+
 ## iPhone-side bridge (Connect IQ iOS SDK)
 
 The iOS host receives the venu3s app's messages via the **Connect IQ Mobile SDK for iOS**

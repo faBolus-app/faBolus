@@ -1,11 +1,16 @@
 using Toybox.Application as App;
 using Toybox.WatchUi as Ui;
 using Toybox.Communications as Comm;
+using Toybox.Background;
+using Toybox.Time;
+using Toybox.System;
 using Toybox.Timer;
 using Toybox.Lang;
 
-// App entry. Glance-first: requests pump status from the phone on launch and every 30s, and
-// listens for status/bolus updates. Thin remote — the iPhone owns the pump connection.
+// App entry. Glance-first: requests pump status from the phone on launch and every 30s, listens
+// for status/bolus updates, and republishes the BG complication so it shows on the watch face.
+// A background temporal event refreshes the complication roughly every 5 minutes while the app
+// isn't open. Thin remote — the iPhone owns the pump connection.
 class ControlX2App extends App.AppBase {
     private var _timer as Timer.Timer?;
 
@@ -13,9 +18,11 @@ class ControlX2App extends App.AppBase {
 
     function onStart(state as Lang.Dictionary?) as Void {
         Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
+        BgComplication.publish(null, "");   // show last-known reading immediately
         requestStatus();
         _timer = new Timer.Timer();
-        _timer.start(method(:requestStatus), 30000, true);   // refresh every 30s
+        _timer.start(method(:requestStatus), 30000, true);   // refresh every 30s while open
+        registerBackground();
     }
 
     function onStop(state as Lang.Dictionary?) as Void {
@@ -26,6 +33,23 @@ class ControlX2App extends App.AppBase {
         return [ new MainView(), new MainDelegate() ];
     }
 
+    // The background service that refreshes the complication when the app is closed.
+    function getServiceDelegate() as [System.ServiceDelegate] {
+        return [ new BgServiceDelegate() ];
+    }
+
+    private function registerBackground() as Void {
+        if (!(Toybox has :Background)) { return; }
+        try {
+            var last = Background.getLastTemporalEventTime();
+            if (last == null) {
+                Background.registerForTemporalEvent(new Time.Duration(5 * 60));
+            }
+        } catch (e) {
+            // Background not permitted on this device/config — foreground updates still work.
+        }
+    }
+
     function requestStatus() as Void {
         RemoteComm.send(RemoteComm.statusRead(RemoteComm.newRequestId()));
     }
@@ -34,7 +58,16 @@ class ControlX2App extends App.AppBase {
         var data = msg.data;
         if (data instanceof Lang.Dictionary) {
             AppState.handle(data as Lang.Dictionary);
+            BgComplication.publishFromState();
             Ui.requestUpdate();
+        }
+    }
+
+    // Called when the background service exits with data (a fresh reading fetched off-screen).
+    function onBackgroundData(data as App.PersistableType) as Void {
+        if (data instanceof Lang.Dictionary) {
+            AppState.handle(data as Lang.Dictionary);
+            BgComplication.publishFromState();
         }
     }
 }

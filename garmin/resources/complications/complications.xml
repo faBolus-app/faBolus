@@ -1,0 +1,20 @@
+<complications>
+    <!-- A single public complication publishing the current blood glucose (with a trend hint in
+         the value string). `public` lets Garmin "Face It" faces and other CIQ watch faces show
+         it. id is stable across versions. Ranges are the glucose color bands (mg/dL) so a
+         subscribing face can range-color the value: low / in-range / high / urgent-high. -->
+    <complication id="0" access="public"
+                  longLabel="@Strings.ComplicationLong"
+                  shortLabel="@Strings.ComplicationShort"
+                  icon="@Drawables.BgComplicationIcon"
+                  glancePreview="true">
+        <faceIt defaultText="@Strings.ComplicationFaceIt" />
+        <range>
+            <value>0</value>
+            <value>70</value>
+            <value>180</value>
+            <value>250</value>
+            <value>400</value>
+        </range>
+    </complication>
+</complications>

@@ -46,6 +46,6 @@ class BolusEntryView extends Ui.View {
         dc.setColor(0x5C6BE6, Gfx.COLOR_TRANSPARENT);
         dc.fillRoundedRectangle(bx, by, bw, bh, 10);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, by + bh / 2 - 14, Gfx.FONT_SMALL, "Deliver", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, by + bh / 2, Gfx.FONT_SMALL, "Deliver", Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 }

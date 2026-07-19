@@ -83,6 +83,7 @@ module AppState {
         if (kind == null) { return; }
         if (kind.equals("statusRead")) {
             glucose = numOrNull(data["bgMgdl"]);
+            var t = data["trend"] as Lang.String?; if (t != null) { trend = t; }
             var i = flt(data["units"]); if (i != null) { iob = i; }
             var cr = flt(data["carbRatio"]); if (cr != null) { carbRatio = cr; }
             var isfv = numOrNull(data["isf"]); if (isfv != null) { isf = isfv; }
