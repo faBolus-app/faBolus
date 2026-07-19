@@ -47,11 +47,12 @@ module AppState {
     }
 
     // Bolus entry
-    var mode as Lang.String = "units";    // "units" | "carbs"
+    var mode as Lang.String = "carbs";    // "units" | "carbs"; default from phone settings
+    var defaultMode as Lang.String = "carbs";
     var unitsValue as Lang.Float = 0.0;
     var carbsValue as Lang.Number = 0;
-    const STEP_U = 0.05;
-    const STEP_C = 1;
+    var stepU as Lang.Float = 0.05;       // bolus increment (from phone settings)
+    var stepC as Lang.Number = 5;         // carb increment (from phone settings)
     const MAX_CARBS = 200;
 
     // Delivery
@@ -62,7 +63,7 @@ module AppState {
     var message as Lang.String? = null;
 
     function reset() as Void {
-        mode = "units"; unitsValue = 0.0; carbsValue = 0;
+        mode = defaultMode; unitsValue = 0.0; carbsValue = 0;
         pendingRequestId = null; status = null; message = null;
     }
 
@@ -84,11 +85,11 @@ module AppState {
     // dir = +1 / -1
     function adjust(dir as Lang.Number) as Void {
         if (mode.equals("units")) {
-            unitsValue += dir * STEP_U;
+            unitsValue += dir * stepU;
             if (unitsValue < 0.0) { unitsValue = 0.0; }
             if (unitsValue > maxUnits) { unitsValue = maxUnits; }
         } else {
-            carbsValue += dir * STEP_C;
+            carbsValue += dir * stepC;
             if (carbsValue < 0) { carbsValue = 0; }
             if (carbsValue > MAX_CARBS) { carbsValue = MAX_CARBS; }
         }
@@ -141,6 +142,9 @@ module AppState {
             if (ag != null) { readingEpoch = Time.now().value() - ag.toNumber(); }
             var hs = data["history"]; if (hs instanceof Lang.Array) { history = hs; }
             var al = data["alerts"]; if (al instanceof Lang.Array) { alerts = al; }
+            var bm = data["bolusMode"] as Lang.String?; if (bm != null) { defaultMode = bm; }
+            var bi = flt(data["bolusIncrement"]); if (bi != null && bi > 0.0) { stepU = bi; }
+            var ci = numOrNull(data["carbIncrement"]); if (ci != null && ci > 0) { stepC = ci; }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {

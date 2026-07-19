@@ -7,6 +7,8 @@ import PumpX2Messages
 public final class MockPumpDataSource: PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var iobHistory: [IOBSample] = []
+    public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpNotification] = [
         PumpNotification(id: 0, kind: .alert, title: "Low insulin",
                          detail: "Low amount of insulin remaining in the cartridge.")
@@ -38,11 +40,21 @@ public final class MockPumpDataSource: PumpDataSource {
             readings.append(GlucoseReading(date: t, mgdl: Int(value)))
         }
         glucoseHistory = readings
+        // Sample IOB decay + a couple of boluses for the chart overlay.
+        iobHistory = stride(from: 36, through: 0, by: -1).map {
+            IOBSample(date: now.addingTimeInterval(TimeInterval(-$0 * 300)),
+                      iob: max(0, 3.0 - Double(36 - $0) * 0.07))
+        }
+        bolusMarkers = [
+            BolusMarker(date: now.addingTimeInterval(-3600), units: 2.0),
+            BolusMarker(date: now.addingTimeInterval(-1500), units: 1.0),
+        ]
         snapshot.glucose = readings.last?.mgdl
         snapshot.iobUnits = 1.4
         snapshot.reservoirUnits = 142
         snapshot.batteryPercent = 78
         snapshot.cgmActive = true
+        snapshot.carbRatio = 10; snapshot.isf = 40; snapshot.targetBg = 110; snapshot.maxBolusUnits = 25
         snapshot.lastBolusUnits = 2.0
         snapshot.lastBolusDate = now.addingTimeInterval(-3600)
     }

@@ -8,6 +8,8 @@ import PumpX2Messages
 public final class AppModel {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var iobHistory: [IOBSample] = []
+    public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpNotification] = []
     public private(set) var alertDebug: String = ""
     public var lastError: String?
@@ -40,7 +42,10 @@ public final class AppModel {
                              lastBolusUnits: s.lastBolusUnits,
                              glucoseAgeSec: age,
                              history: (history?.isEmpty ?? true) ? nil : history,
-                             alerts: alertList)
+                             alerts: alertList,
+                             bolusMode: AppSettings.shared.defaultBolusMode.rawValue,
+                             bolusIncrement: AppSettings.shared.bolusIncrement,
+                             carbIncrement: AppSettings.shared.carbIncrement)
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
@@ -111,6 +116,8 @@ public final class AppModel {
     private func refresh() {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
+        iobHistory = source.iobHistory
+        bolusMarkers = source.bolusMarkers
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug

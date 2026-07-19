@@ -13,6 +13,7 @@ final class WatchModel {
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var lastBolusUnits: Double?
+    var bolusIncrement: Double = 0.05   // from phone settings
     var alerts: [RemoteCommand.RemoteAlert] = []
     var reachable: Bool = false
     var lastStatus: RemoteCommand.Status?
@@ -55,6 +56,7 @@ final class WatchModel {
             if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }
+            if let bi = cmd.bolusIncrement, bi > 0 { bolusIncrement = bi }
             lastBolusUnits = cmd.lastBolusUnits
             if let a = cmd.alerts { alerts = a }
         default:

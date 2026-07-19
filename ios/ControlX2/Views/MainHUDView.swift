@@ -1,57 +1,45 @@
 import SwiftUI
 
-/// Loop-style main screen: glucose chart, status ring, HUD pills, and a bottom toolbar for
-/// carb/bolus/connection actions. ControlX2 is a manual remote-bolus + status viewer.
-struct MainHUDView: View {
+/// Dashboard tab: Loop-style glucose chart + status ring + HUD pills, then a scrollable details
+/// section with everything sourced from the pump. Connection lives in the toolbar.
+struct DashboardView: View {
     @Bindable var model: AppModel
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var showBolus = false
+    @State private var settings = AppSettings.shared
     @State private var showPairing = false
     @State private var windowHours = 3
     private let windows = [3, 6, 12, 24]
 
-    /// Auto-reconnect using the saved pairing when there's one and we're idle (launch or
-    /// returning to the foreground — backgrounding drops the connection).
-    private func autoReconnectIfNeeded() async {
-        guard model.hasStoredPairing, model.snapshot.connection == .disconnected else { return }
-        await model.connect()
-    }
-
     var body: some View {
-        NavigationStack {
+        @Bindable var settings = settings   // local @Bindable for binding projection
+        return NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     VStack(spacing: 6) {
-                        GlucoseChartView(readings: model.glucoseHistory, windowHours: windowHours)
+                        GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
+                                         boluses: model.bolusMarkers, windowHours: windowHours,
+                                         showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis)
                         Picker("Window", selection: $windowHours) {
                             ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        }.pickerStyle(.segmented)
+                        HStack(spacing: 16) {
+                            Toggle("Glucose", isOn: $settings.showGlucoseAxis)
+                            Toggle("IOB", isOn: $settings.showIOBAxis)
+                        }.font(.caption).toggleStyle(.button).controlSize(.small)
                     }
                     .padding(.horizontal)
 
                     AlertsBannerView(model: model)
-
                     StatusRingView(snapshot: model.snapshot)
 
-                    // Prominent Cancel while a bolus is being delivered.
                     if model.snapshot.connection == .bolusing {
                         Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                            Label("Cancel bolus", systemImage: "stop.fill")
-                                .font(.headline).frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .padding(.horizontal)
+                            Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
+                        }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
                     }
 
-                    if let u = model.snapshot.lastBolusUnits, let d = model.snapshot.lastBolusDate {
-                        Text("Last bolus: \(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    VStack(spacing: 10) { StatusPillsView(snapshot: model.snapshot) }.padding(.horizontal)
 
-                    VStack(spacing: 10) { StatusPillsView(snapshot: model.snapshot) }
-                        .padding(.horizontal)
+                    PumpDetailsCard(snapshot: model.snapshot).padding(.horizontal)
 
                     if let err = model.lastError {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
@@ -73,36 +61,8 @@ struct MainHUDView: View {
                     Button { model.setupGarmin?() } label: { Image(systemName: "applewatch.radiowaves.left.and.right") }
                         .accessibilityLabel("Set up Garmin remote")
                 }
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
-                        .disabled(model.snapshot.connection != .connected)
-                    Spacer()
-                    Text("Bench PoC — saline only").font(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    if model.snapshot.connection == .bolusing {
-                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                            Label("Cancel", systemImage: "stop.fill")
-                        }
-                    }
-                }
             }
-            .sheet(isPresented: $showBolus) { BolusEntryView(model: model) }
             .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-            .onChange(of: model.openBolusRequested) { _, requested in
-                if requested { showBolus = true; model.openBolusRequested = false }  // widget deep link
-            }
-            .task { await autoReconnectIfNeeded() }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await autoReconnectIfNeeded() } }
-            }
-            .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
-                Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
-                    Task { await model.confirmRemoteBolus() }
-                }
-                Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
-            } message: {
-                Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)) of SALINE. Confirm to deliver on the bench.")
-            }
         }
     }
 
@@ -125,6 +85,39 @@ struct MainHUDView: View {
     }
 }
 
+/// Card listing everything sourced from the pump (scroll target for "more details").
+struct PumpDetailsCard: View {
+    let snapshot: PumpSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row("Active insulin (IOB)", String(format: "%.2f U", snapshot.iobUnits))
+            row("Reservoir", "\(Int(snapshot.reservoirUnits)) U")
+            row("Pump battery", "\(snapshot.batteryPercent)%")
+            row("CGM", snapshot.cgmActive ? "Active" : "Inactive")
+            if let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate {
+                row("Last bolus", "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))")
+            }
+            row("Carb ratio", snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—")
+            row("Correction factor (ISF)", snapshot.isf > 0 ? "\(snapshot.isf) mg/dL/U" : "—")
+            row("Target glucose", snapshot.targetBg > 0 ? "\(snapshot.targetBg) mg/dL" : "—")
+            row("Max bolus", String(format: "%.1f U", snapshot.maxBolusUnits), last: true)
+        }
+        .padding(.vertical, 4)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder private func row(_ title: String, _ value: String, last: Bool = false) -> some View {
+        HStack {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).fontWeight(.medium)
+        }
+        .font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
+        if !last { Divider().padding(.leading, 14) }
+    }
+}
+
 /// Enter the pump's 6-digit pairing code, then connect + JPAKE-pair.
 struct PairingSheet: View {
     @Bindable var model: AppModel
@@ -136,17 +129,14 @@ struct PairingSheet: View {
             Form {
                 Section("Pump pairing code") {
                     TextField("6 digits", text: $code)
-                        .keyboardType(.numberPad)
-                        .font(.title2.monospacedDigit())
+                        .keyboardType(.numberPad).font(.title2.monospacedDigit())
                 }
                 Section {
                     Button {
                         model.pairingCode = code
                         Task { await model.connect() }
                         onDone()
-                    } label: {
-                        HStack { Spacer(); Text("Connect"); Spacer() }
-                    }
+                    } label: { HStack { Spacer(); Text("Connect"); Spacer() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(code.count != 6)
                 } footer: {
@@ -157,8 +147,4 @@ struct PairingSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
         }
     }
-}
-
-#Preview {
-    MainHUDView(model: AppModel(source: MockPumpDataSource()))
 }

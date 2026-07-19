@@ -14,6 +14,8 @@ import PumpX2BLE
 public final class LivePumpDataSource: NSObject, PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
+    public private(set) var iobHistory: [IOBSample] = []
+    public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpNotification] = []
     public var onChange: (@MainActor () -> Void)?
 
@@ -217,6 +219,10 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         snapshot.connection = .connected
         snapshot.lastBolusUnits = delivered
         snapshot.iobUnits += delivered
+        if delivered > 0 {
+            bolusMarkers.append(BolusMarker(date: Date(), units: delivered))
+            if bolusMarkers.count > 60 { bolusMarkers.removeFirst() }
+        }
         onChange?()
         startPolling()            // resume routine polling
         return delivered
@@ -438,7 +444,16 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         if ch == .authorization { coordinator?.handle(frame: frame); return }
         guard let parsed = try? ResponseParser.parse(frame: frame) else { return }
         switch parsed.message {
-        case let m as ControlIQIOBResponse: snapshot.iobUnits = m.iobUnits
+        case let m as ControlIQIOBResponse:
+            snapshot.iobUnits = m.iobUnits
+            // Accumulate an IOB time series (append on change or every ~4.5 min) for the chart.
+            let now = Date()
+            if let last = iobHistory.last {
+                if abs(last.iob - m.iobUnits) > 0.001 || now.timeIntervalSince(last.date) > 270 {
+                    iobHistory.append(IOBSample(date: now, iob: m.iobUnits))
+                }
+            } else { iobHistory.append(IOBSample(date: now, iob: m.iobUnits)) }
+            if iobHistory.count > 288 { iobHistory.removeFirst() }
         case let m as InsulinStatusResponse: snapshot.reservoirUnits = Double(m.currentInsulinAmount)
         case let m as CurrentBatteryV2Response: snapshot.batteryPercent = m.batteryPercent
         case let m as CurrentEgvGuiDataV2Response:

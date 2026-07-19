@@ -31,7 +31,7 @@ struct WatchBolusView: View {
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(.indigo)
                     .focusable()
-                    .digitalCrownRotation($units, from: 0, through: maxUnits, by: 0.05,
+                    .digitalCrownRotation($units, from: 0, through: maxUnits, by: model.bolusIncrement,
                                           sensitivity: .medium, isContinuous: false)
                 Text("Turn crown to set").font(.caption2).foregroundStyle(.secondary)
                 Button {

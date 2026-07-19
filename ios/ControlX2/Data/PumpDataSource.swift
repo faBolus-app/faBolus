@@ -7,6 +7,9 @@ import PumpX2Messages
 public protocol PumpDataSource: AnyObject {
     var snapshot: PumpSnapshot { get }
     var glucoseHistory: [GlucoseReading] { get }
+    /// IOB over time + delivered-bolus markers, for the chart's insulin overlay.
+    var iobHistory: [IOBSample] { get }
+    var bolusMarkers: [BolusMarker] { get }
     /// Active pump alerts/alarms/CGM alerts (most severe first).
     var activeNotifications: [PumpNotification] { get }
     /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.

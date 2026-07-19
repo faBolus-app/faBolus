@@ -56,6 +56,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// The alert to clear (dismissAlert command): its id + kind from the alerts list.
     public var alertId: Int?
     public var alertKind: Int?
+    // Shared bolus settings so remotes honor the same defaults/increments (statusRead reply).
+    public var bolusMode: String?        // "carbs" | "units"
+    public var bolusIncrement: Double?
+    public var carbIncrement: Double?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -65,7 +69,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
                 glucoseAgeSec: Double? = nil, history: [Int]? = nil,
-                alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil) {
+                alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
+                bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -77,6 +82,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.lastBolusUnits = lastBolusUnits
         self.glucoseAgeSec = glucoseAgeSec; self.history = history
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
+        self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

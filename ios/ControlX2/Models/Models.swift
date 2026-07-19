@@ -11,6 +11,22 @@ public struct GlucoseReading: Identifiable, Sendable, Equatable {
     public init(date: Date, mgdl: Int) { self.date = date; self.mgdl = mgdl }
 }
 
+/// Insulin-on-board sample over time, for the chart's IOB overlay.
+public struct IOBSample: Identifiable, Sendable, Equatable {
+    public let id = UUID()
+    public let date: Date
+    public let iob: Double
+    public init(date: Date, iob: Double) { self.date = date; self.iob = iob }
+}
+
+/// A delivered bolus marked on the chart (vertical bar, height ∝ units).
+public struct BolusMarker: Identifiable, Sendable, Equatable {
+    public let id = UUID()
+    public let date: Date
+    public let units: Double
+    public init(date: Date, units: Double) { self.date = date; self.units = units }
+}
+
 public enum GlucoseTrend: String, Sendable {
     case flat = "→", up = "↑", down = "↓", upUp = "⇈", downDown = "⇊"
     case rising = "↗", falling = "↘"

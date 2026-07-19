@@ -37,14 +37,6 @@ struct AlertsBannerView: View {
                 .padding(10)
                 .background(color(n.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             }
-
-            // Diagnostic while we confirm alerts work end-to-end: shows the raw pump bitmaps so
-            // we can tell whether the pump is reporting the alert at all.
-            if model.snapshot.connection == .connected {
-                Text(model.activeNotifications.isEmpty ? "No active pump alerts" : "")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Text(model.alertDebug).font(.caption2).foregroundStyle(.tertiary)
-            }
         }
         .padding(.horizontal)
     }

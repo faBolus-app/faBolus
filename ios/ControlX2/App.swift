@@ -15,7 +15,7 @@ struct ControlX2App: App {
 
     var body: some Scene {
         WindowGroup {
-            MainHUDView(model: model)
+            RootTabView(model: model)
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
