@@ -8,21 +8,21 @@ struct AlertsBannerView: View {
     @State private var clearing: Set<Int> = []
 
     var body: some View {
-        if !model.activeNotifications.isEmpty {
-            VStack(spacing: 8) {
-                ForEach(model.activeNotifications) { n in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: icon(n.kind))
-                            .foregroundStyle(color(n.kind))
-                            .font(.headline)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(n.title).font(.subheadline).fontWeight(.semibold)
-                            if let d = n.detail {
-                                Text(d).font(.caption).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+        VStack(spacing: 8) {
+            ForEach(model.activeNotifications) { n in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: icon(n.kind))
+                        .foregroundStyle(color(n.kind))
+                        .font(.headline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(n.title).font(.subheadline).fontWeight(.semibold)
+                        if let d = n.detail {
+                            Text(d).font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: 8)
+                    }
+                    Spacer(minLength: 8)
+                    if n.dismissable {
                         Button {
                             clearing.insert(n.id)
                             Task { await model.dismissNotification(n); clearing.remove(n.id) }
@@ -33,12 +33,20 @@ struct AlertsBannerView: View {
                         .buttonStyle(.bordered)
                         .disabled(clearing.contains(n.id))
                     }
-                    .padding(10)
-                    .background(color(n.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 }
+                .padding(10)
+                .background(color(n.kind).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             }
-            .padding(.horizontal)
+
+            // Diagnostic while we confirm alerts work end-to-end: shows the raw pump bitmaps so
+            // we can tell whether the pump is reporting the alert at all.
+            if model.snapshot.connection == .connected {
+                Text(model.activeNotifications.isEmpty ? "No active pump alerts" : "")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text(model.alertDebug).font(.caption2).foregroundStyle(.tertiary)
+            }
         }
+        .padding(.horizontal)
     }
 
     private func icon(_ k: NotificationKind) -> String {

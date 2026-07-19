@@ -23,7 +23,7 @@ class AlertsListView extends Ui.View {
         var vc = Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER;
 
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, h * 0.09, Gfx.FONT_XTINY, "Alerts (tap to clear)", vc);
+        dc.drawText(cx, h * 0.13, Gfx.FONT_XTINY, "Alerts", vc);
 
         var n = AppState.alerts.size();
         if (n == 0) {
@@ -40,5 +40,8 @@ class AlertsListView extends Ui.View {
             dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
             dc.drawText(cx, rr[1] + rr[3] / 2, Gfx.FONT_XTINY, a["title"], vc);
         }
+        // Hint at the bottom (wider part of the round screen), only when there are alerts.
+        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, h * 0.90, Gfx.FONT_XTINY, "tap a row to clear", vc);
     }
 }

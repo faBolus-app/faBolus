@@ -9,6 +9,7 @@ public final class AppModel {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var activeNotifications: [PumpNotification] = []
+    public private(set) var alertDebug: String = ""
     public var lastError: String?
 
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
@@ -72,6 +73,7 @@ public final class AppModel {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
         activeNotifications = source.activeNotifications
+        alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory)
         pushStatusIfNeeded()
     }

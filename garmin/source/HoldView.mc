@@ -11,11 +11,12 @@ class HoldView extends Ui.View {
     function initialize() { View.initialize(); }
 
     // Circle centers/radius (pixels), shared with the delegate. In order, left → right.
+    // Spread out and sized so the three circles don't overlap.
     static function center(i, w, h) {
-        var xs = [0.26, 0.50, 0.74];
+        var xs = [0.23, 0.50, 0.77];
         return [ (w * xs[i]).toNumber(), (h * 0.50).toNumber() ];
     }
-    static function radius(w) { return (w * 0.13).toNumber(); }
+    static function radius(w) { return (w * 0.11).toNumber(); }
 
     function progress() as Lang.Number { return _progress; }
 

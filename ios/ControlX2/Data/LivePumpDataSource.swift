@@ -17,11 +17,25 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     public private(set) var activeNotifications: [PumpNotification] = []
     public var onChange: (@MainActor () -> Void)?
 
-    // Active notifications by kind (merged into `activeNotifications`, alarms first).
+    // Active notifications by kind (merged into `activeNotifications`, most serious first).
     private var alarmList: [PumpNotification] = []
+    private var malfunctionList: [PumpNotification] = []
     private var alertList: [PumpNotification] = []
     private var cgmAlertList: [PumpNotification] = []
-    private func mergeNotifications() { activeNotifications = alarmList + alertList + cgmAlertList }
+    private var reminderList: [PumpNotification] = []
+    private func mergeNotifications() {
+        activeNotifications = malfunctionList + alarmList + alertList + cgmAlertList + reminderList
+    }
+    // Diagnostic: raw bitmaps + how many alert responses we've received (surfaced on the HUD to
+    // confirm the pump is actually answering the alert polls).
+    public private(set) var alertDebug: String = "alerts: not polled yet"
+    private var alertBits: [String: UInt64] = [:]
+    private var alertRespCount = 0
+    private func noteAlert(_ key: String, _ bmp: UInt64) {
+        alertBits[key] = bmp; alertRespCount += 1
+        let hex: (String) -> String = { String(format: "%llX", self.alertBits[$0] ?? 0) }
+        alertDebug = "polls \(alertRespCount) · Al=\(hex("al")) Am=\(hex("am")) C=\(hex("c")) R=\(hex("r")) M=\(hex("m"))"
+    }
 
     // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
     // BLE events (with `bluetooth-central` background mode) and hands the connection back.
@@ -185,10 +199,10 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         defer { client.writePolicy = previous }
         _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
-        // Optimistically drop it locally; the next fastRead confirms via the bitmap.
-        alarmList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
-        alertList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
-        cgmAlertList.removeAll { $0.id == notification.id && $0.kind == notification.kind }
+        // Optimistically drop it locally; the next poll confirms via the bitmap.
+        let drop: (PumpNotification) -> Bool = { $0.id == notification.id && $0.kind == notification.kind }
+        alarmList.removeAll(where: drop); alertList.removeAll(where: drop)
+        cgmAlertList.removeAll(where: drop); reminderList.removeAll(where: drop)
         mergeNotifications()
         onChange?()
     }
@@ -197,11 +211,19 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
 
     private var pollTick = 0
 
-    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery, alerts/alarms.
+    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery.
     private func fastRead() {
         for r: Message in [ControlIQIOBRequest(), CurrentEgvGuiDataV2Request(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest()] {
+                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request()] {
+            try? client.send(r)
+        }
+    }
+
+    /// Alerts/alarms/reminders/malfunctions — sent as a separate burst (spaced from fastRead) so
+    /// the pump isn't asked for 10 things at once, which was dropping the later requests.
+    private func alertRead() {
+        for r: Message in [AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(),
+                           ReminderStatusRequest(), MalfunctionStatusRequest()] {
             try? client.send(r)
         }
     }
@@ -216,15 +238,22 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
 
     private func startPolling() {
         fastRead(); staticRead()
+        scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated {
                 self.fastRead()
+                self.scheduleAlertRead()
                 self.pollTick += 1
                 if self.pollTick % 10 == 0 { self.staticRead() }   // refresh settings every ~10 min
             }
         }
+    }
+
+    /// Send the alert reads ~1.5 s after the fast reads so they aren't in the same request burst.
+    private func scheduleAlertRead() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
     }
 
     /// Request one page of history (255 records) ending at `backfillNextEnd`, walking backward.
@@ -397,9 +426,11 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
             scheduleBackfillTick()   // debounce: page ends when frames stop arriving
-        case let m as AlertStatusResponse: alertList = m.notifications; mergeNotifications()
-        case let m as AlarmStatusResponse: alarmList = m.notifications; mergeNotifications()
-        case let m as CGMAlertStatusResponse: cgmAlertList = m.notifications; mergeNotifications()
+        case let m as AlertStatusResponse: alertList = m.notifications; noteAlert("al", m.bitmap); mergeNotifications()
+        case let m as AlarmStatusResponse: alarmList = m.notifications; noteAlert("am", m.bitmap); mergeNotifications()
+        case let m as CGMAlertStatusResponse: cgmAlertList = m.notifications; noteAlert("c", m.bitmap); mergeNotifications()
+        case let m as ReminderStatusResponse: reminderList = m.notifications; noteAlert("r", m.bitmap); mergeNotifications()
+        case let m as MalfunctionBitmaskStatusResponse: malfunctionList = m.notifications; noteAlert("m", m.bitmap); mergeNotifications()
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         default: break

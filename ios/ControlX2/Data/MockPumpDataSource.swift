@@ -11,6 +11,7 @@ public final class MockPumpDataSource: PumpDataSource {
         PumpNotification(id: 0, kind: .alert, title: "Low insulin",
                          detail: "Low amount of insulin remaining in the cartridge.")
     ]
+    public var alertDebug: String { "mock" }
     public func dismissNotification(_ notification: PumpNotification) async {
         activeNotifications.removeAll { $0.id == notification.id && $0.kind == notification.kind }
         onChange?()

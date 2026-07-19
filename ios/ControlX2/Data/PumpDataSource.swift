@@ -9,6 +9,8 @@ public protocol PumpDataSource: AnyObject {
     var glucoseHistory: [GlucoseReading] { get }
     /// Active pump alerts/alarms/CGM alerts (most severe first).
     var activeNotifications: [PumpNotification] { get }
+    /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.
+    var alertDebug: String { get }
     /// Dismiss (clear) one notification on the pump — a signed control command.
     func dismissNotification(_ notification: PumpNotification) async
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
