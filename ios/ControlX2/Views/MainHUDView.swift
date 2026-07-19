@@ -72,7 +72,14 @@ struct MainHUDView: View {
     @ViewBuilder private var connectionButton: some View {
         switch model.snapshot.connection {
         case .disconnected, .error:
-            Button("Connect") { showPairing = true }
+            if model.hasStoredPairing {
+                Menu("Connect") {
+                    Button("Connect (saved pairing)") { Task { await model.connect() } }
+                    Button("Re-pair with new code") { model.forgetPairing(); showPairing = true }
+                }
+            } else {
+                Button("Connect") { showPairing = true }
+            }
         case .connected, .bolusing:
             Button("Disconnect") { model.disconnect() }
         default:

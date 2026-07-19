@@ -7,6 +7,8 @@ public final class MockPumpDataSource: PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public var pairingCode: String = ""   // unused by the mock
+    public var hasStoredPairing: Bool { false }
+    public func forgetPairing() {}
     public var onChange: (@MainActor () -> Void)?
 
     private var timer: Timer?

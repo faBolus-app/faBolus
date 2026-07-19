@@ -21,6 +21,9 @@ public final class AppModel {
     public var pairingCode: String {
         get { source.pairingCode } set { source.pairingCode = newValue }
     }
+    /// True when a saved pairing exists — Connect can resume without a code.
+    public var hasStoredPairing: Bool { source.hasStoredPairing }
+    public func forgetPairing() { source.forgetPairing() }
 
     public init(source: PumpDataSource) {
         self.source = source

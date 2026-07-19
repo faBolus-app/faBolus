@@ -8,6 +8,10 @@ public protocol PumpDataSource: AnyObject {
     var glucoseHistory: [GlucoseReading] { get }
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
     var pairingCode: String { get set }
+    /// True when a prior pairing was saved (Keychain) — connect can resume without a code.
+    var hasStoredPairing: Bool { get }
+    /// Forget the saved pairing (require the 6-digit code again).
+    func forgetPairing()
     func connect() async
     func disconnect()
     /// Compute a bolus recommendation for the given carbs/BG (uses the pump's calculator on

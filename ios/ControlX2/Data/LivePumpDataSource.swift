@@ -145,22 +145,36 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         snapshot.connection = .connected; onChange?()
     }
 
-    // MARK: - Helpers
+    // MARK: - Helpers (tiered polling to spare phone + pump battery)
 
-    private func pollStatus() {
-        for r: Message in [ControlIQIOBRequest(), InsulinStatusRequest(), CurrentBatteryV2Request(),
-                           CurrentEgvGuiDataV2Request(), CurrentBasalStatusRequest(),
-                           LastBolusStatusV2Request(), BolusCalcDataSnapshotRequest(),
-                           TimeSinceResetRequest()] {
+    private var pollTick = 0
+
+    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery.
+    private func fastRead() {
+        for r: Message in [ControlIQIOBRequest(), CurrentEgvGuiDataV2Request(),
+                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request()] {
+            try? client.send(r)
+        }
+    }
+
+    /// Slow/static settings (once per connect + every ~10 min): basal, calculator snapshot
+    /// (carb ratio/ISF/target/max), and the pump-clock anchor.
+    private func staticRead() {
+        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest()] {
             try? client.send(r)
         }
     }
 
     private func startPolling() {
-        pollStatus()
+        fastRead(); staticRead()
+        pollTick = 0
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
-            MainActor.assumeIsolated { self.pollStatus() }
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                self.fastRead()
+                self.pollTick += 1
+                if self.pollTick % 10 == 0 { self.staticRead() }   // refresh settings every ~10 min
+            }
         }
     }
 }
@@ -183,17 +197,36 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
     }
 
     public func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        guard !pairingCode.isEmpty, let coord = try? PairingCoordinator(pairingCode: pairingCode) else {
-            startPolling(); return
+        // Prefer resume (no code) when a prior pairing is saved; else full pair with the code.
+        let coord: PairingCoordinator
+        let isFullPairing: Bool
+        if pairingCode.isEmpty, let stored = PairingStore.load() {
+            coord = PairingCoordinator(resumeDerivedSecret: stored); isFullPairing = false
+        } else if let full = try? PairingCoordinator(pairingCode: pairingCode), !pairingCode.isEmpty {
+            coord = full; isFullPairing = true
+        } else {
+            startPolling(); return   // no code and no saved pairing — reads will be rejected
         }
         coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION passes the interlock
+        coord.onError = { [weak self] _ in
+            // Resume can fail if the pump forgot us; drop the saved secret so the UI re-pairs.
+            if !isFullPairing { PairingStore.clear() }
+            self?.snapshot.connection = .error; self?.onChange?()
+        }
         coord.onPaired = { [weak self] key, _ in
             self?.authenticationKey = key
+            if isFullPairing {
+                PairingStore.save(coord.derivedSecret)   // enable future quick-pair
+                self?.pairingCode = ""                    // subsequent connects resume
+            }
             self?.startPolling()
         }
         coordinator = coord
         coord.start()
     }
+
+    public var hasStoredPairing: Bool { PairingStore.load() != nil }
+    public func forgetPairing() { PairingStore.clear(); authenticationKey = [] }
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization { coordinator?.handle(frame: frame); return }
