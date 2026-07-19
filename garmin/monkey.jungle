@@ -1,0 +1,4 @@
+# Connect IQ build config for the ControlX2 Garmin remote.
+# Build with the Connect IQ SDK: `monkeyc -f monkey.jungle -o ControlX2.prg -y <dev_key>`.
+project.manifest = manifest.xml
+base.sourcePath = source

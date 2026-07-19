@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ControlX2 Garmin remote (Connect IQ). Thin remote: relays bolus commands to the iPhone
+     host via the Connect IQ mobile SDK; the phone runs the confirm interlock + PumpX2Kit.
+     Independent reimplementation; bench PoC (saline only). -->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application entry="ControlX2App"
+                    id="a1b2c3d4e5f600112233445566778899"
+                    launcherIcon="@Drawables.LauncherIcon"
+                    name="@Strings.AppName"
+                    type="watch-app"
+                    minSdkVersion="4.0.0">
+        <iq:products>
+            <iq:product id="fenix7"/>
+            <iq:product id="venu2"/>
+            <iq:product id="epix2"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>
