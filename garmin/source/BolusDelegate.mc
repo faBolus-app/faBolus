@@ -1,20 +1,15 @@
 using Toybox.WatchUi as Ui;
 using Toybox.Lang;
 using Toybox.System;
-using Toybox.Math;
 
-// Bolus entry input (touch): tap the mode chip to switch Units/Carbs, tap − / + to adjust, tap
-// Deliver (or press the top button) to go to hold-to-confirm.
+// Bolus entry input (touch). Big full-screen zones so a tap always lands somewhere reachable
+// (edge touches are eaten by the watch's swipe gestures, so we rely on generous bands):
+//   • top band    → toggle Units/Carbs
+//   • middle-left → −   middle-right → +
+//   • bottom band → Deliver
+// No onSelect override: taps must reach onTap, and the physical buttons can't dial on venu3s.
 class BolusEntryDelegate extends Ui.BehaviorDelegate {
     function initialize() { BehaviorDelegate.initialize(); }
-
-    private function inRect(c, r) {
-        return c[0] >= r[0] && c[0] <= r[0] + r[2] && c[1] >= r[1] && c[1] <= r[1] + r[3];
-    }
-    private function nearCircle(c, center, radius) {
-        var dx = c[0] - center[0], dy = c[1] - center[1];
-        return Math.sqrt(dx * dx + dy * dy) <= radius * 1.25;   // a little forgiving
-    }
 
     private function goDeliver() as Lang.Boolean {
         AppState.deliverUnits = AppState.computeUnits();
@@ -26,27 +21,15 @@ class BolusEntryDelegate extends Ui.BehaviorDelegate {
 
     function onTap(evt as Ui.ClickEvent) as Lang.Boolean {
         var c = evt.getCoordinates();
+        var x = c[0], y = c[1];
         var s = System.getDeviceSettings();
         var w = s.screenWidth, h = s.screenHeight;
 
-        if (nearCircle(c, BolusEntryView.minusCenter(w, h), BolusEntryView.stepRadius(w))) {
-            AppState.adjust(-1); Ui.requestUpdate(); return true;
-        }
-        if (nearCircle(c, BolusEntryView.plusCenter(w, h), BolusEntryView.stepRadius(w))) {
-            AppState.adjust(1); Ui.requestUpdate(); return true;
-        }
-        if (inRect(c, BolusEntryView.chipRect(w, h))) {
-            AppState.toggleMode(); Ui.requestUpdate(); return true;
-        }
-        if (inRect(c, BolusEntryView.deliverRect(w, h))) { return goDeliver(); }
+        if (y >= BolusEntryView.deliverBandMinY(h)) { return goDeliver(); }
+        if (y <= BolusEntryView.topBandMaxY(h)) { AppState.toggleMode(); Ui.requestUpdate(); return true; }
+        // Middle band: left half decreases, right half increases.
+        AppState.adjust(x < w / 2 ? -1 : 1);
+        Ui.requestUpdate();
         return true;
-    }
-
-    // Top physical button = Deliver shortcut.
-    function onSelect() as Lang.Boolean { return goDeliver(); }
-    function onKey(evt as Ui.KeyEvent) as Lang.Boolean {
-        var k = evt.getKey();
-        if (k == Ui.KEY_ENTER || k == Ui.KEY_START) { return goDeliver(); }
-        return false;
     }
 }
