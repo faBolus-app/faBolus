@@ -248,14 +248,18 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         let previous = client.writePolicy
         client.writePolicy = .allowNonDelivery
         defer { client.writePolicy = previous }
+        alertDebug = "dismiss sent (id \(notification.id) kind \(notification.kind.rawValue))…"
         _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
-        // Optimistically drop it locally; the next poll confirms via the bitmap.
+        // Optimistically drop it locally; then re-poll so the pump's real state wins — if the
+        // pump didn't actually clear it, it reappears (and the DismissNotificationResponse ack
+        // status shows in the diagnostic).
         let drop: (PumpNotification) -> Bool = { $0.id == notification.id && $0.kind == notification.kind }
         alarmList.removeAll(where: drop); alertList.removeAll(where: drop)
         cgmAlertList.removeAll(where: drop); reminderList.removeAll(where: drop)
         mergeNotifications()
         onChange?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
     }
 
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
@@ -292,12 +296,15 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+        // Tick every 30 s: alerts every tick (~30 s, so alerts reach the watch faster), the
+        // fuller fast-read every other tick (~60 s), settings every ~10 min. Alert reads are
+        // cheap empty-cargo requests, so the tighter cadence barely affects battery.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
             MainActor.assumeIsolated {
-                self.fastRead()
-                self.scheduleAlertRead()
                 self.pollTick += 1
-                if self.pollTick % 10 == 0 { self.staticRead() }   // refresh settings every ~10 min
+                self.scheduleAlertRead()                            // ~30 s
+                if self.pollTick % 2 == 0 { self.fastRead() }       // ~60 s
+                if self.pollTick % 20 == 0 { self.staticRead() }    // ~10 min
             }
         }
     }

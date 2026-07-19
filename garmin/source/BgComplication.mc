@@ -13,17 +13,17 @@ module BgComplication {
     const KEY_TREND = "trend";   // direction token: flat/up/down/upup/downdown/up45/down45
     const KEY_EPOCH = "bgEpoch"; // unix sec the BG was taken (for 6-min staleness)
 
-    // Latin-safe ("ASCII") trend arrow. The watch-face font can't render Unicode arrows (they
-    // show as an empty box), so the complication uses characters every font has.
+    // Real Unicode trend arrow. Published inside the VALUE string (not the unit): the face's
+    // value font has arrow glyphs (Dexcom's complication uses this), while the unit font doesn't.
     function arrowFor(token as Lang.String?) as Lang.String {
         if (token == null) { return ""; }
-        if (token.equals("up")) { return "^"; }
-        if (token.equals("upup")) { return "^^"; }
-        if (token.equals("up45")) { return "/"; }
-        if (token.equals("down")) { return "v"; }
-        if (token.equals("downdown")) { return "vv"; }
-        if (token.equals("down45")) { return "\\"; }
-        if (token.equals("flat")) { return "->"; }
+        if (token.equals("up")) { return "↑"; }
+        if (token.equals("upup")) { return "⇈"; }
+        if (token.equals("up45")) { return "↗"; }
+        if (token.equals("down")) { return "↓"; }
+        if (token.equals("downdown")) { return "⇊"; }
+        if (token.equals("down45")) { return "↘"; }
+        if (token.equals("flat")) { return "→"; }
         return "";
     }
 

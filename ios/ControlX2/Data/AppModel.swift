@@ -68,6 +68,11 @@ public final class AppModel {
     }
     private var lastStatusPush = Date.distantPast
     private var lastPushedGlucose: Int?
+    /// Push status to remotes right now, ignoring the throttle (used for alert changes).
+    private func forceStatusPush() {
+        lastStatusPush = Date()
+        for h in statusListeners { h(snapshot) }
+    }
     private func pushStatusIfNeeded() {
         guard !statusListeners.isEmpty else { return }
         // Push on a glucose change, or at most once every 15 s otherwise.
@@ -111,7 +116,10 @@ public final class AppModel {
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory)
         pushStatusIfNeeded()
-        if alertsChanged { onNotificationsChange?(activeNotifications) }
+        if alertsChanged {
+            onNotificationsChange?(activeNotifications)
+            forceStatusPush()   // get alert changes to the watch immediately (bypass throttle)
+        }
     }
 
     public func connect() async { await source.connect(); refresh() }
