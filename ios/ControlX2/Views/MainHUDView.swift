@@ -51,6 +51,10 @@ struct MainHUDView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { connectionButton }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { model.setupGarmin?() } label: { Image(systemName: "applewatch.radiowaves.left.and.right") }
+                        .accessibilityLabel("Set up Garmin remote")
+                }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
                         .disabled(model.snapshot.connection != .connected)

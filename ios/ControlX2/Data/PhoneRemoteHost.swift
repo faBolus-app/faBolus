@@ -11,7 +11,7 @@ public final class PhoneRemoteHost {
     public init(model: AppModel) {
         self.model = model
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
-        model.remoteStatusEcho = { [weak self] cmd in self?.link.send(cmd) }
+        model.addRemoteEcho { [weak self] cmd in self?.link.send(cmd) }
     }
 
     private func handle(_ cmd: RemoteCommand) {

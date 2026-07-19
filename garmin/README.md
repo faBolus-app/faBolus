@@ -29,3 +29,16 @@ app lives in the ControlX2iOS repo.
 
 > Not yet compiled here (no Connect IQ SDK in this environment). The double-confirmation,
 > out-of-range handling, and schema parity match the Apple Watch remote.
+
+## iPhone-side bridge (Connect IQ iOS SDK)
+
+The iOS host receives the venu3s app's messages via the **Connect IQ Mobile SDK for iOS**
+(`ConnectIQ.xcframework`), mapping them to the same `RemoteCommand` the double-confirm host
+handles (`ios/ControlX2/Data/GarminRemoteBridge.swift`).
+
+- SDK (not committed — Garmin license): place at `~/Code/vendor/connectiq-companion-app-sdk-ios-1.8.0`
+  (referenced by `project.yml` as a local SPM package at `../../vendor/...`).
+- URL scheme `controlx2ciq` + `gcm-ciq` query scheme are in the generated Info.plist.
+- Requires the **Garmin Connect Mobile** app installed and the watch paired to it.
+- In the iOS app, tap the watch icon (top-right) → "Set up Garmin remote" to pick the device
+  (opens Garmin Connect); the selection is remembered.

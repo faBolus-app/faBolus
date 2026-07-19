@@ -12,8 +12,13 @@ public final class AppModel {
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
     public var pendingRemoteBolus: PendingRemoteBolus?
-    /// Set by PhoneRemoteHost to echo status back to the remote.
-    public var remoteStatusEcho: (@MainActor (RemoteCommand) -> Void)?
+    /// Status-echo handlers registered by remote bridges (watch / Garmin). Broadcasts to all;
+    /// each remote ignores statuses for requestIds it didn't send.
+    private var remoteEchoes: [@MainActor (RemoteCommand) -> Void] = []
+    public func addRemoteEcho(_ handler: @escaping @MainActor (RemoteCommand) -> Void) {
+        remoteEchoes.append(handler)
+    }
+    private func echo(_ cmd: RemoteCommand) { for h in remoteEchoes { h(cmd) } }
 
     private let source: PumpDataSource
 
@@ -24,6 +29,9 @@ public final class AppModel {
     /// True when a saved pairing exists — Connect can resume without a code.
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
+
+    /// Set by the Garmin bridge; presents Garmin device selection.
+    public var setupGarmin: (@MainActor () -> Void)?
 
     public init(source: PumpDataSource) {
         self.source = source
@@ -64,21 +72,20 @@ public final class AppModel {
         pendingRemoteBolus = nil
         do {
             let delivered = try await source.deliverBolus(units: pending.units)
-            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                                            status: .delivered, deliveredUnits: delivered))
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                               status: .delivered, deliveredUnits: delivered))
             lastError = nil
         } catch {
             lastError = error.localizedDescription
-            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                                            status: .failed, message: error.localizedDescription))
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                               status: .failed, message: error.localizedDescription))
         }
         refresh()
     }
 
     public func rejectRemoteBolus() {
         if let pending = pendingRemoteBolus {
-            remoteStatusEcho?(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                                            status: .cancelled))
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .cancelled))
         }
         pendingRemoteBolus = nil
     }

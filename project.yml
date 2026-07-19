@@ -7,6 +7,11 @@ packages:
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
+  ConnectIQ:
+    # Garmin Connect IQ Mobile SDK for iOS (binary xcframework). Not committed (Garmin
+    # license). Place it at ~/Code/vendor/connectiq-companion-app-sdk-ios-1.8.0 (see
+    # garmin/README.md). Path is relative to this repo.
+    path: ../../vendor/connectiq-companion-app-sdk-ios-1.8.0
 
 targets:
   # iOS host app — owns the pump connection (PumpX2Kit) and the Loop-style HUD.
@@ -24,18 +29,28 @@ targets:
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
+      - package: ConnectIQ
+        product: ConnectIQ
+    info:
+      path: ios/ControlX2/Info.plist
+      properties:
+        NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
+        UILaunchScreen: {}
+        # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
+        # Garmin Connect Mobile app.
+        LSApplicationQueriesSchemes: [gcm-ciq]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.zgranowitz.controlx2.ciq
+            CFBundleURLSchemes: [controlx2ciq]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
 
   # watchOS remote — a thin Loop-style remote (dial-to-bolus). Never touches the pump; relays
   # commands to the iPhone host over WatchConnectivity (double-confirm).
