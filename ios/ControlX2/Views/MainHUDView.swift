@@ -44,6 +44,11 @@ struct MainHUDView: View {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(LoopTheme.low).padding(.horizontal)
                     }
+                    if let g = model.garminStatus {
+                        Label(g, systemImage: "applewatch.radiowaves.left.and.right")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center).padding(.horizontal)
+                    }
                 }
                 .padding(.vertical)
             }

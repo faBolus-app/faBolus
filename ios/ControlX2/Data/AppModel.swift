@@ -32,6 +32,8 @@ public final class AppModel {
 
     /// Set by the Garmin bridge; presents Garmin device selection.
     public var setupGarmin: (@MainActor () -> Void)?
+    /// Human-readable Garmin remote status (device name / selection result) for the HUD.
+    public var garminStatus: String?
 
     public init(source: PumpDataSource) {
         self.source = source

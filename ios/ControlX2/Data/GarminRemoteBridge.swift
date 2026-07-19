@@ -29,16 +29,23 @@ final class GarminRemoteBridge: NSObject {
     var hasDevice: Bool { device != nil }
 
     /// Opens Garmin Connect Mobile so the user can pick which paired device runs the remote.
-    func selectDevice() { ConnectIQ.sharedInstance().showDeviceSelection() }
+    func selectDevice() {
+        model?.garminStatus = "Opening Garmin Connect — pick your venu3s, then return to ControlX2…"
+        ConnectIQ.sharedInstance().showDeviceSelection()
+    }
 
     /// Handle the SDK's device-selection callback URL (from `.onOpenURL`).
     func handleOpenURL(_ url: URL) {
-        guard let devices = ConnectIQ.sharedInstance().parseDeviceSelectionResponse(from: url) as? [IQDevice],
-              let first = devices.first else { return }
+        let devices = ConnectIQ.sharedInstance().parseDeviceSelectionResponse(from: url) as? [IQDevice]
+        guard let first = devices?.first else {
+            model?.garminStatus = "Garmin returned no device (callback URL had no devices)."
+            return
+        }
         UserDefaults.standard.set([first.uuid.uuidString, first.modelName ?? "", first.friendlyName ?? ""],
                                   forKey: Self.deviceDefaultsKey)
         device = first
         registerApp()
+        model?.garminStatus = "Garmin remote: \(first.friendlyName ?? first.modelName ?? "device") ✓"
     }
 
     private func restoreDevice() {
@@ -46,6 +53,7 @@ final class GarminRemoteBridge: NSObject {
               parts.count == 3, let uuid = UUID(uuidString: parts[0]) else { return }
         device = IQDevice(id: uuid, modelName: parts[1], friendlyName: parts[2])
         registerApp()
+        model?.garminStatus = "Garmin remote: \(parts[2].isEmpty ? parts[1] : parts[2])"
     }
 
     private func registerApp() {
