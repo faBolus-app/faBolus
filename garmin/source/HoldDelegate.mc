@@ -2,8 +2,8 @@ using Toybox.WatchUi as Ui;
 using Toybox.Timer;
 using Toybox.Lang;
 
-// Press-and-hold the middle button for 3s to deliver. Releasing early cancels. The ring in
-// HoldView fills as the hold progresses.
+// Press-and-hold the touchscreen for 3s to deliver (the venu3s has no holdable middle button).
+// Lifting early cancels. The ring in HoldView fills as the hold progresses.
 class HoldDelegate extends Ui.BehaviorDelegate {
     private const HOLD_MS = 3000;
     private const TICK_MS = 50;
@@ -12,15 +12,13 @@ class HoldDelegate extends Ui.BehaviorDelegate {
 
     function initialize() { BehaviorDelegate.initialize(); }
 
-    function onKeyPressed(evt as Ui.KeyEvent) as Lang.Boolean {
+    // Touch down anywhere on the screen starts the hold; lifting (or a drag-release) cancels.
+    function onPress(evt as Ui.ClickEvent) as Lang.Boolean {
         if (AppState.status != null) { return false; }         // already sent
-        if (evt.getKey() == Ui.KEY_ENTER) { startHold(); return true; }
-        return false;
+        startHold(); return true;
     }
-
-    function onKeyReleased(evt as Ui.KeyEvent) as Lang.Boolean {
-        if (evt.getKey() == Ui.KEY_ENTER) { cancelHold(); return true; }
-        return false;
+    function onRelease(evt as Ui.ClickEvent) as Lang.Boolean {
+        cancelHold(); return true;
     }
 
     private function startHold() as Void {

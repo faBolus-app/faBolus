@@ -20,6 +20,23 @@ public final class AppModel {
     }
     private func echo(_ cmd: RemoteCommand) { for h in remoteEchoes { h(cmd) } }
 
+    /// Listeners (Garmin bridge) that push the latest status to a remote when pump data changes,
+    /// so an open remote refreshes promptly instead of waiting for its own poll.
+    private var statusListeners: [@MainActor (PumpSnapshot) -> Void] = []
+    public func addStatusListener(_ handler: @escaping @MainActor (PumpSnapshot) -> Void) {
+        statusListeners.append(handler)
+    }
+    private var lastStatusPush = Date.distantPast
+    private var lastPushedGlucose: Int?
+    private func pushStatusIfNeeded() {
+        guard !statusListeners.isEmpty else { return }
+        // Push on a glucose change, or at most once every 15 s otherwise.
+        let changed = snapshot.glucose != lastPushedGlucose
+        guard changed || Date().timeIntervalSince(lastStatusPush) > 15 else { return }
+        lastStatusPush = Date(); lastPushedGlucose = snapshot.glucose
+        for h in statusListeners { h(snapshot) }
+    }
+
     private let source: PumpDataSource
 
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
@@ -50,6 +67,7 @@ public final class AppModel {
         snapshot = source.snapshot
         glucoseHistory = source.glucoseHistory
         WidgetPublisher.publish(snapshot, history: glucoseHistory)
+        pushStatusIfNeeded()
     }
 
     public func connect() async { await source.connect(); refresh() }

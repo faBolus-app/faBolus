@@ -1,6 +1,7 @@
 using Toybox.Lang;
 using Toybox.Graphics as Gfx;
 using Toybox.Math;
+using Toybox.Application.Storage;
 
 // Shared app state for the ControlX2 Garmin remote. Glance data comes from the phone
 // (statusRead reply); carbs→units is computed locally from the pump's calculator settings so
@@ -33,6 +34,15 @@ module AppState {
     function reset() as Void {
         mode = "units"; unitsValue = 0.0; carbsValue = 0;
         pendingRequestId = null; status = null; message = null;
+    }
+
+    // Seed glucose/trend from the persisted complication value so the glance shows the last-known
+    // reading immediately on open, instead of "--" while the first phone reply is in flight.
+    function loadPersisted() as Void {
+        var g = Storage.getValue(BgComplication.KEY_BG);
+        if (g != null && isNum(g)) { glucose = g.toNumber(); }
+        var t = Storage.getValue(BgComplication.KEY_TREND);
+        if (t != null && t instanceof Lang.String) { trend = t; }
     }
 
     function toggleMode() as Void {

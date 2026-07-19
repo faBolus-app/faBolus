@@ -44,7 +44,7 @@ class HoldView extends Ui.View {
         dc.setColor(0x8AB4FF, Gfx.COLOR_TRANSPARENT);
         dc.drawText(cx, cy - 34, Gfx.FONT_NUMBER_MEDIUM, AppState.deliverUnits.format("%.2f") + " U", Gfx.TEXT_JUSTIFY_CENTER);
         dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, cy + 22, Gfx.FONT_XTINY, "Hold middle button", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, cy + 22, Gfx.FONT_XTINY, "Press & hold screen", Gfx.TEXT_JUSTIFY_CENTER);
         dc.drawText(cx, cy + 40, Gfx.FONT_XTINY, "saline · bench", Gfx.TEXT_JUSTIFY_CENTER);
     }
 }

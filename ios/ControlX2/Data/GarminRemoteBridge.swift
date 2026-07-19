@@ -22,6 +22,8 @@ final class GarminRemoteBridge: NSObject {
         super.init()
         ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil)
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
+        // Proactively push status to the watch when pump data changes (prompt refresh while open).
+        model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
         restoreDevice()
     }
@@ -82,16 +84,20 @@ final class GarminRemoteBridge: NSObject {
             Task { await model.cancelBolus() }
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
         case .statusRead:
-            let s = model.snapshot
-            send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
-                               bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
-                               trend: GlucoseTrend.ascii(from: s.trend),
-                               carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
-                               isf: s.isf > 0 ? Double(s.isf) : nil,
-                               targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                               maxBolusUnits: s.maxBolusUnits))
+            sendStatus(model.snapshot)
         default: break
         }
+    }
+
+    /// Build + send a statusRead reply from a snapshot (used for both replies and proactive pushes).
+    private func sendStatus(_ s: PumpSnapshot) {
+        send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
+                           bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
+                           trend: GlucoseTrend.ascii(from: s.trend),
+                           carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
+                           isf: s.isf > 0 ? Double(s.isf) : nil,
+                           targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
+                           maxBolusUnits: s.maxBolusUnits))
     }
 }
 
