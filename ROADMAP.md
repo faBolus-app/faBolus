@@ -51,11 +51,14 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   CarPlay can't be built — so there is no Siri bolus intent. Revisit only if CarPlay becomes
   possible (with its touchscreen 1-2-3 confirm gate).
 
-## 5b. Bolus from an iPhone widget (1-2-3 confirm)
-- Interactive Home-Screen widget (App Intents) that delivers a preset bolus, gated by the same
-  **1-2-3 sequential tap confirmation** the Garmin uses (tap targets 1→2→3 in order; wrong tap
-  resets) so a stray tap can't dispense. The final tap hands the dose to the app to deliver
-  through the validated signed path. Saline/bench only.
+## 5b. Bolus from an iPhone widget (1-2-3 confirm) ✅
+- Interactive Home-Screen **Quick Bolus** widget (App Intents) delivering a preset dose, gated by
+  the same **1-2-3 sequential tap** the Garmin uses (1→2→3 in order; a wrong/late tap within 20 s
+  resets). Steps 1-2 advance App Group state headlessly; the final tap opens the app and, only if
+  1→2 completed, hands off a pending bolus the app delivers via `remoteDeliver` (the validated
+  signed path, with progress + cancel). Preset amount in Settings. Saline/bench only.
+- Files: `Shared/WidgetShared.swift` (WidgetBolusStore/Request), `ios/ControlX2Widgets/
+  WidgetBolusIntents.swift` + `QuickBolusWidget.swift`, consume hook in `App.swift`.
 
 ## 6. Garmin: configurable screen order + default screen ✅
 - Phone setting (**Settings → Garmin remote → Screen order**): reorder the swipe screens (glance /

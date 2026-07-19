@@ -79,6 +79,60 @@ public enum WidgetStore {
     }
 }
 
+/// A bolus the Quick-Bolus widget has confirmed (1-2-3) and handed to the app to deliver through
+/// the validated signed path. The widget can't drive Bluetooth, so it writes this to the App Group
+/// and opens the app, which delivers it (like a Garmin remote bolus) and shows progress + cancel.
+public struct WidgetBolusRequest: Codable, Sendable, Equatable {
+    public var units: Double
+    public var requestId: String
+    public var createdAt: Date
+    public init(units: Double, requestId: String, createdAt: Date) {
+        self.units = units; self.requestId = requestId; self.createdAt = createdAt
+    }
+}
+
+/// App Group–backed state for the Quick-Bolus widget's 1-2-3 confirmation. The widget records tap
+/// progress (reset on a wrong/late tap) and, on completing 1→2→3, a pending request the app
+/// consumes. Mirrors the Garmin hold/tap confirm: the widget confirms, the phone delivers.
+public enum WidgetBolusStore {
+    private static var d: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
+    /// Seconds allowed to complete the 1-2-3 sequence before it resets (a stray tap can't linger).
+    public static let confirmTTL: TimeInterval = 20
+    /// The app must consume a completed request within this window (else it's ignored as stale).
+    public static let pendingTTL: TimeInterval = 60
+
+    /// Preset dose the widget delivers. The app writes this from Settings; defaults to 1.0 U.
+    public static var presetUnits: Double {
+        get { let v = d?.double(forKey: "wbPreset") ?? 0; return v > 0 ? v : 1.0 }
+        set { d?.set(newValue, forKey: "wbPreset") }
+    }
+
+    /// Current confirm progress (0/1/2), or 0 if it has timed out.
+    public static func progress() -> Int {
+        guard let d else { return 0 }
+        let at = d.double(forKey: "wbProgAt")
+        if at == 0 || Date().timeIntervalSince1970 - at > confirmTTL { return 0 }
+        return d.integer(forKey: "wbProg")
+    }
+    public static func setProgress(_ n: Int) {
+        d?.set(n, forKey: "wbProg")
+        d?.set(Date().timeIntervalSince1970, forKey: "wbProgAt")
+    }
+    public static func resetProgress() { d?.set(0, forKey: "wbProg"); d?.set(0.0, forKey: "wbProgAt") }
+
+    public static func setPending(_ r: WidgetBolusRequest) {
+        guard let data = try? JSONEncoder().encode(r) else { return }
+        d?.set(data, forKey: "wbPending")
+    }
+    /// Read and clear the pending request (returns nil if none or older than `pendingTTL`).
+    public static func takePending() -> WidgetBolusRequest? {
+        guard let data = d?.data(forKey: "wbPending"),
+              let r = try? JSONDecoder().decode(WidgetBolusRequest.self, from: data) else { return nil }
+        d?.removeObject(forKey: "wbPending")
+        return Date().timeIntervalSince(r.createdAt) > pendingTTL ? nil : r
+    }
+}
+
 /// Deep links the widgets use to open the app. `bolus` opens the bolus-entry sheet (tap-to-bolus
 /// is a link into the app's confirm flow — never a one-tap dispense).
 public enum ControlX2DeepLink {

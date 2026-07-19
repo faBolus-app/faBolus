@@ -12,6 +12,7 @@ struct ControlX2App: App {
     @State private var remoteHost: PhoneRemoteHost?
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: PumpAlertNotifier?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -21,6 +22,11 @@ struct ControlX2App: App {
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
+                    AppSettings.shared.syncWidgetPreset()
+                    consumeWidgetBolus()   // the Quick-Bolus widget may have opened us to deliver
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { consumeWidgetBolus() }
                 }
                 .onOpenURL { url in
                     if url.scheme == ControlX2DeepLink.scheme {
@@ -31,5 +37,14 @@ struct ControlX2App: App {
                     }
                 }
         }
+    }
+
+    /// Deliver a bolus the Quick-Bolus widget confirmed (1-2-3) and handed off via the App Group.
+    /// Goes through the same validated signed path as a Garmin remote bolus (progress + cancel
+    /// shown in-app); the pump still enforces its max and signing.
+    private func consumeWidgetBolus() {
+        guard let r = WidgetBolusStore.takePending() else { return }
+        model.openBolusRequested = true   // surface the delivering UI
+        Task { await model.remoteDeliver(requestId: r.requestId, units: r.units) }
     }
 }

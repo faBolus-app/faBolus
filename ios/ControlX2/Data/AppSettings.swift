@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 public enum BolusMode: String, Sendable, CaseIterable { case carbs, units }
 
@@ -22,8 +23,21 @@ public final class AppSettings {
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
     public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
 
+    /// Preset dose delivered by the Quick-Bolus widget (via its 1-2-3 confirm). Mirrored to the
+    /// App Group so the widget can display it.
+    public var widgetBolusUnits: Double {
+        didSet { d.set(widgetBolusUnits, forKey: "widgetBolusUnits"); syncWidgetPreset() }
+    }
+
     public static let bolusIncrements: [Double] = [0.01, 0.05, 0.1, 0.5, 1, 2]
     public static let carbIncrements: [Double] = [1, 5, 10, 15]
+    public static let widgetBolusOptions: [Double] = [0.5, 1, 2, 3, 5]
+
+    /// Push the widget preset to the App Group and refresh the widget.
+    public func syncWidgetPreset() {
+        WidgetBolusStore.presetUnits = widgetBolusUnits
+        WidgetCenter.shared.reloadAllTimelines()
+    }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
     public static let garminScreens: [String] = ["glance", "alerts", "history", "details"]
     public static func garminScreenLabel(_ id: String) -> String {
@@ -54,5 +68,7 @@ public final class AppSettings {
         garminScreenOrder = order
         let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
+        let wb = d.object(forKey: "widgetBolusUnits") as? Double
+        widgetBolusUnits = wb ?? 1.0
     }
 }
