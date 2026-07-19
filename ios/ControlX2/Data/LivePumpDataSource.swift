@@ -77,10 +77,16 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         }
     }
 
+    /// Pump time epoch is 2008-01-01 UTC; convert pump seconds-since-reset timestamps to Date.
+    private static let pumpEpoch: TimeInterval = 1_199_145_600
+
     private func pollStatus() {
         try? client.send(ControlIQIOBRequest())
         try? client.send(InsulinStatusRequest())
         try? client.send(CurrentBatteryV2Request())
+        try? client.send(CurrentEgvGuiDataV2Request())
+        try? client.send(CurrentBasalStatusRequest())
+        try? client.send(LastBolusStatusV2Request())
     }
 }
 
@@ -122,6 +128,17 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as ControlIQIOBResponse: snapshot.iobUnits = m.iobUnits
         case let m as InsulinStatusResponse: snapshot.reservoirUnits = Double(m.currentInsulinAmount)
         case let m as CurrentBatteryV2Response: snapshot.batteryPercent = m.batteryPercent
+        case let m as CurrentEgvGuiDataV2Response:
+            snapshot.cgmActive = m.hasValidReading
+            snapshot.trend = m.trendArrow
+            if m.hasValidReading {
+                snapshot.glucose = m.cgmReading
+                glucoseHistory.append(GlucoseReading(date: Date(), mgdl: m.cgmReading))
+                if glucoseHistory.count > 72 { glucoseHistory.removeFirst() }
+            }
+        case let m as LastBolusStatusV2Response:
+            snapshot.lastBolusUnits = m.deliveredUnits
+            snapshot.lastBolusDate = Date(timeIntervalSince1970: Self.pumpEpoch + Double(m.timestamp))
         default: break
         }
         onChange?()
