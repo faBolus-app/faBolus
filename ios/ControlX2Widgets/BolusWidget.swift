@@ -36,7 +36,7 @@ struct BolusWidgetView: View {
             VStack(spacing: 6) {
                 Image(systemName: "drop.fill").font(.system(size: 30)).foregroundStyle(.white)
                 Text("Bolus").font(.title3.weight(.bold)).foregroundStyle(.white)
-                if let g = snap.glucose {
+                if let g = snap.glucose, !snap.isGlucoseStale {
                     Text("\(g) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
                 }
             }

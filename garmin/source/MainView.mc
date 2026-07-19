@@ -27,11 +27,12 @@ class MainView extends Ui.View {
 
         // Glucose (large, range-colored), vertically centered so the glyph baseline can't
         // collide with the unit label below it.
-        var g = (AppState.glucose == null) ? "--" : (AppState.glucose as Lang.Number).toString();
-        dc.setColor(AppState.glucoseColor(), Gfx.COLOR_TRANSPARENT);
+        var stale = AppState.glucoseStale();
+        var g = AppState.displayGlucose();   // "--" when missing or older than 6 min
+        dc.setColor(stale ? Gfx.COLOR_LT_GRAY : AppState.glucoseColor(), Gfx.COLOR_TRANSPARENT);
         dc.drawText(cx, h * 0.36, Gfx.FONT_NUMBER_HOT, g, vc);
         // Trend arrow (drawn shape, from the phone's direction token) just right of the number.
-        if (!AppState.trend.equals("")) {
+        if (!stale && !AppState.trend.equals("")) {
             var gw = dc.getTextWidthInPixels(g, Gfx.FONT_NUMBER_HOT);
             TrendArrow.draw(dc, cx + gw / 2 + 24, h * 0.36, 13, AppState.trend, AppState.glucoseColor());
         }

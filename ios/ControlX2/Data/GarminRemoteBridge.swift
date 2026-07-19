@@ -91,6 +91,10 @@ final class GarminRemoteBridge: NSObject {
 
     /// Build + send a statusRead reply from a snapshot (used for both replies and proactive pushes).
     private func sendStatus(_ s: PumpSnapshot) {
+        // Age of the current reading (for "Nm ago" + staleness on the watch).
+        let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
+        // Recent history for the watch plot: last ~3 h (36 points), oldest→newest.
+        let history = Array((model?.glucoseHistory ?? []).suffix(36).map { $0.mgdl })
         send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
                            bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
                            trend: GlucoseTrend.token(from: s.trend),
@@ -100,7 +104,9 @@ final class GarminRemoteBridge: NSObject {
                            maxBolusUnits: s.maxBolusUnits,
                            reservoirUnits: s.reservoirUnits,
                            batteryPercent: Double(s.batteryPercent),
-                           lastBolusUnits: s.lastBolusUnits))
+                           lastBolusUnits: s.lastBolusUnits,
+                           glucoseAgeSec: age,
+                           history: history.isEmpty ? nil : history))
     }
 }
 

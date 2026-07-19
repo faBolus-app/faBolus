@@ -21,7 +21,7 @@ struct GlucoseWidgetView: View {
 
     private var color: Color { WidgetUI.glucoseColor(snap.rangeCategory) }
     private var bg: String { WidgetUI.glucoseText(snap) }
-    private var arrow: String { snap.trendArrow }
+    private var arrow: String { snap.isGlucoseStale ? "" : snap.trendArrow }
 
     var body: some View {
         switch family {

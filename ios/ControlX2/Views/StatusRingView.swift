@@ -17,7 +17,8 @@ struct StatusRingView: View {
                 .animation(.easeInOut, value: snapshot.connection)
 
             VStack(spacing: 2) {
-                if let g = snapshot.glucose {
+                // Hide a reading older than 6 minutes so a stale value is never shown as current.
+                if let g = snapshot.glucose, !snapshot.isGlucoseStale {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("\(g)")
                             .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -27,6 +28,8 @@ struct StatusRingView: View {
                     Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
                 } else {
                     Text("—").font(.system(size: 44, weight: .bold, design: .rounded))
+                    Text(snapshot.glucose == nil ? "mg/dL" : "no recent CGM")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(snapshot.connection.rawValue)
                     .font(.caption).foregroundStyle(.secondary)

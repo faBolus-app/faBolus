@@ -33,9 +33,9 @@ class MainDelegate extends Ui.BehaviorDelegate {
         return false;
     }
 
-    // Swipe up → the pump details screen.
+    // Swipe up → the Dexcom-style history plot (then swipe up again for pump details).
     function onNextPage() as Lang.Boolean {
-        Ui.pushView(new DetailsView(), new DetailsDelegate(), Ui.SLIDE_UP);
+        Ui.pushView(new DexcomView(), new DexcomDelegate(), Ui.SLIDE_UP);
         return true;
     }
 }

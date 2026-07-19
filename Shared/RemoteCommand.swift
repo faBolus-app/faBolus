@@ -38,6 +38,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var reservoirUnits: Double?
     public var batteryPercent: Double?
     public var lastBolusUnits: Double?
+    /// Seconds since the current CGM reading was taken (so a remote can show "Nm ago" and hide
+    /// readings older than 6 minutes).
+    public var glucoseAgeSec: Double?
+    /// Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot.
+    public var history: [Int]?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -45,7 +50,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 trend: String? = nil,
                 carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
-                batteryPercent: Double? = nil, lastBolusUnits: Double? = nil) {
+                batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
+                glucoseAgeSec: Double? = nil, history: [Int]? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -55,6 +61,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.maxBolusUnits = maxBolusUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits
+        self.glucoseAgeSec = glucoseAgeSec; self.history = history
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

@@ -16,7 +16,9 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public var onChange: (@MainActor () -> Void)?
 
-    private let client = PumpBLEClient()
+    // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
+    // BLE events (with `bluetooth-central` background mode) and hands the connection back.
+    private let client = PumpBLEClient(restoreIdentifier: "com.zgranowitz.controlx2.pump")
     private var coordinator: PairingCoordinator?
     private var pollTimer: Timer?
 
@@ -35,15 +37,20 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
 
-    // One-shot CGM history backfill (fills the chart gaps left when the app was disconnected).
-    // Re-runs on each connect. `backfillRemaining` counts down all record types the pump streams,
-    // not just CGM; readings are buffered until the stream ends, then aligned to the live axis.
+    // CGM history backfill: pages backward through the pump's history log (in 255-record pages)
+    // until it has enough CGM readings to fill the chart, then merges them. Paging is driven by
+    // a debounce timer (each page's stream ends when frames stop) rather than an exact record
+    // count, because sequence numbers can be non-contiguous. Re-runs on each connect.
     private var didBackfill = false
-    private var backfillRemaining = 0
+    private var backfillActive = false
     private var backfillBuffer: [(pumpSec: UInt32, mgdl: Int)] = []
-    /// Cap on records requested per connect. numberOfLogs is a single byte, so ≤255; the recent
-    /// window is plenty to fill short disconnect gaps.
-    private static let backfillRecords = 255
+    private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page
+    private var backfillFirstSeq: UInt32 = 0    // oldest available sequence number
+    private var backfillPages = 0
+    private var backfillTimer: Timer?
+    private static let backfillPageSize = 255   // numberOfLogs is one byte
+    private static let backfillMaxPages = 8     // safety cap (~2040 records)
+    private static let backfillTargetReadings = 288  // ~24 h @ 5-min
 
     // Continuations bridging the delegate callbacks to async/await for the signed flow.
     private var timeCont: CheckedContinuation<TimeSinceResetResponse, Error>?
@@ -188,11 +195,44 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         }
     }
 
+    /// Request one page of history (255 records) ending at `backfillNextEnd`, walking backward.
+    private func requestBackfillPage() {
+        guard backfillNextEnd >= backfillFirstSeq, backfillPages < Self.backfillMaxPages else {
+            finishBackfill(); return
+        }
+        let available = backfillNextEnd - backfillFirstSeq + 1
+        let count = min(UInt32(Self.backfillPageSize), available)
+        guard count > 0 else { finishBackfill(); return }
+        let startLog = backfillNextEnd - (count - 1)
+        backfillPages += 1
+        try? client.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)))
+        backfillNextEnd = startLog > 0 ? startLog - 1 : 0   // next (older) page
+        scheduleBackfillTick()
+    }
+
+    /// Debounce: a page's stream has ended once ~1.5 s pass with no new frames.
+    private func scheduleBackfillTick() {
+        backfillTimer?.invalidate()
+        backfillTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+            MainActor.assumeIsolated { self.backfillPageDone() }
+        }
+    }
+
+    private func backfillPageDone() {
+        // Keep paging backward until we have enough CGM readings or run out of history.
+        if backfillBuffer.count < Self.backfillTargetReadings && backfillNextEnd >= backfillFirstSeq {
+            requestBackfillPage()
+        } else {
+            finishBackfill()
+        }
+    }
+
     /// Merge the buffered CGM history into the chart. Aligns the newest backfilled reading to
     /// ~now and spaces the rest by their true pump-clock deltas — robust to any pump
-    /// timezone/epoch offset, and consistent with the live (`Date()`-stamped) readings.
-    private func finalizeBackfill() {
-        backfillRemaining = 0
+    /// timezone/epoch offset, and consistent with the (correct) live `Date()`-stamped readings.
+    private func finishBackfill() {
+        backfillTimer?.invalidate(); backfillTimer = nil
+        backfillActive = false
         defer { backfillBuffer.removeAll(keepingCapacity: false) }
         guard let newest = backfillBuffer.map({ $0.pumpSec }).max() else { return }
         let now = Date()
@@ -211,6 +251,8 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         }
         if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
         glucoseHistory = deduped
+        // Reflect the newest reading + its age for staleness.
+        if let last = deduped.last { snapshot.glucose = last.mgdl; snapshot.glucoseDate = last.date }
         onChange?()
     }
 }
@@ -225,7 +267,8 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case .disconnected, .idle:
             snapshot.connection = .disconnected
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
-            didBackfill = false; backfillRemaining = 0; backfillBuffer.removeAll()
+            didBackfill = false; backfillActive = false
+            backfillTimer?.invalidate(); backfillTimer = nil; backfillBuffer.removeAll()
         default: break
         }
         onChange?()
@@ -278,12 +321,19 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             snapshot.cgmActive = m.hasValidReading
             snapshot.trend = m.trendArrow
             if m.hasValidReading {
+                let now = Date()
                 snapshot.glucose = m.cgmReading
-                // De-dup: only append when the reading changes (CGM updates every ~5 min).
-                if glucoseHistory.last?.mgdl != m.cgmReading {
-                    glucoseHistory.append(GlucoseReading(date: Date(), mgdl: m.cgmReading))
-                    if glucoseHistory.count > 288 { glucoseHistory.removeFirst() }  // ~24h @ 5-min
+                snapshot.glucoseDate = now
+                // Append on a value change OR every ~4.5 min, so a stable BG still advances the
+                // plot to "now" (a value-only de-dup left the newest point drifting into the past).
+                if let last = glucoseHistory.last {
+                    if last.mgdl != m.cgmReading || now.timeIntervalSince(last.date) > 270 {
+                        glucoseHistory.append(GlucoseReading(date: now, mgdl: m.cgmReading))
+                    }
+                } else {
+                    glucoseHistory.append(GlucoseReading(date: now, mgdl: m.cgmReading))
                 }
+                if glucoseHistory.count > 288 { glucoseHistory.removeFirst() }
             }
         case let m as LastBolusStatusV2Response:
             snapshot.lastBolusUnits = m.deliveredUnits
@@ -303,17 +353,17 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             // Kick off the CGM history backfill once per connect (after we can talk to the pump).
             if !didBackfill { didBackfill = true; try? client.send(HistoryLogStatusRequest()) }
         case let m as HistoryLogStatusResponse:
-            guard m.numEntries > 0, backfillRemaining == 0 else { break }
-            let count = min(UInt32(Self.backfillRecords), m.numEntries)
-            let startLog = m.lastSequenceNum &- (count - 1)   // the most-recent `count` records
-            backfillRemaining = Int(count)
+            guard !backfillActive, m.numEntries > 0 else { break }
+            backfillActive = true
             backfillBuffer.removeAll(keepingCapacity: true)
-            try? client.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)))
+            backfillFirstSeq = m.firstSequenceNum
+            backfillNextEnd = m.lastSequenceNum
+            backfillPages = 0
+            requestBackfillPage()
         case let m as HistoryLogStreamResponse:
-            guard backfillRemaining > 0 else { break }
+            guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
-            backfillRemaining -= max(m.numberOfHistoryLogs, m.records.count)
-            if backfillRemaining <= 0 { finalizeBackfill() }
+            scheduleBackfillTick()   // debounce: page ends when frames stop arriving
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         default: break

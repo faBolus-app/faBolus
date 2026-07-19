@@ -26,7 +26,7 @@ struct StatusWidgetView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(WidgetUI.glucoseText(snap))
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
-                    Text(snap.trendArrow).font(.title3).foregroundStyle(color)
+                    Text(snap.isGlucoseStale ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
                 }
                 Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
                 Sparkline(points: snap.recentPoints).frame(height: 34).padding(.top, 2)

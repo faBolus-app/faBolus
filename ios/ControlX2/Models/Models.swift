@@ -63,6 +63,8 @@ public enum PumpConnectionState: String, Sendable {
 public struct PumpSnapshot: Sendable, Equatable {
     public var connection: PumpConnectionState = .disconnected
     public var glucose: Int? = nil
+    /// When the current glucose reading was taken. Used to hide readings older than 6 minutes.
+    public var glucoseDate: Date? = nil
     public var trend: String = GlucoseTrend.flat.rawValue
     public var iobUnits: Double = 0          // Active Insulin
     public var reservoirUnits: Double = 0
@@ -79,6 +81,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var isf: Int = 0             // correction factor, mg/dL per unit
     public var targetBg: Int = 0        // mg/dL
     public init() {}
+
+    /// A CGM reading is considered stale (don't display the number) after 6 minutes.
+    public var isGlucoseStale: Bool {
+        guard let d = glucoseDate else { return glucose != nil }  // unknown age → treat as stale
+        return Date().timeIntervalSince(d) > 6 * 60
+    }
 }
 
 /// A bolus the user is about to confirm (Loop-style: carbs + BG → recommended units).

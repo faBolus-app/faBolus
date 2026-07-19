@@ -14,7 +14,7 @@ class BgServiceDelegate extends System.ServiceDelegate {
     function initialize() { ServiceDelegate.initialize(); }
 
     function onTemporalEvent() as Void {
-        BgComplication.publish(null, "");   // keep last-known reading visible
+        BgComplication.publish(null, null, 0);   // keep last-known reading visible (or "--" if stale)
 
         if (System.getDeviceSettings().phoneConnected) {
             Comm.registerForPhoneAppMessages(method(:onPhoneMessage));

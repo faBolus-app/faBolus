@@ -1,6 +1,7 @@
 using Toybox.Lang;
 using Toybox.Graphics as Gfx;
 using Toybox.Math;
+using Toybox.Time;
 using Toybox.Application.Storage;
 
 // Shared app state for the ControlX2 Garmin remote. Glance data comes from the phone
@@ -20,6 +21,22 @@ module AppState {
     var battery as Lang.Number = -1;      // percent (-1 = unknown)
     var lastBolus as Lang.Float = -1.0;   // units of the last bolus (-1 = unknown)
     var connection as Lang.String = "";   // e.g. "Connected"
+    var readingEpoch as Lang.Number = 0;  // unix sec the current BG was taken (0 = unknown)
+    var history as Lang.Array = [];       // recent mg/dL (Numbers), oldest → newest, for the plot
+
+    // A cached BG older than 6 minutes must not be shown (per spec).
+    function glucoseStale() as Lang.Boolean {
+        if (glucose == null || readingEpoch <= 0) { return true; }
+        return (Time.now().value() - readingEpoch) > 360;
+    }
+    function displayGlucose() as Lang.String {
+        return glucoseStale() ? "--" : glucose.toString();
+    }
+    // Minutes since the current reading (-1 if unknown).
+    function ageMinutes() as Lang.Number {
+        if (readingEpoch <= 0) { return -1; }
+        return (Time.now().value() - readingEpoch) / 60;
+    }
 
     // Bolus entry
     var mode as Lang.String = "units";    // "units" | "carbs"
@@ -48,6 +65,8 @@ module AppState {
         if (g != null && isNum(g)) { glucose = g.toNumber(); }
         var t = Storage.getValue(BgComplication.KEY_TREND);
         if (t != null && t instanceof Lang.String) { trend = t; }
+        var e = Storage.getValue(BgComplication.KEY_EPOCH);
+        if (e != null && isNum(e)) { readingEpoch = e.toNumber(); }
     }
 
     function toggleMode() as Void {
@@ -110,6 +129,9 @@ module AppState {
             var bt = numOrNull(data["batteryPercent"]); if (bt != null) { battery = bt; }
             var lb = flt(data["lastBolusUnits"]); if (lb != null) { lastBolus = lb; }
             var cn = data["message"] as Lang.String?; if (cn != null) { connection = cn; }
+            var ag = flt(data["glucoseAgeSec"]);
+            if (ag != null) { readingEpoch = Time.now().value() - ag.toNumber(); }
+            var hs = data["history"]; if (hs instanceof Lang.Array) { history = hs; }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {
@@ -127,7 +149,11 @@ module AppState {
 
     function glucoseColor() as Gfx.ColorValue {
         if (glucose == null) { return Gfx.COLOR_LT_GRAY; }
-        var g = glucose as Lang.Number;
+        return rangeColor(glucose as Lang.Number);
+    }
+
+    // Range color for an arbitrary mg/dL value (used by the history plot).
+    function rangeColor(g as Lang.Number) as Gfx.ColorValue {
         if (g < 70) { return Gfx.COLOR_RED; }
         if (g < 180) { return Gfx.COLOR_GREEN; }
         if (g < 250) { return Gfx.COLOR_YELLOW; }

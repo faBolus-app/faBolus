@@ -50,12 +50,7 @@ enum WidgetUI {
         default: return .gray      // unknown
         }
     }
-    static func glucoseText(_ snap: WidgetSnapshot) -> String {
-        guard let g = snap.glucose else { return "--" }
-        return "\(g)"
-    }
-    /// True when the reading is old enough to flag (CGM updates ~every 5 min).
-    static func isStale(_ snap: WidgetSnapshot) -> Bool {
-        Date().timeIntervalSince(snap.updatedAt) > 12 * 60
-    }
+    static func glucoseText(_ snap: WidgetSnapshot) -> String { snap.displayGlucose }
+    /// True when the reading is older than 6 minutes (hide the number).
+    static func isStale(_ snap: WidgetSnapshot) -> Bool { snap.isGlucoseStale }
 }

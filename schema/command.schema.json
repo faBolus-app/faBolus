@@ -94,6 +94,16 @@
       "type": "number",
       "minimum": 0,
       "description": "Units of the most recent bolus (statusRead reply, for a remote's detail screen)."
+    },
+    "glucoseAgeSec": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Seconds since the current CGM reading was taken (so a remote can show age and hide readings older than 6 minutes)."
+    },
+    "history": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "description": "Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot."
     }
   },
   "additionalProperties": false

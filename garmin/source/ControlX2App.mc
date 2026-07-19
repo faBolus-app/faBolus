@@ -19,7 +19,7 @@ class ControlX2App extends App.AppBase {
     function onStart(state as Lang.Dictionary?) as Void {
         Comm.registerForPhoneAppMessages(method(:onPhoneMessage));
         AppState.loadPersisted();            // show last-known BG instantly (no "--" flash)
-        BgComplication.publish(null, null);  // re-publish last-known reading to the complication
+        BgComplication.publish(null, null, 0);  // re-publish last-known reading to the complication
         requestStatus();
         _timer = new Timer.Timer();
         _timer.start(method(:requestStatus), 15000, true);   // refresh every 15s while open
