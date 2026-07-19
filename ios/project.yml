@@ -1,0 +1,37 @@
+name: ControlX2
+options:
+  bundleIdPrefix: com.zgranowitz.controlx2
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  PumpX2Kit:
+    # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
+    path: ../../PumpX2Kit
+
+targets:
+  ControlX2:
+    type: application
+    platform: iOS
+    sources:
+      - ControlX2
+    dependencies:
+      - package: PumpX2Kit
+        product: PumpX2Messages
+      - package: PumpX2Kit
+        product: PumpX2Auth
+      - package: PumpX2Kit
+        product: PumpX2BLE
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Bench PoC BLE usage strings.
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

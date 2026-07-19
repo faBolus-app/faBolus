@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zgranowitz/ControlX2iOS/schema/command.schema.json",
+  "title": "ControlX2iOS phone↔remote command contract",
+  "description": "The tiny message contract shared by the iOS host and its remotes (Apple Watch over WatchConnectivity, Garmin over the Connect IQ mobile SDK). Both the Swift side and the Monkey C side validate/generate against this. Keep it minimal — this is safety-critical surface. DRAFT: finalize during Milestone 2.",
+  "type": "object",
+  "required": ["version", "kind", "requestId"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Bump on any breaking change; both sides must match."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead"],
+      "description": "Command type."
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Client-generated unique id correlating a request → confirm → status across the phone↔watch hop.",
+      "minLength": 1
+    },
+    "units": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Insulin units to deliver (bolusRequest). Milestone 2 is units-only."
+    },
+    "carbsGrams": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Optional carbs for the calculator flow (Milestone 2 follow-on). Absent = units-only."
+    },
+    "bgMgdl": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Optional BG for the calculator flow (Milestone 2 follow-on)."
+    },
+    "confirmToken": {
+      "type": "string",
+      "description": "Opaque token issued by the host for a specific bolusRequest; echoed by the remote in bolusConfirm to complete the double-confirmation. Single-use, short-lived.",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "awaitingConfirm", "delivering", "delivered", "cancelled", "failed", "outOfRange"],
+      "description": "Delivery/connection status echoed back to the remote (bolusStatus)."
+    },
+    "deliveredUnits": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Units actually delivered so far (bolusStatus) — important for partial-delivery after a cancel."
+    },
+    "message": {
+      "type": "string",
+      "description": "Optional human-readable detail for display on the remote."
+    }
+  },
+  "additionalProperties": false
+}
