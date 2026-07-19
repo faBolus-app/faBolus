@@ -4,10 +4,18 @@ import SwiftUI
 /// carb/bolus/connection actions. ControlX2 is a manual remote-bolus + status viewer.
 struct MainHUDView: View {
     @Bindable var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showBolus = false
     @State private var showPairing = false
     @State private var windowHours = 3
     private let windows = [3, 6, 12, 24]
+
+    /// Auto-reconnect using the saved pairing when there's one and we're idle (launch or
+    /// returning to the foreground — backgrounding drops the connection).
+    private func autoReconnectIfNeeded() async {
+        guard model.hasStoredPairing, model.snapshot.connection == .disconnected else { return }
+        await model.connect()
+    }
 
     var body: some View {
         NavigationStack {
@@ -58,6 +66,10 @@ struct MainHUDView: View {
             }
             .sheet(isPresented: $showBolus) { BolusEntryView(model: model) }
             .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
+            .task { await autoReconnectIfNeeded() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await autoReconnectIfNeeded() } }
+            }
             .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
                 Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
                     Task { await model.confirmRemoteBolus() }
