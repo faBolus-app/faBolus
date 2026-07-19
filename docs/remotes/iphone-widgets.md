@@ -13,14 +13,21 @@ last published value and hide any reading older than 6 minutes.
 - **Bolus** — Home Screen small + Lock Screen circular. A shortcut that opens the app's
   bolus-entry + confirm flow (`controlx2://bolus`); it never dispenses from the widget itself.
 - **Quick Bolus** — Home Screen small/medium. Delivers a **preset** dose gated by the same
-  **1-2-3** sequential-tap confirm the Garmin uses. Tap **1 → 2 → 3 in order**; a wrong or late
-  tap (20 s) resets. The final tap opens the app, which delivers through the validated signed path
-  and shows progress + cancel — the widget can't drive Bluetooth and never dispenses headlessly.
-  Set the preset in **Settings → Home-Screen widget → Quick-bolus amount**.
+  **1-2-3** sequential-tap confirm the Garmin uses. Tap **1 → 2 → 3 in order** (a wrong/late tap
+  within 20 s resets). Completing it delivers **in place**: the widget shows **Delivering… + a
+  Cancel button**, then **Delivered X.XX U** (auto-returns to the 1-2-3 state after a few seconds).
+  It does **not** open the app. Set the preset in **Settings → Home-Screen widget → Quick-bolus
+  amount**.
+
+    Under the hood the widget hands the confirmed dose to the app over the App Group and a Darwin
+    notification; the app (kept alive in the background by its `bluetooth-central` connection)
+    delivers through the validated signed path and writes progress back to the widget. If the pump
+    isn't connected, the widget shows **"Pump not connected — open app"** instead of the 1-2-3 pad.
 
 !!! danger "Quick Bolus is a real delivery"
     Completing 1-2-3 delivers the preset dose (bench/saline only). It is not a shortcut into the
-    entry screen — treat it like the Garmin hold-to-deliver.
+    entry screen — treat it like the Garmin hold-to-deliver. It only works while the app is running
+    with the pump connected (typically in the background); otherwise open the app first.
 
 ## Setup
 Long-press the Home Screen (or Lock Screen → Customize) → add widget → **ControlX2**. On device,

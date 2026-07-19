@@ -196,6 +196,25 @@ public final class AppModel {
         refresh()
     }
 
+    /// Deliver a bolus confirmed on the Quick-Bolus widget (its 1-2-3 tap is the confirmation).
+    /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
+    /// delivered/cancelled/failed in place.
+    public func deliverWidgetBolus(requestId: String, units: Double) async -> (delivered: Double, cancelled: Bool, error: String?) {
+        echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
+        do {
+            let delivered = try await source.deliverBolus(units: units)
+            echo(bolusOutcome(requestId: requestId, delivered: delivered))
+            lastError = nil
+            refresh()
+            return (delivered, source.lastBolusCancelled, nil)
+        } catch {
+            lastError = error.localizedDescription
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: error.localizedDescription))
+            refresh()
+            return (0, false, error.localizedDescription)
+        }
+    }
+
     public func rejectRemoteBolus() {
         if let pending = pendingRemoteBolus {
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .cancelled))

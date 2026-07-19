@@ -16,6 +16,13 @@ data the widgets show — so they answer instantly without opening the app or dr
 The exact wording Siri accepts is the app's shortcut phrases (Shortcuts app → ControlX2). You can
 also add these to the Shortcuts app or a Home Screen / Lock Screen Shortcut.
 
+## Enabling
+
+Nothing to turn on — the shortcuts register automatically the first time you launch ControlX2
+after installing. Just say **“Hey Siri, what's my glucose in ControlX2.”** The phrases are also
+listed in **Settings → Siri (read-only)** for reference, and appear under ControlX2 in the
+Shortcuts app.
+
 ## Freshness
 
 - A glucose reading older than **6 minutes** is reported as not recent (never spoken as current).

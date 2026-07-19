@@ -91,15 +91,38 @@ public struct WidgetBolusRequest: Codable, Sendable, Equatable {
     }
 }
 
+/// Live delivery status the app writes back so the widget can show progress + a cancel button in
+/// place (without opening the app).
+public enum WidgetBolusPhase: String, Codable, Sendable { case idle, delivering, delivered, cancelled, failed }
+public struct WidgetBolusStatus: Codable, Sendable, Equatable {
+    public var phase: WidgetBolusPhase
+    public var units: Double            // requested
+    public var deliveredUnits: Double
+    public var requestId: String
+    public var updatedAt: Date
+    public var message: String
+    public init(phase: WidgetBolusPhase, units: Double = 0, deliveredUnits: Double = 0,
+                requestId: String = "", updatedAt: Date = Date(), message: String = "") {
+        self.phase = phase; self.units = units; self.deliveredUnits = deliveredUnits
+        self.requestId = requestId; self.updatedAt = updatedAt; self.message = message
+    }
+    public static let idle = WidgetBolusStatus(phase: .idle)
+}
+
 /// App Group–backed state for the Quick-Bolus widget's 1-2-3 confirmation. The widget records tap
-/// progress (reset on a wrong/late tap) and, on completing 1→2→3, a pending request the app
-/// consumes. Mirrors the Garmin hold/tap confirm: the widget confirms, the phone delivers.
+/// progress (reset on a wrong/late tap) and, on completing 1→2→3, a pending request + a Darwin
+/// notification the app (running in the background with the pump connected) picks up to deliver —
+/// writing status back so the widget shows progress + cancel in place. Mirrors the Garmin
+/// hold/tap confirm: the widget confirms, the phone delivers.
 public enum WidgetBolusStore {
     private static var d: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
     /// Seconds allowed to complete the 1-2-3 sequence before it resets (a stray tap can't linger).
     public static let confirmTTL: TimeInterval = 20
     /// The app must consume a completed request within this window (else it's ignored as stale).
-    public static let pendingTTL: TimeInterval = 60
+    public static let pendingTTL: TimeInterval = 120
+    /// Darwin notification names that wake the app to deliver / cancel a widget bolus.
+    public static let darwinPending = "com.zgranowitz.controlx2.widgetBolus"
+    public static let darwinCancel = "com.zgranowitz.controlx2.widgetBolusCancel"
 
     /// Preset dose the widget delivers. The app writes this from Settings; defaults to 1.0 U.
     public static var presetUnits: Double {
@@ -130,6 +153,21 @@ public enum WidgetBolusStore {
               let r = try? JSONDecoder().decode(WidgetBolusRequest.self, from: data) else { return nil }
         d?.removeObject(forKey: "wbPending")
         return Date().timeIntervalSince(r.createdAt) > pendingTTL ? nil : r
+    }
+
+    /// Delivery status the app writes and the widget renders.
+    public static func setStatus(_ s: WidgetBolusStatus) {
+        guard let data = try? JSONEncoder().encode(s) else { return }
+        d?.set(data, forKey: "wbStatus")
+    }
+    public static func status() -> WidgetBolusStatus {
+        guard let data = d?.data(forKey: "wbStatus"),
+              let s = try? JSONDecoder().decode(WidgetBolusStatus.self, from: data) else { return .idle }
+        // A terminal status older than 15 s (or a stuck "delivering" > 90 s) reverts to idle so the
+        // widget returns to the 1-2-3 state on its own.
+        let age = Date().timeIntervalSince(s.updatedAt)
+        if s.phase == .delivering { return age > 90 ? .idle : s }
+        return age > 15 ? .idle : s
     }
 }
 

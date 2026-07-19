@@ -91,6 +91,9 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     private var didBackfill = false
     private var backfillActive = false
     private var backfillBuffer: [(pumpSec: UInt32, mgdl: Int)] = []
+    // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
+    // the IOB series so both show pump history, not just data since the app connected).
+    private var backfillBoluses: [(pumpSec: UInt32, units: Double, iob: Double)] = []
     private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page
     private var backfillFirstSeq: UInt32 = 0    // oldest available sequence number
     private var backfillPages = 0
@@ -278,16 +281,25 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         let previous = client.writePolicy
         client.writePolicy = .allowNonDelivery
         defer { client.writePolicy = previous }
+        lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
         alertDebug = "cleared id \(notification.id) kind \(notification.kind.rawValue) — snoozed if condition persists"
         _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         // Record a local acknowledge, then re-poll. The signed dismiss clears any truly-dismissable
-        // alert on the pump; for a condition-based alert the pump re-raises it, but the ack keeps it
-        // hidden (and un-notified) until the condition clears on the pump or the snooze elapses.
+        // alert on the pump; for a condition-based alert (e.g. CGM high while BG is genuinely high)
+        // the pump re-raises it, but the ack keeps it hidden (and un-notified) until the condition
+        // clears on the pump or the snooze elapses.
         acknowledged[noteKey(notification)] = Date()
         mergeNotifications()
         onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
+        // If the pump never answers the dismiss, say so — distinguishes "rejected/no response" from
+        // "accepted but condition persists" on the next bench test.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+            guard let self, self.lastDismissAck.isEmpty else { return }
+            self.lastDismissAck = "no ack (no pump response)"
+            self.renderDebug(); self.onChange?()
+        }
     }
 
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
@@ -381,30 +393,52 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     private func finishBackfill() {
         backfillTimer?.invalidate(); backfillTimer = nil
         backfillActive = false
-        defer { backfillBuffer.removeAll(keepingCapacity: false) }
-        guard !backfillBuffer.isEmpty else { return }
+        defer { backfillBuffer.removeAll(keepingCapacity: false); backfillBoluses.removeAll(keepingCapacity: false) }
         let now = Date()
         // The pump logs time as local wall-clock. Adding the 2008 epoch treats it as UTC, which
-        // lands readings a timezone away (they showed ~7-8 h in the past in PDT); subtract the
-        // local UTC offset to place them at the correct real instant, aligned with live readings.
+        // lands records a timezone away (they showed ~7-8 h in the past in PDT); subtract the
+        // local UTC offset to place them at the correct real instant, aligned with live data.
         let tzOffset = Double(TimeZone.current.secondsFromGMT())
-        var merged = glucoseHistory
-        for b in backfillBuffer {
-            let date = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(b.pumpSec) - tzOffset)
-            merged.append(GlucoseReading(date: min(date, now), mgdl: b.mgdl))
+        let pumpDate: (UInt32) -> Date = { sec in
+            min(Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(sec) - tzOffset), now)
         }
-        merged.sort { $0.date < $1.date }
-        // Drop near-duplicates: same value within ~150 s of the previously kept reading.
-        var deduped: [GlucoseReading] = []
-        for r in merged {
-            if let last = deduped.last, last.mgdl == r.mgdl,
-               r.date.timeIntervalSince(last.date) < 150 { continue }
-            deduped.append(r)
+
+        // --- CGM readings ---
+        if !backfillBuffer.isEmpty {
+            var merged = glucoseHistory
+            for b in backfillBuffer { merged.append(GlucoseReading(date: pumpDate(b.pumpSec), mgdl: b.mgdl)) }
+            merged.sort { $0.date < $1.date }
+            // Drop near-duplicates: same value within ~150 s of the previously kept reading.
+            var deduped: [GlucoseReading] = []
+            for r in merged {
+                if let last = deduped.last, last.mgdl == r.mgdl,
+                   r.date.timeIntervalSince(last.date) < 150 { continue }
+                deduped.append(r)
+            }
+            if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
+            glucoseHistory = deduped
+            if let last = deduped.last { snapshot.glucose = last.mgdl; snapshot.glucoseDate = last.date }
         }
-        if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
-        glucoseHistory = deduped
-        // Reflect the newest reading + its age for staleness.
-        if let last = deduped.last { snapshot.glucose = last.mgdl; snapshot.glucoseDate = last.date }
+
+        // --- Boluses (bars) + IOB samples seeded from history ---
+        if !backfillBoluses.isEmpty {
+            var markers = bolusMarkers
+            var iob = iobHistory
+            let existingBolus = Set(bolusMarkers.map { $0.date.timeIntervalSince1970.rounded() })
+            for b in backfillBoluses {
+                let date = pumpDate(b.pumpSec)
+                if !existingBolus.contains(date.timeIntervalSince1970.rounded()) {
+                    markers.append(BolusMarker(date: date, units: b.units))
+                }
+                if b.iob > 0 { iob.append(IOBSample(date: date, iob: b.iob)) }
+            }
+            markers.sort { $0.date < $1.date }
+            if markers.count > 100 { markers.removeFirst(markers.count - 100) }
+            bolusMarkers = markers
+            iob.sort { $0.date < $1.date }
+            if iob.count > 288 { iob.removeFirst(iob.count - 288) }
+            iobHistory = iob
+        }
         onChange?()
     }
 }
@@ -420,7 +454,8 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             snapshot.connection = .disconnected
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
             didBackfill = false; backfillActive = false
-            backfillTimer?.invalidate(); backfillTimer = nil; backfillBuffer.removeAll()
+            backfillTimer?.invalidate(); backfillTimer = nil
+            backfillBuffer.removeAll(); backfillBoluses.removeAll()
         default: break
         }
         onChange?()
@@ -523,6 +558,7 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
             guard !backfillActive, m.numEntries > 0 else { break }
             backfillActive = true
             backfillBuffer.removeAll(keepingCapacity: true)
+            backfillBoluses.removeAll(keepingCapacity: true)
             backfillFirstSeq = m.firstSequenceNum
             backfillNextEnd = m.lastSequenceNum
             backfillPages = 0
@@ -530,6 +566,7 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as HistoryLogStreamResponse:
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
+            for b in m.bolusRecords { backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
             scheduleBackfillTick()   // debounce: page ends when frames stop arriving
         case let m as AlertStatusResponse: alertList = m.notifications; noteAlert("al", m.bitmap); mergeNotifications()
         case let m as AlarmStatusResponse: alarmList = m.notifications; noteAlert("am", m.bitmap); mergeNotifications()

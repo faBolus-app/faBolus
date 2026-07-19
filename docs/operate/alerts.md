@@ -25,6 +25,16 @@ Clearing sends a **signed `DismissNotificationRequest`** (opcode 184) with the n
 + kind. It's signed like a bolus but does not modify insulin delivery, so it runs under the
 `allowNonDelivery` write policy.
 
+### Condition-based (CGM) alerts
+Some alerts are **condition-based** — most importantly the CGM **high / low glucose** alerts. While
+the reading is genuinely out of range the pump keeps re-raising the alert on every poll, so it
+**cannot be cleared on the pump** until glucose returns to range (the official Tandem/Dexcom app
+behaves the same way — you can only acknowledge/snooze it). In ControlX2, tapping **Clear** on such
+an alert **snoozes it on your phone**: it's hidden and stops re-notifying for 30 minutes (or until
+the pump condition clears). The Alerts screen says so when a CGM alert is active. The pump's dismiss
+acknowledgement is shown in the diagnostic line (`· ack 0 (accepted)` vs `ack N (rejected)` vs
+`no ack`).
+
 !!! warning "Not yet hardware-verified"
     The signed dismiss path is validated by construction (its cargo is asserted byte-for-byte and
     its signing/framing is the same path proven byte-exact for boluses), but clearing has **not

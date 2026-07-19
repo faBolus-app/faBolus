@@ -55,6 +55,16 @@ struct SettingsView: View {
                     Text("Reorder the Garmin app's swipe screens and pick which one opens first. Applied on the watch's next update.")
                 }
 
+                Section {
+                    ForEach(SettingsView.siriPhrases, id: \.self) { p in
+                        Label("“\(p)”", systemImage: "mic.fill").font(.callout)
+                    }
+                } header: {
+                    Text("Siri (read-only)")
+                } footer: {
+                    Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
+                }
+
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
                     if model.hasStoredPairing {
@@ -76,6 +86,14 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
     }
+
+    /// The Siri phrases (mirror `ControlX2Shortcuts`), shown for discoverability.
+    static let siriPhrases = [
+        "What's my glucose in ControlX2",
+        "Insulin on board in ControlX2",
+        "Pump status in ControlX2",
+        "Last bolus in ControlX2",
+    ]
 
     private func fmtU(_ v: Double) -> String {
         v < 0.1 ? String(format: "%.2f U", v) : (v < 1 ? String(format: "%.1f U", v) : String(format: "%.0f U", v))

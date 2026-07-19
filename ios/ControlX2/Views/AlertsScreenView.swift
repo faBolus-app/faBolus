@@ -15,6 +15,11 @@ struct AlertsScreenView: View {
                             .padding(.top, 40)
                     } else {
                         AlertsBannerView(model: model)
+                        if model.activeNotifications.contains(where: { $0.kind == .cgmAlert }) {
+                            Text("A CGM alert like “high glucose” is condition-based: the pump keeps re-raising it while the reading is actually high, so it can’t be cleared on the pump until glucose comes back in range. Clearing here snoozes it on your phone.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                        }
                     }
                     if model.snapshot.connection == .connected {
                         // Diagnostic: after tapping Clear, this shows the pump's ack — status 0

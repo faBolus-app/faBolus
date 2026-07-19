@@ -19,31 +19,22 @@ struct QuickBolusWidget: Widget {
 
 struct QuickBolusView: View {
     let snap: WidgetSnapshot
-    // Read live confirm progress from the App Group (re-read on every interactive re-render).
+    // Read live confirm progress + delivery status from the App Group (re-read on every re-render).
     private var progress: Int { WidgetBolusStore.progress() }
     private var preset: Double { WidgetBolusStore.presetUnits }
+    private var status: WidgetBolusStatus { WidgetBolusStore.status() }
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                Image(systemName: "drop.fill").font(.caption)
-                Text(String(format: "%.2f U", preset)).font(.headline)
-                Spacer()
-                if progress > 0 {
-                    Button(intent: WidgetBolusResetIntent()) {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Text(progress == 0 ? "Tap 1 · 2 · 3 to bolus" : "Confirming… \(progress)/3")
-                .font(.caption2).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 8) {
-                stepButton(1)
-                stepButton(2)
-                stepButton(3)
+            switch status.phase {
+            case .delivering: deliveringBody
+            case .delivered:  doneBody(icon: "checkmark.circle.fill",
+                                       text: String(format: "Delivered %.2f U", status.deliveredUnits))
+            case .cancelled:  doneBody(icon: "xmark.circle.fill",
+                                       text: String(format: "Cancelled · %.2f U", status.deliveredUnits))
+            case .failed:     doneBody(icon: "exclamationmark.triangle.fill",
+                                       text: status.message.isEmpty ? "Bolus failed" : status.message)
+            case .idle:       idleBody
             }
         }
         .padding(4)
@@ -53,6 +44,59 @@ struct QuickBolusView: View {
                                     Color(red: 0.22, green: 0.26, blue: 0.72)],
                            startPoint: .top, endPoint: .bottom)
         }
+    }
+
+    // Idle: the 1-2-3 confirm (or a prompt to open the app if the pump isn't connected).
+    @ViewBuilder private var idleBody: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "drop.fill").font(.caption)
+            Text(String(format: "%.2f U", preset)).font(.headline)
+            Spacer()
+            if progress > 0 {
+                Button(intent: WidgetBolusResetIntent()) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.7))
+                }.buttonStyle(.plain)
+            }
+        }
+        if snap.connected {
+            Text(progress == 0 ? "Tap 1 · 2 · 3 to bolus" : "Confirming… \(progress)/3")
+                .font(.caption2).foregroundStyle(.white.opacity(0.85))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) { stepButton(1); stepButton(2); stepButton(3) }
+        } else {
+            Spacer(minLength: 0)
+            Link(destination: ControlX2DeepLink.open) {
+                Text("Pump not connected — open app")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // Delivering: progress + a cancel button, in place.
+    @ViewBuilder private var deliveringBody: some View {
+        HStack(spacing: 5) {
+            ProgressView().tint(.white).scaleEffect(0.8)
+            Text(String(format: "Delivering %.2f U", status.units))
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Spacer(minLength: 0)
+        Button(intent: WidgetBolusCancelIntent()) {
+            Text("Cancel").font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 6)
+                .background(Color.red.opacity(0.9), in: Capsule())
+        }.buttonStyle(.plain)
+    }
+
+    // Terminal result — auto-reverts to idle after a few seconds (status TTL).
+    @ViewBuilder private func doneBody(icon: String, text: String) -> some View {
+        Spacer(minLength: 0)
+        Image(systemName: icon).font(.title2).foregroundStyle(.white)
+        Text(text).font(.caption).foregroundStyle(.white)
+            .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+        Spacer(minLength: 0)
     }
 
     /// A numbered confirm circle. 1 and 2 advance the sequence; 3 opens the app to deliver.

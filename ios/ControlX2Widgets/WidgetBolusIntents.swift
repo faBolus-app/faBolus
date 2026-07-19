@@ -1,10 +1,21 @@
 import AppIntents
+import WidgetKit
 import Foundation
 
-/// App Intents backing the Quick-Bolus widget's 1-2-3 confirmation. Steps 1 and 2 just advance
-/// (or reset) the confirm progress in the App Group without opening the app. The final "3" opens
-/// the app and, only if 1→2 were tapped in order, writes a pending bolus the app delivers through
-/// the validated signed path. A wrong or late tap resets — a stray tap can never dispense.
+/// App Intents backing the Quick-Bolus widget's 1-2-3 confirmation. Steps 1 and 2 advance (or
+/// reset) the confirm progress. Completing 1→2→3 hands a pending bolus to the app via the App
+/// Group and a Darwin notification; the app (running in the background with the pump connected)
+/// delivers it through the validated signed path and writes status back, so the widget shows
+/// progress + a cancel button in place — it never opens the app and never dispenses headlessly on
+/// its own. A wrong/late tap resets. Bench/saline only.
+
+private func postDarwin(_ name: String) {
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         CFNotificationName(name as CFString), nil, nil, true)
+}
+private func reloadWidget() {
+    WidgetCenter.shared.reloadTimelines(ofKind: "ControlX2QuickBolus")
+}
 
 /// Tap "1" or "2": advance the sequence, or reset on a wrong tap.
 struct WidgetBolusStepIntent: AppIntent {
@@ -23,19 +34,33 @@ struct WidgetBolusStepIntent: AppIntent {
     }
 }
 
-/// Tap "3" (the final step): opens the app. If 1→2 were completed, hands the preset bolus to the
-/// app to deliver; otherwise it just resets (the app opens but nothing is delivered).
+/// Tap "3" (the final step): if 1→2 were completed, hand the preset bolus to the app to deliver in
+/// the background (does NOT open the app). Otherwise just reset.
 struct WidgetBolusDeliverIntent: AppIntent {
     static let title: LocalizedStringResource = "Deliver Widget Bolus"
-    static let openAppWhenRun = true   // deliver + show progress/cancel in the app, never headless
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
         if WidgetBolusStore.progress() == 2 {
-            WidgetBolusStore.setPending(WidgetBolusRequest(units: WidgetBolusStore.presetUnits,
-                                                           requestId: UUID().uuidString,
-                                                           createdAt: Date()))
+            let units = WidgetBolusStore.presetUnits
+            let reqId = UUID().uuidString
+            WidgetBolusStore.setPending(WidgetBolusRequest(units: units, requestId: reqId, createdAt: Date()))
+            // Show "delivering" immediately; the app overwrites this with the real outcome.
+            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: reqId))
+            postDarwin(WidgetBolusStore.darwinPending)
         }
         WidgetBolusStore.resetProgress()
+        reloadWidget()
+        return .result()
+    }
+}
+
+/// Cancel an in-progress widget bolus.
+struct WidgetBolusCancelIntent: AppIntent {
+    static let title: LocalizedStringResource = "Cancel Widget Bolus"
+    static let openAppWhenRun = false
+    func perform() async throws -> some IntentResult {
+        postDarwin(WidgetBolusStore.darwinCancel)
         return .result()
     }
 }
@@ -44,5 +69,7 @@ struct WidgetBolusDeliverIntent: AppIntent {
 struct WidgetBolusResetIntent: AppIntent {
     static let title: LocalizedStringResource = "Reset Bolus Confirm"
     static let openAppWhenRun = false
-    func perform() async throws -> some IntentResult { WidgetBolusStore.resetProgress(); return .result() }
+    func perform() async throws -> some IntentResult {
+        WidgetBolusStore.resetProgress(); reloadWidget(); return .result()
+    }
 }
