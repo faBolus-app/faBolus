@@ -17,7 +17,7 @@ private func reloadWidget() {
     WidgetCenter.shared.reloadTimelines(ofKind: "ControlX2QuickBolus")
 }
 
-/// − / + the dose on the amount stage (step = the configured bolus increment).
+/// − / + the amount on the amount stage. Step + max depend on the mode (units vs carbs).
 struct WidgetBolusAdjustIntent: AppIntent {
     static let title: LocalizedStringResource = "Adjust Bolus Amount"
     static let openAppWhenRun = false
@@ -28,11 +28,24 @@ struct WidgetBolusAdjustIntent: AppIntent {
     init(delta: Int) { self.delta = delta }
 
     func perform() async throws -> some IntentResult {
-        let step = WidgetBolusStore.increment
+        let carbs = WidgetBolusStore.mode == "carbs"
+        let step = carbs ? WidgetBolusStore.carbIncrement : WidgetBolusStore.increment
+        let maxV = carbs ? WidgetBolusStore.maxCarbs : WidgetBolusStore.maxBolus
         var v = WidgetBolusStore.draft + Double(delta) * step
-        // Snap to the increment grid and clamp to [0, max].
-        v = (v / step).rounded() * step
-        WidgetBolusStore.draft = min(max(0, v), WidgetBolusStore.maxBolus)
+        v = (v / step).rounded() * step   // snap to the increment grid
+        WidgetBolusStore.draft = min(max(0, v), maxV)
+        reloadWidget()
+        return .result()
+    }
+}
+
+/// Tap the units/carbs label to switch modes (resets the amount, like the Garmin mode chip).
+struct WidgetBolusToggleModeIntent: AppIntent {
+    static let title: LocalizedStringResource = "Switch Units/Carbs"
+    static let openAppWhenRun = false
+    func perform() async throws -> some IntentResult {
+        WidgetBolusStore.mode = (WidgetBolusStore.mode == "carbs") ? "units" : "carbs"
+        WidgetBolusStore.draft = 0
         reloadWidget()
         return .result()
     }
@@ -83,11 +96,13 @@ struct WidgetBolusDeliverIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
-        let units = WidgetBolusStore.draft
-        if WidgetBolusStore.stage == "confirm", WidgetBolusStore.progress() == 2, units > 0 {
+        let amount = WidgetBolusStore.draft
+        if WidgetBolusStore.stage == "confirm", WidgetBolusStore.progress() == 2, amount > 0 {
             let reqId = UUID().uuidString
-            WidgetBolusStore.setPending(WidgetBolusRequest(units: units, requestId: reqId, createdAt: Date()))
-            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: reqId))
+            let mode = WidgetBolusStore.mode
+            WidgetBolusStore.setPending(WidgetBolusRequest(amount: amount, mode: mode, requestId: reqId, createdAt: Date()))
+            // `units` here is the entered amount for display; the app writes the real delivered units.
+            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: mode == "units" ? amount : 0, requestId: reqId))
             postDarwin(WidgetBolusStore.darwinPending)
         }
         WidgetBolusStore.resetEntry()

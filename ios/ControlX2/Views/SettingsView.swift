@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
+    @State private var showPairing = false
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -15,6 +16,13 @@ struct SettingsView: View {
                         Text("Carbs").tag(BolusMode.carbs)
                         Text("Units").tag(BolusMode.units)
                     }
+                } header: {
+                    Text("Bolus entry")
+                } footer: {
+                    Text("Default entry mode for the iPhone, the widget, and the remotes.")
+                }
+
+                Section {
                     Picker("Bolus increment", selection: $settings.bolusIncrement) {
                         ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
                     }
@@ -22,9 +30,22 @@ struct SettingsView: View {
                         ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                     }
                 } header: {
-                    Text("Bolus entry")
+                    Text("iPhone increments")
                 } footer: {
-                    Text("Applies to the iPhone, Apple Watch, and Garmin bolus screens.")
+                    Text("Steps for the iPhone bolus screen and the Home-Screen widget.")
+                }
+
+                Section {
+                    Picker("Bolus increment", selection: $settings.watchBolusIncrement) {
+                        ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
+                    }
+                    Picker("Carb increment", selection: $settings.watchCarbIncrement) {
+                        ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
+                    }
+                } header: {
+                    Text("Watch & Garmin increments")
+                } footer: {
+                    Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone).")
                 }
 
                 Section("Chart") {
@@ -57,6 +78,7 @@ struct SettingsView: View {
 
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
+                    connectionControls
                     if model.hasStoredPairing {
                         Button("Forget pairing", role: .destructive) { model.forgetPairing() }
                     }
@@ -74,15 +96,34 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
+        }
+    }
+
+    /// Connect / disconnect / re-pair — moved here from the Dashboard toolbar.
+    @ViewBuilder private var connectionControls: some View {
+        switch model.snapshot.connection {
+        case .disconnected, .error:
+            if model.hasStoredPairing {
+                Button("Connect (saved pairing)") { Task { await model.connect() } }
+                Button("Re-pair with new code") { model.forgetPairing(); showPairing = true }
+            } else {
+                Button("Connect") { showPairing = true }
+            }
+        case .connected, .bolusing:
+            Button("Disconnect", role: .destructive) { model.disconnect() }
+        default:
+            HStack { Text("Connecting…").foregroundStyle(.secondary); Spacer(); ProgressView() }
         }
     }
 
     /// The Siri phrases (mirror `ControlX2Shortcuts`), shown for discoverability.
     static let siriPhrases = [
-        "What's my glucose in ControlX2",
-        "Insulin on board in ControlX2",
-        "Pump status in ControlX2",
-        "Last bolus in ControlX2",
+        "What's my glucose in Control X2",
+        "Insulin on board in Control X2",
+        "Pump status in Control X2",
+        "Any alerts in Control X2",
+        "Last bolus in Control X2",
     ]
 
     private func fmtU(_ v: Double) -> String {

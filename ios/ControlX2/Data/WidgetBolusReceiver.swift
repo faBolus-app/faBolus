@@ -44,12 +44,25 @@ final class WidgetBolusReceiver {
     /// Called on the Darwin wake and again when the app becomes active (a suspended-app fallback).
     func handlePending() {
         guard let model, let r = WidgetBolusStore.takePending() else { return }
-        WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: r.units, requestId: r.requestId))
-        reload()
         Task {
-            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: r.units)
+            // Carbs → units via the pump's calculator (same as the Garmin remote); units go as-is.
+            let units: Double
+            if r.mode == "carbs" {
+                let rec = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.snapshot.glucose)
+                units = rec.recommendedUnits
+            } else {
+                units = r.amount
+            }
+            guard units > 0 else {
+                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
+                                                             message: "No insulin needed"))
+                reload(); return
+            }
+            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: r.requestId))
+            reload()
+            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units)
             let phase: WidgetBolusPhase = out.error != nil ? .failed : (out.cancelled ? .cancelled : .delivered)
-            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, units: r.units,
+            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, units: units,
                                                          deliveredUnits: out.delivered, requestId: r.requestId,
                                                          message: out.error ?? ""))
             reload()

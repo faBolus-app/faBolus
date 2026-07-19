@@ -8,7 +8,7 @@ enum WidgetPublisher {
     @MainActor private static var lastReload = Date.distantPast
 
     @MainActor
-    static func publish(_ s: PumpSnapshot, history: [GlucoseReading]) {
+    static func publish(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = []) {
         let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         let snap = WidgetSnapshot(
             glucose: s.glucose,
@@ -21,7 +21,8 @@ enum WidgetPublisher {
             lastBolusDate: s.lastBolusDate,
             connected: s.connection == .connected || s.connection == .bolusing,
             updatedAt: Date(),
-            recentPoints: Array(points))
+            recentPoints: Array(points),
+            activeAlerts: alerts)
         WidgetStore.save(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }

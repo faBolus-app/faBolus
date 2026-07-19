@@ -22,15 +22,18 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var updatedAt: Date
     /// Recent readings for a sparkline (oldest→newest, capped small for App Group size).
     public var recentPoints: [Point]
+    /// Active pump alert titles (for the read-only Siri "alerts" query).
+    public var activeAlerts: [String]
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
-                recentPoints: [Point] = []) {
+                recentPoints: [Point] = [], activeAlerts: [String] = []) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
         self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
+        self.activeAlerts = activeAlerts
     }
 
     /// Loop-style glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
@@ -83,11 +86,14 @@ public enum WidgetStore {
 /// the validated signed path. The widget can't drive Bluetooth, so it writes this to the App Group
 /// and opens the app, which delivers it (like a Garmin remote bolus) and shows progress + cancel.
 public struct WidgetBolusRequest: Codable, Sendable, Equatable {
-    public var units: Double
+    /// The amount as entered: units when `mode == "units"`, grams of carbs when `"carbs"`. The app
+    /// converts carbs→units with the pump's calculator before delivering.
+    public var amount: Double
+    public var mode: String
     public var requestId: String
     public var createdAt: Date
-    public init(units: Double, requestId: String, createdAt: Date) {
-        self.units = units; self.requestId = requestId; self.createdAt = createdAt
+    public init(amount: Double, mode: String, requestId: String, createdAt: Date) {
+        self.amount = amount; self.mode = mode; self.requestId = requestId; self.createdAt = createdAt
     }
 }
 
@@ -130,10 +136,22 @@ public enum WidgetBolusStore {
         get { let v = d?.double(forKey: "wbIncrement") ?? 0; return v > 0 ? v : 0.05 }
         set { d?.set(newValue, forKey: "wbIncrement") }
     }
+    /// Grams step for the +/- buttons in carbs mode. Defaults to 5 g.
+    public static var carbIncrement: Double {
+        get { let v = d?.double(forKey: "wbCarbIncrement") ?? 0; return v > 0 ? v : 5 }
+        set { d?.set(newValue, forKey: "wbCarbIncrement") }
+    }
     /// The pump's max bolus (clamp for the amount picker). Defaults to 25 U.
     public static var maxBolus: Double {
         get { let v = d?.double(forKey: "wbMaxBolus") ?? 0; return v > 0 ? v : 25.0 }
         set { d?.set(newValue, forKey: "wbMaxBolus") }
+    }
+    /// Max carbs entry (grams). Fixed cap mirroring the Garmin remote.
+    public static let maxCarbs: Double = 200
+    /// Default entry mode ("units"/"carbs") from Settings; the entry starts here.
+    public static var defaultMode: String {
+        get { d?.string(forKey: "wbDefaultMode") ?? "carbs" }
+        set { d?.set(newValue, forKey: "wbDefaultMode") }
     }
 
     // --- Entry state: two stages (choose amount → 1-2-3 confirm), like the Garmin flow ---
@@ -142,13 +160,18 @@ public enum WidgetBolusStore {
         get { d?.string(forKey: "wbStage") ?? "amount" }
         set { d?.set(newValue, forKey: "wbStage") }
     }
-    /// The dose being entered (units).
+    /// Current entry mode: "units" or "carbs" (togglable on the amount stage).
+    public static var mode: String {
+        get { d?.string(forKey: "wbMode") ?? defaultMode }
+        set { d?.set(newValue, forKey: "wbMode") }
+    }
+    /// The amount being entered — units when mode == "units", grams when "carbs".
     public static var draft: Double {
         get { d?.double(forKey: "wbDraft") ?? 0 }
         set { d?.set(newValue, forKey: "wbDraft") }
     }
-    /// Reset the whole entry back to the amount stage at zero.
-    public static func resetEntry() { stage = "amount"; draft = 0; resetProgress() }
+    /// Reset the whole entry back to the amount stage at zero, in the default mode.
+    public static func resetEntry() { stage = "amount"; mode = defaultMode; draft = 0; resetProgress() }
 
     /// Current confirm progress (0/1/2), or 0 if it has timed out.
     public static func progress() -> Int {

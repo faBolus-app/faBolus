@@ -116,6 +116,23 @@ struct LastBolusQueryIntent: AppIntent {
     }
 }
 
+// MARK: - Alerts
+
+struct AlertsQueryIntent: AppIntent {
+    static let title: LocalizedStringResource = "Check Alerts"
+    static let description = IntentDescription("Ask what pump alerts or alarms are active.")
+    static let openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let s = WidgetStore.load() else { return .result(dialog: IntentDialog(stringLiteral: SiriFormat.noData)) }
+        let alerts = s.activeAlerts
+        if alerts.isEmpty { return .result(dialog: "You have no active pump alerts.") }
+        if alerts.count == 1 { return .result(dialog: "You have one active alert: \(alerts[0]).") }
+        let list = alerts.prefix(5).joined(separator: ", ")
+        return .result(dialog: "You have \(alerts.count) active alerts: \(list).")
+    }
+}
+
 // MARK: - Shortcut phrases
 
 struct ControlX2Shortcuts: AppShortcutsProvider {
@@ -142,5 +159,11 @@ struct ControlX2Shortcuts: AppShortcutsProvider {
             "What was my last bolus in \(.applicationName)",
             "\(.applicationName) last bolus",
         ], shortTitle: "Last Bolus", systemImageName: "clock.arrow.circlepath")
+
+        AppShortcut(intent: AlertsQueryIntent(), phrases: [
+            "Any alerts in \(.applicationName)",
+            "\(.applicationName) alerts",
+            "Check alerts in \(.applicationName)",
+        ], shortTitle: "Alerts", systemImageName: "bell.badge")
     }
 }

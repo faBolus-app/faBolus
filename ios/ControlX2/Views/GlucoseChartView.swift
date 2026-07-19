@@ -79,7 +79,7 @@ struct GlucoseChartView: View {
         .overlay(alignment: .topTrailing) {
             if showIOB { Text("U").font(.caption2).foregroundStyle(LoopTheme.insulin).padding(.trailing, 2) }
         }
-        .frame(height: 190)
+        .frame(height: 160)
     }
 
     private var xStride: Int {

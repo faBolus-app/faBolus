@@ -44,8 +44,8 @@ public final class AppModel {
                              history: (history?.isEmpty ?? true) ? nil : history,
                              alerts: alertList,
                              bolusMode: AppSettings.shared.defaultBolusMode.rawValue,
-                             bolusIncrement: AppSettings.shared.bolusIncrement,
-                             carbIncrement: AppSettings.shared.carbIncrement,
+                             bolusIncrement: AppSettings.shared.watchBolusIncrement,
+                             carbIncrement: AppSettings.shared.watchCarbIncrement,
                              screenOrder: AppSettings.shared.garminScreenOrder,
                              defaultScreen: AppSettings.shared.garminDefaultScreen)
     }
@@ -123,7 +123,7 @@ public final class AppModel {
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
-        WidgetPublisher.publish(snapshot, history: glucoseHistory)
+        WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         pushStatusIfNeeded()
         if alertsChanged {
             onNotificationsChange?(activeNotifications)

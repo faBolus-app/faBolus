@@ -5,7 +5,6 @@ import SwiftUI
 struct DashboardView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
-    @State private var showPairing = false
     @State private var windowHours = 3
     private let windows = [3, 6, 12, 24]
 
@@ -13,7 +12,21 @@ struct DashboardView: View {
         @Bindable var settings = settings   // local @Bindable for binding projection
         return NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 14) {
+                    // Above the fold: glucose ring + the four status pills + the chart. Connection
+                    // and Garmin setup live in the Settings tab now (not the toolbar).
+                    StatusRingView(snapshot: model.snapshot)
+
+                    AlertsBannerView(model: model)
+
+                    if model.snapshot.connection == .bolusing {
+                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
+                            Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
+                        }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
+                    }
+
+                    StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
+
                     VStack(spacing: 6) {
                         GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                          boluses: model.bolusMarkers, windowHours: windowHours,
@@ -28,59 +41,18 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal)
 
-                    AlertsBannerView(model: model)
-                    StatusRingView(snapshot: model.snapshot)
-
-                    if model.snapshot.connection == .bolusing {
-                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                            Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
-                        }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
-                    }
-
-                    VStack(spacing: 10) { StatusPillsView(snapshot: model.snapshot) }.padding(.horizontal)
-
+                    // Scroll target: everything else from the pump.
                     PumpDetailsCard(snapshot: model.snapshot).padding(.horizontal)
 
                     if let err = model.lastError {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(LoopTheme.low).padding(.horizontal)
                     }
-                    if let g = model.garminStatus {
-                        Label(g, systemImage: "applewatch.radiowaves.left.and.right")
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center).padding(.horizontal)
-                    }
                 }
                 .padding(.vertical)
             }
             .navigationTitle("ControlX2")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { connectionButton }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { model.setupGarmin?() } label: { Image(systemName: "applewatch.radiowaves.left.and.right") }
-                        .accessibilityLabel("Set up Garmin remote")
-                }
-            }
-            .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-        }
-    }
-
-    @ViewBuilder private var connectionButton: some View {
-        switch model.snapshot.connection {
-        case .disconnected, .error:
-            if model.hasStoredPairing {
-                Menu("Connect") {
-                    Button("Connect (saved pairing)") { Task { await model.connect() } }
-                    Button("Re-pair with new code") { model.forgetPairing(); showPairing = true }
-                }
-            } else {
-                Button("Connect") { showPairing = true }
-            }
-        case .connected, .bolusing:
-            Button("Disconnect") { model.disconnect() }
-        default:
-            ProgressView()
         }
     }
 }

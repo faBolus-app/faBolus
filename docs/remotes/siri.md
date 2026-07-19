@@ -12,6 +12,7 @@ data the widgets show — so they answer instantly without opening the app or dr
 | "Insulin on board in ControlX2" | current IOB |
 | "Pump status in ControlX2" / "How's my pump in ControlX2" | glucose, IOB, reservoir, battery, connection |
 | "Last bolus in ControlX2" | most recent bolus + when |
+| "Any alerts in ControlX2" | active pump alerts/alarms |
 
 The exact wording Siri accepts is the app's shortcut phrases (Shortcuts app → ControlX2). You can
 also add these to the Shortcuts app or a Home Screen / Lock Screen Shortcut.
