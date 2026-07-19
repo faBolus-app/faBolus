@@ -37,6 +37,7 @@ nav:
       - Apple Watch: remotes/apple-watch.md
       - Garmin: remotes/garmin.md
       - iPhone widgets: remotes/iphone-widgets.md
+      - Siri: remotes/siri.md
   - Architecture: architecture.md
   - Troubleshoot: troubleshoot.md
   - FAQ: faq.md

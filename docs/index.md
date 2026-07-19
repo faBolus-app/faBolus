@@ -31,6 +31,8 @@ and deliver **manual boluses** — it is **not** an automated closed-loop system
   confirm and a max-units clamp; cancels in-progress and reports partial delivery.
 - Views and **clears pump alerts/alarms** (a signed dismiss) — from the phone and the watch.
 - **iPhone widgets** (Lock Screen + Home Screen): glucose, an overview, and a bolus shortcut.
+- **Siri** (read-only): ask for glucose, insulin on board, pump status, or the last bolus. Voice
+  bolusing is intentionally excluded (dosing stays a deliberate, confirmed action).
 - Accepts boluses from an **Apple Watch** or **Garmin** remote (double-confirmed); the Garmin
   also has a glucose **complication**, a Dexcom-style history screen, and a details screen.
 

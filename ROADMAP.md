@@ -3,15 +3,16 @@
 Working order agreed with the user: **1 → 2 → 3 → 4**, then the rest. Each step is built,
 installed, and pushed before moving on.
 
-## 1. Fix alert clearing (in progress)
-Clearing an alert (phone or watch) doesn't clear it on the pump.
-- Surface the pump's dismiss-ack status prominently (phone + watch) so we can tell whether the
-  pump **rejects** the signed dismiss (status ≠ 0 → signing/opcode issue) or **accepts** it
-  (status 0 → the alert is condition-based and re-raises, e.g. a high-glucose alert while BG is
-  still high).
-- Re-verify the `DismissNotificationRequest` cargo/opcode/kind/id + signed path vs controlX2.
-- Reduce the **watch alert delay**: the phone already pushes on change; also poll alerts on a
-  tighter cadence and push immediately when the alert set changes (balance vs battery).
+## 1. Fix alert clearing (done — pending one ack readout)
+Clearing an alert re-surfaced on the next poll because *condition-based* alerts (e.g. a CGM high
+while BG is genuinely still high) are re-raised by the pump every poll.
+- **Local acknowledge/snooze**: tapping Clear hides the alert (and stops re-notifying) until the
+  pump condition actually clears (the bit drops) or a 30-min re-nag window elapses — matching how
+  a CGM app behaves. Truly-dismissable alerts still clear on the pump and don't return. ✅
+- **Durable dismiss-ack**: the `DismissNotificationResponse` status is kept on the Alerts
+  diagnostic (`· ack N (accepted/rejected)`) so a subsequent poll can't clobber it before it's
+  read. Confirms accepted (condition-based) vs rejected (signing). ✅ (awaiting one on-device read)
+- Watch alert delay reduced via the 15 s alert poll + push-on-change. ✅
 
 ## 2. iOS tab bar + Settings + bolus defaults/increments
 - Bottom **TabView** (modern iOS): **Dashboard · Bolus · Alerts · Settings**.
@@ -38,13 +39,17 @@ Clearing an alert (phone or watch) doesn't clear it on the pump.
   stalls, recover from transient GATT errors, and verify state-restoration wake paths.
 - Reduce spurious "Disconnected" flicker; keep the pending-connect alive across app states.
 
-## 5. Siri (App Intents) — CarPlay dropped
+## 5. Siri (App Intents) — CarPlay dropped (read-only done)
 - **CarPlay is not feasible**: it requires an Apple-granted entitlement limited to specific app
   categories (audio, nav, EV, food, …); a bolus/medical app can't get it, so a CarPlay app
   can't be built or installed. Dropped.
-- **Siri**: App Intents for view/bolus. Bolusing via Siri **gated to CarPlay-connected state**
-  only (checked at intent runtime); otherwise view-only. Safety-sensitive + untested — treat as
-  bench-only and require an explicit confirm.
+- **Siri (read-only)** ✅ — App Intents + `AppShortcutsProvider` for **glucose**, **insulin on
+  board**, **pump status**, and **last bolus**. Each reads the App Group snapshot (same data as
+  the widgets), runs without opening the app, and speaks a dialog. See
+  `ios/ControlX2/Intents/StatusIntents.swift`.
+- **Voice bolus is intentionally out of scope**: per the safety rule, dosing is CarPlay-only, and
+  CarPlay can't be built — so there is no Siri bolus intent. Revisit only if CarPlay becomes
+  possible (with its touchscreen 1-2-3 confirm gate).
 
 ## 5b. Bolus from an iPhone widget (1-2-3 confirm)
 - Interactive Home-Screen widget (App Intents) that delivers a preset bolus, gated by the same
