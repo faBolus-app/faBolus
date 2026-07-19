@@ -46,6 +46,12 @@ Clearing an alert (phone or watch) doesn't clear it on the pump.
   only (checked at intent runtime); otherwise view-only. Safety-sensitive + untested — treat as
   bench-only and require an explicit confirm.
 
+## 5b. Bolus from an iPhone widget (1-2-3 confirm)
+- Interactive Home-Screen widget (App Intents) that delivers a preset bolus, gated by the same
+  **1-2-3 sequential tap confirmation** the Garmin uses (tap targets 1→2→3 in order; wrong tap
+  resets) so a stray tap can't dispense. The final tap hands the dose to the app to deliver
+  through the validated signed path. Saline/bench only.
+
 ## 6. Garmin: configurable screen order + default screen
 - A setting (phone-side, pushed to the watch) to choose the **default screen** (glance / history
   / alerts / details) and the **swipe order** of the screens.

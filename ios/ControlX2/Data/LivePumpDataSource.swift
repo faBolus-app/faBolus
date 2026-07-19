@@ -302,15 +302,15 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()
-        // Tick every 30 s: alerts every tick (~30 s, so alerts reach the watch faster), the
-        // fuller fast-read every other tick (~60 s), settings every ~10 min. Alert reads are
-        // cheap empty-cargo requests, so the tighter cadence barely affects battery.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+        // Tick every 15 s: alerts every tick (~15 s, so a new alert appears quickly on phone +
+        // watch), the fuller fast-read every 4th tick (~60 s), settings every ~10 min. Alert
+        // reads are cheap empty-cargo requests, so the tighter cadence barely affects battery.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
             MainActor.assumeIsolated {
                 self.pollTick += 1
-                self.scheduleAlertRead()                            // ~30 s
-                if self.pollTick % 2 == 0 { self.fastRead() }       // ~60 s
-                if self.pollTick % 20 == 0 { self.staticRead() }    // ~10 min
+                self.scheduleAlertRead()                            // ~15 s
+                if self.pollTick % 4 == 0 { self.fastRead() }       // ~60 s
+                if self.pollTick % 40 == 0 { self.staticRead() }    // ~10 min
             }
         }
     }

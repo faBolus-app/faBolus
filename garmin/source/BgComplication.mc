@@ -49,14 +49,14 @@ module BgComplication {
 
         var stale = (ep <= 0) || ((Time.now().value() - ep) > 360);
         var arrow = stale ? "" : arrowFor(tok);
-        // Dexcom style: numeric value (so faces render it, not 0) + the trend arrow published as
-        // the "unit" so Face It appends it to the value (→ "132↑"), with no mg/dL.
-        var label = stale ? "--" : (value.toString() + arrow);
+        // Dexcom style: value + trend arrow as a single STRING value (the face's value font
+        // renders the arrow), no unit/ranges. Putting the arrow in :unit made updateComplication
+        // reject the call, freezing the value.
+        var text = stale ? "--" : (value.toString() + arrow);
         try {
             Complications.updateComplication(COMP_ID, {
-                :value => (stale ? -1 : value),
-                :unit => arrow,
-                :shortLabel => label
+                :value => text,
+                :shortLabel => text
             });
         } catch (e) {
             // Older firmware / complication not registered yet — ignore.

@@ -19,9 +19,13 @@ and deliver **manual boluses** — it is **not** an automated closed-loop system
 ## What it does
 - Connects to one pump at a time over Bluetooth (exclusive control connection), with
   **auto-reconnect** on range drops and CoreBluetooth **state restoration**.
-- Shows a **Loop-style status HUD**: glucose with trend + a chart (3/6/12/24 h), Active
-  Insulin (IOB), reservoir, battery, CGM status, last bolus. A CGM reading older than
-  **6 minutes** is hidden so a stale value is never shown as current.
+- A **tabbed UI** (Dashboard · Bolus · Alerts · Settings). The Dashboard shows a Loop-style HUD —
+  glucose with trend + a chart (3/6/12/24 h) with an optional **IOB overlay** and **bolus bars**
+  (toggleable axes) — and scrolls to a details card with everything from the pump (carb ratio,
+  correction factor/ISF, target, max bolus, reservoir, battery, CGM, last bolus).
+- A CGM reading older than **6 minutes** is hidden so a stale value is never shown as current.
+- **Settings**: default bolus mode (carbs/units) and bolus/carb increments, shared with the
+  Apple Watch and Garmin remotes.
 - Backfills the glucose chart from the pump's **history log** on each connect.
 - Delivers a **manual (units) or carbs bolus** (the pump's calculator formula) with an explicit
   confirm and a max-units clamp; cancels in-progress and reports partial delivery.

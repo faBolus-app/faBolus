@@ -26,6 +26,7 @@ nav:
   - Home: index.md
   - Safety: safety.md
   - Requirements: requirements.md
+  - Building & installing: build.md
   - Set Up:
       - Pairing: setup/pairing.md
   - Operate:
