@@ -33,16 +33,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Quick-bolus amount", selection: $settings.widgetBolusUnits) {
-                        ForEach(AppSettings.widgetBolusOptions, id: \.self) { Text(fmtU($0)).tag($0) }
-                    }
-                } header: {
-                    Text("Home-Screen widget")
-                } footer: {
-                    Text("The preset dose delivered by the Quick-Bolus widget after its 1-2-3 confirm.")
-                }
-
-                Section {
                     NavigationLink {
                         GarminScreensView(settings: settings)
                     } label: {

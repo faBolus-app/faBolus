@@ -23,6 +23,13 @@ after installing. Just say **“Hey Siri, what's my glucose in ControlX2.”** T
 listed in **Settings → Siri (read-only)** for reference, and appear under ControlX2 in the
 Shortcuts app.
 
+!!! tip "Say the app name Siri understands"
+    App Shortcut phrases must include the app name, and “ControlX2” is awkward to say. The app
+    registers spoken alternatives, so any of these work in place of the name: **“Control X2”**,
+    **“Pump Remote”**, or **“Tandem Remote”** — e.g. *“Hey Siri, pump status in Pump Remote.”*
+    After installing, it can take a minute (or a device unlock) for Siri to index the phrases; if
+    a phrase isn't recognized yet, open the **Shortcuts** app once to trigger indexing.
+
 ## Freshness
 
 - A glucose reading older than **6 minutes** is reported as not recent (never spoken as current).

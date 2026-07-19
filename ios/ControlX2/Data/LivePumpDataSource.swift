@@ -283,8 +283,14 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         defer { client.writePolicy = previous }
         lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
         alertDebug = "cleared id \(notification.id) kind \(notification.kind.rawValue) — snoozed if condition persists"
-        _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
-                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        // Surface a send failure directly (the request otherwise fails silently) so a non-arriving
+        // ack can be told apart from a request that never went out.
+        do {
+            _ = try client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
+                                authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        } catch {
+            lastDismissAck = "send failed: \(error)"
+        }
         // Record a local acknowledge, then re-poll. The signed dismiss clears any truly-dismissable
         // alert on the pump; for a condition-based alert (e.g. CGM high while BG is genuinely high)
         // the pump re-raises it, but the ack keeps it hidden (and un-notified) until the condition

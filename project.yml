@@ -44,6 +44,15 @@ targets:
         # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName;
         # without it, showDeviceSelection() often opens GCM with no picker.
         CFBundleDisplayName: ControlX2
+        # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
+        # "ControlX2" is hard for Siri to parse, so provide a spoken name + alternatives the user
+        # can say instead ("… in Control X2 / Pump Remote / Tandem Remote").
+        CFBundleSpokenName: "Control X2"
+        # iOS allows at most 3 alternative names.
+        INAlternativeAppNames:
+          - INAlternativeAppNameKey: "Control X2"
+          - INAlternativeAppNameKey: "Pump Remote"
+          - INAlternativeAppNameKey: "Tandem Remote"
         NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
         # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
         # goes through without the app being in the foreground.

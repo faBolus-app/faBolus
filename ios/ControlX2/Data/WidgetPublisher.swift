@@ -23,6 +23,9 @@ enum WidgetPublisher {
             updatedAt: Date(),
             recentPoints: Array(points))
         WidgetStore.save(snap)
+        // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
+        if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
+        WidgetBolusStore.increment = AppSettings.shared.bolusIncrement
 
         // Coalesce reloads to at most once every 30 s.
         if Date().timeIntervalSince(lastReload) > 30 {

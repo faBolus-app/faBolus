@@ -124,11 +124,31 @@ public enum WidgetBolusStore {
     public static let darwinPending = "com.zgranowitz.controlx2.widgetBolus"
     public static let darwinCancel = "com.zgranowitz.controlx2.widgetBolusCancel"
 
-    /// Preset dose the widget delivers. The app writes this from Settings; defaults to 1.0 U.
-    public static var presetUnits: Double {
-        get { let v = d?.double(forKey: "wbPreset") ?? 0; return v > 0 ? v : 1.0 }
-        set { d?.set(newValue, forKey: "wbPreset") }
+    // --- Config mirrored from the app so the widget can build the amount picker ---
+    /// Units step for the +/- buttons (from Settings' bolus increment). Defaults to 0.05.
+    public static var increment: Double {
+        get { let v = d?.double(forKey: "wbIncrement") ?? 0; return v > 0 ? v : 0.05 }
+        set { d?.set(newValue, forKey: "wbIncrement") }
     }
+    /// The pump's max bolus (clamp for the amount picker). Defaults to 25 U.
+    public static var maxBolus: Double {
+        get { let v = d?.double(forKey: "wbMaxBolus") ?? 0; return v > 0 ? v : 25.0 }
+        set { d?.set(newValue, forKey: "wbMaxBolus") }
+    }
+
+    // --- Entry state: two stages (choose amount → 1-2-3 confirm), like the Garmin flow ---
+    /// "amount" (adjust the dose) or "confirm" (the 1-2-3 pad). Defaults to "amount".
+    public static var stage: String {
+        get { d?.string(forKey: "wbStage") ?? "amount" }
+        set { d?.set(newValue, forKey: "wbStage") }
+    }
+    /// The dose being entered (units).
+    public static var draft: Double {
+        get { d?.double(forKey: "wbDraft") ?? 0 }
+        set { d?.set(newValue, forKey: "wbDraft") }
+    }
+    /// Reset the whole entry back to the amount stage at zero.
+    public static func resetEntry() { stage = "amount"; draft = 0; resetProgress() }
 
     /// Current confirm progress (0/1/2), or 0 if it has timed out.
     public static func progress() -> Int {

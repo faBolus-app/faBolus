@@ -24,7 +24,7 @@ struct ControlX2App: App {
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
-                    AppSettings.shared.syncWidgetPreset()
+                    AppSettings.shared.syncWidgetConfig()
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
                 }
                 .onChange(of: scenePhase) { _, phase in

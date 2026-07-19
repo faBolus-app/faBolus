@@ -18,6 +18,8 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleSpokenName</key>
+	<string>Control X2</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -39,6 +41,21 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppNameKey</key>
+			<string>Control X2</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppNameKey</key>
+			<string>Pump Remote</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppNameKey</key>
+			<string>Tandem Remote</string>
+		</dict>
+	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>gcm-ciq</string>
