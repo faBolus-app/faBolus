@@ -12,6 +12,11 @@ public final class PhoneRemoteHost {
         self.model = model
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
         model.addRemoteEcho { [weak self] cmd in self?.link.send(cmd) }
+        // Proactively push status to the watch when pump data changes.
+        model.addStatusListener { [weak self] _ in
+            guard let self, let m = self.model else { return }
+            self.link.send(m.statusCommand(includeHistory: false))
+        }
     }
 
     private func handle(_ cmd: RemoteCommand) {
@@ -25,12 +30,12 @@ public final class PhoneRemoteHost {
         case .cancelBolus:
             Task { await model.cancelBolus() }
             link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
+        case .dismissAlert:
+            if let id = cmd.alertId, let k = cmd.alertKind {
+                Task { await model.dismissAlert(id: id, kind: k); self.link.send(model.statusCommand(includeHistory: false)) }
+            }
         case .statusRead:
-            let s = model.snapshot
-            link.send(RemoteCommand(kind: .statusRead,
-                                    units: s.iobUnits,
-                                    bgMgdl: s.glucose.map(Double.init),
-                                    message: s.connection.rawValue))
+            link.send(model.statusCommand(includeHistory: false))
         default:
             break
         }

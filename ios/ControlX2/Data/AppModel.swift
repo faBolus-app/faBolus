@@ -15,6 +15,36 @@ public final class AppModel {
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
     public func dismissNotification(_ n: PumpNotification) async { await source.dismissNotification(n); refresh() }
 
+    /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
+    /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
+    public func statusCommand(includeHistory: Bool) -> RemoteCommand {
+        let s = snapshot
+        let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
+        let alertList = activeNotifications.map {
+            RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
+        }
+        let history = includeHistory ? Array(glucoseHistory.suffix(288).map { $0.mgdl }) : nil
+        return RemoteCommand(kind: .statusRead, units: s.iobUnits,
+                             bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
+                             trend: GlucoseTrend.token(from: s.trend),
+                             carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
+                             isf: s.isf > 0 ? Double(s.isf) : nil,
+                             targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
+                             maxBolusUnits: s.maxBolusUnits,
+                             reservoirUnits: s.reservoirUnits,
+                             batteryPercent: Double(s.batteryPercent),
+                             lastBolusUnits: s.lastBolusUnits,
+                             glucoseAgeSec: age,
+                             history: (history?.isEmpty ?? true) ? nil : history,
+                             alerts: alertList)
+    }
+
+    /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
+    public func dismissAlert(id: Int, kind: Int) async {
+        guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
+        await dismissNotification(n)
+    }
+
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
     public var pendingRemoteBolus: PendingRemoteBolus?

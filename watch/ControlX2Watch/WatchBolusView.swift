@@ -17,7 +17,14 @@ struct WatchBolusView: View {
                 VStack(spacing: 8) {
                     Image(systemName: statusIcon).font(.largeTitle).foregroundStyle(statusColor)
                     Text(model.statusMessage ?? "Sent").font(.footnote).multilineTextAlignment(.center)
-                    Button("Done") { dismiss() }
+                    // While still in progress, offer a red Cancel; once final, a Done button.
+                    if inProgress {
+                        Button(role: .destructive) { model.cancel() } label: {
+                            Label("Cancel bolus", systemImage: "stop.fill")
+                        }.tint(.red)
+                    } else {
+                        Button("Done") { dismiss() }
+                    }
                 }
             } else {
                 Text(String(format: "%.2f U", units))
@@ -38,6 +45,14 @@ struct WatchBolusView: View {
             }
         }
         .navigationTitle("Bolus")
+    }
+
+    /// Still awaiting confirm or delivering (not a final delivered/failed/cancelled state).
+    private var inProgress: Bool {
+        switch model.lastStatus {
+        case .delivered, .failed, .outOfRange, .cancelled: return false
+        default: return true
+        }
     }
 
     private var statusIcon: String {

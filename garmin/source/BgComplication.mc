@@ -48,14 +48,14 @@ module BgComplication {
         if (value == null) { return; }
 
         var stale = (ep <= 0) || ((Time.now().value() - ep) > 360);
-        var num = stale ? "--" : value.toString();
         var arrow = stale ? "" : arrowFor(tok);
-        // Dexcom style: value + trend arrow, no units. Publish the same string to both slots.
-        var text = arrow.equals("") ? num : (num + arrow);
+        // Dexcom style: value + trend arrow, no units. Publish the numeric value (so faces that
+        // render a number don't show 0) plus a "132→" string label for text/radial faces.
+        var label = stale ? "--" : (value.toString() + arrow);
         try {
             Complications.updateComplication(COMP_ID, {
-                :value => text,
-                :shortLabel => text
+                :value => (stale ? -1 : value),
+                :shortLabel => label
             });
         } catch (e) {
             // Older firmware / complication not registered yet — ignore.

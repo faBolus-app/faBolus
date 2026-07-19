@@ -9,7 +9,7 @@ class DexcomView extends Ui.View {
     function initialize() { View.initialize(); }
 
     private const VMIN = 40.0;
-    private const VMAX = 400.0;
+    private const VMAX = 300.0;
 
     function onUpdate(dc as Gfx.Dc) as Void {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
@@ -40,8 +40,8 @@ class DexcomView extends Ui.View {
         var plotT = h * 0.42, plotB = h * 0.82;
         var plotH = plotB - plotT;
 
-        // Gridlines 100/200/300/400 with right-edge labels.
-        var lines = [100, 200, 300, 400];
+        // Gridlines with right-edge labels (y-axis max = VMAX).
+        var lines = [100, 200, 300];
         for (var i = 0; i < lines.size(); i += 1) {
             var v = lines[i];
             var y = plotB - ((v - VMIN) / (VMAX - VMIN)) * plotH;

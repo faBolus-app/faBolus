@@ -34,6 +34,17 @@ struct MainHUDView: View {
 
                     StatusRingView(snapshot: model.snapshot)
 
+                    // Prominent Cancel while a bolus is being delivered.
+                    if model.snapshot.connection == .bolusing {
+                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
+                            Label("Cancel bolus", systemImage: "stop.fill")
+                                .font(.headline).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .padding(.horizontal)
+                    }
+
                     if let u = model.snapshot.lastBolusUnits, let d = model.snapshot.lastBolusDate {
                         Text("Last bolus: \(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))")
                             .font(.caption).foregroundStyle(.secondary)

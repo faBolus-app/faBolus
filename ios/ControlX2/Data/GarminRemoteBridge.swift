@@ -84,38 +84,18 @@ final class GarminRemoteBridge: NSObject {
             Task { await model.cancelBolus() }
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
         case .dismissAlert:
-            if let id = cmd.alertId, let k = cmd.alertKind,
-               let n = model.activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == k }) {
-                Task { await model.dismissNotification(n); sendStatus(model.snapshot) }
+            if let id = cmd.alertId, let k = cmd.alertKind {
+                Task { await model.dismissAlert(id: id, kind: k); send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
-            sendStatus(model.snapshot)
+            send(model.statusCommand(includeHistory: true))
         default: break
         }
     }
 
-    /// Build + send a statusRead reply from a snapshot (used for both replies and proactive pushes).
+    /// Send the full status (reply or proactive push). History included for the watch plot.
     private func sendStatus(_ s: PumpSnapshot) {
-        // Age of the current reading (for "Nm ago" + staleness on the watch).
-        let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
-        // History for the watch plot: up to ~24 h (288 points, ~5-min spacing), oldest→newest,
-        // so the watch can switch its window (3/6/12/24 h) locally.
-        let history = Array((model?.glucoseHistory ?? []).suffix(288).map { $0.mgdl })
-        send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
-                           bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
-                           trend: GlucoseTrend.token(from: s.trend),
-                           carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
-                           isf: s.isf > 0 ? Double(s.isf) : nil,
-                           targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                           maxBolusUnits: s.maxBolusUnits,
-                           reservoirUnits: s.reservoirUnits,
-                           batteryPercent: Double(s.batteryPercent),
-                           lastBolusUnits: s.lastBolusUnits,
-                           glucoseAgeSec: age,
-                           history: history.isEmpty ? nil : history,
-                           alerts: (model?.activeNotifications ?? []).map {
-                               RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
-                           }))
+        if let model { send(model.statusCommand(includeHistory: true)) }
     }
 }
 

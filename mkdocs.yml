@@ -31,9 +31,11 @@ nav:
   - Operate:
       - Status HUD: operate/status.md
       - Bolus & cancel: operate/bolus.md
+      - Alerts & alarms: operate/alerts.md
   - Remotes:
       - Apple Watch: remotes/apple-watch.md
       - Garmin: remotes/garmin.md
+      - iPhone widgets: remotes/iphone-widgets.md
   - Architecture: architecture.md
   - Troubleshoot: troubleshoot.md
   - FAQ: faq.md

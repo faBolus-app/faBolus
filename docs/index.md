@@ -17,14 +17,18 @@ and deliver **manual boluses** — it is **not** an automated closed-loop system
     Android `controlX2` reference. The UI borrows Loop's visual language for familiarity only.
 
 ## What it does
-- Connects to one pump at a time over Bluetooth (exclusive control connection).
-- Shows a **Loop-style status HUD**: recent glucose, Active Insulin (IOB), Active Carbs (COB),
-  reservoir, battery, CGM status.
-- Delivers a **manual (units) bolus** with an explicit confirm and a max-units clamp; a
-  carbs/BG calculator flow is a follow-on.
-- Cancels an in-progress bolus and reports partial delivery.
-- Accepts bolus requests from an **Apple Watch** or **Garmin** remote, gated by a
-  **double confirmation** (remote → phone).
+- Connects to one pump at a time over Bluetooth (exclusive control connection), with
+  **auto-reconnect** on range drops and CoreBluetooth **state restoration**.
+- Shows a **Loop-style status HUD**: glucose with trend + a chart (3/6/12/24 h), Active
+  Insulin (IOB), reservoir, battery, CGM status, last bolus. A CGM reading older than
+  **6 minutes** is hidden so a stale value is never shown as current.
+- Backfills the glucose chart from the pump's **history log** on each connect.
+- Delivers a **manual (units) or carbs bolus** (the pump's calculator formula) with an explicit
+  confirm and a max-units clamp; cancels in-progress and reports partial delivery.
+- Views and **clears pump alerts/alarms** (a signed dismiss) — from the phone and the watch.
+- **iPhone widgets** (Lock Screen + Home Screen): glucose, an overview, and a bolus shortcut.
+- Accepts boluses from an **Apple Watch** or **Garmin** remote (double-confirmed); the Garmin
+  also has a glucose **complication**, a Dexcom-style history screen, and a details screen.
 
 ## The two repositories
 - **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** — the Swift protocol/auth/BLE core

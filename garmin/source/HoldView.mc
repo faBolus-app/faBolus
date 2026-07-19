@@ -18,6 +18,9 @@ class HoldView extends Ui.View {
     }
     static function radius(w) { return (w * 0.11).toNumber(); }
 
+    // Cancel button (shown while delivering). [x,y,w,h].
+    static function cancelRect(w, h) { return [w / 2 - w * 0.26, h * 0.66, w * 0.52, h * 0.15]; }
+
     function progress() as Lang.Number { return _progress; }
 
     // Register a tap on button number `num` (1..3).
@@ -44,13 +47,23 @@ class HoldView extends Ui.View {
             if (s.equals("delivered")) { color = Gfx.COLOR_GREEN; }
             else if (s.equals("failed") || s.equals("outOfRange")) { color = Gfx.COLOR_RED; }
             dc.setColor(color, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy - 30, Gfx.FONT_MEDIUM, s, Gfx.TEXT_JUSTIFY_CENTER);
+            dc.drawText(cx, h * 0.30, Gfx.FONT_MEDIUM, s, Gfx.TEXT_JUSTIFY_CENTER);
             if (AppState.message != null) {
                 dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-                dc.drawText(cx, cy + 10, Gfx.FONT_XTINY, AppState.message, Gfx.TEXT_JUSTIFY_CENTER);
+                dc.drawText(cx, h * 0.44, Gfx.FONT_XTINY, AppState.message, Gfx.TEXT_JUSTIFY_CENTER);
             }
-            dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy + 55, Gfx.FONT_XTINY, "BACK to exit", Gfx.TEXT_JUSTIFY_CENTER);
+            // While delivering, a red Cancel button (tap) instead of relying on the BACK button.
+            if (s.equals("delivering") || s.equals("cancelling")) {
+                var cr = cancelRect(w, h);
+                dc.setColor(Gfx.COLOR_RED, Gfx.COLOR_TRANSPARENT);
+                dc.fillRoundedRectangle(cr[0], cr[1], cr[2], cr[3], 10);
+                dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
+                dc.drawText(cx, cr[1] + cr[3] / 2, Gfx.FONT_SMALL, "Cancel",
+                            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+            } else {
+                dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+                dc.drawText(cx, h * 0.80, Gfx.FONT_XTINY, "BACK to exit", Gfx.TEXT_JUSTIFY_CENTER);
+            }
             return;
         }
 

@@ -12,7 +12,24 @@ class HoldDelegate extends Ui.BehaviorDelegate {
     function onTap(evt as Ui.ClickEvent) as Lang.Boolean {
         var c = evt.getCoordinates();
         var s = System.getDeviceSettings();
-        var w = s.screenWidth, h = s.screenHeight, r = HoldView.radius(w);
+        var w = s.screenWidth, h = s.screenHeight;
+
+        // While delivering, the only control is the Cancel button.
+        if (AppState.status != null) {
+            if (AppState.status.equals("delivering")) {
+                var cr = HoldView.cancelRect(w, h);
+                if (c[0] >= cr[0] && c[0] <= cr[0] + cr[2] && c[1] >= cr[1] && c[1] <= cr[1] + cr[3]) {
+                    if (AppState.pendingRequestId != null) {
+                        RemoteComm.send(RemoteComm.cancelBolus(AppState.pendingRequestId));
+                    }
+                    AppState.status = "cancelling"; Ui.requestUpdate();
+                }
+            }
+            return true;
+        }
+
+        // Otherwise: the 1-2-3 confirm circles.
+        var r = HoldView.radius(w);
         for (var i = 0; i < 3; i += 1) {
             var ctr = HoldView.center(i, w, h);
             var dx = c[0] - ctr[0], dy = c[1] - ctr[1];

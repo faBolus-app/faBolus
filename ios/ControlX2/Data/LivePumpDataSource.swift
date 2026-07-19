@@ -298,9 +298,13 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         defer { backfillBuffer.removeAll(keepingCapacity: false) }
         guard !backfillBuffer.isEmpty else { return }
         let now = Date()
+        // The pump logs time as local wall-clock. Adding the 2008 epoch treats it as UTC, which
+        // lands readings a timezone away (they showed ~7-8 h in the past in PDT); subtract the
+        // local UTC offset to place them at the correct real instant, aligned with live readings.
+        let tzOffset = Double(TimeZone.current.secondsFromGMT())
         var merged = glucoseHistory
         for b in backfillBuffer {
-            let date = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(b.pumpSec))
+            let date = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(b.pumpSec) - tzOffset)
             merged.append(GlucoseReading(date: min(date, now), mgdl: b.mgdl))
         }
         merged.sort { $0.date < $1.date }

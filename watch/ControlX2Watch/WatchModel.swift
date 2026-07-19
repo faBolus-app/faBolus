@@ -8,8 +8,12 @@ import Observation
 @Observable
 final class WatchModel {
     var glucose: Int?
-    var trend: String = "→"
+    var glucoseDate: Date?             // for 6-min staleness
+    var trend: String = "→"           // Unicode arrow
     var iobUnits: Double = 0
+    var reservoirUnits: Double = 0
+    var lastBolusUnits: Double?
+    var alerts: [RemoteCommand.RemoteAlert] = []
     var reachable: Bool = false
     var lastStatus: RemoteCommand.Status?
     var statusMessage: String?
@@ -23,6 +27,21 @@ final class WatchModel {
         reachable = link.isReachable
     }
 
+    /// A CGM reading older than 6 minutes shouldn't be shown as current.
+    var isGlucoseStale: Bool {
+        guard let d = glucoseDate else { return glucose != nil }
+        return Date().timeIntervalSince(d) > 6 * 60
+    }
+    var displayGlucose: String { (glucose != nil && !isGlucoseStale) ? "\(glucose!)" : "—" }
+
+    private static func arrow(fromToken t: String?) -> String {
+        switch t {
+        case "up": return "↑"; case "upup": return "⇈"; case "up45": return "↗"
+        case "down": return "↓"; case "downdown": return "⇊"; case "down45": return "↘"
+        default: return "→"
+        }
+    }
+
     private func handle(_ cmd: RemoteCommand) {
         switch cmd.kind {
         case .bolusStatus:
@@ -32,7 +51,12 @@ final class WatchModel {
             }
         case .statusRead:
             if let g = cmd.bgMgdl { glucose = Int(g) }
+            if let age = cmd.glucoseAgeSec { glucoseDate = Date().addingTimeInterval(-age) }
+            if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }
+            if let r = cmd.reservoirUnits { reservoirUnits = r }
+            lastBolusUnits = cmd.lastBolusUnits
+            if let a = cmd.alerts { alerts = a }
         default:
             break
         }
@@ -50,6 +74,11 @@ final class WatchModel {
     func cancel() {
         guard let id = pendingRequestId else { return }
         link.send(RemoteCommand(kind: .cancelBolus, requestId: id))
+    }
+
+    func dismissAlert(_ a: RemoteCommand.RemoteAlert) {
+        link.send(RemoteCommand(kind: .dismissAlert, alertId: a.id, alertKind: a.kind))
+        alerts.removeAll { $0.id == a.id && $0.kind == a.kind }
     }
 
     func requestStatus() { link.send(RemoteCommand(kind: .statusRead)) }
