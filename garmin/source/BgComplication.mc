@@ -49,12 +49,13 @@ module BgComplication {
 
         var stale = (ep <= 0) || ((Time.now().value() - ep) > 360);
         var arrow = stale ? "" : arrowFor(tok);
-        // Dexcom style: value + trend arrow, no units. Publish the numeric value (so faces that
-        // render a number don't show 0) plus a "132→" string label for text/radial faces.
+        // Dexcom style: numeric value (so faces render it, not 0) + the trend arrow published as
+        // the "unit" so Face It appends it to the value (→ "132↑"), with no mg/dL.
         var label = stale ? "--" : (value.toString() + arrow);
         try {
             Complications.updateComplication(COMP_ID, {
                 :value => (stale ? -1 : value),
+                :unit => arrow,
                 :shortLabel => label
             });
         } catch (e) {

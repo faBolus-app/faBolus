@@ -24,9 +24,12 @@ public protocol PumpDataSource: AnyObject {
     /// Compute a bolus recommendation for the given carbs/BG (uses the pump's calculator on
     /// the live source; a simple model on the mock).
     func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation
-    /// Deliver a SALINE bench bolus of the given units. Returns the delivered units on success.
+    /// Deliver a SALINE bench bolus of the given units. Returns the **actual delivered** units
+    /// (may be a partial amount if cancelled mid-delivery). Check `lastBolusCancelled`.
     func deliverBolus(units: Double) async throws -> Double
     func cancelBolus() async
+    /// True if the most recent `deliverBolus` was cancelled before completing.
+    var lastBolusCancelled: Bool { get }
     /// Called by the view model to observe changes.
     var onChange: (@MainActor () -> Void)? { get set }
 }

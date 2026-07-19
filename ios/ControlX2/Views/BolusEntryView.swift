@@ -42,23 +42,29 @@ struct BolusEntryView: View {
                 }
 
                 Section("Deliver (saline, bench)") {
-                    Stepper(value: $units, in: 0...maxUnits, step: 0.05) {
-                        Text(String(format: "%.2f U", units))
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(overMax ? LoopTheme.low : .primary)
+                    if delivering {
+                        HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
+                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
+                            HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
+                        }
+                        .buttonStyle(.borderedProminent).tint(.red)
+                    } else {
+                        Stepper(value: $units, in: 0...maxUnits, step: 0.05) {
+                            Text(String(format: "%.2f U", units))
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(overMax ? LoopTheme.low : .primary)
+                        }
+                        if overMax {
+                            Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(LoopTheme.low)
+                        }
+                        Button { confirming = true } label: {
+                            HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(LoopTheme.insulin)
+                        .disabled(units < 0.05 || overMax)
                     }
-                    if overMax {
-                        Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(LoopTheme.low)
-                    }
-                    Button {
-                        confirming = true
-                    } label: {
-                        HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(LoopTheme.insulin)
-                    .disabled(units < 0.05 || overMax || delivering)
                 }
             }
             .navigationTitle("Bolus")

@@ -135,8 +135,7 @@ public final class AppModel {
         pendingRemoteBolus = nil
         do {
             let delivered = try await source.deliverBolus(units: pending.units)
-            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                               status: .delivered, deliveredUnits: delivered))
+            echo(bolusOutcome(requestId: pending.requestId, delivered: delivered))
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -146,14 +145,25 @@ public final class AppModel {
         refresh()
     }
 
+    /// Build the final bolus-status echo, distinguishing a full delivery from a cancelled
+    /// (partial) one so the remote can tell the user exactly what happened.
+    private func bolusOutcome(requestId: String, delivered: Double) -> RemoteCommand {
+        if source.lastBolusCancelled {
+            return RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .cancelled,
+                                 deliveredUnits: delivered,
+                                 message: String(format: "Cancelled · %.2f U delivered", delivered))
+        }
+        return RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivered,
+                             deliveredUnits: delivered)
+    }
+
     /// Deliver a bolus already confirmed on the remote itself (e.g. Garmin hold-to-deliver) —
     /// no phone-side dialog. Echoes delivering → delivered/failed back to the remote.
     public func remoteDeliver(requestId: String, units: Double) async {
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: units)
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
-                               status: .delivered, deliveredUnits: delivered))
+            echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
         } catch {
             lastError = error.localizedDescription

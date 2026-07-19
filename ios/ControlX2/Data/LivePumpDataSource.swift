@@ -70,13 +70,33 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     private var backfillPages = 0
     private var backfillTimer: Timer?
     private static let backfillPageSize = 255   // numberOfLogs is one byte
-    private static let backfillMaxPages = 8     // safety cap (~2040 records)
+    private static let backfillMaxPages = 20    // safety cap (~5100 records) — cover a full day
     private static let backfillTargetReadings = 288  // ~24 h @ 5-min
+
+    // Bolus-in-progress tracking so the UI keeps a live cancel window + reports partial delivery.
+    private var cancelRequested = false
+    public private(set) var lastBolusCancelled = false
 
     // Continuations bridging the delegate callbacks to async/await for the signed flow.
     private var timeCont: CheckedContinuation<TimeSinceResetResponse, Error>?
     private var permissionCont: CheckedContinuation<BolusPermissionResponse, Error>?
     private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
+    private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
+    private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
+
+    /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile).
+    private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
+        try await withCheckedThrowingContinuation { cont in
+            bolusStatusCont = cont
+            do { try client.send(CurrentBolusStatusRequest()) } catch { bolusStatusCont = nil; cont.resume(throwing: error) }
+        }
+    }
+    private func lastBolusStatus() async throws -> LastBolusStatusV2Response {
+        try await withCheckedThrowingContinuation { cont in
+            lastBolusCont = cont
+            do { try client.send(LastBolusStatusV2Request()) } catch { lastBolusCont = nil; cont.resume(throwing: error) }
+        }
+    }
 
     public var writePolicy: PumpBLEClient.WritePolicy {
         get { client.writePolicy } set { client.writePolicy = newValue }
@@ -165,22 +185,53 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
             throw BolusError.pumpRejected("initiate not accepted (status \(ini.status))")
         }
 
-        snapshot.connection = .connected
-        snapshot.lastBolusUnits = units
+        // Delivery has started on the pump. Keep the UI in `.bolusing` and poll the pump until
+        // the bolus finishes or is cancelled — this gives the user a real cancel window and lets
+        // us report the ACTUAL delivered amount (important for partial delivery after a cancel).
+        cancelRequested = false
+        lastBolusCancelled = false
         snapshot.lastBolusDate = Date()
-        snapshot.iobUnits += units
         onChange?()
-        return units
+        pollTimer?.invalidate()   // pause routine polling so its LastBolus reads don't interfere
+
+        let deadline = Date().addingTimeInterval(min(600.0, max(60.0, units * 90.0)))   // upper bound
+        while Date() < deadline && !cancelRequested {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if cancelRequested { break }
+            if let st = try? await currentBolusStatus(), st.bolusId != currentBolusId || !st.isActive {
+                break   // pump reports the bolus is no longer active
+            }
+        }
+
+        // Read the actual delivered amount for this bolus.
+        var delivered = units
+        if let last = try? await lastBolusStatus(), last.bolusId == currentBolusId {
+            delivered = last.deliveredUnits
+        } else if cancelRequested {
+            delivered = 0   // couldn't confirm; assume unknown-partial reported by caller
+        }
+
+        lastBolusCancelled = cancelRequested
+        cancelRequested = false
+        currentBolusId = 0
+        snapshot.connection = .connected
+        snapshot.lastBolusUnits = delivered
+        snapshot.iobUnits += delivered
+        onChange?()
+        startPolling()            // resume routine polling
+        return delivered
     }
 
+    /// Request a bolus cancel. The in-flight `deliverBolus` loop detects this, stops, and reports
+    /// the partial delivered amount. Safe to call from the phone HUD or a remote.
     public func cancelBolus() async {
         guard currentBolusId != 0 else { return }
+        cancelRequested = true
         let previous = client.writePolicy
         client.writePolicy = .allowDelivery
         _ = try? client.send(CancelBolusRequest(bolusId: currentBolusId),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         client.writePolicy = previous
-        snapshot.connection = .connected; onChange?()
     }
 
     /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
@@ -274,7 +325,7 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     /// Debounce: a page's stream has ended once ~1.5 s pass with no new frames.
     private func scheduleBackfillTick() {
         backfillTimer?.invalidate()
-        backfillTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+        backfillTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
             MainActor.assumeIsolated { self.backfillPageDone() }
         }
     }
@@ -402,11 +453,16 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
                 if glucoseHistory.count > 288 { glucoseHistory.removeFirst() }
             }
         case let m as LastBolusStatusV2Response:
+            if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }
             snapshot.lastBolusUnits = m.deliveredUnits
             // Convert the pump timestamp using the pump↔phone clock anchor (timezone-agnostic).
             if let a = pumpTimeAnchor {
                 snapshot.lastBolusDate = a.phone.addingTimeInterval(Double(Int64(m.timestamp) - Int64(a.pump)))
             }
+        case let m as CurrentBolusStatusResponse:
+            bolusStatusCont?.resume(returning: m); bolusStatusCont = nil
+        case let m as DismissNotificationResponse:
+            alertDebug = "dismiss ack: status \(m.status)"   // 0 usually = accepted
         case let m as BolusCalcDataSnapshotResponse:
             calcSnapshot = m
             if m.maxBolusAmount > 0 { snapshot.maxBolusUnits = Double(m.maxBolusAmount) / 1000.0 }

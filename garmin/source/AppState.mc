@@ -29,8 +29,7 @@ module AppState {
     function cyclePlotHours() as Void {
         if (plotHours == 3) { plotHours = 6; }
         else if (plotHours == 6) { plotHours = 12; }
-        else if (plotHours == 12) { plotHours = 24; }
-        else { plotHours = 3; }
+        else { plotHours = 3; }   // 3 → 6 → 12 → 3 (no 24 h on the watch)
     }
 
     // A cached BG older than 6 minutes must not be shown (per spec).
