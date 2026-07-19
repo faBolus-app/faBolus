@@ -34,6 +34,9 @@ targets:
     info:
       path: ios/ControlX2/Info.plist
       properties:
+        # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName;
+        # without it, showDeviceSelection() often opens GCM with no picker.
+        CFBundleDisplayName: ControlX2
         NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
         UILaunchScreen: {}
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
