@@ -18,12 +18,10 @@ struct GlucoseChartView: View {
     private var visibleBoluses: [BolusMarker] { boluses.filter { $0.date >= start } }
 
     // Glucose plot domain (left axis). IOB/bolus (units) are scaled into this domain and labeled
-    // on the right axis.
+    // on the right axis. The units scale autoscales to the visible window.
     private let gLo = 40.0, gHi = 300.0
-    // Base the units scale on ALL retained data (not just the visible window) so the right axis and
-    // the bolus-bar heights stay consistent when you switch 3h/6h/12h/24h.
     private var iobMax: Double {
-        let m = max(iob.map(\.iob).max() ?? 0, boluses.map(\.units).max() ?? 0)
+        let m = max(visibleIOB.map(\.iob).max() ?? 0, visibleBoluses.map(\.units).max() ?? 0)
         return max(4, (m * 1.1).rounded(.up))
     }
     private func scaleUnits(_ u: Double) -> Double { gLo + (u / iobMax) * (gHi - gLo) }

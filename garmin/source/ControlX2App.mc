@@ -44,11 +44,12 @@ class ControlX2App extends App.AppBase {
 
     private function registerBackground() as Void {
         if (!(Toybox has :Background)) { return; }
+        // Re-register every launch (registering replaces the schedule). The previous `last == null`
+        // guard could skip registration after a sideload update — where the last-event time
+        // persisted but the schedule was cleared — leaving the complication with no background
+        // refresh at all. 5 min is the minimum interval Garmin allows.
         try {
-            var last = Background.getLastTemporalEventTime();
-            if (last == null) {
-                Background.registerForTemporalEvent(new Time.Duration(5 * 60));
-            }
+            Background.registerForTemporalEvent(new Time.Duration(5 * 60));
         } catch (e) {
             // Background not permitted on this device/config — foreground updates still work.
         }

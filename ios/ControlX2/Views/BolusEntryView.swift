@@ -38,8 +38,13 @@ struct BolusEntryView: View {
 
             if mode == .carbs {
                 Section("Entry") {
-                    Stepper(value: $carbs, in: 0...300, step: settings.carbIncrement) {
-                        Text("\(Int(carbs)) g carbs").font(.title3.weight(.semibold))
+                    HStack {
+                        TextField("0", value: $carbs, format: .number)
+                            .keyboardType(.numberPad).frame(maxWidth: 90)
+                            .font(.title3.weight(.semibold))
+                        Text("g carbs").foregroundStyle(.secondary)
+                        Spacer()
+                        Stepper("", value: $carbs, in: 0...300, step: settings.carbIncrement).labelsHidden()
                     }
                     LabeledContent("Blood glucose") {
                         TextField("mg/dL", text: $bg).keyboardType(.numberPad).multilineTextAlignment(.trailing)
@@ -62,9 +67,14 @@ struct BolusEntryView: View {
                         HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
                     }.buttonStyle(.borderedProminent).tint(.red)
                 } else {
-                    Stepper(value: $units, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement) {
-                        Text(String(format: "%.2f U", units)).font(.title3.weight(.semibold))
+                    HStack {
+                        TextField("0", value: $units, format: .number.precision(.fractionLength(0...2)))
+                            .keyboardType(.decimalPad).frame(maxWidth: 90)
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(overMax ? LoopTheme.low : .primary)
+                        Text("U").foregroundStyle(.secondary)
+                        Spacer()
+                        Stepper("", value: $units, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
                     }
                     if overMax {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
