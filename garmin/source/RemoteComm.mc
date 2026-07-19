@@ -1,5 +1,6 @@
 using Toybox.Communications as Comm;
 using Toybox.Lang;
+using Toybox.System;
 
 // Phone↔remote command builder + transport. Mirrors ../Shared/RemoteCommand.swift and
 // schema/command.schema.json (version 1). Commands are sent to the iPhone host over the
@@ -8,7 +9,7 @@ module RemoteComm {
     const SCHEMA_VERSION = 1;
 
     // Builds a units-only bolus request dictionary matching the schema.
-    function bolusRequest(units, requestId) {
+    function bolusRequest(units as Lang.Float, requestId as Lang.String) as Lang.Dictionary {
         return {
             "version" => SCHEMA_VERSION,
             "kind" => "bolusRequest",
@@ -17,24 +18,40 @@ module RemoteComm {
         };
     }
 
-    function cancelBolus(requestId) {
+    function cancelBolus(requestId as Lang.String) as Lang.Dictionary {
         return { "version" => SCHEMA_VERSION, "kind" => "cancelBolus", "requestId" => requestId };
     }
 
-    function statusRead(requestId) {
+    function statusRead(requestId as Lang.String) as Lang.Dictionary {
         return { "version" => SCHEMA_VERSION, "kind" => "statusRead", "requestId" => requestId };
     }
 
-    // Sends a command dictionary to the paired phone app (Connect IQ mobile SDK). Phone-app
-    // transmits take null options.
-    function send(cmd, listener) {
-        Comm.transmit(cmd, null, listener);
+    // True when the companion phone is reachable.
+    function phoneReachable() as Lang.Boolean {
+        return System.getDeviceSettings().phoneConnected;
     }
 
-    // Generates a simple unique request id (uptime millis + counter).
-    var _counter = 0;
-    function newRequestId() {
-        _counter += 1;
-        return Toybox.System.getTimer().toString() + "-" + _counter.toString();
+    // Sends a command dictionary to the paired phone app. No-ops safely offline; never crashes.
+    function send(cmd as Lang.Dictionary) as Void {
+        if (!phoneReachable()) { return; }
+        try {
+            Comm.transmit(cmd, null, new CommListener());
+        } catch (e) {
+            // swallow transport errors; the UI reflects reachability separately
+        }
     }
+
+    var _counter = 0;
+    function newRequestId() as Lang.String {
+        _counter += 1;
+        return System.getTimer().toString() + "-" + _counter.toString();
+    }
+}
+
+// Minimal ConnectionListener (transmit requires one). Delivery status comes back via the
+// separate phone→watch bolusStatus message, so these are no-ops.
+class CommListener extends Comm.ConnectionListener {
+    function initialize() { ConnectionListener.initialize(); }
+    function onComplete() as Void {}
+    function onError() as Void {}
 }

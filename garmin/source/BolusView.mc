@@ -2,55 +2,46 @@ using Toybox.WatchUi as Ui;
 using Toybox.Graphics as Gfx;
 using Toybox.Lang;
 
-// Shared UI state for the bolus flow.
-module BolusState {
-    var units as Lang.Float = 0.0;
-    const MAX_UNITS = 10.0;
-    const STEP = 0.05;
-    var pendingRequestId as Lang.String? = null;
-    var status as Lang.String? = null;   // "awaitingConfirm"|"delivering"|"delivered"|"failed"|...
-    var message as Lang.String? = null;
-
-    function adjust(delta as Lang.Float) as Void {
-        units += delta;
-        if (units < 0.0) { units = 0.0; }
-        if (units > MAX_UNITS) { units = MAX_UNITS; }
-    }
-
-    // Handle a status echo from the phone (schema: bolusStatus).
-    function handle(data as Lang.Dictionary) as Void {
-        var kind = data["kind"] as Lang.String?;
-        var rid = data["requestId"] as Lang.String?;
-        if (kind != null && kind.equals("bolusStatus")
-                && pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {
-            status = data["status"] as Lang.String?;
-            message = data.hasKey("message") ? data["message"] as Lang.String? : null;
-        }
-    }
-}
-
-// Loop-style units picker + confirm. UP/DOWN adjust; START requests on the phone.
+// Bolus entry (saline, bench only). Tap the top (+) / bottom (−) of the screen to adjust, then
+// press START to request on the iPhone (which runs the second confirm). Shows delivery status
+// echoed back from the phone. Parity with the Apple Watch bolus screen.
 class BolusView extends Ui.View {
     function initialize() { View.initialize(); }
 
-    function onUpdate(dc) {
+    function onUpdate(dc as Gfx.Dc) as Void {
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_BLACK);
         dc.clear();
         var cx = dc.getWidth() / 2;
         var cy = dc.getHeight() / 2;
 
-        if (BolusState.status != null) {
-            dc.drawText(cx, cy - 20, Gfx.FONT_MEDIUM, BolusState.status, Gfx.TEXT_JUSTIFY_CENTER);
-            if (BolusState.message != null) {
-                dc.drawText(cx, cy + 20, Gfx.FONT_SMALL, BolusState.message, Gfx.TEXT_JUSTIFY_CENTER);
+        if (AppState.bolusStatus != null) {
+            var status = AppState.bolusStatus as Lang.String;
+            var color = Gfx.COLOR_BLUE;
+            if (status.equals("delivered")) { color = Gfx.COLOR_GREEN; }
+            else if (status.equals("failed") || status.equals("outOfRange")) { color = Gfx.COLOR_RED; }
+            else if (status.equals("cancelled")) { color = Gfx.COLOR_ORANGE; }
+            dc.setColor(color, Gfx.COLOR_TRANSPARENT);
+            dc.drawText(cx, cy - 40, Gfx.FONT_SMALL, status, Gfx.TEXT_JUSTIFY_CENTER);
+            if (AppState.bolusMessage != null) {
+                dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+                dc.drawText(cx, cy, Gfx.FONT_XTINY, AppState.bolusMessage, Gfx.TEXT_JUSTIFY_CENTER);
             }
-        } else {
-            dc.drawText(cx, cy - 40, Gfx.FONT_SMALL, "Bolus (saline)", Gfx.TEXT_JUSTIFY_CENTER);
-            dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy - 10, Gfx.FONT_NUMBER_MEDIUM,
-                        BolusState.units.format("%.2f") + " U", Gfx.TEXT_JUSTIFY_CENTER);
             dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy + 40, Gfx.FONT_XTINY, "UP/DOWN set · START send", Gfx.TEXT_JUSTIFY_CENTER);
+            dc.drawText(cx, cy + 50, Gfx.FONT_XTINY, "BACK to exit", Gfx.TEXT_JUSTIFY_CENTER);
+            return;
         }
+
+        // + / - affordances (ASCII — device fonts lack the Unicode minus glyph)
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy - 92, Gfx.FONT_LARGE, "+", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, cy + 56, Gfx.FONT_LARGE, "-", Gfx.TEXT_JUSTIFY_CENTER);
+
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy - 44, Gfx.FONT_XTINY, "Bolus (saline)", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy - 24, Gfx.FONT_NUMBER_MEDIUM, AppState.units.format("%.2f") + " U", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy + 20, Gfx.FONT_XTINY, "START → request on iPhone", Gfx.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, cy + 36, Gfx.FONT_XTINY, "saline · bench only", Gfx.TEXT_JUSTIFY_CENTER);
     }
 }
