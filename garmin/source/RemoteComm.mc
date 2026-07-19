@@ -25,10 +25,10 @@ module RemoteComm {
         return { "version" => SCHEMA_VERSION, "kind" => "statusRead", "requestId" => requestId };
     }
 
-    // Sends a command dictionary to the paired phone app.
+    // Sends a command dictionary to the paired phone app (Connect IQ mobile SDK). Phone-app
+    // transmits take null options.
     function send(cmd, listener) {
-        var options = { :method => Comm.UNKNOWN };
-        Comm.transmit(cmd, options, listener);
+        Comm.transmit(cmd, null, listener);
     }
 
     // Generates a simple unique request id (uptime millis + counter).

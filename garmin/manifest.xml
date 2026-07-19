@@ -8,11 +8,9 @@
                     launcherIcon="@Drawables.LauncherIcon"
                     name="@Strings.AppName"
                     type="watch-app"
-                    minSdkVersion="4.0.0">
+                    minSdkVersion="5.0.0">
         <iq:products>
-            <iq:product id="fenix7"/>
-            <iq:product id="venu2"/>
-            <iq:product id="epix2"/>
+            <iq:product id="venu3s"/>
         </iq:products>
         <iq:permissions>
             <iq:uses-permission id="Communications"/>

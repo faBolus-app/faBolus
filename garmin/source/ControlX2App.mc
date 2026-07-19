@@ -1,6 +1,7 @@
 using Toybox.Application as App;
 using Toybox.WatchUi as Ui;
 using Toybox.Communications as Comm;
+using Toybox.Lang;
 
 // App entry. Registers a phone-message listener so status echoed back from the iPhone host
 // (bolusStatus) can update the UI.
@@ -18,10 +19,10 @@ class ControlX2App extends App.AppBase {
     }
 
     // Receives status updates from the iPhone host (schema: bolusStatus / statusRead).
-    function onPhoneMessage(msg) {
+    function onPhoneMessage(msg as Comm.PhoneAppMessage) as Void {
         var data = msg.data;
-        if (data != null && data.hasKey("kind")) {
-            BolusState.handle(data);
+        if (data instanceof Lang.Dictionary && (data as Lang.Dictionary).hasKey("kind")) {
+            BolusState.handle(data as Lang.Dictionary);
             Ui.requestUpdate();
         }
     }

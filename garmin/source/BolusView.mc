@@ -1,26 +1,30 @@
 using Toybox.WatchUi as Ui;
 using Toybox.Graphics as Gfx;
+using Toybox.Lang;
 
 // Shared UI state for the bolus flow.
 module BolusState {
-    var units = 0.0;
+    var units as Lang.Float = 0.0;
     const MAX_UNITS = 10.0;
     const STEP = 0.05;
-    var pendingRequestId = null;
-    var status = null;      // "awaitingConfirm" | "delivering" | "delivered" | "failed" | ...
-    var message = null;
+    var pendingRequestId as Lang.String? = null;
+    var status as Lang.String? = null;   // "awaitingConfirm"|"delivering"|"delivered"|"failed"|...
+    var message as Lang.String? = null;
 
-    function adjust(delta) {
+    function adjust(delta as Lang.Float) as Void {
         units += delta;
         if (units < 0.0) { units = 0.0; }
         if (units > MAX_UNITS) { units = MAX_UNITS; }
     }
 
-    // Handle a status echo from the phone.
-    function handle(data) {
-        if (data["kind"].equals("bolusStatus") && data["requestId"].equals(pendingRequestId)) {
-            status = data["status"];
-            message = data.hasKey("message") ? data["message"] : null;
+    // Handle a status echo from the phone (schema: bolusStatus).
+    function handle(data as Lang.Dictionary) as Void {
+        var kind = data["kind"] as Lang.String?;
+        var rid = data["requestId"] as Lang.String?;
+        if (kind != null && kind.equals("bolusStatus")
+                && pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {
+            status = data["status"] as Lang.String?;
+            message = data.hasKey("message") ? data["message"] as Lang.String? : null;
         }
     }
 }
