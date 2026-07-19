@@ -259,19 +259,20 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         }
     }
 
-    /// Merge the buffered CGM history into the chart. Aligns the newest backfilled reading to
-    /// ~now and spaces the rest by their true pump-clock deltas — robust to any pump
-    /// timezone/epoch offset, and consistent with the (correct) live `Date()`-stamped readings.
+    /// Merge the buffered CGM history into the chart. Places each reading at its TRUE pump-clock
+    /// time (`pumpTimeSec + Jan-1-2008 epoch`, the same conversion controlX2/tconnectsync use) so
+    /// it aligns with the correct live `Date()`-stamped readings — no "anchor newest to now",
+    /// which previously shifted older data forward onto the present.
     private func finishBackfill() {
         backfillTimer?.invalidate(); backfillTimer = nil
         backfillActive = false
         defer { backfillBuffer.removeAll(keepingCapacity: false) }
-        guard let newest = backfillBuffer.map({ $0.pumpSec }).max() else { return }
+        guard !backfillBuffer.isEmpty else { return }
         let now = Date()
         var merged = glucoseHistory
         for b in backfillBuffer {
-            let date = now.addingTimeInterval(-Double(newest - b.pumpSec))
-            merged.append(GlucoseReading(date: date, mgdl: b.mgdl))
+            let date = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(b.pumpSec))
+            merged.append(GlucoseReading(date: min(date, now), mgdl: b.mgdl))
         }
         merged.sort { $0.date < $1.date }
         // Drop near-duplicates: same value within ~150 s of the previously kept reading.

@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
-  <!-- Blood-glucose droplet, high-contrast so it reads on light and dark Face It backgrounds. -->
-  <path d="M17 3 C17 3 6 15.5 6 22.5 A11 11 0 0 0 28 22.5 C28 15.5 17 3 17 3 Z"
-        fill="#E53935" stroke="#FFFFFF" stroke-width="1.5"/>
-  <path d="M12 21.5 A5.5 5.5 0 0 0 17.5 27" fill="none" stroke="#FFFFFF"
-        stroke-width="2" stroke-linecap="round"/>
+  <!-- Intentionally blank: the complication shows just the glucose value + trend arrow (Dexcom
+       style), with no icon. A public complication still requires an SVG, so this is transparent. -->
+  <rect width="34" height="34" fill="#000000" fill-opacity="0"/>
 </svg>

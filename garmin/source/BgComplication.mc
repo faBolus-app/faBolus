@@ -13,16 +13,17 @@ module BgComplication {
     const KEY_TREND = "trend";   // direction token: flat/up/down/upup/downdown/up45/down45
     const KEY_EPOCH = "bgEpoch"; // unix sec the BG was taken (for 6-min staleness)
 
-    // Latin-safe arrow for the published complication string.
-    function asciiArrow(token as Lang.String?) as Lang.String {
+    // Unicode trend arrow for the published complication string (rendered by the watch face,
+    // whose system font supports these — like the Dexcom complication).
+    function arrowFor(token as Lang.String?) as Lang.String {
         if (token == null) { return ""; }
-        if (token.equals("up")) { return "^"; }
-        if (token.equals("upup")) { return "^^"; }
-        if (token.equals("up45")) { return "/"; }
-        if (token.equals("down")) { return "v"; }
-        if (token.equals("downdown")) { return "vv"; }
-        if (token.equals("down45")) { return "\\"; }
-        if (token.equals("flat")) { return "->"; }
+        if (token.equals("up")) { return "↑"; }
+        if (token.equals("upup")) { return "↑↑"; }
+        if (token.equals("up45")) { return "↗"; }
+        if (token.equals("down")) { return "↓"; }
+        if (token.equals("downdown")) { return "↓↓"; }
+        if (token.equals("down45")) { return "↘"; }
+        if (token.equals("flat")) { return "→"; }
         return "";
     }
 
@@ -47,14 +48,14 @@ module BgComplication {
         if (value == null) { return; }
 
         var stale = (ep <= 0) || ((Time.now().value() - ep) > 360);
-        var label = stale ? "--" : value.toString();
-        var arrow = stale ? "" : asciiArrow(tok);
-        var text = arrow.equals("") ? label : (label + " " + arrow);
+        var num = stale ? "--" : value.toString();
+        var arrow = stale ? "" : arrowFor(tok);
+        // Dexcom style: value + trend arrow, no units. Publish the same string to both slots.
+        var text = arrow.equals("") ? num : (num + arrow);
         try {
             Complications.updateComplication(COMP_ID, {
                 :value => text,
-                :shortLabel => label,
-                :ranges => [ value, 70, 180, 250 ]
+                :shortLabel => text
             });
         } catch (e) {
             // Older firmware / complication not registered yet — ignore.
