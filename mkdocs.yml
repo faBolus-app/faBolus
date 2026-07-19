@@ -1,0 +1,39 @@
+site_name: ControlX2iOS Docs
+site_description: Independent iOS/watch/Garmin remote for the Tandem t:slim X2 / Mobi — bench proof-of-concept. Not affiliated with Tandem or the controlX2/pumpX2 projects.
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: green
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - scheme: slate
+      primary: indigo
+      accent: green
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - toc: { permalink: true }
+
+nav:
+  - Home: index.md
+  - Safety: safety.md
+  - Requirements: requirements.md
+  - Set Up:
+      - Pairing: setup/pairing.md
+  - Operate:
+      - Status HUD: operate/status.md
+      - Bolus & cancel: operate/bolus.md
+  - Remotes:
+      - Apple Watch: remotes/apple-watch.md
+      - Garmin: remotes/garmin.md
+  - Architecture: architecture.md
+  - Troubleshoot: troubleshoot.md
+  - FAQ: faq.md
