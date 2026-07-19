@@ -4,13 +4,12 @@ import PumpX2Messages
 import PumpX2Auth
 import PumpX2BLE
 
-/// Real pump data source over `PumpX2Kit`'s Core Bluetooth transport. On connect it polls the
-/// status reads and maps parsed responses into the HUD snapshot.
+/// Real pump data source over `PumpX2Kit`'s Core Bluetooth transport: scan → connect → JPAKE
+/// pair → poll status; and a signed bolus flow (permission → initiate → status) matching the
+/// bench harness that's validated on hardware. Read-only by default; `deliverBolus` briefly
+/// raises the write policy to `.allowDelivery` for the signed sequence only.
 ///
-/// NOT yet hardware-tested. The read path is wired end to end; the signed bolus path requires a
-/// completed pairing (legacy or JPAKE) to supply `authenticationKey` + `pumpTimeSinceReset` —
-/// pairing UI is a follow-on (see PumpX2Kit docs/OPEN_QUESTIONS.md). Until then `deliverBolus`
-/// throws `notConnected` to fail safe.
+/// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class LivePumpDataSource: NSObject, PumpDataSource {
     public private(set) var snapshot = PumpSnapshot()
@@ -19,46 +18,57 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
 
     private let client = PumpBLEClient()
     private var coordinator: PairingCoordinator?
+    private var pollTimer: Timer?
 
     /// 6-digit JPAKE pairing code (from the pump screen). Set before `connect()`.
     public var pairingCode: String = ""
-    /// Set once pairing completes; required to sign insulin-affecting commands.
-    public var authenticationKey: [UInt8] = []
-    public var pumpTimeSinceReset: UInt32 = 0
+    private var authenticationKey: [UInt8] = []
+    private var signingTimestamp: UInt32 = 0
+    private var currentBolusId: Int = 0
     private var isPaired: Bool { !authenticationKey.isEmpty }
 
-    /// Read-only safety mode — mirrors `PumpBLEClient.readOnly`. Defaults ON: the app connects,
-    /// pairs, and reads status but cannot write a bolus until writes are explicitly enabled.
-    public var readOnly: Bool = true {
-        didSet { client.readOnly = readOnly }
+    /// Latest bolus-calculator settings (carb ratio / ISF / target) for recommendBolus.
+    private var calcSnapshot: BolusCalcDataSnapshotResponse?
+
+    /// Pump time epoch is 2008-01-01 UTC.
+    private static let pumpEpoch: TimeInterval = 1_199_145_600
+    private static let food2 = 8   // manual units-only bolus type
+
+    // Continuations bridging the delegate callbacks to async/await for the signed flow.
+    private var timeCont: CheckedContinuation<TimeSinceResetResponse, Error>?
+    private var permissionCont: CheckedContinuation<BolusPermissionResponse, Error>?
+    private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
+
+    public var writePolicy: PumpBLEClient.WritePolicy {
+        get { client.writePolicy } set { client.writePolicy = newValue }
     }
 
     public override init() {
         super.init()
-        client.readOnly = readOnly
+        client.writePolicy = .readOnly
         client.delegate = self
     }
+
+    // MARK: - PumpDataSource
 
     public func connect() async {
         snapshot.connection = .scanning; onChange?()
         client.startScan()
     }
 
-    public func disconnect() { client.disconnect() }
-
-    /// Latest bolus-calculator settings read from the pump (carb ratio, ISF, target BG).
-    private var calcSnapshot: BolusCalcDataSnapshotResponse?
+    public func disconnect() {
+        pollTimer?.invalidate(); pollTimer = nil
+        client.disconnect()
+    }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
-        // Use the pump's own carb ratio / ISF / target when available (like controlX2's
-        // calculator), else a conservative fallback. VERIFY units against the pump before use.
         if let s = calcSnapshot, s.carbRatio > 0 {
-            let carbUnits = carbsGrams / s.carbRatioGramsPerUnit
+            let food = carbsGrams / s.carbRatioGramsPerUnit
             let correction = (bgMgdl != nil && s.isf > 0)
-                ? max(0, Double(bgMgdl! - s.targetBg) / Double(s.isf)) : 0
-            rec.recommendedUnits = max(0, carbUnits + correction - snapshot.iobUnits)
+                ? max(0, Double(bgMgdl! - s.targetBg) / Double(s.isf) - snapshot.iobUnits) : 0
+            rec.recommendedUnits = max(0, food + correction)
         } else {
             rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
         }
@@ -66,40 +76,88 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         return rec
     }
 
+    /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
+    /// policy to `.allowDelivery` only for this call.
     public func deliverBolus(units: Double) async throws -> Double {
-        guard snapshot.connection == .connected else { throw BolusError.notConnected }
+        guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
         guard units <= Interlocks.maxBolusUnits else { throw BolusError.exceedsMax(Interlocks.maxBolusUnits) }
-        // Bolus flow: permission → (await BolusPermissionResponse.bolusId) → initiate. The
-        // bolusId correlation across responses is wired once the connection state machine +
-        // pairing land; structurally the signed sends go through PumpBLEClient.send(...).
-        _ = try client.send(BolusPermissionRequest(),
-                            authenticationKey: authenticationKey,
-                            pumpTimeSinceReset: pumpTimeSinceReset,
-                            allowInsulinDelivery: true)
-        throw BolusError.pumpRejected("live bolus flow pending bench validation")
+        let mu = UInt32((units * 1000).rounded())
+        guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
+
+        // Fresh signing timestamp (the pump validates the HMAC against its clock).
+        let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
+            timeCont = cont
+            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
+        }
+        signingTimestamp = time.currentTime
+
+        let previousPolicy = client.writePolicy
+        client.writePolicy = .allowDelivery
+        defer { client.writePolicy = previousPolicy }
+        snapshot.connection = .bolusing; onChange?()
+
+        let perm: BolusPermissionResponse = try await withCheckedThrowingContinuation { cont in
+            permissionCont = cont
+            do {
+                try client.send(BolusPermissionRequest(), authenticationKey: authenticationKey,
+                                pumpTimeSinceReset: signingTimestamp)
+            } catch { permissionCont = nil; cont.resume(throwing: error) }
+        }
+        guard perm.granted else {
+            snapshot.connection = .connected; onChange?()
+            throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
+        }
+        currentBolusId = perm.bolusId
+
+        let ini: InitiateBolusResponse = try await withCheckedThrowingContinuation { cont in
+            initiateCont = cont
+            do {
+                try client.send(
+                    InitiateBolusRequest(totalVolume: mu, bolusID: perm.bolusId, bolusTypeBitmask: Self.food2),
+                    authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp,
+                    allowInsulinDelivery: true)
+            } catch { initiateCont = nil; cont.resume(throwing: error) }
+        }
+        guard ini.accepted else {
+            snapshot.connection = .connected; onChange?()
+            throw BolusError.pumpRejected("initiate not accepted (status \(ini.status))")
+        }
+
+        snapshot.connection = .connected
+        snapshot.lastBolusUnits = units
+        snapshot.lastBolusDate = Date()
+        snapshot.iobUnits += units
+        onChange?()
+        return units
     }
 
     public func cancelBolus() async {
-        if isPaired {
-            _ = try? client.send(CancelBolusRequest(bolusId: 0),
-                                 authenticationKey: authenticationKey,
-                                 pumpTimeSinceReset: pumpTimeSinceReset,
-                                 allowInsulinDelivery: true)
+        guard currentBolusId != 0 else { return }
+        let previous = client.writePolicy
+        client.writePolicy = .allowDelivery
+        _ = try? client.send(CancelBolusRequest(bolusId: currentBolusId),
+                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        client.writePolicy = previous
+        snapshot.connection = .connected; onChange?()
+    }
+
+    // MARK: - Helpers
+
+    private func pollStatus() {
+        for r: Message in [ControlIQIOBRequest(), InsulinStatusRequest(), CurrentBatteryV2Request(),
+                           CurrentEgvGuiDataV2Request(), CurrentBasalStatusRequest(),
+                           LastBolusStatusV2Request(), BolusCalcDataSnapshotRequest()] {
+            try? client.send(r)
         }
     }
 
-    /// Pump time epoch is 2008-01-01 UTC; convert pump seconds-since-reset timestamps to Date.
-    private static let pumpEpoch: TimeInterval = 1_199_145_600
-
-    private func pollStatus() {
-        try? client.send(ControlIQIOBRequest())
-        try? client.send(InsulinStatusRequest())
-        try? client.send(CurrentBatteryV2Request())
-        try? client.send(CurrentEgvGuiDataV2Request())
-        try? client.send(CurrentBasalStatusRequest())
-        try? client.send(LastBolusStatusV2Request())
-        try? client.send(BolusCalcDataSnapshotRequest())
+    private func startPolling() {
+        pollStatus()
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in
+            MainActor.assumeIsolated { self.pollStatus() }
+        }
     }
 }
 
@@ -117,18 +175,17 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
-        c.connect(peripheral)   // connect to the first pump found
+        c.connect(peripheral)
     }
 
     public func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        // Pair over JPAKE (6-digit) if a code is set, then poll status once paired.
         guard !pairingCode.isEmpty, let coord = try? PairingCoordinator(pairingCode: pairingCode) else {
-            pollStatus(); return
+            startPolling(); return
         }
-        coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION passes the read-only gate
+        coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION passes the interlock
         coord.onPaired = { [weak self] key, _ in
             self?.authenticationKey = key
-            self?.pollStatus()
+            self?.startPolling()
         }
         coordinator = coord
         coord.start()
@@ -152,8 +209,10 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as LastBolusStatusV2Response:
             snapshot.lastBolusUnits = m.deliveredUnits
             snapshot.lastBolusDate = Date(timeIntervalSince1970: Self.pumpEpoch + Double(m.timestamp))
-        case let m as BolusCalcDataSnapshotResponse:
-            calcSnapshot = m   // feeds recommendBolus (carb ratio / ISF / target)
+        case let m as BolusCalcDataSnapshotResponse: calcSnapshot = m
+        case let m as TimeSinceResetResponse: timeCont?.resume(returning: m); timeCont = nil
+        case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
+        case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         default: break
         }
         onChange?()

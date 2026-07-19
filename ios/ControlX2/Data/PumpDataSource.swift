@@ -6,6 +6,8 @@ import Foundation
 public protocol PumpDataSource: AnyObject {
     var snapshot: PumpSnapshot { get }
     var glucoseHistory: [GlucoseReading] { get }
+    /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
+    var pairingCode: String { get set }
     func connect() async
     func disconnect()
     /// Compute a bolus recommendation for the given carbs/BG (uses the pump's calculator on

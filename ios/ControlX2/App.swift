@@ -2,9 +2,13 @@ import SwiftUI
 
 @main
 struct ControlX2App: App {
-    // Uses the mock data source by default so the app runs in the Simulator without hardware.
-    // Swap for a LivePumpDataSource (PumpX2Kit) when a pump is available.
+    // On a device, talk to a real pump via PumpX2Kit. In the Simulator (no Bluetooth) use the
+    // mock so the UI is still demoable.
+    #if targetEnvironment(simulator)
     @State private var model = AppModel(source: MockPumpDataSource())
+    #else
+    @State private var model = AppModel(source: LivePumpDataSource())
+    #endif
     @State private var remoteHost: PhoneRemoteHost?
 
     var body: some Scene {

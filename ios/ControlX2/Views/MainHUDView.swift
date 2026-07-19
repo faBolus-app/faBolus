@@ -5,6 +5,7 @@ import SwiftUI
 struct MainHUDView: View {
     @Bindable var model: AppModel
     @State private var showBolus = false
+    @State private var showPairing = false
 
     var body: some View {
         NavigationStack {
@@ -48,6 +49,7 @@ struct MainHUDView: View {
                 }
             }
             .sheet(isPresented: $showBolus) { BolusEntryView(model: model) }
+            .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
             .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
                 Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
                     Task { await model.confirmRemoteBolus() }
@@ -62,11 +64,45 @@ struct MainHUDView: View {
     @ViewBuilder private var connectionButton: some View {
         switch model.snapshot.connection {
         case .disconnected, .error:
-            Button("Connect") { Task { await model.connect() } }
+            Button("Connect") { showPairing = true }
         case .connected, .bolusing:
             Button("Disconnect") { model.disconnect() }
         default:
             ProgressView()
+        }
+    }
+}
+
+/// Enter the pump's 6-digit pairing code, then connect + JPAKE-pair.
+struct PairingSheet: View {
+    @Bindable var model: AppModel
+    let onDone: () -> Void
+    @State private var code = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Pump pairing code") {
+                    TextField("6 digits", text: $code)
+                        .keyboardType(.numberPad)
+                        .font(.title2.monospacedDigit())
+                }
+                Section {
+                    Button {
+                        model.pairingCode = code
+                        Task { await model.connect() }
+                        onDone()
+                    } label: {
+                        HStack { Spacer(); Text("Connect"); Spacer() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(code.count != 6)
+                } footer: {
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time. Bench pump / saline only.")
+                }
+            }
+            .navigationTitle("Connect to pump")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
         }
     }
 }

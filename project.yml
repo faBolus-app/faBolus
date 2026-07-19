@@ -31,6 +31,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -52,6 +53,7 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "4"
         INFOPLIST_KEY_WKApplication: YES
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Relays bolus commands to the ControlX2 iPhone app."

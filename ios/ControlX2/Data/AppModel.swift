@@ -17,6 +17,11 @@ public final class AppModel {
 
     private let source: PumpDataSource
 
+    /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
+    public var pairingCode: String {
+        get { source.pairingCode } set { source.pairingCode = newValue }
+    }
+
     public init(source: PumpDataSource) {
         self.source = source
         self.snapshot = source.snapshot
