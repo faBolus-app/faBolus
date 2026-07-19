@@ -54,6 +54,11 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// Pump's configured max bolus (units), read from the calculator snapshot. Governs the UI
     /// cap instead of a hardcoded number. Falls back to the pump's absolute max.
     public var maxBolusUnits: Double = 25
+    // Bolus-calculator settings (from the pump), shared with remotes so they can compute
+    // carbs→units locally.
+    public var carbRatio: Double = 0    // grams per unit
+    public var isf: Int = 0             // correction factor, mg/dL per unit
+    public var targetBg: Int = 0        // mg/dL
     public init() {}
 }
 

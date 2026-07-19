@@ -74,17 +74,21 @@ final class GarminRemoteBridge: NSObject {
         guard let model else { return }
         switch cmd.kind {
         case .bolusRequest:
+            // The watch already confirmed via hold-to-deliver — deliver directly, no phone
+            // dialog. The pump still enforces max + signing.
             guard let units = cmd.units else { return }
-            model.presentRemoteBolus(requestId: cmd.requestId, units: units)
-            send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
-                               status: .awaitingConfirm, message: "Confirm on iPhone"))
+            Task { await model.remoteDeliver(requestId: cmd.requestId, units: units) }
         case .cancelBolus:
             Task { await model.cancelBolus() }
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .cancelled))
         case .statusRead:
             let s = model.snapshot
             send(RemoteCommand(kind: .statusRead, units: s.iobUnits,
-                               bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue))
+                               bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
+                               carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
+                               isf: s.isf > 0 ? Double(s.isf) : nil,
+                               targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
+                               maxBolusUnits: s.maxBolusUnits))
         default: break
         }
     }

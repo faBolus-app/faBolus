@@ -26,14 +26,23 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var status: Status?
     public var deliveredUnits: Double?
     public var message: String?
+    // Calculator settings the phone shares so a remote can compute carbs→units locally.
+    public var carbRatio: Double?     // grams per unit
+    public var isf: Double?           // correction factor, mg/dL per unit
+    public var targetBg: Double?      // mg/dL
+    public var maxBolusUnits: Double? // pump's configured max
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
-                status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil) {
+                status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
+                carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
+                maxBolusUnits: Double? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
         self.status = status; self.deliveredUnits = deliveredUnits; self.message = message
+        self.carbRatio = carbRatio; self.isf = isf; self.targetBg = targetBg
+        self.maxBolusUnits = maxBolusUnits
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

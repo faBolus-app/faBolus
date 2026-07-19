@@ -85,6 +85,23 @@ public final class AppModel {
         refresh()
     }
 
+    /// Deliver a bolus already confirmed on the remote itself (e.g. Garmin hold-to-deliver) —
+    /// no phone-side dialog. Echoes delivering → delivered/failed back to the remote.
+    public func remoteDeliver(requestId: String, units: Double) async {
+        echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
+        do {
+            let delivered = try await source.deliverBolus(units: units)
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
+                               status: .delivered, deliveredUnits: delivered))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
+                               status: .failed, message: error.localizedDescription))
+        }
+        refresh()
+    }
+
     public func rejectRemoteBolus() {
         if let pending = pendingRemoteBolus {
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .cancelled))

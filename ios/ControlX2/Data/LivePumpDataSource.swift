@@ -255,6 +255,9 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as BolusCalcDataSnapshotResponse:
             calcSnapshot = m
             if m.maxBolusAmount > 0 { snapshot.maxBolusUnits = Double(m.maxBolusAmount) / 1000.0 }
+            snapshot.carbRatio = m.carbRatioGramsPerUnit
+            snapshot.isf = m.isf
+            snapshot.targetBg = m.targetBg
         case let m as TimeSinceResetResponse:
             pumpTimeAnchor = (m.currentTime, Date())
             timeCont?.resume(returning: m); timeCont = nil

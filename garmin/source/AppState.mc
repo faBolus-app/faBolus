@@ -1,58 +1,108 @@
 using Toybox.Lang;
 using Toybox.Graphics as Gfx;
+using Toybox.Math;
 
-// Shared app state for the ControlX2 Garmin remote — parity with the Apple Watch model:
-// glucose + trend, Active Insulin (IOB), phone reachability, and the bolus flow. Updated from
-// phone messages (schema: statusRead / bolusStatus).
+// Shared app state for the ControlX2 Garmin remote. Glance data comes from the phone
+// (statusRead reply); carbs→units is computed locally from the pump's calculator settings so
+// the hold-to-deliver screen can show the exact units.
 module AppState {
-    // HUD status
+    // HUD data (from phone)
     var glucose as Lang.Number? = null;   // mg/dL
-    var trend as Lang.String = "→";  // → default
-    var iob as Lang.Float = 0.0;          // units (Active Insulin)
-    var connection as Lang.String? = null;
+    var trend as Lang.String = "";
+    var iob as Lang.Float = 0.0;          // units
+    var carbRatio as Lang.Float = 0.0;    // g/u
+    var isf as Lang.Number = 0;           // mg/dL per unit
+    var targetBg as Lang.Number = 0;      // mg/dL
+    var maxUnits as Lang.Float = 25.0;
 
-    // Bolus flow
-    var units as Lang.Float = 0.0;
-    const MAX_UNITS = 10.0;
-    const STEP = 0.05;
+    // Bolus entry
+    var mode as Lang.String = "units";    // "units" | "carbs"
+    var unitsValue as Lang.Float = 0.0;
+    var carbsValue as Lang.Number = 0;
+    const STEP_U = 0.05;
+    const STEP_C = 1;
+    const MAX_CARBS = 200;
+
+    // Delivery
+    var deliverUnits as Lang.Float = 0.0; // captured when entering the hold screen
+    var holdProgress as Lang.Float = 0.0; // 0..1 for the hold-to-deliver ring
     var pendingRequestId as Lang.String? = null;
-    var bolusStatus as Lang.String? = null;
-    var bolusMessage as Lang.String? = null;
+    var status as Lang.String? = null;    // delivering/delivered/failed/...
+    var message as Lang.String? = null;
 
-    function adjust(delta as Lang.Float) as Void {
-        units += delta;
-        if (units < 0.0) { units = 0.0; }
-        if (units > MAX_UNITS) { units = MAX_UNITS; }
+    function reset() as Void {
+        mode = "units"; unitsValue = 0.0; carbsValue = 0;
+        pendingRequestId = null; status = null; message = null;
     }
 
-    function resetBolus() as Void {
-        units = 0.0; pendingRequestId = null; bolusStatus = null; bolusMessage = null;
+    function toggleMode() as Void {
+        mode = mode.equals("units") ? "carbs" : "units";
     }
 
-    // Route an inbound phone message (a decoded schema dictionary).
+    // dir = +1 / -1
+    function adjust(dir as Lang.Number) as Void {
+        if (mode.equals("units")) {
+            unitsValue += dir * STEP_U;
+            if (unitsValue < 0.0) { unitsValue = 0.0; }
+            if (unitsValue > maxUnits) { unitsValue = maxUnits; }
+        } else {
+            carbsValue += dir * STEP_C;
+            if (carbsValue < 0) { carbsValue = 0; }
+            if (carbsValue > MAX_CARBS) { carbsValue = MAX_CARBS; }
+        }
+    }
+
+    // The units that will actually be delivered (rounded to 0.05, clamped to the pump max).
+    function computeUnits() as Lang.Float {
+        var total;
+        if (mode.equals("units")) {
+            total = unitsValue;
+        } else {
+            var food = (carbRatio > 0.0) ? (carbsValue.toFloat() / carbRatio) : 0.0;
+            var correction = 0.0;
+            if (isf > 0 && glucose != null) {
+                correction = (glucose - targetBg).toFloat() / isf.toFloat() - iob;
+                if (correction < 0.0) { correction = 0.0; }
+            }
+            total = food + correction;
+        }
+        total = Math.round(total * 20.0) / 20.0;   // 0.05 u steps
+        if (total < 0.0) { total = 0.0; }
+        if (total > maxUnits) { total = maxUnits; }
+        return total;
+    }
+
+    function valueLabel() as Lang.String {
+        if (mode.equals("units")) { return unitsValue.format("%.2f") + " U"; }
+        return carbsValue.toString() + " g";
+    }
+
+    // Route an inbound phone message.
     function handle(data as Lang.Dictionary) as Void {
         var kind = data["kind"] as Lang.String?;
         if (kind == null) { return; }
         if (kind.equals("statusRead")) {
-            var g = data["bgMgdl"];
-            if (g instanceof Lang.Number || g instanceof Lang.Float || g instanceof Lang.Double) {
-                glucose = g.toNumber();
-            }
-            var i = data["units"];
-            if (i instanceof Lang.Number || i instanceof Lang.Float || i instanceof Lang.Double) {
-                iob = i.toFloat();
-            }
-            connection = data["message"] as Lang.String?;
+            glucose = numOrNull(data["bgMgdl"]);
+            var i = flt(data["units"]); if (i != null) { iob = i; }
+            var cr = flt(data["carbRatio"]); if (cr != null) { carbRatio = cr; }
+            var isfv = numOrNull(data["isf"]); if (isfv != null) { isf = isfv; }
+            var tb = numOrNull(data["targetBg"]); if (tb != null) { targetBg = tb; }
+            var mx = flt(data["maxBolusUnits"]); if (mx != null) { maxUnits = mx; }
         } else if (kind.equals("bolusStatus")) {
             var rid = data["requestId"] as Lang.String?;
             if (pendingRequestId != null && rid != null && rid.equals(pendingRequestId)) {
-                bolusStatus = data["status"] as Lang.String?;
-                bolusMessage = data.hasKey("message") ? data["message"] as Lang.String? : null;
+                status = data["status"] as Lang.String?;
+                message = data.hasKey("message") ? data["message"] as Lang.String? : null;
             }
         }
     }
 
-    // Loop-style glucose color.
+    function isNum(v) as Lang.Boolean {
+        return v instanceof Lang.Number || v instanceof Lang.Float || v instanceof Lang.Double;
+    }
+    function numOrNull(v) as Lang.Number? { return isNum(v) ? v.toNumber() : null; }
+    function flt(v) as Lang.Float? { return isNum(v) ? v.toFloat() : null; }
+
     function glucoseColor() as Gfx.ColorValue {
         if (glucose == null) { return Gfx.COLOR_LT_GRAY; }
         var g = glucose as Lang.Number;
