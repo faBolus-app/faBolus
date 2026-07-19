@@ -25,18 +25,42 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
     private var alertList: [PumpNotification] = []
     private var cgmAlertList: [PumpNotification] = []
     private var reminderList: [PumpNotification] = []
+    // Locally-acknowledged (snoozed) alerts: key -> the time the user tapped Clear. Some pump
+    // alerts are *condition-based* (e.g. a CGM "high glucose" while glucose is genuinely still
+    // high): the signed dismiss is accepted, but the pump re-raises it on the next poll. To match
+    // what a CGM app does, a cleared alert is hidden until the pump condition actually clears
+    // (the alert drops off the pump's bitmap) or the snooze window elapses, at which point it
+    // re-nags. Truly-dismissable alerts just clear on the pump and never come back.
+    private var acknowledged: [String: Date] = [:]
+    private static let snoozeWindow: TimeInterval = 30 * 60   // re-nag after 30 min, like a CGM re-alert
+    private func noteKey(_ n: PumpNotification) -> String { "\(n.kind.rawValue):\(n.id)" }
     private func mergeNotifications() {
-        activeNotifications = malfunctionList + alarmList + alertList + cgmAlertList + reminderList
+        let raw = malfunctionList + alarmList + alertList + cgmAlertList + reminderList
+        let present = Set(raw.map(noteKey))
+        let now = Date()
+        // Expire acks whose alert is gone from the pump (condition resolved) or whose snooze has
+        // elapsed, so a genuinely new occurrence shows (and re-notifies) again.
+        acknowledged = acknowledged.filter { present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow }
+        activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }
     }
     // Diagnostic: raw bitmaps + how many alert responses we've received (surfaced on the HUD to
     // confirm the pump is actually answering the alert polls).
     public private(set) var alertDebug: String = "alerts: not polled yet"
     private var alertBits: [String: UInt64] = [:]
     private var alertRespCount = 0
+    // Last DismissNotificationResponse status, kept separate so a poll doesn't clobber it before it
+    // can be read: 0 = pump accepted the dismiss (a still-showing alert is then condition-based and
+    // re-raising), non-zero = pump rejected it (e.g. a signing problem for opcode 184).
+    private var lastDismissAck = ""
+    private func renderDebug() {
+        let hex: (String) -> String = { String(format: "%llX", self.alertBits[$0] ?? 0) }
+        var s = "polls \(alertRespCount) · Al=\(hex("al")) Am=\(hex("am")) C=\(hex("c")) R=\(hex("r")) M=\(hex("m"))"
+        if !lastDismissAck.isEmpty { s += " · \(lastDismissAck)" }
+        alertDebug = s
+    }
     private func noteAlert(_ key: String, _ bmp: UInt64) {
         alertBits[key] = bmp; alertRespCount += 1
-        let hex: (String) -> String = { String(format: "%llX", self.alertBits[$0] ?? 0) }
-        alertDebug = "polls \(alertRespCount) · Al=\(hex("al")) Am=\(hex("am")) C=\(hex("c")) R=\(hex("r")) M=\(hex("m"))"
+        renderDebug()
     }
 
     // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
@@ -254,15 +278,13 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         let previous = client.writePolicy
         client.writePolicy = .allowNonDelivery
         defer { client.writePolicy = previous }
-        alertDebug = "dismiss sent (id \(notification.id) kind \(notification.kind.rawValue))…"
+        alertDebug = "cleared id \(notification.id) kind \(notification.kind.rawValue) — snoozed if condition persists"
         _ = try? client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
-        // Optimistically drop it locally; then re-poll so the pump's real state wins — if the
-        // pump didn't actually clear it, it reappears (and the DismissNotificationResponse ack
-        // status shows in the diagnostic).
-        let drop: (PumpNotification) -> Bool = { $0.id == notification.id && $0.kind == notification.kind }
-        alarmList.removeAll(where: drop); alertList.removeAll(where: drop)
-        cgmAlertList.removeAll(where: drop); reminderList.removeAll(where: drop)
+        // Record a local acknowledge, then re-poll. The signed dismiss clears any truly-dismissable
+        // alert on the pump; for a condition-based alert the pump re-raises it, but the ack keeps it
+        // hidden (and un-notified) until the condition clears on the pump or the snooze elapses.
+        acknowledged[noteKey(notification)] = Date()
         mergeNotifications()
         onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
@@ -484,7 +506,8 @@ extension LivePumpDataSource: PumpBLEClientDelegate {
         case let m as CurrentBolusStatusResponse:
             bolusStatusCont?.resume(returning: m); bolusStatusCont = nil
         case let m as DismissNotificationResponse:
-            alertDebug = "dismiss ack: status \(m.status)"   // 0 usually = accepted
+            lastDismissAck = "ack \(m.status)\(m.status == 0 ? " (accepted)" : " (rejected)")"
+            renderDebug()
         case let m as BolusCalcDataSnapshotResponse:
             calcSnapshot = m
             if m.maxBolusAmount > 0 { snapshot.maxBolusUnits = Double(m.maxBolusAmount) / 1000.0 }
