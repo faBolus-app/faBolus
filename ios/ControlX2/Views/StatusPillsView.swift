@@ -13,11 +13,23 @@ struct StatusPillsView: View {
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         }
         HStack(spacing: 10) {
-            pill(icon: "battery.75", tint: snapshot.batteryPercent < 20 ? LoopTheme.low : .green,
+            pill(icon: batteryIcon(snapshot.batteryPercent),
+                 tint: snapshot.batteryPercent <= 20 ? LoopTheme.low : .green,
                  value: "\(snapshot.batteryPercent)%", label: "Pump")
             pill(icon: snapshot.cgmActive ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
                  tint: snapshot.cgmActive ? LoopTheme.inRange : .gray,
                  value: snapshot.cgmActive ? "OK" : "—", label: "CGM")
+        }
+    }
+
+    /// SF Symbol whose fill level tracks the battery percentage.
+    private func batteryIcon(_ pct: Int) -> String {
+        switch pct {
+        case ...5:   return "battery.0"
+        case ...37:  return "battery.25"
+        case ...62:  return "battery.50"
+        case ...87:  return "battery.75"
+        default:     return "battery.100"
         }
     }
 

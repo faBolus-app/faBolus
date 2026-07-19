@@ -17,6 +17,8 @@ struct BolusEntryView: View {
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
+    private enum Field { case carbs, bg, units }
+    @FocusState private var focus: Field?
 
     private var maxUnits: Double { model.snapshot.maxBolusUnits }
     private var overMax: Bool { units > maxUnits }
@@ -38,16 +40,17 @@ struct BolusEntryView: View {
 
             if mode == .carbs {
                 Section("Entry") {
-                    HStack {
+                    HStack(spacing: 6) {
                         TextField("0", value: $carbs, format: .number)
-                            .keyboardType(.numberPad).frame(maxWidth: 90)
-                            .font(.title3.weight(.semibold))
+                            .keyboardType(.numberPad).fixedSize()
+                            .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
                         Text("g carbs").foregroundStyle(.secondary)
                         Spacer()
                         Stepper("", value: $carbs, in: 0...300, step: settings.carbIncrement).labelsHidden()
                     }
                     LabeledContent("Blood glucose") {
-                        TextField("mg/dL", text: $bg).keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        TextField("mg/dL", text: $bg).keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
                     }
                     Button("Calculate recommendation") { Task { await calculate() } }
                 }
@@ -67,10 +70,10 @@ struct BolusEntryView: View {
                         HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
                     }.buttonStyle(.borderedProminent).tint(.red)
                 } else {
-                    HStack {
+                    HStack(spacing: 6) {
                         TextField("0", value: $units, format: .number.precision(.fractionLength(0...2)))
-                            .keyboardType(.decimalPad).frame(maxWidth: 90)
-                            .font(.title3.weight(.semibold))
+                            .keyboardType(.decimalPad).fixedSize()
+                            .font(.title3.weight(.semibold)).focused($focus, equals: .units)
                             .foregroundStyle(overMax ? LoopTheme.low : .primary)
                         Text("U").foregroundStyle(.secondary)
                         Spacer()
@@ -96,6 +99,10 @@ struct BolusEntryView: View {
         }
         .toolbar {
             if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focus = nil }
+            }
         }
         .confirmationDialog("Deliver \(String(format: "%.2f U", units)) of SALINE?",
                             isPresented: $confirming, titleVisibility: .visible) {
