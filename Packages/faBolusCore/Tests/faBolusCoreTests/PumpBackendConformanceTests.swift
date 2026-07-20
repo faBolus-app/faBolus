@@ -71,8 +71,11 @@ final class PumpBackendConformanceTests: XCTestCase {
 }
 
 /// Small async throwing assertion helper (XCTAssertThrowsError has no async overload).
+/// The autoclosure is `@MainActor`-isolated (same as this helper and the callers), so its result
+/// never crosses an actor boundary — that keeps Swift 6 strict concurrency happy without requiring
+/// `T: Sendable`.
 @MainActor
-func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure () async throws -> T,
+func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure @MainActor () async throws -> T,
                                  _ message: String = "expected an error",
                                  file: StaticString = #filePath, line: UInt = #line) async {
     do { _ = try await expression(); XCTFail(message, file: file, line: line) } catch { /* expected */ }
