@@ -1,0 +1,287 @@
+/* ControlX2iOS docs — Stripe-inspired theme layered on mkdocs-material.
+   Clean whitespace, blurple accent, soft cards, framed device screenshots. */
+
+:root {
+  --cx2-blurple: #635bff;
+  --cx2-blurple-dark: #5249e0;
+  --cx2-ink: #0a2540;          /* Stripe's deep navy ink */
+  --cx2-slate: #425466;
+  --cx2-muted: #697386;
+  --cx2-line: #e3e8ee;
+  --cx2-bg-soft: #f6f9fc;
+  --cx2-radius: 14px;
+  --cx2-shadow: 0 2px 5px -1px rgba(50, 50, 93, .12), 0 1px 3px -1px rgba(0, 0, 0, .08);
+  --cx2-shadow-lg: 0 15px 35px -5px rgba(50, 50, 93, .12), 0 5px 15px rgba(0, 0, 0, .06);
+}
+
+/* ---- Material palette overrides (light) ---- */
+/* Keep the header/primary WHITE (Stripe-like) — only accents & links go blurple. */
+[data-md-color-scheme="default"] {
+  --md-accent-fg-color: var(--cx2-blurple);
+  --md-typeset-a-color: var(--cx2-blurple);
+  --md-default-bg-color: #ffffff;
+  --md-typeset-color: var(--cx2-slate);
+}
+[data-md-color-scheme="default"] .md-typeset h1,
+[data-md-color-scheme="default"] .md-typeset h2,
+[data-md-color-scheme="default"] .md-typeset h3 {
+  color: var(--cx2-ink);
+}
+/* Clean white header + tabs with dark ink and a hairline border */
+[data-md-color-scheme="default"] .md-header,
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: #ffffff;
+  color: var(--cx2-ink);
+}
+[data-md-color-scheme="default"] .md-header {
+  box-shadow: 0 1px 0 var(--cx2-line);
+}
+[data-md-color-scheme="default"] .md-tabs__link { color: var(--cx2-slate); opacity: 1; }
+[data-md-color-scheme="default"] .md-tabs__link--active,
+[data-md-color-scheme="default"] .md-tabs__link:hover { color: var(--cx2-blurple); }
+[data-md-color-scheme="default"] .md-search__form {
+  background-color: var(--cx2-bg-soft);
+  box-shadow: inset 0 0 0 1px var(--cx2-line);
+}
+[data-md-color-scheme="default"] .md-search__input::placeholder { color: var(--cx2-muted); }
+
+/* ---- Dark ---- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0b1220;
+  --md-accent-fg-color: #8a84ff;
+  --md-typeset-a-color: #9d98ff;
+  --md-default-bg-color: #0b1220;
+}
+
+/* ---- Typography ---- */
+.md-typeset {
+  font-size: .82rem;
+  line-height: 1.7;
+  letter-spacing: -0.003em;
+}
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: .4em;
+}
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-top: 2.2em;
+  padding-top: 1.1em;
+  border-top: 1px solid var(--cx2-line);
+}
+.md-typeset h3 { font-weight: 650; letter-spacing: -0.01em; }
+
+/* Sticky top tabs: clean underline, no heavy bar */
+.md-tabs {
+  border-bottom: 1px solid var(--cx2-line);
+}
+[data-md-color-scheme="default"] .md-header {
+  color: var(--cx2-ink);
+  box-shadow: 0 1px 0 var(--cx2-line);
+}
+[data-md-color-scheme="default"] .md-tabs {
+  color: var(--cx2-slate);
+}
+
+/* ---- Links ---- */
+.md-typeset a { font-weight: 550; text-underline-offset: 2px; }
+
+/* ---- Buttons (Stripe pill CTAs) ---- */
+.md-typeset .md-button {
+  border-radius: 999px;
+  border: 1px solid var(--cx2-line);
+  padding: .5em 1.25em;
+  font-weight: 600;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease;
+}
+.md-typeset .md-button--primary {
+  background: var(--cx2-blurple);
+  border-color: var(--cx2-blurple);
+  color: #fff;
+}
+.md-typeset .md-button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--cx2-shadow);
+}
+
+/* ---- Cards (grid.cards from Material) ---- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border: 1px solid var(--cx2-line);
+  border-radius: var(--cx2-radius);
+  box-shadow: var(--cx2-shadow);
+  padding: 1.1rem 1.2rem;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  background: var(--md-default-bg-color);
+}
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--cx2-shadow-lg);
+  border-color: #c8ccff;
+}
+.md-typeset .grid.cards > ul > li > hr {
+  margin: .6rem 0;
+  border-color: var(--cx2-line);
+}
+.md-typeset .grid.cards .twemoji,
+.md-typeset .grid.cards .lg { color: var(--cx2-blurple); }
+
+/* ---- Code ---- */
+.md-typeset pre > code {
+  border-radius: 10px;
+}
+.md-typeset code {
+  border-radius: 5px;
+  font-size: .78em;
+}
+[data-md-color-scheme="default"] .md-typeset pre > code {
+  box-shadow: inset 0 0 0 1px var(--cx2-line);
+}
+
+/* ---- Admonitions (rounded, soft) ---- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: var(--cx2-radius);
+  border-width: 0 0 0 3px;
+  box-shadow: var(--cx2-shadow);
+  font-size: .78rem;
+}
+
+/* ---- Tables ---- */
+.md-typeset table:not([class]) {
+  border-radius: var(--cx2-radius);
+  overflow: hidden;
+  box-shadow: var(--cx2-shadow);
+  border: 1px solid var(--cx2-line);
+}
+.md-typeset table:not([class]) th {
+  background: var(--cx2-bg-soft);
+  color: var(--cx2-ink);
+  font-weight: 650;
+}
+
+/* ---- Hero (home page) ---- */
+.cx2-hero {
+  margin: .5rem 0 2.5rem;
+  padding: 2.6rem 2rem 2.8rem;
+  border-radius: 20px;
+  background:
+    radial-gradient(1200px 400px at 90% -10%, rgba(99, 91, 255, .18), transparent 60%),
+    linear-gradient(120deg, #f6f9fc 0%, #eef1ff 100%);
+  border: 1px solid var(--cx2-line);
+}
+[data-md-color-scheme="slate"] .cx2-hero {
+  background:
+    radial-gradient(1200px 400px at 90% -10%, rgba(99, 91, 255, .25), transparent 60%),
+    linear-gradient(120deg, #0d1526 0%, #141d33 100%);
+  border-color: #22304d;
+}
+.cx2-hero .cx2-eyebrow {
+  display: inline-block;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--cx2-blurple);
+  background: rgba(99, 91, 255, .1);
+  padding: .28rem .7rem;
+  border-radius: 999px;
+  margin-bottom: 1rem;
+}
+.cx2-hero h1 {
+  font-size: 2.5rem;
+  line-height: 1.1;
+  margin: 0 0 .5rem;
+}
+.cx2-hero p {
+  font-size: 1rem;
+  max-width: 46ch;
+  color: var(--cx2-slate);
+}
+[data-md-color-scheme="slate"] .cx2-hero p { color: #c3cbd8; }
+.cx2-hero .cx2-cta { margin-top: 1.4rem; }
+
+/* ---- Device screenshot frames ---- */
+.cx2-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  margin: 1.4rem 0;
+  align-items: flex-start;
+}
+.cx2-shot { text-align: center; }
+.cx2-shot figcaption {
+  margin-top: .55rem;
+  font-size: .72rem;
+  color: var(--cx2-muted);
+  font-weight: 550;
+}
+/* Phone frame */
+.cx2-shot.phone img {
+  width: 232px;
+  max-width: 60vw;
+  border-radius: 26px;
+  border: 8px solid #0a2540;
+  background: #0a2540;
+  box-shadow: var(--cx2-shadow-lg);
+}
+/* Watch frame */
+.cx2-shot.watch img {
+  width: 150px;
+  max-width: 45vw;
+  border-radius: 34px;
+  border: 8px solid #0a2540;
+  background: #0a2540;
+  box-shadow: var(--cx2-shadow-lg);
+}
+/* Wide (Home Screen / desktop) frame */
+.cx2-shot.wide img {
+  width: 380px;
+  max-width: 90vw;
+  border-radius: 14px;
+  border: 1px solid var(--cx2-line);
+  box-shadow: var(--cx2-shadow-lg);
+}
+
+/* A subtle "coming soon / planned" pill for roadmap features */
+.cx2-tag {
+  display: inline-block;
+  font-size: .64rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.cx2-tag.planned { color: #8a5a00; background: #fff1d6; }
+.cx2-tag.now { color: #0a6b3b; background: #d8f5e5; }
+[data-md-color-scheme="slate"] .cx2-tag.planned { color: #ffcf7a; background: #3a2c08; }
+[data-md-color-scheme="slate"] .cx2-tag.now { color: #7ff0b6; background: #0d3323; }
+
+/* Numbered step chips */
+.cx2-steps { counter-reset: cx2step; list-style: none; padding-left: 0; }
+.cx2-steps > li {
+  position: relative;
+  padding-left: 2.6rem;
+  margin-bottom: 1rem;
+}
+.cx2-steps > li::before {
+  counter-increment: cx2step;
+  content: counter(cx2step);
+  position: absolute;
+  left: 0;
+  top: -.1rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  background: var(--cx2-blurple);
+  color: #fff;
+  font-weight: 700;
+  font-size: .8rem;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--cx2-shadow);
+}

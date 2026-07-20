@@ -1,45 +1,107 @@
-site_name: ControlX2iOS Docs
-site_description: Independent iOS/watch/Garmin remote for the Tandem t:slim X2 / Mobi — bench proof-of-concept. Not affiliated with Tandem or the controlX2/pumpX2 projects.
+site_name: ControlX2iOS
+site_description: Independent iOS / Apple Watch / Garmin remote for the Tandem t:slim X2 / Mobi — a bench proof-of-concept. Not affiliated with Tandem or the controlX2 / pumpX2 projects.
+site_url: https://zgranowitz.github.io/ControlX2iOS/
+copyright: Independent, unofficial project · Bench proof-of-concept · Not affiliated with Tandem Diabetes Care
+
 theme:
   name: material
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/water
+    repo: fontawesome/brands/github
   palette:
-    - scheme: default
-      primary: indigo
-      accent: green
-      toggle: { icon: material/weather-night, name: Dark mode }
-    - scheme: slate
-      primary: indigo
-      accent: green
-      toggle: { icon: material/weather-sunny, name: Light mode }
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: indigo
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
+    - navigation.indexes
     - navigation.top
+    - navigation.footer
+    - navigation.instant
+    - navigation.instant.progress
+    - toc.follow
     - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
+  - abbr
   - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Link to this section
   - pymdownx.details
-  - pymdownx.superfences
-  - toc: { permalink: true }
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 nav:
   - Home: index.md
-  - Safety: safety.md
-  - Requirements: requirements.md
-  - Building & installing: build.md
-  - Set Up:
-      - Pairing: setup/pairing.md
-  - Operate:
-      - Status HUD: operate/status.md
+  - Get started:
+      - Safety first: safety.md
+      - What you'll need: requirements.md
+      - How it works: architecture.md
+  - Build it yourself:
+      - Overview: build/index.md
+      - 1 · Apple ID & Developer account: build/apple-developer.md
+      - 2 · Install Xcode: build/xcode.md
+      - 3 · Build the iPhone app: build/build-app.md
+      - 4 · Add the Apple Watch app: build/apple-watch-build.md
+      - 5 · Build the Garmin remote: build/garmin-build.md
+      - Advanced (command line): build/advanced.md
+      - Keeping the app running: build/updating.md
+  - Set up & pair:
+      - Pairing your pump: setup/pairing.md
+  - Using the app:
+      - Dashboard & status: operate/status.md
       - Bolus & cancel: operate/bolus.md
       - Alerts & alarms: operate/alerts.md
+  - Customize:
+      - Settings & options: customize/settings.md
+      - Siri & Shortcuts: customize/shortcuts.md
   - Remotes:
       - Apple Watch: remotes/apple-watch.md
       - Garmin: remotes/garmin.md
       - iPhone widgets: remotes/iphone-widgets.md
-      - Siri: remotes/siri.md
-  - Architecture: architecture.md
   - Design:
       - Independent Apple Watch: design/independent-watch.md
-  - Troubleshoot: troubleshoot.md
-  - FAQ: faq.md
+  - Help:
+      - Troubleshooting: troubleshoot.md
+      - FAQ: faq.md

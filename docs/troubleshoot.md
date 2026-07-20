@@ -1,26 +1,79 @@
-# Troubleshoot
+# Troubleshooting
 
-## Can't find or connect to the pump
-- Make sure the **official Tandem app is unpaired/closed** — only one control connection is
-  allowed at a time.
-- Confirm Bluetooth permission is granted to ControlX2iOS.
-- Put the pump in pairing mode; the app scans for the Tandem service (`0000fdfb…`).
+Common snags, grouped by where you hit them. If something here doesn't cover it, check the
+[FAQ](faq.md).
 
-## Pairing fails
-- Double-check the code type (16-char vs 6-digit) matches your firmware.
-- For 6-digit (JPAKE), a wrong code completes the handshake but fails **key confirmation** —
-  re-enter the code.
+## Building the app
 
-## Bolus rejected
-- The command must be correctly HMAC-signed with a recent pump time-since-reset. Reconnect to
-  refresh timing.
-- Check the max-units clamp.
+??? question "Build fails right after downloading — missing `mbedtls` files"
+    PumpX2Kit's crypto submodule wasn't fetched. Run:
 
-## Remote (watch/Garmin) request doesn't deliver
-- The phone must **explicitly confirm** every remote request (double confirmation).
-- If the phone is out of range, the request is queued/failed — reconnect and retry.
+    ```sh
+    cd ~/ControlX2/PumpX2Kit && git submodule update --init --recursive
+    ```
 
-## Build issues
-- Regenerate the Xcode project: `xcodegen generate`.
-- Ensure `PumpX2Kit` and its `vendor/` submodules are checked out
-  (`git submodule update --init --recursive`).
+??? question "Xcode can't find the ConnectIQ package"
+    The Connect IQ **Mobile** SDK isn't where `project.yml` expects it. Re-check
+    [step 3, Step B](build/build-app.md#step-b-get-the-connect-iq-companion-sdk), place the
+    `connectiq-companion-app-sdk-ios-1.8.0` folder correctly (or edit the `ConnectIQ` `path:` in
+    `project.yml`), then re-run `xcodegen generate` and reopen the project.
+
+??? question "\"Failed to register bundle identifier\" or signing errors"
+    The bundle ID is taken (it defaults to `com.zgranowitz.controlx2`). On a free account or your
+    own account, change the prefix everywhere in `project.yml` (see the
+    [signing note](build/build-app.md#signing)), keeping the `.widgets` / `.watch` / `group.`
+    suffixes intact, then `xcodegen generate` again.
+
+??? question "The widget target won't sign on a free account"
+    Free \"Personal Team\" accounts sometimes can't register App Groups or app extensions. Build
+    just the main **ControlX2** app for now; add the widgets once you're on the paid Apple
+    Developer Program.
+
+??? question "I changed `project.yml` and nothing happened"
+    Re-run `xcodegen generate` and reopen `ControlX2.xcodeproj` — the project file is generated
+    from `project.yml`, so edits only take effect after regenerating.
+
+??? question "The app expired / won't open"
+    That's the signing certificate's normal life (7 days on free, 1 year on paid). Just
+    reinstall — see [Keeping the app running](build/updating.md).
+
+## Connecting & pairing
+
+??? question "Can't find or connect to the pump"
+    - Make sure the official Tandem **t:connect** app is unpaired/closed — only one control
+      connection is allowed at a time.
+    - Confirm Bluetooth permission is granted to ControlX2 (**Settings → ControlX2 → Bluetooth**).
+    - Put the pump in pairing mode; the app scans for the Tandem service (`0000fdfb…`).
+
+??? question "Pairing fails"
+    - Double-check the code type (16-char vs 6-digit) matches your pump's firmware.
+    - For a 6-digit (JPAKE) code, a **wrong** code still completes the handshake but fails
+      **key confirmation** — re-enter the correct code.
+
+## Using it
+
+??? question "A bolus is rejected"
+    - The command must be correctly signed with a recent pump time. Reconnect to refresh timing.
+    - Check the max-units clamp — the pump also rejects anything over its own configured max.
+
+??? question "A watch/Garmin request doesn't deliver"
+    - The phone must be reachable — it runs the confirm interlock and does the delivery.
+    - Apple Watch requests need an **explicit confirm on the phone**.
+    - If the phone is out of range, the request fails cleanly — reconnect and retry.
+
+??? question "A cleared alert comes back"
+    Some alerts are **condition-based** (e.g. a high-glucose alert re-raises while BG is still
+    high). Also note the dismiss path isn't fully bench-verified yet — see
+    [Alerts & alarms](operate/alerts.md).
+
+## Watch & Garmin
+
+??? question "The Apple Watch app won't install"
+    Watch installs are finicky: keep the watch on its charger and unlocked, install the phone app
+    first, then retry — or install from the **Watch** app on the iPhone
+    (**My Watch → Available Apps**).
+
+??? question "The Garmin complication shows `--` or nothing"
+    - It needs the iPhone app open and connected for fresh data.
+    - Stock Garmin faces can't show third-party data — use a **Face It** or CIQ face that
+      supports complications and add the *ControlX2 BG* field.

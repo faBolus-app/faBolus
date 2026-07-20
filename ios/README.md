@@ -1,3 +1,13 @@
 # ios — iOS host app
 
-Owns the pump BLE connection via `PumpX2Kit`; full UI (connect, status/IOB, units bolus, cancel). Milestone 2. Requires full Xcode + a paid Apple Developer account.
+The iPhone app. It owns the pump's Bluetooth connection via
+[`PumpX2Kit`](https://github.com/zgranowitz/PumpX2Kit) and provides the tabbed Loop-style UI
+(Dashboard, Bolus, Alerts, Settings), the widget extension, Siri/App Intents, and the bridges to
+the Apple Watch and Garmin remotes.
+
+- `ControlX2/` — the main app (Data sources, Views, Models, Intents, remote bridges).
+- `ControlX2Widgets/` — the WidgetKit extension (Lock/Home Screen widgets + Quick Bolus).
+
+**Build & usage:** see the docs — [build guide](../docs/build/build-app.md) and
+[using the app](../docs/operate/status.md). Requires **Xcode 16+** and an **Apple ID** (free
+works; paid recommended). Bench proof-of-concept — saline only.

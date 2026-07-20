@@ -1,5 +1,11 @@
 # schema
 
-Single source of truth for the phone↔watch/garmin command contract: `command.schema.json`.
+Single source of truth for the phone↔remote command contract: `command.schema.json`.
 
-Both the Swift host (`ios/`, `watch/`) and the Monkey C remote (`garmin/`) validate and generate messages against this file so the two sides never drift. DRAFT — finalize during Milestone 2.
+The Swift host (`ios/`, `watch/`, via `Shared/RemoteCommand.swift`) and the Monkey C Garmin remote
+(in the separate [PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin) repo, via its
+`RemoteComm`) both generate and validate messages against this file so the sides never drift. It's
+a small JSON contract — `kind`, `requestId`, `units`, `carbsGrams`, `bgMgdl`, `confirmToken`,
+`status`, `deliveredUnits`, and the status fields remotes display.
+
+See [How it works → The command contract](../docs/architecture.md#the-command-contract).
