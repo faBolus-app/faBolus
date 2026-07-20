@@ -51,6 +51,26 @@ battery start filling in within a few seconds.
     Make sure the pump is in pairing mode, Bluetooth permission is granted to faBolus, and the
     official app isn't holding the connection. More in [Troubleshooting](../troubleshoot.md).
 
+## Using faBolus alongside the official t:connect app
+
+The pump keeps **one** paired controller and issues a **new code** every time you pair — it never
+stores two, and the code can't be shared between apps (each derives its own key). So faBolus and the
+official **t:connect** app can both be installed, but only one is paired/connected at a time, and
+switching is a **full re-pair, not a quick toggle**:
+
+<ol class="cx2-steps">
+<li>On the pump, <strong>Pair Device</strong> shows a new code; pair whichever app you want to use.</li>
+<li>That <strong>evicts</strong> the other app's pairing — to switch back, you re-pair it with another new code.</li>
+</ol>
+
+Day-to-day this is painless if you pick one everyday controller: while faBolus stays paired it
+reconnects with **no code**, so the new-code step only appears when you bounce between the two.
+
+!!! note "faBolus doesn't replace the official app"
+    Some pump settings and configuration — and certain **Mobi** functions — can only be changed in
+    **t:connect**; faBolus doesn't support them yet. When you need one, pair t:connect, make the
+    change, then re-pair faBolus for monitoring and remote bolus.
+
 ## Under the hood (for the curious)
 
 ??? info "What the handshake actually does"
