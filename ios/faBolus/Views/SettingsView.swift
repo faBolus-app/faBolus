@@ -100,6 +100,7 @@ struct SettingsView: View {
                     .onChange(of: selectedGlucoseSource) { _, id in
                         GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
                     }
+                    NavigationLink("CGM account credentials") { CgmCredentialsView() }
                 } header: {
                     Text("Glucose failover")
                 } footer: {
