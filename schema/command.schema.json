@@ -13,7 +13,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert", "keyShare"],
+      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert"],
       "description": "Command type."
     },
     "requestId": {
@@ -148,10 +148,6 @@
       "type": "string",
       "enum": ["glance", "alerts", "history", "details"],
       "description": "Garmin remote screen shown first (statusRead reply)."
-    },
-    "pumpKeyHex": {
-      "type": "string",
-      "description": "keyShare: JPAKE derived secret as lowercase hex (phone → watch, bench handoff). Credential."
     }
   },
   "additionalProperties": false

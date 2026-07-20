@@ -9,9 +9,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     public enum Kind: String, Codable, Sendable {
         case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead, dismissAlert
-        /// Phone → watch: shares the JPAKE derived secret so the watch can resume-auth to the pump
-        /// directly (bench handoff). Carried in `pumpKeyHex`.
-        case keyShare
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -67,8 +64,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     // first. Screen ids: "glance" | "alerts" | "history" | "details".
     public var screenOrder: [String]?
     public var defaultScreen: String?
-    /// keyShare: the JPAKE derived secret as lowercase hex (bench handoff; treat as a credential).
-    public var pumpKeyHex: String?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -80,7 +75,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 glucoseAgeSec: Double? = nil, history: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
-                screenOrder: [String]? = nil, defaultScreen: String? = nil, pumpKeyHex: String? = nil) {
+                screenOrder: [String]? = nil, defaultScreen: String? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -94,7 +89,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
-        self.pumpKeyHex = pumpKeyHex
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

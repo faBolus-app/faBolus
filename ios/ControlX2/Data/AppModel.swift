@@ -98,13 +98,9 @@ public final class AppModel {
     /// True when a saved pairing exists — Connect can resume without a code.
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
-    /// DEBUG (bench): stored derived secret as hex, to paste into the Garmin handoff-resume probe.
-    public var debugPairingHex: String? { PairingStore.loadHex() }
 
     /// Set by the Garmin bridge; presents Garmin device selection.
     public var setupGarmin: (@MainActor () -> Void)?
-    /// Set by the Garmin bridge; pushes the stored pump key to the watch (bench handoff).
-    public var sendGarminKey: (@MainActor () -> Void)?
     /// Human-readable Garmin remote status (device name / selection result) for the HUD.
     public var garminStatus: String?
 
