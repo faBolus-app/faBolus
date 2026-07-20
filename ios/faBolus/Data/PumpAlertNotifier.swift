@@ -1,6 +1,5 @@
 import Foundation
 import UserNotifications
-import PumpX2Messages
 
 /// Posts an iOS local notification for each active pump alert, with a **Clear** action that
 /// dismisses it on the pump — so the user can act on alerts without opening the app. Notifications
@@ -26,16 +25,16 @@ final class PumpAlertNotifier: NSObject, UNUserNotificationCenterDelegate {
         model.onNotificationsChange = { [weak self] ns in self?.sync(ns) }
     }
 
-    private func key(_ n: PumpNotification) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
+    private func key(_ n: PumpAlert) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
 
-    private func sync(_ notifications: [PumpNotification]) {
+    private func sync(_ notifications: [PumpAlert]) {
         let active = Set(notifications.map(key))
         // Post newly-active alerts.
         for n in notifications where !posted.contains(key(n)) {
             posted.insert(key(n))
             let content = UNMutableNotificationContent()
             content.title = n.title
-            content.body = n.detail ?? "Active pump alert"
+            content.body = n.detail.isEmpty ? "Active pump alert" : n.detail
             content.categoryIdentifier = Self.category
             content.userInfo = ["id": n.id, "kind": n.kind.rawValue]
             content.sound = .default

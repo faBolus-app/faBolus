@@ -1,21 +1,24 @@
 import Foundation
-import PumpX2Messages
 
-/// Abstraction over the pump so the UI runs in the simulator (mock) and, later, against a real
-/// pump via PumpX2Kit (live). Async streaming of snapshots keeps the HUD reactive.
+/// The **pump backend** interface — the stable seam between the faBolus UI and any pump. A backend
+/// (TandemBackend/PumpX2Kit, MockBackend, or a community backend) conforms to this; the app depends
+/// only on this protocol + the neutral models, never on a specific pump library. Async streaming of
+/// snapshots keeps the HUD reactive.
 @MainActor
-public protocol PumpDataSource: AnyObject {
+public protocol PumpBackend: AnyObject {
+    /// What this backend supports, so the UI adapts (carbs mode, cancel, alerts, pairing).
+    var capabilities: PumpCapabilities { get }
     var snapshot: PumpSnapshot { get }
     var glucoseHistory: [GlucoseReading] { get }
     /// IOB over time + delivered-bolus markers, for the chart's insulin overlay.
     var iobHistory: [IOBSample] { get }
     var bolusMarkers: [BolusMarker] { get }
-    /// Active pump alerts/alarms/CGM alerts (most severe first).
-    var activeNotifications: [PumpNotification] { get }
+    /// Active pump alerts/alarms/CGM alerts (most severe first), as neutral `PumpAlert`s.
+    var activeNotifications: [PumpAlert] { get }
     /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.
     var alertDebug: String { get }
-    /// Dismiss (clear) one notification on the pump — a signed control command.
-    func dismissNotification(_ notification: PumpNotification) async
+    /// Dismiss (clear) one alert on the pump — a signed control command.
+    func dismissNotification(_ alert: PumpAlert) async
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
     var pairingCode: String { get set }
     /// True when a prior pairing was saved (Keychain) — connect can resume without a code.

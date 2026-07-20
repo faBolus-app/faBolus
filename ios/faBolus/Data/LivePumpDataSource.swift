@@ -11,13 +11,21 @@ import PumpX2BLE
 ///
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
-public final class LivePumpDataSource: NSObject, PumpDataSource {
+public final class LivePumpDataSource: NSObject, PumpBackend {
+    /// Tandem (via PumpX2Kit) supports the full feature set.
+    public let capabilities: PumpCapabilities = .full
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
-    public private(set) var activeNotifications: [PumpNotification] = []
+    public private(set) var activeNotifications: [PumpAlert] = []
     public var onChange: (@MainActor () -> Void)?
+
+    /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
+    private static func toAlert(_ n: PumpNotification) -> PumpAlert {
+        PumpAlert(id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
+                  title: n.title, detail: n.detail ?? "", isDismissable: n.dismissable)
+    }
 
     // Active notifications by kind (merged into `activeNotifications`, most serious first).
     private var alarmList: [PumpNotification] = []
@@ -41,7 +49,7 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         // Expire acks whose alert is gone from the pump (condition resolved) or whose snooze has
         // elapsed, so a genuinely new occurrence shows (and re-notifies) again.
         acknowledged = acknowledged.filter { present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow }
-        activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }
+        activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map(Self.toAlert)
     }
     // Diagnostic: raw bitmaps + how many alert responses we've received (surfaced on the HUD to
     // confirm the pump is actually answering the alert polls).
@@ -269,8 +277,10 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
 
     /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
     /// message but does NOT modify insulin delivery, so it runs under `.allowNonDelivery`.
-    public func dismissNotification(_ notification: PumpNotification) async {
+    public func dismissNotification(_ alert: PumpAlert) async {
         guard isPaired else { return }
+        let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert
+        let ackKey = "\(alert.kind.rawValue):\(alert.id)"
         // Fresh signing timestamp for the HMAC.
         guard let time = try? await withCheckedThrowingContinuation({ (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
             timeCont = cont
@@ -282,11 +292,11 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         client.writePolicy = .allowNonDelivery
         defer { client.writePolicy = previous }
         lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
-        alertDebug = "cleared id \(notification.id) kind \(notification.kind.rawValue) — snoozed if condition persists"
+        alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
         // Surface a send failure directly (the request otherwise fails silently) so a non-arriving
         // ack can be told apart from a request that never went out.
         do {
-            _ = try client.send(DismissNotificationRequest(kind: notification.kind, notificationId: notification.id),
+            _ = try client.send(DismissNotificationRequest(kind: kind, notificationId: alert.id),
                                 authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         } catch {
             lastDismissAck = "send failed: \(error)"
@@ -295,7 +305,7 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         // alert on the pump; for a condition-based alert (e.g. CGM high while BG is genuinely high)
         // the pump re-raises it, but the ack keeps it hidden (and un-notified) until the condition
         // clears on the pump or the snooze elapses.
-        acknowledged[noteKey(notification)] = Date()
+        acknowledged[ackKey] = Date()
         mergeNotifications()
         onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }

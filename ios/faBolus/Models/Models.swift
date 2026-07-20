@@ -105,6 +105,44 @@ public struct PumpSnapshot: Sendable, Equatable {
     }
 }
 
+/// A pump alert/alarm surfaced to the UI. Backend-neutral: each `PumpBackend` maps its own
+/// notification type onto this so the app (and remotes) never depend on a specific pump library.
+/// `kind` raw values match the remote-protocol alert kinds (reminder 0 / alert 1 / alarm 2 /
+/// cgmAlert 3) so `RemoteCommand.RemoteAlert` mapping is a straight passthrough.
+public enum PumpAlertKind: Int, Sendable, Equatable {
+    case reminder = 0, alert = 1, alarm = 2, cgmAlert = 3
+}
+
+public struct PumpAlert: Identifiable, Sendable, Equatable {
+    public let id: Int          // backend's stable id (e.g. bitmap index) — used for remote mapping
+    public let kind: PumpAlertKind
+    public let title: String
+    public let detail: String
+    public let isDismissable: Bool
+    public init(id: Int, kind: PumpAlertKind, title: String, detail: String = "", isDismissable: Bool = true) {
+        self.id = id; self.kind = kind; self.title = title; self.detail = detail; self.isDismissable = isDismissable
+    }
+}
+
+/// What a pump backend supports, so one UI adapts to any backend (hide carbs mode / cancel /
+/// alerts / pairing when unsupported). Defaults are the full Tandem feature set.
+public struct PumpCapabilities: Sendable, Equatable {
+    public var supportsCarbEntry: Bool
+    public var supportsBolusCancel: Bool
+    public var supportsAlertClear: Bool
+    public var supportsHistoryBackfill: Bool
+    /// The backend needs an interactive pairing flow (e.g. a 6-digit code).
+    public var supportsPairing: Bool
+    public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
+                supportsAlertClear: Bool = true, supportsHistoryBackfill: Bool = true,
+                supportsPairing: Bool = true) {
+        self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
+        self.supportsAlertClear = supportsAlertClear; self.supportsHistoryBackfill = supportsHistoryBackfill
+        self.supportsPairing = supportsPairing
+    }
+    public static let full = PumpCapabilities()
+}
+
 /// A bolus the user is about to confirm (modern: carbs + BG → recommended units).
 public struct BolusRecommendation: Sendable, Equatable {
     public var carbsGrams: Double = 0
