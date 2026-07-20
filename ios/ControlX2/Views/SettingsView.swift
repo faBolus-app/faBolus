@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Settings tab: bolus defaults + increments (shared with the remotes), chart axes, and pump
 /// pairing management.
@@ -81,6 +82,19 @@ struct SettingsView: View {
                     connectionControls
                     if model.hasStoredPairing {
                         Button("Forget pairing", role: .destructive) { model.forgetPairing() }
+                    }
+                    // Bench debug: reveal/copy the derived secret to paste into the Garmin
+                    // handoff-resume probe (Milestone 0). Treat it like a credential.
+                    if let hex = model.debugPairingHex {
+                        Button {
+                            UIPasteboard.general.string = hex
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Copy pairing secret (debug)")
+                                Text(hex).font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary).lineLimit(3)
+                            }
+                        }
                     }
                     Button { model.setupGarmin?() } label: {
                         Label("Set up Garmin remote", systemImage: "applewatch.radiowaves.left.and.right")

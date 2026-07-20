@@ -38,6 +38,13 @@ enum PairingStore {
         return [UInt8](data)
     }
 
+    /// DEBUG (bench): the stored derived secret as lowercase hex, for the Garmin handoff-resume
+    /// probe. This is long-term pairing material — treat it like a credential.
+    static func loadHex() -> String? {
+        guard let s = load() else { return nil }
+        return s.map { String(format: "%02x", $0) }.joined()
+    }
+
     static func clear() {
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,

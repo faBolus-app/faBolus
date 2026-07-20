@@ -98,6 +98,8 @@ public final class AppModel {
     /// True when a saved pairing exists — Connect can resume without a code.
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
+    /// DEBUG (bench): stored derived secret as hex, to paste into the Garmin handoff-resume probe.
+    public var debugPairingHex: String? { PairingStore.loadHex() }
 
     /// Set by the Garmin bridge; presents Garmin device selection.
     public var setupGarmin: (@MainActor () -> Void)?
