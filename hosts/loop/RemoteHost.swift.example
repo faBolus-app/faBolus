@@ -1,0 +1,61 @@
+// RemoteHost.swift.example — DESIGN SCAFFOLD, NOT COMPILED (`.example` extension).
+//
+// The host side of the faBolus remote protocol. faBolus's PhoneRemoteHost/GarminRemoteBridge are
+// the reference implementation; a Loop adapter implements the same shape against LoopKit. Copy into
+// Loop's build (or a future optional package here), drop the `.example`, and wire the TODOs.
+
+import Foundation
+// import faBolusCore   // RemoteCommand + models, once extracted to a package (see extensibility plan)
+// import LoopKit
+
+/// A host answers remote commands and produces the status payload the remotes display.
+@MainActor
+protocol RemoteHost: AnyObject {
+    /// Handle one inbound command from a remote; return zero or more commands to send back
+    /// (e.g. a bolusStatus echo, or the statusRead reply).
+    func handle(_ command: RemoteCommand) async -> [RemoteCommand]
+    /// The current status the remotes show (glucose/IOB/reservoir/battery/alerts/settings…).
+    func statusCommand(includeHistory: Bool) -> RemoteCommand
+}
+
+/// Skeleton Loop adapter. Every `TODO` maps the neutral contract onto LoopKit; all dosing must go
+/// through Loop's own authorization + confirmation. Bench/experimental only.
+@MainActor
+final class LoopRemoteHost: RemoteHost {
+    // let loop: LoopDataManager  // or the relevant LoopKit entry points
+
+    func handle(_ command: RemoteCommand) async -> [RemoteCommand] {
+        switch command.kind {
+        case .statusRead:
+            return [statusCommand(includeHistory: true)]
+        case .bolusRequest:
+            let units: Double
+            if let carbs = command.carbsGrams, carbs > 0 {
+                units = 0 // TODO: Loop bolus calculator (carbs, bgMgdl) → recommended units
+            } else {
+                units = command.units ?? 0
+            }
+            guard units > 0 else {
+                return [RemoteCommand(kind: .bolusStatus, requestId: command.requestId,
+                                      status: .failed, message: "No insulin needed")]
+            }
+            // TODO: deliver via Loop's manual-bolus path WITH Loop's confirmation + a max-bolus
+            // clamp; echo .delivering then .delivered/.cancelled/.failed with deliveredUnits.
+            return [RemoteCommand(kind: .bolusStatus, requestId: command.requestId, status: .delivering)]
+        case .cancelBolus:
+            // TODO: cancel the in-progress dose; echo the final status.
+            return []
+        case .dismissAlert:
+            // TODO: acknowledge the matching Loop/pump alert (command.alertId / command.alertKind).
+            return [statusCommand(includeHistory: false)]
+        default:
+            return []
+        }
+    }
+
+    func statusCommand(includeHistory: Bool) -> RemoteCommand {
+        // TODO: fill from LoopKit — glucose, glucoseAgeSec, trend, iobUnits(units), reservoirUnits,
+        // batteryPercent, lastBolusUnits, carbRatio/isf/targetBg/maxBolusUnits, alerts, and history.
+        RemoteCommand(kind: .statusRead)
+    }
+}
