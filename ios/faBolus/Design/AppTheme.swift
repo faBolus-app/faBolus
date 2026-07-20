@@ -11,6 +11,7 @@ public enum AppTheme {
     public static let insulin = Color(red: 0.36, green: 0.42, blue: 0.90)   // indigo
     public static let carbs = Color(red: 0.95, green: 0.62, blue: 0.20)     // carb orange
     public static let disconnected = Color.gray
+    public static let stale = Color.gray                                    // de-emphasized old reading
 
     public static func glucoseColor(_ mgdl: Int) -> Color {
         switch GlucoseRange.classify(mgdl) {
@@ -19,6 +20,12 @@ public enum AppTheme {
         case .high: return high
         case .urgentHigh: return urgentHigh
         }
+    }
+
+    /// Glucose color, de-emphasized to `stale` gray when the reading is old — old values must read
+    /// as "not current" at a glance, never as a live in-range/high/low number.
+    public static func glucoseColor(_ mgdl: Int, stale: Bool) -> Color {
+        stale ? self.stale : glucoseColor(mgdl)
     }
 
     public static func ringColor(_ state: PumpConnectionState) -> Color {

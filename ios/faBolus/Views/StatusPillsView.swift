@@ -13,14 +13,25 @@ struct StatusPillsView: View {
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         }
-        HStack(spacing: 10) {
-            pill(icon: batteryIcon(snapshot.batteryPercent),
-                 tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
-                 value: "\(snapshot.batteryPercent)%", label: "Pump")
-            pill(icon: snapshot.cgmActive ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-                 tint: snapshot.cgmActive ? AppTheme.inRange : .gray,
-                 value: snapshot.cgmActive ? "OK" : "—", label: "CGM")
+        // CGM pill shows the reading's age and turns warning-colored when stale (self-updating).
+        TimelineView(.periodic(from: .now, by: 20)) { ctx in
+            HStack(spacing: 10) {
+                pill(icon: batteryIcon(snapshot.batteryPercent),
+                     tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
+                     value: "\(snapshot.batteryPercent)%", label: "Pump")
+                cgmPill(now: ctx.date)
+            }
         }
+    }
+
+    @ViewBuilder private func cgmPill(now: Date) -> some View {
+        let active = snapshot.cgmActive
+        let stale = GlucoseFreshness.isStale(snapshot.glucoseDate, now: now)
+        let value: String = snapshot.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: now) }
+            ?? (active ? "OK" : "—")
+        let tint: Color = !active ? .gray : (stale && snapshot.glucose != nil ? AppTheme.low : AppTheme.inRange)
+        pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
+             tint: tint, value: value, label: "CGM")
     }
 
     /// SF Symbol whose fill level tracks the battery percentage.

@@ -98,10 +98,11 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var targetBg: Int = 0        // mg/dL
     public init() {}
 
-    /// A CGM reading is considered stale (don't display the number) after 6 minutes.
+    /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
+    /// 6 min). Old readings must never be shown as current — the UI shows the value flagged instead.
     public var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }  // unknown age → treat as stale
-        return Date().timeIntervalSince(d) > 6 * 60
+        return GlucoseFreshness.isStale(d)
     }
 }
 

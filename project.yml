@@ -7,6 +7,9 @@ packages:
   faBolusCore:
     # Stable, pump/host-agnostic contracts + models (in-repo local package).
     path: Packages/faBolusCore
+  G7SensorKit:
+    # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
+    path: Packages/G7SensorKit
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -27,6 +30,8 @@ targets:
     dependencies:
       - package: faBolusCore
         product: faBolusCore
+      - package: G7SensorKit
+        product: G7SensorKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
@@ -45,6 +50,9 @@ targets:
       properties:
         # Shared container the app writes and the widgets read.
         com.apple.security.application-groups: [group.com.fabolus.app]
+        # Read glucose from Apple Health as a failover CGM feed (Eversense).
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     info:
       path: ios/faBolus/Info.plist
       properties:
@@ -57,7 +65,9 @@ targets:
           - INAlternativeAppNameKey: "faBolus"
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
-        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
+        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
+        # Read glucose from Apple Health as a failover CGM feed (e.g. Eversense).
+        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. Eversense) when the pump's glucose is unavailable."
         # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
         # goes through without the app being in the foreground.
         UIBackgroundModes: [bluetooth-central]
@@ -98,6 +108,9 @@ targets:
       # Shared contracts (RemoteCommand/RemoteLink + models).
       - package: faBolusCore
         product: faBolusCore
+      # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
+      - package: G7SensorKit
+        product: G7SensorKit
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -117,7 +130,9 @@ targets:
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
         WKCompanionAppBundleIdentifier: com.fabolus.app
-        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
+        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app and can read a CGM directly over Bluetooth when the phone is out of range."
+        # Keep a direct CGM (G7) BLE link alive in the background as a failover when the phone is unreachable.
+        UIBackgroundModes: [bluetooth-central]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.watch

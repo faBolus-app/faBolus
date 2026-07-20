@@ -94,6 +94,10 @@ public final class AppModel {
 
     private let source: PumpBackend
 
+    /// Optional independent CGM feed used as a **failover** when the pump-relayed glucose goes stale.
+    /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
+    private var glucoseSource: GlucoseSource?
+
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
         get { source.pairingCode } set { source.pairingCode = newValue }
@@ -112,6 +116,11 @@ public final class AppModel {
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
         source.onChange = { [weak self] in self?.refresh() }
+        // Optional glucose failover source: re-arbitrate whenever it has new data, and start it.
+        let gs = GlucoseSourceRegistry.makeSelected()
+        self.glucoseSource = gs
+        gs?.onChange = { [weak self] in self?.refresh() }
+        if let gs { Task { await gs.start() } }
     }
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
@@ -119,8 +128,13 @@ public final class AppModel {
     public var openBolusRequested = false
 
     private func refresh() {
-        snapshot = source.snapshot
-        glucoseHistory = source.glucoseHistory
+        // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
+        // stale. A stale reading is never published as current (see GlucoseArbiter).
+        let (snap, hist) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
+                                                pumpHistory: source.glucoseHistory,
+                                                source: glucoseSource)
+        snapshot = snap
+        glucoseHistory = hist
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         let alertsChanged = activeNotifications != source.activeNotifications

@@ -10,15 +10,23 @@ struct WatchGlanceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(model.displayGlucose)
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .foregroundStyle(watchGlucoseColor(model.glucose, stale: model.isGlucoseStale))
-                    if !model.isGlucoseStale { Text(model.trend).font(.title2) }
+                // Re-evaluate age/staleness on a timer so a reading visibly ages and turns stale.
+                TimelineView(.periodic(from: .now, by: 20)) { ctx in
+                    let stale = GlucoseFreshness.isStale(model.glucoseDate, now: ctx.date)
+                    VStack(spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(model.displayGlucose)
+                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .foregroundStyle(watchGlucoseColor(model.glucose, stale: stale))
+                            Text(model.trend).font(.title2)
+                                .foregroundStyle(stale ? .gray : .primary)
+                        }
+                        Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? "mg/dL")
+                            .font(.caption2)
+                            .fontWeight(stale ? .semibold : .regular)
+                            .foregroundStyle(stale ? .orange : .secondary)
+                    }
                 }
-                Text(model.isGlucoseStale ? "no recent CGM"
-                     : (model.ageMinutes.map { "\($0) min ago" } ?? "mg/dL"))
-                    .font(.caption2).foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
                     Label(String(format: "%.2f U", model.iobUnits), systemImage: "syringe")
