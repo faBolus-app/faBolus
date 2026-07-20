@@ -39,8 +39,8 @@ An Apple Watch or Garmin can *request* a bolus, but the phone stays in control:
 
 - **Apple Watch:** the request appears on the phone as a confirm dialog; delivery only happens
   after you confirm on the iPhone.
-- **Garmin:** you complete the tap-1-2-3 confirmation on the watch, and the phone carries it
-  out.
+- **Garmin:** you complete the confirmation on the watch — tap 1-2-3 on a touchscreen, or the
+  two-button hold on a button device — and the phone carries it out.
 - If the phone is unreachable, the remote shows a clean failure and **nothing is delivered**.
 
 See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).
