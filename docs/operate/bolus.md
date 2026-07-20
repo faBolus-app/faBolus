@@ -9,7 +9,7 @@
   <figcaption>Enter units, or carbs + BG for a recommendation</figcaption>
 </figure>
 <figure class="cx2-shot phone" markdown="span">
-  ![Saline confirmation dialog](../assets/screenshots/bolus-confirm.svg)
+  ![Bolus confirmation dialog](../assets/screenshots/bolus-confirm.svg)
   <figcaption>Explicit confirm before anything is delivered</figcaption>
 </figure>
 <figure class="cx2-shot phone" markdown="span">
