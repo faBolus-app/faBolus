@@ -151,10 +151,15 @@ struct SettingsView: View {
     }
 }
 
-/// Reorder the Garmin remote's swipe screens and choose which opens first. Drag to reorder (Edit),
-/// then pick the default. The new layout is pushed to the watch on its next status update.
+/// Choose which Garmin screens appear, their swipe order, and which opens first. Toggle screens
+/// on/off, drag to reorder (Edit), and pick the default. Pushed to the watch on its next status update.
 struct GarminScreensView: View {
     @Bindable var settings: AppSettings
+
+    // Known screens not currently shown (available to add back).
+    private var hidden: [String] {
+        AppSettings.garminScreens.filter { !settings.garminScreenOrder.contains($0) }
+    }
 
     var body: some View {
         Form {
@@ -165,7 +170,7 @@ struct GarminScreensView: View {
                     }
                 }
             } footer: {
-                Text("The screen shown when the Garmin app launches.")
+                Text("The screen shown when the Garmin app launches (from the shown screens).")
             }
 
             Section {
@@ -177,13 +182,41 @@ struct GarminScreensView: View {
                 .onMove { from, to in
                     settings.garminScreenOrder.move(fromOffsets: from, toOffset: to)
                 }
+                .onDelete { idx in hideScreens(idx) }
             } header: {
-                Text("Swipe order (top → bottom)")
+                Text("Shown on watch (top → bottom)")
             } footer: {
-                Text("Swiping up on the watch moves down this list; swiping down moves up.")
+                Text("Swiping up on the watch moves down this list. Swipe a row left to hide it — at least one screen must stay shown.")
+            }
+
+            if !hidden.isEmpty {
+                Section {
+                    ForEach(hidden, id: \.self) { id in
+                        Button {
+                            settings.garminScreenOrder = settings.garminScreenOrder + [id]
+                        } label: {
+                            Label(AppSettings.garminScreenLabel(id), systemImage: "plus.circle")
+                        }
+                    }
+                } header: {
+                    Text("Hidden")
+                } footer: {
+                    Text("Tap to show a screen on the watch.")
+                }
             }
         }
         .navigationTitle("Garmin Screens")
         .toolbar { EditButton() }
+    }
+
+    // Hide the selected shown-screens, keeping at least one and a valid default.
+    private func hideScreens(_ idx: IndexSet) {
+        guard settings.garminScreenOrder.count - idx.count >= 1 else { return }
+        var order = settings.garminScreenOrder
+        order.remove(atOffsets: idx)
+        settings.garminScreenOrder = order
+        if !order.contains(settings.garminDefaultScreen) {
+            settings.garminDefaultScreen = order.first ?? "glance"
+        }
     }
 }
