@@ -7,8 +7,8 @@ import faBolusCore
 ///
 /// Requires faBolus **and** xDrip to be built/signed under the **same Apple Developer Team ID** with
 /// the matching app-group entitlement (App Groups are team-scoped) — i.e. self-compile both. In
-/// xDrip: Settings → "Share to Loop" with share type **Loop**. Ported from
-/// JohanDegraeve/xdrip-client-swift. Read-only.
+/// xDrip: Settings → "Share to Loop" (share type **Loop** or **Trio**). faBolus reads whichever
+/// group xDrip writes to. Ported from JohanDegraeve/xdrip-client-swift. Read-only.
 ///
 /// Payload dicts are Dexcom-Share-style: `Value` mg/dL, `DT`/`ST` = "/Date(ms)/", `Trend` slope
 /// ordinal (1=DoubleUp…7=DoubleDown), optional `direction` name, `from` = "xDrip".
@@ -23,11 +23,14 @@ final class XDripAppGroupSource: GlucoseSource {
 
     private var task: Task<Void, Never>?
 
-    /// The Loop App Group suite name, resolved from Info.plist (the `$(DEVELOPMENT_TEAM)` placeholder
-    /// is substituted with the signing team at build), so no team id is hard-coded here.
-    private var suiteName: String? {
-        (Bundle.main.object(forInfoDictionaryKey: "LoopAppGroupIdentifier") as? String)?
-            .trimmingCharacters(in: .whitespaces)
+    /// xDrip's shared-group suite names (Loop and Trio share types), resolved from Info.plist (the
+    /// `$(DEVELOPMENT_TEAM)` placeholder is substituted with the signing team at build), so no team
+    /// id is hard-coded. faBolus reads whichever group xDrip is actually writing to. An unsubstituted
+    /// placeholder (no team set) is dropped.
+    private var suiteNames: [String] {
+        ["LoopAppGroupIdentifier", "TrioAppGroupIdentifier"].compactMap {
+            (Bundle.main.object(forInfoDictionaryKey: $0) as? String)?.trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty && !$0.contains("DEVELOPMENT_TEAM") }
     }
 
     func start() async {
@@ -45,22 +48,25 @@ final class XDripAppGroupSource: GlucoseSource {
     func stop() { task?.cancel(); task = nil; status = .idle; onChange?() }
 
     private func read() async {
-        guard let suite = suiteName, !suite.isEmpty, !suite.contains("DEVELOPMENT_TEAM"),
-              let defaults = UserDefaults(suiteName: suite),
-              let data = defaults.data(forKey: "latestReadings") else {
-            status = .needsSetup; onChange?(); return
+        let suites = suiteNames
+        guard !suites.isEmpty else { status = .needsSetup; onChange?(); return }
+        // Read latestReadings from each configured group (Loop / Trio); use whichever has data.
+        var dicts: [[String: Any]] = []
+        for suite in suites {
+            guard let defaults = UserDefaults(suiteName: suite),
+                  let data = defaults.data(forKey: "latestReadings"),
+                  let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+            else { continue }
+            dicts.append(contentsOf: arr)
         }
-        guard let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
-            status = .error("Unreadable xDrip payload"); onChange?(); return
-        }
-        let readings: [GlucoseReading] = arr.compactMap { reading(from: $0)?.reading }
-        let samples: [GlucoseSample] = arr.compactMap { reading(from: $0) }
+        guard !dicts.isEmpty else { status = .needsSetup; onChange?(); return }
+        let samples = dicts.compactMap { reading(from: $0) }
         guard let newest = samples.max(by: { $0.date < $1.date }) else {
             status = .stale; onChange?(); return
         }
         latest = newest
         var byBucket: [Int: GlucoseReading] = [:]
-        for r in history + readings { byBucket[Int(r.date.timeIntervalSince1970 / 300)] = r }
+        for r in history + samples.map({ $0.reading }) { byBucket[Int(r.date.timeIntervalSince1970 / 300)] = r }
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
         status = newest.isStale ? .stale : .connected
