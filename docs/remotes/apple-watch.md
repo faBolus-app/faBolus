@@ -23,6 +23,23 @@ A Loop-style remote at parity with the phone + Garmin. **The watch never touches
 The watch honors its own bolus/carb increments and default mode, set in **iPhone Settings →
 Watch & Garmin increments** and **Default mode**.
 
+## Watch-face complication
+A glucose **complication** (value + trend) is available for the watch face — add it like any
+complication (long-press the face → Edit → pick a corner → ControlX2 → Glucose). It reads the last
+value the watch app published (App Group), hides readings older than 6 min, and refreshes when the
+watch app updates or on its ~5-min timeline. Supported families: circular, inline, corner,
+rectangular.
+
+!!! note "One-time setup (App Group)"
+    The complication shares data with the watch app via the App Group `group.com.zgranowitz.controlx2`.
+    It must be enabled once on the **ControlX2Watch** and **ControlX2WatchWidgets** targets (Xcode →
+    each target → Signing & Capabilities → App Groups → check the group), then the watch app +
+    complication install/provision. Same one-time step the iPhone widgets needed.
+
+## Independent (direct-to-pump) mode
+Running the watch **without the iPhone** — pairing the watch straight to the pump — is planned, not
+built. See the design + phased plan in [Independent Apple Watch](../design/independent-watch.md).
+
 ## Contract
 Phone↔watch messages follow [`schema/command.schema.json`](../architecture.md): a tiny JSON
 contract (`kind`, `requestId`, `units`, `confirmToken`, `status`, …). The Swift mirror is
