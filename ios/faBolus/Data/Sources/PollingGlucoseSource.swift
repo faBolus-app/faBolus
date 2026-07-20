@@ -13,28 +13,53 @@ class PollingGlucoseSource: GlucoseSource {
     private(set) var status: GlucoseSourceStatus = .idle
     var onChange: (@MainActor () -> Void)?
 
-    /// Poll cadence (seconds). Cloud CGM feeds update ~every 5 min; poll a bit faster to catch them.
-    let interval: TimeInterval
+    /// Poll cadences (seconds). Battery-aware: while the pump feed is healthy we poll rarely
+    /// (`idleInterval`) just to keep a warm value; once it goes stale we ramp to `activeInterval`
+    /// and poll immediately, since the cloud feed is now the live source.
+    let activeInterval: TimeInterval
+    let idleInterval: TimeInterval
     private var task: Task<Void, Never>?
+    private var started = false
+    private var primaryHealthy = false
 
-    init(id: String, priority: Int, interval: TimeInterval = 60) {
-        self.id = id; self.priority = priority; self.interval = interval
+    init(id: String, priority: Int, activeInterval: TimeInterval = 60, idleInterval: TimeInterval = 600) {
+        self.id = id; self.priority = priority
+        self.activeInterval = activeInterval; self.idleInterval = idleInterval
     }
 
     func start() async {
-        guard task == nil else { return }
+        guard !started else { return }
+        started = true
         status = .searching; onChange?()
-        task = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.tick()
-                try? await Task.sleep(nanoseconds: UInt64((self?.interval ?? 60) * 1_000_000_000))
-            }
-        }
+        restartLoop(pollNow: true)
     }
 
     func stop() {
+        started = false
         task?.cancel(); task = nil
         status = .idle; onChange?()
+    }
+
+    /// Ramp up (poll now + fast cadence) when the primary goes stale; back off to the idle cadence
+    /// when it recovers. No-op until the source has been started.
+    func setPrimaryHealthy(_ healthy: Bool) {
+        guard started, healthy != primaryHealthy else { return }
+        primaryHealthy = healthy
+        restartLoop(pollNow: !healthy)   // became stale → fetch immediately
+    }
+
+    private func restartLoop(pollNow: Bool) {
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            if pollNow { await self.tick() }
+            while !Task.isCancelled {
+                let delay = self.primaryHealthy ? self.idleInterval : self.activeInterval
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                if Task.isCancelled { break }
+                await self.tick()
+            }
+        }
     }
 
     private func tick() async {
