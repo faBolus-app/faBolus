@@ -4,11 +4,19 @@ Goal: let the Apple Watch connect to the pump **over its own Bluetooth** and rea
 saline boluses **without the iPhone present**, as an option alongside the current iPhone-relay mode.
 Bench proof-of-concept, saline only.
 
-## The hard constraint: one control connection
-The pump accepts **one authenticated control connection at a time** (the same reason t:connect must
-be unpaired to use ControlX2). So "independent watch" does **not** mean phone + watch both driving
-the pump at once. It means the watch can **take over** the connection when the phone is away
-(a *handoff*). The design is built around arbitration, not simultaneous control.
+## The hard constraint: one pairing at a time (re-pair to switch)
+The pump stores **one pairing at a time** — pairing a new device **evicts** the previous device's
+pairing (confirmed on the bench, and it's why t:connect must be unpaired to use ControlX2). So
+"independent watch" is **not** phone + watch both controlling the pump, and it isn't even a live
+handoff between two paired devices. It's an **either/or**:
+
+- Whichever device you **paired last** (with a fresh code) is the one that can talk to the pump.
+- Pairing the **watch** evicts the **phone** (the phone app must re-pair, with a new code, to use the
+  pump again) — and vice-versa.
+
+This *simplifies* the software (no simultaneous-connection arbitration to build) but makes switching
+a deliberate, manual **re-pair with a new code** each time. The design centers on making that
+re-pair fast and obvious, not on juggling two live connections.
 
 ## Authentication: the watch must pair itself (code entry on the watch)
 The pump issues a **fresh 6-digit pairing code for every device pairing**, and the derived secret is
@@ -22,14 +30,9 @@ viable** and is superseded by this section. The watch must run its **own full JP
 3. Thereafter the watch **resume-auths** with its stored secret (no code re-entry) on every connect —
    exactly like the phone does today.
 
-So code entry is a **one-time** step on the watch; the recurring path is resume-auth. This makes the
-watchOS crypto spike harder — the watch must run the **full JPAKE key exchange**, not just resume.
-
-!!! warning "Open question — does the pump keep more than one pairing?"
-    If the pump stores only **one** pairing at a time, pairing the watch may **evict the phone's
-    pairing** (and vice-versa), forcing a re-pair when you switch devices. If it keeps several, phone
-    and watch can each stay paired (still only one *connected* at a time). Determine this in Phase 0 —
-    it decides whether "independent watch" is a co-equal second device or a re-pair-to-switch model.
+Code entry is a **one-time** step per pairing session; the recurring path is resume-auth — until you
+pair the *other* device, which evicts this one and forces a re-pair here next time. This makes the
+watchOS crypto spike harder: the watch must run the **full JPAKE key exchange**, not just resume.
 
 ## Phases
 
@@ -40,8 +43,8 @@ watchOS crypto spike harder — the watch must run the **full JPAKE key exchange
   target the watch. (Must cover the full pairing handshake, not just resume.)
 - **CoreBluetooth on the watch:** confirm `PumpX2BLE`'s `CBCentralManager` can discover + connect the
   pump from a physical Apple Watch (watchOS supports CB central; range/throughput are lower).
-- **Pairing model:** pair the watch directly (fresh code from the pump) and confirm whether doing so
-  **evicts the phone's pairing** — this answers the "one pairing?" question above and shapes the UX.
+- **Pairing model:** ✅ confirmed on the bench — the pump keeps **one** pairing; pairing the watch
+  evicts the phone (re-pair-to-switch). No further spike needed here.
 
 ### Phase 1 — On-watch pairing UI + storage
 - A watch **6-digit code entry** (crown digit-picker or tap number pad) → run JPAKE on the watch →
@@ -57,12 +60,15 @@ watchOS crypto spike harder — the watch must run the **full JPAKE key exchange
   poll status, deliver signed bolus, dismiss alerts. Reuse the exact signed path (byte-verified).
 - The watch's existing views bind to either the relay model or the direct client behind a protocol.
 
-### Phase 3 — Mode + arbitration
-- Setting: **Connection mode** = *iPhone relay* (default) or *Direct to pump*.
-- Arbitration so both never hold the connection: switching the watch to Direct sends the phone a
-  "release" (phone disconnects), then the watch connects; switching back reverses it. When the phone
-  is reachable it owns the connection unless the user explicitly hands off.
-- A clear on-watch indicator of which mode/owner is active.
+### Phase 3 — Mode + switching (no live arbitration needed)
+Because only one device is ever paired, there's **no simultaneous-connection arbitration to build** —
+whichever paired last owns the pump. What's needed is a clear switch:
+- Watch setting: **Direct to pump** vs **iPhone relay** (default). Choosing Direct starts the on-watch
+  pairing (Phase 1); the phone shows a "Watch is now paired — re-pair the phone to use it here" banner.
+- Both apps surface **who is paired now** and offer a one-tap "Re-pair this device" (with the fresh
+  code) so switching back is fast and obvious.
+- Optional nicety: since it's either/or, the relay path and the direct path are mutually exclusive at
+  runtime — the watch uses the direct `WatchPumpClient` when paired, else falls back to relay.
 
 ### Phase 4 — Reliability / background
 - watchOS `bluetooth-central` background mode + reconnect/backoff on the watch (background BLE is
@@ -71,13 +77,14 @@ watchOS crypto spike harder — the watch must run the **full JPAKE key exchange
 
 ### Phase 5 — Bench validation
 - Saline on a scale. Re-run the oracle byte-exactness for signed messages generated on the watch.
-- Handoff edge cases: both devices attempting connect, secret rotation on re-pair, phone returning
-  mid-watch-session, watch out of range mid-bolus.
+- Edge cases: re-pair round-trips (watch↔phone) with fresh codes, watch out of range mid-bolus,
+  resume-auth after the watch app is killed, pump eviction mid-session (the other device was paired).
 
 ## Risks / open questions
 - **JPAKE/crypto on watchOS** — the watch must run the *full* pairing handshake; mbedtls may not
   target watchOS, forcing a CryptoKit/Swift path (largest risk).
-- **One pairing vs many** — does pairing the watch evict the phone's pairing? (Phase 0; decides the model.)
+- **Re-pair friction** — ✅ single pairing (watch evicts phone). Switching devices always means a
+  fresh code entry; the UX must make that fast, or the watch mostly stays the paired device.
 - **On-watch code entry** — a usable 6-digit input on a tiny screen (crown picker vs number pad).
 - **watchOS BLE** — range, throughput, background limits, battery.
 - **Safety** — direct delivery keeps every guard: max-bolus clamp, saline/bench confirm, the
