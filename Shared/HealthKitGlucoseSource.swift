@@ -2,10 +2,14 @@ import Foundation
 import HealthKit
 import faBolusCore
 
-/// Reads glucose from **Apple Health** as a failover feed. Wired for **Eversense**, whose official
-/// app writes to Health (Dexcom writes on a 3-hour delay and US LibreLink doesn't write to Health, so
-/// they are served by BLE/cloud sources instead). Uses an observer + anchored query with background
-/// delivery so new samples arrive as the writer flushes them. Read-only; no trend from Health.
+/// Reads glucose from **Apple Health** as a failover feed — whatever app writes glucose there.
+/// Primary use is **xDrip4iOS**, which writes each reading to Health in real time (≈5 min, or ≈1 min
+/// with its frequent-readings toggle), giving near-real-time coverage of *any* xDrip-supported sensor
+/// (Libre 1/2, Dexcom G5/G6/ONE, …). Also serves **Eversense**, whose app writes to Health. (The
+/// official Dexcom app writes on a ~3-hour delay and US LibreLink doesn't write at all, so those are
+/// served by the BLE/cloud sources instead.) Observer + anchored query with background delivery, so
+/// samples arrive as the writer flushes them. Cross-platform: compiles for iOS and watchOS (the watch
+/// reads Health synced from the phone). Read-only; Health carries no trend, so trend shows flat.
 @MainActor
 final class HealthKitGlucoseSource: GlucoseSource {
     let id = "healthkit"

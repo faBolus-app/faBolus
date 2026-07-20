@@ -10,7 +10,8 @@ The app talks only to a backend interface, so support for other pumps can be add
 
 **CGM failover (optional):** glucose normally arrives through the pump; faBolus can also read an
 **independent CGM feed** as a backup so a reading keeps flowing if the pump, phone, or sensor link
-drops. Sources: **Dexcom G7/ONE+** directly over Bluetooth (also on Apple Watch), and **LibreLinkUp**
+drops. Sources: **Dexcom G7/ONE+** directly over Bluetooth (also on Apple Watch); **xDrip4iOS** via
+Apple Health or a local App Group (universal — Libre 1/2, Dexcom G5/G6/ONE, …); and **LibreLinkUp**
 (Libre 2/3), **Dexcom Share** (G6), **Nightscout**, and **Apple Health** (Eversense). The pump stays
 the primary source; a stale reading is shown marked (never as current). See
 [the CGM failover docs](docs/operate/cgm-failover.md).

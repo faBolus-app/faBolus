@@ -19,8 +19,10 @@ public enum GlucoseSourceRegistry {
                                 sensors: ["Any"]) { NightscoutSource() },
         GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
                                 sensors: ["Dexcom G6", "Dexcom G7"]) { DexcomShareSource() },
-        GlucoseSourceDescriptor(id: "healthkit", name: "Eversense (Apple Health)",
-                                sensors: ["Eversense E3", "Eversense 365"]) { HealthKitGlucoseSource() },
+        GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
+                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { HealthKitGlucoseSource() },
+        GlucoseSourceDescriptor(id: "xdrip-appgroup", name: "xDrip4iOS — App Group (local)",
+                                sensors: ["xDrip4iOS (any sensor, local)"]) { XDripAppGroupSource() },
     ]
 
     private static let key = "selectedGlucoseSourceId"
