@@ -99,6 +99,12 @@ struct SettingsView: View {
                     Button { model.setupGarmin?() } label: {
                         Label("Set up Garmin remote", systemImage: "applewatch.radiowaves.left.and.right")
                     }
+                    // Bench handoff: push the pump key to the watch so it can connect directly.
+                    if model.hasStoredPairing {
+                        Button { model.sendGarminKey?() } label: {
+                            Label("Send pump key to Garmin (debug)", systemImage: "key.radiowaves.forward")
+                        }
+                    }
                 }
 
                 Section {

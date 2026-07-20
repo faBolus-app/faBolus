@@ -39,5 +39,7 @@ nav:
       - iPhone widgets: remotes/iphone-widgets.md
       - Siri: remotes/siri.md
   - Architecture: architecture.md
+  - Design:
+      - Independent Apple Watch: design/independent-watch.md
   - Troubleshoot: troubleshoot.md
   - FAQ: faq.md

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 /// Watch-side remote state. Talks to the iPhone host over `RemoteLink` (WatchConnectivity):
 /// sends bolus requests, reflects status echoed back. The watch is a dumb remote — it never
@@ -87,9 +88,21 @@ final class WatchModel {
             if let h = cmd.history { history = h }
             lastBolusUnits = cmd.lastBolusUnits
             if let a = cmd.alerts { alerts = a }
+            publishComplication()
         default:
             break
         }
+    }
+
+    /// Publish the latest glucose to the App Group so the watch-face complication can show it.
+    /// Reuses `WidgetSnapshot`/`WidgetStore` (device-local App Group container on the watch).
+    private func publishComplication() {
+        let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
+                                  iobUnits: iobUnits, reservoirUnits: reservoirUnits,
+                                  batteryPercent: batteryPercent, lastBolusUnits: lastBolusUnits,
+                                  connected: reachable, updatedAt: Date())
+        WidgetStore.save(snap)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Send a units bolus the watch already confirmed (hold-to-deliver). The phone delivers it

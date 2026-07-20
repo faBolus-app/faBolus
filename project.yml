@@ -86,6 +86,15 @@ targets:
     sources:
       - watch/ControlX2Watch
       - Shared
+    dependencies:
+      # Embeds the watch-face complication extension.
+      - target: ControlX2WatchWidgets
+    entitlements:
+      path: watch/ControlX2Watch/ControlX2Watch.entitlements
+      properties:
+        # Device-local container shared with the watch complication (reuses the existing group id
+        # so no new App Group registration is needed).
+        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch
@@ -97,6 +106,35 @@ targets:
         TARGETED_DEVICE_FAMILY: "4"
         INFOPLIST_KEY_WKApplication: YES
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Relays bolus commands to the ControlX2 iPhone app."
+
+  # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
+  # app publishes to the shared App Group; never touches Bluetooth.
+  ControlX2WatchWidgets:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - watch/ControlX2WatchWidgets
+      - path: Shared/WidgetShared.swift
+    info:
+      path: watch/ControlX2WatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: ControlX2
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: watch/ControlX2WatchWidgets/ControlX2WatchWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "4"
 
   # WidgetKit extension — Lock Screen (accessory) + Home Screen widgets + tap-to-bolus. Reads
   # the snapshot the app publishes to the shared App Group; never touches Bluetooth itself.
