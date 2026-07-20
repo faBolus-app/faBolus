@@ -31,6 +31,15 @@ have to choose.
 battery start filling in within a few seconds.
 </div>
 
+!!! note "Tandem Mobi pairs differently (no screen)"
+    The Mobi has no display, so it can't show a code on a menu. Per Tandem's procedure you **place
+    the Mobi on its charging pad** to start pairing, then **pick up the pump and press its button
+    twice** to put it in pairing mode. Its 6-digit code is a **fixed PIN printed behind the
+    cartridge** (near the QR code) — that's the number you type into faBolus. Because it needs the
+    charging pad and physical button presses each time, **re-pairing a Mobi (e.g. switching it
+    between faBolus and the official app) is a deliberate, hands-on step — even less of a quick
+    toggle than the t:slim X2.**
+
 ## Pair (16-character — older t:slim X2, pre-v7.7)
 
 <ol class="cx2-steps">
