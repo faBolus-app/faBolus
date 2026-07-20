@@ -2,13 +2,9 @@ import SwiftUI
 
 @main
 struct FaBolusApp: App {
-    // On a device, talk to a real pump via PumpX2Kit. In the Simulator (no Bluetooth) use the
-    // mock so the UI is still demoable.
-    #if targetEnvironment(simulator)
-    @State private var model = AppModel(source: MockPumpDataSource())
-    #else
-    @State private var model = AppModel(source: LivePumpDataSource())
-    #endif
+    // The pump backend is chosen from the compile-time BackendRegistry (Tandem on device, mock in
+    // the Simulator by default; user-selectable when more than one backend is compiled in).
+    @State private var model = AppModel(source: BackendRegistry.makeSelected())
     @State private var remoteHost: PhoneRemoteHost?
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: PumpAlertNotifier?

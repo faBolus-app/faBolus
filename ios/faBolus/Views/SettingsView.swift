@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
     @State private var showPairing = false
+    @State private var selectedBackend = BackendRegistry.selected().id
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -76,6 +77,19 @@ struct SettingsView: View {
                     Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
                 }
 
+                if BackendRegistry.enabled.count > 1 {
+                    Section {
+                        Picker("Pump backend", selection: $selectedBackend) {
+                            ForEach(BackendRegistry.enabled) { Text($0.name).tag($0.id) }
+                        }
+                        .onChange(of: selectedBackend) { _, id in BackendRegistry.select(id) }
+                    } header: {
+                        Text("Backend")
+                    } footer: {
+                        Text("Which pump this build talks to. Takes effect after you reopen the app.")
+                    }
+                }
+
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
                     connectionControls
@@ -119,11 +133,11 @@ struct SettingsView: View {
 
     /// The Siri phrases (mirror `FaBolusShortcuts`), shown for discoverability.
     static let siriPhrases = [
-        "What's my glucose in Control X2",
-        "Insulin on board in Control X2",
-        "Pump status in Control X2",
-        "Any alerts in Control X2",
-        "Last bolus in Control X2",
+        "What's my glucose in faBolus",
+        "Insulin on board in faBolus",
+        "Pump status in faBolus",
+        "Any alerts in faBolus",
+        "Last bolus in faBolus",
     ]
 
     private func fmtU(_ v: Double) -> String {
