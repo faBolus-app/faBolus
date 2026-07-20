@@ -4,13 +4,14 @@ hide:
 ---
 
 <div class="cx2-hero" markdown>
-<span class="cx2-eyebrow">Built by Zev and Tia in Tandem</span>
+<span class="cx2-eyebrow">Built by Zev and Tia in tandem</span>
 
 # faBolus — your pump, on your wrist and your phone.
 
 faBolus is a remote for insulin pumps: see your glucose and pump status at a glance, and deliver a
-bolus from your iPhone, Apple Watch, or Garmin watch. It currently supports the **Tandem t:slim X2
-/ Mobi**.
+bolus from your iPhone, Apple Watch, or Garmin device — a watch or a cycling computer. It currently
+supports the **Tandem t:slim X2 / Mobi** pump, and the **Garmin Venu 3S** is the tested Garmin
+device.
 
 <span class="cx2-cta" markdown>
 [Build it yourself :material-arrow-right:](build/index.md){ .md-button .md-button--primary }

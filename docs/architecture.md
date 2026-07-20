@@ -44,12 +44,11 @@ faBolusGarmin  (separate repo)
 └── Connect IQ (Monkey C) remote for the venu3s — pairs to the iPhone app
 ```
 
-!!! note "The Garmin app moved to its own repo"
-    The Garmin (Monkey C) watch app used to live in `faBolus/garmin/`; it now lives in the
-    separate **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The
-    *iPhone side* of the Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK
-    dependency) is still part of this app, so the two continue to talk over the shared command
-    contract.
+!!! note "The Garmin app lives in its own repo"
+    The Garmin (Monkey C) app lives in the separate
+    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
+    Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK dependency) is part of this app,
+    so the two talk over the shared command contract.
 
 ## Who owns the pump
 

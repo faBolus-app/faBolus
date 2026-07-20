@@ -6,10 +6,9 @@ interlock and delivers through PumpX2Kit. To build and install it, see
 [Build the Garmin remote](../build/garmin-build.md).
 
 !!! note "The Garmin app lives in its own repo"
-    The Garmin watch app is maintained in the separate
-    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo (it used to live in
-    `faBolus/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
-    so the two talk over the shared command contract as before.
+    The Garmin app is maintained in the separate
+    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
+    bridge is part of the faBolus app, so the two talk over the shared command contract.
 
 !!! note "Devices: Venu 3S validated; more build-verified"
     The **Garmin Venu 3S** is hardware-validated. The app also builds for button-only watches and
