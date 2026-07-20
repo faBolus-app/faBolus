@@ -158,7 +158,7 @@ Then do the same **Team** choice for the other rows in the TARGETS list:
 
 !!! warning "Free account? A red \"identifier is not available\" message is normal"
     Every app needs a name that's unique across everyone in the world. The project comes with
-    `com.zgranowitz.controlx2`, which is already taken. Change the first part to your own — for
+    `com.fabolus.app`, which is already taken. Change the first part to your own — for
     example `com.janesmith` — so it's unique to you:
 
     1. Open `faBolus/project.yml` in **TextEdit**.

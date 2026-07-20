@@ -57,7 +57,7 @@ xcrun devicectl device install app --device <UDID> \
 - **`DEVELOPMENT_TEAM`** is your Apple team id (the signing cert's OU). It isn't stored in the
   repo — pass it on the command line. For a compile-only check, add `CODE_SIGNING_ALLOWED=NO` and
   drop the team.
-- **App Group** (`group.com.zgranowitz.controlx2`) is shared by the app, the widget extension,
+- **App Group** (`group.com.fabolus.app`) is shared by the app, the widget extension,
   and the watch complication. It registers automatically on first signed build; entitlements are
   generated from `project.yml`.
 - The **WidgetKit extension**, **Apple Watch app**, and **watch complication** build as targets of

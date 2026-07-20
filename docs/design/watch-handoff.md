@@ -8,7 +8,7 @@ committed and compiles; the block is device/account setup, not code.
 - **Watch:** Apple Watch **Series 4** (`Watch4,1`), **watchOS 10.6.2** (build 21U594). App min target
   is 10.0 → compatible.
 - **iPhone:** iPhone 13 mini, UDID `00008110-001244692280A01E`, **registered** for dev.
-  devicectl id `55BB0EAB-1D34-5EA9-9A42-7C707C88BCCA`. Dev team `4AA4WP5Q4S`.
+  devicectl id `<YOUR-IPHONE-UDID>`. Dev team `4AA4WP5Q4S`.
 - The **watch is NOT a registered dev device** — the `com.zgranowitz.controlx2.watch` provisioning
   profile contains only the iPhone UDID. A dev-signed app can't install until the watch's UDID is
   registered (happens when Xcode "prepares" the watch). **This is the one remaining blocker.**
@@ -37,7 +37,7 @@ committed and compiles; the block is device/account setup, not code.
 cd ControlX2iOS
 xcodebuild -project ControlX2.xcodeproj -scheme ControlX2 -destination 'generic/platform=iOS' \
   -configuration Debug -allowProvisioningUpdates DEVELOPMENT_TEAM=4AA4WP5Q4S -derivedDataPath build/DD build
-xcrun devicectl device install app --device 55BB0EAB-1D34-5EA9-9A42-7C707C88BCCA \
+xcrun devicectl device install app --device <YOUR-IPHONE-UDID> \
   build/DD/Build/Products/Debug-iphoneos/ControlX2.app
 ```
 Or simplest: in Xcode pick the **ControlX2Watch** scheme + the watch and **Run** (registers + installs
