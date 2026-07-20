@@ -62,11 +62,13 @@ public final class AppSettings {
         watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
-        // Restore the Garmin order, dropping any unknown ids and appending any missing known ones
-        // so every screen stays reachable even if the stored list is stale.
+        // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
+        // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
+        // only if nothing valid is stored, so the watch is never left with no screens.
         let stored = (d.array(forKey: "garminScreenOrder") as? [String]) ?? Self.garminScreens
-        var order = stored.filter { Self.garminScreens.contains($0) }
-        for s in Self.garminScreens where !order.contains(s) { order.append(s) }
+        var order: [String] = []
+        for s in stored where Self.garminScreens.contains(s) && !order.contains(s) { order.append(s) }
+        if order.isEmpty { order = Self.garminScreens }
         garminScreenOrder = order
         let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
