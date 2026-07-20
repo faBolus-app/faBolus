@@ -29,6 +29,11 @@ This is the modern scheme (t:slim X2 v7.7+ and Mobi), using a secure JPAKE hands
 The app auto-selects the scheme based on the code you enter and the pump's version, so you don't
 have to choose.
 
+<div class="cx2-check" markdown>
+**Success looks like:** the top of the app says **Connected**, and your glucose, insulin, and
+battery start filling in within a few seconds.
+</div>
+
 ## Pair (16-character — older t:slim X2, pre-v7.7)
 
 <ol class="cx2-steps">

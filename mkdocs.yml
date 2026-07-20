@@ -24,14 +24,14 @@ theme:
       accent: indigo
       toggle: { icon: material/weather-sunny, name: Switch to light mode }
   features:
-    - navigation.tabs
-    - navigation.tabs.sticky
+    # Stripe-style persistent left sidebar (no top tabs)
     - navigation.sections
     - navigation.indexes
     - navigation.top
     - navigation.footer
     - navigation.instant
     - navigation.instant.progress
+    - navigation.tracking
     - toc.follow
     - content.code.copy
     - content.code.annotate
@@ -80,11 +80,11 @@ nav:
       - How it works: architecture.md
   - Build it yourself:
       - Overview: build/index.md
-      - 1 · Apple ID & Developer account: build/apple-developer.md
+      - 1 · Apple account: build/apple-developer.md
       - 2 · Install Xcode: build/xcode.md
-      - 3 · Build the iPhone app: build/build-app.md
-      - 4 · Add the Apple Watch app: build/apple-watch-build.md
-      - 5 · Build the Garmin remote: build/garmin-build.md
+      - 3 · Put it on your iPhone: build/build-app.md
+      - 4 · Add the Apple Watch: build/apple-watch-build.md
+      - 5 · Add a Garmin: build/garmin-build.md
       - Advanced (command line): build/advanced.md
       - Keeping the app running: build/updating.md
   - Set up & pair:
