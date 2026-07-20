@@ -2,24 +2,54 @@
 
 !!! danger "Saline, bench only"
     Confirm the pump is dispensing **saline into a container on a scale** before every bolus.
+    The confirmation dialog repeats this reminder every time.
+
+<div class="cx2-shots" markdown>
+<figure class="cx2-shot phone" markdown="span">
+  ![Bolus entry](../assets/screenshots/bolus-entry.svg)
+  <figcaption>Enter units, or carbs + BG for a recommendation</figcaption>
+</figure>
+<figure class="cx2-shot phone" markdown="span">
+  ![Saline confirmation dialog](../assets/screenshots/bolus-confirm.svg)
+  <figcaption>Explicit confirm before anything is delivered</figcaption>
+</figure>
+<figure class="cx2-shot phone" markdown="span">
+  ![Delivering with a Cancel button](../assets/screenshots/bolus-delivering.svg)
+  <figcaption>Cancel any time while it's delivering</figcaption>
+</figure>
+</div>
 
 ## Deliver a bolus
-1. Tap the **Bolus** droplet in the toolbar (enabled only when connected).
-2. Optionally enter **carbs** and **BG** and tap **Calculate recommendation** — the app derives
-   recommended units (units-only path is always available as a fallback).
-3. Adjust units with the stepper (0.05 U steps). The **max-units clamp** blocks anything over
-   the configured ceiling.
-4. Tap **Bolus N U** → confirm the saline dialog.
 
-Under the hood (`PumpX2Kit`): `BolusPermissionRequest` → `InitiateBolusRequest` (signed,
-insulin-delivery-gated) → status polling. Every outgoing message is byte-exact against the
-oracle.
+<ol class="cx2-steps">
+<li>Open the <strong>Bolus</strong> tab (enabled only when connected). It opens in your default mode (Carbs or Units) from <a href="../customize/settings/">Settings</a>.</li>
+<li>Either enter <strong>units</strong> directly, or enter <strong>carbs</strong> (and optionally <strong>BG</strong>) and tap <strong>Calculate recommendation</strong> — the app uses the pump's own calculator (carb ratio, ISF, target, IOB) to suggest a dose.</li>
+<li>Adjust units with the stepper (step = your <strong>bolus increment</strong> from Settings). The <strong>max-units clamp</strong> blocks anything over your pump's configured ceiling.</li>
+<li>Tap <strong>Bolus N U</strong>, then confirm the <strong>saline</strong> dialog.</li>
+</ol>
 
-## Cancel
-While a bolus is delivering, tap **Cancel**. The app sends `CancelBolusRequest` and reports the
-**partial delivered amount**.
+## Cancel & partial delivery
+
+While a bolus is delivering, a prominent **Cancel** button is available on the HUD and the bolus
+sheet. Tapping it sends a cancel to the pump, and the app reports the **actual amount delivered**
+before the stop — so a cancelled bolus tells you exactly how much went through.
 
 ## From a remote (double confirmation)
-An Apple Watch or Garmin can request a bolus. The phone then shows an explicit confirm dialog;
-delivery only happens after the phone user confirms. If the phone is out of range, the remote
-shows a clean failure and nothing is delivered. See [Remotes](../remotes/apple-watch.md).
+
+An Apple Watch or Garmin can *request* a bolus, but the phone stays in control:
+
+- **Apple Watch:** the request appears on the phone as a confirm dialog; delivery only happens
+  after you confirm on the iPhone.
+- **Garmin:** you complete the tap-1-2-3 confirmation on the watch, and the phone carries it
+  out.
+- If the phone is unreachable, the remote shows a clean failure and **nothing is delivered**.
+
+See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).
+
+## Under the hood (for the curious)
+
+??? info "The signed delivery sequence"
+    Via PumpX2Kit: `BolusPermissionRequest` → `InitiateBolusRequest` (signed and
+    insulin-delivery-gated) → status polling until the bolus finishes or is cancelled →
+    `LastBolusStatus` for the delivered amount. Every outgoing message is asserted byte-exact
+    against the pumpX2 `cliparser` oracle.

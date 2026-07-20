@@ -14,3 +14,11 @@ gen/
 *.xcodeproj/
 ios/.build/
 .build/
+
+# MkDocs (docs site is built by CI; build locally with mkdocs serve)
+site/
+.venv/
+.docvenv/
+
+# The `build/` rule above is for Xcode output — do NOT let it swallow the docs build guide.
+!docs/build/
