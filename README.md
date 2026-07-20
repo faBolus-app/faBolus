@@ -51,11 +51,11 @@ Two features are known not to work correctly yet and are being fixed:
 ```
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
                              #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, RemoteLink,
-                             #    GlucoseSource — the CGM-failover seam)
+                             #    GlucoseSource seam + GlucoseArbiter — the CGM-failover contracts)
 Packages/G7SensorKit/        # Dexcom G7/ONE+ BLE decoders, vendored from LoopKit (MIT), LoopKit-free
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
-ios/faBolus/Data/Sources/    # CGM failover sources (LibreLinkUp/Nightscout/Share/HealthKit) + arbiter
+ios/faBolus/Data/Sources/    # CGM failover impls: cloud (LibreLinkUp/Nightscout/Share) + HealthKit + creds
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
 watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity + direct-G7 failover)
 watch/faBolusWatchWidgets/   # watch-face complication

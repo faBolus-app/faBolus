@@ -39,7 +39,7 @@ interlock and delivers through PumpX2Kit. To build and install it, see
 
 - **Glance** — current glucose + a drawn, range-colored trend arrow, and a **Bolus** button.
 - **Alerts** — active pump alerts/alarms; **tap a row to clear** one.
-- **History** — a Dexcom-style plot; **tap to cycle** the window **3 → 6 → 12 h**.
+- **History** — a CGM history plot; **tap to cycle** the window **3 → 6 → 12 h**.
 - **Details** — last bolus, Active Insulin, reservoir, battery, and an alert count.
 
 ### Reorder the screens / pick the default

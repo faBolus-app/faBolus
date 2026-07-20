@@ -39,10 +39,10 @@ PumpX2Kit  (Swift package — build once, reuse everywhere)
 └── PumpX2BLE        Core Bluetooth central (iOS + watchOS)
 
 faBolus  (this repo, consumes PumpX2Kit via SPM)
-├── Packages/faBolusCore/  contracts + models (RemoteCommand, RemoteLink, PumpBackend, GlucoseSource)
+├── Packages/faBolusCore/  contracts + models (RemoteCommand, RemoteLink, PumpBackend, GlucoseSource, GlucoseArbiter)
 ├── Packages/G7SensorKit/  Dexcom G7/ONE+ BLE decoders (vendored from LoopKit, MIT; LoopKit-free)
 ├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
-│   └── Data/Sources/    CGM failover sources (LibreLinkUp, Nightscout, Dexcom Share, HealthKit) + arbiter
+│   └── Data/Sources/    CGM failover impls: cloud (LibreLinkUp, Nightscout, Dexcom Share) + HealthKit + credentials
 ├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
 ├── watch/faBolusWatch/  Apple Watch remote (WatchConnectivity + direct-G7 failover)
 ├── watch/faBolusWatchWidgets/  watch-face complication
