@@ -35,7 +35,17 @@ struct GlucoseComplication: Widget {
         }
         .configurationDisplayName("Glucose")
         .description("Current glucose + trend from faBolus.")
-        .supportedFamilies([.accessoryCircular, .accessoryInline, .accessoryCorner, .accessoryRectangular])
+        .supportedFamilies(Self.supportedFamilies)
+    }
+
+    /// `.accessoryCorner` is watchOS-only; keep it out when this file is compiled against the iOS
+    /// SDK (e.g. an `-sdk iphonesimulator` build of the whole scheme) so it still compiles.
+    static var supportedFamilies: [WidgetFamily] {
+        #if os(watchOS)
+        [.accessoryCircular, .accessoryInline, .accessoryCorner, .accessoryRectangular]
+        #else
+        [.accessoryCircular, .accessoryInline, .accessoryRectangular]
+        #endif
     }
 }
 
@@ -55,10 +65,12 @@ struct GlucoseComplicationView: View {
         switch family {
         case .accessoryInline:
             Text("\(value) \(arrow)")
+        #if os(watchOS)
         case .accessoryCorner:
             Text(value).font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(color(snap))
                 .widgetLabel { Text("Glucose \(value) \(arrow)") }
+        #endif
         case .accessoryRectangular:
             HStack(spacing: 6) {
                 Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(color(snap))
