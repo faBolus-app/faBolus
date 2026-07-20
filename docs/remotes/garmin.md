@@ -1,8 +1,8 @@
 # Garmin remote
 
-A Connect IQ (Monkey C) companion for the **Garmin venu3s**. It's a **thin remote**: it messages
-the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm interlock and
-delivers through PumpX2Kit. To build and install it, see
+A Connect IQ (Monkey C) companion, currently supporting the **Garmin Venu 3S**. It's a **thin
+remote**: it messages the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm
+interlock and delivers through PumpX2Kit. To build and install it, see
 [Build the Garmin remote](../build/garmin-build.md).
 
 !!! note "The Garmin app lives in its own repo"
@@ -10,6 +10,12 @@ delivers through PumpX2Kit. To build and install it, see
     **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo (it used to live in
     `faBolus/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
     so the two talk over the shared command contract as before.
+
+!!! note "Currently the Garmin Venu 3S"
+    The app currently supports the **Garmin Venu 3S**. Adding another Garmin watch is a welcome
+    contribution — the layout is device-relative, so it's mostly manifest + input + icon work; see
+    the faBolusGarmin
+    [contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-watch).
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
@@ -77,6 +83,10 @@ The app publishes a **public BG complication** (value + a trend arrow, no units)
 **Face It** faces and Connect IQ faces can show on your watch face. A reading older than 6
 minutes shows `--`. It refreshes while the app is open and via a background refresh (~5 min);
 fresh data needs the iPhone app open and connected.
+
+!!! warning "Known issue — being fixed"
+    The BG complication doesn't update with the live CGM value yet — it currently shows `0` instead
+    of the reading. A fix is in progress.
 
 <figure class="cx2-shot watch" markdown="span">
   ![Garmin BG complication](../assets/screenshots/garmin-complication.svg)

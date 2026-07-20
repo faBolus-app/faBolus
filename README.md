@@ -30,6 +30,15 @@ live at the documentation site:**
 - [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md) ·
   [Siri & Shortcuts](docs/customize/shortcuts.md).
 
+## Known limitations (being worked on)
+
+Two features are known not to work correctly yet and are being fixed:
+
+1. **Garmin BG complication reads 0.** The Garmin watch complication doesn't update with the live
+   CGM value — it currently shows `0` instead of the reading.
+2. **Alert clear doesn't reach the pump.** Clearing an alert removes it from the phone and watch UI
+   **but does not clear it on the pump itself**.
+
 ## Layout
 
 ```

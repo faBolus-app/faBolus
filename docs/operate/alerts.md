@@ -44,7 +44,8 @@ Clearing sends a **signed `DismissNotificationRequest`** with the notification's
 signed like a bolus but does **not** modify insulin delivery, so it runs under a restricted
 "non-delivery" write policy.
 
-!!! warning "Clearing isn't hardware-verified yet"
-    The dismiss path is validated by construction — its bytes are asserted exactly and it uses the
-    same signing/framing proven byte-exact for boluses — but clearing has **not yet been confirmed
-    in testing**. Verify it actually dismisses before relying on it.
+!!! warning "Known issue — clearing doesn't reach the pump yet"
+    Clearing currently removes the alert from the **phone and watch UI but does not clear it on the
+    pump itself**. The dismiss path is validated by construction (its bytes are asserted exactly and
+    it uses the same signing/framing proven byte-exact for boluses), but it isn't yet dismissing on
+    the pump in practice. A fix is in progress — don't rely on it to clear alerts on the pump.
