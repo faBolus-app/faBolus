@@ -10,32 +10,46 @@ be unpaired to use ControlX2). So "independent watch" does **not** mean phone + 
 the pump at once. It means the watch can **take over** the connection when the phone is away
 (a *handoff*). The design is built around arbitration, not simultaneous control.
 
-## Two ways to authenticate the watch
-1. **Key handoff from the phone (recommended, already scaffolded).** The phone does the JPAKE
-   pairing (6-digit code from the pump screen), derives the shared secret, and sends it to the watch
-   over WatchConnectivity. The watch then uses **resume-auth** (`PairingCoordinator(resumeDerivedSecret:)`)
-   to authenticate directly — no code entry on the watch. Groundwork exists: `RemoteCommand.keyShare`
-   + `pumpKeyHex` (schema + Swift mirror). This is the pragmatic path.
-2. **Full pairing on the watch.** Enter the 6-digit code on the watch and run JPAKE there. Awkward
-   input and competes with the phone/t:connect for the single pairing slot. Only if handoff proves
-   unworkable.
+## Authentication: the watch must pair itself (code entry on the watch)
+The pump issues a **fresh 6-digit pairing code for every device pairing**, and the derived secret is
+bound to that pairing. So the phone **cannot** hand its secret to the watch — the earlier
+`keyShare`/`pumpKeyHex` idea (share the phone's derived secret, resume-auth on the watch) is **not
+viable** and is superseded by this section. The watch must run its **own full JPAKE pairing**:
+
+1. On the pump, generate a new pairing code (Options → Device Settings → Bluetooth → Pair Device).
+2. **Enter that code on the Apple Watch**, and the watch runs JPAKE directly with the pump to derive
+   **its own** secret, stored in the watch Keychain.
+3. Thereafter the watch **resume-auths** with its stored secret (no code re-entry) on every connect —
+   exactly like the phone does today.
+
+So code entry is a **one-time** step on the watch; the recurring path is resume-auth. This makes the
+watchOS crypto spike harder — the watch must run the **full JPAKE key exchange**, not just resume.
+
+!!! warning "Open question — does the pump keep more than one pairing?"
+    If the pump stores only **one** pairing at a time, pairing the watch may **evict the phone's
+    pairing** (and vice-versa), forcing a re-pair when you switch devices. If it keeps several, phone
+    and watch can each stay paired (still only one *connected* at a time). Determine this in Phase 0 —
+    it decides whether "independent watch" is a co-equal second device or a re-pair-to-switch model.
 
 ## Phases
 
 ### Phase 0 — Feasibility spikes (de-risk first)
-- **Crypto on watchOS:** confirm `PumpX2Auth` (JPAKE + HMAC-SHA1) builds and runs on watchOS arm64.
-  The mbedtls backend (`scripts/link-mbedtls.sh`) must produce a watch slice — this is the biggest
-  unknown. Fallback: a pure-Swift/CryptoKit HMAC + a Swift JPAKE if mbedtls can't target the watch.
+- **Crypto on watchOS:** confirm `PumpX2Auth` (full **JPAKE** key exchange + HMAC-SHA1) builds and
+  runs on watchOS arm64. The mbedtls backend (`scripts/link-mbedtls.sh`) must produce a watch slice —
+  this is the biggest unknown. Fallback: a pure-Swift/CryptoKit HMAC + a Swift JPAKE if mbedtls can't
+  target the watch. (Must cover the full pairing handshake, not just resume.)
 - **CoreBluetooth on the watch:** confirm `PumpX2BLE`'s `CBCentralManager` can discover + connect the
   pump from a physical Apple Watch (watchOS supports CB central; range/throughput are lower).
-- **Handoff auth:** with the phone paired, copy the derived secret to the watch and prove the watch
-  can resume-auth **after the phone disconnects** (reuses the existing "Copy pairing secret (debug)"
-  + resume path). Confirms the pump accepts a second device holding the same secret.
+- **Pairing model:** pair the watch directly (fresh code from the pump) and confirm whether doing so
+  **evicts the phone's pairing** — this answers the "one pairing?" question above and shapes the UX.
 
-### Phase 1 — Key handoff plumbing (partly done)
-- Phone: after pairing, send `keyShare(pumpKeyHex:)` to the watch; add a "Send pump key to Watch"
-  action in Settings. Store the secret in the **watch Keychain** (not UserDefaults).
-- Watch: persist + a "Paired (via iPhone)" state; clear on re-pair/forget.
+### Phase 1 — On-watch pairing UI + storage
+- A watch **6-digit code entry** (crown digit-picker or tap number pad) → run JPAKE on the watch →
+  store the derived secret in the **watch Keychain**.
+- A "Pair to pump" flow in the watch Settings; a "Forget pairing" to clear. Resume-auth on later
+  connects using the stored secret.
+- Remove/retire the `keyShare`/`pumpKeyHex` handoff path (kept only if Phase 0 unexpectedly shows the
+  pump accepts a shared secret across devices — not expected).
 
 ### Phase 2 — Watch pump client
 - Add `PumpX2Kit` (Messages/Auth/BLE) as watch-app dependencies.
@@ -61,13 +75,16 @@ the pump at once. It means the watch can **take over** the connection when the p
   mid-watch-session, watch out of range mid-bolus.
 
 ## Risks / open questions
-- **mbedtls/crypto on watchOS** — may force a CryptoKit/Swift crypto path (largest risk).
-- **Pump contention** — does the pump cleanly accept the watch resuming after the phone drops? (Phase 0.)
+- **JPAKE/crypto on watchOS** — the watch must run the *full* pairing handshake; mbedtls may not
+  target watchOS, forcing a CryptoKit/Swift path (largest risk).
+- **One pairing vs many** — does pairing the watch evict the phone's pairing? (Phase 0; decides the model.)
+- **On-watch code entry** — a usable 6-digit input on a tiny screen (crown picker vs number pad).
 - **watchOS BLE** — range, throughput, background limits, battery.
 - **Safety** — direct delivery keeps every guard: max-bolus clamp, saline/bench confirm, the
-  1-2-3/deliberate confirm, and the validated signed path. No new dosing path bypasses these.
+  deliberate confirm, and the validated signed path. No new dosing path bypasses these.
 
 ## Status
-Scaffolded: `keyShare` + `pumpKeyHex` in the command contract; the phone's debug "copy pairing
-secret". Not started: watchOS crypto/BLE spikes, `WatchPumpClient`, arbitration. Start at **Phase 0**
-— the crypto spike gates everything else.
+Superseded: the `keyShare`/`pumpKeyHex` handoff (the pump needs a fresh code per device, so the
+watch pairs itself). Not started: watchOS crypto/BLE spikes, on-watch code entry + JPAKE,
+`WatchPumpClient`, arbitration. Start at **Phase 0** — the crypto spike (full JPAKE) and the
+"does pairing the watch evict the phone" question gate everything else.
