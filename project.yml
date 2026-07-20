@@ -116,6 +116,7 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon   # watchOS won't install without an app icon
 
   # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
   # app publishes to the shared App Group; never touches Bluetooth.
