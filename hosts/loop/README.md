@@ -1,9 +1,13 @@
-# Loop host adapter (design scaffold — not built)
+# Loop host adapter (design scaffold — open contribution, not built)
 
 This directory sketches how **Loop** (or any app) can host the faBolus remotes (Apple Watch /
 faBolusGarmin) by implementing the remote protocol, so the same watch apps work with Loop instead of
 faBolus. It is **not compiled into faBolus** (it would pull in LoopKit); it's a reference for a Loop
 integration that would live in Loop's own build, or graduate into an optional package here.
+
+**This is intentionally left for a contributor to build** — the design and the contract are settled;
+what remains is the LoopKit wiring, which belongs in a Loop-aware build. If you take it on, see
+`RemoteHost.swift.example` and `../../CONTRIBUTING.md` → "Host the remotes from another app."
 
 ## How it works
 The remotes only speak the JSON contract in `../../schema/command.schema.json`

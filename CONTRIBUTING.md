@@ -47,5 +47,12 @@ additive, optional fields so older remotes keep working.
 ## Before you open a PR
 - `xcodegen generate` after adding/removing files.
 - Build the `faBolus` scheme (and `faBolusWatch` if you touched watch/shared code).
-- Run the package tests (PumpX2Kit: `scripts/test.sh`).
+- Run the core tests: `swift test --package-path Packages/faBolusCore` (models, remote round-trips,
+  and the `PumpBackend` conformance harness — a good template for your own backend's tests).
+- If you touched the contract, run `scripts/check-schema-drift.sh` (also enforced in CI) and update
+  the Monkey C mirror in faBolusGarmin.
+- For pump-protocol work in PumpX2Kit, its own `scripts/test.sh` (oracle parity) must be green.
 - Note anything bench-tested vs. only compiled.
+
+CI (`.github/workflows/ci.yml`) runs the drift check and `faBolusCore` tests on every PR, so these
+are the same gates a reviewer sees.
