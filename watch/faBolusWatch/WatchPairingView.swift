@@ -7,6 +7,7 @@ struct WatchPairingView: View {
     @Bindable var pump: WatchPumpClient
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
+    @State private var savePin = false
 
     var body: some View {
         ScrollView {
@@ -18,13 +19,18 @@ struct WatchPairingView: View {
                         .textContentType(.oneTimeCode)
                         .font(.title3.monospacedDigit())
                         .multilineTextAlignment(.center)
+                    Toggle("Remember PIN (Mobi)", isOn: $savePin).font(.caption2)
                     if case let .failed(msg) = pump.pairState {
                         Text(msg).font(.caption2).foregroundStyle(.red).multilineTextAlignment(.center)
                     }
-                    Button("Pair") { pump.pair(code: code) }
+                    Button("Pair") {
+                        // Mobi's PIN is fixed — save it (or clear a saved one) per the toggle.
+                        if savePin && code.count == 6 { WatchPairingStore.savePin(code) } else { WatchPairingStore.clearPin() }
+                        pump.pair(code: code)
+                    }
                         .tint(.indigo)
                         .disabled(code.count != 6)
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device.")
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Mobi's PIN is behind the cartridge — save it to skip re-typing.")
                         .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
 
                 case .connecting:
@@ -44,5 +50,8 @@ struct WatchPairingView: View {
             .padding(.top, 4)
         }
         .navigationTitle("Pair")
+        .onAppear {
+            if let pin = WatchPairingStore.loadPin() { code = pin; savePin = true }   // prefill saved Mobi PIN
+        }
     }
 }
