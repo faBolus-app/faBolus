@@ -11,5 +11,12 @@ The protocol/auth/Bluetooth core lives in the separate **PumpX2Kit** package, wh
 **Mbed TLS** (Apache-2.0 OR GPL-2.0) for its EC-JPAKE implementation — see PumpX2Kit's own `NOTICE`
 for that attribution.
 
+## Loop / LoopDocs (design + documentation)
+
+faBolus's visual design draws inspiration from the **[Loop](https://github.com/LoopKit/Loop)** app,
+and portions of this project's documentation are adapted from
+**[LoopDocs](https://loopkit.github.io/loopdocs/)**. faBolus is an independent project and is not
+affiliated with, or endorsed by, the Loop / LoopKit projects.
+
 Not affiliated with, endorsed by, or a product of **Tandem Diabetes Care** or **Dexcom**. Tandem,
 t:slim X2, Mobi, and Dexcom are trademarks of their respective owners.
