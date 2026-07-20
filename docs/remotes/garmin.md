@@ -11,11 +11,12 @@ interlock and delivers through PumpX2Kit. To build and install it, see
     `faBolus/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
     so the two talk over the shared command contract as before.
 
-!!! note "Currently the Garmin Venu 3S"
-    The app currently supports the **Garmin Venu 3S**. Adding another Garmin watch is a welcome
-    contribution — the layout is device-relative, so it's mostly manifest + input + icon work; see
-    the faBolusGarmin
-    [contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-watch).
+!!! note "Devices: Venu 3S validated; more build-verified"
+    The **Garmin Venu 3S** is hardware-validated. The app also builds for button-only watches and
+    **Edge cycling computers** — it adapts to touch vs. buttons (and watch vs. no-watch-face) at
+    runtime, so adding a device is usually just a manifest entry. Those non-Venu-3S targets aren't
+    hardware-validated yet. See the faBolusGarmin
+    [contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-device).
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
