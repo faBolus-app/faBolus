@@ -91,12 +91,14 @@ struct PumpDetailsCard: View {
     }
 }
 
-/// Enter the pump's 6-digit pairing code, then connect + JPAKE-pair.
+/// Enter the pump's 6-digit pairing code, then connect + JPAKE-pair. A saved Mobi PIN (if any) is
+/// prefilled; you can edit it to pair a different pump, or clear it. Saving is *offered after
+/// connecting* once we recognize a Mobi (see AppModel.savePinPrompt) — not decided up front.
 struct PairingSheet: View {
     @Bindable var model: AppModel
     let onDone: () -> Void
     @State private var code = ""
-    @State private var savePin = false
+    @State private var hadSavedPin = false
 
     var body: some View {
         NavigationStack {
@@ -104,26 +106,27 @@ struct PairingSheet: View {
                 Section("Pump pairing code") {
                     TextField("6 digits", text: $code)
                         .keyboardType(.numberPad).font(.title2.monospacedDigit())
-                    Toggle("Save PIN (Tandem Mobi)", isOn: $savePin)
+                    if hadSavedPin {
+                        Button("Clear saved PIN", role: .destructive) {
+                            model.clearSavedPin(); code = ""; hadSavedPin = false
+                        }
+                    }
                 }
                 Section {
                     Button {
-                        // Mobi's PIN is fixed — save it (or clear a previously-saved one) per the toggle.
-                        if savePin && code.count == 6 { PairingStore.savePin(code) } else { PairingStore.clearPin() }
-                        model.pairingCode = code
-                        Task { await model.connect() }
+                        Task { await model.connectWithCode(code) }
                         onDone()
                     } label: { HStack { Spacer(); Text("Connect"); Spacer() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(code.count != 6)
                 } footer: {
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nThe Tandem Mobi's PIN is fixed (printed behind the cartridge), so you can save it to skip re-typing when you re-pair. The t:slim X2 shows a new code each time — leave this off for that pump.")
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device (Mobi: on the charging pad, press the pump button twice; its PIN is behind the cartridge). Unpair the official t:connect app first — only one connection at a time.\n\nOn a Tandem Mobi the PIN never changes, so after connecting faBolus offers to save it and skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
                 }
             }
             .navigationTitle("Connect to pump")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
             .onAppear {
-                if let pin = PairingStore.loadPin() { code = pin; savePin = true }   // prefill saved Mobi PIN
+                if let pin = model.savedPin { code = pin; hadSavedPin = true }   // prefill saved Mobi PIN
             }
         }
     }

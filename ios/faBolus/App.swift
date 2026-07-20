@@ -15,6 +15,15 @@ struct FaBolusApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView(model: model)
+                .alert("Save this pump's PIN?", isPresented: Binding(
+                    get: { model.savePinPrompt != nil },
+                    set: { if !$0 { model.dismissSavePinPrompt() } }
+                )) {
+                    Button("Save PIN") { model.saveOfferedPin() }
+                    Button("Not now", role: .cancel) { model.dismissSavePinPrompt() }
+                } message: {
+                    Text("This looks like a Tandem Mobi — its PIN doesn't change. faBolus can save it so you don't re-type it next time you connect. You can change or clear it later on the Connect screen.")
+                }
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch

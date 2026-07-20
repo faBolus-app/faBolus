@@ -38,7 +38,9 @@ both be installed but only one is connected at once — and switching is a full 
 between apps). faBolus also isn't a full replacement: some pump settings and certain **Mobi**
 functions can only be changed in t:connect. Pick faBolus as your everyday controller (it reconnects
 with no code) and pair t:connect only when you need an official-app-only setting — then re-pair
-faBolus. More in the [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
+faBolus. To make that re-pair painless on a **Tandem Mobi** (whose PIN is fixed), faBolus offers to
+**save the PIN** the first time it recognizes a Mobi, so switching back is one tap; you can clear or
+change it on the Connect screen. More in the [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
 
 ## Known limitations (being worked on)
 
