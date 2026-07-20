@@ -5,7 +5,7 @@ a Tandem **t:slim X2 / Mobi** pump. The iPhone owns the pump's Bluetooth connect
 [`PumpX2Kit`](../PumpX2Kit)); the watches are thin remotes that relay confirmed commands to the
 phone.
 
-> _Built by Zev and Tia in Tandem._
+> _Built by Zev and Tia in tandem._
 
 > [!WARNING]
 > **Experimental — in development.** faBolus is an independent, open-source project in development
