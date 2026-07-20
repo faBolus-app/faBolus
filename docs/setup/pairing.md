@@ -12,40 +12,52 @@ once — after that, faBolus reconnects on its own using a securely-stored key, 
     Only **one** control connection can be active at a time. Remove/close the official Tandem
     **t:connect** app's pairing before pairing faBolus, and don't expect them to work at once.
 
-## Pair (6-digit — most current pumps)
+## Pair your pump
 
-This is the modern scheme (t:slim X2 v7.7+ and Mobi), using a secure JPAKE handshake.
+Both current pumps use the same secure 6-digit **JPAKE** handshake — what differs is how you put the
+pump into pairing mode and where its code comes from. Find your pump below. (faBolus auto-selects the
+handshake from the code you enter and the pump's version, so you never have to choose a "scheme.")
+
+### Tandem Mobi
+
+The Mobi has no screen, so its code is a **fixed 6-digit PIN printed behind the cartridge** (next to
+the QR code), and you enter pairing mode with the pump's button.
 
 <ol class="cx2-steps">
-<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong>. The pump shows a <strong>6-digit</strong> code.</li>
-<li>In faBolus, tap <strong>Connect</strong> and type the 6 digits.</li>
-<li>Tap <strong>Connect</strong>. The app scans for the pump, runs the pairing handshake, and derives a signing key.</li>
+<li>Get the pump's <strong>6-digit PIN</strong> — it's printed <strong>behind the cartridge</strong>, next to the QR code. (Keep it handy; it doesn't change.)</li>
+<li>Following Tandem's procedure, <strong>place the Mobi on its charging pad</strong> to begin, then pick it up and <strong>press the pump button twice</strong> to enter pairing mode.</li>
+<li>In faBolus, tap <strong>Connect</strong>, type the <strong>6-digit PIN</strong>, and tap <strong>Connect</strong>. The app scans for the pump, runs the handshake, and derives a signing key.</li>
 <li>When the HUD shows <strong>Connected</strong>, you're paired. Live data starts filling in.</li>
 </ol>
 
-The app auto-selects the scheme based on the code you enter and the pump's version, so you don't
-have to choose.
+### t:slim X2 (v7.7+)
+
+The t:slim X2 has a screen, so it shows a fresh 6-digit code when you start pairing on the pump.
+
+<ol class="cx2-steps">
+<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong>. The pump screen shows a <strong>6-digit</strong> code.</li>
+<li>In faBolus, tap <strong>Connect</strong> and type those 6 digits.</li>
+<li>Tap <strong>Connect</strong>. The app scans for the pump, runs the handshake, and derives a signing key.</li>
+<li>When the HUD shows <strong>Connected</strong>, you're paired. Live data starts filling in.</li>
+</ol>
+
+### Older t:slim X2 (pre-v7.7 — 16-character)
+
+<ol class="cx2-steps">
+<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong> to show the <strong>16-character</strong> code.</li>
+<li>Enter it in faBolus and connect. The app performs the legacy challenge/response handshake.</li>
+</ol>
 
 <div class="cx2-check" markdown>
 **Success looks like:** the top of the app says **Connected**, and your glucose, insulin, and
 battery start filling in within a few seconds.
 </div>
 
-!!! note "Tandem Mobi pairs differently (no screen)"
-    The Mobi has no display, so it can't show a code on a menu. Per Tandem's procedure you **place
-    the Mobi on its charging pad** to start pairing, then **pick up the pump and press its button
-    twice** to put it in pairing mode. Its 6-digit code is a **fixed PIN printed behind the
-    cartridge** (near the QR code) — that's the number you type into faBolus. Because it needs the
-    charging pad and physical button presses each time, **re-pairing a Mobi (e.g. switching it
-    between faBolus and the official app) is a deliberate, hands-on step — even less of a quick
-    toggle than the t:slim X2.**
-
-## Pair (16-character — older t:slim X2, pre-v7.7)
-
-<ol class="cx2-steps">
-<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong> to show the <strong>16-character</strong> code.</li>
-<li>Enter it in faBolus and connect. The app performs the legacy challenge/response handshake.</li>
-</ol>
+!!! note "Switching a Mobi between apps is hands-on"
+    Because the Mobi needs the charging pad and physical button presses to enter pairing mode,
+    re-pairing it (e.g. switching between faBolus and the official app) is a deliberate, hands-on
+    step every time — even less of a quick toggle than the t:slim X2. See
+    [Using faBolus alongside the official t:connect app](#using-fabolus-alongside-the-official-tconnect-app).
 
 ## After pairing
 
