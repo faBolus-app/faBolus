@@ -28,7 +28,7 @@ Because of that, what an independent feed can be depends on the sensor:
 | **Dexcom G7 / ONE+** | **Direct Bluetooth** (local, no internet) | Listens to the sensor's broadcast alongside the official app. Fastest, works even with no phone/internet. |
 | **Dexcom G6** | **Dexcom Share** (cloud) | The G6 has no spare Bluetooth slot, so cloud is the only option — and Share is slow/unreliable. Last resort. |
 | **FreeStyle Libre 2 / 3** | **LibreLinkUp** (cloud) | Share to a LibreLinkUp follower account. ~5 min. |
-| **Eversense E3 / 365** | **Apple Health** | The Eversense app writes glucose to Apple Health; faBolus reads it. |
+| **Eversense E3 / 365** | **Apple Health** | The Eversense app writes glucose to Apple Health; faBolus reads it. Requires enabling HealthKit — see below. |
 | **Any CGM** | **Nightscout** (cloud) | If you already push your CGM to a Nightscout site. |
 
 ## Turn it on
@@ -43,6 +43,13 @@ Because of that, what an independent feed can be depends on the sensor:
 Cloud sources are **battery-aware**: while the pump feed is healthy they check rarely, and they ramp
 up automatically the moment it goes stale. The Dexcom G7 direct link listens continuously (it's
 cheap) so failover is instant.
+
+!!! note "Eversense / Apple Health is opt-in (HealthKit)"
+    HealthKit is **off by default** so the app builds and signs on a free Apple account. To use the
+    Eversense (Apple Health) source you need the **paid Apple Developer Program**, then enable
+    HealthKit for the app: uncomment the two `com.apple.developer.healthkit*` keys in `project.yml`
+    (or turn on the **HealthKit** capability under Signing & Capabilities in Xcode) and rebuild.
+    Every other source — Dexcom G7 direct, LibreLinkUp, Dexcom Share, Nightscout — works without it.
 
 ## On the watch
 
@@ -61,3 +68,12 @@ Old readings are worse than no reading, so faBolus is strict about age:
   greyed out with its age called out** — never presented as the current value.
 - The same threshold governs the pump feed and every failover feed, so "stale" means one thing
   everywhere.
+
+## Keeping it working
+
+The Dexcom G7 decoders are **vendored** (copied) from LoopKit's G7SensorKit into
+`Packages/G7SensorKit`, and the cloud clients (LibreLinkUp, Dexcom Share) are hand-ported from the
+community projects. These are **pinned snapshots — they do not auto-update.** If a sensor's protocol
+or a cloud API changes upstream, the matching source is updated by hand (re-copying the decoders, or
+adjusting the request/parsing). Each file's header notes where it came from.
+

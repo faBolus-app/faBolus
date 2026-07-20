@@ -1,5 +1,4 @@
 import Foundation
-import faBolusCore
 
 /// Merges the pump-relayed glucose (**primary**) with an optional independent `GlucoseSource`
 /// (**failover**). The rule that governs everything: a stale reading is never presented as the
@@ -11,12 +10,12 @@ import faBolusCore
 /// - If everything is stale, the pump's own (stale) value is kept and the UI flags it via
 ///   `PumpSnapshot.isGlucoseStale` — "old is worse than nothing", so it is shown marked, not as live.
 @MainActor
-enum GlucoseArbiter {
+public enum GlucoseArbiter {
     /// Produce the snapshot + history the app should publish, given the pump's own data and the
     /// current failover source (if any).
-    static func merge(pumpSnapshot snap: PumpSnapshot,
-                      pumpHistory: [GlucoseReading],
-                      source: GlucoseSource?) -> (PumpSnapshot, [GlucoseReading]) {
+    public static func merge(pumpSnapshot snap: PumpSnapshot,
+                             pumpHistory: [GlucoseReading],
+                             source: GlucoseSource?) -> (PumpSnapshot, [GlucoseReading]) {
         let pumpFresh = snap.glucose != nil && !GlucoseFreshness.isStale(snap.glucoseDate)
         guard !pumpFresh, let source, let sample = source.latest, !sample.isStale else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
@@ -33,7 +32,7 @@ enum GlucoseArbiter {
 
     /// Union of pump + source history, de-duplicated into 5-minute buckets (pump wins ties so the
     /// chart never double-counts the same reading), sorted oldest→newest.
-    static func mergeHistory(pump: [GlucoseReading], source: [GlucoseReading]) -> [GlucoseReading] {
+    public static func mergeHistory(pump: [GlucoseReading], source: [GlucoseReading]) -> [GlucoseReading] {
         let bucket = 5.0 * 60
         var byBucket: [Int: GlucoseReading] = [:]
         for r in source { byBucket[Int(r.date.timeIntervalSince1970 / bucket)] = r }
