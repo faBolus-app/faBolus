@@ -483,6 +483,12 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
+        // Detect the model from the BLE advertised name (jwoglom/pumpx2 uses the same signal):
+        // "Tandem Mobi …" vs "tslim X2 …". Persisted so the UI can offer to save the fixed Mobi PIN.
+        if let name = peripheral.name {
+            if name.hasPrefix("Tandem Mobi") { PumpModelStore.set(isMobi: true) }
+            else if name.hasPrefix("tslim X2") { PumpModelStore.set(isMobi: false) }
+        }
         c.connect(peripheral)
     }
 

@@ -29,7 +29,9 @@
     reconnects with **no code** ("Connect (saved pairing)"); the new-code step only comes up when
     you bounce between the two. On a **Tandem Mobi** switching is even more hands-on: it has no
     screen, so re-pairing means placing the pump on its **charging pad** and **pressing its button
-    twice** (its PIN is fixed, behind the cartridge) — see [Pairing your pump](setup/pairing.md).
+    twice** (its PIN is fixed, behind the cartridge). Since that PIN never changes, faBolus offers to
+    **save it** the first time it recognizes a Mobi, so at least you don't re-type it — see
+    [Pairing your pump](setup/pairing.md).
 
     **faBolus is not a full replacement for the official app.** Some pump settings and configuration
     — and certain **Mobi** functions — can only be changed in **t:connect**; faBolus doesn't support
