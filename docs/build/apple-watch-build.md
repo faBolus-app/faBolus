@@ -1,4 +1,4 @@
-# 4 · Add the Apple Watch app
+# 4 · Add the Apple Watch (optional)
 
 The Apple Watch remote is **optional** and rides along with the iPhone app you already built.
 It never touches the pump itself — it relays bolus requests to your iPhone, which owns the
@@ -53,12 +53,12 @@ The watch app is a separate *target* in the same project, so it needs your team 
 Press the Digital Crown to see your apps and tap **ControlX2**. The glance appears; if your
 iPhone is nearby and connected to a pump, live data fills in within a few seconds.
 
-## What you should have now
+<div class="cx2-check" markdown>
+**Success looks like:** the ControlX2 app on your Apple Watch shows glucose, trend, and Active
+Insulin, plus whether the iPhone is reachable.
+</div>
 
-- [x] The ControlX2 watch app installed on your Apple Watch.
-- [x] It shows glucose, trend, and Active Insulin, plus whether the iPhone is reachable.
-
-Learn how to use it — including the **double-confirmation** bolus flow — on the
+Learn how to use it — including the bolus flow — on the
 [Apple Watch remote](../remotes/apple-watch.md) page.
 
-Next (optional): [Build the Garmin remote :material-arrow-right:](garmin-build.md)
+Next (optional): [Add a Garmin :material-arrow-right:](garmin-build.md)

@@ -1,135 +1,218 @@
 # 3 · Put the app on your iPhone
 
-This is the main event: download the code, press one button, and the app appears on your phone.
-Go slowly and do the steps in order. None of it needs coding.
+This is the main event. We'll download the app's code, do one short setup step, then press **Run**
+in Xcode to install it on your phone. Do the steps in order and you'll be fine — most of it is
+pointing and clicking.
+
+!!! tip "Almost no typing"
+    We use a free app called **GitHub Desktop** to download the code (no commands), and **Finder**
+    to move one file. There is exactly **one** step that uses the Terminal, and it's spelled out
+    word-for-word when we get there.
 
 ## Step 1 — Download the code {#download}
 
-The app is built on a companion library called **PumpX2Kit**, and the two folders need to sit
-**next to each other**. The easiest way is to make one folder and put both inside it.
+The app comes in two parts that must sit next to each other: **ControlX2iOS** (the app) and
+**PumpX2Kit** (a helper library it's built on). The easiest way to download both — and everything
+they need — is **GitHub Desktop**, a free app from GitHub.
 
-Open the **Terminal** app (Applications → Utilities) and paste each block, pressing Return after
-each:
+!!! info "What's GitHub? What's a repository?"
+    **GitHub** is a website where code is stored and shared. A **repository** (or "repo") is just
+    a project folder on GitHub. "Cloning" a repo means downloading a copy to your Mac. GitHub
+    Desktop does this with a button instead of commands.
 
-```sh
-# Make a folder and go into it
-mkdir -p ~/ControlX2 && cd ~/ControlX2
+<figure class="cx2-shot wide" markdown="span">
+  ![GitHub Desktop — Clone a repository](../assets/screenshots/github-desktop.svg)
+  <figcaption>GitHub Desktop → File → Clone Repository → paste the URL</figcaption>
+</figure>
 
-# Download both projects (the --recurse-submodules part grabs some extra files they need)
-git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-git clone https://github.com/zgranowitz/ControlX2iOS.git
+<ol class="cx2-steps">
+<li>Download <strong>GitHub Desktop</strong> from <a href="https://desktop.github.com/">desktop.github.com</a> and open it. (You can sign in with a free GitHub account, or skip sign-in — either works for downloading.)</li>
+<li>In the menu bar: <strong>File → Clone Repository…</strong> → click the <strong>URL</strong> tab.</li>
+<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>ControlX2</code> inside your <strong>Documents</strong> — for example <code>~/Documents/ControlX2/PumpX2Kit</code>:
+<div></div>
 ```
+https://github.com/zgranowitz/PumpX2Kit
+```
+Click <strong>Clone</strong> and wait for it to finish.</li>
+<li>Do it again for the second project: <strong>File → Clone Repository…</strong> → <strong>URL</strong>, and this time paste:
+<div></div>
+```
+https://github.com/zgranowitz/ControlX2iOS
+```
+Save it right next to the first one — <code>~/Documents/ControlX2/ControlX2iOS</code>.</li>
+</ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** you now have two folders, `~/ControlX2/PumpX2Kit` and
-`~/ControlX2/ControlX2iOS`.
+**Success looks like:** inside **Documents → ControlX2** you now have two folders:
+**PumpX2Kit** and **ControlX2iOS**, side by side.
 </div>
 
-!!! note "If you later see errors about missing `mbedtls` files"
-    A small extra piece didn't download. Fix it with:
+??? note "Advanced: prefer the Terminal? (optional)"
+    If you'd rather use the command line, this does the same thing (the `--recurse-submodules`
+    part is what GitHub Desktop does automatically):
 
     ```sh
-    cd ~/ControlX2/PumpX2Kit && git submodule update --init --recursive
+    mkdir -p ~/Documents/ControlX2 && cd ~/Documents/ControlX2
+    git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
+    git clone https://github.com/zgranowitz/ControlX2iOS.git
     ```
 
 ## Step 2 — Add the Garmin helper file {#connectiq}
 
-The app is wired to talk to Garmin watches, so it needs one file from Garmin — **even if you
-never use a Garmin.** You download it once and drop it in place.
+The app is wired to talk to Garmin watches, so it needs one file from Garmin to build — **even if
+you never use a Garmin.** You download it once and drop it into a folder. No commands.
 
 <ol class="cx2-steps">
-<li>Go to the <a href="https://developer.garmin.com/connect-iq/sdk/">Garmin Connect IQ SDK page</a> and download the <strong>Connect IQ Companion (Mobile) SDK for iOS</strong>. (Free Garmin account; accept the license.)</li>
-<li>Unzip it. You want the folder named like <code>connectiq-companion-app-sdk-ios-1.8.0</code>.</li>
-<li>Put it in a <code>vendor</code> folder next to your projects — paste this in Terminal (adjust the version if yours differs):
-
-<div></div>
-
-```sh
-mkdir -p ~/ControlX2/vendor
-mv ~/Downloads/connectiq-companion-app-sdk-ios-1.8.0 ~/ControlX2/vendor/
-```
-</li>
+<li>Go to the <a href="https://developer.garmin.com/connect-iq/sdk/">Garmin Connect IQ SDK page</a> and download the <strong>Connect IQ Companion (Mobile) SDK for iOS</strong>. (You'll make a free Garmin account and accept their license.)</li>
+<li>In your <strong>Downloads</strong>, double-click the zip to unzip it. You'll get a folder named something like <code>connectiq-companion-app-sdk-ios-1.8.0</code>.</li>
+<li>Open <strong>Finder</strong> → go to your <strong>Documents</strong> folder → make a <strong>new folder</strong> called <code>vendor</code> (right-click → New Folder).</li>
+<li><strong>Drag</strong> the unzipped Garmin folder into that <code>vendor</code> folder.</li>
 </ol>
 
-!!! info "Why is this needed for an iPhone-only build?"
-    The app *includes* the Garmin bridge, so Xcode needs this file to build even if you don't own
-    a Garmin. If you keep the file somewhere else, open `ControlX2iOS/project.yml`, find
-    `ConnectIQ:` → `path:`, and point it at your folder (then re-run the next step).
+<div class="cx2-check" markdown>
+**Success looks like:** **Documents → vendor** contains the
+`connectiq-companion-app-sdk-ios-1.8.0` folder. (So `Documents` now has both a **ControlX2**
+folder and a **vendor** folder.)
+</div>
 
-## Step 3 — Create the project
+??? note "If you saved things somewhere else"
+    The app looks for the Garmin folder two levels up from itself, in a `vendor` folder. If you
+    put your projects somewhere other than `Documents/ControlX2`, either move things to match the
+    layout above, or open `ControlX2iOS/project.yml` in **TextEdit**, find the line under
+    `ConnectIQ:` that starts with `path:`, and change it to the full path of your Garmin folder.
+    (Re-do Step 3 afterward.)
 
-This turns the code into something Xcode can open.
+## Step 3 — Create the project (the one Terminal step)
+
+The project is described by a small text file, and a tiny free tool called **XcodeGen** turns it
+into the file Xcode opens. This is the only step that uses the **Terminal**. It's two commands —
+just copy, paste, and press Return.
+
+!!! info "What's the Terminal?"
+    The **Terminal** is a Mac app where you type commands instead of clicking. Find it in
+    **Applications → Utilities → Terminal**. You don't need to understand the commands — copy each
+    one, paste it in, and press Return. It's safe.
+
+<figure class="cx2-shot wide" markdown="span">
+  ![Terminal app](../assets/screenshots/terminal.svg)
+  <figcaption>Paste each line, press Return, wait for it to finish before the next</figcaption>
+</figure>
+
+**3a. Install XcodeGen (one time).** This uses **Homebrew**, the standard way to install small
+Mac tools. Paste this line and press Return; if it asks for your Mac password, type it (you won't
+see the characters — that's normal) and press Return:
 
 ```sh
-cd ~/ControlX2/ControlX2iOS
+brew install xcodegen
+```
+
+??? note "\"command not found: brew\" — install Homebrew first (one time)"
+    If you've never used Homebrew, install it by pasting this line, pressing Return, and following
+    the prompts — then run `brew install xcodegen` again:
+
+    ```sh
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    ```
+
+**3b. Create the project.** Now point the Terminal at your app folder and run XcodeGen. The
+easiest way to avoid typing the folder path: type `cd` and a space, then **drag the ControlX2iOS
+folder from Finder into the Terminal window** (it fills in the path for you), then press Return:
+
+```sh
+cd ~/Documents/ControlX2/ControlX2iOS
 xcodegen generate
 ```
 
 <div class="cx2-check" markdown>
-**Success looks like:** a new file **`ControlX2.xcodeproj`** appears in the folder.
+**Success looks like:** the Terminal prints something like *"Created project at …ControlX2.xcodeproj"*,
+and a new **ControlX2.xcodeproj** file appears in the ControlX2iOS folder.
 </div>
 
-## Step 4 — Open it in Xcode
+## Step 4 — Open the project in Xcode
 
-```sh
-open ControlX2.xcodeproj
-```
+In Finder, open **Documents → ControlX2 → ControlX2iOS** and **double-click**
+**`ControlX2.xcodeproj`**. Xcode opens.
 
-Give Xcode a minute — a bar at the top says it's "resolving packages" (fetching PumpX2Kit). Wait
-for it to finish.
+Give it a minute — a bar near the top says it's "resolving packages" (downloading the helper
+library). Wait for that to finish.
 
-## Step 5 — Choose your Team {#your-team}
+## Step 5 — Choose your Team (signing) {#your-team}
 
-This is the step people trip on, so take it slowly. It tells Xcode to sign the app with *your*
-Apple account.
-
-<ol class="cx2-steps">
-<li>In the left panel, click the blue <strong>ControlX2</strong> icon at the very top.</li>
-<li>In the middle, under <strong>TARGETS</strong>, click <strong>ControlX2</strong>.</li>
-<li>Click the <strong>Signing &amp; Capabilities</strong> tab.</li>
-<li>Tick <strong>Automatically manage signing</strong>.</li>
-<li>Set <strong>Team</strong> to your name (the account from <a href="apple-developer.md">Step 1</a>).</li>
-</ol>
-
-Do the same **Team** choice for the other targets in the TARGETS list too:
-**ControlX2Widgets**, **ControlX2Watch**, and **ControlX2WatchWidgets**.
+"Signing" is Xcode proving the app is yours. This trips people up, so go slowly.
 
 <figure class="cx2-shot wide" markdown="span">
   ![Xcode Signing & Capabilities tab](../assets/screenshots/xcode-signing.svg)
-  <figcaption>Signing &amp; Capabilities → tick "Automatically manage signing", pick your Team</figcaption>
-</figure>
-
-!!! warning "Free account? You'll probably see a red \"identifier is not available\" error"
-    Every app needs a name that's unique across everyone. The project ships with
-    `com.zgranowitz.controlx2`, which is taken. Change the front part to your own — for example
-    `com.yourname` — everywhere it appears in `ControlX2iOS/project.yml` (the `bundleIdPrefix`,
-    each `PRODUCT_BUNDLE_IDENTIFIER`, and the `group.com.zgranowitz.controlx2` line). Keep the
-    endings the same (`.widgets`, `.watch`, `group.…`). Then run `xcodegen generate` again and
-    reopen the project. This is normal and only takes a minute.
-
-!!! info "Free account and the widgets"
-    A free account sometimes can't set up widgets. If a widget target won't sign, you can still
-    run the main app — build just **ControlX2** for now and add widgets later on a paid account.
-
-## Step 6 — Plug in your iPhone and press Run
-
-<figure class="cx2-shot wide" markdown="span">
-  ![Choosing your iPhone and pressing Run in Xcode](../assets/screenshots/xcode-run.svg)
-  <figcaption>Pick your iPhone at the top, then press ▶</figcaption>
+  <figcaption>Signing &amp; Capabilities → tick "Automatically manage signing" → pick your Team</figcaption>
 </figure>
 
 <ol class="cx2-steps">
-<li>Connect your iPhone to the Mac with a cable. If the phone asks, tap <strong>Trust This Computer</strong> and enter your passcode.</li>
-<li>If your iPhone asks you to turn on <strong>Developer Mode</strong>: <strong>Settings → Privacy &amp; Security → Developer Mode</strong> → on, then restart the phone.</li>
-<li>At the top of Xcode, click the device menu and pick <strong>your iPhone</strong> (under "iOS Device").</li>
-<li>Press the <strong>▶</strong> button (top-left), or press <kbd>⌘</kbd> + <kbd>R</kbd>.</li>
+<li>In the tall left panel, click the blue <strong>ControlX2</strong> icon at the very top.</li>
+<li>In the list that appears, under <strong>TARGETS</strong>, click <strong>ControlX2</strong>.</li>
+<li>Along the top of the middle area, click the <strong>Signing &amp; Capabilities</strong> tab.</li>
+<li>Tick the box <strong>Automatically manage signing</strong>.</li>
+<li>In the <strong>Team</strong> dropdown, pick your name (the account from <a href="apple-developer.md">Step 1</a>).</li>
 </ol>
 
-The first build takes a few minutes. Let it work.
+Then do the same **Team** choice for the other rows in the TARGETS list:
+**ControlX2Widgets**, **ControlX2Watch**, and **ControlX2WatchWidgets**.
 
-## Step 7 — Let your phone trust the app
+!!! warning "Free account? A red \"identifier is not available\" message is normal"
+    Every app needs a name that's unique across everyone in the world. The project comes with
+    `com.zgranowitz.controlx2`, which is already taken. Change the first part to your own — for
+    example `com.janesmith` — so it's unique to you:
 
-The first time, iOS won't open an app from a developer it doesn't know yet — that's you.
+    1. Open `ControlX2iOS/project.yml` in **TextEdit**.
+    2. Use **Edit → Find → Replace** to change every `com.zgranowitz` to your own `com.yourname`
+       (keep the endings like `.widgets` and `.watch`, and the `group.` line, exactly as they are).
+    3. Save, then re-do **Step 3b** (`xcodegen generate`) and reopen the project.
+
+    This is a normal one-time fix.
+
+!!! info "Free account and widgets"
+    Free accounts sometimes can't set up the widgets. If a widget row shows a signing error, you
+    can still install the main app — just build **ControlX2** for now and add widgets later on a
+    paid account.
+
+## Step 6 — Turn on Developer Mode on your iPhone
+
+Newer iPhones need "Developer Mode" switched on before they'll run an app you built.
+
+<figure class="cx2-shot phone" markdown="span">
+  ![iPhone Privacy & Security → Developer Mode](../assets/screenshots/developer-mode.svg)
+  <figcaption>Settings → Privacy &amp; Security → Developer Mode → on → Restart</figcaption>
+</figure>
+
+<ol class="cx2-steps">
+<li>On the iPhone, open <strong>Settings</strong> → <strong>Privacy &amp; Security</strong>.</li>
+<li>Scroll to the bottom and tap <strong>Developer Mode</strong>.</li>
+<li>Turn the switch <strong>on</strong> (green), tap <strong>Restart</strong>, and after it reboots choose <strong>Turn On</strong>.</li>
+</ol>
+
+!!! note "Don't see \"Developer Mode\"?"
+    It only appears after your phone has been connected to Xcode at least once. If it's missing,
+    plug your phone into the Mac with Xcode open (Step 7), then come back here.
+
+## Step 7 — Plug in your iPhone and press Run
+
+<figure class="cx2-shot wide" markdown="span">
+  ![Choosing your iPhone and pressing Run in Xcode](../assets/screenshots/xcode-run.svg)
+  <figcaption>Pick your iPhone in the bar at the top, then click the ▶ button</figcaption>
+</figure>
+
+<ol class="cx2-steps">
+<li>Connect your iPhone to the Mac with a cable.</li>
+<li>The first time, the phone shows <strong>Trust This Computer?</strong> — tap <strong>Trust</strong> and enter your passcode.</li>
+<li>Near the top-middle of Xcode, click the device menu and choose <strong>your iPhone</strong> (listed under "iOS Device").</li>
+<li>Click the <strong>▶</strong> (Run) button at the top-left, or press <kbd>⌘</kbd> + <kbd>R</kbd>.</li>
+</ol>
+
+The first build takes a few minutes — let it work. If Xcode says *"Device isn't registered,"*
+click to register it (your Mac needs to be online); this is a one-time thing.
+
+## Step 8 — Let your phone trust the app
+
+The first time, iOS won't open an app from a developer it doesn't recognize yet — that developer
+is you. You just tell it that's OK.
 
 <figure class="cx2-shot phone" markdown="span">
   ![Trusting the developer profile in iPhone Settings](../assets/screenshots/developer-trust.svg)
@@ -138,24 +221,24 @@ The first time, iOS won't open an app from a developer it doesn't know yet — t
 
 <ol class="cx2-steps">
 <li>On the iPhone: <strong>Settings → General → VPN &amp; Device Management</strong>.</li>
-<li>Under <strong>Developer App</strong>, tap your account.</li>
+<li>Under <strong>Developer App</strong>, tap your Apple account name.</li>
 <li>Tap <strong>Trust</strong>, then confirm.</li>
 </ol>
 
-## Step 8 — Open it and allow Bluetooth
+## Step 9 — Open it and allow Bluetooth
 
 Tap the **ControlX2** icon on your Home Screen. The first time you tap **Connect**, iOS asks to
-use Bluetooth — tap **Allow** (the app can't find your pump without it).
+use Bluetooth — tap **Allow**. (Without Bluetooth the app can't find your pump.)
 
 <div class="cx2-check" markdown>
-**🎉 You did it.** The app is on your iPhone. Until you pair a pump it shows a waiting screen.
-Next up:
+**🎉 You did it — the app is on your iPhone.** Until you pair a pump it shows a waiting screen.
+Next:
 
 - [Pair it with your pump →](../setup/pairing.md)
 - Optional: [add the Apple Watch app](apple-watch-build.md) or [a Garmin](garmin-build.md)
 - Learn [what everything does](../operate/status.md)
 </div>
 
-!!! note "Remember the expiry"
-    Free account: the app stops opening after 7 days — just [re-install](updating.md) (a minute).
-    Paid: once a year.
+!!! note "The app will stop opening after a while — that's normal"
+    Free account: after **7 days**. Paid account: after **1 year**. Fixing it takes about a
+    minute — see [Keeping the app running](updating.md).

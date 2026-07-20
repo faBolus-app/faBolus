@@ -1,7 +1,7 @@
 # Keeping the app running
 
 Because you install ControlX2iOS yourself (not from the App Store), it has an expiry date. This
-page explains why, and the quick routine to keep it working.
+page explains why, and the quick routine to keep it working. Good news: it's almost all clicking.
 
 ## Why it expires
 
@@ -12,44 +12,49 @@ The certificate that signs your app has a limited life:
 | Free Apple ID | **7 days** |
 | Apple Developer Program ($99/yr) | **1 year** |
 
-When it expires the icon stays on your Home Screen but the app refuses to open (or shows a
-signing error). Nothing is wrong — it just needs to be re-signed.
+When it expires, the icon stays on your Home Screen but the app won't open (or shows a signing
+error). Nothing is broken — it just needs re-installing.
 
-## The quick reinstall
+## The quick reinstall (about a minute)
 
 <ol class="cx2-steps">
 <li>Plug your iPhone into the Mac.</li>
-<li>Open <strong>ControlX2.xcodeproj</strong> in Xcode (in <code>~/ControlX2/ControlX2iOS</code>).</li>
-<li>Select your iPhone in the device menu and press <strong>▶ Run</strong> (<kbd>⌘</kbd> + <kbd>R</kbd>).</li>
+<li>In Finder, open <strong>Documents → ControlX2 → ControlX2iOS</strong> and double-click <strong>ControlX2.xcodeproj</strong>.</li>
+<li>Pick your iPhone in the device bar at the top and click <strong>▶ Run</strong> (or press <kbd>⌘</kbd> + <kbd>R</kbd>).</li>
+<li>If the phone asks you to <strong>Trust</strong> the developer again, do so (<a href="build-app.md#step-8-let-your-phone-trust-the-app">Step 8</a>).</li>
 </ol>
 
 That's it — the fresh install resets the clock. Your saved pump pairing stays put (it's stored
-securely in the iOS Keychain), so you won't need the 6-digit code again.
+securely on the phone), so you won't need the 6-digit code again.
 
-!!! tip "Put a reminder on the calendar"
-    On a free account, a weekly reminder saves you from discovering an expired app right when you
-    want it. On the paid program, once a year is plenty.
+!!! tip "Put a reminder on your calendar"
+    On a free account, a weekly reminder saves you from finding an expired app right when you need
+    it. On the paid program, once a year is plenty.
 
-## Getting the latest code changes
+## Getting the newest version of the app
 
-To pick up updates to the project itself:
+When the project gets updates, refresh your copy with **GitHub Desktop** — no commands:
 
-```sh
-cd ~/ControlX2/PumpX2Kit && git pull --recurse-submodules
-cd ~/ControlX2/ControlX2iOS && git pull
+<ol class="cx2-steps">
+<li>Open <strong>GitHub Desktop</strong>.</li>
+<li>Pick <strong>PumpX2Kit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
+<li>Do the same for <strong>ControlX2iOS</strong>.</li>
+<li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>xcodegen generate</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
+</ol>
 
-# Regenerate the Xcode project in case the structure changed, then reopen
-xcodegen generate
-open ControlX2.xcodeproj
-```
+??? note "Advanced: update from the Terminal (optional)"
+    ```sh
+    cd ~/Documents/ControlX2/PumpX2Kit && git pull --recurse-submodules
+    cd ~/Documents/ControlX2/ControlX2iOS && git pull
+    xcodegen generate
+    open ControlX2.xcodeproj
+    ```
 
-Then **Run** as usual. If a build ever fails right after pulling, see
-[Troubleshooting](../troubleshoot.md) — the usual fixes are re-fetching submodules and
-re-running `xcodegen generate`.
+If a build ever fails right after updating, see [Troubleshooting](../troubleshoot.md) — the usual
+fixes are re-fetching the helper files and re-running `xcodegen generate`.
 
 ## Updating the watch and Garmin apps
 
-- **Apple Watch:** re-run the **ControlX2Watch** scheme from Xcode ([step 4](apple-watch-build.md)).
-- **Garmin:** rebuild `ControlX2.prg` and copy it to the watch again
-  ([step 5](garmin-build.md)). The Garmin app doesn't expire the way the iOS app does, but you'll
-  reinstall it to get changes.
+- **Apple Watch:** run it again from Xcode — see [Add the Apple Watch](apple-watch-build.md).
+- **Garmin:** rebuild and re-install it — see [Add a Garmin](garmin-build.md). The Garmin app
+  doesn't expire like the iOS app does; you only reinstall it to get changes.

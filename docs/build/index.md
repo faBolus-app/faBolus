@@ -21,6 +21,12 @@ your iPhone. That's "building."
 You do it once. Every so often you'll redo the last step to keep the app from expiring — that
 takes about a minute (see [Keeping the app running](updating.md)).
 
+!!! tip "You won't be typing commands (much)"
+    This guide is click-and-point wherever possible: you'll use free apps like **GitHub Desktop**
+    and **Xcode**, and **Finder** to move a file. There's just **one** short step that uses the
+    Terminal, and it's written out word-for-word with plain-English explanations. Anything meant
+    only for advanced users is tucked inside a *"click to open"* box you can ignore.
+
 ## The whole process, start to finish
 
 Five short chapters. The first three get the app on your iPhone; the last two are optional

@@ -1,19 +1,18 @@
-# 5 · Build the Garmin remote
+# 5 · Add a Garmin (optional)
 
-The Garmin remote is **optional**. It's a small **Connect IQ** app (Garmin's app platform) for
-the **Garmin venu3s** that relays bolus requests to your iPhone — the phone owns the pump
-connection and confirms every request. It also shows a glucose complication and a Dexcom-style
-history plot. (See [Garmin remote](../remotes/garmin.md) for day-to-day use.)
+The Garmin remote is **optional**. It's a small app for the **Garmin venu3s** that asks your
+iPhone to bolus — the phone still owns the pump and confirms everything. It also shows glucose on
+your watch face and a history plot. (See [Garmin remote](../remotes/garmin.md) for how it's used.)
 
-!!! note "The Garmin app lives in its own repo"
-    The Garmin watch app is now in the separate
-    **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo, not in `ControlX2iOS`.
-    The *iPhone side* of the bridge is already part of the ControlX2 app you built in
-    [step 3](build-app.md) (it links Garmin's Connect IQ Mobile SDK), so all you do here is build
+!!! note "What is Connect IQ?"
+    **Connect IQ** is Garmin's system for third-party watch apps (like the App Store, but for
+    Garmin). Building a Connect IQ app uses different (free) tools than the iPhone app. We'll do it
+    all inside **Visual Studio Code**, a free editor, using buttons — not commands.
+
+!!! note "The Garmin app lives in its own project"
+    It's in the separate **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo. The
+    iPhone side is already in the app you built in [Step 3](build-app.md), so here you just build
     the watch app and pair it.
-
-Garmin uses a **different toolchain** from the iPhone app, so this page is a bit more technical.
-Take your time.
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
@@ -32,99 +31,82 @@ Take your time.
 
 ## What you'll need
 
-- The **iPhone app already built** ([step 3](build-app.md)) — the Garmin remote is useless
-  without it, since the phone does the actual pump communication.
-- The **Garmin Connect IQ SDK** and a **developer key** (both free).
-- The **Garmin Connect Mobile** app on your iPhone, with your **venu3s** paired to it.
+- The **iPhone app already built** ([Step 3](build-app.md)) — the Garmin can't do anything on its
+  own.
+- **Visual Studio Code** (free) with Garmin's **Monkey C** extension (installs the tools for you).
+- The **Garmin Connect** app on your iPhone, with your **venu3s** already paired to it.
 
-## Step A — Get the Garmin app source
+## Step 1 — Download the Garmin app
 
-```sh
-cd ~/ControlX2
-git clone https://github.com/zgranowitz/PumpX2Garmin.git
+In **GitHub Desktop** (the same app from [Step 3](build-app.md#download)): **File → Clone
+Repository → URL**, paste the address below, and save it next to your other projects:
+
+```
+https://github.com/zgranowitz/PumpX2Garmin
 ```
 
-## Step B — Install the Connect IQ SDK
-
-The friendliest way is the **Connect IQ extension for Visual Studio Code**, which bundles the SDK
-manager, compiler, and simulator.
+## Step 2 — Install the Garmin tools (in VS Code)
 
 <ol class="cx2-steps">
-<li>Install <a href="https://code.visualstudio.com/">Visual Studio Code</a> (free).</li>
-<li>Inside VS Code, open the <strong>Extensions</strong> panel and install <strong>Monkey C</strong> (published by Garmin).</li>
-<li>Run <strong>Monkey C: Verify Installation</strong> (command palette: <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>). It walks you through downloading the <strong>SDK</strong> and the <strong>venu3s device</strong> files.</li>
+<li>Download and open <a href="https://code.visualstudio.com/">Visual Studio Code</a> (free).</li>
+<li>Click the <strong>Extensions</strong> icon in the left bar (four squares), search <strong>Monkey C</strong>, and click <strong>Install</strong> (it's by Garmin).</li>
+<li>Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd> to open the command box, type <strong>Verify Installation</strong>, and pick <strong>Monkey C: Verify Installation</strong>. It walks you through downloading the Garmin <strong>SDK</strong> and the <strong>venu3s</strong> device files — just say yes to the prompts.</li>
 </ol>
 
-Prefer the command line? Download the SDK from the
-[Connect IQ SDK page](https://developer.garmin.com/connect-iq/sdk/) and add its `bin/` to your
-`PATH` so `monkeyc` and `connectiq` are available.
+## Step 3 — Make a developer key (one click)
 
-## Step C — Create a developer key
+Garmin apps must be "signed" with a key, like the iPhone app. In VS Code, press
+<kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>, type **Generate**, and choose **Monkey C: Generate a
+Developer Key**. VS Code makes it and remembers it. That's all.
 
-=== "In VS Code"
-
-    Run **Monkey C: Generate a Developer Key** and let it save the key.
-
-=== "In Terminal (OpenSSL)"
-
+??? note "Advanced: make the key in the Terminal instead (optional)"
     ```sh
-    openssl genrsa -out ~/ControlX2/developer_key.pem 4096
+    openssl genrsa -out ~/Documents/ControlX2/developer_key.pem 4096
     openssl pkcs8 -topk8 -inform PEM -outform DER \
-      -in ~/ControlX2/developer_key.pem \
-      -out ~/ControlX2/developer_key.der -nocrypt
+      -in ~/Documents/ControlX2/developer_key.pem \
+      -out ~/Documents/ControlX2/developer_key.der -nocrypt
     ```
 
-## Step D — Build the watch app
-
-The sources are in the PumpX2Garmin repo you cloned.
-
-=== "In VS Code"
-
-    <ol class="cx2-steps">
-    <li>Open the <strong>PumpX2Garmin</strong> folder in VS Code.</li>
-    <li><kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd> → <strong>Monkey C: Build Current Project</strong>, or <strong>Monkey C: Run</strong> to build and launch the simulator.</li>
-    <li>When asked for a device, choose <strong>venu3s</strong>.</li>
-    </ol>
-
-=== "In Terminal"
-
-    ```sh
-    cd ~/ControlX2/PumpX2Garmin
-    SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
-    "$SDK/bin/monkeyc" -f monkey.jungle -o bin/ControlX2.iq -y ~/ControlX2/developer_key.der -e -r -w
-    ```
-
-    (Check the repo's own README for the exact target/flags.)
-
-## Step E — Try it in the simulator
+## Step 4 — Build and preview it
 
 <figure class="cx2-shot wide" markdown="span">
   ![Connect IQ simulator](../assets/screenshots/garmin-sim.svg)
-  <figcaption>The Connect IQ simulator (venu3s) — check the screens before sideloading</figcaption>
+  <figcaption>The Connect IQ simulator shows the app on a virtual venu3s</figcaption>
 </figure>
 
-In VS Code, **Monkey C: Run** opens the **Connect IQ simulator** with your app on a virtual
-venu3s. It can't reach your iPhone/pump, so bolus flows show the out-of-range path there — but
-it's the best place to check the screens and taps.
-
-## Step F — Put it on your venu3s
-
-Sideload the built app in the simulator, or upload `bin/ControlX2.iq` to the Connect IQ store as
-a beta and install it from Garmin Connect Mobile onto the watch.
-
-## Step G — Pair the remote to your iPhone
-
 <ol class="cx2-steps">
-<li>Make sure <strong>Garmin Connect Mobile</strong> is installed and your venu3s is paired to it.</li>
-<li>Open the <strong>ControlX2</strong> iPhone app, tap the <strong>watch icon</strong> (top-right) → <strong>Set up Garmin remote</strong>. This opens Garmin Connect so you can pick your venu3s.</li>
-<li>Return to ControlX2 — it remembers the device and the HUD shows "Garmin remote: &lt;your watch&gt; ✓".</li>
+<li>In VS Code, open the <strong>PumpX2Garmin</strong> folder (<strong>File → Open Folder…</strong>).</li>
+<li>Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>, type <strong>Run</strong>, and choose <strong>Monkey C: Run</strong>.</li>
+<li>When it asks for a device, pick <strong>venu3s</strong>. The <strong>Connect IQ simulator</strong> opens with the app running.</li>
 </ol>
 
-## What you should have now
+The simulator can't reach your iPhone or pump, so bolus screens show the "phone unreachable" path
+there — that's expected. It's just for checking the screens look right.
 
-- [x] The PumpX2Garmin app built and running in the Connect IQ simulator.
-- [x] The app on your venu3s.
-- [x] The venu3s selected as your Garmin remote inside the iPhone app.
+??? note "Advanced: build from the Terminal (optional)"
+    ```sh
+    cd ~/Documents/ControlX2/PumpX2Garmin
+    SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
+    "$SDK/bin/monkeyc" -f monkey.jungle -o bin/ControlX2.iq -y ~/Documents/ControlX2/developer_key.der -e -r -w
+    ```
+    Check the PumpX2Garmin README for the exact device/flags.
 
-Head to [Garmin remote](../remotes/garmin.md) to learn the screens, history plot, complication,
-and the tap-1-2-3 bolus confirmation.
+## Step 5 — Put it on your watch
+
+Connect your venu3s to the computer with its cable and copy the built app onto it, **or** upload
+it to the Connect IQ store as a private beta and install it from **Garmin Connect** on your phone.
+The PumpX2Garmin README has the exact, current steps for the venu3s.
+
+## Step 6 — Pair the remote to your iPhone
+
+<ol class="cx2-steps">
+<li>Make sure <strong>Garmin Connect</strong> is installed on your iPhone and your venu3s is paired to it.</li>
+<li>Open the <strong>ControlX2</strong> iPhone app, tap the <strong>watch icon</strong> (top-right) → <strong>Set up Garmin remote</strong>. Garmin Connect opens so you can pick your venu3s.</li>
+<li>Come back to ControlX2 — it remembers your watch and shows "Garmin remote: &lt;your watch&gt; ✓".</li>
+</ol>
+
+<div class="cx2-check" markdown>
+**Success looks like:** the ControlX2 app on your venu3s shows your glucose, and the iPhone app
+lists your watch as the Garmin remote. Learn the screens on the
+[Garmin remote](../remotes/garmin.md) page.
+</div>
