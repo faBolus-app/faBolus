@@ -18,8 +18,8 @@ public enum BackendRegistry {
     /// The backends compiled into this build. **Add a backend here.** First entry is the default.
     /// On device the real pump backend leads; in the Simulator the mock leads.
     public static let enabled: [BackendDescriptor] = {
-        let tandem = BackendDescriptor(id: "tandem", name: "Tandem t:slim X2 / Mobi") { LivePumpDataSource() }
-        let mock = BackendDescriptor(id: "mock", name: "Simulator (mock)") { MockPumpDataSource() }
+        let tandem = BackendDescriptor(id: "tandem", name: "Tandem t:slim X2 / Mobi") { TandemBackend() }
+        let mock = BackendDescriptor(id: "mock", name: "Simulator (mock)") { MockBackend() }
         #if targetEnvironment(simulator)
         return [mock, tandem]
         #else

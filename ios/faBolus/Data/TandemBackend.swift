@@ -11,7 +11,7 @@ import PumpX2BLE
 ///
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
-public final class LivePumpDataSource: NSObject, PumpBackend {
+public final class TandemBackend: NSObject, PumpBackend {
     /// Tandem (via PumpX2Kit) supports the full feature set.
     public let capabilities: PumpCapabilities = .full
     public private(set) var snapshot = PumpSnapshot()
@@ -464,7 +464,7 @@ public final class LivePumpDataSource: NSObject, PumpBackend {
 }
 
 // PumpBLEClientDelegate is @MainActor; PumpBLEClient delivers all callbacks on the main actor.
-extension LivePumpDataSource: PumpBLEClientDelegate {
+extension TandemBackend: PumpBLEClientDelegate {
     public func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
         switch state {
         case .scanning: snapshot.connection = .scanning

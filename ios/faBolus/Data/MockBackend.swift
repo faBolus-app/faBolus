@@ -4,7 +4,7 @@ import Foundation
 /// hardware. Generates a plausible glucose trace and simple IOB/COB dynamics. A reference
 /// `PumpBackend` implementation — copy it as a starting point for a new backend.
 @MainActor
-public final class MockPumpDataSource: PumpBackend {
+public final class MockBackend: PumpBackend {
     public let capabilities: PumpCapabilities = .full
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
