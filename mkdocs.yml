@@ -98,6 +98,7 @@ nav:
       - Dashboard & status: operate/status.md
       - Bolus & cancel: operate/bolus.md
       - Alerts & alarms: operate/alerts.md
+      - CGM failover: operate/cgm-failover.md
   - Customize:
       - Settings & options: customize/settings.md
       - Siri & Shortcuts: customize/shortcuts.md
