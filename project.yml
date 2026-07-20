@@ -50,9 +50,12 @@ targets:
       properties:
         # Shared container the app writes and the widgets read.
         com.apple.security.application-groups: [group.com.fabolus.app]
-        # Read glucose from Apple Health as a failover CGM feed (Eversense).
-        com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: []
+        # HealthKit (the Eversense failover source) is OPT-IN — it needs the paid Apple Developer
+        # Program to enable the capability, so it's left off by default and the app builds/signs on
+        # a free account. To use Eversense via Apple Health, uncomment the two keys below (and enable
+        # HealthKit under Signing & Capabilities). See docs/operate/cgm-failover.md.
+        # com.apple.developer.healthkit: true
+        # com.apple.developer.healthkit.access: []
     info:
       path: ios/faBolus/Info.plist
       properties:
