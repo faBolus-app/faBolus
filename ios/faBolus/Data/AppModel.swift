@@ -130,6 +130,9 @@ public final class AppModel {
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
+        // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
+        let pumpFresh = source.snapshot.glucose != nil && !GlucoseFreshness.isStale(source.snapshot.glucoseDate)
+        glucoseSource?.setPrimaryHealthy(pumpFresh)
         let (snap, hist) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
                                                 pumpHistory: source.glucoseHistory,
                                                 source: glucoseSource)

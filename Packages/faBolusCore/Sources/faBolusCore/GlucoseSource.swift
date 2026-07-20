@@ -73,6 +73,14 @@ public protocol GlucoseSource: AnyObject {
     var status: GlucoseSourceStatus { get }
     func start() async
     func stop()
+    /// Tell the source whether the PRIMARY (pump) feed is currently healthy, so it can throttle its
+    /// work. Cloud pollers poll lazily while the primary is healthy and ramp up when it goes stale;
+    /// local BLE sources ignore this and run continuously for instant failover. Default: no-op.
+    func setPrimaryHealthy(_ healthy: Bool)
     /// Called whenever `latest`/`status` change so the app can re-arbitrate promptly.
     var onChange: (@MainActor () -> Void)? { get set }
+}
+
+public extension GlucoseSource {
+    func setPrimaryHealthy(_ healthy: Bool) {}
 }
