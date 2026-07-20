@@ -33,6 +33,9 @@ targets:
         product: ConnectIQ
       # Embeds the WidgetKit extension (Lock Screen + Home Screen widgets).
       - target: ControlX2Widgets
+      # Embeds the watchOS companion app so it installs to the paired watch with the phone app.
+      - target: ControlX2Watch
+        embed: true
     entitlements:
       path: ios/ControlX2/ControlX2.entitlements
       properties:
@@ -77,8 +80,10 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
 
-  # watchOS remote — a thin Loop-style remote (dial-to-bolus). Never touches the pump; relays
-  # commands to the iPhone host over WatchConnectivity (double-confirm).
+  # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
+  # (The glucose complication extension is temporarily NOT embedded: it needs the App Group
+  # registered on the watch App IDs, which isn't done yet. Re-add ControlX2WatchWidgets + the App
+  # Group entitlement once that capability is enabled in Xcode.)
   ControlX2Watch:
     type: application
     platform: watchOS
@@ -87,8 +92,6 @@ targets:
       - watch/ControlX2Watch
       - Shared
     dependencies:
-      # Embeds the watch-face complication extension.
-      - target: ControlX2WatchWidgets
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -96,23 +99,23 @@ targets:
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
-    entitlements:
-      path: watch/ControlX2Watch/ControlX2Watch.entitlements
+    info:
+      path: watch/ControlX2Watch/Info.plist
       properties:
-        # Device-local container shared with the watch complication (reuses the existing group id
-        # so no new App Group registration is needed).
-        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+        CFBundleDisplayName: ControlX2
+        WKApplication: true
+        # Marks this as the companion of the iPhone app so it installs alongside it.
+        WKCompanionAppBundleIdentifier: com.zgranowitz.controlx2
+        NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch
-        GENERATE_INFOPLIST_FILE: YES
+        GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "4"
-        INFOPLIST_KEY_WKApplication: YES
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Relays bolus commands to the ControlX2 iPhone app."
 
   # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
   # app publishes to the shared App Group; never touches Bluetooth.
