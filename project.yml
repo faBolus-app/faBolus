@@ -92,6 +92,8 @@ targets:
       - watch/ControlX2Watch
       - Shared
     dependencies:
+      # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
+      - target: ControlX2WatchWidgets
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -99,6 +101,11 @@ targets:
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
+    entitlements:
+      path: watch/ControlX2Watch/ControlX2Watch.entitlements
+      properties:
+        # Device-local container shared with the watch complication.
+        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
     info:
       path: watch/ControlX2Watch/Info.plist
       properties:
