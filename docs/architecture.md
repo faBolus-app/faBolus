@@ -46,7 +46,7 @@ faBolusGarmin  (separate repo)
 
 !!! note "The Garmin app moved to its own repo"
     The Garmin (Monkey C) watch app used to live in `faBolus/garmin/`; it now lives in the
-    separate **[faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin)** repo. The
+    separate **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The
     *iPhone side* of the Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK
     dependency) is still part of this app, so the two continue to talk over the shared command
     contract.
@@ -70,4 +70,4 @@ what keeps the watch, Garmin, and phone from drifting apart.
 Every outgoing pump message in PumpX2Kit is asserted **byte-for-byte equal** to the pumpX2
 `cliparser` oracle in tests, and CI re-runs this on every push. A scheduled CI job watches for
 upstream protocol drift. This is what makes a hand-ported dosing protocol trustworthy — see the
-[PumpX2Kit](https://github.com/fabolus-app/PumpX2Kit) repo.
+[PumpX2Kit](https://github.com/faBolus-app/PumpX2Kit) repo.

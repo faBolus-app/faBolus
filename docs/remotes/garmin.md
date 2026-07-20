@@ -7,7 +7,7 @@ delivers through PumpX2Kit. To build and install it, see
 
 !!! note "The Garmin app lives in its own repo"
     The Garmin watch app is maintained in the separate
-    **[faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin)** repo (it used to live in
+    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo (it used to live in
     `faBolus/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
     so the two talk over the shared command contract as before.
 

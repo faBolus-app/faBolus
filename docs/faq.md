@@ -31,7 +31,7 @@
 ??? question "Does the watch / Garmin talk to the pump directly?"
     No. The iPhone owns the connection; remotes relay commands to it. A standalone Apple Watch is
     designed but not built; the Garmin remote lives in the
-    separate [faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin) repo and always relays
+    separate [faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin) repo and always relays
     through the phone.
 
 ??? question "Can I bolus by carbs?"
