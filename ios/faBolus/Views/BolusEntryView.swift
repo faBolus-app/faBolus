@@ -50,12 +50,15 @@ struct BolusEntryView: View {
 
     private var content: some View {
         Form {
-            Picker("Mode", selection: $mode) {
-                Text("Carbs").tag(BolusMode.carbs)
-                Text("Units").tag(BolusMode.units)
+            // Carbs entry only when the active backend supports the pump's bolus calculator.
+            if model.capabilities.supportsCarbEntry {
+                Picker("Mode", selection: $mode) {
+                    Text("Carbs").tag(BolusMode.carbs)
+                    Text("Units").tag(BolusMode.units)
+                }
+                .pickerStyle(.segmented)
+                .disabled(delivering)
             }
-            .pickerStyle(.segmented)
-            .disabled(delivering)
 
             if mode == .carbs {
                 Section("Entry") {
@@ -113,7 +116,10 @@ struct BolusEntryView: View {
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if !modeInitialized { mode = settings.defaultBolusMode; modeInitialized = true }
+            if !modeInitialized {
+                mode = model.capabilities.supportsCarbEntry ? settings.defaultBolusMode : .units
+                modeInitialized = true
+            }
             if bg.isEmpty, let g = model.snapshot.glucose { bg = "\(g)" }
         }
         .toolbar {
