@@ -8,6 +8,13 @@ that relay confirmed commands to the phone.
 The app talks only to a backend interface, so support for other pumps can be added as new backends
 **without forking** — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
+**CGM failover (optional):** glucose normally arrives through the pump; faBolus can also read an
+**independent CGM feed** as a backup so a reading keeps flowing if the pump, phone, or sensor link
+drops. Sources: **Dexcom G7/ONE+** directly over Bluetooth (also on Apple Watch), and **LibreLinkUp**
+(Libre 2/3), **Dexcom Share** (G6), **Nightscout**, and **Apple Health** (Eversense). The pump stays
+the primary source; a stale reading is shown marked (never as current). See
+[the CGM failover docs](docs/operate/cgm-failover.md).
+
 > _Built by Zev and Tia in tandem._
 
 > [!WARNING]
@@ -43,13 +50,16 @@ Two features are known not to work correctly yet and are being fixed:
 
 ```
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
-                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, RemoteLink)
+                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, RemoteLink,
+                             #    GlucoseSource — the CGM-failover seam)
+Packages/G7SensorKit/        # Dexcom G7/ONE+ BLE decoders, vendored from LoopKit (MIT), LoopKit-free
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
+ios/faBolus/Data/Sources/    # CGM failover sources (LibreLinkUp/Nightscout/Share/HealthKit) + arbiter
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
-watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity)
+watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity + direct-G7 failover)
 watch/faBolusWatchWidgets/   # watch-face complication
-Shared/                      # WidgetShared — App Group snapshot shared with the widgets
+Shared/                      # WidgetShared (App Group snapshot) + DexcomG7BLESource (phone+watch)
 schema/                      # THE phone↔remote message contract — single source of truth
 hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
 docs/                        # the documentation site (MkDocs Material)
@@ -66,7 +76,7 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
   **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
 - The widgets read a snapshot the app publishes to a shared App Group; they can't drive
-  Bluetooth, so they show the last published value and hide anything older than 6 minutes.
+  Bluetooth, so they show the last published value with its age (older than 6 minutes shows marked).
 
 ## Build (quick reference)
 
