@@ -61,7 +61,9 @@
 		<string>gcm-ciq</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
+	<string>faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>faBolus can read glucose from Apple Health as a backup CGM feed (e.g. Eversense) when the pump's glucose is unavailable.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

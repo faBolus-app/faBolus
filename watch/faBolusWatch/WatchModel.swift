@@ -37,24 +37,48 @@ final class WatchModel {
     var pendingRequestId: String?
 
     private let link = RemoteLink()
+    /// Direct-to-watch CGM failover: when the iPhone is out of range, the watch reads a Dexcom G7/ONE+
+    /// over BLE itself (reuses the shared passive source). Started only while unreachable, to save power.
+    private let g7 = DexcomG7BLESource()
 
     init() {
-        link.onReachabilityChange = { [weak self] r in self?.reachable = r }
+        link.onReachabilityChange = { [weak self] r in
+            guard let self else { return }
+            self.reachable = r
+            if r { self.g7.stop() } else { Task { await self.g7.start() } }
+        }
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
+        g7.onChange = { [weak self] in self?.applyDirectG7() }
         reachable = link.isReachable
+        if !reachable { Task { await g7.start() } }
     }
 
-    /// A CGM reading older than 6 minutes shouldn't be shown as current.
+    /// Apply a direct-BLE reading when the phone can't supply a fresher one (out of range, or the
+    /// relayed value is older than the sensor's). Never overrides a fresher phone reading.
+    private func applyDirectG7() {
+        guard let s = g7.latest else { return }
+        let fresher = glucoseDate.map { s.date > $0 } ?? true
+        guard !reachable || fresher else { return }
+        glucose = s.mgdl
+        glucoseDate = s.date
+        trend = s.trend.rawValue
+        publishComplication()
+    }
+
+    /// Stale per the shared `GlucoseFreshness` threshold (default 6 min). A stale reading is shown
+    /// but marked (grayed + age), never hidden — "old is worse than nothing".
     var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }
-        return Date().timeIntervalSince(d) > 6 * 60
+        return GlucoseFreshness.isStale(d)
     }
-    var displayGlucose: String { (glucose != nil && !isGlucoseStale) ? "\(glucose!)" : "—" }
+    var displayGlucose: String { glucose.map { "\($0)" } ?? "—" }
     var cgmActive: Bool { glucose != nil && !isGlucoseStale }
     var ageMinutes: Int? {
         guard let d = glucoseDate else { return nil }
         return max(0, Int(Date().timeIntervalSince(d) / 60))
     }
+    /// Relative age label ("now", "3 min ago"), or nil when there's no reading yet.
+    var ageLabel: String? { glucoseDate.map { GlucoseFreshness.ageLabel(for: $0) } }
 
     private static func arrow(fromToken t: String?) -> String {
         switch t {

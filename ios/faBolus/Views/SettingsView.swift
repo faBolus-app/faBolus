@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var settings = AppSettings.shared
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
+    @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -89,6 +90,20 @@ struct SettingsView: View {
                     } footer: {
                         Text("Which pump this build talks to. Takes effect after you reopen the app.")
                     }
+                }
+
+                Section {
+                    Picker("Failover CGM", selection: $selectedGlucoseSource) {
+                        Text("None (pump only)").tag("")
+                        ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
+                    }
+                    .onChange(of: selectedGlucoseSource) { _, id in
+                        GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
+                    }
+                } header: {
+                    Text("Glucose failover")
+                } footer: {
+                    Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
                 }
 
                 Section("Pump") {

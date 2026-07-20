@@ -21,7 +21,11 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>faBolus relays bolus commands to the iPhone app over Bluetooth.</string>
+	<string>faBolus relays bolus commands to the iPhone app and can read a CGM directly over Bluetooth when the phone is out of range.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
