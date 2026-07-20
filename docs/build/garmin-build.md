@@ -1,8 +1,11 @@
 # 5 · Add a Garmin (optional)
 
-The Garmin remote is **optional**. It's a small app for the **Garmin venu3s** that asks your
-iPhone to bolus — the phone still owns the pump and confirms everything. It also shows glucose on
-your watch face and a history plot. (See [Garmin remote](../remotes/garmin.md) for how it's used.)
+The Garmin remote is **optional**. It's a small app for the **Garmin Venu 3S** (the currently
+supported watch) that asks your iPhone to bolus — the phone still owns the pump and confirms
+everything. It also shows glucose on your watch face and a history plot. (See
+[Garmin remote](../remotes/garmin.md) for how it's used; adding another Garmin watch is a welcome
+contribution — see the faBolusGarmin
+[contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-watch).)
 
 !!! note "What is Connect IQ?"
     **Connect IQ** is Garmin's system for third-party watch apps (like the App Store, but for
