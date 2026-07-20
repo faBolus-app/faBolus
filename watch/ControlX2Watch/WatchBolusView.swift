@@ -1,60 +1,105 @@
 import SwiftUI
 
-/// Loop-style Digital Crown dial-to-bolus. The watch confirms intent (first confirm) and sends
-/// a units-only request; the iPhone runs the second confirm + delivery interlock.
-/// SALINE bench boluses only.
+/// Bolus entry, at parity with the phone + Garmin: pick **Units** or **Carbs** (default from
+/// Settings), set the amount with the Digital Crown (step = the watch increment), then confirm.
+/// The watch confirms on-device (like the Garmin) and the iPhone delivers directly through the
+/// validated signed path — carbs are converted to units on the phone. SALINE bench boluses only.
 struct WatchBolusView: View {
     @Bindable var model: WatchModel
     @Environment(\.dismiss) private var dismiss
 
-    private let maxUnits = 10.0
-    @State private var units = 0.0
+    private enum Mode: String { case carbs, units }
+    @State private var mode: Mode = .carbs
+    @State private var modeInit = false
+    @State private var amount = 0.0        // units or grams, per mode
+    @State private var confirming = false
     @State private var sent = false
 
+    private var isCarbs: Bool { mode == .carbs }
+    private var step: Double { isCarbs ? model.carbIncrement : model.bolusIncrement }
+    private var maxAmount: Double { isCarbs ? 200 : max(model.maxBolusUnits, 0.05) }
+    private var amountLabel: String { isCarbs ? "\(Int(amount)) g" : String(format: "%.2f U", amount) }
+
     var body: some View {
-        VStack(spacing: 10) {
-            if sent {
-                VStack(spacing: 8) {
-                    Image(systemName: statusIcon).font(.largeTitle).foregroundStyle(statusColor)
-                    Text(model.statusMessage ?? "Sent").font(.footnote).multilineTextAlignment(.center)
-                    // While still in progress, offer a red Cancel; once final, a Done button.
-                    if inProgress {
-                        Button(role: .destructive) { model.cancel() } label: {
-                            Label("Cancel bolus", systemImage: "stop.fill")
-                        }.tint(.red)
-                    } else {
-                        Button("Done") { dismiss() }
-                    }
-                }
-            } else {
-                Text(String(format: "%.2f U", units))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(.indigo)
-                    .focusable()
-                    .digitalCrownRotation($units, from: 0, through: maxUnits, by: model.bolusIncrement,
-                                          sensitivity: .medium, isContinuous: false)
-                Text("Turn crown to set").font(.caption2).foregroundStyle(.secondary)
-                Button {
-                    model.requestBolus(units: units); sent = true
-                } label: {
-                    Label("Request on iPhone", systemImage: "arrow.up.forward")
-                }
-                .tint(.indigo)
-                .disabled(units < 0.05)
-                Text("Saline · bench only").font(.caption2).foregroundStyle(.secondary)
-            }
+        Group {
+            if sent { statusView } else { entryView }
         }
         .navigationTitle("Bolus")
+        .onAppear {
+            if !modeInit { mode = Mode(rawValue: model.defaultMode) ?? .carbs; modeInit = true }
+        }
     }
 
-    /// Still awaiting confirm or delivering (not a final delivered/failed/cancelled state).
+    private var entryView: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    modeButton(.carbs, "Carbs")
+                    modeButton(.units, "Units")
+                }
+
+                Text(amountLabel)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(.indigo)
+                    .focusable()
+                    .digitalCrownRotation($amount, from: 0, through: maxAmount, by: step,
+                                          sensitivity: .medium, isContinuous: false)
+                Text("Turn crown to set").font(.caption2).foregroundStyle(.secondary)
+
+                Button { confirming = true } label: {
+                    Label("Bolus \(amountLabel)", systemImage: "drop.fill")
+                }
+                .tint(.indigo)
+                .disabled(amount <= 0 || !model.reachable)
+
+                Text("Saline · bench only").font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+        }
+        .confirmationDialog("Deliver \(amountLabel)?", isPresented: $confirming, titleVisibility: .visible) {
+            Button("Deliver \(amountLabel)", role: .destructive) { deliver() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Bench proof-of-concept — saline into a container on a scale, never on a body.")
+        }
+    }
+
+    private var statusView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: statusIcon).font(.largeTitle).foregroundStyle(statusColor)
+            Text(model.statusMessage ?? "Delivering…").font(.footnote).multilineTextAlignment(.center)
+            if inProgress {
+                Button(role: .destructive) { model.cancel() } label: {
+                    Label("Cancel bolus", systemImage: "stop.fill")
+                }.tint(.red)
+            } else {
+                Button("Done") { dismiss() }
+            }
+        }
+        .padding()
+    }
+
+    private func modeButton(_ m: Mode, _ title: String) -> some View {
+        Button {
+            if mode != m { mode = m; amount = 0 }
+        } label: {
+            Text(title).font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(mode == m ? .indigo : .gray.opacity(0.4))
+    }
+
+    private func deliver() {
+        if isCarbs { model.deliverCarbs(amount) } else { model.deliverUnits(amount) }
+        sent = true
+    }
+
     private var inProgress: Bool {
         switch model.lastStatus {
         case .delivered, .failed, .outOfRange, .cancelled: return false
         default: return true
         }
     }
-
     private var statusIcon: String {
         switch model.lastStatus {
         case .delivered: return "checkmark.circle.fill"
