@@ -37,26 +37,31 @@ final class WatchModel {
     var pendingRequestId: String?
 
     private let link = RemoteLink()
-    /// Direct-to-watch CGM failover: when the iPhone is out of range, the watch reads a Dexcom G7/ONE+
-    /// over BLE itself (reuses the shared passive source). Started only while unreachable, to save power.
-    private let g7 = DexcomG7BLESource()
+    /// Direct-to-watch CGM failover: when the iPhone is out of range, the watch reads glucose itself,
+    /// phone-independent — a Dexcom G7/ONE+ over BLE, and/or xDrip4iOS via Apple Health (synced from
+    /// the phone). Both reuse the shared sources; started only while unreachable, to save power.
+    private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
 
     init() {
         link.onReachabilityChange = { [weak self] r in
             guard let self else { return }
             self.reachable = r
-            if r { self.g7.stop() } else { Task { await self.g7.start() } }
+            if r { self.stopDirect() } else { self.startDirect() }
         }
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
-        g7.onChange = { [weak self] in self?.applyDirectG7() }
+        for s in directSources { s.onChange = { [weak self] in self?.applyDirect() } }
         reachable = link.isReachable
-        if !reachable { Task { await g7.start() } }
+        if !reachable { startDirect() }
     }
 
-    /// Apply a direct-BLE reading when the phone can't supply a fresher one (out of range, or the
-    /// relayed value is older than the sensor's). Never overrides a fresher phone reading.
-    private func applyDirectG7() {
-        guard let s = g7.latest else { return }
+    private func startDirect() { for s in directSources { Task { await s.start() } } }
+    private func stopDirect() { for s in directSources { s.stop() } }
+
+    /// Apply the freshest direct reading when the phone can't supply a fresher one (out of range, or
+    /// the relayed value is older). Never overrides a fresher phone reading. Scans the sources (no
+    /// per-source capture) to avoid a retain cycle on their `onChange`.
+    private func applyDirect() {
+        guard let s = directSources.compactMap({ $0.latest }).max(by: { $0.date < $1.date }) else { return }
         let fresher = glucoseDate.map { s.date > $0 } ?? true
         guard !reachable || fresher else { return }
         glucose = s.mgdl

@@ -107,9 +107,9 @@ device.
     ---
 
     An optional **independent glucose feed** as a backup, so a reading keeps flowing if the pump,
-    phone, or sensor link drops — Dexcom G7 direct over Bluetooth, or LibreLinkUp / Dexcom Share /
-    Nightscout / Apple Health. The pump stays primary; stale readings are never shown as current.
-    [Learn more](operate/cgm-failover.md).
+    phone, or sensor link drops — Dexcom G7 direct over Bluetooth, **xDrip4iOS** (universal — via
+    Apple Health or a local App Group), or LibreLinkUp / Dexcom Share / Nightscout / Apple Health.
+    The pump stays primary; stale readings are never shown as current. [Learn more](operate/cgm-failover.md).
 
 </div>
 
