@@ -9,7 +9,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     PumpX2Kit's crypto submodule wasn't fetched. Run:
 
     ```sh
-    cd ~/ControlX2/PumpX2Kit && git submodule update --init --recursive
+    cd ~/faBolus/PumpX2Kit && git submodule update --init --recursive
     ```
 
 ??? question "Xcode can't find the ConnectIQ package"
@@ -26,11 +26,11 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 
 ??? question "The widget target won't sign on a free account"
     Free \"Personal Team\" accounts sometimes can't register App Groups or app extensions. Build
-    just the main **ControlX2** app for now; add the widgets once you're on the paid Apple
+    just the main **faBolus** app for now; add the widgets once you're on the paid Apple
     Developer Program.
 
 ??? question "I changed `project.yml` and nothing happened"
-    Re-run `xcodegen generate` and reopen `ControlX2.xcodeproj` — the project file is generated
+    Re-run `xcodegen generate` and reopen `faBolus.xcodeproj` — the project file is generated
     from `project.yml`, so edits only take effect after regenerating.
 
 ??? question "The app expired / won't open"
@@ -42,7 +42,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 ??? question "Can't find or connect to the pump"
     - Make sure the official Tandem **t:connect** app is unpaired/closed — only one control
       connection is allowed at a time.
-    - Confirm Bluetooth permission is granted to ControlX2 (**Settings → ControlX2 → Bluetooth**).
+    - Confirm Bluetooth permission is granted to faBolus (**Settings → faBolus → Bluetooth**).
     - Put the pump in pairing mode; the app scans for the Tandem service (`0000fdfb…`).
 
 ??? question "Pairing fails"
@@ -58,13 +58,13 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 
 ??? question "A watch/Garmin request doesn't deliver"
     - The iPhone does the actual delivery, so it must be **reachable and connected to the pump**.
-    - You confirm the bolus on the watch itself (the deliberate saline/bench confirmation); the
+    - You confirm the bolus on the watch itself (the deliberate confirmation); the
       phone then delivers.
     - If the phone is out of range, the request fails cleanly on the watch — reconnect and retry.
 
 ??? question "A cleared alert comes back"
     Some alerts are **condition-based** (e.g. a high-glucose alert re-raises while BG is still
-    high). Also note the dismiss path isn't fully bench-verified yet — see
+    high). Also note the dismiss path isn't fully verified yet — see
     [Alerts & alarms](operate/alerts.md).
 
 ## Watch & Garmin
@@ -77,4 +77,4 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 ??? question "The Garmin complication shows `--` or nothing"
     - It needs the iPhone app open and connected for fresh data.
     - Stock Garmin faces can't show third-party data — use a **Face It** or CIQ face that
-      supports complications and add the *ControlX2 BG* field.
+      supports complications and add the *faBolus BG* field.

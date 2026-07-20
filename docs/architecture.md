@@ -11,7 +11,7 @@ runs the safety interlocks, and does the actual delivery.
 
 ```mermaid
 flowchart LR
-    Pump[("t:slim X2 / Mobi\n(saline bench pump)")]
+    Pump[("t:slim X2 / Mobi\n(insulin pump)")]
     Phone["iPhone app\n(owns BLE, runs PumpX2Kit,\nconfirms every bolus)"]
     Watch["Apple Watch\nremote"]
     Garmin["Garmin venu3s\nremote (PumpX2Garmin)"]
@@ -32,10 +32,10 @@ PumpX2Kit  (Swift package — build once, reuse everywhere)
 └── PumpX2BLE        Core Bluetooth central (iOS + watchOS)
 
 ControlX2iOS  (this repo, consumes PumpX2Kit via SPM)
-├── ios/ControlX2/         iOS host app — owns the pump connection; tabbed Loop-style UI
-├── ios/ControlX2Widgets/  Lock/Home Screen widgets (incl. Quick Bolus)
-├── watch/ControlX2Watch/  Apple Watch remote (WatchConnectivity)
-├── watch/ControlX2WatchWidgets/  watch-face complication
+├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
+├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
+├── watch/faBolusWatch/  Apple Watch remote (WatchConnectivity)
+├── watch/faBolusWatchWidgets/  watch-face complication
 ├── Shared/                RemoteCommand + RemoteLink (phone↔remote transport)
 ├── schema/                command.schema.json — the single source of truth for the contract
 └── docs/                  this site

@@ -1,23 +1,23 @@
 import SwiftUI
 
-/// Loop-style HUD status row: Active Insulin (IOB), reservoir, battery, and CGM pills.
+/// modern HUD status row: Active Insulin (IOB), reservoir, battery, and CGM pills.
 /// (COB/"Active Carbs" was removed — the pump doesn't expose a carbs-on-board read.)
 struct StatusPillsView: View {
     let snapshot: PumpSnapshot
 
     var body: some View {
         HStack(spacing: 10) {
-            pill(icon: "drop.fill", tint: LoopTheme.insulin,
+            pill(icon: "drop.fill", tint: AppTheme.insulin,
                  value: String(format: "%.2f U", snapshot.iobUnits), label: "Active Insulin")
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         }
         HStack(spacing: 10) {
             pill(icon: batteryIcon(snapshot.batteryPercent),
-                 tint: snapshot.batteryPercent <= 20 ? LoopTheme.low : .green,
+                 tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
                  value: "\(snapshot.batteryPercent)%", label: "Pump")
             pill(icon: snapshot.cgmActive ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-                 tint: snapshot.cgmActive ? LoopTheme.inRange : .gray,
+                 tint: snapshot.cgmActive ? AppTheme.inRange : .gray,
                  value: snapshot.cgmActive ? "OK" : "—", label: "CGM")
         }
     }

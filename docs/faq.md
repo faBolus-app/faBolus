@@ -1,9 +1,9 @@
 # FAQ
 
-??? question "Is this Loop?"
-    No. ControlX2iOS borrows Loop's *visual language and terminology* for familiarity, but it's a
-    **manual remote-bolus + status viewer**, not an automated closed-loop system. Not affiliated
-    with Loop / LoopKit.
+??? question "Is this an official Tandem or Dexcom product?"
+    No. faBolus is an independent, open-source project — not affiliated with, endorsed by, or a
+    product of Tandem Diabetes Care or Dexcom. It's a manual remote-bolus + status viewer, not an
+    automated closed-loop system.
 
 ??? question "Is this the Tandem app, or controlX2?"
     No. It's an independent reimplementation for iOS, inspired by the naming of jwoglom's Android
@@ -11,8 +11,8 @@
     either, nor by Tandem Diabetes Care.
 
 ??? question "Can I use this to dose insulin?"
-    No. It's a **bench proof-of-concept** — saline, on a scale, never on a body. See
-    [Safety first](safety.md).
+    faBolus is experimental and in development — **not FDA-cleared**. Use it responsibly, with your
+    clinician, and at your own risk. See [Safety](safety.md).
 
 ??? question "Which pumps are supported?"
     Tandem **t:slim X2** and **Mobi**, on a firmware version that's been pinned and tested. The

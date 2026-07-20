@@ -34,7 +34,7 @@ struct GlucoseComplication: Widget {
                 .containerBackground(.clear, for: .widget)
         }
         .configurationDisplayName("Glucose")
-        .description("Current glucose + trend from ControlX2.")
+        .description("Current glucose + trend from faBolus.")
         .supportedFamilies([.accessoryCircular, .accessoryInline, .accessoryCorner, .accessoryRectangular])
     }
 }

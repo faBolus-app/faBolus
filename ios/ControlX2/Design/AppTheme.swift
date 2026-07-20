@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Loop-inspired semantic palette. Green = in range, yellow/orange = high, red = urgent/low,
+/// modern semantic palette. Green = in range, yellow/orange = high, red = urgent/low,
 /// purple accents for insulin. (Visual language only — ControlX2 does not automate dosing.)
-public enum LoopTheme {
+public enum AppTheme {
     public static let inRange = Color(red: 0.30, green: 0.78, blue: 0.36)   // green
     public static let high = Color(red: 0.98, green: 0.76, blue: 0.18)      // yellow
     public static let urgentHigh = Color(red: 0.95, green: 0.55, blue: 0.15) // orange

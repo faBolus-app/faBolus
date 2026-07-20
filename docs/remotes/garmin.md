@@ -8,7 +8,7 @@ delivers through PumpX2Kit. To build and install it, see
 !!! note "The Garmin app lives in its own repo"
     The Garmin watch app is maintained in the separate
     **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo (it used to live in
-    `ControlX2iOS/garmin/`). The *iPhone side* of the bridge is still part of the ControlX2 app,
+    `ControlX2iOS/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
     so the two talk over the shared command contract as before.
 
 <div class="cx2-shots" markdown>
@@ -85,7 +85,7 @@ fresh data needs the iPhone app open and connected.
 
 !!! note "Stock Garmin faces can't show it"
     Third-party complication data only appears on **Face It** faces or CIQ faces that support
-    complications. Pick one of those and add the *ControlX2 BG* field.
+    complications. Pick one of those and add the *faBolus BG* field.
 
 ## The contract
 

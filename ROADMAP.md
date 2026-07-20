@@ -56,7 +56,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   the same **1-2-3 sequential tap** the Garmin uses (1→2→3 in order; a wrong/late tap within 20 s
   resets). Steps 1-2 advance App Group state headlessly; the final tap opens the app and, only if
   1→2 completed, hands off a pending bolus the app delivers via `remoteDeliver` (the validated
-  signed path, with progress + cancel). Preset amount in Settings. Saline/bench only.
+  signed path, with progress + cancel). Preset amount in Settings.
 - Files: `Shared/WidgetShared.swift` (WidgetBolusStore/Request), `ios/ControlX2Widgets/
   WidgetBolusIntents.swift` + `QuickBolusWidget.swift`, consume hook in `App.swift`.
 
@@ -76,4 +76,4 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 
 ## Deferred / notes
 - Apple Watch full parity (history plot, details screen) if wanted.
-- The signed dismiss path and all delivery paths remain **bench-only, saline, not on a body.**
+- The signed dismiss path and all delivery paths remain **experimental / in development.**

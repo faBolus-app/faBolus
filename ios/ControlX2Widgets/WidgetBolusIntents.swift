@@ -7,7 +7,7 @@ import Foundation
 /// sequence hands the dose to the app via the App Group + a Darwin notification; the app (running
 /// in the background with the pump connected) delivers it through the validated signed path and
 /// writes status back, so the widget shows progress + cancel in place. It never opens the app and
-/// never dispenses on a stray tap (a wrong/late 1-2-3 tap resets). Bench/saline only.
+/// never dispenses on a stray tap (a wrong/late 1-2-3 tap resets).
 
 private func postDarwin(_ name: String) {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),

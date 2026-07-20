@@ -1,8 +1,8 @@
 # 1 · Apple account
 
 Before Apple lets you put an app you built onto your own iPhone, it needs to know who you are.
-That's all this step is: signing in with an Apple account. It's the same first step as building
-Loop — if you've done that, you can reuse the same account and skip ahead.
+That's all this step is: signing in with an Apple account. If you already have an Apple
+Developer account, you can reuse it and skip ahead.
 
 <figure class="cx2-shot wide" markdown="span">
   ![Apple Developer sign-in page](../assets/screenshots/appledev-enroll.svg)

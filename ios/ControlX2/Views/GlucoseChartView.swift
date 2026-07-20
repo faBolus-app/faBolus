@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// Loop-style chart: glucose (left axis, in-range band, range-colored points) plus an optional
+/// modern chart: glucose (left axis, in-range band, range-colored points) plus an optional
 /// **IOB overlay** on a second (right) axis with **vertical bolus bars** (height ∝ units). Each
 /// axis can be toggled independently. IOB/bolus values (units) share the right-axis scale.
 struct GlucoseChartView: View {
@@ -30,22 +30,22 @@ struct GlucoseChartView: View {
         Chart {
             if showGlucose {
                 RectangleMark(yStart: .value("Low", 70), yEnd: .value("High", 180))
-                    .foregroundStyle(LoopTheme.inRange.opacity(0.12))
+                    .foregroundStyle(AppTheme.inRange.opacity(0.12))
                 ForEach(visible) { r in
                     PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
-                        .foregroundStyle(LoopTheme.glucoseColor(r.mgdl)).symbolSize(24)
+                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
                 }
             }
             if showIOB {
                 ForEach(visibleBoluses) { b in
                     RuleMark(x: .value("Time", b.date),
                              yStart: .value("Base", gLo), yEnd: .value("Bolus", scaleUnits(b.units)))
-                        .foregroundStyle(LoopTheme.insulin.opacity(0.55)).lineStyle(.init(lineWidth: 3))
+                        .foregroundStyle(AppTheme.insulin.opacity(0.55)).lineStyle(.init(lineWidth: 3))
                 }
                 ForEach(visibleIOB) { s in
                     LineMark(x: .value("Time", s.date), y: .value("IOB", scaleUnits(s.iob)),
                              series: .value("Series", "IOB"))
-                        .foregroundStyle(LoopTheme.insulin).interpolationMethod(.monotone)
+                        .foregroundStyle(AppTheme.insulin).interpolationMethod(.monotone)
                 }
             }
         }
@@ -77,7 +77,7 @@ struct GlucoseChartView: View {
             if showGlucose { Text("mg/dL").font(.caption2).foregroundStyle(.secondary).padding(.leading, 2) }
         }
         .overlay(alignment: .topTrailing) {
-            if showIOB { Text("U").font(.caption2).foregroundStyle(LoopTheme.insulin).padding(.trailing, 2) }
+            if showIOB { Text("U").font(.caption2).foregroundStyle(AppTheme.insulin).padding(.trailing, 2) }
         }
         .frame(height: 160)
     }

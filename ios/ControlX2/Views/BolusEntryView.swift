@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Bolus entry (Loop-style). Carbs (+ optional BG) → recommended dose, or a plain Units dial —
-/// default mode and the ± increments come from Settings. SALINE bench boluses only; enforces the
+/// Bolus entry (modern). Carbs (+ optional BG) → recommended dose, or a plain Units dial —
+/// default mode and the ± increments come from Settings. Experimental; enforces the
 /// max-units interlock and an explicit confirm. Works as a tab (`embedded`) or a sheet.
 struct BolusEntryView: View {
     let model: AppModel
@@ -82,7 +82,7 @@ struct BolusEntryView: View {
                 }
             }
 
-            Section("Deliver (saline, bench)") {
+            Section("Deliver") {
                 if delivering {
                     HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
                     Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
@@ -93,19 +93,19 @@ struct BolusEntryView: View {
                         TextField("0", text: $unitsText)
                             .keyboardType(.decimalPad).fixedSize()
                             .font(.title3.weight(.semibold)).focused($focus, equals: .units)
-                            .foregroundStyle(overMax ? LoopTheme.low : .primary)
+                            .foregroundStyle(overMax ? AppTheme.low : .primary)
                         Text("U").foregroundStyle(.secondary)
                         Spacer()
                         Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
                     }
                     if overMax {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(LoopTheme.low)
+                            .foregroundStyle(AppTheme.low)
                     }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
-                    .buttonStyle(.borderedProminent).tint(LoopTheme.insulin)
+                    .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
                     .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected)
                 }
             }
@@ -123,12 +123,12 @@ struct BolusEntryView: View {
                 Button("Done") { focus = nil }
             }
         }
-        .confirmationDialog("Deliver \(String(format: "%.2f U", units)) of SALINE?",
+        .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
                             isPresented: $confirming, titleVisibility: .visible) {
             Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await deliver() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Bench proof-of-concept. Confirm the pump is dispensing saline into a container on a scale — never on a body.")
+            Text("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
         }
     }
 

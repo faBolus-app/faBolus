@@ -4,8 +4,8 @@ If you're comfortable in a terminal, you can build and install everything withou
 Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest of the
 [build guide](index.md) — use this page if you'd rather script it.
 
-!!! danger "Bench proof-of-concept — saline only"
-    Everything here is a bench PoC. See [Safety first](../safety.md).
+!!! warning "Experimental"
+    faBolus is in development for experimental use and is not FDA-cleared. See [Safety](../safety.md).
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest o
 ## Clone (siblings)
 
 ```sh
-mkdir -p ~/ControlX2 && cd ~/ControlX2
+mkdir -p ~/faBolus && cd ~/faBolus
 git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
 git clone https://github.com/zgranowitz/ControlX2iOS.git
 ```
@@ -31,7 +31,7 @@ side.
 ## PumpX2Kit (core + byte-exact oracle tests)
 
 ```sh
-cd ~/ControlX2/PumpX2Kit
+cd ~/faBolus/PumpX2Kit
 git submodule update --init            # vendors the pumpX2 oracle + mbedTLS
 ./scripts/test.sh                      # builds the cliparser JAR + runs byte-exact tests
 ```
@@ -42,16 +42,16 @@ git submodule update --init            # vendors the pumpX2 oracle + mbedTLS
 ## iOS app (build + install to a device)
 
 ```sh
-cd ~/ControlX2/ControlX2iOS
+cd ~/faBolus/ControlX2iOS
 xcodegen generate                      # regenerate the .xcodeproj after adding/removing files
 
-xcodebuild -project ControlX2.xcodeproj -scheme ControlX2 \
+xcodebuild -project faBolus.xcodeproj -scheme faBolus \
   -destination 'generic/platform=iOS' -configuration Debug \
   -allowProvisioningUpdates DEVELOPMENT_TEAM=<TEAMID> -derivedDataPath build/DD build
 
 xcrun devicectl device list            # find your device UDID
 xcrun devicectl device install app --device <UDID> \
-  build/DD/Build/Products/Debug-iphoneos/ControlX2.app
+  build/DD/Build/Products/Debug-iphoneos/faBolus.app
 ```
 
 - **`DEVELOPMENT_TEAM`** is your Apple team id (the signing cert's OU). It isn't stored in the
@@ -68,12 +68,12 @@ xcrun devicectl device install app --device <UDID> \
 The Garmin app is in the separate [PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin) repo:
 
 ```sh
-cd ~/ControlX2/PumpX2Garmin
+cd ~/faBolus/PumpX2Garmin
 SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
-"$SDK/bin/monkeyc" -f monkey.jungle -o bin/ControlX2.iq -y <developer_key.der> -e -r -w
+"$SDK/bin/monkeyc" -f monkey.jungle -o bin/faBolus.iq -y <developer_key.der> -e -r -w
 ```
 
-Sideload in the Connect IQ simulator, or upload `bin/ControlX2.iq` to the Connect IQ store as a
+Sideload in the Connect IQ simulator, or upload `bin/faBolus.iq` to the Connect IQ store as a
 beta and install from Garmin Connect Mobile. See that repo's README for the venu3s input model and
 complication notes.
 

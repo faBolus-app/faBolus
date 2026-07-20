@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Loop-style status ring around the current glucose reading + trend. The ring color reflects
+/// modern status ring around the current glucose reading + trend. The ring color reflects
 /// connection/activity state (NOT closed-loop status — ControlX2 doesn't automate).
 struct StatusRingView: View {
     let snapshot: PumpSnapshot
@@ -8,10 +8,10 @@ struct StatusRingView: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(LoopTheme.ringColor(snapshot.connection).opacity(0.25), lineWidth: 10)
+                .stroke(AppTheme.ringColor(snapshot.connection).opacity(0.25), lineWidth: 10)
             Circle()
                 .trim(from: 0, to: snapshot.connection == .disconnected ? 0.05 : 1)
-                .stroke(LoopTheme.ringColor(snapshot.connection),
+                .stroke(AppTheme.ringColor(snapshot.connection),
                         style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut, value: snapshot.connection)
@@ -22,7 +22,7 @@ struct StatusRingView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("\(g)")
                             .font(.system(size: 44, weight: .bold, design: .rounded))
-                            .foregroundStyle(LoopTheme.glucoseColor(g))
+                            .foregroundStyle(AppTheme.glucoseColor(g))
                         Text(snapshot.trend).font(.title2)
                     }
                     Text("mg/dL").font(.caption2).foregroundStyle(.secondary)

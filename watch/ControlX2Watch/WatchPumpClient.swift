@@ -10,7 +10,7 @@ import PumpX2Messages
 /// the derived secret in the watch Keychain. Later connects resume-auth with that secret.
 ///
 /// This is the direct path; the rest of the watch app still uses the iPhone relay until the
-/// direct client is promoted (Phase 2: status polling + signed delivery). Bench PoC, saline only.
+/// direct client is promoted (Phase 2: status polling + signed delivery).
 @MainActor
 @Observable
 final class WatchPumpClient: PumpBLEClientDelegate {

@@ -28,7 +28,7 @@ struct WatchRootView: View {
     }
 }
 
-/// Shared Loop-style glucose color.
+/// Shared modern glucose color.
 func watchGlucoseColor(_ mgdl: Int?, stale: Bool) -> Color {
     guard let g = mgdl, !stale else { return .gray }
     switch RemoteGlucose.band(g) {

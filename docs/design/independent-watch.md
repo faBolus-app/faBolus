@@ -1,12 +1,12 @@
 # Plan — Independent Apple Watch (direct-to-pump)
 
 Goal: let the Apple Watch connect to the pump **over its own Bluetooth** and read status + deliver
-saline boluses **without the iPhone present**, as an option alongside the current iPhone-relay mode.
-Bench proof-of-concept, saline only.
+boluses **without the iPhone present**, as an option alongside the current iPhone-relay mode.
+Experimental — in development.
 
 ## The hard constraint: one pairing at a time (re-pair to switch)
 The pump stores **one pairing at a time** — pairing a new device **evicts** the previous device's
-pairing (confirmed on the bench, and it's why t:connect must be unpaired to use ControlX2). So
+pairing (confirmed in testing, and it's why t:connect must be unpaired to use faBolus). So
 "independent watch" is **not** phone + watch both controlling the pump, and it isn't even a live
 handoff between two paired devices. It's an **either/or**:
 
@@ -44,12 +44,12 @@ watchOS crypto spike harder: the watch must run the **full JPAKE key exchange**,
   completing a pairing over BLE (runtime, needs a watch + pump).
 - **CoreBluetooth on the watch:** builds; still need to confirm at runtime that `CBCentralManager` on a
   **physical** Apple Watch discovers + connects the pump (range/throughput are lower than iOS).
-- **Pairing model:** ✅ confirmed on the bench — the pump keeps **one** pairing; pairing the watch
+- **Pairing model:** ✅ confirmed in testing — the pump keeps **one** pairing; pairing the watch
   evicts the phone (re-pair-to-switch). No further spike needed here.
 
 ### Phase 1 — On-watch pairing UI + storage ✅ (built, pending on-device test)
 - ✅ `PumpX2Kit` (Messages/Auth/BLE) wired into the watch app target.
-- ✅ `WatchPumpClient` (`watch/ControlX2Watch/WatchPumpClient.swift`): scans → connects → runs the
+- ✅ `WatchPumpClient` (`watch/faBolusWatch/WatchPumpClient.swift`): scans → connects → runs the
   full JPAKE pairing with the 6-digit code, or resume-auths from the stored secret; exposes a
   `PairState` (idle/connecting/pairing/paired/failed).
 - ✅ `WatchPairingStore` — the watch's own derived secret in the **watch Keychain** (separate service).
@@ -80,7 +80,7 @@ whichever paired last owns the pump. What's needed is a clear switch:
   more restricted than iOS; foreground operation is the reliable baseline for the PoC).
 - Battery budget: the watch polling + BLE is heavier than relay; tune the cadence.
 
-### Phase 5 — Bench validation
+### Phase 5 — Validation
 - Saline on a scale. Re-run the oracle byte-exactness for signed messages generated on the watch.
 - Edge cases: re-pair round-trips (watch↔phone) with fresh codes, watch out of range mid-bolus,
   resume-auth after the watch app is killed, pump eviction mid-session (the other device was paired).
@@ -92,7 +92,7 @@ whichever paired last owns the pump. What's needed is a clear switch:
   fresh code entry; the UX must make that fast, or the watch mostly stays the paired device.
 - **On-watch code entry** — a usable 6-digit input on a tiny screen (crown picker vs number pad).
 - **watchOS BLE** — range, throughput, background limits, battery.
-- **Safety** — direct delivery keeps every guard: max-bolus clamp, saline/bench confirm, the
+- **Safety** — direct delivery keeps every guard: max-bolus clamp, the deliberate confirm, the
   deliberate confirm, and the validated signed path. No new dosing path bypasses these.
 
 ## Status

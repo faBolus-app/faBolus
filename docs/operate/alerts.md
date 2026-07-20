@@ -32,7 +32,7 @@ shows the raw pump bitmaps and poll count so you can confirm the pump is reporti
 Some alerts are **condition-based** — most importantly the CGM **high / low glucose** alerts.
 While the reading is genuinely out of range the pump re-raises the alert on every poll, so it
 **cannot be cleared on the pump** until glucose returns to range (the official Tandem/Dexcom app
-behaves the same way — you can only acknowledge/snooze it). In ControlX2, tapping **Clear** on
+behaves the same way — you can only acknowledge/snooze it). In faBolus, tapping **Clear** on
 such an alert **snoozes it on your phone**: it's hidden and stops re-notifying for 30 minutes (or
 until the pump condition clears). The Alerts screen says so when a CGM alert is active. The pump's
 dismiss acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack N (rejected)` vs
@@ -47,4 +47,4 @@ signed like a bolus but does **not** modify insulin delivery, so it runs under a
 !!! warning "Clearing isn't hardware-verified yet"
     The dismiss path is validated by construction — its bytes are asserted exactly and it uses the
     same signing/framing proven byte-exact for boluses — but clearing has **not yet been confirmed
-    on the bench**. Verify it actually dismisses before relying on it.
+    in testing**. Verify it actually dismisses before relying on it.

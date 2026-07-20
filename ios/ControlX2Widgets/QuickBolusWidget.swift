@@ -5,7 +5,7 @@ import AppIntents
 /// Home-Screen widget that delivers a bolus with the same flow as the Garmin remote: **choose an
 /// amount** (− / +), tap **Bolus**, then a **1-2-3** sequential-tap confirm. Completing it delivers
 /// **in place** — the widget shows Delivering… + Cancel, then Delivered — without opening the app.
-/// The pump still enforces its max + signing. Bench/saline only.
+/// The pump still enforces its max + signing.
 struct QuickBolusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "ControlX2QuickBolus", provider: ControlX2Provider()) { entry in

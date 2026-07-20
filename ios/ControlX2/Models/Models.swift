@@ -1,6 +1,6 @@
 import Foundation
 
-/// Domain models for the Loop-style HUD. Terminology mirrors Loop (IOB = "Active Insulin",
+/// Domain models for the modern HUD. Terminology uses common names (IOB = "Active Insulin",
 /// COB = "Active Carbohydrates"), but ControlX2 is a manual remote-bolus + status viewer, NOT
 /// an automated closed loop. Glucose is in mg/dL.
 
@@ -51,7 +51,7 @@ public enum GlucoseTrend: String, Sendable {
     }
 }
 
-/// Loop-style glucose ranges for coloring.
+/// modern glucose ranges for coloring.
 public enum GlucoseRange: Sendable {
     case low, inRange, high, urgentHigh
     public static func classify(_ mgdl: Int) -> GlucoseRange {
@@ -64,7 +64,7 @@ public enum GlucoseRange: Sendable {
     }
 }
 
-/// Connection/activity status shown by the HUD ring (adapted from Loop's loop-status ring —
+/// Connection/activity status shown by the HUD ring (a status ring —
 /// we show link/bolus state, never closed-loop automation).
 public enum PumpConnectionState: String, Sendable {
     case disconnected = "Disconnected"
@@ -105,7 +105,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     }
 }
 
-/// A bolus the user is about to confirm (Loop-style: carbs + BG → recommended units).
+/// A bolus the user is about to confirm (modern: carbs + BG → recommended units).
 public struct BolusRecommendation: Sendable, Equatable {
     public var carbsGrams: Double = 0
     public var bgMgdl: Int? = nil

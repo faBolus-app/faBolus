@@ -1,6 +1,6 @@
 # Settings & options
 
-ControlX2 has a dedicated **Settings** tab (the app is organized as **Dashboard · Bolus · Alerts ·
+faBolus has a dedicated **Settings** tab (the app is organized as **Dashboard · Bolus · Alerts ·
 Settings**). This page covers everything you can adjust; most settings are shared with the Apple
 Watch and Garmin remotes so all three behave consistently.
 

@@ -1,7 +1,7 @@
 # Pairing your pump
 
 Before the pump accepts any command, it needs an authenticated Bluetooth connection. You do this
-once — after that, ControlX2 reconnects on its own using a securely-stored key, no code needed.
+once — after that, faBolus reconnects on its own using a securely-stored key, no code needed.
 
 <figure class="cx2-shot phone" markdown="span">
   ![Enter the 6-digit pairing code](../assets/screenshots/pairing.svg)
@@ -10,10 +10,7 @@ once — after that, ControlX2 reconnects on its own using a securely-stored key
 
 !!! warning "Unpair the official app first"
     Only **one** control connection can be active at a time. Remove/close the official Tandem
-    **t:connect** app's pairing before pairing ControlX2, and don't expect them to work at once.
-
-!!! danger "Bench pump only"
-    Pair only with your **dedicated saline test pump**. See [Safety first](../safety.md).
+    **t:connect** app's pairing before pairing faBolus, and don't expect them to work at once.
 
 ## Pair (6-digit — most current pumps)
 
@@ -21,7 +18,7 @@ This is the modern scheme (t:slim X2 v7.7+ and Mobi), using a secure JPAKE hands
 
 <ol class="cx2-steps">
 <li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong>. The pump shows a <strong>6-digit</strong> code.</li>
-<li>In ControlX2, tap <strong>Connect</strong> and type the 6 digits.</li>
+<li>In faBolus, tap <strong>Connect</strong> and type the 6 digits.</li>
 <li>Tap <strong>Connect</strong>. The app scans for the pump, runs the pairing handshake, and derives a signing key.</li>
 <li>When the HUD shows <strong>Connected</strong>, you're paired. Live data starts filling in.</li>
 </ol>
@@ -38,7 +35,7 @@ battery start filling in within a few seconds.
 
 <ol class="cx2-steps">
 <li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong> to show the <strong>16-character</strong> code.</li>
-<li>Enter it in ControlX2 and connect. The app performs the legacy challenge/response handshake.</li>
+<li>Enter it in faBolus and connect. The app performs the legacy challenge/response handshake.</li>
 </ol>
 
 ## After pairing
@@ -51,7 +48,7 @@ battery start filling in within a few seconds.
   cancel). The app tracks the pump's clock so those commands are signed with correct timing.
 
 !!! tip "Nothing connecting?"
-    Make sure the pump is in pairing mode, Bluetooth permission is granted to ControlX2, and the
+    Make sure the pump is in pairing mode, Bluetooth permission is granted to faBolus, and the
     official app isn't holding the connection. More in [Troubleshooting](../troubleshoot.md).
 
 ## Under the hood (for the curious)
