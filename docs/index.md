@@ -8,8 +8,9 @@ hide:
 
 # faBolus — your pump, on your wrist and your phone.
 
-faBolus is a remote for the **Tandem t:slim X2 / Mobi**: see your glucose and pump status at a
-glance, and deliver a bolus from your iPhone, Apple Watch, or Garmin watch.
+faBolus is a remote for insulin pumps: see your glucose and pump status at a glance, and deliver a
+bolus from your iPhone, Apple Watch, or Garmin watch. It currently supports the **Tandem t:slim X2
+/ Mobi**.
 
 <span class="cx2-cta" markdown>
 [Build it yourself :material-arrow-right:](build/index.md){ .md-button .md-button--primary }

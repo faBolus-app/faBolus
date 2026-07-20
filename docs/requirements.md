@@ -7,11 +7,12 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 <div class="grid cards" markdown>
 
--   :material-needle:{ .lg .middle } **A Tandem pump**
+-   :material-needle:{ .lg .middle } **A supported pump**
 
     ---
 
-    A Tandem **t:slim X2** or **Mobi**, plus the usual cartridges and infusion sets.
+    faBolus currently supports the Tandem **t:slim X2** or **Mobi**, plus the usual cartridges and
+    infusion sets.
 
 -   :material-cellphone:{ .lg .middle } **An iPhone**
 
