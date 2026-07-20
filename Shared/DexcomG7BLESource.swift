@@ -1,5 +1,5 @@
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import faBolusCore
 import G7SensorKit
 
@@ -115,16 +115,16 @@ extension DexcomG7BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {
             guard central.state == .poweredOn else { status = .searching; notify(); return }
-            central.scanForPeripherals(withServices: [SensorServiceUUID.advertisement.cbUUID])
-        }
-    }
-
-    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        MainActor.assumeIsolated {
-            if let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-               let p = restored.first {
-                peripheral = p
-                p.delegate = self
+            // Re-adopt an already-connected G7 (e.g. after iOS relaunched us via state restoration)
+            // rather than scanning for one that isn't advertising; otherwise scan. Deriving the list
+            // inside the main-actor closure keeps non-Sendable CB values from crossing isolation.
+            if let existing = central.retrieveConnectedPeripherals(
+                withServices: [SensorServiceUUID.cgmService.cbUUID]).first {
+                peripheral = existing
+                existing.delegate = self
+                central.connect(existing)
+            } else {
+                central.scanForPeripherals(withServices: [SensorServiceUUID.advertisement.cbUUID])
             }
         }
     }
