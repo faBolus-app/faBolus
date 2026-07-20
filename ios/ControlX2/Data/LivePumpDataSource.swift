@@ -6,7 +6,7 @@ import PumpX2BLE
 
 /// Real pump data source over `PumpX2Kit`'s Core Bluetooth transport: scan → connect → JPAKE
 /// pair → poll status; and a signed bolus flow (permission → initiate → status) matching the
-/// bench harness that's validated on hardware. Read-only by default; `deliverBolus` briefly
+/// signed delivery path. Read-only by default; `deliverBolus` briefly
 /// raises the write policy to `.allowDelivery` for the signed sequence only.
 ///
 /// Runs on a physical device only (the Simulator has no Bluetooth).
@@ -300,7 +300,7 @@ public final class LivePumpDataSource: NSObject, PumpDataSource {
         onChange?()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
         // If the pump never answers the dismiss, say so — distinguishes "rejected/no response" from
-        // "accepted but condition persists" on the next bench test.
+        // "accepted but condition persists" on the next test.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
             guard let self, self.lastDismissAck.isEmpty else { return }
             self.lastDismissAck = "no ack (no pump response)"

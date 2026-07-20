@@ -1,7 +1,7 @@
 import SwiftUI
 import PumpX2Messages
 
-/// Loop-style banner listing active pump alerts/alarms, each with a Clear button that sends a
+/// modern banner listing active pump alerts/alarms, each with a Clear button that sends a
 /// signed dismiss to the pump — so the user can clear them without reaching for the pump.
 struct AlertsBannerView: View {
     @Bindable var model: AppModel
@@ -50,8 +50,8 @@ struct AlertsBannerView: View {
     }
     private func color(_ k: NotificationKind) -> Color {
         switch k {
-        case .alarm: return LoopTheme.low          // red — most serious
-        case .cgmAlert: return LoopTheme.high
+        case .alarm: return AppTheme.low          // red — most serious
+        case .cgmAlert: return AppTheme.high
         default: return .orange
         }
     }

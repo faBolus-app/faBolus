@@ -1,78 +1,64 @@
-# Safety first
+# Safety
 
-!!! danger "Read this before you build or connect anything"
-    ControlX2iOS is experimental software that can command an insulin pump to deliver insulin.
-    Used incorrectly, that is dangerous. It exists **only** as a bench proof-of-concept and must
-    **never** be used to dose a person.
+!!! warning "Experimental software — you assume all responsibility"
+    faBolus is an independent, open-source project **in development for experimental use**. It can
+    command an insulin pump to deliver insulin, and it is **not FDA-cleared or otherwise approved**.
+    It is provided as-is, with no warranty; if you build, install, or use it, **you take full
+    responsibility** for what it does. Work with your own clinician and use your own judgment.
 
-## The one rule that matters most
+## How faBolus is built for safety
 
-<div class="cx2-hero" markdown>
-<span class="cx2-eyebrow">Non-negotiable</span>
-
-### Saline, on the bench, never on a body.
-
-Every test uses a **dedicated test pump** with a saline/water cartridge, dispensing into a
-container on a scale. On-body use is out of scope — full stop.
-</div>
-
-## Non-negotiable ground rules
+Several checks are built in so a bolus can't happen by accident:
 
 <div class="grid cards" markdown>
 
--   :material-flask:{ .lg .middle } **Saline test pump only**
+-   :material-numeric:{ .lg .middle } **Max-units clamp**
 
     ---
 
-    Use a pump you have dedicated to bench testing — never anyone's therapy pump. Saline
-    cartridge, dispensing into a container on a scale.
+    Every bolus is capped at your pump's configured maximum, and the pump enforces its own limit
+    independently.
 
--   :material-alert-decagram:{ .lg .middle } **The dosing path is unproven**
-
-    ---
-
-    It's an independent reimplementation, treated as unproven until it clears every validation
-    gate below.
-
--   :material-link-variant-off:{ .lg .middle } **One connection at a time**
+-   :material-gesture-tap-button:{ .lg .middle } **Explicit confirmation**
 
     ---
 
-    While ControlX2 is paired, the official Tandem app cannot be, and vice versa. Never assume
-    the two can coexist.
+    Delivery always requires a deliberate on-screen confirmation. Remote and widget boluses use a
+    1-2-3 confirm sequence.
 
--   :material-lock-check:{ .lg .middle } **Firmware is never modified**
+-   :material-shield-lock:{ .lg .middle } **Signed commands**
 
     ---
 
-    The app only speaks the pump's existing Bluetooth protocol. It's pinned to a tested firmware
-    and treated as disposable against vendor changes.
+    Every insulin-affecting command is cryptographically signed; the pump rejects anything that
+    isn't. faBolus never modifies pump firmware — it only speaks the existing Bluetooth protocol.
+
+-   :material-close-octagon:{ .lg .middle } **Cancel any time**
+
+    ---
+
+    A bolus can be cancelled mid-delivery, and faBolus reports the amount actually delivered.
 
 </div>
 
-## Interlocks built into the app
+!!! note "One connection at a time"
+    The pump accepts a single control connection, so while faBolus is paired the official Tandem
+    app cannot be, and vice versa.
 
-- **Max-units clamp** on every bolus (your pump's configured maximum).
-- **Explicit on-screen confirmation** before delivery, with a saline reminder in the dialog.
-- **Double confirmation** for remote (watch / Garmin) requests — the remote requests, and the
-  phone confirms before anything is delivered.
-- A working **cancel** with partial-delivery reporting.
-- **Signed bolus commands** — the pump rejects anything that isn't correctly HMAC-signed.
+## Validation
 
-## Validation gates
+Every change that can affect delivery is put through the same checks before it's trusted:
 
-Every change that can touch delivery must clear all of these before it's trusted:
+| Check | What it proves |
+| --- | --- |
+| **Protocol parity** | Outgoing messages byte-match the pumpX2 `cliparser` reference. |
+| **Delivery accuracy** | Requested units match the amount actually delivered. |
+| **Signature enforcement** | Malformed / incorrectly-signed requests are rejected. |
+| **Cancel** | A mid-delivery cancel stops the pump and reports partial delivery. |
+| **Interruption** | App kill / Bluetooth drop mid-bolus fails safe. |
+| **Connection handoff** | Switching control between apps never leaves an ambiguous state. |
+| **Soak** | Multi-hour stability; reconnect after suspend. |
 
-| # | Gate | What it proves |
-| --- | --- | --- |
-| 1 | **Oracle parity** | Outgoing messages byte-match the pumpX2 `cliparser` oracle. |
-| 2 | **Gravimetric accuracy** | Requested units match the delivered saline mass on a scale. |
-| 3 | **Signature enforcement** | Malformed / incorrectly-signed requests are rejected. |
-| 4 | **Cancel** | A mid-delivery cancel stops the pump; partial delivery is reported. |
-| 5 | **Interruption** | App kill / Bluetooth drop mid-bolus fails safe. |
-| 6 | **Exclusive-connection handoff** | Official-app ↔ ControlX2 never leaves an ambiguous state. |
-| 7 | **Soak** | Multi-hour stability; reconnect after suspend. |
-
-!!! warning "Not affiliated"
-    ControlX2iOS is not affiliated with, endorsed by, or a fork of Tandem Diabetes Care,
-    jwoglom's `controlX2` / `pumpX2`, or Loop / LoopKit. See the [FAQ](faq.md).
+!!! note "Independent project"
+    faBolus is not affiliated with, endorsed by, or a product of **Tandem Diabetes Care or
+    Dexcom**. See the [FAQ](faq.md).

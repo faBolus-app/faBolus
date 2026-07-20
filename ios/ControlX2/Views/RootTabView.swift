@@ -37,7 +37,7 @@ struct RootTabView: View {
             }
             Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
         } message: {
-            Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)) of SALINE. Confirm to deliver on the bench.")
+            Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)). Confirm to deliver.")
         }
     }
 }

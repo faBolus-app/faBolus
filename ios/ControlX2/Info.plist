@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ControlX2</string>
+	<string>faBolus</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleSpokenName</key>
-	<string>Control X2</string>
+	<string>Fabolus</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -35,7 +35,7 @@
 			<string>com.zgranowitz.controlx2.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>controlx2</string>
+				<string>fabolus</string>
 			</array>
 		</dict>
 	</array>
@@ -45,7 +45,7 @@
 	<array>
 		<dict>
 			<key>INAlternativeAppNameKey</key>
-			<string>Control X2</string>
+			<string>faBolus</string>
 		</dict>
 		<dict>
 			<key>INAlternativeAppNameKey</key>
@@ -53,7 +53,7 @@
 		</dict>
 		<dict>
 			<key>INAlternativeAppNameKey</key>
-			<string>Tandem Remote</string>
+			<string>Fabolus</string>
 		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
@@ -61,7 +61,7 @@
 		<string>gcm-ciq</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses.</string>
+	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

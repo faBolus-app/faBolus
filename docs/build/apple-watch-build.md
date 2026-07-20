@@ -28,8 +28,8 @@ how it works day to day.)
 The watch app is a separate *target* in the same project, so it needs your team too.
 
 <ol class="cx2-steps">
-<li>In Xcode, click the blue <strong>ControlX2</strong> project at the top of the sidebar.</li>
-<li>Under <strong>TARGETS</strong>, select <strong>ControlX2Watch</strong>.</li>
+<li>In Xcode, click the blue <strong>faBolus</strong> project at the top of the sidebar.</li>
+<li>Under <strong>TARGETS</strong>, select <strong>faBolusWatch</strong>.</li>
 <li>On <strong>Signing &amp; Capabilities</strong>, tick <strong>Automatically manage signing</strong> and set your <strong>Team</strong>.</li>
 <li>If you changed the bundle identifier prefix for a free account, make sure this target is <code>&lt;your prefix&gt;.watch</code>.</li>
 </ol>
@@ -37,7 +37,7 @@ The watch app is a separate *target* in the same project, so it needs your team 
 ## Step B — Choose the watch and run
 
 <ol class="cx2-steps">
-<li>In the device menu at the top of Xcode, choose the <strong>ControlX2Watch</strong> scheme, then your <strong>Apple Watch</strong> as the destination. (If your watch isn't listed, open the Watch app on your iPhone once, and make sure the watch is unlocked and nearby.)</li>
+<li>In the device menu at the top of Xcode, choose the <strong>faBolusWatch</strong> scheme, then your <strong>Apple Watch</strong> as the destination. (If your watch isn't listed, open the Watch app on your iPhone once, and make sure the watch is unlocked and nearby.)</li>
 <li>Press <strong>▶ Run</strong> (<kbd>⌘</kbd> + <kbd>R</kbd>).</li>
 <li>The app installs to the watch. The first install over the air can take a few minutes.</li>
 </ol>
@@ -46,15 +46,15 @@ The watch app is a separate *target* in the same project, so it needs your team 
     Watch installs are notoriously finicky. Try: keep the watch on its charger and unlocked;
     install the **phone** app first and let it settle; then install the watch app. You can also
     install it later from the **Watch** app on the iPhone (**My Watch → Available Apps →
-    ControlX2 → Install**) once the phone app is on the device.
+    faBolus → Install**) once the phone app is on the device.
 
 ## Step C — Open it on the watch
 
-Press the Digital Crown to see your apps and tap **ControlX2**. The glance appears; if your
+Press the Digital Crown to see your apps and tap **faBolus**. The glance appears; if your
 iPhone is nearby and connected to a pump, live data fills in within a few seconds.
 
 <div class="cx2-check" markdown>
-**Success looks like:** the ControlX2 app on your Apple Watch shows glucose, trend, and Active
+**Success looks like:** the faBolus app on your Apple Watch shows glucose, trend, and Active
 Insulin, plus whether the iPhone is reachable.
 </div>
 

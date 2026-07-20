@@ -1,4 +1,4 @@
-name: ControlX2
+name: faBolus
 options:
   bundleIdPrefix: com.zgranowitz.controlx2
   createIntermediateGroups: true
@@ -9,13 +9,12 @@ packages:
     path: ../PumpX2Kit
   ConnectIQ:
     # Garmin Connect IQ Mobile SDK for iOS (binary xcframework). Not committed (Garmin
-    # license). Place it at ~/Code/vendor/connectiq-companion-app-sdk-ios-1.8.0 (see
-    # garmin/README.md). Path is relative to this repo.
+    # license). Place it where the docs describe. Path is relative to this repo.
     path: ../../vendor/connectiq-companion-app-sdk-ios-1.8.0
 
 targets:
-  # iOS host app — owns the pump connection (PumpX2Kit) and the Loop-style HUD.
-  ControlX2:
+  # iOS host app — owns the pump connection (PumpX2Kit) and the main HUD.
+  faBolus:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
@@ -32,9 +31,9 @@ targets:
       - package: ConnectIQ
         product: ConnectIQ
       # Embeds the WidgetKit extension (Lock Screen + Home Screen widgets).
-      - target: ControlX2Widgets
+      - target: faBolusWidgets
       # Embeds the watchOS companion app so it installs to the paired watch with the phone app.
-      - target: ControlX2Watch
+      - target: faBolusWatch
         embed: true
     entitlements:
       path: ios/ControlX2/ControlX2.entitlements
@@ -44,19 +43,16 @@ targets:
     info:
       path: ios/ControlX2/Info.plist
       properties:
-        # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName;
-        # without it, showDeviceSelection() often opens GCM with no picker.
-        CFBundleDisplayName: ControlX2
+        # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName.
+        CFBundleDisplayName: faBolus
         # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
-        # "ControlX2" is hard for Siri to parse, so provide a spoken name + alternatives the user
-        # can say instead ("… in Control X2 / Pump Remote / Tandem Remote").
-        CFBundleSpokenName: "Control X2"
+        CFBundleSpokenName: "Fabolus"
         # iOS allows at most 3 alternative names.
         INAlternativeAppNames:
-          - INAlternativeAppNameKey: "Control X2"
+          - INAlternativeAppNameKey: "faBolus"
           - INAlternativeAppNameKey: "Pump Remote"
-          - INAlternativeAppNameKey: "Tandem Remote"
-        NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
+          - INAlternativeAppNameKey: "Fabolus"
+        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
         # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
         # goes through without the app being in the foreground.
         UIBackgroundModes: [bluetooth-central]
@@ -67,9 +63,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.zgranowitz.controlx2.ciq
             CFBundleURLSchemes: [controlx2ciq]
-          # Deep links from the widgets (controlx2://bolus, controlx2://open).
+          # Deep links from the widgets (fabolus://bolus, fabolus://open).
           - CFBundleURLName: com.zgranowitz.controlx2.deeplink
-            CFBundleURLSchemes: [controlx2]
+            CFBundleURLSchemes: [fabolus]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2
@@ -82,9 +78,9 @@ targets:
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # (The glucose complication extension is temporarily NOT embedded: it needs the App Group
-  # registered on the watch App IDs, which isn't done yet. Re-add ControlX2WatchWidgets + the App
+  # registered on the watch App IDs, which isn't done yet. Re-add faBolusWatchWidgets + the App
   # Group entitlement once that capability is enabled in Xcode.)
-  ControlX2Watch:
+  faBolusWatch:
     type: application
     platform: watchOS
     deploymentTarget: "10.0"
@@ -93,7 +89,7 @@ targets:
       - Shared
     dependencies:
       # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
-      - target: ControlX2WatchWidgets
+      - target: faBolusWatchWidgets
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -109,11 +105,11 @@ targets:
     info:
       path: watch/ControlX2Watch/Info.plist
       properties:
-        CFBundleDisplayName: ControlX2
+        CFBundleDisplayName: faBolus
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
         WKCompanionAppBundleIdentifier: com.zgranowitz.controlx2
-        NSBluetoothAlwaysUsageDescription: "ControlX2 connects to a Tandem test pump over Bluetooth to read status and deliver bench (saline) boluses."
+        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch
@@ -127,7 +123,7 @@ targets:
 
   # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
   # app publishes to the shared App Group; never touches Bluetooth.
-  ControlX2WatchWidgets:
+  faBolusWatchWidgets:
     type: app-extension
     platform: watchOS
     deploymentTarget: "10.0"
@@ -137,7 +133,7 @@ targets:
     info:
       path: watch/ControlX2WatchWidgets/Info.plist
       properties:
-        CFBundleDisplayName: ControlX2
+        CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
@@ -156,7 +152,7 @@ targets:
 
   # WidgetKit extension — Lock Screen (accessory) + Home Screen widgets + tap-to-bolus. Reads
   # the snapshot the app publishes to the shared App Group; never touches Bluetooth itself.
-  ControlX2Widgets:
+  faBolusWidgets:
     type: app-extension
     platform: iOS
     deploymentTarget: "17.0"
@@ -166,7 +162,7 @@ targets:
     info:
       path: ios/ControlX2Widgets/Info.plist
       properties:
-        CFBundleDisplayName: ControlX2
+        CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:

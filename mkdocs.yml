@@ -1,7 +1,10 @@
-site_name: ControlX2iOS
-site_description: Independent iOS / Apple Watch / Garmin remote for the Tandem t:slim X2 / Mobi — a bench proof-of-concept. Not affiliated with Tandem or the controlX2 / pumpX2 projects.
+site_name: faBolus
+site_description: faBolus — an iPhone, Apple Watch, and Garmin remote for the Tandem t:slim X2 / Mobi. Built by Zev and Tia in Tandem.
 site_url: https://zgranowitz.github.io/ControlX2iOS/
-copyright: Independent, unofficial project · Bench proof-of-concept · Not affiliated with Tandem Diabetes Care
+copyright: >-
+  Built by Zev and Tia in Tandem · faBolus is an independent, open-source project in development
+  for experimental use — not FDA-cleared; you assume all responsibility. Not affiliated with
+  Tandem Diabetes Care or Dexcom.
 
 theme:
   name: material

@@ -45,7 +45,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
     }
 
-    /// Loop-style glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
+    /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
     public static func rangeCategory(_ mgdl: Int?) -> Int {
         guard let g = mgdl else { return -1 }
         switch g {
@@ -235,7 +235,7 @@ public enum WidgetBolusStore {
 /// Deep links the widgets use to open the app. `bolus` opens the bolus-entry sheet (tap-to-bolus
 /// is a link into the app's confirm flow — never a one-tap dispense).
 public enum ControlX2DeepLink {
-    public static let scheme = "controlx2"
-    public static let bolus = URL(string: "controlx2://bolus")!
-    public static let open = URL(string: "controlx2://open")!
+    public static let scheme = "fabolus"
+    public static let bolus = URL(string: "fabolus://bolus")!
+    public static let open = URL(string: "fabolus://open")!
 }

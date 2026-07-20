@@ -7,10 +7,10 @@ iPhone.
 Take it slowly, one page at a time, in order. If a step doesn't work, don't worry — the
 [Troubleshooting](../troubleshoot.md) page covers the common snags.
 
-!!! danger "First, the one rule that never changes"
-    This app can tell an insulin pump to deliver insulin. Only ever connect it to a **spare test
-    pump filled with saline (salt water), dripping into a cup on a scale — never a pump on a
-    person.** Please read [Safety first](../safety.md) before you build anything.
+!!! warning "Experimental — in development"
+    faBolus can tell an insulin pump to deliver insulin, and it is **not FDA-cleared**. It's an
+    open-source project for experimental use — you assume all responsibility. Please read
+    [Safety](../safety.md) before you build anything.
 
 ## What "building" means (in plain words)
 
@@ -83,7 +83,7 @@ You'll want all of these before you start (details on [What you'll need](../requ
 - [x] A **Mac** computer (any recent one).
 - [x] An **iPhone** (iOS 17 or newer) and a cable to plug it into the Mac.
 - [x] An **Apple ID** — the same email/password you use for the App Store.
-- [x] A **spare Tandem pump** you'll use *only* on the bench with saline.
+- [x] A **Tandem t:slim X2 or Mobi** pump.
 - [x] *Optional:* an **Apple Watch** or a **Garmin venu3s**.
 
 ## How much time and money?

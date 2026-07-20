@@ -7,12 +7,11 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 <div class="grid cards" markdown>
 
--   :material-needle:{ .lg .middle } **A dedicated saline test pump**
+-   :material-needle:{ .lg .middle } **A Tandem pump**
 
     ---
 
-    A Tandem **t:slim X2** or **Mobi** you use *only* for bench testing — never anyone's therapy
-    pump. Plus saline cartridges, infusion sets, a **scale**, and a graduated container.
+    A Tandem **t:slim X2** or **Mobi**, plus the usual cartridges and infusion sets.
 
 -   :material-cellphone:{ .lg .middle } **An iPhone**
 
@@ -60,7 +59,7 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 ## Pairing codes
 
-Your pump uses one of two pairing schemes; ControlX2 supports both and auto-selects:
+Your pump uses one of two pairing schemes; faBolus supports both and auto-selects:
 
 - A **6-digit** code — t:slim X2 v7.7+ and Mobi (via a modern JPAKE handshake). Most current
   pumps.

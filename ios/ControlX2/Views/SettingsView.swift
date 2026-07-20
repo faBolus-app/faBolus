@@ -92,7 +92,7 @@ struct SettingsView: View {
                         Text(g).font(.caption).foregroundStyle(.secondary)
                     }
                 } footer: {
-                    Text("ControlX2 — independent bench proof-of-concept. Saline only, never on a body.")
+                    Text("faBolus is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom.")
                 }
             }
             .navigationTitle("Settings")

@@ -21,7 +21,7 @@ last published value and hide any reading older than 6 minutes.
 | --- | --- | --- |
 | **Glucose** | Lock Screen (inline / circular / rectangular) + Home Screen small | Current glucose + trend arrow, range-colored. |
 | **Pump Overview** | Home Screen medium | Glucose trend + a sparkline, Active Insulin, reservoir, last bolus. |
-| **Bolus** | Home Screen small + Lock Screen circular | A one-tap shortcut into the bolus entry + confirm flow (`controlx2://bolus`). Opens the app; never dispenses from the widget. |
+| **Bolus** | Home Screen small + Lock Screen circular | A one-tap shortcut into the bolus entry + confirm flow (`fabolus://bolus`). Opens the app; never dispenses from the widget. |
 | **Quick Bolus** | Home Screen small / medium | Delivers a dose **in place** behind a Garmin-style 1-2-3 confirm — see below. |
 
 ## Quick Bolus
@@ -44,7 +44,7 @@ delivers through the validated signed path and writes progress back to the widge
 isn't connected, the widget shows **"Pump not connected — open app."**
 
 !!! danger "Quick Bolus is a real delivery"
-    Completing 1-2-3 delivers the dose (bench / saline only). Unlike the plain **Bolus** widget,
+    Completing 1-2-3 delivers the dose (experimental). Unlike the plain **Bolus** widget,
     it is not just a shortcut into the entry screen — treat it like the Garmin hold-to-deliver. It
     only works while the app is running with the pump connected (typically in the background);
     otherwise open the app first.
@@ -53,7 +53,7 @@ isn't connected, the widget shows **"Pump not connected — open app."**
 
 <ol class="cx2-steps">
 <li>Long-press the Home Screen (or Lock Screen → <strong>Customize</strong>).</li>
-<li>Tap <strong>+</strong> / <strong>Add widget</strong> and search for <strong>ControlX2</strong>.</li>
+<li>Tap <strong>+</strong> / <strong>Add widget</strong> and search for <strong>faBolus</strong>.</li>
 <li>Pick a widget and size, and place it.</li>
 </ol>
 

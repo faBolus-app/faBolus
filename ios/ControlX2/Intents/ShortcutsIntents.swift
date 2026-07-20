@@ -9,7 +9,7 @@ import Foundation
 
 /// Thrown when the app has no snapshot yet (never launched/connected).
 struct NoPumpDataError: Error, CustomLocalizedStringResourceConvertible {
-    var localizedStringResource: LocalizedStringResource { "No pump data yet — open ControlX2 and connect first." }
+    var localizedStringResource: LocalizedStringResource { "No pump data yet — open faBolus and connect first." }
 }
 
 private func loadSnap() throws -> WidgetSnapshot {
@@ -229,7 +229,7 @@ struct GetPumpSummaryIntent: AppIntent {
 
 struct OpenBolusScreenIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Bolus Screen"
-    static let description = IntentDescription("Open ControlX2 to the bolus screen (you still confirm the dose in the app).")
+    static let description = IntentDescription("Open faBolus to the bolus screen (you still confirm the dose in the app).")
     static let openAppWhenRun = true
     func perform() async throws -> some IntentResult {
         WidgetStore.requestOpenBolus()   // the app routes to the Bolus tab on becoming active

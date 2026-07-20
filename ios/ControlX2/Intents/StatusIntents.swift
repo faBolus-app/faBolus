@@ -42,7 +42,7 @@ enum SiriFormat {
         return "\(s) unit\(u == 1 ? "" : "s")"
     }
 
-    static let noData = "I don't have any pump data yet. Open ControlX2 and connect to your pump first."
+    static let noData = "I don't have any pump data yet. Open faBolus and connect to your pump first."
 }
 
 // MARK: - Glucose

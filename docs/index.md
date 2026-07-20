@@ -4,44 +4,41 @@ hide:
 ---
 
 <div class="cx2-hero" markdown>
-<span class="cx2-eyebrow">Independent · open · bench proof-of-concept</span>
+<span class="cx2-eyebrow">Built by Zev and Tia in Tandem</span>
 
-# Your Tandem pump, on your wrist and your phone.
+# faBolus — your pump, on your wrist and your phone.
 
-ControlX2iOS is an independent, open reimplementation of a **Tandem t:slim X2 / Mobi** remote:
-see your glucose and pump status at a glance, and deliver a **manual bolus** from your iPhone,
-Apple Watch, or Garmin watch — all built by you, on your own devices.
+faBolus is a remote for the **Tandem t:slim X2 / Mobi**: see your glucose and pump status at a
+glance, and deliver a bolus from your iPhone, Apple Watch, or Garmin watch.
 
 <span class="cx2-cta" markdown>
 [Build it yourself :material-arrow-right:](build/index.md){ .md-button .md-button--primary }
-[Read the safety rules](safety.md){ .md-button }
+[Read the safety notes](safety.md){ .md-button }
 </span>
 </div>
 
-!!! danger "This is a bench proof-of-concept — never for therapy"
-    ControlX2iOS can command an insulin pump to deliver insulin. This project exists **only** as
-    a bench experiment: every test uses a **dedicated test pump dispensing saline into a
-    container on a scale — never on a body.** On-body use is out of scope. The dosing path is
-    an independent reimplementation and is treated as **unproven**. Please read
-    [Safety first](safety.md) before anything else.
+!!! warning "Experimental — in development"
+    faBolus is an independent, open-source project **in development for experimental use**. It is
+    **not FDA-cleared**; if you build and use it, you assume all responsibility. See
+    [Safety](safety.md).
 
 ## Start here
 
 <div class="grid cards" markdown>
 
--   :material-shield-check:{ .lg .middle } **Safety first**
+-   :material-shield-check:{ .lg .middle } **Safety**
 
     ---
 
-    The non-negotiable ground rules, the interlocks in the app, and the validation gates.
+    What faBolus is, the interlocks built in, and how to use it responsibly.
 
-    [:octicons-arrow-right-24: Safety rules](safety.md)
+    [:octicons-arrow-right-24: Safety notes](safety.md)
 
 -   :material-clipboard-list:{ .lg .middle } **What you'll need**
 
     ---
 
-    The hardware, accounts, and tools — including a saline test pump and a free or paid Apple ID.
+    The hardware, accounts, and tools — a pump, an iPhone, a Mac, and a free or paid Apple ID.
 
     [:octicons-arrow-right-24: Requirements](requirements.md)
 
@@ -69,7 +66,7 @@ Apple Watch, or Garmin watch — all built by you, on your own devices.
 
 <div class="grid cards" markdown>
 
--   :material-view-dashboard:{ .lg .middle } **A tabbed, Loop-style app**
+-   :material-view-dashboard:{ .lg .middle } **A tabbed, modern app**
 
     ---
 
@@ -78,7 +75,7 @@ Apple Watch, or Garmin watch — all built by you, on your own devices.
     details card with everything from the pump (carb ratio, correction factor, target, max
     bolus, reservoir, battery, CGM, last bolus). Readings older than **6 minutes** are hidden.
 
--   :material-water:{ .lg .middle } **Manual boluses, with guardrails**
+-   :material-water:{ .lg .middle } **Boluses, with guardrails**
 
     ---
 
@@ -92,30 +89,29 @@ Apple Watch, or Garmin watch — all built by you, on your own devices.
 
     Request a bolus from your wrist. Remotes never touch the pump — the iPhone owns the
     connection and confirms every request. Both watches get a glucose complication; the Apple
-    Watch has a full chart/details/alerts, and the Garmin a Dexcom-style history screen.
+    Watch has a full chart/details/alerts, and the Garmin a history screen.
 
 -   :material-microphone:{ .lg .middle } **Widgets & Siri**
 
     ---
 
     Lock/Home Screen widgets (glucose, overview, a bolus shortcut, and a **Quick Bolus** with a
-    1-2-3 confirm), plus **read-only Siri** ("what's my glucose in ControlX2") and a set of
+    1-2-3 confirm), plus **read-only Siri** ("what's my glucose in faBolus") and a set of
     Shortcuts data actions.
 
 </div>
 
-## The two repositories
+## Under the hood
 
-This documentation covers the **apps**. They're built on a separate protocol library, and the
-Garmin watch app now lives in its own repo.
+faBolus is built on an open protocol core, and the Garmin watch app lives in its own repository.
 
 | Repository | What it is |
 | --- | --- |
-| **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, legacy + JPAKE pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
-| **[ControlX2iOS](https://github.com/zgranowitz/ControlX2iOS)** | The iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
-| **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** | The Garmin (Connect IQ / Monkey C) watch remote. Pairs to the iPhone app. |
+| **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
+| **[ControlX2iOS](https://github.com/zgranowitz/ControlX2iOS)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
+| **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
 
-!!! warning "Not affiliated"
-    Not affiliated with, endorsed by, or a fork of **Tandem Diabetes Care**, jwoglom's
-    `controlX2` / `pumpX2`, or **Loop / LoopKit**. The name mirrors `controlX2` only to signal
-    the parallel. The UI borrows Loop's visual language for familiarity only.
+!!! note "Independent project"
+    faBolus is an independent, open-source project. It is **not affiliated with, endorsed by, or
+    a product of Tandem Diabetes Care or Dexcom.** Tandem, t:slim X2, Mobi, and Dexcom are
+    trademarks of their respective owners.

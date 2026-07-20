@@ -135,7 +135,7 @@ final class WatchModel {
 
     func requestStatus() { link.send(RemoteCommand(kind: .statusRead)) }
 
-    /// Loop-style band color for a glucose value.
+    /// modern band color for a glucose value.
     static func color(_ mgdl: Int) -> Int { RemoteGlucose.band(mgdl) }
 }
 

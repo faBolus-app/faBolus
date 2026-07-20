@@ -3,7 +3,7 @@ import SwiftUI
 /// Bolus entry, at parity with the phone + Garmin: pick **Units** or **Carbs** (default from
 /// Settings), set the amount with the Digital Crown (step = the watch increment), then confirm.
 /// The watch confirms on-device (like the Garmin) and the iPhone delivers directly through the
-/// validated signed path — carbs are converted to units on the phone. SALINE bench boluses only.
+/// validated signed path — carbs are converted to units on the phone. Experimental.
 struct WatchBolusView: View {
     @Bindable var model: WatchModel
     @Environment(\.dismiss) private var dismiss
@@ -52,7 +52,7 @@ struct WatchBolusView: View {
                 .tint(.indigo)
                 .disabled(amount <= 0 || !model.reachable)
 
-                Text("Saline · bench only").font(.caption2).foregroundStyle(.secondary)
+                Text("Experimental").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.top, 4)
         }
@@ -60,7 +60,7 @@ struct WatchBolusView: View {
             Button("Deliver \(amountLabel)", role: .destructive) { deliver() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Bench proof-of-concept — saline into a container on a scale, never on a body.")
+            Text("faBolus is experimental and not FDA-cleared.")
         }
     }
 

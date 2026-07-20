@@ -28,7 +28,7 @@ they need — is **GitHub Desktop**, a free app from GitHub.
 <ol class="cx2-steps">
 <li>Download <strong>GitHub Desktop</strong> from <a href="https://desktop.github.com/">desktop.github.com</a> and open it. (You can sign in with a free GitHub account, or skip sign-in — either works for downloading.)</li>
 <li>In the menu bar: <strong>File → Clone Repository…</strong> → click the <strong>URL</strong> tab.</li>
-<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>ControlX2</code> inside your <strong>Documents</strong> — for example <code>~/Documents/ControlX2/PumpX2Kit</code>:
+<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>faBolus</code> inside your <strong>Documents</strong> — for example <code>~/Documents/faBolus/PumpX2Kit</code>:
 <div></div>
 ```
 https://github.com/zgranowitz/PumpX2Kit
@@ -39,11 +39,11 @@ Click <strong>Clone</strong> and wait for it to finish.</li>
 ```
 https://github.com/zgranowitz/ControlX2iOS
 ```
-Save it right next to the first one — <code>~/Documents/ControlX2/ControlX2iOS</code>.</li>
+Save it right next to the first one — <code>~/Documents/faBolus/ControlX2iOS</code>.</li>
 </ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** inside **Documents → ControlX2** you now have two folders:
+**Success looks like:** inside **Documents → faBolus** you now have two folders:
 **PumpX2Kit** and **ControlX2iOS**, side by side.
 </div>
 
@@ -52,7 +52,7 @@ Save it right next to the first one — <code>~/Documents/ControlX2/ControlX2iOS
     part is what GitHub Desktop does automatically):
 
     ```sh
-    mkdir -p ~/Documents/ControlX2 && cd ~/Documents/ControlX2
+    mkdir -p ~/Documents/faBolus && cd ~/Documents/faBolus
     git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
     git clone https://github.com/zgranowitz/ControlX2iOS.git
     ```
@@ -71,13 +71,13 @@ you never use a Garmin.** You download it once and drop it into a folder. No com
 
 <div class="cx2-check" markdown>
 **Success looks like:** **Documents → vendor** contains the
-`connectiq-companion-app-sdk-ios-1.8.0` folder. (So `Documents` now has both a **ControlX2**
+`connectiq-companion-app-sdk-ios-1.8.0` folder. (So `Documents` now has both a **faBolus**
 folder and a **vendor** folder.)
 </div>
 
 ??? note "If you saved things somewhere else"
     The app looks for the Garmin folder two levels up from itself, in a `vendor` folder. If you
-    put your projects somewhere other than `Documents/ControlX2`, either move things to match the
+    put your projects somewhere other than `Documents/faBolus`, either move things to match the
     layout above, or open `ControlX2iOS/project.yml` in **TextEdit**, find the line under
     `ConnectIQ:` that starts with `path:`, and change it to the full path of your Garmin folder.
     (Re-do Step 3 afterward.)
@@ -119,19 +119,19 @@ easiest way to avoid typing the folder path: type `cd` and a space, then **drag 
 folder from Finder into the Terminal window** (it fills in the path for you), then press Return:
 
 ```sh
-cd ~/Documents/ControlX2/ControlX2iOS
+cd ~/Documents/faBolus/ControlX2iOS
 xcodegen generate
 ```
 
 <div class="cx2-check" markdown>
-**Success looks like:** the Terminal prints something like *"Created project at …ControlX2.xcodeproj"*,
-and a new **ControlX2.xcodeproj** file appears in the ControlX2iOS folder.
+**Success looks like:** the Terminal prints something like *"Created project at …faBolus.xcodeproj"*,
+and a new **faBolus.xcodeproj** file appears in the ControlX2iOS folder.
 </div>
 
 ## Step 4 — Open the project in Xcode
 
-In Finder, open **Documents → ControlX2 → ControlX2iOS** and **double-click**
-**`ControlX2.xcodeproj`**. Xcode opens.
+In Finder, open **Documents → faBolus → ControlX2iOS** and **double-click**
+**`faBolus.xcodeproj`**. Xcode opens.
 
 Give it a minute — a bar near the top says it's "resolving packages" (downloading the helper
 library). Wait for that to finish.
@@ -146,15 +146,15 @@ library). Wait for that to finish.
 </figure>
 
 <ol class="cx2-steps">
-<li>In the tall left panel, click the blue <strong>ControlX2</strong> icon at the very top.</li>
-<li>In the list that appears, under <strong>TARGETS</strong>, click <strong>ControlX2</strong>.</li>
+<li>In the tall left panel, click the blue <strong>faBolus</strong> icon at the very top.</li>
+<li>In the list that appears, under <strong>TARGETS</strong>, click <strong>faBolus</strong>.</li>
 <li>Along the top of the middle area, click the <strong>Signing &amp; Capabilities</strong> tab.</li>
 <li>Tick the box <strong>Automatically manage signing</strong>.</li>
 <li>In the <strong>Team</strong> dropdown, pick your name (the account from <a href="apple-developer.md">Step 1</a>).</li>
 </ol>
 
 Then do the same **Team** choice for the other rows in the TARGETS list:
-**ControlX2Widgets**, **ControlX2Watch**, and **ControlX2WatchWidgets**.
+**faBolusWidgets**, **faBolusWatch**, and **faBolusWatchWidgets**.
 
 !!! warning "Free account? A red \"identifier is not available\" message is normal"
     Every app needs a name that's unique across everyone in the world. The project comes with
@@ -170,7 +170,7 @@ Then do the same **Team** choice for the other rows in the TARGETS list:
 
 !!! info "Free account and widgets"
     Free accounts sometimes can't set up the widgets. If a widget row shows a signing error, you
-    can still install the main app — just build **ControlX2** for now and add widgets later on a
+    can still install the main app — just build **faBolus** for now and add widgets later on a
     paid account.
 
 ## Step 6 — Turn on Developer Mode on your iPhone
@@ -227,7 +227,7 @@ is you. You just tell it that's OK.
 
 ## Step 9 — Open it and allow Bluetooth
 
-Tap the **ControlX2** icon on your Home Screen. The first time you tap **Connect**, iOS asks to
+Tap the **faBolus** icon on your Home Screen. The first time you tap **Connect**, iOS asks to
 use Bluetooth — tap **Allow**. (Without Bluetooth the app can't find your pump.)
 
 <div class="cx2-check" markdown>

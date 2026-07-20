@@ -61,10 +61,10 @@ Developer Key**. VS Code makes it and remembers it. That's all.
 
 ??? note "Advanced: make the key in the Terminal instead (optional)"
     ```sh
-    openssl genrsa -out ~/Documents/ControlX2/developer_key.pem 4096
+    openssl genrsa -out ~/Documents/faBolus/developer_key.pem 4096
     openssl pkcs8 -topk8 -inform PEM -outform DER \
-      -in ~/Documents/ControlX2/developer_key.pem \
-      -out ~/Documents/ControlX2/developer_key.der -nocrypt
+      -in ~/Documents/faBolus/developer_key.pem \
+      -out ~/Documents/faBolus/developer_key.der -nocrypt
     ```
 
 ## Step 4 — Build and preview it
@@ -85,9 +85,9 @@ there — that's expected. It's just for checking the screens look right.
 
 ??? note "Advanced: build from the Terminal (optional)"
     ```sh
-    cd ~/Documents/ControlX2/PumpX2Garmin
+    cd ~/Documents/faBolus/PumpX2Garmin
     SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
-    "$SDK/bin/monkeyc" -f monkey.jungle -o bin/ControlX2.iq -y ~/Documents/ControlX2/developer_key.der -e -r -w
+    "$SDK/bin/monkeyc" -f monkey.jungle -o bin/faBolus.iq -y ~/Documents/faBolus/developer_key.der -e -r -w
     ```
     Check the PumpX2Garmin README for the exact device/flags.
 
@@ -101,12 +101,12 @@ The PumpX2Garmin README has the exact, current steps for the venu3s.
 
 <ol class="cx2-steps">
 <li>Make sure <strong>Garmin Connect</strong> is installed on your iPhone and your venu3s is paired to it.</li>
-<li>Open the <strong>ControlX2</strong> iPhone app, tap the <strong>watch icon</strong> (top-right) → <strong>Set up Garmin remote</strong>. Garmin Connect opens so you can pick your venu3s.</li>
-<li>Come back to ControlX2 — it remembers your watch and shows "Garmin remote: &lt;your watch&gt; ✓".</li>
+<li>Open the <strong>faBolus</strong> iPhone app, tap the <strong>watch icon</strong> (top-right) → <strong>Set up Garmin remote</strong>. Garmin Connect opens so you can pick your venu3s.</li>
+<li>Come back to faBolus — it remembers your watch and shows "Garmin remote: &lt;your watch&gt; ✓".</li>
 </ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** the ControlX2 app on your venu3s shows your glucose, and the iPhone app
+**Success looks like:** the faBolus app on your venu3s shows your glucose, and the iPhone app
 lists your watch as the Garmin remote. Learn the screens on the
 [Garmin remote](../remotes/garmin.md) page.
 </div>

@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// History page: a Loop-style glucose plot of the recent readings the phone sends (oldest→newest,
+/// History page: a modern glucose plot of the recent readings the phone sends (oldest→newest,
 /// ~5-min spacing). Points are range-colored with an in-range band, mirroring the phone chart.
 struct WatchChartView: View {
     @Bindable var model: WatchModel

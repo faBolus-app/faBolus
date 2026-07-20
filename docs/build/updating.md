@@ -19,7 +19,7 @@ error). Nothing is broken — it just needs re-installing.
 
 <ol class="cx2-steps">
 <li>Plug your iPhone into the Mac.</li>
-<li>In Finder, open <strong>Documents → ControlX2 → ControlX2iOS</strong> and double-click <strong>ControlX2.xcodeproj</strong>.</li>
+<li>In Finder, open <strong>Documents → faBolus → ControlX2iOS</strong> and double-click <strong>faBolus.xcodeproj</strong>.</li>
 <li>Pick your iPhone in the device bar at the top and click <strong>▶ Run</strong> (or press <kbd>⌘</kbd> + <kbd>R</kbd>).</li>
 <li>If the phone asks you to <strong>Trust</strong> the developer again, do so (<a href="build-app.md#step-8-let-your-phone-trust-the-app">Step 8</a>).</li>
 </ol>
@@ -44,10 +44,10 @@ When the project gets updates, refresh your copy with **GitHub Desktop** — no 
 
 ??? note "Advanced: update from the Terminal (optional)"
     ```sh
-    cd ~/Documents/ControlX2/PumpX2Kit && git pull --recurse-submodules
-    cd ~/Documents/ControlX2/ControlX2iOS && git pull
+    cd ~/Documents/faBolus/PumpX2Kit && git pull --recurse-submodules
+    cd ~/Documents/faBolus/ControlX2iOS && git pull
     xcodegen generate
-    open ControlX2.xcodeproj
+    open faBolus.xcodeproj
     ```
 
 If a build ever fails right after updating, see [Troubleshooting](../troubleshoot.md) — the usual

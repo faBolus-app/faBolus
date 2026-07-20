@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Dashboard tab: Loop-style glucose chart + status ring + HUD pills, then a scrollable details
+/// Dashboard tab: modern glucose chart + status ring + HUD pills, then a scrollable details
 /// section with everything sourced from the pump. Connection lives in the toolbar.
 struct DashboardView: View {
     @Bindable var model: AppModel
@@ -46,12 +46,12 @@ struct DashboardView: View {
 
                     if let err = model.lastError {
                         Label(err, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(LoopTheme.low).padding(.horizontal)
+                            .font(.caption).foregroundStyle(AppTheme.low).padding(.horizontal)
                     }
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("ControlX2")
+            .navigationTitle("faBolus")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -112,7 +112,7 @@ struct PairingSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(code.count != 6)
                 } footer: {
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time. Bench pump / saline only.")
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.")
                 }
             }
             .navigationTitle("Connect to pump")

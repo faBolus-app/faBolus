@@ -1,8 +1,7 @@
 # Bolus & cancel
 
-!!! danger "Saline, bench only"
-    Confirm the pump is dispensing **saline into a container on a scale** before every bolus.
-    The confirmation dialog repeats this reminder every time.
+!!! warning "Confirm every bolus"
+    faBolus is experimental and not FDA-cleared. Always confirm the amount before you deliver.
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot phone" markdown="span">
@@ -25,7 +24,7 @@
 <li>Open the <strong>Bolus</strong> tab (enabled only when connected). It opens in your default mode (Carbs or Units) from <a href="../customize/settings/">Settings</a>.</li>
 <li>Either enter <strong>units</strong> directly, or enter <strong>carbs</strong> (and optionally <strong>BG</strong>) and tap <strong>Calculate recommendation</strong> — the app uses the pump's own calculator (carb ratio, ISF, target, IOB) to suggest a dose.</li>
 <li>Adjust units with the stepper (step = your <strong>bolus increment</strong> from Settings). The <strong>max-units clamp</strong> blocks anything over your pump's configured ceiling.</li>
-<li>Tap <strong>Bolus N U</strong>, then confirm the <strong>saline</strong> dialog.</li>
+<li>Tap <strong>Bolus N U</strong>, then confirm the dialog.</li>
 </ol>
 
 ## Cancel & partial delivery

@@ -32,7 +32,7 @@ final class GarminRemoteBridge: NSObject {
 
     /// Opens Garmin Connect Mobile so the user can pick which paired device runs the remote.
     func selectDevice() {
-        model?.garminStatus = "Opening Garmin Connect — pick your venu3s, then return to ControlX2…"
+        model?.garminStatus = "Opening Garmin Connect — pick your venu3s, then return to faBolus…"
         ConnectIQ.sharedInstance().showDeviceSelection()
     }
 

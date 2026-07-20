@@ -36,7 +36,7 @@ struct ControlX2App: App {
                 }
                 .onOpenURL { url in
                     if url.scheme == ControlX2DeepLink.scheme {
-                        // Widget tap-to-bolus / open (controlx2://bolus). Opens the confirm flow.
+                        // Widget tap-to-bolus / open (fabolus://bolus). Opens the confirm flow.
                         if url.host == "bolus" { model.openBolusRequested = true }
                     } else {
                         garmin?.handleOpenURL(url)   // Connect IQ device-selection callback
