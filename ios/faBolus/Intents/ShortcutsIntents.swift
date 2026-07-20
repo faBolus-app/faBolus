@@ -1,4 +1,5 @@
 import AppIntents
+import faBolusCore
 import Foundation
 
 /// Value-returning App Intents for **Apple Shortcuts** — they expose every field the app publishes

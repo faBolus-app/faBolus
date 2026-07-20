@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import WidgetKit
 
 extension Notification.Name {

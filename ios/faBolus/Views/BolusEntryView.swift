@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Bolus entry (modern). Carbs (+ optional BG) → recommended dose, or a plain Units dial —
 /// default mode and the ± increments come from Settings. Experimental; enforces the

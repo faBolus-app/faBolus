@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Modern iOS tab bar: Dashboard · Bolus · Alerts · Settings. Cross-tab concerns (auto-reconnect,
 /// the remote-bolus confirm, the widget deep link) live here.

@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// modern status ring around the current glucose reading + trend. The ring color reflects
 /// connection/activity state (NOT closed-loop status — FaBolus doesn't automate).

@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import UserNotifications
 
 /// Posts an iOS local notification for each active pump alert, with a **Clear** action that

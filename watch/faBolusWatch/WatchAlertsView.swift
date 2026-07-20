@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Alerts page: active pump alerts/alarms, each clearable (relayed to the phone, which sends the
 /// signed dismiss). Notes that CGM alerts are condition-based, matching the phone.

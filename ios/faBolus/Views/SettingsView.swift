@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Settings tab: bolus defaults + increments (shared with the remotes), chart axes, and pump
 /// pairing management.

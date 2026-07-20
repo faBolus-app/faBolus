@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// "Direct" page: pair the watch straight to the pump (independent of the iPhone). Phase 1 —
 /// pairing only; status + delivery over the direct link come in Phase 2. Because the pump keeps

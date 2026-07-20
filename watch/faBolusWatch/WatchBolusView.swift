@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Bolus entry, at parity with the phone + Garmin: pick **Units** or **Carbs** (default from
 /// Settings), set the amount with the Digital Crown (step = the watch increment), then confirm.

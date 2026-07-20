@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// On-watch pairing: enter the pump's fresh 6-digit code, then run JPAKE directly from the watch.
 /// The derived secret is stored in the watch Keychain (WatchPairingStore) for resume-auth later.
