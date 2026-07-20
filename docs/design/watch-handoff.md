@@ -11,9 +11,9 @@ committed and compiles; the block is device/account setup, not code.
   devicectl id `55BB0EAB-1D34-5EA9-9A42-7C707C88BCCA`. Dev team `4AA4WP5Q4S`.
 - The **watch is NOT a registered dev device** — the `com.zgranowitz.controlx2.watch` provisioning
   profile contains only the iPhone UDID. A dev-signed app can't install until the watch's UDID is
-  registered (happens when Xcode "prepares" the watch).
-- **App Group is NOT enabled** on either watch App ID (`com.zgranowitz.controlx2.watch` and
-  `…watch.widgets`) — checked the profiles; both have no `application-groups`.
+  registered (happens when Xcode "prepares" the watch). **This is the one remaining blocker.**
+- **App Group IS enabled** (as of 2026-07-19) on the watch App IDs — a signed build passes and the
+  watch app is signed with `com.apple.security.application-groups → group.com.zgranowitz.controlx2`.
 
 ## A. Install status
 - The watch app is **embedded as a companion** in the iPhone app
@@ -65,14 +65,15 @@ in one go). Watch compile-check: `-scheme ControlX2Watch -destination 'generic/p
   (reuse the byte-verified path), so Glance/Chart/Details/Bolus/Alerts run off the direct link.
   **Phase 3:** relay↔direct switch UX. See `independent-watch.md` for the full plan.
 
-## C. Complication (glucose on the watch face) — temporarily removed
-- Built but **un-embedded** for now: `watch/ControlX2WatchWidgets/GlucoseComplication.swift` (widget
-  extension) reads the App Group snapshot the watch app publishes (`WatchModel.publishComplication`).
-- Removed from the build because the **App Group isn't registered** on the watch App IDs (signed
-  builds fail on it). To restore: in Xcode, enable App Group `group.com.zgranowitz.controlx2` on
-  **ControlX2Watch** + **ControlX2WatchWidgets** (Signing & Capabilities — registers it on the App
-  IDs; persists through XcodeGen regen), then in `project.yml` re-add the watch App Group entitlement
-  + re-add `- target: ControlX2WatchWidgets` to the watch app's dependencies, regenerate, rebuild.
+## C. Complication (glucose on the watch face) — re-embedded ✅
+- `watch/ControlX2WatchWidgets/GlucoseComplication.swift` (widget extension) reads the App Group
+  snapshot the watch app publishes (`WatchModel.publishComplication`).
+- The App Group was enabled in Xcode (Signing & Capabilities) on both watch App IDs, so the
+  complication is **back in the build**: `project.yml` re-adds the watch App Group entitlement +
+  `- target: ControlX2WatchWidgets` to the watch app's dependencies. Verified `ControlX2WatchWidgets.appex`
+  is embedded in `ControlX2Watch.app/PlugIns/` and the watch app signs with the group entitlement.
+- Once the watch app installs (needs the dev-registration in §A), add it via the watch face: Edit
+  face → a corner → ControlX2 → Glucose. Families: circular / inline / corner / rectangular.
 
 ## What the watch app already does (parity work, done earlier)
 Paged UI: **Glance · Chart · Details · Alerts · Direct**. Carbs/Units bolus with watch increments +
