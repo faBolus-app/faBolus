@@ -14,7 +14,7 @@ flowchart LR
     Pump[("Insulin pump\n(currently Tandem t:slim X2 / Mobi)")]
     Phone["iPhone app\n(owns BLE, runs PumpX2Kit,\nconfirms every bolus)"]
     Watch["Apple Watch\nremote"]
-    Garmin["Garmin venu3s\nremote (faBolusGarmin)"]
+    Garmin["Garmin\nwatch / Edge remote"]
     Widgets["Lock/Home\nwidgets + Siri"]
 
     Pump <-->|Bluetooth · signed| Phone
@@ -32,16 +32,16 @@ PumpX2Kit  (Swift package — build once, reuse everywhere)
 └── PumpX2BLE        Core Bluetooth central (iOS + watchOS)
 
 faBolus  (this repo, consumes PumpX2Kit via SPM)
+├── Packages/faBolusCore/  contracts + models (RemoteCommand, RemoteLink, PumpBackend)
 ├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
 ├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
 ├── watch/faBolusWatch/  Apple Watch remote (WatchConnectivity)
 ├── watch/faBolusWatchWidgets/  watch-face complication
-├── Shared/                RemoteCommand + RemoteLink (phone↔remote transport)
 ├── schema/                command.schema.json — the single source of truth for the contract
 └── docs/                  this site
 
 faBolusGarmin  (separate repo)
-└── Connect IQ (Monkey C) remote for the venu3s — pairs to the iPhone app
+└── Connect IQ (Monkey C) remote — Garmin watches + Edge cycling computers; pairs to the iPhone app
 ```
 
 !!! note "The Garmin app lives in its own repo"
@@ -61,7 +61,7 @@ designed but not built.
 
 `schema/command.schema.json` defines the tiny phone↔remote protocol — fields like `kind`,
 `requestId`, `units`, `carbsGrams`, `bgMgdl`, `confirmToken`, and `status`. Both the Swift side
-(`Shared/RemoteCommand.swift`) and the Monkey C side generate and validate against it, which is
+(`faBolusCore/RemoteCommand.swift`) and the Monkey C side generate and validate against it, which is
 what keeps the watch, Garmin, and phone from drifting apart.
 
 ## Byte-exact protocol

@@ -10,12 +10,11 @@ interlock and delivers through PumpX2Kit. To build and install it, see
     **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
     bridge is part of the faBolus app, so the two talk over the shared command contract.
 
-!!! note "Devices: Venu 3S validated; more build-verified"
-    The **Garmin Venu 3S** is hardware-validated. The app also builds for button-only watches and
-    **Edge cycling computers** — it adapts to touch vs. buttons (and watch vs. no-watch-face) at
-    runtime, so adding a device is usually just a manifest entry. Those non-Venu-3S targets aren't
-    hardware-validated yet. See the faBolusGarmin
-    [contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-device).
+!!! note "Which Garmin devices work"
+    **Tested:** the Garmin **Venu 3S**. The app also runs on button-only Garmin watches (e.g. the
+    fenix and Forerunner lines) and on **Edge cycling computers**, adapting to each device's buttons
+    or touchscreen automatically — but those haven't been tested on real hardware yet, so treat them
+    as **experimental**.
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
@@ -51,12 +50,15 @@ first. The layout is sent to the watch on its next status update and is remember
 (it survives restarts and offline launches). Default: Glance → Alerts → History → Details,
 opening on Glance.
 
-## Input model (venu3s)
+## Using it: touch or buttons
 
-The venu3s delivers screen taps as high-level events, so the app uses:
+faBolus adapts to your device automatically:
 
-- **Tap** a button or target (bolus −/+, Deliver, the numbered confirm circles, an alert row).
-- **Swipe** up/down to move between screens.
+- **Touchscreen** (e.g. Venu 3S): **tap** the on-screen buttons (bolus −/+, Deliver, the confirm
+  targets, an alert row), and **swipe up/down** to move between screens.
+- **Button watches / Edge** (no touchscreen): use the physical buttons — **UP / DOWN** move between
+  screens (and set the amount on the bolus screen), **START** selects/delivers, **MENU** switches
+  Units/Carbs, **BACK** goes back. No on-screen cursor.
 
 ## Bolus flow
 
@@ -72,9 +74,9 @@ The venu3s delivers screen taps as high-level events, so the app uses:
 </div>
 
 <ol class="cx2-steps">
-<li>Open <strong>Bolus</strong>, tap the mode chip to switch <strong>Units / Carbs</strong>, tap <strong>−/+</strong> to set the amount, then <strong>Deliver</strong>.</li>
-<li>On the confirm screen, <strong>tap 1 → 2 → 3 in order</strong> (like unlocking a t:slim). A wrong tap resets.</li>
-<li>Completing the sequence sends the request to the phone, which carries it out. The remote never delivers on its own, and the pump still enforces its max and signature.</li>
+<li><strong>Set the amount.</strong> <em>Touch:</em> tap the mode chip to switch <strong>Units / Carbs</strong>, tap <strong>−/+</strong> to set the amount, then <strong>Deliver</strong>. <em>Buttons:</em> <strong>UP/DOWN</strong> set the amount, <strong>MENU</strong> switches Units/Carbs, <strong>START</strong> delivers.</li>
+<li><strong>Confirm.</strong> <em>Touch:</em> tap <strong>1 → 2 → 3</strong> in order (like unlocking a t:slim) — a wrong tap resets. <em>Buttons:</em> a deliberate two-button hold — <strong>hold UP</strong> to arm, then <strong>hold START</strong> to deliver; let go early to cancel.</li>
+<li>Completing the confirm sends the request to the phone, which carries it out. The remote never delivers on its own, and the pump still enforces its max and signature.</li>
 </ol>
 
 ## BG complication
@@ -97,13 +99,9 @@ fresh data needs the iPhone app open and connected.
     Third-party complication data only appears on **Face It** faces or CIQ faces that support
     complications. Pick one of those and add the *faBolus BG* field.
 
-## The contract
+## Why your iPhone has to be nearby
 
-The Monkey C side generates and validates against the same
-[`schema/command.schema.json`](../architecture.md#the-command-contract) as the Swift side — the
-shared schema is what keeps the two repos in lockstep.
-
-!!! note "Standalone Garmin (no phone) is a separate future project"
-    Running the pump protocol **directly on Garmin** (no phone) would need a full Monkey C
-    reimplementation of the protocol, crypto, and Bluetooth — gated on whether Connect IQ's
-    Bluetooth can establish the bonded/authenticated connection the pump requires.
+The Garmin is a remote — it talks to your **iPhone**, which owns the pump connection and confirms
+and delivers every bolus. So keep your iPhone with you and connected while you use the Garmin.
+Running the pump directly from the Garmin with no phone is a separate future project, not something
+the app does today.

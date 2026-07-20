@@ -23,8 +23,8 @@ Several checks are built in so a bolus can't happen by accident:
 
     ---
 
-    Delivery always requires a deliberate on-screen confirmation. Remote and widget boluses use a
-    1-2-3 confirm sequence.
+    Delivery always requires a deliberate confirmation. Widget and touchscreen-remote boluses use a
+    1-2-3 confirm sequence; button-only Garmin devices use a two-different-button hold.
 
 -   :material-shield-lock:{ .lg .middle } **Signed commands**
 

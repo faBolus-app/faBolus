@@ -76,9 +76,8 @@ inline, corner, rectangular.
 Running the watch **without the iPhone** — pairing the watch straight to the pump — is designed
 but **not built**.
 
-## The contract
+## Under the hood
 
-Phone↔watch messages follow [`schema/command.schema.json`](../architecture.md#the-command-contract):
-a tiny JSON contract (`kind`, `requestId`, `units`, `confirmToken`, `status`, …). The Swift mirror
-is `Shared/RemoteCommand.swift`; transport is `Shared/RemoteLink.swift`. The same contract drives
-the [Garmin remote](garmin.md).
+The Apple Watch and the [Garmin remote](garmin.md) talk to the phone over the same small,
+shared messaging format — so both stay in step with the iPhone app. The technical details are in
+[How it works](../architecture.md#the-command-contract).
