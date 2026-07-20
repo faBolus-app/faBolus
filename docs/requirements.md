@@ -30,7 +30,8 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
     ---
 
-    An **Apple Watch** (watchOS 10+) and/or a **Garmin venu3s** if you want a wrist remote.
+    An **Apple Watch** (watchOS 10+) and/or a **Garmin** watch or cycling computer if you want a
+    wrist/handlebar remote (the **Venu 3S** is the tested Garmin device).
 
 </div>
 

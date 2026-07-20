@@ -1,10 +1,10 @@
 site_name: faBolus
-site_description: faBolus — an iPhone, Apple Watch, and Garmin remote for insulin pumps; currently supports the Tandem t:slim X2 / Mobi. Built by Zev and Tia in Tandem.
+site_description: faBolus — an iPhone, Apple Watch, and Garmin remote for insulin pumps; currently supports the Tandem t:slim X2 / Mobi. Built by Zev and Tia in tandem.
 site_url: https://fabolus.org/
 repo_url: https://github.com/faBolus-app/faBolus
 repo_name: faBolus-app/faBolus
 copyright: >-
-  Built by Zev and Tia in Tandem · faBolus is an independent, open-source project in development
+  Built by Zev and Tia in tandem · faBolus is an independent, open-source project in development
   for experimental use — not FDA-cleared; you assume all responsibility. Not affiliated with
   Tandem Diabetes Care or Dexcom.
 
