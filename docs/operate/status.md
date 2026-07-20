@@ -31,8 +31,11 @@ auto-reconnects when you open it or bring it to the foreground. See
 
 ## Staleness
 
-A CGM reading older than **6 minutes** is hidden (shown as `--`) so a stale value is never
-mistaken for a current one — on the HUD, the widgets, and every remote.
+Every glucose reading shows its **age**. A reading older than **6 minutes** is treated as stale so
+it's never mistaken for a current one: on the HUD and the watches it is still shown but **greyed,
+with its age called out**; the widgets and Siri report it as not-current. If you set up an optional
+[CGM failover](cgm-failover.md) source, an independent reading fills in when the pump's glucose goes
+stale.
 
 !!! note "Terminology"
     "Active Insulin" (IOB) means insulin on board. faBolus is a manual remote-bolus + status

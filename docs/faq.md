@@ -19,6 +19,13 @@
     protocol can break on a pump firmware update, so the app is treated as disposable against
     vendor changes.
 
+??? question "Can faBolus get glucose without going through the pump?"
+    Yes — optionally, as a **failover**. Glucose normally comes through the pump; you can add an
+    independent backup feed that fills in when the pump, phone, or sensor link drops: **Dexcom G7 /
+    ONE+** directly over Bluetooth (also on Apple Watch), or **LibreLinkUp** (Libre 2/3), **Dexcom
+    Share** (G6), **Nightscout**, or **Apple Health** (Eversense). The pump stays the primary
+    source. See [CGM failover](operate/cgm-failover.md).
+
 ??? question "Do I need to be a programmer to build it?"
     No. The [build guide](build/index.md) walks through every step in plain language — get an
     Apple account, install Xcode, and run the app on your iPhone.
