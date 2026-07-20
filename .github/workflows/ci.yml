@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  core:
+    name: faBolusCore tests + contract drift
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Swift RemoteCommand mirror must not drift from schema/command.schema.json.
+      - name: Contract drift check
+        run: ./scripts/check-schema-drift.sh
+
+      # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
+      - name: faBolusCore unit tests
+        run: swift test --package-path Packages/faBolusCore
