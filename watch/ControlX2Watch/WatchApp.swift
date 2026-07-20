@@ -20,6 +20,7 @@ struct WatchRootView: View {
             WatchChartView(model: model)
             WatchDetailsView(model: model)
             WatchAlertsView(model: model)
+            WatchDirectView()
         }
         .tabViewStyle(.page)
         .sheet(isPresented: $showBolus) { WatchBolusView(model: model) }

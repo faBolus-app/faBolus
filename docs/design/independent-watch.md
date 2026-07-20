@@ -47,13 +47,17 @@ watchOS crypto spike harder: the watch must run the **full JPAKE key exchange**,
 - **Pairing model:** ✅ confirmed on the bench — the pump keeps **one** pairing; pairing the watch
   evicts the phone (re-pair-to-switch). No further spike needed here.
 
-### Phase 1 — On-watch pairing UI + storage
-- A watch **6-digit code entry** (crown digit-picker or tap number pad) → run JPAKE on the watch →
-  store the derived secret in the **watch Keychain**.
-- A "Pair to pump" flow in the watch Settings; a "Forget pairing" to clear. Resume-auth on later
-  connects using the stored secret.
-- Remove/retire the `keyShare`/`pumpKeyHex` handoff path (kept only if Phase 0 unexpectedly shows the
-  pump accepts a shared secret across devices — not expected).
+### Phase 1 — On-watch pairing UI + storage ✅ (built, pending on-device test)
+- ✅ `PumpX2Kit` (Messages/Auth/BLE) wired into the watch app target.
+- ✅ `WatchPumpClient` (`watch/ControlX2Watch/WatchPumpClient.swift`): scans → connects → runs the
+  full JPAKE pairing with the 6-digit code, or resume-auths from the stored secret; exposes a
+  `PairState` (idle/connecting/pairing/paired/failed).
+- ✅ `WatchPairingStore` — the watch's own derived secret in the **watch Keychain** (separate service).
+- ✅ UI: a **Direct** page (`WatchDirectView`) + a 6-digit **pairing sheet** (`WatchPairingView`) with
+  Pair / Re-pair / Forget and live state.
+- Retired the `keyShare`/`pumpKeyHex` handoff (pump needs a fresh code per device).
+- **Pending:** the on-device run — enter a real code and confirm JPAKE completes over the watch's BLE
+  (Phase 0's runtime check happens naturally here).
 
 ### Phase 2 — Watch pump client
 - Add `PumpX2Kit` (Messages/Auth/BLE) as watch-app dependencies.
@@ -92,8 +96,9 @@ whichever paired last owns the pump. What's needed is a clear switch:
   deliberate confirm, and the validated signed path. No new dosing path bypasses these.
 
 ## Status
-- ✅ **Phase 0 build spike:** Messages/Auth/BLE compile for watchOS (2026-07-19). Pairing model
-  confirmed (single pairing, re-pair to switch).
-- Superseded: the `keyShare`/`pumpKeyHex` handoff (the pump needs a fresh code per device).
-- Next: on-device runtime spike (watch BLE discovers/connects the pump + JPAKE completes), then
-  Phase 1 (on-watch 6-digit entry + JPAKE + Keychain), Phase 2 (`WatchPumpClient`), Phase 3 (switch UX).
+- ✅ **Phase 0 build spike:** Messages/Auth/BLE compile for watchOS. Pairing model confirmed
+  (single pairing, re-pair to switch).
+- ✅ **Phase 1 built:** PumpX2Kit wired into the watch; `WatchPumpClient` (JPAKE pair + resume) +
+  `WatchPairingStore` (Keychain) + Direct page & pairing sheet. Compiles for watchOS.
+- **Next:** run it on a physical watch (enter a real code → JPAKE completes over watch BLE). Then
+  Phase 2 (`WatchPumpClient` status polling + signed delivery), Phase 3 (relay↔direct switch UX).
