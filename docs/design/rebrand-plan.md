@@ -78,7 +78,7 @@ re-adding. Do it as **one branch/PR**, verify a clean install, then rename the r
 - Update `faBolusGarmin` README/HANDOFF references to the app repo's new name.
 
 ### 8. Docs (mkdocs)
-- `mkdocs.yml`: `site_name`, `site_url` (→ `https://zgranowitz.github.io/faBolus/`), `repo_url`,
+- `mkdocs.yml`: `site_name`, `site_url` (→ `https://fabolus.org/`), `repo_url`,
   `edit_uri`, `copyright`, nav.
 - All `ControlX2` prose + the repo table/links (GitHub URLs) + screenshot alt text.
 - `.github/workflows/docs.yml` (Pages deploy) — verify it still targets the renamed repo/Pages.

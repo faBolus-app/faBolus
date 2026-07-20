@@ -21,8 +21,8 @@ Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest o
 
 ```sh
 mkdir -p ~/faBolus && cd ~/faBolus
-git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-git clone https://github.com/zgranowitz/faBolus.git
+git clone --recurse-submodules https://github.com/fabolus-app/PumpX2Kit.git
+git clone https://github.com/fabolus-app/faBolus.git
 ```
 
 `faBolus` consumes `PumpX2Kit` via a local SPM path (`../PumpX2Kit`), so keep them side by
@@ -65,7 +65,7 @@ xcrun devicectl device install app --device <UDID> \
 
 ## Garmin watch app (Connect IQ)
 
-The Garmin app is in the separate [faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin) repo:
+The Garmin app is in the separate [faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin) repo:
 
 ```sh
 cd ~/faBolus/faBolusGarmin

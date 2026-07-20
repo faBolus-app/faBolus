@@ -18,7 +18,7 @@ phone.
 **Full docs — a no-experience-required build guide, usage, customization, Siri & Shortcuts —
 live at the documentation site:**
 
-### 👉 https://zgranowitz.github.io/faBolus/
+### 👉 https://fabolus.org/
 
 - [Safety](docs/safety.md) — read before anything else.
 - [Build it yourself](docs/build/index.md) — Apple account → Xcode → iPhone, step by step, plus
@@ -43,7 +43,7 @@ docs/                          # the documentation site (MkDocs Material)
   project (`faBolus.xcodeproj`), generated from `project.yml` with
   [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `PumpX2Kit` via SPM.
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
-  **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)**; the iPhone-side bridge stays
+  **[faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
 - The widgets read a snapshot the app publishes to a shared App Group; they can't drive
   Bluetooth, so they show the last published value and hide anything older than 6 minutes.
@@ -53,8 +53,8 @@ docs/                          # the documentation site (MkDocs Material)
 Full walkthrough: [docs/build](docs/build/index.md). In short:
 
 ```sh
-git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-git clone https://github.com/zgranowitz/faBolus.git
+git clone --recurse-submodules https://github.com/fabolus-app/PumpX2Kit.git
+git clone https://github.com/fabolus-app/faBolus.git
 # Place the Connect IQ Mobile SDK where project.yml expects it (see docs), then:
 cd faBolus
 xcodegen generate

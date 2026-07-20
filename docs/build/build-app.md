@@ -31,13 +31,13 @@ they need — is **GitHub Desktop**, a free app from GitHub.
 <li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>faBolus</code> inside your <strong>Documents</strong> — for example <code>~/Documents/faBolus/PumpX2Kit</code>:
 <div></div>
 ```
-https://github.com/zgranowitz/PumpX2Kit
+https://github.com/fabolus-app/PumpX2Kit
 ```
 Click <strong>Clone</strong> and wait for it to finish.</li>
 <li>Do it again for the second project: <strong>File → Clone Repository…</strong> → <strong>URL</strong>, and this time paste:
 <div></div>
 ```
-https://github.com/zgranowitz/faBolus
+https://github.com/fabolus-app/faBolus
 ```
 Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>.</li>
 </ol>
@@ -53,8 +53,8 @@ Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>
 
     ```sh
     mkdir -p ~/Documents/faBolus && cd ~/Documents/faBolus
-    git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-    git clone https://github.com/zgranowitz/faBolus.git
+    git clone --recurse-submodules https://github.com/fabolus-app/PumpX2Kit.git
+    git clone https://github.com/fabolus-app/faBolus.git
     ```
 
 ## Step 2 — Add the Garmin helper file {#connectiq}

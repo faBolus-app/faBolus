@@ -1,7 +1,7 @@
 # ios — iOS host app
 
 The iPhone app. It owns the pump's Bluetooth connection via
-[`PumpX2Kit`](https://github.com/zgranowitz/PumpX2Kit) and provides the tabbed modern UI
+[`PumpX2Kit`](https://github.com/fabolus-app/PumpX2Kit) and provides the tabbed modern UI
 (Dashboard, Bolus, Alerts, Settings), the widget extension, Siri/App Intents, and the bridges to
 the Apple Watch and Garmin remotes.
 

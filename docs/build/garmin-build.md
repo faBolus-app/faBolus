@@ -10,7 +10,7 @@ your watch face and a history plot. (See [Garmin remote](../remotes/garmin.md) f
     all inside **Visual Studio Code**, a free editor, using buttons — not commands.
 
 !!! note "The Garmin app lives in its own project"
-    It's in the separate **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)** repo. The
+    It's in the separate **[faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin)** repo. The
     iPhone side is already in the app you built in [Step 3](build-app.md), so here you just build
     the watch app and pair it.
 
@@ -42,7 +42,7 @@ In **GitHub Desktop** (the same app from [Step 3](build-app.md#download)): **Fil
 Repository → URL**, paste the address below, and save it next to your other projects:
 
 ```
-https://github.com/zgranowitz/faBolusGarmin
+https://github.com/fabolus-app/faBolusGarmin
 ```
 
 ## Step 2 — Install the Garmin tools (in VS Code)

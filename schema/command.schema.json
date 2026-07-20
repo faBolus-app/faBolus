@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/zgranowitz/faBolus/schema/command.schema.json",
+  "$id": "https://github.com/fabolus-app/faBolus/schema/command.schema.json",
   "title": "faBolus phone↔remote command contract",
   "description": "The tiny message contract shared by the iOS host and its remotes (Apple Watch over WatchConnectivity, Garmin over the Connect IQ mobile SDK). Both the Swift side and the Monkey C side validate/generate against this. Keep it minimal — this is safety-critical surface. DRAFT: finalize during Milestone 2.",
   "type": "object",
