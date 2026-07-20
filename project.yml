@@ -204,3 +204,12 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+
+schemes:
+  # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
+  # iOS faBolus app, so it doesn't require Garmin's ConnectIQ SDK (not available in CI). Catches
+  # watchOS build breakage — e.g. a watchOS-only WidgetKit family used without an os() guard.
+  WatchCI:
+    build:
+      targets:
+        faBolusWatch: all
