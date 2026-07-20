@@ -1,9 +1,12 @@
 # faBolus
 
-An iPhone app plus smartwatch remotes (Apple Watch and Garmin) for bolusing and status viewing on
-a Tandem **t:slim X2 / Mobi** pump. The iPhone owns the pump's Bluetooth connection (via
-[`PumpX2Kit`](../PumpX2Kit)); the watches are thin remotes that relay confirmed commands to the
-phone.
+A remote-bolus and status-viewing app — iPhone, Apple Watch, and Garmin — designed to be
+**pump-agnostic**. The iPhone owns the pump's Bluetooth connection; the watches are thin remotes
+that relay confirmed commands to the phone.
+
+**Today it supports one pump:** the Tandem **t:slim X2 / Mobi** (via [`PumpX2Kit`](../PumpX2Kit)).
+The app talks only to a backend interface, so support for other pumps can be added as new backends
+**without forking** — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 > _Built by Zev and Tia in tandem._
 
