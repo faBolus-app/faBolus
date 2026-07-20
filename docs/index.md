@@ -108,8 +108,8 @@ faBolus is built on an open protocol core, and the Garmin watch app lives in its
 | Repository | What it is |
 | --- | --- |
 | **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
-| **[ControlX2iOS](https://github.com/zgranowitz/ControlX2iOS)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
-| **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
+| **[faBolus](https://github.com/zgranowitz/faBolus)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
+| **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
 
 !!! note "Independent project"
     faBolus is an independent, open-source project. It is **not affiliated with, endorsed by, or

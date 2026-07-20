@@ -1,6 +1,6 @@
 # Keeping the app running
 
-Because you install ControlX2iOS yourself (not from the App Store), it has an expiry date. This
+Because you install faBolus yourself (not from the App Store), it has an expiry date. This
 page explains why, and the quick routine to keep it working. Good news: it's almost all clicking.
 
 ## Why it expires
@@ -19,7 +19,7 @@ error). Nothing is broken — it just needs re-installing.
 
 <ol class="cx2-steps">
 <li>Plug your iPhone into the Mac.</li>
-<li>In Finder, open <strong>Documents → faBolus → ControlX2iOS</strong> and double-click <strong>faBolus.xcodeproj</strong>.</li>
+<li>In Finder, open <strong>Documents → faBolus → faBolus</strong> and double-click <strong>faBolus.xcodeproj</strong>.</li>
 <li>Pick your iPhone in the device bar at the top and click <strong>▶ Run</strong> (or press <kbd>⌘</kbd> + <kbd>R</kbd>).</li>
 <li>If the phone asks you to <strong>Trust</strong> the developer again, do so (<a href="build-app.md#step-8-let-your-phone-trust-the-app">Step 8</a>).</li>
 </ol>
@@ -38,14 +38,14 @@ When the project gets updates, refresh your copy with **GitHub Desktop** — no 
 <ol class="cx2-steps">
 <li>Open <strong>GitHub Desktop</strong>.</li>
 <li>Pick <strong>PumpX2Kit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
-<li>Do the same for <strong>ControlX2iOS</strong>.</li>
+<li>Do the same for <strong>faBolus</strong>.</li>
 <li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>xcodegen generate</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
 </ol>
 
 ??? note "Advanced: update from the Terminal (optional)"
     ```sh
     cd ~/Documents/faBolus/PumpX2Kit && git pull --recurse-submodules
-    cd ~/Documents/faBolus/ControlX2iOS && git pull
+    cd ~/Documents/faBolus/faBolus && git pull
     xcodegen generate
     open faBolus.xcodeproj
     ```

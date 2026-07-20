@@ -19,7 +19,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     `project.yml`), then re-run `xcodegen generate` and reopen the project.
 
 ??? question "\"Failed to register bundle identifier\" or signing errors"
-    The bundle ID is taken (it defaults to `com.zgranowitz.controlx2`). On a free account or your
+    The bundle ID is taken (it defaults to `com.fabolus.app`). On a free account or your
     own account, change the prefix everywhere in `project.yml` (see the
     [signing note](build/build-app.md#your-team)), keeping the `.widgets` / `.watch` / `group.`
     suffixes intact, then `xcodegen generate` again.

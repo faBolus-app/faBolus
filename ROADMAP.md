@@ -1,4 +1,4 @@
-# ControlX2iOS — Roadmap (accumulated requests)
+# faBolus — Roadmap (accumulated requests)
 
 Working order agreed with the user: **1 → 2 → 3 → 4**, then the rest. Each step is built,
 installed, and pushed before moving on.
@@ -46,7 +46,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 - **Siri (read-only)** ✅ — App Intents + `AppShortcutsProvider` for **glucose**, **insulin on
   board**, **pump status**, and **last bolus**. Each reads the App Group snapshot (same data as
   the widgets), runs without opening the app, and speaks a dialog. See
-  `ios/ControlX2/Intents/StatusIntents.swift`.
+  `ios/faBolus/Intents/StatusIntents.swift`.
 - **Voice bolus is intentionally out of scope**: per the safety rule, dosing is CarPlay-only, and
   CarPlay can't be built — so there is no Siri bolus intent. Revisit only if CarPlay becomes
   possible (with its touchscreen 1-2-3 confirm gate).
@@ -57,7 +57,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   resets). Steps 1-2 advance App Group state headlessly; the final tap opens the app and, only if
   1→2 completed, hands off a pending bolus the app delivers via `remoteDeliver` (the validated
   signed path, with progress + cancel). Preset amount in Settings.
-- Files: `Shared/WidgetShared.swift` (WidgetBolusStore/Request), `ios/ControlX2Widgets/
+- Files: `Shared/WidgetShared.swift` (WidgetBolusStore/Request), `ios/faBolusWidgets/
   WidgetBolusIntents.swift` + `QuickBolusWidget.swift`, consume hook in `App.swift`.
 
 ## 6. Garmin: configurable screen order + default screen ✅

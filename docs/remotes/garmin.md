@@ -7,8 +7,8 @@ delivers through PumpX2Kit. To build and install it, see
 
 !!! note "The Garmin app lives in its own repo"
     The Garmin watch app is maintained in the separate
-    **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo (it used to live in
-    `ControlX2iOS/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
+    **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)** repo (it used to live in
+    `faBolus/garmin/`). The *iPhone side* of the bridge is still part of the faBolus app,
     so the two talk over the shared command contract as before.
 
 <div class="cx2-shots" markdown>
