@@ -20,7 +20,7 @@ struct DashboardView: View {
 
                     AlertsBannerView(model: model)
 
-                    if model.snapshot.connection == .bolusing {
+                    if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                         Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                             Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
                         }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)

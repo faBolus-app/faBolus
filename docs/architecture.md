@@ -11,7 +11,7 @@ runs the safety interlocks, and does the actual delivery.
 
 ```mermaid
 flowchart LR
-    Pump[("t:slim X2 / Mobi\n(insulin pump)")]
+    Pump[("Insulin pump\n(currently Tandem t:slim X2 / Mobi)")]
     Phone["iPhone app\n(owns BLE, runs PumpX2Kit,\nconfirms every bolus)"]
     Watch["Apple Watch\nremote"]
     Garmin["Garmin venu3s\nremote (faBolusGarmin)"]

@@ -126,6 +126,13 @@ public struct PumpAlert: Identifiable, Sendable, Equatable {
 
 /// What a pump backend supports, so one UI adapts to any backend (hide carbs mode / cancel /
 /// alerts / pairing when unsupported). Defaults are the full Tandem feature set.
+///
+/// Gating status: the **iOS app** views read `AppModel.capabilities` and gate carbs entry, bolus
+/// cancel, alert-clear, and the pairing UI directly. The **remotes** (Apple Watch, Garmin) and the
+/// **widgets** can't see capabilities yet — `RemoteCommand`/`WidgetSnapshot` don't carry them — so
+/// gating their affordances is deferred until it's needed by a non-`.full` backend; add the flags to
+/// the statusRead reply (schema + Swift + Monkey C mirrors) and read them on the remote at that
+/// point. The phone host remains the enforcement point regardless of what a remote renders.
 public struct PumpCapabilities: Sendable, Equatable {
     public var supportsCarbEntry: Bool
     public var supportsBolusCancel: Bool

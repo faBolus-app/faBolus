@@ -22,7 +22,7 @@ struct AlertsBannerView: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    if n.isDismissable {
+                    if n.isDismissable && model.capabilities.supportsAlertClear {
                         Button {
                             clearing.insert(n.id)
                             Task { await model.dismissNotification(n); clearing.remove(n.id) }

@@ -94,7 +94,7 @@ struct SettingsView: View {
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
                     connectionControls
-                    if model.hasStoredPairing {
+                    if model.hasStoredPairing && model.capabilities.supportsPairing {
                         Button("Forget pairing", role: .destructive) { model.forgetPairing() }
                     }
                     Button { model.setupGarmin?() } label: {
@@ -119,7 +119,10 @@ struct SettingsView: View {
     @ViewBuilder private var connectionControls: some View {
         switch model.snapshot.connection {
         case .disconnected, .error:
-            if model.hasStoredPairing {
+            if !model.capabilities.supportsPairing {
+                // Backend doesn't use a pairing-code handshake — connect directly.
+                Button("Connect") { Task { await model.connect() } }
+            } else if model.hasStoredPairing {
                 Button("Connect (saved pairing)") { Task { await model.connect() } }
                 Button("Re-pair with new code") { model.forgetPairing(); showPairing = true }
             } else {

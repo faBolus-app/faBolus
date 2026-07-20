@@ -89,9 +89,11 @@ struct BolusEntryView: View {
             Section("Deliver") {
                 if delivering {
                     HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
-                    Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                        HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
-                    }.buttonStyle(.borderedProminent).tint(.red)
+                    if model.capabilities.supportsBolusCancel {
+                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
+                            HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
+                        }.buttonStyle(.borderedProminent).tint(.red)
+                    }
                 } else {
                     HStack(spacing: 6) {
                         TextField("0", text: $unitsText)
