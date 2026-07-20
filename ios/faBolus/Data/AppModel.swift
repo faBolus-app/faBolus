@@ -1,8 +1,7 @@
 import Foundation
 import Observation
-import PumpX2Messages
 
-/// Observable app state bridging a `PumpDataSource` to SwiftUI.
+/// Observable app state bridging a `PumpBackend` to SwiftUI.
 @MainActor
 @Observable
 public final class AppModel {
@@ -10,16 +9,19 @@ public final class AppModel {
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
-    public private(set) var activeNotifications: [PumpNotification] = []
+    public private(set) var activeNotifications: [PumpAlert] = []
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
+    /// The active backend's capabilities, so the UI can hide unsupported features.
+    public var capabilities: PumpCapabilities { source.capabilities }
+
     /// Fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on.
-    public var onNotificationsChange: (@MainActor ([PumpNotification]) -> Void)?
+    public var onNotificationsChange: (@MainActor ([PumpAlert]) -> Void)?
 
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
-    public func dismissNotification(_ n: PumpNotification) async { await source.dismissNotification(n); refresh() }
+    public func dismissNotification(_ n: PumpAlert) async { await source.dismissNotification(n); refresh() }
 
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
@@ -89,7 +91,7 @@ public final class AppModel {
         for h in statusListeners { h(snapshot) }
     }
 
-    private let source: PumpDataSource
+    private let source: PumpBackend
 
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
@@ -104,7 +106,7 @@ public final class AppModel {
     /// Human-readable Garmin remote status (device name / selection result) for the HUD.
     public var garminStatus: String?
 
-    public init(source: PumpDataSource) {
+    public init(source: PumpBackend) {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
