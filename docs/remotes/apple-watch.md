@@ -74,7 +74,7 @@ inline, corner, rectangular.
 ## Independent (direct-to-pump) mode
 
 Running the watch **without the iPhone** — pairing the watch straight to the pump — is designed
-but **not built**. See the phased plan in [Independent Apple Watch](../design/independent-watch.md).
+but **not built**.
 
 ## The contract
 
