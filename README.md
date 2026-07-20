@@ -30,14 +30,22 @@ live at the documentation site:**
 ## Layout
 
 ```
+Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
+                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, RemoteLink)
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
+ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
 watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity)
 watch/faBolusWatchWidgets/   # watch-face complication
-Shared/                        # RemoteCommand + RemoteLink — the phone↔remote transport
-schema/                        # THE phone↔remote message contract — single source of truth
-docs/                          # the documentation site (MkDocs Material)
+Shared/                      # WidgetShared — App Group snapshot shared with the widgets
+schema/                      # THE phone↔remote message contract — single source of truth
+hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
+docs/                        # the documentation site (MkDocs Material)
 ```
+
+New pumps and new host apps are added **in-tree behind stable interfaces, not by forking** — see
+**[ARCHITECTURE.md](ARCHITECTURE.md)** for the two seams and **[CONTRIBUTING.md](CONTRIBUTING.md)**
+for step-by-step "add a pump backend" / "host the remotes" guides.
 
 - The iOS app, widgets, Apple Watch app, and watch complication are all targets of one Xcode
   project (`faBolus.xcodeproj`), generated from `project.yml` with
