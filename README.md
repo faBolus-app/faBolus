@@ -51,7 +51,7 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
   project (`faBolus.xcodeproj`), generated from `project.yml` with
   [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `PumpX2Kit` via SPM.
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
-  **[faBolusGarmin](https://github.com/fabolus-app/faBolusGarmin)**; the iPhone-side bridge stays
+  **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
 - The widgets read a snapshot the app publishes to a shared App Group; they can't drive
   Bluetooth, so they show the last published value and hide anything older than 6 minutes.
@@ -61,8 +61,8 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
 Full walkthrough: [docs/build](docs/build/index.md). In short:
 
 ```sh
-git clone --recurse-submodules https://github.com/fabolus-app/PumpX2Kit.git
-git clone https://github.com/fabolus-app/faBolus.git
+git clone --recurse-submodules https://github.com/faBolus-app/PumpX2Kit.git
+git clone https://github.com/faBolus-app/faBolus.git
 # Place the Connect IQ Mobile SDK where project.yml expects it (see docs), then:
 cd faBolus
 xcodegen generate
