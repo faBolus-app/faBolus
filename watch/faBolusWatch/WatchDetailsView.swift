@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Details page: everything the pump reports, matching the phone's details card + Garmin details
 /// screen — active insulin, reservoir, battery, CGM, last bolus, carb ratio, correction factor,

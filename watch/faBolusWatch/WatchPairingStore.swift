@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import Security
 
 /// Persists the watch's **own** JPAKE derived secret in the watch Keychain, so once the watch is

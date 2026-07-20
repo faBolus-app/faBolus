@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// modern banner listing active pump alerts/alarms, each with a Clear button that sends a
 /// signed dismiss to the pump — so the user can clear them without reaching for the pump.

@@ -1,18 +1,9 @@
 import Foundation
+import faBolusCore
 
-/// A pump backend available in this build. Contributors add a backend by (1) adding its module and
-/// (2) appending a `BackendDescriptor` to `BackendRegistry.enabled` — a **compile-time manifest**
-/// (iOS has no dynamic plugins, so every backend is compiled in and selected at runtime).
-public struct BackendDescriptor: Identifiable, Sendable {
-    public let id: String
-    public let name: String
-    /// Builds a fresh backend instance. `@MainActor` because backends are main-actor bound.
-    public let make: @MainActor () -> PumpBackend
-    public init(id: String, name: String, make: @escaping @MainActor () -> PumpBackend) {
-        self.id = id; self.name = name; self.make = make
-    }
-}
-
+/// The compile-time manifest of pump backends in this build (iOS has no dynamic plugins, so every
+/// backend is compiled in and selected at runtime). Add a backend by implementing `PumpBackend` and
+/// appending a `BackendDescriptor` to `enabled`.
 @MainActor
 public enum BackendRegistry {
     /// The backends compiled into this build. **Add a backend here.** First entry is the default.

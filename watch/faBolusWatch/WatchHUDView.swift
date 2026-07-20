@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Glance page: big glucose + trend (hidden when stale), a compact IOB/reservoir line, the
 /// iPhone-reachability state, and the Bolus button. Swipe for Chart / Details / Alerts.

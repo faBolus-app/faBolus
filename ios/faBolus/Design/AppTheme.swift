@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// modern semantic palette. Green = in range, yellow/orange = high, red = urgent/low,
 /// purple accents for insulin. (Visual language only — FaBolus does not automate dosing.)

@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 import Charts
 
 /// modern chart: glucose (left axis, in-range band, range-colored points) plus an optional

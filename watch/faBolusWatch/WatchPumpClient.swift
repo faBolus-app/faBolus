@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import Observation
 import CoreBluetooth
 import PumpX2BLE

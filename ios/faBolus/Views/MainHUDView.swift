@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Dashboard tab: modern glucose chart + status ring + HUD pills, then a scrollable details
 /// section with everything sourced from the pump. Connection lives in the toolbar.

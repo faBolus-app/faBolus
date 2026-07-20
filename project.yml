@@ -4,6 +4,9 @@ options:
   createIntermediateGroups: true
 
 packages:
+  faBolusCore:
+    # Stable, pump/host-agnostic contracts + models (in-repo local package).
+    path: Packages/faBolusCore
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -22,6 +25,8 @@ targets:
       - ios/faBolus
       - Shared
     dependencies:
+      - package: faBolusCore
+        product: faBolusCore
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
@@ -90,6 +95,9 @@ targets:
     dependencies:
       # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
       - target: faBolusWatchWidgets
+      # Shared contracts (RemoteCommand/RemoteLink + models).
+      - package: faBolusCore
+        product: faBolusCore
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages

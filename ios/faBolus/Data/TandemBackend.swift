@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import CoreBluetooth
 import PumpX2Messages
 import PumpX2Auth

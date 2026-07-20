@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 
 /// iPhone-side receiver for remote (watch/Garmin) commands. Implements the phone half of the
 /// double-confirmation: a remote `bolusRequest` becomes a `pendingRemoteBolus` the iOS UI must

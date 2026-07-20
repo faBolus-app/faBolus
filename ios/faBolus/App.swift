@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 @main
 struct FaBolusApp: App {

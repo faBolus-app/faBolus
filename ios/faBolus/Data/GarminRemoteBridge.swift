@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import ConnectIQ
 
 /// Bridges the Garmin venu3s (Connect IQ) remote to the iPhone host. Receives the watch app's

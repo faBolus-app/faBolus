@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 import Charts
 
 /// History page: a modern glucose plot of the recent readings the phone sends (oldest→newest,

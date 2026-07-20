@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Alerts tab: the full list of active pump alerts/alarms, each clearable, plus the poll
 /// diagnostic. (The same banner also appears on the Dashboard.)

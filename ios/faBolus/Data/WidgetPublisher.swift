@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import WidgetKit
 
 /// Publishes the current pump state to the App Group so the Lock/Home Screen widgets can render

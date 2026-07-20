@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 
 /// In-memory pump simulator so the HUD runs in the Simulator / SwiftUI previews with no
 /// hardware. Generates a plausible glucose trace and simple IOB/COB dynamics. A reference

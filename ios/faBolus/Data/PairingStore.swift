@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import Security
 
 /// Persists the JPAKE derived secret in the Keychain so the app can "quick-pair" (resume) on

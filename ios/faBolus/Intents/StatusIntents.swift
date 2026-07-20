@@ -1,4 +1,5 @@
 import AppIntents
+import faBolusCore
 import Foundation
 
 /// Read-only Siri intents. They answer status questions ("What's my glucose?", "How much insulin

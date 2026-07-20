@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
