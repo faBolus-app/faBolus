@@ -12,7 +12,7 @@ faBolus is designed so new pumps and new host apps are added **in-tree, behind s
   backend) or the equivalent for your backend.
 
 ## Add a pump backend (support a new pump)
-1. **Copy `ios/faBolus/Data/MockPumpDataSource.swift`** as a template — it's a full `PumpBackend`.
+1. **Copy `ios/faBolus/Data/MockBackend.swift`** as a template — it's a full `PumpBackend`.
 2. Implement `PumpBackend`: `snapshot`, `glucoseHistory`, `iobHistory`, `bolusMarkers`,
    `activeNotifications` (map your pump's alerts → neutral `PumpAlert`), `connect/disconnect`,
    `recommendBolus`, `deliverBolus` (return actual delivered units), `cancelBolus`,
