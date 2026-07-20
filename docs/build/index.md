@@ -1,103 +1,99 @@
 # Build it yourself
 
-You don't need to be a programmer to build ControlX2iOS. If you can follow a recipe, you can do
-this. This guide walks you through every step — from creating an Apple account to seeing the app
-running on your own iPhone — in plain language, the same way the
-[LoopDocs](https://loopkit.github.io/loopdocs/) build guide does for Loop.
+You do **not** need to know how to code. If you can follow a recipe, you can do this. This guide
+holds your hand through every step — from making an Apple account to seeing the app on your own
+iPhone.
 
-!!! danger "Before you build anything, read the safety rules"
-    ControlX2iOS is a **bench proof-of-concept**. It must only ever be connected to a dedicated
-    **test pump dispensing saline into a container on a scale — never a pump on a body.** If you
-    haven't yet, read [Safety first](../safety.md) and [What you'll need](../requirements.md).
+Take it slowly, one page at a time, in order. If a step doesn't work, don't worry — the
+[Troubleshooting](../troubleshoot.md) page covers the common snags.
 
-## What "building" means
+!!! danger "First, the one rule that never changes"
+    This app can tell an insulin pump to deliver insulin. Only ever connect it to a **spare test
+    pump filled with saline (salt water), dripping into a cup on a scale — never a pump on a
+    person.** Please read [Safety first](../safety.md) before you build anything.
 
-Apps like this one aren't in the App Store — you assemble ("build") the app from its source
-code on a Mac and install it onto your own devices. Apple lets anyone do this for their own use.
-The tool that does the building is **Xcode**, Apple's free app for making apps.
+## What "building" means (in plain words)
 
-You'll do it once, and then re-install every so often to keep it from expiring (more on that in
-[Keeping the app running](updating.md)).
+This app isn't in the App Store. Instead, you copy its recipe (the "source code") onto a **Mac**,
+and a free Apple program called **Xcode** turns that recipe into the actual app and puts it on
+your iPhone. That's "building."
 
-## The five steps
+You do it once. Every so often you'll redo the last step to keep the app from expiring — that
+takes about a minute (see [Keeping the app running](updating.md)).
+
+## The whole process, start to finish
+
+Five short chapters. The first three get the app on your iPhone; the last two are optional
+watches.
 
 <div class="grid cards" markdown>
 
--   **1 · Apple ID & Developer account**
+-   :material-account-key:{ .lg .middle } **1 · Apple account**
 
     ---
 
-    Get the Apple account that lets you install your own apps. A **free** account works; a
-    **paid** one ($99/year) means you rebuild far less often.
+    Sign in with an Apple ID so you're allowed to put your own app on your phone.
 
-    [:octicons-arrow-right-24: Start](apple-developer.md)
+    [:octicons-arrow-right-24: Start here](apple-developer.md)
 
--   **2 · Install Xcode**
-
-    ---
-
-    Install Apple's free app-building tool from the Mac App Store and let it finish its
-    first-run setup.
-
-    [:octicons-arrow-right-24: Install](xcode.md)
-
--   **3 · Build the iPhone app**
+-   :material-download:{ .lg .middle } **2 · Install Xcode**
 
     ---
 
-    Download the code, generate the project, sign it with your account, and run it on your
-    iPhone.
+    Get Apple's free app-building tool from the Mac App Store.
+
+    [:octicons-arrow-right-24: Install Xcode](xcode.md)
+
+-   :material-cellphone-arrow-down:{ .lg .middle } **3 · Put the app on your iPhone**
+
+    ---
+
+    Download the code and press one button to install it.
 
     [:octicons-arrow-right-24: Build the app](build-app.md)
 
--   **4 · Add the Apple Watch app**
+-   :material-watch:{ .lg .middle } **4 · Add the Apple Watch (optional)**
 
     ---
 
-    Optional: install the matching Apple Watch remote alongside the phone app.
+    Install the matching watch app.
 
     [:octicons-arrow-right-24: Add the watch](apple-watch-build.md)
 
--   **5 · Build the Garmin remote**
+-   :material-watch-variant:{ .lg .middle } **5 · Add a Garmin (optional)**
 
     ---
 
-    Optional: build the Garmin (Connect IQ) remote — it lives in the separate **PumpX2Garmin**
-    repo and pairs to this app.
+    Build the Garmin remote for a Garmin watch.
 
     [:octicons-arrow-right-24: Build for Garmin](garmin-build.md)
 
 </div>
 
-!!! tip "Prefer the command line?"
-    If you're comfortable in a terminal, there's a faster [command-line build](advanced.md) using
-    `xcodebuild` / `devicectl` (and the `monkeyc` Garmin build). The step-by-step Xcode path below
-    is the friendlier route.
+## Do you have everything?
 
-## Before you start: a quick check
+You'll want all of these before you start (details on [What you'll need](../requirements.md)):
 
-Make sure you have all of these. Details are in [What you'll need](../requirements.md).
+- [x] A **Mac** computer (any recent one).
+- [x] An **iPhone** (iOS 17 or newer) and a cable to plug it into the Mac.
+- [x] An **Apple ID** — the same email/password you use for the App Store.
+- [x] A **spare Tandem pump** you'll use *only* on the bench with saline.
+- [x] *Optional:* an **Apple Watch** or a **Garmin venu3s**.
 
-- [x] A **Mac** running a recent macOS (needed to run Xcode).
-- [x] An **iPhone** on iOS 17 or later, plus a cable to connect it to the Mac.
-- [x] An **Apple ID** (you'll set up the developer side in step 1).
-- [x] A **dedicated saline test pump** — a Tandem t:slim X2 or Mobi you will *only* ever use on
-      the bench with saline.
-- [x] Optional: an **Apple Watch** (watchOS 10+) and/or a **Garmin venu3s** for the remotes.
+## How much time and money?
 
-## How long, and how much?
-
-| | Free Apple account | Paid Apple Developer ($99/yr) |
+| | Free Apple account | Paid account ($99/year) |
 | --- | --- | --- |
-| First build | ~1–2 hours (mostly downloads) | ~1–2 hours |
-| App expires after | **7 days** (rebuild weekly) | **1 year** |
-| Apple Watch app | Supported | Supported |
-| Widgets | Limited (extensions can be finicky on free accounts) | Fully supported |
+| Time for the first build | About 1–2 hours, mostly waiting on downloads | About 1–2 hours |
+| App keeps working for | **7 days**, then you redo one step | **1 year** |
+| Widgets & watch app | Can be fiddly | Work smoothly |
 
-!!! tip "Recommended: the paid account"
-    The $99/year Apple Developer Program isn't required, but rebuilding every 7 days gets old
-    fast, and the widgets/watch extensions are more reliable with it. Most people who use apps
-    like this settle on the paid account. Either way, **start with the free path if you're just
-    trying it out** — you can upgrade later without losing anything.
+!!! tip "Which should I pick?"
+    **Start free** — it costs nothing and works. If you end up using the app regularly, the
+    $99/year account means you only re-install once a year instead of weekly, and the widgets and
+    watch app behave better. You can switch to paid later without redoing anything.
 
-Ready? Start with [Apple ID & Developer account :material-arrow-right:](apple-developer.md).
+<div class="cx2-check" markdown>
+**Ready?** Go to [Step 1 · Apple account](apple-developer.md). Just follow each page in order and
+you'll be fine.
+</div>

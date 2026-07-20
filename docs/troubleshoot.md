@@ -14,14 +14,14 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 
 ??? question "Xcode can't find the ConnectIQ package"
     The Connect IQ **Mobile** SDK isn't where `project.yml` expects it. Re-check
-    [step 3, Step B](build/build-app.md#step-b-get-the-connect-iq-companion-sdk), place the
+    [Step 2 of the build](build/build-app.md#connectiq), place the
     `connectiq-companion-app-sdk-ios-1.8.0` folder correctly (or edit the `ConnectIQ` `path:` in
     `project.yml`), then re-run `xcodegen generate` and reopen the project.
 
 ??? question "\"Failed to register bundle identifier\" or signing errors"
     The bundle ID is taken (it defaults to `com.zgranowitz.controlx2`). On a free account or your
     own account, change the prefix everywhere in `project.yml` (see the
-    [signing note](build/build-app.md#signing)), keeping the `.widgets` / `.watch` / `group.`
+    [signing note](build/build-app.md#your-team)), keeping the `.widgets` / `.watch` / `group.`
     suffixes intact, then `xcodegen generate` again.
 
 ??? question "The widget target won't sign on a free account"
@@ -57,9 +57,10 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     - Check the max-units clamp — the pump also rejects anything over its own configured max.
 
 ??? question "A watch/Garmin request doesn't deliver"
-    - The phone must be reachable — it runs the confirm interlock and does the delivery.
-    - Apple Watch requests need an **explicit confirm on the phone**.
-    - If the phone is out of range, the request fails cleanly — reconnect and retry.
+    - The iPhone does the actual delivery, so it must be **reachable and connected to the pump**.
+    - You confirm the bolus on the watch itself (the deliberate saline/bench confirmation); the
+      phone then delivers.
+    - If the phone is out of range, the request fails cleanly on the watch — reconnect and retry.
 
 ??? question "A cleared alert comes back"
     Some alerts are **condition-based** (e.g. a high-glucose alert re-raises while BG is still

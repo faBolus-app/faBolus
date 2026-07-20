@@ -1,78 +1,77 @@
-# 1 · Apple ID & Developer account
+# 1 · Apple account
 
-To install an app you built onto your own iPhone, Apple needs to know who you are. That's what
-an **Apple ID** and a **developer account** are for. This is the same first step as building
-Loop — if you've done that, you can reuse the same account.
+Before Apple lets you put an app you built onto your own iPhone, it needs to know who you are.
+That's all this step is: signing in with an Apple account. It's the same first step as building
+Loop — if you've done that, you can reuse the same account and skip ahead.
 
 <figure class="cx2-shot wide" markdown="span">
-  ![Apple Developer enrollment page](../assets/screenshots/appledev-enroll.svg)
-  <figcaption>The Apple Developer site — where you sign in and (optionally) enroll</figcaption>
+  ![Apple Developer sign-in page](../assets/screenshots/appledev-enroll.svg)
+  <figcaption>You'll sign in here once — that's it for the free path</figcaption>
 </figure>
 
-## Free or paid?
+## Free or paid — pick one
 
-You have two choices. Both work. The difference is how often you have to rebuild.
+Both work. The only real difference is how often you have to re-install the app.
 
 <div class="grid cards" markdown>
 
--   :material-cash-remove:{ .lg .middle } **Free Apple ID** <span class="cx2-tag now">good to start</span>
+-   **Free** <span class="cx2-tag now">start here</span>
 
     ---
 
-    Any Apple ID can build and install apps for free. The catch: the app **stops working after
-    7 days** and you reinstall it from Xcode to reset the clock. Fine for trying things out.
+    Costs nothing. The app **stops opening after 7 days**, and you fix that by re-installing from
+    the Mac (about a minute). Great for trying it out.
 
--   :material-cash:{ .lg .middle } **Apple Developer Program** <span class="cx2-tag now">recommended</span>
+-   **Paid — $99/year** <span class="cx2-tag now">nicer</span>
 
     ---
 
-    $99/year. Apps last **a full year** before needing a rebuild, and widgets / watch features
-    are more reliable. Worth it if you'll use this regularly.
+    The app lasts **a whole year**, and the widgets and watch app are more reliable. Worth it if
+    you'll use this regularly.
 
 </div>
 
-## Step A — Make sure you have an Apple ID
+!!! tip "You don't have to decide now"
+    Start free. You can upgrade to paid later and nothing you've done is wasted.
 
-You almost certainly already have one (it's the account you use for the App Store, iCloud, etc.).
-If not:
+## Step 1 — Make sure you have an Apple ID
+
+An Apple ID is just the email and password you already use for the App Store or iCloud. You
+almost certainly have one.
+
+If you're not sure, on your iPhone open **Settings** and look at the very top — if your name is
+there, you have one. If not, tap **Sign in to your iPhone → Create Apple ID** and follow the
+prompts.
+
+!!! note "Turn on two-factor if it asks"
+    Apple may ask you to switch on **two-factor authentication** (a code sent to your devices).
+    Say yes — Apple requires it for building apps.
+
+## Step 2 — Sign in on Apple's website (free path — done here)
 
 <ol class="cx2-steps">
-<li>On your iPhone, open <strong>Settings</strong> and tap <strong>Sign in to your iPhone</strong> at the top.</li>
-<li>Tap <strong>Don't have an Apple ID or forgot it?</strong> → <strong>Create Apple ID</strong> and follow the prompts.</li>
-<li>Turn on <strong>two-factor authentication</strong> if asked — Apple requires it for developer features.</li>
-</ol>
-
-!!! tip "Use an Apple ID you'll keep"
-    Whatever Apple ID you use here is baked into the app's identity. If you later switch accounts
-    you'll have to rebuild from scratch, so pick one you plan to keep.
-
-## Step B — Sign in to the Apple Developer site
-
-<ol class="cx2-steps">
-<li>Go to <a href="https://developer.apple.com/account/">developer.apple.com/account</a>.</li>
+<li>On your Mac, go to <a href="https://developer.apple.com/account/">developer.apple.com/account</a>.</li>
 <li>Sign in with your Apple ID.</li>
-<li>Accept the developer agreement if you're prompted to. That's all the free path needs — you can stop here and move on to <a href="xcode.md">Install Xcode</a>.</li>
+<li>If it shows an agreement, tick the box to accept it.</li>
 </ol>
 
-## Step C — (Optional) Enroll in the paid program
+<div class="cx2-check" markdown>
+**That's the free path done.** You can head to [Step 2 · Install Xcode](xcode.md) now.
+</div>
 
-Only if you chose the paid route:
+## Step 3 — Only if you chose paid: enroll
 
 <ol class="cx2-steps">
-<li>On the same <a href="https://developer.apple.com/account/">Apple Developer</a> page, look for <strong>Enroll</strong> (or go to <a href="https://developer.apple.com/programs/enroll/">developer.apple.com/programs/enroll</a>).</li>
-<li>Choose <strong>Individual</strong> (simplest for personal use), pay the $99, and complete the identity check. Apple may ask you to confirm your identity in the <strong>Apple Developer</strong> app on your iPhone.</li>
-<li>Enrollment usually approves within a day (sometimes minutes). You'll get an email when it's active.</li>
+<li>On the same page, look for <strong>Enroll</strong> (or go to <a href="https://developer.apple.com/programs/enroll/">developer.apple.com/programs/enroll</a>).</li>
+<li>Choose <strong>Individual</strong>, pay the $99, and confirm your identity if asked (Apple may use the <strong>Apple Developer</strong> app on your iPhone to do this).</li>
+<li>Wait for the approval email — usually quick, sometimes up to a day.</li>
 </ol>
 
-!!! note "You can build while you wait"
-    You don't have to wait for paid enrollment to finish — build with the free path now, and
-    switch Xcode to your paid team later (it's a one-click change in
-    [Build the iPhone app](build-app.md#signing)).
+!!! tip "You can build while you wait"
+    You don't have to wait for the paid approval. Build with the free path now, and switch Xcode
+    to your paid account later — it's a one-click change in [Step 3](build-app.md#your-team).
 
-## What you should have now
-
-- [x] An Apple ID with two-factor authentication on.
-- [x] You've signed in at least once at developer.apple.com and accepted the agreement.
-- [x] (Optional) Paid enrollment started or approved.
-
-Next: [Install Xcode :material-arrow-right:](xcode.md)
+<div class="cx2-check" markdown>
+**You're set** when you've signed in at developer.apple.com at least once. Next:
+[Install Xcode →](xcode.md)
+</div>

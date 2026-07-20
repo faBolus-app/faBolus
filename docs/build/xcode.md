@@ -1,78 +1,77 @@
 # 2 · Install Xcode
 
-**Xcode** is Apple's free app for building apps. It's a big download (several gigabytes), so
-start this early and let it run while you read ahead.
+**Xcode** is Apple's free tool for building apps. It's a big download, so start it now and read
+on while it installs — grab a coffee.
 
-## Step A — Install Xcode from the Mac App Store
+## Step 1 — Get Xcode from the App Store
 
 <ol class="cx2-steps">
 <li>On your Mac, open the <strong>App Store</strong>.</li>
-<li>Search for <strong>Xcode</strong> and click <strong>Get</strong> / <strong>Install</strong>.</li>
-<li>Wait for it to finish downloading and installing. This can take a while — it's normal.</li>
+<li>Search for <strong>Xcode</strong>.</li>
+<li>Click <strong>Get</strong>, then <strong>Install</strong>. Now wait — it's several gigabytes and can take a while. That's normal.</li>
 </ol>
 
-!!! tip "Make sure your macOS is recent enough"
-    Each Xcode version needs a recent macOS. If the App Store won't let you install the latest
-    Xcode, update macOS first (**Apple menu → System Settings → General → Software Update**).
-    ControlX2iOS needs **Xcode 16 or newer**.
+!!! note "If the App Store won't install it"
+    Xcode needs a fairly recent macOS. If it refuses, update your Mac first
+    (**Apple menu → System Settings → General → Software Update**), then try again. You need
+    **Xcode 16 or newer**.
 
-## Step B — Open Xcode once and finish setup
+## Step 2 — Open Xcode once
 
-The first time you open Xcode it installs some extra components.
+The first launch sets up a few extra pieces.
 
 <ol class="cx2-steps">
-<li>Open <strong>Xcode</strong> from Applications.</li>
-<li>If it offers to install <strong>additional required components</strong>, click <strong>Install</strong> and enter your Mac password.</li>
-<li>If asked which <strong>platforms</strong> to support, make sure <strong>iOS</strong> is included (add <strong>watchOS</strong> too if you'll build the Apple Watch app). Let those finish downloading.</li>
+<li>Open <strong>Xcode</strong> from your Applications.</li>
+<li>If it offers to install <strong>additional components</strong>, click <strong>Install</strong> and type your Mac password.</li>
+<li>If it asks which <strong>platforms</strong> you want, make sure <strong>iOS</strong> is included (add <strong>watchOS</strong> too if you'll build the Apple Watch app). Let them download.</li>
 </ol>
 
-## Step C — Sign in to Xcode with your Apple ID
+## Step 3 — Tell Xcode who you are
 
-This links Xcode to the account from [step 1](apple-developer.md) so it can sign your app.
+This links Xcode to the Apple account from [Step 1](apple-developer.md).
 
 <ol class="cx2-steps">
-<li>In Xcode's menu bar: <strong>Xcode → Settings…</strong> (older versions: <em>Preferences…</em>).</li>
+<li>In the menu bar: <strong>Xcode → Settings…</strong></li>
 <li>Click the <strong>Accounts</strong> tab.</li>
-<li>Click the <strong>+</strong> at the bottom-left, choose <strong>Apple ID</strong>, and sign in.</li>
-<li>You should now see your name with a <strong>team</strong> underneath — either "(Personal Team)" for a free account, or your name/organization for a paid one. You'll pick this team when building.</li>
+<li>Click the <strong>+</strong> at the bottom-left → <strong>Apple ID</strong> → sign in.</li>
 </ol>
 
-## Step D — Install Homebrew and XcodeGen
+<div class="cx2-check" markdown>
+**Success looks like:** your name appears in the Accounts list with a **Team** under it —
+"(Personal Team)" for a free account, or your name for a paid one. You'll pick this Team later.
+</div>
 
-ControlX2iOS uses a small helper called **XcodeGen** to create the Xcode project from a simple
-text file (`project.yml`). The easiest way to install it is with **Homebrew**, a popular
-package manager for the Mac.
+## Step 4 — Install two small helpers
 
-=== "If you don't have Homebrew"
+The project uses a couple of free tools. The easiest way to get them is **Homebrew**, a popular
+installer for the Mac. You'll paste one or two lines into the **Terminal** app (in Applications →
+Utilities) — you don't need to understand them, just paste and press Return.
 
-    Open the **Terminal** app (in Applications → Utilities) and paste this line, then press
-    Return and follow the prompts:
+=== "I don't have Homebrew yet"
+
+    Paste this and follow the prompts:
 
     ```sh
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     ```
 
-    When it finishes, install XcodeGen:
+    When it finishes, paste this to install the project helper:
 
     ```sh
     brew install xcodegen
     ```
 
-=== "If you already have Homebrew"
+=== "I already have Homebrew"
 
     ```sh
     brew install xcodegen
     ```
 
-!!! info "What's the Terminal?"
-    The Terminal is a text-based way to run commands on your Mac. You'll use it for a couple of
-    copy-paste commands in this guide — you don't need to understand them, just paste and press
-    Return.
+!!! info "What did that install?"
+    **XcodeGen** builds the Xcode project file from a simple text file in the app, so you always
+    get a clean, correct setup. You'll run it once in the next step.
 
-## What you should have now
-
-- [x] Xcode installed and opened once (components finished installing).
-- [x] Your Apple ID added under **Xcode → Settings → Accounts**, showing a team.
-- [x] `xcodegen` installed (check by running `xcodegen --version` in Terminal).
-
-Next: [Build the iPhone app :material-arrow-right:](build-app.md)
+<div class="cx2-check" markdown>
+**You're ready** when Xcode is installed, your Apple ID is under **Settings → Accounts**, and
+`xcodegen --version` prints a number in Terminal. Next: [Put the app on your iPhone →](build-app.md)
+</div>

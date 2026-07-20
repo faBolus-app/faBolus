@@ -47,9 +47,9 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 | Tool | What it's for | Where |
 | --- | --- | --- |
 | **Xcode 16+** | Builds the iPhone / Apple Watch app | [Install Xcode](build/xcode.md) |
-| **XcodeGen** | Generates the Xcode project from `project.yml` (`brew install xcodegen`) | [Install Xcode](build/xcode.md#step-d-install-homebrew-and-xcodegen) |
-| **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** | The protocol/Bluetooth core the app is built on (downloaded alongside the app) | [Build the app](build/build-app.md#step-a-download-the-source-code) |
-| **Connect IQ Mobile SDK for iOS** | Lets the iPhone talk to the Garmin watch (required by the app build) | [Build the app](build/build-app.md#step-b-get-the-connect-iq-companion-sdk) |
+| **XcodeGen** | Generates the Xcode project from `project.yml` (`brew install xcodegen`) | [Install Xcode](build/xcode.md) |
+| **[PumpX2Kit](https://github.com/zgranowitz/PumpX2Kit)** | The protocol/Bluetooth core the app is built on (downloaded alongside the app) | [Build the app](build/build-app.md#download) |
+| **Connect IQ Mobile SDK for iOS** | Lets the iPhone talk to the Garmin watch (required by the app build) | [Build the app](build/build-app.md#connectiq) |
 | **Connect IQ device SDK** | Builds the Garmin watch app itself | [Build for Garmin](build/garmin-build.md) |
 
 !!! note "For contributors validating the protocol"
