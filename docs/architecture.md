@@ -56,7 +56,7 @@ faBolusGarmin  (separate repo)
 The iPhone owns the single Bluetooth control connection and runs **PumpX2Kit**. Remotes (Apple
 Watch, Garmin) are thin clients that send commands to the phone; the phone runs the confirm
 interlock and delivers. A standalone Apple Watch that runs PumpX2Kit on-watch (no phone) is
-designed but not built — see [Independent Apple Watch](design/independent-watch.md).
+designed but not built.
 
 ## The command contract
 

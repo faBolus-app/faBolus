@@ -105,8 +105,6 @@ nav:
       - Apple Watch: remotes/apple-watch.md
       - Garmin: remotes/garmin.md
       - iPhone widgets: remotes/iphone-widgets.md
-  - Design:
-      - Independent Apple Watch: design/independent-watch.md
   - Help:
       - Troubleshooting: troubleshoot.md
       - FAQ: faq.md
