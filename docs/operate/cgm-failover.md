@@ -26,8 +26,8 @@ Because of that, what an independent feed can be depends on the sensor:
 | Sensor | Failover feed | Notes |
 | --- | --- | --- |
 | **Dexcom G7 / ONE+** | **Direct Bluetooth** (local, no internet) | Listens to the sensor's broadcast alongside the official app. Fastest, works even with no phone/internet. |
-| **Dexcom G6** | **Dexcom Share** (cloud) | The G6 has no spare Bluetooth slot, so cloud is the only option — and Share is slow/unreliable. Last resort. |
-| **FreeStyle Libre 2 / 3** | **LibreLinkUp** (cloud) | Share to a LibreLinkUp follower account. ~5 min. |
+| **Dexcom G6** | **Dexcom Share** (cloud), or **xDrip4iOS** | faBolus can't read a G6 directly (no spare Bluetooth slot), so Share cloud is the fallback (slow/unreliable). Better: if [xDrip4iOS](#via-xdrip4ios) is your G6 collector, faBolus reads it **locally**. |
+| **FreeStyle Libre 2 / 3** | **LibreLinkUp** (cloud), or **xDrip4iOS** (local) | LibreLinkUp follower (~5 min). Better: if [xDrip4iOS](#via-xdrip4ios) reads your Libre, faBolus gets it **locally** via the App Group — no cloud. |
 | **Eversense E3 / 365** | **Apple Health** | The Eversense app writes glucose to Apple Health; faBolus reads it. Requires enabling HealthKit — see below. |
 | **Via xDrip4iOS** (Libre 1/2, Dexcom G5/G6/ONE, + more) | **Apple Health** or **App Group (local)** | Run [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) for your sensor; faBolus reads what it decodes. Biggest coverage boost — see [Via xDrip4iOS](#via-xdrip4ios) below. |
 | **Any CGM** | **Nightscout** (cloud) | If you already push your CGM to a Nightscout site. |
@@ -69,9 +69,12 @@ read it directly). Two ways to connect, both selectable under **Settings → Glu
   readings into a shared App Group that faBolus reads directly on-device — near-instant, works with
   no pump link and no internet. **Constraint:** App Groups are team-scoped, so faBolus and xDrip must
   be **built and signed under the same Apple Developer Team ID**, and you enable the app group on
-  faBolus (uncomment `group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup` in `project.yml`; your team is
-  substituted automatically). In xDrip, set the Loop share type to **Loop**. This is a self-compiler
-  setup (both apps under your own team) — the standard Loop-ecosystem arrangement.
+  faBolus (in `project.yml`, uncomment the group matching xDrip's share type — **Loop**
+  `group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup` or **Trio**
+  `group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group`; your team is substituted
+  automatically). Set xDrip's "Share to Loop" type to match; faBolus reads whichever group has data.
+  This is a self-compiler setup (both apps under your own team) — the standard Loop-ecosystem
+  arrangement.
 
 Which to choose: **App Group** if you self-compile both under one team (fastest, local); **Apple
 Health** otherwise (near-real-time, no team matching). Either way the pump stays primary and the same

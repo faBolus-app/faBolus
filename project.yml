@@ -52,9 +52,11 @@ targets:
         com.apple.security.application-groups:
           - group.com.fabolus.app
           # To read xDrip4iOS via its "Share to Loop" App Group, build + sign xDrip under the SAME
-          # Apple Developer Team ID and uncomment this (App Groups are team-scoped). $(DEVELOPMENT_TEAM)
-          # is substituted with your signing team at build. See docs/operate/cgm-failover.md.
-          # - group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
+          # Apple Developer Team ID and uncomment the group matching xDrip's share type (App Groups
+          # are team-scoped). $(DEVELOPMENT_TEAM) is substituted with your signing team at build.
+          # See docs/operate/cgm-failover.md.
+          # - group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup                 # xDrip share type: Loop
+          # - group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group   # xDrip share type: Trio
         # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
         # it needs the paid Apple Developer Program to enable the capability, so it's off by default
         # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
@@ -76,8 +78,10 @@ targets:
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
-        # xDrip4iOS "Share to Loop" App Group id (team substituted at build). Read by XDripAppGroupSource.
+        # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
+        # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
         LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
+        TrioAppGroupIdentifier: group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group
         # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
         # goes through without the app being in the foreground.
         UIBackgroundModes: [bluetooth-central]
