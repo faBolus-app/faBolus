@@ -19,3 +19,51 @@ jobs:
       # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
+
+  watch-build:
+    name: watchOS app + complication build
+    runs-on: macos-15
+    steps:
+      # Two-level checkout so the project's relative package paths resolve:
+      #   repos/faBolus/../PumpX2Kit  and  repos/faBolus/../../vendor/<ConnectIQ>
+      - name: Checkout faBolus
+        uses: actions/checkout@v4
+        with:
+          path: repos/faBolus
+
+      - name: Checkout PumpX2Kit (local package dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: faBolus-app/PumpX2Kit
+          submodules: recursive
+          path: repos/PumpX2Kit
+
+      # The Garmin ConnectIQ SDK isn't committed (license) and the watch app doesn't link it — but
+      # the project graph references it, so provide a name-matching stub so package resolution passes.
+      - name: Stub the ConnectIQ SDK
+        run: |
+          DIR="$GITHUB_WORKSPACE/vendor/connectiq-companion-app-sdk-ios-1.8.0"
+          mkdir -p "$DIR/Sources/ConnectIQ"
+          {
+            echo '// swift-tools-version:5.9'
+            echo 'import PackageDescription'
+            echo 'let package = Package(name: "ConnectIQ", products: [.library(name: "ConnectIQ", targets: ["ConnectIQ"])], targets: [.target(name: "ConnectIQ")])'
+          } > "$DIR/Package.swift"
+          echo 'public enum ConnectIQ {}' > "$DIR/Sources/ConnectIQ/ConnectIQ.swift"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: repos/faBolus
+        run: xcodegen generate
+
+      # Builds the watchOS app + glucose complication (and their SPM deps) via the WatchCI scheme,
+      # which excludes the iOS app so ConnectIQ isn't needed. Catches watchOS build breakage.
+      - name: Build watch app + complication
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          xcodebuild -project faBolus.xcodeproj -scheme WatchCI \
+            -destination 'generic/platform=watchOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
