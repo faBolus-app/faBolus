@@ -2,7 +2,7 @@
 
 faBolus is designed so new pumps and new host apps are added **in-tree, behind stable interfaces**
 — not by forking. Read `ARCHITECTURE.md` first for the two seams. All contributions are
-**bench/experimental only** (saline into a container on a scale, never on a body).
+for **experimental use only** (in development, not FDA-cleared).
 
 ## Ground rules
 - Keep the app pump- and host-agnostic: no `import` of a specific pump library outside its backend
@@ -52,7 +52,7 @@ additive, optional fields so older remotes keep working.
 - If you touched the contract, run `scripts/check-schema-drift.sh` (also enforced in CI) and update
   the Monkey C mirror in faBolusGarmin.
 - For pump-protocol work in PumpX2Kit, its own `scripts/test.sh` (oracle parity) must be green.
-- Note anything bench-tested vs. only compiled.
+- Note anything hardware-tested vs. only compiled.
 
 CI (`.github/workflows/ci.yml`) runs the drift check and `faBolusCore` tests on every PR, so these
 are the same gates a reviewer sees.

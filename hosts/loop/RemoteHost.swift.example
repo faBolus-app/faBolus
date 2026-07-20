@@ -19,7 +19,7 @@ protocol RemoteHost: AnyObject {
 }
 
 /// Skeleton Loop adapter. Every `TODO` maps the neutral contract onto LoopKit; all dosing must go
-/// through Loop's own authorization + confirmation. Bench/experimental only.
+/// through Loop's own authorization + confirmation. Experimental / in-development only.
 @MainActor
 final class LoopRemoteHost: RemoteHost {
     // let loop: LoopDataManager  // or the relevant LoopKit entry points
