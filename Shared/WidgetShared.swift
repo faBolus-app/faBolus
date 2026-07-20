@@ -77,7 +77,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
 /// App Group–backed store for the widget snapshot. Both the app and the widget read/write here.
 public enum WidgetStore {
     /// Must match the App Group entitlement on both the app and the widget extension.
-    public static let appGroup = "group.com.zgranowitz.controlx2"
+    public static let appGroup = "group.com.fabolus.app"
     private static let key = "widgetSnapshot"
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
@@ -145,8 +145,8 @@ public enum WidgetBolusStore {
     /// The app must consume a completed request within this window (else it's ignored as stale).
     public static let pendingTTL: TimeInterval = 120
     /// Darwin notification names that wake the app to deliver / cancel a widget bolus.
-    public static let darwinPending = "com.zgranowitz.controlx2.widgetBolus"
-    public static let darwinCancel = "com.zgranowitz.controlx2.widgetBolusCancel"
+    public static let darwinPending = "com.fabolus.app.widgetBolus"
+    public static let darwinCancel = "com.fabolus.app.widgetBolusCancel"
 
     // --- Config mirrored from the app so the widget can build the amount picker ---
     /// Units step for the +/- buttons (from Settings' bolus increment). Defaults to 0.05.
@@ -234,7 +234,7 @@ public enum WidgetBolusStore {
 
 /// Deep links the widgets use to open the app. `bolus` opens the bolus-entry sheet (tap-to-bolus
 /// is a link into the app's confirm flow — never a one-tap dispense).
-public enum ControlX2DeepLink {
+public enum FaBolusDeepLink {
     public static let scheme = "fabolus"
     public static let bolus = URL(string: "fabolus://bolus")!
     public static let open = URL(string: "fabolus://open")!

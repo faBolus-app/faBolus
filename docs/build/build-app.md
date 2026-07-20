@@ -11,7 +11,7 @@ pointing and clicking.
 
 ## Step 1 — Download the code {#download}
 
-The app comes in two parts that must sit next to each other: **ControlX2iOS** (the app) and
+The app comes in two parts that must sit next to each other: **faBolus** (the app) and
 **PumpX2Kit** (a helper library it's built on). The easiest way to download both — and everything
 they need — is **GitHub Desktop**, a free app from GitHub.
 
@@ -37,14 +37,14 @@ Click <strong>Clone</strong> and wait for it to finish.</li>
 <li>Do it again for the second project: <strong>File → Clone Repository…</strong> → <strong>URL</strong>, and this time paste:
 <div></div>
 ```
-https://github.com/zgranowitz/ControlX2iOS
+https://github.com/zgranowitz/faBolus
 ```
-Save it right next to the first one — <code>~/Documents/faBolus/ControlX2iOS</code>.</li>
+Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>.</li>
 </ol>
 
 <div class="cx2-check" markdown>
 **Success looks like:** inside **Documents → faBolus** you now have two folders:
-**PumpX2Kit** and **ControlX2iOS**, side by side.
+**PumpX2Kit** and **faBolus**, side by side.
 </div>
 
 ??? note "Advanced: prefer the Terminal? (optional)"
@@ -54,7 +54,7 @@ Save it right next to the first one — <code>~/Documents/faBolus/ControlX2iOS</
     ```sh
     mkdir -p ~/Documents/faBolus && cd ~/Documents/faBolus
     git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-    git clone https://github.com/zgranowitz/ControlX2iOS.git
+    git clone https://github.com/zgranowitz/faBolus.git
     ```
 
 ## Step 2 — Add the Garmin helper file {#connectiq}
@@ -78,7 +78,7 @@ folder and a **vendor** folder.)
 ??? note "If you saved things somewhere else"
     The app looks for the Garmin folder two levels up from itself, in a `vendor` folder. If you
     put your projects somewhere other than `Documents/faBolus`, either move things to match the
-    layout above, or open `ControlX2iOS/project.yml` in **TextEdit**, find the line under
+    layout above, or open `faBolus/project.yml` in **TextEdit**, find the line under
     `ConnectIQ:` that starts with `path:`, and change it to the full path of your Garmin folder.
     (Re-do Step 3 afterward.)
 
@@ -115,22 +115,22 @@ brew install xcodegen
     ```
 
 **3b. Create the project.** Now point the Terminal at your app folder and run XcodeGen. The
-easiest way to avoid typing the folder path: type `cd` and a space, then **drag the ControlX2iOS
+easiest way to avoid typing the folder path: type `cd` and a space, then **drag the faBolus
 folder from Finder into the Terminal window** (it fills in the path for you), then press Return:
 
 ```sh
-cd ~/Documents/faBolus/ControlX2iOS
+cd ~/Documents/faBolus/faBolus
 xcodegen generate
 ```
 
 <div class="cx2-check" markdown>
 **Success looks like:** the Terminal prints something like *"Created project at …faBolus.xcodeproj"*,
-and a new **faBolus.xcodeproj** file appears in the ControlX2iOS folder.
+and a new **faBolus.xcodeproj** file appears in the faBolus folder.
 </div>
 
 ## Step 4 — Open the project in Xcode
 
-In Finder, open **Documents → faBolus → ControlX2iOS** and **double-click**
+In Finder, open **Documents → faBolus → faBolus** and **double-click**
 **`faBolus.xcodeproj`**. Xcode opens.
 
 Give it a minute — a bar near the top says it's "resolving packages" (downloading the helper
@@ -161,7 +161,7 @@ Then do the same **Team** choice for the other rows in the TARGETS list:
     `com.zgranowitz.controlx2`, which is already taken. Change the first part to your own — for
     example `com.janesmith` — so it's unique to you:
 
-    1. Open `ControlX2iOS/project.yml` in **TextEdit**.
+    1. Open `faBolus/project.yml` in **TextEdit**.
     2. Use **Edit → Find → Replace** to change every `com.zgranowitz` to your own `com.yourname`
        (keep the endings like `.widgets` and `.watch`, and the `group.` line, exactly as they are).
     3. Save, then re-do **Step 3b** (`xcodegen generate`) and reopen the project.

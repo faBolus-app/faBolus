@@ -1,6 +1,6 @@
 name: faBolus
 options:
-  bundleIdPrefix: com.zgranowitz.controlx2
+  bundleIdPrefix: com.fabolus
   createIntermediateGroups: true
 
 packages:
@@ -19,7 +19,7 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - ios/ControlX2
+      - ios/faBolus
       - Shared
     dependencies:
       - package: PumpX2Kit
@@ -36,12 +36,12 @@ targets:
       - target: faBolusWatch
         embed: true
     entitlements:
-      path: ios/ControlX2/ControlX2.entitlements
+      path: ios/faBolus/faBolus.entitlements
       properties:
         # Shared container the app writes and the widgets read.
-        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+        com.apple.security.application-groups: [group.com.fabolus.app]
     info:
-      path: ios/ControlX2/Info.plist
+      path: ios/faBolus/Info.plist
       properties:
         # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName.
         CFBundleDisplayName: faBolus
@@ -61,14 +61,14 @@ targets:
         # Garmin Connect Mobile app.
         LSApplicationQueriesSchemes: [gcm-ciq]
         CFBundleURLTypes:
-          - CFBundleURLName: com.zgranowitz.controlx2.ciq
-            CFBundleURLSchemes: [controlx2ciq]
+          - CFBundleURLName: com.fabolus.app.ciq
+            CFBundleURLSchemes: [fabolusciq]
           # Deep links from the widgets (fabolus://bolus, fabolus://open).
-          - CFBundleURLName: com.zgranowitz.controlx2.deeplink
+          - CFBundleURLName: com.fabolus.app.deeplink
             CFBundleURLSchemes: [fabolus]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -85,7 +85,7 @@ targets:
     platform: watchOS
     deploymentTarget: "10.0"
     sources:
-      - watch/ControlX2Watch
+      - watch/faBolusWatch
       - Shared
     dependencies:
       # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
@@ -98,21 +98,21 @@ targets:
       - package: PumpX2Kit
         product: PumpX2BLE
     entitlements:
-      path: watch/ControlX2Watch/ControlX2Watch.entitlements
+      path: watch/faBolusWatch/faBolusWatch.entitlements
       properties:
         # Device-local container shared with the watch complication.
-        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+        com.apple.security.application-groups: [group.com.fabolus.app]
     info:
-      path: watch/ControlX2Watch/Info.plist
+      path: watch/faBolusWatch/Info.plist
       properties:
         CFBundleDisplayName: faBolus
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
-        WKCompanionAppBundleIdentifier: com.zgranowitz.controlx2
+        WKCompanionAppBundleIdentifier: com.fabolus.app
         NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.watch
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -128,21 +128,21 @@ targets:
     platform: watchOS
     deploymentTarget: "10.0"
     sources:
-      - watch/ControlX2WatchWidgets
+      - watch/faBolusWatchWidgets
       - path: Shared/WidgetShared.swift
     info:
-      path: watch/ControlX2WatchWidgets/Info.plist
+      path: watch/faBolusWatchWidgets/Info.plist
       properties:
         CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
-      path: watch/ControlX2WatchWidgets/ControlX2WatchWidgets.entitlements
+      path: watch/faBolusWatchWidgets/faBolusWatchWidgets.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+        com.apple.security.application-groups: [group.com.fabolus.app]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.watch.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.watch.widgets
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -157,21 +157,21 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - ios/ControlX2Widgets
+      - ios/faBolusWidgets
       - path: Shared/WidgetShared.swift
     info:
-      path: ios/ControlX2Widgets/Info.plist
+      path: ios/faBolusWidgets/Info.plist
       properties:
         CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
-      path: ios/ControlX2Widgets/ControlX2Widgets.entitlements
+      path: ios/faBolusWidgets/faBolusWidgets.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.zgranowitz.controlx2]
+        com.apple.security.application-groups: [group.com.fabolus.app]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.zgranowitz.controlx2.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.widgets
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"

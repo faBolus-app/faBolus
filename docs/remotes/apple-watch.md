@@ -67,7 +67,7 @@ inline, corner, rectangular.
 
 !!! note "One-time setup (App Group)"
     The complication shares data with the watch app via the App Group
-    `group.com.zgranowitz.controlx2`. It's enabled once on the **faBolusWatch** and
+    `group.com.fabolus.app`. It's enabled once on the **faBolusWatch** and
     **faBolusWatchWidgets** targets (Xcode → each target → Signing & Capabilities → App Groups),
     then the watch app + complication install. Automatic signing usually registers it.
 

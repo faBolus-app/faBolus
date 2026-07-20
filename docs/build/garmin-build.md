@@ -10,7 +10,7 @@ your watch face and a history plot. (See [Garmin remote](../remotes/garmin.md) f
     all inside **Visual Studio Code**, a free editor, using buttons — not commands.
 
 !!! note "The Garmin app lives in its own project"
-    It's in the separate **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo. The
+    It's in the separate **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)** repo. The
     iPhone side is already in the app you built in [Step 3](build-app.md), so here you just build
     the watch app and pair it.
 
@@ -42,7 +42,7 @@ In **GitHub Desktop** (the same app from [Step 3](build-app.md#download)): **Fil
 Repository → URL**, paste the address below, and save it next to your other projects:
 
 ```
-https://github.com/zgranowitz/PumpX2Garmin
+https://github.com/zgranowitz/faBolusGarmin
 ```
 
 ## Step 2 — Install the Garmin tools (in VS Code)
@@ -75,7 +75,7 @@ Developer Key**. VS Code makes it and remembers it. That's all.
 </figure>
 
 <ol class="cx2-steps">
-<li>In VS Code, open the <strong>PumpX2Garmin</strong> folder (<strong>File → Open Folder…</strong>).</li>
+<li>In VS Code, open the <strong>faBolusGarmin</strong> folder (<strong>File → Open Folder…</strong>).</li>
 <li>Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>, type <strong>Run</strong>, and choose <strong>Monkey C: Run</strong>.</li>
 <li>When it asks for a device, pick <strong>venu3s</strong>. The <strong>Connect IQ simulator</strong> opens with the app running.</li>
 </ol>
@@ -85,17 +85,17 @@ there — that's expected. It's just for checking the screens look right.
 
 ??? note "Advanced: build from the Terminal (optional)"
     ```sh
-    cd ~/Documents/faBolus/PumpX2Garmin
+    cd ~/Documents/faBolus/faBolusGarmin
     SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
     "$SDK/bin/monkeyc" -f monkey.jungle -o bin/faBolus.iq -y ~/Documents/faBolus/developer_key.der -e -r -w
     ```
-    Check the PumpX2Garmin README for the exact device/flags.
+    Check the faBolusGarmin README for the exact device/flags.
 
 ## Step 5 — Put it on your watch
 
 Connect your venu3s to the computer with its cable and copy the built app onto it, **or** upload
 it to the Connect IQ store as a private beta and install it from **Garmin Connect** on your phone.
-The PumpX2Garmin README has the exact, current steps for the venu3s.
+The faBolusGarmin README has the exact, current steps for the venu3s.
 
 ## Step 6 — Pair the remote to your iPhone
 

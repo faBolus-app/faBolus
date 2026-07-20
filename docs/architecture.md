@@ -14,7 +14,7 @@ flowchart LR
     Pump[("t:slim X2 / Mobi\n(insulin pump)")]
     Phone["iPhone app\n(owns BLE, runs PumpX2Kit,\nconfirms every bolus)"]
     Watch["Apple Watch\nremote"]
-    Garmin["Garmin venu3s\nremote (PumpX2Garmin)"]
+    Garmin["Garmin venu3s\nremote (faBolusGarmin)"]
     Widgets["Lock/Home\nwidgets + Siri"]
 
     Pump <-->|Bluetooth · signed| Phone
@@ -31,7 +31,7 @@ PumpX2Kit  (Swift package — build once, reuse everywhere)
 ├── PumpX2Auth       legacy pairing + EC-JPAKE (mbedTLS), per-command signing
 └── PumpX2BLE        Core Bluetooth central (iOS + watchOS)
 
-ControlX2iOS  (this repo, consumes PumpX2Kit via SPM)
+faBolus  (this repo, consumes PumpX2Kit via SPM)
 ├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
 ├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
 ├── watch/faBolusWatch/  Apple Watch remote (WatchConnectivity)
@@ -40,13 +40,13 @@ ControlX2iOS  (this repo, consumes PumpX2Kit via SPM)
 ├── schema/                command.schema.json — the single source of truth for the contract
 └── docs/                  this site
 
-PumpX2Garmin  (separate repo)
+faBolusGarmin  (separate repo)
 └── Connect IQ (Monkey C) remote for the venu3s — pairs to the iPhone app
 ```
 
 !!! note "The Garmin app moved to its own repo"
-    The Garmin (Monkey C) watch app used to live in `ControlX2iOS/garmin/`; it now lives in the
-    separate **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)** repo. The
+    The Garmin (Monkey C) watch app used to live in `faBolus/garmin/`; it now lives in the
+    separate **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)** repo. The
     *iPhone side* of the Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK
     dependency) is still part of this app, so the two continue to talk over the shared command
     contract.

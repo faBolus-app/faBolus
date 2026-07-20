@@ -18,7 +18,7 @@ phone.
 **Full docs — a no-experience-required build guide, usage, customization, Siri & Shortcuts —
 live at the documentation site:**
 
-### 👉 https://zgranowitz.github.io/ControlX2iOS/
+### 👉 https://zgranowitz.github.io/faBolus/
 
 - [Safety](docs/safety.md) — read before anything else.
 - [Build it yourself](docs/build/index.md) — Apple account → Xcode → iPhone, step by step, plus
@@ -30,10 +30,10 @@ live at the documentation site:**
 ## Layout
 
 ```
-ios/ControlX2/                 # iOS host app — owns the pump connection; tabbed UI
-ios/ControlX2Widgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
-watch/ControlX2Watch/          # Apple Watch remote (WatchConnectivity)
-watch/ControlX2WatchWidgets/   # watch-face complication
+ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
+ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
+watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity)
+watch/faBolusWatchWidgets/   # watch-face complication
 Shared/                        # RemoteCommand + RemoteLink — the phone↔remote transport
 schema/                        # THE phone↔remote message contract — single source of truth
 docs/                          # the documentation site (MkDocs Material)
@@ -43,7 +43,7 @@ docs/                          # the documentation site (MkDocs Material)
   project (`faBolus.xcodeproj`), generated from `project.yml` with
   [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `PumpX2Kit` via SPM.
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
-  **[PumpX2Garmin](https://github.com/zgranowitz/PumpX2Garmin)**; the iPhone-side bridge stays
+  **[faBolusGarmin](https://github.com/zgranowitz/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
 - The widgets read a snapshot the app publishes to a shared App Group; they can't drive
   Bluetooth, so they show the last published value and hide anything older than 6 minutes.
@@ -54,9 +54,9 @@ Full walkthrough: [docs/build](docs/build/index.md). In short:
 
 ```sh
 git clone --recurse-submodules https://github.com/zgranowitz/PumpX2Kit.git
-git clone https://github.com/zgranowitz/ControlX2iOS.git
+git clone https://github.com/zgranowitz/faBolus.git
 # Place the Connect IQ Mobile SDK where project.yml expects it (see docs), then:
-cd ControlX2iOS
+cd faBolus
 xcodegen generate
 open faBolus.xcodeproj      # set your Team under Signing & Capabilities, then Run
 ```
