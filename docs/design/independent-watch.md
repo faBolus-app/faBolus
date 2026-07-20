@@ -37,12 +37,13 @@ watchOS crypto spike harder: the watch must run the **full JPAKE key exchange**,
 ## Phases
 
 ### Phase 0 — Feasibility spikes (de-risk first)
-- **Crypto on watchOS:** confirm `PumpX2Auth` (full **JPAKE** key exchange + HMAC-SHA1) builds and
-  runs on watchOS arm64. The mbedtls backend (`scripts/link-mbedtls.sh`) must produce a watch slice —
-  this is the biggest unknown. Fallback: a pure-Swift/CryptoKit HMAC + a Swift JPAKE if mbedtls can't
-  target the watch. (Must cover the full pairing handshake, not just resume.)
-- **CoreBluetooth on the watch:** confirm `PumpX2BLE`'s `CBCentralManager` can discover + connect the
-  pump from a physical Apple Watch (watchOS supports CB central; range/throughput are lower).
+- **Crypto on watchOS:** ✅ **compiles** — `PumpX2Messages`, `PumpX2Auth` (full JPAKE + mbedTLS EC-JPAKE
+  C sources, minimal config), and `PumpX2BLE` all build for `generic/platform=watchOS` (2026-07-19).
+  The package already declares `.watchOS(.v9)`. The feared mbedtls-won't-target-watchOS risk did **not**
+  materialize, so no CryptoKit/Swift-JPAKE fallback is needed. Still to verify on-device: JPAKE actually
+  completing a pairing over BLE (runtime, needs a watch + pump).
+- **CoreBluetooth on the watch:** builds; still need to confirm at runtime that `CBCentralManager` on a
+  **physical** Apple Watch discovers + connects the pump (range/throughput are lower than iOS).
 - **Pairing model:** ✅ confirmed on the bench — the pump keeps **one** pairing; pairing the watch
   evicts the phone (re-pair-to-switch). No further spike needed here.
 
@@ -81,8 +82,8 @@ whichever paired last owns the pump. What's needed is a clear switch:
   resume-auth after the watch app is killed, pump eviction mid-session (the other device was paired).
 
 ## Risks / open questions
-- **JPAKE/crypto on watchOS** — the watch must run the *full* pairing handshake; mbedtls may not
-  target watchOS, forcing a CryptoKit/Swift path (largest risk).
+- **JPAKE/crypto on watchOS** — ✅ retired: all three modules (incl. mbedTLS EC-JPAKE C) compile for
+  watchOS. Remaining is runtime-only (JPAKE completing over the watch's BLE).
 - **Re-pair friction** — ✅ single pairing (watch evicts phone). Switching devices always means a
   fresh code entry; the UX must make that fast, or the watch mostly stays the paired device.
 - **On-watch code entry** — a usable 6-digit input on a tiny screen (crown picker vs number pad).
@@ -91,7 +92,8 @@ whichever paired last owns the pump. What's needed is a clear switch:
   deliberate confirm, and the validated signed path. No new dosing path bypasses these.
 
 ## Status
-Superseded: the `keyShare`/`pumpKeyHex` handoff (the pump needs a fresh code per device, so the
-watch pairs itself). Not started: watchOS crypto/BLE spikes, on-watch code entry + JPAKE,
-`WatchPumpClient`, arbitration. Start at **Phase 0** — the crypto spike (full JPAKE) and the
-"does pairing the watch evict the phone" question gate everything else.
+- ✅ **Phase 0 build spike:** Messages/Auth/BLE compile for watchOS (2026-07-19). Pairing model
+  confirmed (single pairing, re-pair to switch).
+- Superseded: the `keyShare`/`pumpKeyHex` handoff (the pump needs a fresh code per device).
+- Next: on-device runtime spike (watch BLE discovers/connects the pump + JPAKE completes), then
+  Phase 1 (on-watch 6-digit entry + JPAKE + Keychain), Phase 2 (`WatchPumpClient`), Phase 3 (switch UX).
