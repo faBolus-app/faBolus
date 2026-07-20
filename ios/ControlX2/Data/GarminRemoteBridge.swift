@@ -25,7 +25,6 @@ final class GarminRemoteBridge: NSObject {
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
-        model.sendGarminKey = { [weak self] in self?.sendPumpKey() }
         restoreDevice()
     }
 
@@ -71,17 +70,6 @@ final class GarminRemoteBridge: NSObject {
     private func send(_ cmd: RemoteCommand) {
         guard let app, let dict = try? cmd.asDictionary() else { return }
         ConnectIQ.sharedInstance().sendMessage(dict, to: app, progress: nil, completion: { _ in })
-    }
-
-    /// Bench handoff: push the stored JPAKE derived secret to the watch so it can resume-auth to
-    /// the pump directly. Treat the value as a credential.
-    func sendPumpKey() {
-        guard let hex = PairingStore.loadHex() else {
-            model?.garminStatus = "No stored pump pairing to share with the watch."
-            return
-        }
-        send(RemoteCommand(kind: .keyShare, pumpKeyHex: hex))
-        model?.garminStatus = "Sent pump key to the Garmin watch."
     }
 
     private func handle(_ cmd: RemoteCommand) {
