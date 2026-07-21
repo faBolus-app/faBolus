@@ -70,6 +70,9 @@ class RemoteClientModel {
         return GlucoseFreshness.isStale(d)
     }
     var displayGlucose: String { glucose.map { "\($0)" } ?? "—" }
+    /// True when the reading is old enough that the phone's hide policy (`glucoseHideDelayMinutes`)
+    /// says to hide it ("—") rather than show it greyed — mirrors the phone/watch presentation.
+    var glucoseHidden: Bool { glucose != nil && GlucoseFreshness.presentation(of: glucoseDate) == .hidden }
     var cgmActive: Bool { glucose != nil && !isGlucoseStale }
     var ageMinutes: Int? {
         guard let d = glucoseDate else { return nil }

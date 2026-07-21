@@ -10,11 +10,15 @@ struct MacStatusView: View {
     var body: some View {
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.displayGlucose)
+                // Past the phone's "hide after" age, hide the value ("—") like the phone/watch,
+                // rather than showing a stale number. Between stale and hide it shows greyed.
+                Text(model.glucoseHidden ? "—" : model.displayGlucose)
                     .font(.system(size: 44, weight: .bold, design: .rounded))
                     .foregroundStyle(model.isGlucoseStale ? Color.secondary : MacTheme.glucoseColor(model.glucose))
-                Text(model.trend).font(.system(size: 28))
-                    .foregroundStyle(.secondary)
+                if !model.glucoseHidden {
+                    Text(model.trend).font(.system(size: 28))
+                        .foregroundStyle(.secondary)
+                }
             }
             if let age = model.ageLabel {
                 Text(age).font(.caption).foregroundStyle(.secondary)
