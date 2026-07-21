@@ -15,9 +15,9 @@ final class GarminRemoteBridge: NSObject {
     static let betaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
     static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
     /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings).
-    /// Default beta (the historically-paired app).
+    /// Default official; only "beta" selects the beta app.
     static var watchAppUUID: UUID {
-        UserDefaults.standard.string(forKey: "garminTargetApp") == "official" ? officialAppUUID : betaAppUUID
+        UserDefaults.standard.string(forKey: "garminTargetApp") == "beta" ? betaAppUUID : officialAppUUID
     }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 
