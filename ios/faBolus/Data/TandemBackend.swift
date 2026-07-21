@@ -132,6 +132,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
     private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
     private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
+    private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
 
     /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile).
     private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
@@ -369,6 +370,25 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
     public func setMode(bitmap: Int) async throws { try await sendControl(SetModesRequest(bitmap: bitmap), delivery: true) }
     public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
+
+    /// Read the paired G6 CGM transmitter ID from the pump (CGMHardwareInfoResponse.hardwareInfoString),
+    /// so the CGM-failover setup can auto-fill it instead of the user looking it up. Requires a live
+    /// connection; returns nil on timeout / not connected / empty.
+    public func readG6TransmitterId() async -> String? {
+        guard snapshot.connection == .connected || snapshot.connection == .bolusing else { return nil }
+        let resp: CGMHardwareInfoResponse? = await withCheckedContinuation { cont in
+            cgmHwCont = cont
+            // 6 s timeout so the button never hangs if the pump doesn't answer.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard let self, let c = self.cgmHwCont else { return }
+                self.cgmHwCont = nil; c.resume(returning: nil)
+            }
+            do { try client.send(CGMHardwareInfoRequest()) }
+            catch { if let c = cgmHwCont { cgmHwCont = nil; c.resume(returning: nil) } }
+        }
+        let id = resp?.hardwareInfoString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (id?.isEmpty ?? true) ? nil : id
+    }
 
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
 
@@ -736,6 +756,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as ControlIQInfoV2Response:
             snapshot.controlIQMode = m.currentUserModeType
             snapshot.controlIQEnabled = m.closedLoopEnabled
+        case let m as CGMHardwareInfoResponse:
+            if let c = cgmHwCont { cgmHwCont = nil; c.resume(returning: m) }
         case let m as SuspendPumpingResponse:
             if m.accepted { snapshot.deliverySuspended = true }
         case let m as ResumePumpingResponse:
