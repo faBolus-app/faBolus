@@ -7,7 +7,7 @@ import WatchConnectivity
 ///
 /// `@unchecked Sendable`: WCSession's send/transfer calls are thread-safe, and the callbacks
 /// are set once at init and always re-dispatched to the main actor before use.
-public final class RemoteLink: NSObject, WCSessionDelegate, @unchecked Sendable {
+public final class RemoteLink: NSObject, WCSessionDelegate, RemoteTransport, @unchecked Sendable {
     public var onReceive: (@MainActor (RemoteCommand) -> Void)?
     public var onReachabilityChange: (@MainActor (Bool) -> Void)?
 

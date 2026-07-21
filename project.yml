@@ -37,7 +37,10 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - ios/faBolus
-      - Shared
+      # WidgetBolusIntents belongs to the widget extensions only (the app uses WidgetBolusReceiver).
+      - path: Shared
+        excludes:
+          - WidgetBolusIntents.swift
     dependencies:
       - package: faBolusCore
         product: faBolusCore
@@ -92,6 +95,11 @@ targets:
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
+        # Discover + talk to the faBolus Mac remote over the local network (MultipeerConnectivity).
+        NSLocalNetworkUsageDescription: "faBolus connects to the faBolus Mac app on your local network so you can view status and deliver boluses from your Mac."
+        NSBonjourServices:
+          - _fabolus-rmt._tcp
+          - _fabolus-rmt._udp
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
@@ -131,7 +139,10 @@ targets:
     deploymentTarget: "10.0"
     sources:
       - watch/faBolusWatch
-      - Shared
+      # WidgetBolusIntents belongs to the widget extensions only.
+      - path: Shared
+        excludes:
+          - WidgetBolusIntents.swift
     dependencies:
       # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
       - target: faBolusWatchWidgets
@@ -221,6 +232,7 @@ targets:
     sources:
       - ios/faBolusWidgets
       - path: Shared/WidgetShared.swift
+      - path: Shared/WidgetBolusIntents.swift
     info:
       path: ios/faBolusWidgets/Info.plist
       properties:
@@ -241,6 +253,87 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+
+  # macOS remote app — a same-network remote for the iPhone host over MultipeerConnectivity
+  # (WatchConnectivity can't reach a Mac). It never touches the pump: it displays the status the
+  # phone relays and sends bolus/cancel/dismiss commands the phone executes. Menu-bar item + window.
+  faBolusMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"   # interactive WidgetKit widgets + current MenuBarExtra
+    sources:
+      - mac/faBolusMac
+      # Shared remote-client state machine + the App Group snapshot/store (portable, no BLE/HealthKit).
+      - path: Shared/RemoteClientModel.swift
+      - path: Shared/WidgetShared.swift
+    dependencies:
+      # Contracts + models + the PeerLink transport. No PumpX2Kit/ConnectIQ — it's a remote.
+      - package: faBolusCore
+        product: faBolusCore
+      # Embeds the macOS WidgetKit extension.
+      - target: faBolusMacWidgets
+        embed: true
+    entitlements:
+      path: mac/faBolusMac/faBolusMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        # MultipeerConnectivity discovery + transport on the local network.
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        # Shared container the app writes and the Mac widgets read. macOS App Groups are Team-ID
+        # prefixed, so this uses $(TeamIdentifierPrefix) (unlike the iOS/watch group ids).
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
+    info:
+      path: mac/faBolusMac/Info.plist
+      properties:
+        # Team-prefixed App Group id exposed to code (WidgetStore reads AppGroupIdentifier at runtime).
+        AppGroupIdentifier: $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
+        CFBundleDisplayName: faBolus
+        NSLocalNetworkUsageDescription: "faBolus connects to your iPhone on the local network to show pump status and relay boluses."
+        NSBonjourServices:
+          - _fabolus-rmt._tcp
+          - _fabolus-rmt._udp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+
+  # macOS WidgetKit extension — Notification Center / desktop widgets + interactive quick-bolus.
+  # Reads the snapshot the Mac app publishes to the shared App Group; never touches the network.
+  faBolusMacWidgets:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - mac/faBolusMacWidgets
+      - path: Shared/WidgetShared.swift
+      - path: Shared/WidgetBolusIntents.swift
+    info:
+      path: mac/faBolusMacWidgets/Info.plist
+      properties:
+        AppGroupIdentifier: $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
+        CFBundleDisplayName: faBolus
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: mac/faBolusMacWidgets/faBolusMacWidgets.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
 
 schemes:
   # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
