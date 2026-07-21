@@ -118,6 +118,10 @@ final class WatchModel {
             if let h = cmd.history { history = h }
             lastBolusUnits = cmd.lastBolusUnits
             if let a = cmd.alerts { alerts = a }
+            // Mirror the phone's staleness policy so the watch marks/hides + stops using stale
+            // readings for carb→unit exactly like the phone.
+            if let s = cmd.glucoseStaleMinutes { GlucoseFreshness.staleAfter = TimeInterval(s) * 60 }
+            GlucoseFreshness.hideAfter = cmd.glucoseHideDelayMinutes.map { GlucoseFreshness.staleAfter + TimeInterval($0) * 60 }
             publishComplication()
         default:
             break
@@ -142,8 +146,10 @@ final class WatchModel {
     }
 
     /// Send a carbs bolus; the phone converts carbs→units with the pump's calculator, then delivers.
+    /// A stale CGM value is never sent for the correction (matches the phone's rule).
     func deliverCarbs(_ grams: Double) {
-        startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: glucose.map(Double.init)))
+        let bg: Double? = isGlucoseStale ? nil : glucose.map(Double.init)
+        startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg))
     }
 
     private func startPending(_ cmd: RemoteCommand) {

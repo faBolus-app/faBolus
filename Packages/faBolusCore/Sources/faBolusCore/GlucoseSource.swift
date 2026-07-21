@@ -5,9 +5,15 @@ import Foundation
 /// runtime (e.g. from Settings); default 6 minutes. Old readings are worse than none, so anything
 /// past this threshold is never presented as the current value.
 public enum GlucoseFreshness {
-    /// Readings older than this are stale. Default 6 minutes; open for adjustment. Set once at
-    /// launch (e.g. from Settings) before feeds start; reads are benign, hence `nonisolated(unsafe)`.
+    /// Readings older than this are **stale**: shown de-emphasized ("grey") and — critically — no
+    /// longer used to auto-fill a bolus carb→unit correction. Default 6 minutes; open for adjustment.
+    /// Set at launch (e.g. from Settings) before feeds start; reads are benign, hence `nonisolated(unsafe)`.
     public nonisolated(unsafe) static var staleAfter: TimeInterval = 6 * 60
+
+    /// Age past which a reading is **hidden** ("--") instead of shown grey. `nil` = never hide (always
+    /// show the grey value once stale). Set equal to `staleAfter` to skip the grey stage entirely
+    /// (go straight from fresh to "--"). Effective value is clamped to ≥ `staleAfter`.
+    public nonisolated(unsafe) static var hideAfter: TimeInterval? = nil
 
     /// Age of a reading taken at `date` (never negative).
     public static func age(of date: Date, now: Date = Date()) -> TimeInterval {
@@ -20,6 +26,15 @@ public enum GlucoseFreshness {
         return now.timeIntervalSince(date) > staleAfter
     }
 
+    /// How a reading of a given age should be presented on screen.
+    public static func presentation(of date: Date?, now: Date = Date()) -> GlucosePresentation {
+        guard let date else { return .stale }          // unknown age → conservative (marked, shown)
+        let age = now.timeIntervalSince(date)
+        if age <= staleAfter { return .fresh }
+        if let hide = hideAfter, age >= Swift.max(hide, staleAfter) { return .hidden }
+        return .stale
+    }
+
     /// Compact relative age label for a reading taken at `date`, e.g. "now", "3 min ago",
     /// "1h 12m ago". Shown next to every reading so its age is always visible.
     public static func ageLabel(for date: Date, now: Date = Date()) -> String {
@@ -29,6 +44,13 @@ public enum GlucoseFreshness {
         let h = s / 3600, m = (s % 3600) / 60
         return m == 0 ? "\(h)h ago" : "\(h)h \(m)m ago"
     }
+}
+
+/// How a glucose reading should be shown, by age (see `GlucoseFreshness.presentation`).
+public enum GlucosePresentation: Sendable, Equatable {
+    case fresh      // within staleAfter — normal styling, live value
+    case stale      // past staleAfter — shown de-emphasized (grey) with its age
+    case hidden     // past hideAfter — not shown ("--")
 }
 
 /// One glucose reading from an independent CGM source (i.e. not relayed by the pump). mg/dL.

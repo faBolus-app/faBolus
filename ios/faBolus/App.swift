@@ -22,6 +22,7 @@ struct FaBolusApp: App {
                     if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     AppSettings.shared.syncWidgetConfig()
+                    AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
                     if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                 }

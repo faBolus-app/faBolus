@@ -57,6 +57,21 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
+                        ForEach(AppSettings.glucoseStaleOptions, id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    Picker("Hide (\u{2013}\u{2013})", selection: $settings.glucoseHideDelayMinutes) {
+                        ForEach(AppSettings.glucoseHideDelayOptions, id: \.self) { opt in
+                            Text(hideDelayLabel(opt)).tag(opt)
+                        }
+                    }
+                } header: {
+                    Text("Glucose staleness")
+                } footer: {
+                    Text("Older than “mark stale”, a reading is stale: shown greyed and **no longer used** to auto-fill a bolus carb→unit correction (this is also when the watch/Garmin stop using it for that). “Hide” is how long after going stale to keep showing the greyed value before replacing it with “–”: choose Immediately to skip the greyed value, or Never to always keep showing it. A hidden reading is still stale.")
+                }
+
+                Section {
                     NavigationLink {
                         GarminScreensView(settings: settings)
                     } label: {
@@ -159,6 +174,15 @@ struct SettingsView: View {
         "Any alerts in faBolus",
         "Last bolus in faBolus",
     ]
+
+    /// Label for the "hide after stale" delay options: nil = Never, 0 = Immediately, else "N min after".
+    private func hideDelayLabel(_ opt: Int?) -> String {
+        switch opt {
+        case .none: return "Never"
+        case .some(0): return "Immediately"
+        case .some(let n): return "\(n) min after"
+        }
+    }
 
     private func fmtU(_ v: Double) -> String {
         v < 0.1 ? String(format: "%.2f U", v) : (v < 1 ? String(format: "%.1f U", v) : String(format: "%.0f U", v))
