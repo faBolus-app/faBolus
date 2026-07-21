@@ -22,7 +22,11 @@ final class HealthKitGlucoseSource: GlucoseSource {
     private let store = HKHealthStore()
     private let type = HKQuantityType(.bloodGlucose)
     private let unit = HKUnit(from: "mg/dL")
-    private var anchor: HKQueryAnchor?
+    // HealthKit hands the updated anchor back inside its query result handler (a Sendable closure
+    // that runs off the main actor), so this can't be main-actor-isolated. Access is serial (one
+    // fetchNew query at a time), so nonisolated(unsafe) is safe and satisfies Swift 6 strict
+    // concurrency (Xcode 16.4 CI flags the main-actor mutation otherwise).
+    nonisolated(unsafe) private var anchor: HKQueryAnchor?
     private var observer: HKObserverQuery?
 
     func start() async {
