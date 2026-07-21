@@ -156,17 +156,23 @@ library). Wait for that to finish.
 Then do the same **Team** choice for the other rows in the TARGETS list:
 **faBolusWidgets**, **faBolusWatch**, and **faBolusWatchWidgets**.
 
-!!! warning "Free account? A red \"identifier is not available\" message is normal"
-    Every app needs a name that's unique across everyone in the world. The project comes with
-    `com.fabolus.app`, which is already taken. Change the first part to your own — for
-    example `com.janesmith` — so it's unique to you:
+!!! warning "\"Identifier is not available\"? Set your own bundle ID — it's one line"
+    Every App ID and App Group must be **unique across all of Apple**, so the project's default
+    `com.fabolus.app` belongs to the faBolus team and can't be reused by your account. Point the
+    build at an ID that's yours — you only change **one value**:
 
-    1. Open `faBolus/project.yml` in **TextEdit**.
-    2. Use **Edit → Find → Replace** to change every `com.zgranowitz` to your own `com.yourname`
-       (keep the endings like `.widgets` and `.watch`, and the `group.` line, exactly as they are).
+    1. In the `faBolus` folder, find **`LocalConfig.xcconfig.example`**. Make a copy of it in the
+       same folder and rename the copy to **`LocalConfig.xcconfig`** (just drop the `.example`).
+    2. Open `LocalConfig.xcconfig` in **TextEdit** and set:
+        - **`APP_BUNDLE_ID`** — a reverse-domain string unique to you, e.g. `com.janesmith.fabolus`
+          (based on a domain or name you control). The watch app, widgets, and the shared App
+          Group are all derived from this automatically — you don't touch them.
+        - **`DEVELOPMENT_TEAM`** — your 10-character Team ID (or leave it blank and pick your Team
+          in Xcode's Signing tab).
     3. Save, then re-do **Step 3b** (`xcodegen generate`) and reopen the project.
 
-    This is a normal one-time fix.
+    `LocalConfig.xcconfig` stays on your machine (it's gitignored), so your details are never
+    committed or shared. This is a normal one-time setup.
 
 !!! info "Free account and widgets"
     Free accounts sometimes can't set up the widgets. If a widget row shows a signing error, you

@@ -24,7 +24,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.fabolus.app.ciq</string>
+			<string>$(APP_BUNDLE_ID).ciq</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>fabolusciq</string>
@@ -32,7 +32,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.fabolus.app.deeplink</string>
+			<string>$(APP_BUNDLE_ID).deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>fabolus</string>

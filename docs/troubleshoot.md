@@ -18,11 +18,13 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     `connectiq-companion-app-sdk-ios-1.8.0` folder correctly (or edit the `ConnectIQ` `path:` in
     `project.yml`), then re-run `xcodegen generate` and reopen the project.
 
-??? question "\"Failed to register bundle identifier\" or signing errors"
-    The bundle ID is taken (it defaults to `com.fabolus.app`). On a free account or your
-    own account, change the prefix everywhere in `project.yml` (see the
-    [signing note](build/build-app.md#your-team)), keeping the `.widgets` / `.watch` / `group.`
-    suffixes intact, then `xcodegen generate` again.
+??? question "\"Failed to register bundle identifier\", \"An Application Group … is not available\", or other signing errors"
+    App IDs and App Groups must be unique across all of Apple, so the default `com.fabolus.app`
+    (owned by the faBolus team) can't be reused by your account. Set your own: copy
+    `LocalConfig.xcconfig.example` to **`LocalConfig.xcconfig`**, set **`APP_BUNDLE_ID`** to a
+    value unique to you (and **`DEVELOPMENT_TEAM`** to your Team ID), then run `xcodegen generate`
+    again. The watch app, widgets, and App Group all update from that one value. See the
+    [signing note](build/build-app.md#your-team).
 
 ??? question "The widget target won't sign on a free account"
     Free \"Personal Team\" accounts sometimes can't register App Groups or app extensions. Build
