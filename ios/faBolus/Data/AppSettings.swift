@@ -86,6 +86,13 @@ public final class AppSettings {
     /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
     /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
     /// default. The PIN hash lives in the Keychain ([[ChildMode]]), not here.
+    /// Show the extended (combo) bolus controls on the bolus screen. **Default OFF** to keep the
+    /// screen simple. When on, the user can split a dose into now + over-a-duration.
+    public var extendedBolusEnabled: Bool { didSet { d.set(extendedBolusEnabled, forKey: "extendedBolusEnabled") } }
+    /// Show the collapsible "reasoning" breakdown (IOB, carb+correction, max-safe hint) under the
+    /// recommendation. Default ON but collapsed; turn off to remove it entirely.
+    public var showBolusReasoning: Bool { didSet { d.set(showBolusReasoning, forKey: "showBolusReasoning") } }
+
     public var childModeEnabled: Bool { didSet { d.set(childModeEnabled, forKey: "childModeEnabled") } }
     public var childAllowed: Set<ChildFeature> {
         didSet { d.set((try? JSONEncoder().encode(childAllowed)) ?? Data(), forKey: "childAllowed") }
@@ -226,6 +233,8 @@ public final class AppSettings {
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false
         missedBolusNudgeMgdl = max(120, (d.object(forKey: "missedBolusNudgeMgdl") as? Int) ?? 180)
+        extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
+        showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         childModeEnabled = (d.object(forKey: "childModeEnabled") as? Bool) ?? false
         childAllowed = d.data(forKey: "childAllowed").flatMap { try? JSONDecoder().decode(Set<ChildFeature>.self, from: $0) } ?? ChildFeature.defaultAllowed
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),

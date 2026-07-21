@@ -33,6 +33,10 @@ public protocol PumpBackend: AnyObject {
     /// Deliver a bolus of the given units. Returns the **actual delivered** units
     /// (may be a partial amount if cancelled mid-delivery). Check `lastBolusCancelled`.
     func deliverBolus(units: Double) async throws -> Double
+    /// Deliver an **extended (combo)** bolus: `nowUnits` up front and the remainder over
+    /// `durationMinutes`. Total must be ≥ 0.40 U. Returns the actual delivered-so-far units. Optional
+    /// — backends that don't support it use the throwing default.
+    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double
     func cancelBolus() async
     /// True if the most recent `deliverBolus` was cancelled before completing.
     var lastBolusCancelled: Bool { get }
@@ -138,6 +142,7 @@ public enum ControlError: Error, LocalizedError {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double { throw ControlError.notSupported }
     func suspendDelivery() async throws { throw ControlError.notSupported }
     func resumeDelivery() async throws { throw ControlError.notSupported }
     func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
