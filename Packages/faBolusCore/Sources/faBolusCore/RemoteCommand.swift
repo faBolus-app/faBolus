@@ -73,6 +73,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var glucoseStaleMinutes: Int?
     public var glucoseHideDelayMinutes: Int?
 
+    // Apple-Watch-only customization mirrored from the phone (NOT part of the cross-remote JSON
+    // schema / Garmin mirror — Garmin ignores unknown keys, and the drift check only requires every
+    // *schema* property to have a Swift field, which these don't affect). detailsOrder = the detail
+    // rows + order for the watch Details page; watchChartRanges = the tap-through ranges (hours).
+    public var detailsOrder: [String]?
+    public var watchChartRanges: [Int]?
+
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -84,7 +91,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
-                glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil) {
+                glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil,
+                detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -99,6 +107,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
         self.glucoseStaleMinutes = glucoseStaleMinutes; self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
+        self.detailsOrder = detailsOrder; self.watchChartRanges = watchChartRanges
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

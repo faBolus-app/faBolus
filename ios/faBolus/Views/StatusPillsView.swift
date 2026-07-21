@@ -5,33 +5,45 @@ import faBolusCore
 /// (COB/"Active Carbs" was removed — the pump doesn't expose a carbs-on-board read.)
 struct StatusPillsView: View {
     let snapshot: PumpSnapshot
+    private var order: [String] { AppSettings.shared.pillsOrder }
+    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
     var body: some View {
-        HStack(spacing: 10) {
-            pill(icon: "drop.fill", tint: AppTheme.insulin,
-                 value: String(format: "%.2f U", snapshot.iobUnits), label: "Active Insulin")
-            pill(icon: "cross.vial.fill", tint: .teal,
-                 value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
-        }
-        // CGM pill shows the reading's age and turns warning-colored when stale (self-updating).
+        // Wrapped in a TimelineView so the CGM pill's age label stays current. Pills shown + order
+        // come from AppSettings.pillsOrder (Settings → Customize dashboard pills).
         TimelineView(.periodic(from: .now, by: 20)) { ctx in
-            HStack(spacing: 10) {
-                pill(icon: batteryIcon(snapshot.batteryPercent),
-                     tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
-                     value: "\(snapshot.batteryPercent)%", label: "Pump")
-                cgmPill(now: ctx.date)
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(order, id: \.self) { id in pillFor(id, now: ctx.date) }
             }
         }
-        // Basal + Control-IQ (from the CurrentBasalStatus / ControlIQInfoV2 reads).
-        HStack(spacing: 10) {
+    }
+
+    @ViewBuilder private func pillFor(_ id: String, now: Date) -> some View {
+        switch id {
+        case "iob":
+            pill(icon: "drop.fill", tint: AppTheme.insulin,
+                 value: String(format: "%.2f U", snapshot.iobUnits), label: "Active Insulin")
+        case "reservoir":
+            pill(icon: "cross.vial.fill", tint: .teal,
+                 value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
+        case "battery":
+            pill(icon: batteryIcon(snapshot.batteryPercent),
+                 tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
+                 value: "\(snapshot.batteryPercent)%", label: "Pump")
+        case "cgm":
+            cgmPill(now: now)
+        case "basal":
             if snapshot.deliverySuspended {
                 pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
             } else {
                 pill(icon: "waveform.path.ecg", tint: AppTheme.insulin,
                      value: String(format: "%.2f U/hr", snapshot.basalRateUnitsPerHour), label: "Basal")
             }
+        case "controlIQ":
             pill(icon: controlIQIcon, tint: snapshot.controlIQEnabled ? AppTheme.inRange : .gray,
                  value: controlIQValue, label: "Control-IQ")
+        default:
+            EmptyView()
         }
     }
 

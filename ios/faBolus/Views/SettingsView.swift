@@ -61,6 +61,26 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        CustomizeListView(title: "Details", allIds: AppSettings.detailFields,
+                                          label: AppSettings.detailFieldLabel, order: $settings.detailsOrder,
+                                          shownFooter: "Rows shown on the phone Details card and the watch Details page. Drag to reorder, swipe to hide.")
+                    } label: { LabeledContent("Details rows", value: "\(settings.detailsOrder.count) shown") }
+                    NavigationLink {
+                        CustomizeListView(title: "Pills", allIds: AppSettings.pillItems,
+                                          label: AppSettings.pillLabel, order: $settings.pillsOrder,
+                                          shownFooter: "Status pills shown on the dashboard. Drag to reorder, swipe to hide.")
+                    } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
+                    NavigationLink {
+                        WatchChartRangesView(settings: settings)
+                    } label: { LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " ")) }
+                } header: {
+                    Text("Customize")
+                } footer: {
+                    Text("Choose which details, pills, and watch chart time ranges appear. Details + watch ranges are mirrored to the Apple Watch on its next update.")
+                }
+
+                Section {
                     Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
                         ForEach(AppSettings.glucoseStaleOptions, id: \.self) { Text("\($0) min").tag($0) }
                     }
@@ -295,5 +315,69 @@ struct GarminScreensView: View {
         if !order.contains(settings.garminDefaultScreen) {
             settings.garminDefaultScreen = order.first ?? "glance"
         }
+    }
+}
+
+/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). Mirrors
+/// `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least one stays shown.
+struct CustomizeListView: View {
+    let title: String
+    let allIds: [String]
+    let label: (String) -> String
+    @Binding var order: [String]
+    let shownFooter: String
+
+    private var hidden: [String] { allIds.filter { !order.contains($0) } }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(order, id: \.self) { id in
+                    Label(label(id), systemImage: "line.3.horizontal")
+                }
+                .onMove { from, to in order.move(fromOffsets: from, toOffset: to) }
+                .onDelete { idx in if order.count - idx.count >= 1 { order.remove(atOffsets: idx) } }
+            } header: {
+                Text("Shown (top → bottom)")
+            } footer: {
+                Text(shownFooter)
+            }
+            if !hidden.isEmpty {
+                Section("Hidden") {
+                    ForEach(hidden, id: \.self) { id in
+                        Button { order.append(id) } label: {
+                            Label(label(id), systemImage: "plus.circle")
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Customize \(title)")
+        .toolbar { EditButton() }
+    }
+}
+
+/// Pick which time ranges the watch history chart cycles through on tap (3/6/12/24 h). At least one
+/// stays enabled. Mirrored to the watch on its next status update.
+struct WatchChartRangesView: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(AppSettings.chartRangeOptions, id: \.self) { h in
+                    Toggle("\(h) hours", isOn: Binding(
+                        get: { settings.watchChartRanges.contains(h) },
+                        set: { on in
+                            var r = Set(settings.watchChartRanges)
+                            if on { r.insert(h) } else if r.count > 1 { r.remove(h) }
+                            settings.watchChartRanges = r.sorted()
+                        }))
+                }
+            } footer: {
+                Text("Tapping the watch history chart cycles through the enabled ranges. At least one must stay enabled.")
+            }
+        }
+        .navigationTitle("Watch Chart Ranges")
     }
 }

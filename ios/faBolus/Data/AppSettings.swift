@@ -67,6 +67,57 @@ public final class AppSettings {
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
     public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
 
+    /// Which detail rows show, and in what order, on the phone Details card + the watch Details page
+    /// (mirrored to the watch). Hidden rows are simply absent from the array. Same reorder/hide model
+    /// as `garminScreenOrder`.
+    public var detailsOrder: [String] { didSet { d.set(detailsOrder, forKey: "detailsOrder") } }
+    /// Which status pills show, and in what order, on the phone dashboard.
+    public var pillsOrder: [String] { didSet { d.set(pillsOrder, forKey: "pillsOrder") } }
+    /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
+    /// Mirrored to the watch. At least one is always kept.
+    public var watchChartRanges: [Int] { didSet { d.set(watchChartRanges, forKey: "watchChartRanges") } }
+
+    /// Detail rows available on the Details card / watch Details page, in default order.
+    public static let detailFields: [String] =
+        ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"]
+    public static func detailFieldLabel(_ id: String) -> String {
+        switch id {
+        case "iob": return "Active insulin (IOB)"
+        case "reservoir": return "Reservoir"
+        case "battery": return "Pump battery"
+        case "cgm": return "CGM"
+        case "lastBolus": return "Last bolus"
+        case "carbRatio": return "Carb ratio"
+        case "isf": return "Correction factor (ISF)"
+        case "target": return "Target glucose"
+        case "maxBolus": return "Max bolus"
+        default: return id
+        }
+    }
+    /// Status pills available on the dashboard, in default order.
+    public static let pillItems: [String] = ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ"]
+    public static func pillLabel(_ id: String) -> String {
+        switch id {
+        case "iob": return "Active insulin"
+        case "reservoir": return "Reservoir"
+        case "battery": return "Pump battery"
+        case "cgm": return "CGM"
+        case "basal": return "Basal / Suspended"
+        case "controlIQ": return "Control-IQ"
+        default: return id
+        }
+    }
+    /// The watch history-chart tap-through ranges available to enable.
+    public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
+
+    /// Restore a reorder/hide list: keep stored ids that are known + unique, in stored order; fall
+    /// back to the full list if nothing valid is stored (never leave the surface empty).
+    private static func restoreOrder(_ stored: [String]?, all: [String]) -> [String] {
+        var order: [String] = []
+        for s in stored ?? all where all.contains(s) && !order.contains(s) { order.append(s) }
+        return order.isEmpty ? all : order
+    }
+
     // Smallest is 0.05 U — the pump's real minimum increment (sub-0.05 doses are rejected by the
     // pump, so a 0.01 option was misleading). Any previously-persisted 0.01 is clamped up in init.
     public static let bolusIncrements: [Double] = [0.05, 0.1, 0.5, 1, 2]
@@ -120,6 +171,11 @@ public final class AppSettings {
         garminScreenOrder = order
         let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
+        detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
+        pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String], all: Self.pillItems)
+        let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
+            .filter { Self.chartRangeOptions.contains($0) }
+        watchChartRanges = (storedRanges?.isEmpty ?? true) ? Self.chartRangeOptions : storedRanges!.sorted()
         applyFreshness()   // didSet doesn't fire during init; push thresholds into faBolusCore now
     }
 }
