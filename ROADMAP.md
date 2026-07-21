@@ -77,3 +77,20 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 ## Deferred / notes
 - Apple Watch full parity (history plot, details screen) if wanted.
 - The signed dismiss path and all delivery paths remain **experimental / in development.**
+
+### Apple Watch host / phone-as-remote swap (tracked, not started)
+Make the **watch the pump host** and the **phone a remote**. The pump allows only one paired
+controller (see `docs/setup/pairing.md`), so this is a full re-pair that evicts the phone — not a
+quick toggle. Ties into the existing untested **Phase-1 direct-pump** scaffold
+(`watch/faBolusWatch/WatchPumpClient.swift`, `WatchDirectView.swift`). Work required:
+1. **Phase 2 watch backend** — port `TandemBackend`'s tiered polling + signed
+   `deliverBolus`/`cancelBolus`/`dismissNotification` + snapshot building into `WatchPumpClient`
+   (the `PumpX2BLE`/`PumpX2Auth`/`PumpX2Messages` libs already run on watchOS unchanged).
+2. **Reverse the relay** — the watch becomes the `statusCommand` producer / `remoteDeliver`
+   executor / echo source; iOS becomes a `RemoteClientModel` consumer. `RemoteLink`
+   (WatchConnectivity) has no host/remote role today (cf. `PeerLink.Role`) — add one.
+3. **Single-pairing eviction UX** — pairing the watch unpairs the phone; add a clear hand-off flow.
+4. **On-device host testing** — validate the watch-hosted signed delivery path (extends the
+   currently-untested Phase-1 direct-pump work).
+   Files: `watch/faBolusWatch/WatchPumpClient.swift`, `ios/faBolus/Data/TandemBackend.swift`,
+   `Shared/RemoteClientModel.swift`, `Packages/faBolusCore/.../RemoteCommand.swift`.
