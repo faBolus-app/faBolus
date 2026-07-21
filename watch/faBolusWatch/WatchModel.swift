@@ -36,6 +36,9 @@ final class WatchModel {
     var alerts: [RemoteCommand.RemoteAlert] = []
     var reachable: Bool = false
     var lastStatus: RemoteCommand.Status?
+    /// Whether the phone has been seen bolusing since this request started — so a lost/late terminal
+    /// echo can be recovered from the connection state (see handle(.statusRead)).
+    private var sawPhoneBolusing = false
     var statusMessage: String?
     var pendingRequestId: String?
 
@@ -128,10 +131,20 @@ final class WatchModel {
             if let d = cmd.detailsOrder, !d.isEmpty { detailsOrder = d }
             if let r = cmd.watchChartRanges, !r.isEmpty { chartRanges = r }
             if let msg = cmd.message { connection = msg }
+            // Recover from a lost/late terminal echo: once the phone has reported bolusing and then
+            // reports it's no longer bolusing, the watch bolus is done even if the delivered/cancelled
+            // echo never arrived — so we don't stay stuck in .delivering (which would also freeze
+            // "last bolus"). Guarded by sawPhoneBolusing so the pre-bolus status push (phone not yet
+            // bolusing) doesn't clear it prematurely.
+            if connection == PumpConnectionState.bolusing.rawValue {
+                sawPhoneBolusing = true
+            } else if lastStatus == .delivering && sawPhoneBolusing {
+                lastStatus = .delivered
+            }
             if let h = cmd.history { history = h }
-            // Don't overwrite last-bolus from a routine status push while a bolus is in progress —
-            // that value is still the PREVIOUS bolus mid-delivery and would flicker (e.g. 1.9 → 0.05).
-            // The .delivered/.cancelled echo sets the correct amount instead.
+            // Don't overwrite last-bolus from a routine status push while a bolus is genuinely in
+            // progress — that value is still the PREVIOUS bolus mid-delivery and would flicker
+            // (e.g. 1.9 → 0.05). The .delivered/.cancelled echo (or the recovery above) settles it.
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let a = cmd.alerts { alerts = a }
             // Mirror the phone's staleness policy so the watch marks/hides + stops using stale
@@ -172,6 +185,7 @@ final class WatchModel {
         pendingRequestId = cmd.requestId
         lastStatus = .delivering
         statusMessage = "Delivering…"
+        sawPhoneBolusing = false
         link.send(cmd)
     }
 
