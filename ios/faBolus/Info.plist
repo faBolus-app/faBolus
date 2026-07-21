@@ -60,8 +60,14 @@
 	<array>
 		<string>gcm-ciq</string>
 	</array>
+	<key>LoopAppGroupIdentifier</key>
+	<string>group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
+	<string>faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable.</string>
+	<key>TrioAppGroupIdentifier</key>
+	<string>group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

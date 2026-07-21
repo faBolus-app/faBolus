@@ -25,8 +25,8 @@ it, see [Add the Apple Watch app](../build/apple-watch-build.md).
 
 ## The screens (swipe between pages)
 
-- **Glance** — big glucose + trend (hidden when stale), IOB, reservoir, alert count, iPhone
-  reachability, and the **Bolus** button.
+- **Glance** — big glucose + trend (greyed with its age when stale), IOB, reservoir, alert count,
+  iPhone reachability, and the **Bolus** button.
 - **Chart** — a modern glucose history plot (the recent readings the phone sends).
 - **Details** — active insulin, reservoir, battery, CGM, last bolus, carb ratio, correction
   factor, target, max bolus, connection (matches the phone's details card).

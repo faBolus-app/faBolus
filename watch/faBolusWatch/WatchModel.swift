@@ -37,24 +37,53 @@ final class WatchModel {
     var pendingRequestId: String?
 
     private let link = RemoteLink()
+    /// Direct-to-watch CGM failover: when the iPhone is out of range, the watch reads glucose itself,
+    /// phone-independent — a Dexcom G7/ONE+ over BLE, and/or xDrip4iOS via Apple Health (synced from
+    /// the phone). Both reuse the shared sources; started only while unreachable, to save power.
+    private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
 
     init() {
-        link.onReachabilityChange = { [weak self] r in self?.reachable = r }
+        link.onReachabilityChange = { [weak self] r in
+            guard let self else { return }
+            self.reachable = r
+            if r { self.stopDirect() } else { self.startDirect() }
+        }
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
+        for s in directSources { s.onChange = { [weak self] in self?.applyDirect() } }
         reachable = link.isReachable
+        if !reachable { startDirect() }
     }
 
-    /// A CGM reading older than 6 minutes shouldn't be shown as current.
+    private func startDirect() { for s in directSources { Task { await s.start() } } }
+    private func stopDirect() { for s in directSources { s.stop() } }
+
+    /// Apply the freshest direct reading when the phone can't supply a fresher one (out of range, or
+    /// the relayed value is older). Never overrides a fresher phone reading. Scans the sources (no
+    /// per-source capture) to avoid a retain cycle on their `onChange`.
+    private func applyDirect() {
+        guard let s = directSources.compactMap({ $0.latest }).max(by: { $0.date < $1.date }) else { return }
+        let fresher = glucoseDate.map { s.date > $0 } ?? true
+        guard !reachable || fresher else { return }
+        glucose = s.mgdl
+        glucoseDate = s.date
+        trend = s.trend.rawValue
+        publishComplication()
+    }
+
+    /// Stale per the shared `GlucoseFreshness` threshold (default 6 min). A stale reading is shown
+    /// but marked (grayed + age), never hidden — "old is worse than nothing".
     var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }
-        return Date().timeIntervalSince(d) > 6 * 60
+        return GlucoseFreshness.isStale(d)
     }
-    var displayGlucose: String { (glucose != nil && !isGlucoseStale) ? "\(glucose!)" : "—" }
+    var displayGlucose: String { glucose.map { "\($0)" } ?? "—" }
     var cgmActive: Bool { glucose != nil && !isGlucoseStale }
     var ageMinutes: Int? {
         guard let d = glucoseDate else { return nil }
         return max(0, Int(Date().timeIntervalSince(d) / 60))
     }
+    /// Relative age label ("now", "3 min ago"), or nil when there's no reading yet.
+    var ageLabel: String? { glucoseDate.map { GlucoseFreshness.ageLabel(for: $0) } }
 
     private static func arrow(fromToken t: String?) -> String {
         switch t {
@@ -89,6 +118,10 @@ final class WatchModel {
             if let h = cmd.history { history = h }
             lastBolusUnits = cmd.lastBolusUnits
             if let a = cmd.alerts { alerts = a }
+            // Mirror the phone's staleness policy so the watch marks/hides + stops using stale
+            // readings for carb→unit exactly like the phone.
+            if let s = cmd.glucoseStaleMinutes { GlucoseFreshness.staleAfter = TimeInterval(s) * 60 }
+            GlucoseFreshness.hideAfter = cmd.glucoseHideDelayMinutes.map { GlucoseFreshness.staleAfter + TimeInterval($0) * 60 }
             publishComplication()
         default:
             break
@@ -113,8 +146,10 @@ final class WatchModel {
     }
 
     /// Send a carbs bolus; the phone converts carbs→units with the pump's calculator, then delivers.
+    /// A stale CGM value is never sent for the correction (matches the phone's rule).
     func deliverCarbs(_ grams: Double) {
-        startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: glucose.map(Double.init)))
+        let bg: Double? = isGlucoseStale ? nil : glucose.map(Double.init)
+        startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg))
     }
 
     private func startPending(_ cmd: RemoteCommand) {

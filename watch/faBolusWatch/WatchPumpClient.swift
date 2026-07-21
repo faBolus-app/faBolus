@@ -68,6 +68,11 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     }
 
     func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
+        // Detect the model from the BLE name so the pairing screen can offer to save a Mobi's PIN.
+        if let name = peripheral.name {
+            if name.hasPrefix("Tandem Mobi") { WatchPumpModelStore.set(isMobi: true) }
+            else if name.hasPrefix("tslim X2") { WatchPumpModelStore.set(isMobi: false) }
+        }
         c.connect(peripheral)
     }
 

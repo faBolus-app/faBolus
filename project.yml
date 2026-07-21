@@ -15,6 +15,12 @@ packages:
   faBolusCore:
     # Stable, pump/host-agnostic contracts + models (in-repo local package).
     path: Packages/faBolusCore
+  G7SensorKit:
+    # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
+    path: Packages/G7SensorKit
+  DexcomG6Kit:
+    # Dexcom G5/G6/ONE passive glucose-message decoders, vendored from LoopKit/CGMBLEKit (MIT).
+    path: Packages/DexcomG6Kit
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -35,6 +41,10 @@ targets:
     dependencies:
       - package: faBolusCore
         product: faBolusCore
+      - package: G7SensorKit
+        product: G7SensorKit
+      - package: DexcomG6Kit
+        product: DexcomG6Kit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
@@ -52,7 +62,20 @@ targets:
       path: ios/faBolus/faBolus.entitlements
       properties:
         # Shared container the app writes and the widgets read.
-        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+        com.apple.security.application-groups:
+          - group.$(APP_BUNDLE_ID)
+          # To read xDrip4iOS via its "Share to Loop" App Group, build + sign xDrip under the SAME
+          # Apple Developer Team ID and uncomment the group matching xDrip's share type (App Groups
+          # are team-scoped). $(DEVELOPMENT_TEAM) is substituted with your signing team at build.
+          # See docs/operate/cgm-failover.md.
+          # - group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup                 # xDrip share type: Loop
+          # - group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group   # xDrip share type: Trio
+        # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
+        # it needs the paid Apple Developer Program to enable the capability, so it's off by default
+        # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
+        # enable HealthKit under Signing & Capabilities). See docs/operate/cgm-failover.md.
+        # com.apple.developer.healthkit: true
+        # com.apple.developer.healthkit.access: []
     info:
       path: ios/faBolus/Info.plist
       properties:
@@ -65,7 +88,13 @@ targets:
           - INAlternativeAppNameKey: "faBolus"
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
-        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
+        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
+        # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
+        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
+        # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
+        # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
+        LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
+        TrioAppGroupIdentifier: group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group
         # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
         # goes through without the app being in the foreground.
         UIBackgroundModes: [bluetooth-central]
@@ -106,6 +135,9 @@ targets:
       # Shared contracts (RemoteCommand/RemoteLink + models).
       - package: faBolusCore
         product: faBolusCore
+      # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
+      - package: G7SensorKit
+        product: G7SensorKit
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
       - package: PumpX2Kit
         product: PumpX2Messages
@@ -118,6 +150,11 @@ targets:
       properties:
         # Device-local container shared with the watch complication.
         com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+        # HealthKit on the watch (read xDrip glucose from Apple Health, synced from the phone) is
+        # OPT-IN like the phone — uncomment (and enable HealthKit under Signing & Capabilities) to use
+        # the watchOS Apple Health failover. See docs/operate/cgm-failover.md.
+        # com.apple.developer.healthkit: true
+        # com.apple.developer.healthkit.access: []
     info:
       path: watch/faBolusWatch/Info.plist
       properties:
@@ -125,7 +162,11 @@ targets:
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
         WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
-        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
+        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app and can read a CGM directly over Bluetooth when the phone is out of range."
+        # Read glucose from Apple Health (e.g. xDrip4iOS) as a phone-independent failover on the watch.
+        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed when your iPhone is out of range."
+        # Keep a direct CGM (G7) BLE link alive in the background as a failover when the phone is unreachable.
+        UIBackgroundModes: [bluetooth-central]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch

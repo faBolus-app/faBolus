@@ -8,6 +8,10 @@ struct SettingsView: View {
     @State private var settings = AppSettings.shared
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
+    @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
+    // Hidden Debug menu (B4): revealed by tapping the disclaimer footer 7×.
+    @State private var debugTaps = 0
+    @State private var showDebug = false
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -56,6 +60,41 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
+                        ForEach(AppSettings.glucoseStaleOptions, id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    Picker("Hide (\u{2013}\u{2013})", selection: $settings.glucoseHideDelayMinutes) {
+                        ForEach(AppSettings.glucoseHideDelayOptions, id: \.self) { opt in
+                            Text(hideDelayLabel(opt)).tag(opt)
+                        }
+                    }
+                } header: {
+                    Text("Glucose staleness")
+                } footer: {
+                    Text("Older than “mark stale”, a reading is stale: shown greyed and **no longer used** to auto-fill a bolus carb→unit correction (this is also when the watch/Garmin stop using it for that). “Hide” is how long after going stale to keep showing the greyed value before replacing it with “–”: choose Immediately to skip the greyed value, or Never to always keep showing it. A hidden reading is still stale.")
+                }
+
+                Section {
+                    Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
+                    if settings.advancedControlEnabled {
+                        if model.advancedControlAllowed {
+                            NavigationLink { PumpControlView(model: model) } label: {
+                                Label("Pump Control", systemImage: "slider.horizontal.3")
+                            }
+                        } else {
+                            Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
+                                 : "Advanced control requires a Tandem Mobi pump.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Advanced control")
+                } footer: {
+                    Text("Suspend/resume, temp basal, modes, and find-my-pump. Mobi only, off by default. "
+                         + "Insulin-affecting actions ask for confirmation.")
+                }
+
+                Section {
                     NavigationLink {
                         GarminScreensView(settings: settings)
                     } label: {
@@ -91,6 +130,21 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    Picker("Failover CGM", selection: $selectedGlucoseSource) {
+                        Text("None (pump only)").tag("")
+                        ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
+                    }
+                    .onChange(of: selectedGlucoseSource) { _, id in
+                        GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
+                    }
+                    NavigationLink("CGM account credentials") { CgmCredentialsView(model: model) }
+                } header: {
+                    Text("Glucose failover")
+                } footer: {
+                    Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
+                }
+
                 Section("Pump") {
                     LabeledContent("Status", value: model.snapshot.connection.rawValue)
                     connectionControls
@@ -108,6 +162,21 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("faBolus is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom.")
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            debugTaps += 1
+                            if debugTaps >= 7 { showDebug = true }
+                        }
+                }
+
+                if showDebug {
+                    Section {
+                        NavigationLink { DebugMenuView(model: model) } label: {
+                            Label("Debug diagnostics", systemImage: "ladybug.fill")
+                        }
+                    } footer: {
+                        Text("Read-only diagnostics.")
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -143,6 +212,15 @@ struct SettingsView: View {
         "Any alerts in faBolus",
         "Last bolus in faBolus",
     ]
+
+    /// Label for the "hide after stale" delay options: nil = Never, 0 = Immediately, else "N min after".
+    private func hideDelayLabel(_ opt: Int?) -> String {
+        switch opt {
+        case .none: return "Never"
+        case .some(0): return "Immediately"
+        case .some(let n): return "\(n) min after"
+        }
+    }
 
     private func fmtU(_ v: Double) -> String {
         v < 0.1 ? String(format: "%.2f U", v) : (v < 1 ? String(format: "%.1f U", v) : String(format: "%.0f U", v))

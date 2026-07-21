@@ -11,6 +11,14 @@ The protocol/auth/Bluetooth core lives in the separate **PumpX2Kit** package, wh
 **Mbed TLS** (Apache-2.0 OR GPL-2.0) for its EC-JPAKE implementation — see PumpX2Kit's own `NOTICE`
 for that attribution.
 
+## G7SensorKit (Dexcom G7 / ONE+ decoding)
+
+The Dexcom G7 / ONE+ BLE message decoders in `Packages/G7SensorKit` are vendored from
+**[LoopKit/G7SensorKit](https://github.com/LoopKit/G7SensorKit)** (© 2022 LoopKit Authors; several
+files originate in xDripG5 / CGMBLEKit, © 2015–2016 Nathan Racklyeft), used under the MIT License.
+LoopKit-specific coupling has been removed and the decoders are passive/read-only. The reproduced
+license and copyright are in `Packages/G7SensorKit/LICENSE`. The independent CGM seam that consumes
+them is modeled on LoopKit's `CGMManager` design.
 ## Loop / LoopDocs (design + documentation)
 
 faBolus's visual design draws inspiration from the **[Loop](https://github.com/LoopKit/Loop)** app,
