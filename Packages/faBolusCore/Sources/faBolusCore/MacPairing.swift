@@ -55,6 +55,15 @@ public enum MacPairing {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(code.utf8)), salt: salt,
                                info: Data("seal".utf8), outputByteCount: 32)
     }
+    /// Per-connection AES-GCM **channel** key that seals ongoing commands after the handshake (see
+    /// `SealedTransport`). Both ends derive it identically from the shared `secret` (code bytes on
+    /// first pairing, or the token on reconnect) bound to both handshake nonces, so each connection
+    /// gets a fresh key — closing the cleartext-BLE gap (traffic is encrypted, not just authenticated).
+    static func channelKey(secret: Data, phoneNonce: Data, macNonce: Data) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: secret),
+                               salt: phoneNonce + macNonce,
+                               info: Data("fabolus.channel.v1".utf8), outputByteCount: 32)
+    }
 
     /// The HMAC secret material for the proofs: raw code bytes (first pairing) or the token (reconnect).
     public static func secret(code: String) -> Data { Data(code.utf8) }

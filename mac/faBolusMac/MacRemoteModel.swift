@@ -17,7 +17,9 @@ final class MacRemoteModel: RemoteClientModel {
     private(set) var pairing: MacConnection!
     let display = MacDisplayModel()
 
-    private var peer: BLELink { link as! BLELink }
+    private let ble: BLELink
+    private var peer: BLELink { ble }
+    private var sealed: SealedTransport? { link as? SealedTransport }
     private let clientId = MacAuthStore.clientId()
     private let macName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
 
@@ -35,8 +37,10 @@ final class MacRemoteModel: RemoteClientModel {
     }
 
     init() {
-        super.init(link: BLELink(role: .central))
-        pairing = MacConnection(peer: peer)   // reads the remembered phone and starts connecting
+        let ble = BLELink(role: .central)
+        self.ble = ble
+        super.init(link: SealedTransport(inner: ble))   // encrypts all traffic after the handshake
+        pairing = MacConnection(peer: ble)   // reads the remembered phone and starts connecting
         widgetBolus = MacWidgetBolusReceiver(model: self)
         // No requestStatus() here — we ask only after we authenticate.
     }
@@ -48,6 +52,7 @@ final class MacRemoteModel: RemoteClientModel {
             startHandshake()
         } else {
             pairing?.authenticated = false
+            sealed?.endSession()   // require a fresh handshake on the next connection
             resetHandshake()
         }
     }
@@ -161,6 +166,8 @@ final class MacRemoteModel: RemoteClientModel {
             }
             MacAuthStore.saveToken(token, forPhone: pairing.pairedPhone ?? macName)
         }
+        // Turn on channel encryption for the rest of this connection before any non-auth send.
+        sealed?.activateSession(secret: secret, phoneNonce: pNonce, macNonce: mNonce)
         pairing.authenticated = true
         pairing.needsCode = false
         pairing.pairingPhone = nil

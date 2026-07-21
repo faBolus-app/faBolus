@@ -17,6 +17,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// intentionally NOT part of the shared watch/Garmin schema (command.schema.json / the
         /// Monkey C mirror): the handshake is phone↔Mac-specific.
         case authHello, authChallenge, authProof, authResult
+        /// An AES-GCM-**sealed** envelope wrapping a real command, carried over the BLE remote link
+        /// after the pairing handshake (see `SealedTransport`). Its `sealedPayload` is the encrypted
+        /// bytes; the inner command is only visible to the paired peer. BLE-only, not in the shared
+        /// watch/Garmin schema.
+        case sealed
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -100,6 +105,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var authSealedToken: String? = nil
     /// authResult outcome: true = authenticated; false = rejected (see `message`).
     public var authOK: Bool? = nil
+    /// The AES-GCM-sealed inner command (base64 combined box) on a `.sealed` envelope. See
+    /// `SealedTransport`. Present only on `.sealed`; nil on every other kind.
+    public var sealedPayload: String? = nil
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -157,6 +165,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         c.authSealedToken = sealedToken
         c.authOK = ok
         c.message = message
+        return c
+    }
+
+    /// Build a `.sealed` envelope carrying an encrypted inner command (see `SealedTransport`).
+    public static func sealed(_ payloadB64: String) -> RemoteCommand {
+        var c = RemoteCommand(kind: .sealed)
+        c.sealedPayload = payloadB64
         return c
     }
 }

@@ -16,7 +16,10 @@ import UIKit
 /// it — the phone only exchanges `auth*` messages.
 @MainActor
 public final class PeerRemoteHost {
-    private let link = BLELink(role: .peripheral, displayName: UIDevice.current.name)
+    // The raw BLE peripheral (for discovery/disconnect), wrapped in a SealedTransport that encrypts
+    // every command after the handshake — so ongoing traffic is never cleartext (see SealedTransport).
+    private let bleLink = BLELink(role: .peripheral, displayName: UIDevice.current.name)
+    private let link: SealedTransport
     private weak var model: AppModel?
     private let pairing = MacPairingCoordinator.shared
 
@@ -32,6 +35,7 @@ public final class PeerRemoteHost {
 
     public init(model: AppModel) {
         self.model = model
+        self.link = SealedTransport(inner: bleLink)
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
         link.onReachabilityChange = { [weak self] reachable in
             if !reachable { self?.resetAuth() }
@@ -49,7 +53,7 @@ public final class PeerRemoteHost {
         pairing.onForget = { [weak self] id in
             guard let self, id == self.peerClientId else { return }
             self.resetAuth()
-            self.link.disconnectAll()
+            self.bleLink.disconnectAll()
         }
     }
 
@@ -57,6 +61,7 @@ public final class PeerRemoteHost {
         authenticated = false
         peerClientId = nil; peerName = nil; macNonce = nil; phoneNonce = nil
         secret = nil; firstPairing = false; pairingCode = nil
+        link.endSession()   // next connection must re-handshake before any real command flows
         pairing.setConnected(false, name: nil)
     }
 
@@ -114,6 +119,8 @@ public final class PeerRemoteHost {
             let phoneProof = MacPairing.proof(secret: secret, label: "phone",
                                               phoneNonce: pNonce, macNonce: mNonce, clientId: clientId)
             authenticated = true
+            // Turn on channel encryption for the rest of this connection BEFORE any non-auth send.
+            link.activateSession(secret: secret, phoneNonce: pNonce, macNonce: mNonce)
             pairing.setConnected(true, name: peerName)
             link.send(.auth(.authResult, proof: phoneProof, sealedToken: sealed, ok: true))
             // Now that the Mac is trusted, send it a full snapshot.
