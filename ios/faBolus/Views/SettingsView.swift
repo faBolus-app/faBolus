@@ -213,11 +213,27 @@ struct CgmSettingsView: View {
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
+                    if settings.simulatedCgmEnabled {
+                        ForEach(GlucoseSourceRegistry.testing) { Text($0.name).tag($0.id) }
+                    }
                 }
                 .onChange(of: selectedGlucoseSource) { _, id in GlucoseSourceRegistry.select(id.isEmpty ? nil : id) }
                 NavigationLink("CGM account credentials") { CgmCredentialsView(model: model) }
             } header: { Text("Glucose failover") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
+            }
+            Section {
+                Toggle("Simulated CGM (testing)", isOn: $settings.simulatedCgmEnabled)
+                    .onChange(of: settings.simulatedCgmEnabled) { _, on in
+                        // Turning it off while it's the active source clears the selection so fake
+                        // data can't linger as the failover feed.
+                        if !on, selectedGlucoseSource == "simulated" {
+                            selectedGlucoseSource = ""
+                            GlucoseSourceRegistry.select(nil)
+                        }
+                    }
+            } header: { Text("Testing") } footer: {
+                Text("Adds a **Simulated CGM** option above that emits fake glucose (a smooth sweep through low/in-range/high) so you can test the failover badge, chart, and staleness without a real sensor or a cloud login. **Never leave this selected in real use — the readings are not real.**")
             }
             Section {
                 Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {

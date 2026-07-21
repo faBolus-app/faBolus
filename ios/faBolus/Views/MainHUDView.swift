@@ -16,7 +16,7 @@ struct DashboardView: View {
                 VStack(spacing: 14) {
                     // Above the fold: glucose ring + the four status pills + the chart. Connection
                     // and Garmin setup live in the Settings tab now (not the toolbar).
-                    StatusRingView(snapshot: model.snapshot)
+                    StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
                     AlertsBannerView(model: model)
 

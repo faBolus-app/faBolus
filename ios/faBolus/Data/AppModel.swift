@@ -16,6 +16,21 @@ public final class AppModel {
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
+    /// Where the currently-shown live glucose came from (pump vs a failover source). Drives the
+    /// small "via <source>" badge; `.pump` means nothing extra is shown (keeps the UI clean).
+    public private(set) var glucoseProvenance: GlucoseProvenance = .pump
+
+    /// A short source name + human reason when the live glucose is coming from a **failover** source
+    /// instead of the pump; `nil` when the pump feed is live. The UI only shows a badge when non-nil.
+    public var failoverBadge: (name: String, reason: String)? {
+        guard case let .failover(sourceID, reason) = glucoseProvenance else { return nil }
+        let name = GlucoseSourceRegistry.descriptor(id: sourceID)?.name ?? sourceID
+        switch reason {
+        case .pumpMissing: return (name, "pump has no CGM reading")
+        case .pumpStale:   return (name, "pump CGM reading went stale")
+        }
+    }
+
     /// The active backend's capabilities, so the UI can hide unsupported features.
     public var capabilities: PumpCapabilities { source.capabilities }
 
@@ -258,11 +273,12 @@ public final class AppModel {
         // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
         let pumpFresh = source.snapshot.glucose != nil && !GlucoseFreshness.isStale(source.snapshot.glucoseDate)
         glucoseSource?.setPrimaryHealthy(pumpFresh)
-        let (snap, hist) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
-                                                pumpHistory: source.glucoseHistory,
-                                                source: glucoseSource)
+        let (snap, hist, provenance) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
+                                                            pumpHistory: source.glucoseHistory,
+                                                            source: glucoseSource)
         snapshot = snap
         glucoseHistory = hist
+        glucoseProvenance = provenance
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
