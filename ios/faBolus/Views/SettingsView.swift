@@ -252,21 +252,25 @@ struct PumpSettingsView: View {
                     Button("Forget pairing", role: .destructive) { model.forgetPairing() }
                 }
             }
-            Section {
-                Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
-                if settings.advancedControlEnabled {
-                    if model.advancedControlAllowed {
-                        NavigationLink { PumpControlView(model: model) } label: {
-                            Label("Pump Control", systemImage: "slider.horizontal.3")
+            // Advanced control is Mobi-only, so the whole section is hidden unless a Mobi is paired
+            // (or it's already enabled, so it can still be turned off). t:slim users never see it.
+            if model.snapshot.isMobi || settings.advancedControlEnabled {
+                Section {
+                    Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
+                    if settings.advancedControlEnabled {
+                        if model.advancedControlAllowed {
+                            NavigationLink { PumpControlView(model: model) } label: {
+                                Label("Pump Control", systemImage: "slider.horizontal.3")
+                            }
+                        } else {
+                            Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
+                                 : "Advanced control requires a Tandem Mobi pump.")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
-                    } else {
-                        Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
-                             : "Advanced control requires a Tandem Mobi pump.")
-                            .font(.footnote).foregroundStyle(.secondary)
                     }
+                } header: { Text("Advanced control") } footer: {
+                    Text("Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation.")
                 }
-            } header: { Text("Advanced control") } footer: {
-                Text("Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation.")
             }
             if BackendRegistry.enabled.count > 1 {
                 Section {
@@ -325,7 +329,7 @@ struct RemotesSettingsView: View {
                     ForEach(AppSettings.complicationDisplayOptions, id: \.self) { Text(AppSettings.complicationDisplayLabel($0)).tag($0) }
                 }
             } header: { Text("Garmin remote") } footer: {
-                Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update.")
+                Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }

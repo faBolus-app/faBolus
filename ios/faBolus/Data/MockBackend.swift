@@ -6,9 +6,11 @@ import faBolusCore
 /// `PumpBackend` implementation — copy it as a starting point for a new backend.
 @MainActor
 public final class MockBackend: PumpBackend {
-    // Presents as a Mobi with the full advanced-control surface so the control wizards are
-    // developable in the Simulator (they still require AppSettings.advancedControlEnabled = on).
-    public let capabilities: PumpCapabilities = .mobiAdvanced
+    // A simulator can present as a Mobi (full advanced-control surface, for trying the wizards) or a
+    // t:slim X2 (bolus/status only), selected via the backend picker. The control wizards still
+    // require AppSettings.advancedControlEnabled = on and only appear for the Mobi simulator.
+    private let mobi: Bool
+    public var capabilities: PumpCapabilities { mobi ? .mobiAdvanced : .full }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
@@ -30,7 +32,7 @@ public final class MockBackend: PumpBackend {
 
     private var timer: Timer?
 
-    public init() { seedHistory() }
+    public init(isMobi: Bool = true) { self.mobi = isMobi; seedHistory() }
 
     private func seedHistory() {
         let now = Date()
@@ -61,8 +63,8 @@ public final class MockBackend: PumpBackend {
         snapshot.carbRatio = 10; snapshot.isf = 40; snapshot.targetBg = 110; snapshot.maxBolusUnits = 25
         snapshot.lastBolusUnits = 2.0
         snapshot.lastBolusDate = now.addingTimeInterval(-3600)
-        snapshot.isMobi = true
-        snapshot.pumpModelName = "Mobi (mock)"
+        snapshot.isMobi = mobi
+        snapshot.pumpModelName = mobi ? "Mobi (simulated)" : "t:slim X2 (simulated)"
         snapshot.basalRateUnitsPerHour = 0.8
         snapshot.controlIQEnabled = true
         snapshot.cgmSessionActive = true
