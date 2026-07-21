@@ -630,11 +630,14 @@ public final class TandemBackend: NSObject, PumpBackend {
             var merged = glucoseHistory
             for b in backfillBuffer { merged.append(GlucoseReading(date: pumpDate(b.pumpSec), mgdl: b.mgdl)) }
             merged.sort { $0.date < $1.date }
-            // Drop near-duplicates: same value within ~150 s of the previously kept reading.
+            // Collapse readings that fall in the same time bucket. The pump logs more than one CGM
+            // record type per interval (typeIds 256 + 399 — filtered + raw), each with its own
+            // glucose value at the same pump timestamp; keeping both plotted them as vertical stacks
+            // of dots at each time. CGM is ~5 min apart, so keep only the FIRST reading within any
+            // ~150 s window (regardless of value) — one point per interval.
             var deduped: [GlucoseReading] = []
             for r in merged {
-                if let last = deduped.last, last.mgdl == r.mgdl,
-                   r.date.timeIntervalSince(last.date) < 150 { continue }
+                if let last = deduped.last, r.date.timeIntervalSince(last.date) < 150 { continue }
                 deduped.append(r)
             }
             if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
