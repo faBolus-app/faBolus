@@ -134,6 +134,8 @@ public final class AppModel {
     }
 
     private let source: PumpBackend
+    /// Periodic re-arbitration so failover stays live when the pump is quiet (see init).
+    private var arbiterTimer: Timer?
 
     /// Optional independent CGM feed used as a **failover** when the pump-relayed glucose goes stale.
     /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
@@ -207,6 +209,14 @@ public final class AppModel {
         self.glucoseSource = gs
         gs?.onChange = { [weak self] in self?.refresh() }
         if let gs { Task { await gs.start() } }
+        // Re-arbitrate on a timer too: onChange only fires on NEW data, so when the pump is
+        // disconnected/quiet the failover wouldn't otherwise take over (or a value wouldn't age).
+        // This keeps the pump-vs-source freshness re-evaluated so failover stays live regardless.
+        if gs != nil {
+            arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.refresh() }
+            }
+        }
     }
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
