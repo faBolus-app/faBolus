@@ -13,8 +13,8 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert"],
-      "description": "Command type."
+      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert", "suspendPump", "resumePump"],
+      "description": "Command type. suspendPump/resumePump are remote advanced-control requests; the phone re-confirms them on-device before executing and only honors them when advanced control is enabled for a Mobi."
     },
     "requestId": {
       "type": "string",

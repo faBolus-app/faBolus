@@ -9,6 +9,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     public enum Kind: String, Codable, Sendable {
         case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead, dismissAlert
+        /// Remote advanced-control requests (suspend/resume). The phone re-confirms on-device and
+        /// only honors them when advanced control is enabled for a Mobi.
+        case suspendPump, resumePump
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).

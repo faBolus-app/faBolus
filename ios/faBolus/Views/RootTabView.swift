@@ -42,5 +42,14 @@ struct RootTabView: View {
         } message: {
             Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)). Confirm to deliver.")
         }
+        .alert("Remote pump-control request", isPresented: .constant(model.pendingRemoteControl != nil)) {
+            let action = model.pendingRemoteControl?.action
+            Button(action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil) {
+                Task { await model.confirmRemoteControl() }
+            }
+            Button("Reject", role: .cancel) { model.rejectRemoteControl() }
+        } message: {
+            Text("A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed.")
+        }
     }
 }
