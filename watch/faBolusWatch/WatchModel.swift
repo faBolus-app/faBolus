@@ -101,7 +101,9 @@ final class WatchModel {
                 statusMessage = cmd.message
             }
         case .statusRead:
-            if let g = cmd.bgMgdl { glucose = Int(g) }
+            // Treat a non-positive relayed value as "no reading" (nil) so the complication/UI show
+            // "—" instead of a literal 0; a missing bgMgdl leaves the current value untouched.
+            if let g = cmd.bgMgdl { glucose = g > 0 ? Int(g) : nil }
             if let age = cmd.glucoseAgeSec { glucoseDate = Date().addingTimeInterval(-age) }
             if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }

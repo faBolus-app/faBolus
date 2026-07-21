@@ -62,9 +62,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         guard let d = glucoseDate else { return glucose != nil }
         return Date().timeIntervalSince(d) > 6 * 60
     }
-    /// Glucose string, or "--" when missing/stale.
+    /// Glucose string, or "--" when missing/stale. A non-positive value is treated as "no reading"
+    /// (defends the complication against ever rendering a literal "0").
     public var displayGlucose: String {
-        guard let g = glucose, !isGlucoseStale else { return "--" }
+        guard let g = glucose, g > 0, !isGlucoseStale else { return "--" }
         return "\(g)"
     }
 
@@ -76,8 +77,13 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
 
 /// App Group–backed store for the widget snapshot. Both the app and the widget read/write here.
 public enum WidgetStore {
-    /// Must match the App Group entitlement on both the app and the widget extension.
-    public static let appGroup = "group.com.fabolus.app"
+    /// The shared App Group container id. Read from the target's Info.plist (`AppGroupIdentifier`,
+    /// build-substituted from `group.$(APP_BUNDLE_ID)`) so it always matches the entitlement — even
+    /// when a self-compiler overrides `APP_BUNDLE_ID`. Falls back to the default id if the key is
+    /// somehow absent. Every target that touches this container carries the key (see project.yml).
+    public static let appGroup: String =
+        (Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as? String)
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "group.com.fabolus.app"
     private static let key = "widgetSnapshot"
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 

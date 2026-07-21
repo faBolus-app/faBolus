@@ -79,6 +79,9 @@ targets:
     info:
       path: ios/faBolus/Info.plist
       properties:
+        # App Group id (group.$(APP_BUNDLE_ID)) exposed to code so the shared-container store derives
+        # it at runtime instead of hardcoding — stays correct if a self-compiler overrides APP_BUNDLE_ID.
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
         # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName.
         CFBundleDisplayName: faBolus
         # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
@@ -158,6 +161,7 @@ targets:
     info:
       path: watch/faBolusWatch/Info.plist
       properties:
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
         CFBundleDisplayName: faBolus
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
@@ -190,6 +194,7 @@ targets:
     info:
       path: watch/faBolusWatchWidgets/Info.plist
       properties:
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
         CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -219,6 +224,7 @@ targets:
     info:
       path: ios/faBolusWidgets/Info.plist
       properties:
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
         CFBundleDisplayName: faBolus
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
