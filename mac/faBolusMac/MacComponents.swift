@@ -83,6 +83,16 @@ struct MacBolusEntryView: View {
     private var amountText: String { String(format: isCarbs ? "%.0f %@" : "%.2f %@", value, unitLabel) }
     /// In carbs mode, the units the phone would deliver (nil if unknown or nothing entered).
     private var estUnits: Double? { (isCarbs && amount != nil) ? model.estimatedUnits(forCarbs: value) : nil }
+    /// Deliver-button label. Units mode shows units; carbs mode shows the estimated units by default,
+    /// or the carb grams when the user prefers that (Settings → Bolus entry).
+    private var bolusButtonLabel: String {
+        guard amount != nil else { return "Bolus" }
+        if isCarbs {
+            if model.display.carbButtonInUnits, let u = estUnits { return String(format: "Bolus %.2f U", u) }
+            return "Bolus \(Int(value)) g"
+        }
+        return String(format: "Bolus %.2f U", value)
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -126,9 +136,7 @@ struct MacBolusEntryView: View {
                     if let a = amount { amount = min(max(0, a), maxV) }   // clamp typed value
                     if canDeliver { confirming = true }
                 } label: {
-                    Text(amount == nil ? "Bolus"
-                                       : (isCarbs ? "Bolus \(Int(value)) g" : String(format: "Bolus %.2f U", value)))
-                        .frame(maxWidth: .infinity)
+                    Text(bolusButtonLabel).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canDeliver)
