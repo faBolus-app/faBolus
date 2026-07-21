@@ -24,7 +24,7 @@ struct StatusPillsView: View {
         }
     }
 
-    @ViewBuilder private func cgmPill(now: Date) -> some View {
+    private func cgmPill(now: Date) -> some View {
         let active = snapshot.cgmActive
         // No reading → treat as hidden; otherwise fresh/stale/hidden by age.
         let present: GlucosePresentation = snapshot.glucose == nil
@@ -37,8 +37,8 @@ struct StatusPillsView: View {
         case .stale:  value = age ?? "—"; tint = AppTheme.low
         case .fresh:  value = age ?? "OK"; tint = AppTheme.inRange
         }
-        pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-             tint: tint, value: value, label: "CGM")
+        return pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
+                    tint: tint, value: value, label: "CGM")
     }
 
     /// SF Symbol whose fill level tracks the battery percentage.
