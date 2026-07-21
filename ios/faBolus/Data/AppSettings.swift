@@ -25,6 +25,10 @@ public final class AppSettings {
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
+    /// Show the opt-in **Statistics** card on the dashboard (Time-in-Range, GMI, mean, CV over the
+    /// in-memory ~24 h history). **Default OFF** so regular use stays clean. See [[GlucoseStatistics]].
+    public var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -183,6 +187,7 @@ public final class AppSettings {
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
+        showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

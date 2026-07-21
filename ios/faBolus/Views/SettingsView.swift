@@ -120,6 +120,8 @@ enum SettingsIndex {
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
+        .init(title: "Statistics card", keywords: "time in range tir gmi average cv stats a1c", category: .display),
+        .init(title: "Simulated CGM (testing)", keywords: "test failover fake simulator cgm", category: .cgm),
         .init(title: "Watch details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
         .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
@@ -181,6 +183,11 @@ struct DisplaySettingsView: View {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
+            }
+            Section {
+                Toggle("Show statistics card", isOn: $settings.showStats)
+            } header: { Text("Statistics") } footer: {
+                Text("Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory. Off by default to keep the dashboard clean.")
             }
             Section {
                 NavigationLink {

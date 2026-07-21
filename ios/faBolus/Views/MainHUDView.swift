@@ -44,6 +44,11 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal)
 
+                    // Opt-in statistics card (Settings → Display). Hidden by default.
+                    if settings.showStats {
+                        StatsCardView(history: model.glucoseHistory)
+                    }
+
                     // Scroll target: everything else from the pump.
                     PumpDetailsCard(snapshot: model.snapshot).padding(.horizontal)
 
