@@ -158,6 +158,25 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
             self.centralManager?.cancelPeripheralConnection(p)
         }
     }
+
+    /// Fully tear down the link: stop advertising/scanning and drop any connection. Used when the user
+    /// turns remote access off, so the phone stops advertising a BLE service entirely (zero footprint).
+    public func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            switch self.role {
+            case .peripheral:
+                self.peripheralManager?.stopAdvertising()
+                self.peripheralManager?.removeAllServices()
+                self.subscribedCentrals.removeAll()
+            case .central:
+                self.centralManager?.stopScan()
+                if let p = self.connectedPeripheral { self.centralManager?.cancelPeripheralConnection(p) }
+                self.connectedPeripheral = nil; self.commandChar = nil
+            }
+            self.txChunks.removeAll(); self.rxBuffer.removeAll()
+        }
+    }
 }
 
 // MARK: - Peripheral (iPhone)

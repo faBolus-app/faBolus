@@ -65,6 +65,18 @@ public final class AppSettings {
     /// login; it must never be left on in real use. See [[SimulatedGlucoseSource]].
     public var simulatedCgmEnabled: Bool { didSet { d.set(simulatedCgmEnabled, forKey: "simulatedCgmEnabled") } }
 
+    /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
+    /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
+    /// cost. Unlike the Apple Watch / Garmin links (bound to your own paired device, not discoverable
+    /// by third parties), the BLE peripheral advertises openly — hence the opt-in + warning. The link
+    /// is authenticated (one-time code + token) and end-to-end encrypted ([[SealedTransport]]).
+    public var remoteBluetoothEnabled: Bool { didSet { d.set(remoteBluetoothEnabled, forKey: "remoteBluetoothEnabled") } }
+
+    /// When remote Bluetooth is on, restrict remote peers to **read-only + safe** actions: status
+    /// viewing, cancelling a running bolus (stops insulin), and clearing alerts — but **no bolus,
+    /// extended bolus, or suspend/resume**. **Default OFF** (peers use their granted permissions).
+    public var remoteBluetoothReadOnly: Bool { didSet { d.set(remoteBluetoothReadOnly, forKey: "remoteBluetoothReadOnly") } }
+
     /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
     /// auto-dismiss), persisted as JSON. **Alarms are never auto-acted** regardless of rules — the
     /// engine hard-excludes them. See [[AlertRuleEngine]].
@@ -229,6 +241,8 @@ public final class AppSettings {
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
+        remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
+        remoteBluetoothReadOnly = (d.object(forKey: "remoteBluetoothReadOnly") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false

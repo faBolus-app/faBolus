@@ -66,6 +66,12 @@ public final class PeerRemoteHost {
         pairing.setConnected(false, name: nil)
     }
 
+    /// Stop advertising and drop any connection (called when the user turns remote Bluetooth off).
+    public func stop() {
+        resetAuth()
+        bleLink.stop()
+    }
+
     private func handle(_ cmd: RemoteCommand) {
         switch cmd.kind {
         case .authHello, .authProof:
@@ -148,11 +154,17 @@ public final class PeerRemoteHost {
                                 status: .failed, message: "Not permitted for this remote"))
     }
 
+    /// Global read-only clamp (Settings → Remote access): block insulin-affecting writes over BLE
+    /// regardless of a peer's granted permissions. Status, cancel (stops insulin), and alert-dismiss
+    /// stay allowed.
+    private var readOnly: Bool { AppSettings.shared.remoteBluetoothReadOnly }
+
     private func handleCommand(_ cmd: RemoteCommand) {
         guard let model else { return }
         let policy = self.policy
         switch cmd.kind {
         case .bolusRequest:
+            guard !readOnly else { deny(cmd.requestId); return }
             guard policy.allows(.bolus) else { deny(cmd.requestId); return }
             Task {
                 let units: Double
@@ -186,10 +198,10 @@ public final class PeerRemoteHost {
         case .statusRead:
             link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
         case .suspendPump:
-            guard policy.allows(.suspendResume) else { deny(cmd.requestId); return }
+            guard !readOnly, policy.allows(.suspendResume) else { deny(cmd.requestId); return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
         case .resumePump:
-            guard policy.allows(.suspendResume) else { deny(cmd.requestId); return }
+            guard !readOnly, policy.allows(.suspendResume) else { deny(cmd.requestId); return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .resume)
         default:
             break
