@@ -13,8 +13,11 @@ import PumpX2BLE
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class TandemBackend: NSObject, PumpBackend {
-    /// Tandem (via PumpX2Kit) supports the full feature set.
-    public let capabilities: PumpCapabilities = .full
+    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Advanced control
+    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
+    /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
+    /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
+    public var capabilities: PumpCapabilities { snapshot.isMobi ? .mobiAdvanced : .full }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
@@ -343,7 +346,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Slow/static settings (once per connect + every ~10 min): basal, calculator snapshot
     /// (carb ratio/ISF/target/max), and the pump-clock anchor.
     private func staticRead() {
-        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest()] {
+        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
+                           ApiVersionRequest(), ControlIQInfoV2Request()] {
             try? client.send(r)
         }
     }
@@ -596,6 +600,16 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as MalfunctionBitmaskStatusResponse: malfunctionList = m.notifications; noteAlert("m", m.bitmap); mergeNotifications()
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
+        // Workstream B: pump model + basal + Control-IQ status.
+        case let m as ApiVersionResponse:
+            snapshot.isMobi = m.isMobi
+            snapshot.pumpModelName = m.isMobi ? "Mobi" : "t:slim X2"
+            snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
+        case let m as CurrentBasalStatusResponse:
+            snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
+        case let m as ControlIQInfoV2Response:
+            snapshot.controlIQMode = m.currentUserModeType
+            snapshot.controlIQEnabled = m.closedLoopEnabled
         default: break
         }
         onChange?()
