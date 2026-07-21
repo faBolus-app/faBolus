@@ -153,6 +153,11 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsCarbEntry: Bool
     public var supportsBolusCancel: Bool
     public var supportsAlertClear: Bool
+    /// True when the pump firmware actually honors a *remote* notification dismissal. t:slim X2
+    /// silently rejects it (Tandem's own app disables the action there), so on t:slim "Clear" can
+    /// only snooze the alert locally in faBolus; Mobi honors it. Distinct from `supportsAlertClear`
+    /// (which is whether the clear/snooze affordance exists at all).
+    public var supportsRemoteAlertDismiss: Bool
     public var supportsHistoryBackfill: Bool
     /// The backend needs an interactive pairing flow (e.g. a 6-digit code).
     public var supportsPairing: Bool
@@ -172,7 +177,8 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsTimeSync: Bool
 
     public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
-                supportsAlertClear: Bool = true, supportsHistoryBackfill: Bool = true,
+                supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
+                supportsHistoryBackfill: Bool = true,
                 supportsPairing: Bool = true,
                 supportsSuspendResume: Bool = false, supportsTempBasal: Bool = false,
                 supportsModes: Bool = false, supportsProfiles: Bool = false,
@@ -180,7 +186,9 @@ public struct PumpCapabilities: Sendable, Equatable {
                 supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
                 supportsTimeSync: Bool = false) {
         self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
-        self.supportsAlertClear = supportsAlertClear; self.supportsHistoryBackfill = supportsHistoryBackfill
+        self.supportsAlertClear = supportsAlertClear
+        self.supportsRemoteAlertDismiss = supportsRemoteAlertDismiss
+        self.supportsHistoryBackfill = supportsHistoryBackfill
         self.supportsPairing = supportsPairing
         self.supportsSuspendResume = supportsSuspendResume; self.supportsTempBasal = supportsTempBasal
         self.supportsModes = supportsModes; self.supportsProfiles = supportsProfiles

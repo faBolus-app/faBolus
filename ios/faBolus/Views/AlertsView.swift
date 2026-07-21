@@ -28,7 +28,10 @@ struct AlertsBannerView: View {
                             Task { await model.dismissNotification(n); clearing.remove(n.id) }
                         } label: {
                             if clearing.contains(n.id) { ProgressView() }
-                            else { Text("Clear").font(.caption).fontWeight(.semibold) }
+                            // "Snooze" (not "Clear") on pumps that can't be dismissed remotely, so the
+                            // label doesn't imply it silences the pump itself.
+                            else { Text(model.capabilities.supportsRemoteAlertDismiss ? "Clear" : "Snooze")
+                                    .font(.caption).fontWeight(.semibold) }
                         }
                         .buttonStyle(.bordered)
                         .disabled(clearing.contains(n.id))

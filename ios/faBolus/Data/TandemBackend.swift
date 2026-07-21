@@ -17,7 +17,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
     /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
     /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
-    public var capabilities: PumpCapabilities { snapshot.isMobi ? .mobiAdvanced : .full }
+    public var capabilities: PumpCapabilities {
+        var caps = snapshot.isMobi ? PumpCapabilities.mobiAdvanced : PumpCapabilities.full
+        // t:slim X2 firmware silently rejects *remote* notification dismissal (Tandem's own app
+        // disables it there); only Mobi honors it. On t:slim, "Clear" only snoozes locally in faBolus.
+        caps.supportsRemoteAlertDismiss = snapshot.isMobi
+        return caps
+    }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
@@ -294,6 +300,17 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard isPaired else { return }
         let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert
         let ackKey = "\(alert.kind.rawValue):\(alert.id)"
+        // On pumps that don't honor remote dismissal (t:slim X2), skip the futile signed send and just
+        // snooze locally in faBolus so it stops nagging here. The pump keeps its own alert until the
+        // condition clears or it's dismissed on the pump itself.
+        guard capabilities.supportsRemoteAlertDismiss else {
+            acknowledged[ackKey] = Date()
+            lastDismissAck = "local snooze (this pump model can't be dismissed remotely)"
+            alertDebug = "local-snoozed id \(alert.id) kind \(alert.kind.rawValue) — t:slim X2 rejects remote dismiss"
+            mergeNotifications()
+            onChange?()
+            return
+        }
         // Fresh signing timestamp for the HMAC.
         guard let time = try? await withCheckedThrowingContinuation({ (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
             timeCont = cont
