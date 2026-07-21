@@ -32,8 +32,12 @@ public enum GlucoseSourceRegistry {
     /// The chosen source id, or nil for "none / pump only".
     public static func selectedId() -> String? { UserDefaults.standard.string(forKey: key) }
 
-    /// Persist the chosen source id (nil clears it). Applied on next launch / re-init.
-    public static func select(_ id: String?) { UserDefaults.standard.set(id, forKey: key) }
+    /// Persist the chosen source id (nil clears it). Applied on next launch / re-init. Also clears
+    /// the crash guard so a re-selected source is auto-started again on the next launch.
+    public static func select(_ id: String?) {
+        UserDefaults.standard.set(id, forKey: key)
+        UserDefaults.standard.removeObject(forKey: "glucoseSourceCrashGuard")
+    }
 
     /// The selected descriptor if it's still available, else nil.
     public static func selected() -> GlucoseSourceDescriptor? {
@@ -43,4 +47,9 @@ public enum GlucoseSourceRegistry {
 
     /// Build the selected source, or nil when none is configured/available.
     public static func makeSelected() -> GlucoseSource? { selected()?.make() }
+
+    /// The descriptor for a specific source id (for the credentials "test all" diagnostic).
+    public static func descriptor(id: String) -> GlucoseSourceDescriptor? { enabled.first { $0.id == id } }
+    /// Build a specific source by id (for testing a not-necessarily-selected source).
+    public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make() }
 }
