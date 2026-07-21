@@ -101,9 +101,9 @@ struct CgmCredentialsView: View {
                 .disabled(readingTxId)
                 if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
             } header: {
-                Text("Dexcom G5 / G6 / ONE (direct)")
+                Text("Dexcom G5 / G6 / ONE (direct — experimental)")
             } footer: {
-                Text("Keep the official Dexcom app running — faBolus reads the transmitter passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it automatically from the connected pump.")
+                Text("Experimental and often unreliable: a G6 only talks to its authenticated app and allows few Bluetooth connections, so this passive read may never connect. For a dependable backup, prefer **Dexcom Share** (above) or **xDrip4iOS via the App Group**. Keep the official Dexcom app running — faBolus reads passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it from the connected pump.")
             }
 
             Section {
@@ -184,7 +184,9 @@ struct CgmCredentialsView: View {
             (filled(libreUser) && filled(librePass)) ? "librelinkup" : nil,
             (filled(shareUser) && filled(sharePass)) ? "dexcom-share" : nil,
             filled(nsURL) ? "nightscout" : nil,
-            filled(g6TransmitterID) ? "dexcom-g6-ble" : nil,
+            // Direct G6 is passive/experimental and needs no credentials (the transmitter ID is
+            // optional), so test it whenever it's the selected source — don't gate on the tx id.
+            (GlucoseSourceRegistry.selectedId() == "dexcom-g6-ble" || filled(g6TransmitterID)) ? "dexcom-g6-ble" : nil,
         ].compactMap { $0 }
 
         for id in toTest {
@@ -196,7 +198,10 @@ struct CgmCredentialsView: View {
             await source.start()
             var result = SourceResult(id: id, name: name, status: .warn,
                                       detail: "no reading yet — check credentials / that the sensor is sharing")
-            for _ in 0..<7 {   // ~7 s per source for the first reading
+            // Direct BLE (G6) can take longer to see the first message and a G6 only emits every
+            // ~5 min, so give it a longer window; cloud sources answer fast.
+            let attempts = (id == "dexcom-g6-ble") ? 30 : 8
+            for _ in 0..<attempts {
                 if let s = source.latest {
                     let age = Int(max(0, Date().timeIntervalSince(s.date)))
                     let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
@@ -205,9 +210,15 @@ struct CgmCredentialsView: View {
                                           detail: "\(s.mgdl) mg/dL \(s.trend.rawValue) · \(ageStr)\(stale)")
                     break
                 }
+                // Surface a real connection error instead of a generic "no reading" warning.
+                if case let .error(msg) = source.status {
+                    result = SourceResult(id: id, name: name, status: .fail, detail: msg)
+                    break
+                }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
             results.append(result)
+            source.stop()
         }
     }
 }

@@ -10,7 +10,12 @@ import DexcomG6Kit
 /// disconnect the official app. Decodes with the vendored `DexcomG6Kit` (from LoopKit/CGMBLEKit, MIT).
 ///
 /// Requires the official Dexcom app installed and connected (it keeps the session alive). Local,
-/// no cloud. Its own `CBCentralManager` (distinct restore identifier) keeps it isolated from the pump.
+/// no cloud. Its own `CBCentralManager` keeps it isolated from the pump.
+///
+/// EXPERIMENTAL / unreliable: unlike the G7 (a true broadcaster), a G5/G6 delivers glucose only
+/// inside an *authenticated* session, and allows a limited number of BLE connections, so a passive
+/// third central often receives nothing or is refused outright. Prefer Dexcom Share (cloud) or the
+/// xDrip4iOS App Group as a robust failover; this source is best-effort.
 @MainActor
 final class DexcomG6BLESource: NSObject, GlucoseSource {
     let id = "dexcom-g6-ble"
@@ -126,8 +131,15 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
 
     nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                                     error: Error?) {
+        let reason = error?.localizedDescription
         MainActor.assumeIsolated {
             self.peripheral = nil
+            // Surface a real error instead of failing silently: a G6/G5 typically only talks to its
+            // authenticated master (the Dexcom app), and allows a limited number of BLE connections,
+            // so a passive third central is often refused. Keep retrying in case it frees up.
+            status = .error(reason.map { "couldn't connect: \($0)" }
+                            ?? "couldn't connect — the Dexcom app may hold the sensor's only session")
+            onChange?()
             central.scanForPeripherals(withServices: [TransmitterServiceUUID.advertisement.cbUUID])
         }
     }
