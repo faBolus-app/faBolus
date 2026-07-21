@@ -43,8 +43,23 @@ public final class AppModel {
     public var onNudge: (@MainActor (String, String) -> Void)?
     private var lastNudge = Date.distantPast
 
+    // MARK: Child (locked) mode gate
+
+    /// Whether `feature` is permitted right now. In child mode, blocked actions no-op with a message.
+    /// This is the single enforcement point for the phone, the widget, **and** every remote (they all
+    /// route through the gated methods below), so a locked device can't be driven from a watch/Garmin.
+    private func childAllows(_ feature: ChildFeature) -> Bool { AppSettings.shared.childAllows(feature) }
+    private func childBlocked(_ feature: ChildFeature) -> Bool {
+        guard !childAllows(feature) else { return false }
+        lastError = "Locked (child mode): \(feature.label.lowercased()) is disabled."
+        return true
+    }
+
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
-    public func dismissNotification(_ n: PumpAlert) async { await source.dismissNotification(n); refresh() }
+    public func dismissNotification(_ n: PumpAlert) async {
+        if childBlocked(.dismissAlerts) { return }
+        await source.dismissNotification(n); refresh()
+    }
 
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
@@ -326,12 +341,16 @@ public final class AppModel {
     }
 
     public func deliverBolus(units: Double) async {
+        if childBlocked(.bolus) { return }
         do { _ = try await source.deliverBolus(units: units); lastError = nil }
         catch { lastError = error.localizedDescription }
         refresh()
     }
 
-    public func cancelBolus() async { await source.cancelBolus(); refresh() }
+    public func cancelBolus() async {
+        if childBlocked(.cancelBolus) { return }
+        await source.cancelBolus(); refresh()
+    }
 
     // MARK: Advanced control (B3) — gated in the UI by `advancedControlAllowed`.
 
@@ -343,6 +362,7 @@ public final class AppModel {
     }
 
     private func runControl(_ op: () async throws -> Void) async {
+        if childBlocked(.advancedControl) { refresh(); return }
         do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
         refresh()
         // Control actions (suspend/resume, temp basal, modes…) are time-sensitive: push the new state
@@ -419,6 +439,11 @@ public final class AppModel {
     public func confirmRemoteBolus() async {
         guard let pending = pendingRemoteBolus else { return }
         pendingRemoteBolus = nil
+        if childBlocked(.bolus) {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
+                               status: .failed, message: "Locked (child mode)"))
+            return
+        }
         do {
             let delivered = try await source.deliverBolus(units: pending.units)
             echo(bolusOutcome(requestId: pending.requestId, delivered: delivered))
@@ -446,6 +471,10 @@ public final class AppModel {
     /// Deliver a bolus already confirmed on the remote itself (e.g. Garmin hold-to-deliver) —
     /// no phone-side dialog. Echoes delivering → delivered/failed back to the remote.
     public func remoteDeliver(requestId: String, units: Double) async {
+        if childBlocked(.bolus) {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+            return
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: units)
@@ -463,6 +492,10 @@ public final class AppModel {
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
     public func deliverWidgetBolus(requestId: String, units: Double) async -> (delivered: Double, cancelled: Bool, error: String?) {
+        if childBlocked(.bolus) {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+            return (0, false, "Locked (child mode)")
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: units)

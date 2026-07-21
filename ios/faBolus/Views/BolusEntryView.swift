@@ -108,11 +108,15 @@ struct BolusEntryView: View {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.low)
                     }
+                    if !settings.childAllows(.bolus) {
+                        Label("Bolus is disabled by child mode", systemImage: "lock.fill")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
                     .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
-                    .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected)
+                    .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus))
                 }
             }
         }

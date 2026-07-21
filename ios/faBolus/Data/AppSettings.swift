@@ -83,6 +83,18 @@ public final class AppSettings {
     public var missedBolusNudgeEnabled: Bool { didSet { d.set(missedBolusNudgeEnabled, forKey: "missedBolusNudgeEnabled") } }
     public var missedBolusNudgeMgdl: Int { didSet { d.set(missedBolusNudgeMgdl, forKey: "missedBolusNudgeMgdl") } }
 
+    /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
+    /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
+    /// default. The PIN hash lives in the Keychain ([[ChildMode]]), not here.
+    public var childModeEnabled: Bool { didSet { d.set(childModeEnabled, forKey: "childModeEnabled") } }
+    public var childAllowed: Set<ChildFeature> {
+        didSet { d.set((try? JSONEncoder().encode(childAllowed)) ?? Data(), forKey: "childAllowed") }
+    }
+    /// Whether `feature` is currently permitted (always true when child mode is off).
+    public func childAllows(_ feature: ChildFeature) -> Bool {
+        !childModeEnabled || childAllowed.contains(feature)
+    }
+
     /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
     /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
     public func advancedControlAllowed(isMobi: Bool) -> Bool {
@@ -214,6 +226,8 @@ public final class AppSettings {
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false
         missedBolusNudgeMgdl = max(120, (d.object(forKey: "missedBolusNudgeMgdl") as? Int) ?? 180)
+        childModeEnabled = (d.object(forKey: "childModeEnabled") as? Bool) ?? false
+        childAllowed = d.data(forKey: "childAllowed").flatMap { try? JSONDecoder().decode(Set<ChildFeature>.self, from: $0) } ?? ChildFeature.defaultAllowed
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.

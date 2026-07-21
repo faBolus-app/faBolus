@@ -27,6 +27,12 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
+            SettingsLockGate(settings: settings) { settingsList }
+                .navigationTitle("Settings")
+        }
+    }
+
+    @ViewBuilder private var settingsList: some View {
             List {
                 if query.isEmpty {
                     Section {
@@ -35,6 +41,13 @@ struct SettingsView: View {
                                 Label(cat.title, systemImage: cat.icon)
                             }
                         }
+                    }
+                    Section {
+                        NavigationLink { ChildModeView(settings: settings) } label: {
+                            Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
+                        }
+                    } footer: {
+                        Text("Lock this device for a child: block boluses/settings behind a PIN.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {
@@ -59,9 +72,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationTitle("Settings")
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
-        }
     }
 
     @ViewBuilder private func destination(_ cat: SettingsCategory) -> some View {
