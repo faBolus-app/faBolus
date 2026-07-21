@@ -30,6 +30,14 @@ the QR code), and you enter pairing mode with the pump's button.
 <li>When the HUD shows <strong>Connected</strong>, you're paired. Live data starts filling in.</li>
 </ol>
 
+!!! tip "Save the Mobi PIN"
+    Because the Mobi's PIN never changes, the first time faBolus recognizes you've connected to a
+    Mobi it **asks whether to save the PIN**. If you say yes, it's filled in for you next time, so
+    re-pairing (e.g. after using the official app) is just one tap — no re-typing. Pairing a
+    different pump? Edit the code on the Connect screen, or tap **Clear saved PIN** there. (The
+    prompt only appears on a Mobi; the t:slim X2's code changes each time, so there's nothing to
+    save.)
+
 ### t:slim X2 (v7.7+)
 
 The t:slim X2 has a screen, so it shows a fresh 6-digit code when you start pairing on the pump.

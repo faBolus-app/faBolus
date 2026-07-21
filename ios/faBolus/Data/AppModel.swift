@@ -147,6 +147,47 @@ public final class AppModel {
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
 
+    // MARK: - Mobi PIN saving
+    // The Tandem Mobi's 6-digit PIN is fixed. After a full pairing (a typed code) completes on a
+    // pump detected as a Mobi, offer to save that PIN so re-pairing skips re-typing. Users can pair
+    // a different device with a different PIN anytime by editing the code or clearing the saved one.
+
+    /// The saved Mobi PIN, if any (prefilled into the pairing screen). Editable/clearable there.
+    public var savedPin: String? { PairingStore.loadPin() }
+    public func clearSavedPin() { PairingStore.clearPin() }
+
+    /// Non-nil ⇒ the app should ask the user whether to save this just-used PIN (a Mobi was
+    /// recognized). Holds the PIN to save.
+    public var savePinPrompt: String?
+    public func saveOfferedPin() { if let c = savePinPrompt { PairingStore.savePin(c) }; savePinPrompt = nil }
+    public func dismissSavePinPrompt() { savePinPrompt = nil }
+
+    /// The code the user just typed for a full pairing (nil once consumed / on a resume connect),
+    /// so we can offer to save it once the pairing succeeds and we know it's a Mobi.
+    private var enteredPairCode: String?
+
+    /// Connect using a freshly-typed pairing code (full pairing). Remembers the code so a Mobi
+    /// save-PIN offer can fire on success.
+    public func connectWithCode(_ code: String) async {
+        enteredPairCode = code
+        pairingCode = code
+        await connect()
+    }
+
+    /// After a full pairing completes on a Mobi, raise the save-PIN offer (once).
+    private func evaluateSavePinOffer() {
+        switch snapshot.connection {
+        case .connected, .bolusing:
+            guard let code = enteredPairCode else { return }
+            enteredPairCode = nil
+            if PumpModelStore.isMobi() == true, code != PairingStore.loadPin() { savePinPrompt = code }
+        case .disconnected, .error:
+            enteredPairCode = nil   // pairing didn't complete — drop the pending offer
+        default:
+            break
+        }
+    }
+
     /// Set by the Garmin bridge; presents Garmin device selection.
     public var setupGarmin: (@MainActor () -> Void)?
     /// Human-readable Garmin remote status (device name / selection result) for the HUD.
@@ -186,6 +227,7 @@ public final class AppModel {
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
+        evaluateSavePinOffer()
         pushStatusIfNeeded()
         if alertsChanged {
             onNotificationsChange?(activeNotifications)
