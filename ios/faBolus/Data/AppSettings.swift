@@ -72,6 +72,11 @@ public final class AppSettings {
         didSet { d.set((try? JSONEncoder().encode(alertRules)) ?? Data(), forKey: "alertRules") }
     }
 
+    /// Upload glucose + boluses + pump status to a Nightscout site. **Default OFF** — this publishes
+    /// health data off-device, so it's strictly opt-in. Uses the same `nightscout.url` + token the
+    /// follower source uses (plus an optional API secret). See [[NightscoutUploader]].
+    public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
+
     /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
     /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
     public func advancedControlAllowed(isMobi: Bool) -> Bool {
@@ -200,6 +205,7 @@ public final class AppSettings {
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
+        nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.
