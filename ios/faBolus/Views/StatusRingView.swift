@@ -5,6 +5,10 @@ import faBolusCore
 /// connection/activity state (NOT closed-loop status — FaBolus doesn't automate).
 struct StatusRingView: View {
     let snapshot: PumpSnapshot
+    /// Set only when the live glucose is coming from a failover source (not the pump) — shows a
+    /// small "via <source>" badge so the user knows where the number is from and why. `nil` = pump
+    /// feed is live, so nothing extra is drawn (keeps the ring clean in the common case).
+    var failover: (name: String, reason: String)? = nil
 
     var body: some View {
         ZStack {
@@ -55,6 +59,15 @@ struct StatusRingView: View {
             }
             Text(snapshot.connection.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
+            if let f = failover {
+                // Only shown while a failover source is supplying the live value (pump feed stale/
+                // missing). Tap for the reason; nothing is drawn when the pump feed is live.
+                Label("via \(f.name)", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption2).foregroundStyle(.orange)
+                    .labelStyle(.titleAndIcon)
+                    .help(f.reason)
+                    .accessibilityHint(f.reason)
+            }
         }
     }
 }

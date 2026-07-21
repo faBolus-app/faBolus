@@ -56,6 +56,11 @@ public final class AppSettings {
     /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
+    /// Testing opt-in: expose the **Simulated CGM** failover source in the CGM picker. **Default OFF.**
+    /// The simulator emits fake glucose to exercise the failover pipeline without a sensor or cloud
+    /// login; it must never be left on in real use. See [[SimulatedGlucoseSource]].
+    public var simulatedCgmEnabled: Bool { didSet { d.set(simulatedCgmEnabled, forKey: "simulatedCgmEnabled") } }
+
     /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
     /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
     public func advancedControlAllowed(isMobi: Bool) -> Bool {
@@ -181,6 +186,7 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
+        simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.
