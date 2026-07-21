@@ -11,7 +11,18 @@ struct FaBolusApp: App {
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: PumpAlertNotifier?
     @State private var widgetBolus: WidgetBolusReceiver?
+    @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Create or tear down the BLE peripheral host to match the opt-in gate. Off = no advertising.
+    private func syncPeerHost() {
+        if settings.remoteBluetoothEnabled {
+            if peerHost == nil { peerHost = PeerRemoteHost(model: model) }   // Mac / iPhone remote (BLE)
+        } else {
+            peerHost?.stop()
+            peerHost = nil
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -28,7 +39,7 @@ struct FaBolusApp: App {
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
-                    if peerHost == nil { peerHost = PeerRemoteHost(model: model) }             // Mac / iPhone remote (BLE)
+                    syncPeerHost()   // BLE peripheral only when the user has opted in (default off)
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil {
                         notifier = PumpAlertNotifier(model: model)                              // actionable alert notifications
@@ -46,6 +57,7 @@ struct FaBolusApp: App {
                         if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                     }
                 }
+                .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }
                 .onOpenURL { url in
                     if url.scheme == FaBolusDeepLink.scheme {
                         // Widget tap-to-bolus / open (fabolus://bolus). Opens the confirm flow.

@@ -399,13 +399,25 @@ struct RemotesSettingsView: View {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
             }
             Section {
-                NavigationLink {
-                    MacPairingView()
-                } label: {
-                    Label("Mac remote", systemImage: "laptopcomputer")
+                Toggle("Allow remote devices (Bluetooth)", isOn: $settings.remoteBluetoothEnabled)
+                if settings.remoteBluetoothEnabled {
+                    Toggle("Read-only (block remote bolus & pump changes)", isOn: $settings.remoteBluetoothReadOnly)
                 }
-            } header: { Text("Mac") } footer: {
-                Text("Pair the faBolus Mac app to view status and send boluses from your Mac. First-time pairing needs a one-time code.")
+            } header: { Text("Remote access") } footer: {
+                Text("Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (unless read-only) deliver boluses — even when this phone is locked. Pairing is authenticated and the link is end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected — they aren't discoverable by other devices.)")
+            }
+            Section {
+                if settings.remoteBluetoothEnabled {
+                    NavigationLink { MacPairingView() } label: {
+                        Label("Pair a remote (Mac or iPhone)", systemImage: "laptopcomputer")
+                    }
+                } else {
+                    Label("Turn on “Allow remote devices” above to pair", systemImage: "lock.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Enable remote access") { settings.remoteBluetoothEnabled = true }
+                }
+            } header: { Text("Remotes") } footer: {
+                Text("Pair the faBolus Mac app or a parent's iPhone to view status and send boluses. First-time pairing needs a one-time code or QR scan; the host grants each remote its own permissions.")
             }
             Section {
                 ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
