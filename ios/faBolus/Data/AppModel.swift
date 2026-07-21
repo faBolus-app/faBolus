@@ -152,6 +152,28 @@ public final class AppModel {
 
     public func cancelBolus() async { await source.cancelBolus(); refresh() }
 
+    // MARK: Advanced control (B3) — gated in the UI by `advancedControlAllowed`.
+
+    /// The single gate the control UI uses: opt-in ON, pump is a Mobi, and the backend advertises
+    /// at least one advanced-control capability.
+    public var advancedControlAllowed: Bool {
+        AppSettings.shared.advancedControlAllowed(isMobi: snapshot.isMobi)
+            && capabilities.supportsAnyAdvancedControl
+    }
+
+    private func runControl(_ op: () async throws -> Void) async {
+        do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
+        refresh()
+    }
+    public func suspendDelivery() async { await runControl { try await source.suspendDelivery() } }
+    public func resumeDelivery() async { await runControl { try await source.resumeDelivery() } }
+    public func setTempBasal(percent: Int, durationMinutes: Int) async {
+        await runControl { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
+    }
+    public func stopTempBasal() async { await runControl { try await source.stopTempBasal() } }
+    public func setMode(bitmap: Int) async { await runControl { try await source.setMode(bitmap: bitmap) } }
+    public func playFindMyPump() async { await runControl { try await source.playFindMyPump() } }
+
     // MARK: Remote (watch/Garmin) double-confirmation
 
     public func presentRemoteBolus(requestId: String, units: Double) {

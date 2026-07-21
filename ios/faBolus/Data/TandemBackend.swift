@@ -326,6 +326,46 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
+    // MARK: - Advanced control (B3)
+    // Each command is signed with a fresh pump-clock timestamp and sent under a raised WritePolicy
+    // that is restored via `defer`. Insulin-affecting commands use `.allowDelivery` +
+    // `allowInsulinDelivery: true`; non-insulin ones use `.allowNonDelivery`. The pump's response
+    // (parsed in didReceiveFrame) updates the snapshot. The UI only reaches these behind the
+    // advanced-control + Mobi gate; the WritePolicy + pump-side checks are the enforcement backstop.
+
+    private func refreshSigningTimestamp() async throws {
+        let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
+            timeCont = cont
+            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
+        }
+        signingTimestamp = time.currentTime
+    }
+
+    /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
+    /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
+    private func sendControl(_ message: Message, delivery: Bool) async throws {
+        guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
+            throw BolusError.notConnected
+        }
+        try await refreshSigningTimestamp()
+        let previous = client.writePolicy
+        client.writePolicy = delivery ? .allowDelivery : .allowNonDelivery
+        defer { client.writePolicy = previous }
+        _ = try client.send(message, authenticationKey: authenticationKey,
+                            pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
+        // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+
+    public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
+    public func resumeDelivery() async throws { try await sendControl(ResumePumpingRequest(), delivery: true) }
+    public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
+        try await sendControl(SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
+    }
+    public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
+    public func setMode(bitmap: Int) async throws { try await sendControl(SetModesRequest(bitmap: bitmap), delivery: true) }
+    public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
+
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
 
     private var pollTick = 0
@@ -674,6 +714,10 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as ControlIQInfoV2Response:
             snapshot.controlIQMode = m.currentUserModeType
             snapshot.controlIQEnabled = m.closedLoopEnabled
+        case let m as SuspendPumpingResponse:
+            if m.accepted { snapshot.deliverySuspended = true }
+        case let m as ResumePumpingResponse:
+            if m.accepted { snapshot.deliverySuspended = false }
         default: break
         }
         onChange?()

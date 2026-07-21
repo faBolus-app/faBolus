@@ -56,6 +56,26 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
+                    if settings.advancedControlEnabled {
+                        if model.advancedControlAllowed {
+                            NavigationLink { PumpControlView(model: model) } label: {
+                                Label("Pump Control", systemImage: "slider.horizontal.3")
+                            }
+                        } else {
+                            Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
+                                 : "Advanced control requires a Tandem Mobi pump.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Advanced control")
+                } footer: {
+                    Text("Suspend/resume, temp basal, modes, and find-my-pump. Mobi only, off by default. "
+                         + "Insulin-affecting actions ask for confirmation.")
+                }
+
+                Section {
                     NavigationLink {
                         GarminScreensView(settings: settings)
                     } label: {
