@@ -78,6 +78,13 @@ struct WatchBolusView: View {
             }
         }
         .padding()
+        // Auto-close a couple seconds after the bolus finishes (delivered/cancelled/failed), so the
+        // watch returns to the HUD on its own; the Done button is still there for an immediate exit.
+        .onChange(of: model.lastStatus) { _, s in
+            if s == .delivered || s == .cancelled || s == .failed || s == .outOfRange {
+                Task { try? await Task.sleep(nanoseconds: 2_500_000_000); dismiss() }
+            }
+        }
     }
 
     private func modeButton(_ m: Mode, _ title: String) -> some View {
