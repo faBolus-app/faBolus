@@ -26,7 +26,7 @@ Because of that, what an independent feed can be depends on the sensor:
 | Sensor | Failover feed | Notes |
 | --- | --- | --- |
 | **Dexcom G7 / ONE+** | **Direct Bluetooth** (local, no internet) | Listens to the sensor's broadcast alongside the official app. Fastest, works even with no phone/internet. |
-| **Dexcom G6** | **Dexcom Share** (cloud), or **xDrip4iOS** | faBolus can't read a G6 directly (no spare Bluetooth slot), so Share cloud is the fallback (slow/unreliable). Better: if [xDrip4iOS](#via-xdrip4ios) is your G6 collector, faBolus reads it **locally**. |
+| **Dexcom G6 / G5 / ONE** | **Direct Bluetooth** (passive, local) | faBolus reads the transmitter **passively, alongside the official Dexcom app** (which stays the master) — local, no internet. The Dexcom app must be running. See [Dexcom G6 direct](#dexcom-g5g6one-direct) below. Fallbacks: [xDrip4iOS](#via-xdrip4ios) or Dexcom Share (cloud). |
 | **FreeStyle Libre 2 / 3** | **LibreLinkUp** (cloud), or **xDrip4iOS** (local) | LibreLinkUp follower (~5 min). Better: if [xDrip4iOS](#via-xdrip4ios) reads your Libre, faBolus gets it **locally** via the App Group — no cloud. |
 | **Eversense E3 / 365** | **Apple Health** | The Eversense app writes glucose to Apple Health; faBolus reads it. Requires enabling HealthKit — see below. |
 | **Via xDrip4iOS** (Libre 1/2, Dexcom G5/G6/ONE, + more) | **Apple Health** or **App Group (local)** | Run [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift) for your sensor; faBolus reads what it decodes. Biggest coverage boost — see [Via xDrip4iOS](#via-xdrip4ios) below. |
@@ -80,6 +80,25 @@ Which to choose: **App Group** if you self-compile both under one team (fastest,
 Health** otherwise (near-real-time, no team matching). Either way the pump stays primary and the same
 staleness/age rules apply.
 
+## Dexcom G5/G6/ONE (direct)
+
+faBolus can read a Dexcom **G6** (also G5 / ONE) **directly over Bluetooth**, locally — the "follow
+the Dexcom app" approach, so you don't need a separate xDrip install:
+
+- **Keep the official Dexcom app installed and running.** It stays the *master* (it authenticates and
+  owns the session); faBolus connects as a second listener and **passively reads** the glucose the
+  transmitter broadcasts. faBolus never authenticates or writes to the transmitter, so it can't
+  disconnect the Dexcom app.
+- Optionally enter your **transmitter ID** under Settings → Glucose failover → CGM account credentials
+  (it just helps pick the right sensor if several Dexcoms are nearby). No login, no cloud.
+- Decoding is vendored from LoopKit/CGMBLEKit (MIT), passive path only.
+
+!!! warning "Needs the Dexcom app connected, and validate coexistence on-device"
+    Without the official Dexcom app installed and connected to the transmitter, this gives no
+    readings (it relies on that app keeping the session alive). And a G6 allows only a limited number
+    of Bluetooth connections — **pump + Dexcom app + faBolus** all at once should be validated on your
+    hardware. (The G7, which faBolus reads passively too, has no such limit.)
+
 ## On the watch
 
 - **Apple Watch:** if your **Dexcom G7** is selected, the watch reads it **directly over Bluetooth**
@@ -104,7 +123,8 @@ Old readings are worse than no reading, so faBolus is strict about age:
 ## Keeping it working
 
 The Dexcom G7 decoders are **vendored** (copied) from LoopKit's G7SensorKit into
-`Packages/G7SensorKit`; the cloud clients (LibreLinkUp, Dexcom Share) are hand-ported from the
+`Packages/G7SensorKit`; the G5/G6/ONE passive decoders from LoopKit's CGMBLEKit into
+`Packages/DexcomG6Kit`; the cloud clients (LibreLinkUp, Dexcom Share) are hand-ported from the
 community projects; and the xDrip App Group reader follows `JohanDegraeve/xdrip-client-swift`. These
 are **pinned snapshots — they do not auto-update.** If a sensor's protocol or a cloud/xDrip format
 changes upstream, the matching source is updated by hand. Each file's header notes where it came from.

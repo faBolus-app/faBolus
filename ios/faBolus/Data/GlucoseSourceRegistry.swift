@@ -13,6 +13,8 @@ public enum GlucoseSourceRegistry {
     public static let enabled: [GlucoseSourceDescriptor] = [
         GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
                                 sensors: ["Dexcom G7", "Dexcom ONE+"]) { DexcomG7BLESource() },
+        GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE (direct BLE, passive)",
+                                sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { DexcomG6BLESource() },
         GlucoseSourceDescriptor(id: "librelinkup", name: "FreeStyle Libre 2/3 (LibreLinkUp)",
                                 sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { LibreLinkUpSource() },
         GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",

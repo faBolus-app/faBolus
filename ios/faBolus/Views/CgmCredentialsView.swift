@@ -17,6 +17,8 @@ struct CgmCredentialsView: View {
     // Nightscout (universal)
     @State private var nsURL = ""
     @State private var nsToken = ""
+    // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
+    @State private var g6TransmitterID = ""
 
     @State private var saved = false
 
@@ -60,6 +62,15 @@ struct CgmCredentialsView: View {
                 Text("A Nightscout site already receiving your CGM data. Token is optional if the site allows unauthenticated reads.")
             }
 
+            Section {
+                TextField("Transmitter ID (6 chars, optional)", text: $g6TransmitterID)
+                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
+            } header: {
+                Text("Dexcom G5 / G6 / ONE (direct)")
+            } footer: {
+                Text("Keep the official Dexcom app running — faBolus reads the transmitter passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed.")
+            }
+
             if saved {
                 Label("Saved — reopen the app to apply.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.footnote)
@@ -84,6 +95,7 @@ struct CgmCredentialsView: View {
         shareRegion = GlucoseSourceConfig.string("dexcomshare.region") ?? "us"
         nsURL = GlucoseSourceConfig.string("nightscout.url") ?? ""
         nsToken = CredentialStore.get(account: "nightscout.token") ?? ""
+        g6TransmitterID = GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? ""
     }
 
     private func save() {
@@ -101,5 +113,6 @@ struct CgmCredentialsView: View {
 
         GlucoseSourceConfig.set(trimmed(nsURL), "nightscout.url")
         CredentialStore.set(trimmed(nsToken), account: "nightscout.token")
+        GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 }

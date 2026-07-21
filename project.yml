@@ -10,6 +10,9 @@ packages:
   G7SensorKit:
     # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
     path: Packages/G7SensorKit
+  DexcomG6Kit:
+    # Dexcom G5/G6/ONE passive glucose-message decoders, vendored from LoopKit/CGMBLEKit (MIT).
+    path: Packages/DexcomG6Kit
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -32,6 +35,8 @@ targets:
         product: faBolusCore
       - package: G7SensorKit
         product: G7SensorKit
+      - package: DexcomG6Kit
+        product: DexcomG6Kit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
