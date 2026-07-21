@@ -55,7 +55,7 @@ public final class AppModel {
                              defaultScreen: AppSettings.shared.garminDefaultScreen,
                              glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
                              glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes,
-                             detailsOrder: AppSettings.shared.detailsOrder,
+                             detailsOrder: AppSettings.shared.watchDetailsOrder,   // remotes use the watch-specific order
                              watchChartRanges: AppSettings.shared.watchChartRanges,
                              garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay)
     }

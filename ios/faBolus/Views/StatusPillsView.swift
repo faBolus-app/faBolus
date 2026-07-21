@@ -42,6 +42,24 @@ struct StatusPillsView: View {
         case "controlIQ":
             pill(icon: controlIQIcon, tint: snapshot.controlIQEnabled ? AppTheme.inRange : .gray,
                  value: controlIQValue, label: "Control-IQ")
+        case "lastBolus":
+            pill(icon: "drop.triangle.fill", tint: AppTheme.insulin,
+                 value: snapshot.lastBolusUnits.map { String(format: "%.2f U", $0) } ?? "—", label: "Last bolus")
+        case "carbRatio":
+            pill(icon: "fork.knife", tint: .orange,
+                 value: snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—", label: "Carb ratio")
+        case "isf":
+            pill(icon: "arrow.down.right.circle", tint: .purple,
+                 value: snapshot.isf > 0 ? "\(snapshot.isf)" : "—", label: "ISF")
+        case "target":
+            pill(icon: "target", tint: AppTheme.inRange,
+                 value: snapshot.targetBg > 0 ? "\(snapshot.targetBg)" : "—", label: "Target")
+        case "maxBolus":
+            pill(icon: "gauge.with.dots.needle.67percent", tint: .teal,
+                 value: String(format: "%.1f U", snapshot.maxBolusUnits), label: "Max bolus")
+        case "cob":
+            pill(icon: "leaf.fill", tint: .green,
+                 value: snapshot.cobGrams > 0 ? "\(Int(snapshot.cobGrams)) g" : "—", label: "Active carbs")
         default:
             EmptyView()
         }

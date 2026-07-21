@@ -74,10 +74,11 @@ public final class AppSettings {
         id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
     }
 
-    /// Which detail rows show, and in what order, on the phone Details card + the watch Details page
-    /// (mirrored to the watch). Hidden rows are simply absent from the array. Same reorder/hide model
-    /// as `garminScreenOrder`.
+    /// Which detail rows show, and in what order, on the **phone** Details card. Phone-only.
     public var detailsOrder: [String] { didSet { d.set(detailsOrder, forKey: "detailsOrder") } }
+    /// Which detail rows show, and in what order, on the **watch/Garmin** Details page — independent
+    /// of the phone's. Mirrored to the remotes.
+    public var watchDetailsOrder: [String] { didSet { d.set(watchDetailsOrder, forKey: "watchDetailsOrder") } }
     /// Which status pills show, and in what order, on the phone dashboard.
     public var pillsOrder: [String] { didSet { d.set(pillsOrder, forKey: "pillsOrder") } }
     /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
@@ -101,8 +102,9 @@ public final class AppSettings {
         default: return id
         }
     }
-    /// Status pills available on the dashboard, in default order.
-    public static let pillItems: [String] = ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ"]
+    /// Status pills available on the dashboard, in default order (first 6 shown by default).
+    public static let pillItems: [String] =
+        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
     public static func pillLabel(_ id: String) -> String {
         switch id {
         case "iob": return "Active insulin"
@@ -111,9 +113,17 @@ public final class AppSettings {
         case "cgm": return "CGM"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
+        case "lastBolus": return "Last bolus"
+        case "carbRatio": return "Carb ratio"
+        case "isf": return "Correction (ISF)"
+        case "target": return "Target glucose"
+        case "maxBolus": return "Max bolus"
+        case "cob": return "Active carbs (COB)"
         default: return id
         }
     }
+    /// Pills shown by default when the user hasn't customized (the original set).
+    public static let defaultPills: [String] = ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ"]
     /// The watch history-chart tap-through ranges available to enable.
     public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
 
@@ -181,7 +191,9 @@ public final class AppSettings {
         let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
-        pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String], all: Self.pillItems)
+        watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
+        // Default to the original 6 pills (the full option set is larger); honor a saved selection.
+        pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String] ?? Self.defaultPills, all: Self.pillItems)
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
             .filter { Self.chartRangeOptions.contains($0) }
         watchChartRanges = (storedRanges?.isEmpty ?? true) ? Self.chartRangeOptions : storedRanges!.sorted()
