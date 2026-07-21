@@ -129,3 +129,33 @@ community projects; and the xDrip App Group reader follows `JohanDegraeve/xdrip-
 are **pinned snapshots — they do not auto-update.** If a sensor's protocol or a cloud/xDrip format
 changes upstream, the matching source is updated by hand. Each file's header notes where it came from.
 
+## Knowing which source is live
+
+When a failover source is supplying the live number (because the pump feed went stale or missing), the
+glucose ring shows a small **"via &lt;source&gt;"** badge — e.g. *via Dexcom Share*. Tap it (or check the
+details) for the reason. When the pump feed is the one being shown, no badge appears, so the dashboard
+stays clean in the normal case.
+
+## Testing failover without a sensor
+
+The cloud sources can be exercised by entering credentials, but the direct-BLE / Apple Health / xDrip
+paths need real hardware or data. To test the whole failover pipeline (the badge, the chart backfill,
+staleness) without any of that, turn on **Settings → CGM &amp; failover → Testing → Simulated CGM**, then
+pick **Simulated CGM** as the failover source. It emits a smooth synthetic curve that sweeps through
+low / in-range / high.
+
+!!! warning "Simulated readings are fake"
+    The Simulated CGM is a diagnostic tool. Its numbers are not real glucose — never leave it selected
+    in real use. Turning the toggle off clears it if it was the active source.
+
+## Uploading to Nightscout
+
+faBolus can also **push** data to a Nightscout site (the reverse of the follower). Under **Settings →
+CGM &amp; failover → CGM account credentials → Nightscout upload**, turn on **Upload to Nightscout** and
+(optionally) enter an API secret. It uploads glucose **entries**, bolus **treatments**, and pump
+**devicestatus** (IOB / reservoir / battery) to the site configured above.
+
+!!! note "Off by default"
+    Uploading sends your health data off-device, so it's strictly opt-in. It de-dupes by timestamp and
+    throttles device status, so it's safe to leave running.
+

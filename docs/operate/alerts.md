@@ -49,3 +49,21 @@ signed like a bolus but does **not** modify insulin delivery, so it runs under a
     pump itself**. The dismiss path is validated by construction (its bytes are asserted exactly and
     it uses the same signing/framing proven byte-exact for boluses), but it isn't yet dismissing on
     the pump in practice. A fix is in progress — don't rely on it to clear alerts on the pump.
+
+## Conditional auto-rules
+
+Under **Settings → Alert rules** you can add rules that automatically **snooze** or **dismiss** alerts
+that meet conditions you choose:
+
+- **Time of day** — e.g. quiet CGM highs between 22:00 and 07:00 (a window that ends before it starts
+  wraps past midnight).
+- **Alert kind** — reminders, alerts, or CGM alerts.
+- **Specific alert ids**, and/or a **glucose condition** (only act when glucose is below / above a value).
+
+Rules are checked top to bottom; the first match wins. *Auto-snooze* hides the alert and stops
+re-notifying (it re-nags after 30 minutes if still active), like tapping Clear. *Auto-dismiss* does the
+same and, on pumps that allow remote dismiss, also clears it on the pump.
+
+!!! warning "Alarms are never auto-handled"
+    For safety, **alarms and malfunctions** — the pump's most severe notifications — are never
+    auto-snoozed or auto-dismissed, no matter what rules you set.
