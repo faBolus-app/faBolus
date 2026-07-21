@@ -21,6 +21,8 @@ struct CgmCredentialsView: View {
     // Nightscout (universal)
     @State private var nsURL = ""
     @State private var nsToken = ""
+    @State private var nsApiSecret = ""
+    @State private var settings = AppSettings.shared
     // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
     @State private var g6TransmitterID = ""
 
@@ -77,6 +79,18 @@ struct CgmCredentialsView: View {
                 Text("Nightscout (any CGM)")
             } footer: {
                 Text("A Nightscout site already receiving your CGM data. Token is optional if the site allows unauthenticated reads.")
+            }
+
+            Section {
+                Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
+                if settings.nightscoutUploadEnabled {
+                    SecureField("API secret (optional)", text: $nsApiSecret)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+            } header: {
+                Text("Nightscout upload")
+            } footer: {
+                Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to the site above. Uses an API secret if provided, otherwise the token. **Off by default — this sends your health data off-device.**")
             }
 
             Section {
@@ -150,6 +164,7 @@ struct CgmCredentialsView: View {
         shareRegion = GlucoseSourceConfig.string("dexcomshare.region") ?? "us"
         nsURL = GlucoseSourceConfig.string("nightscout.url") ?? ""
         nsToken = CredentialStore.get(account: "nightscout.token") ?? ""
+        nsApiSecret = CredentialStore.get(account: "nightscout.apisecret") ?? ""
         g6TransmitterID = GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? ""
     }
 
@@ -168,6 +183,7 @@ struct CgmCredentialsView: View {
 
         GlucoseSourceConfig.set(trimmed(nsURL), "nightscout.url")
         CredentialStore.set(trimmed(nsToken), account: "nightscout.token")
+        CredentialStore.set(trimmed(nsApiSecret), account: "nightscout.apisecret")
         GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 

@@ -286,6 +286,7 @@ public final class AppModel {
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
+        NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         evaluateSavePinOffer()
         pushStatusIfNeeded()
         if alertsChanged {
