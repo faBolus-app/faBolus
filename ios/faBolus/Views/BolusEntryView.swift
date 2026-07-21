@@ -123,7 +123,9 @@ struct BolusEntryView: View {
                 mode = model.capabilities.supportsCarbEntry ? settings.defaultBolusMode : .units
                 modeInitialized = true
             }
-            if bg.isEmpty, let g = model.snapshot.glucose { bg = "\(g)" }
+            // Never auto-fill the correction BG from a stale CGM value (see GlucoseFreshness.staleAfter).
+            // The user can still type one in manually.
+            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)" }
         }
         .toolbar {
             if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }

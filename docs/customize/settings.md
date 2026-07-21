@@ -57,11 +57,21 @@ The Settings tab lists the read-only **Siri** phrases for reference. Full detail
 value-returning **Shortcuts** actions you can use in automations, are on
 [Siri & Shortcuts](shortcuts.md).
 
+## CGM failover
+
+Under **Settings → Glucose failover** you can choose an optional independent CGM source used as a
+backup when the pump's glucose goes stale, and — for the cloud sources — enter your account under
+**CGM account credentials**. The pump stays the primary source. See
+[CGM failover](../operate/cgm-failover.md) for what each sensor supports and how to set it up.
+Changing the source or credentials takes effect after you reopen the app.
+
 ## Safety behaviors you can rely on (not configurable)
 
 Always on by design:
 
-- A CGM reading older than **6 minutes** is hidden everywhere (phone, watch, widgets, Siri).
+- A CGM reading older than **6 minutes** is treated as stale — shown greyed with its age on the
+  phone and watches, and reported as not-current by the widgets and Siri. It's never presented as
+  the live value.
 - Every bolus needs an **explicit confirmation**; remote requests are confirmed deliberately, and
   the **Quick Bolus** widget requires a 1-2-3 tap.
 - Every insulin-affecting command is **cryptographically signed** — the pump rejects anything

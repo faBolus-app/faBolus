@@ -51,6 +51,10 @@ public final class PhoneRemoteHost {
             }
         case .statusRead:
             link.send(model.statusCommand(includeHistory: true))
+        case .suspendPump:
+            model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
+        case .resumePump:
+            model.requestRemoteControl(requestId: cmd.requestId, action: .resume)
         default:
             break
         }

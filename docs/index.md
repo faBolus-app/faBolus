@@ -75,7 +75,8 @@ device.
     **Dashboard · Bolus · Alerts · Settings.** The Dashboard shows glucose with a trend and a
     3 / 6 / 12 / 24-hour chart — with an optional **IOB overlay** and **bolus bars** — over a
     details card with everything from the pump (carb ratio, correction factor, target, max
-    bolus, reservoir, battery, CGM, last bolus). Readings older than **6 minutes** are hidden.
+    bolus, reservoir, battery, CGM, last bolus). Every reading shows its **age**, and anything
+    older than **6 minutes** is shown greyed — never as the current value.
 
 -   :material-water:{ .lg .middle } **Boluses, with guardrails**
 
@@ -100,6 +101,16 @@ device.
     Lock/Home Screen widgets (glucose, overview, a bolus shortcut, and a **Quick Bolus** with a
     1-2-3 confirm), plus **read-only Siri** ("what's my glucose in faBolus") and a set of
     Shortcuts data actions.
+
+-   :material-backup-restore:{ .lg .middle } **CGM failover**
+
+    ---
+
+    An optional **independent glucose feed** as a backup, so a reading keeps flowing if the pump,
+    phone, or sensor link drops — Dexcom G7 **and G6/G5/ONE** direct over Bluetooth, **xDrip4iOS**
+    (universal — via Apple Health or a local App Group), or LibreLinkUp / Dexcom Share / Nightscout /
+    Apple Health.
+    The pump stays primary; stale readings are never shown as current. [Learn more](operate/cgm-failover.md).
 
 </div>
 

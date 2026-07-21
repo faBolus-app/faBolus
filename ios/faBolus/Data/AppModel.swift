@@ -11,6 +11,8 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+    /// Decoded history-log events for the Logbook (B2), newest first.
+    public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
@@ -50,7 +52,9 @@ public final class AppModel {
                              bolusIncrement: AppSettings.shared.watchBolusIncrement,
                              carbIncrement: AppSettings.shared.watchCarbIncrement,
                              screenOrder: AppSettings.shared.garminScreenOrder,
-                             defaultScreen: AppSettings.shared.garminDefaultScreen)
+                             defaultScreen: AppSettings.shared.garminDefaultScreen,
+                             glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
+                             glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes)
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
@@ -62,6 +66,43 @@ public final class AppModel {
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
     public var pendingRemoteBolus: PendingRemoteBolus?
+
+    /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
+    public struct PendingRemoteControl: Equatable, Sendable {
+        public enum Action: String, Sendable { case suspend, resume }
+        public let requestId: String; public let action: Action
+    }
+    public var pendingRemoteControl: PendingRemoteControl?
+
+    /// Called by a remote bridge when the watch/Garmin requests suspend/resume. Only honored when
+    /// advanced control is enabled for a Mobi; otherwise rejected back to the remote. Never executes
+    /// directly — it stages a phone-side confirmation (RootTabView presents the alert).
+    public func requestRemoteControl(requestId: String, action: PendingRemoteControl.Action) {
+        guard advancedControlAllowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                                          message: "Advanced control is off"))
+            return
+        }
+        pendingRemoteControl = PendingRemoteControl(requestId: requestId, action: action)
+    }
+    public func confirmRemoteControl() async {
+        guard let p = pendingRemoteControl else { return }
+        pendingRemoteControl = nil
+        switch p.action {
+        case .suspend: await suspendDelivery()
+        case .resume: await resumeDelivery()
+        }
+        let ok = lastError == nil
+        echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId,
+                                      status: ok ? .delivered : .failed,
+                                      message: ok ? (p.action == .suspend ? "Suspended" : "Resumed") : (lastError ?? "Failed")))
+    }
+    public func rejectRemoteControl() {
+        if let p = pendingRemoteControl {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId, status: .cancelled, message: "Rejected on phone"))
+        }
+        pendingRemoteControl = nil
+    }
     /// Status-echo handlers registered by remote bridges (watch / Garmin). Broadcasts to all;
     /// each remote ignores statuses for requestIds it didn't send.
     private var remoteEchoes: [@MainActor (RemoteCommand) -> Void] = []
@@ -93,6 +134,12 @@ public final class AppModel {
     }
 
     private let source: PumpBackend
+    /// Periodic re-arbitration so failover stays live when the pump is quiet (see init).
+    private var arbiterTimer: Timer?
+
+    /// Optional independent CGM feed used as a **failover** when the pump-relayed glucose goes stale.
+    /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
+    private var glucoseSource: GlucoseSource?
 
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
@@ -101,6 +148,51 @@ public final class AppModel {
     /// True when a saved pairing exists — Connect can resume without a code.
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
+
+    // MARK: - Mobi PIN saving
+    // The Tandem Mobi's 6-digit PIN is fixed. After a full pairing (a typed code) completes on a
+    // pump detected as a Mobi, offer to save that PIN so re-pairing skips re-typing. Users can pair
+    // a different device with a different PIN anytime by editing the code or clearing the saved one.
+
+    /// The saved Mobi PIN, if any (prefilled into the pairing screen). Editable/clearable there.
+    public var savedPin: String? { PairingStore.loadPin() }
+    public func clearSavedPin() { PairingStore.clearPin() }
+
+    /// Non-nil ⇒ the app should ask the user whether to save this just-used PIN (a Mobi was
+    /// recognized). Holds the PIN to save.
+    public var savePinPrompt: String?
+    public func saveOfferedPin() { if let c = savePinPrompt { PairingStore.savePin(c) }; savePinPrompt = nil }
+    public func dismissSavePinPrompt() { savePinPrompt = nil }
+
+    /// The code the user just typed for a full pairing (nil once consumed / on a resume connect),
+    /// so we can offer to save it once the pairing succeeds and we know it's a Mobi.
+    private var enteredPairCode: String?
+
+    /// Connect using a freshly-typed pairing code (full pairing). Remembers the code so a Mobi
+    /// save-PIN offer can fire on success.
+    public func connectWithCode(_ code: String) async {
+        enteredPairCode = code
+        pairingCode = code
+        await connect()
+    }
+
+    /// After a full pairing completes on a Mobi, raise the save-PIN offer (once).
+    private func evaluateSavePinOffer() {
+        switch snapshot.connection {
+        case .connected, .bolusing:
+            guard enteredPairCode != nil else { return }
+            // Wait until the pump model is known — it comes from ApiVersionResponse (authoritative),
+            // which arrives shortly after connect, not at discovery. pumpModelName is empty until then.
+            guard !snapshot.pumpModelName.isEmpty else { return }
+            let code = enteredPairCode!
+            enteredPairCode = nil
+            if snapshot.isMobi, code != PairingStore.loadPin() { savePinPrompt = code }
+        case .disconnected, .error:
+            enteredPairCode = nil   // pairing didn't complete — drop the pending offer
+        default:
+            break
+        }
+    }
 
     /// Set by the Garmin bridge; presents Garmin device selection.
     public var setupGarmin: (@MainActor () -> Void)?
@@ -112,21 +204,62 @@ public final class AppModel {
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
         source.onChange = { [weak self] in self?.refresh() }
+        // Optional glucose failover source, with a crash-loop guard: if the selected source was armed
+        // on the previous launch and never disarmed, it crashed during start — do NOT auto-start it
+        // again (that would brick every launch). The user re-enables it by re-selecting it in
+        // Settings (which clears the guard); by then any fix has shipped.
+        let selId = GlucoseSourceRegistry.selectedId()
+        if let selId, UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
+            UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
+            self.glucoseSource = nil
+            self.failoverAutoDisabled = selId
+        } else if let gs = GlucoseSourceRegistry.makeSelected(), let selId {
+            self.glucoseSource = gs
+            gs.onChange = { [weak self] in self?.refresh() }
+            UserDefaults.standard.set(selId, forKey: Self.sourceCrashGuardKey)   // arm
+            Task { await gs.start() }
+            // Disarm once it survives ~10s without crashing the launch.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                if UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
+                    UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
+                }
+            }
+            // Re-arbitrate on a timer too: onChange only fires on NEW data, so when the pump is
+            // disconnected/quiet the failover would not otherwise take over (or a value would not age).
+            arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.refresh() }
+            }
+        }
     }
+
+    static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
+    /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
+    /// in Settings to try again.
+    public private(set) var failoverAutoDisabled: String?
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
     /// the bolus-entry sheet.
     public var openBolusRequested = false
 
     private func refresh() {
-        snapshot = source.snapshot
-        glucoseHistory = source.glucoseHistory
+        // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
+        // stale. A stale reading is never published as current (see GlucoseArbiter).
+        // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
+        let pumpFresh = source.snapshot.glucose != nil && !GlucoseFreshness.isStale(source.snapshot.glucoseDate)
+        glucoseSource?.setPrimaryHealthy(pumpFresh)
+        let (snap, hist) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
+                                                pumpHistory: source.glucoseHistory,
+                                                source: glucoseSource)
+        snapshot = snap
+        glucoseHistory = hist
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
+        historyEvents = source.historyEvents
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
+        evaluateSavePinOffer()
         pushStatusIfNeeded()
         if alertsChanged {
             onNotificationsChange?(activeNotifications)
@@ -148,6 +281,30 @@ public final class AppModel {
     }
 
     public func cancelBolus() async { await source.cancelBolus(); refresh() }
+
+    // MARK: Advanced control (B3) — gated in the UI by `advancedControlAllowed`.
+
+    /// The single gate the control UI uses: opt-in ON, pump is a Mobi, and the backend advertises
+    /// at least one advanced-control capability.
+    public var advancedControlAllowed: Bool {
+        AppSettings.shared.advancedControlAllowed(isMobi: snapshot.isMobi)
+            && capabilities.supportsAnyAdvancedControl
+    }
+
+    private func runControl(_ op: () async throws -> Void) async {
+        do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
+        refresh()
+    }
+    public func suspendDelivery() async { await runControl { try await source.suspendDelivery() } }
+    public func resumeDelivery() async { await runControl { try await source.resumeDelivery() } }
+    public func setTempBasal(percent: Int, durationMinutes: Int) async {
+        await runControl { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
+    }
+    public func stopTempBasal() async { await runControl { try await source.stopTempBasal() } }
+    public func setMode(bitmap: Int) async { await runControl { try await source.setMode(bitmap: bitmap) } }
+    public func playFindMyPump() async { await runControl { try await source.playFindMyPump() } }
+    /// Read the G6 transmitter ID from the pump (CGM-failover auto-fill). nil if unavailable.
+    public func readG6TransmitterId() async -> String? { await source.readG6TransmitterId() }
 
     // MARK: Remote (watch/Garmin) double-confirmation
 

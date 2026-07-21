@@ -44,4 +44,46 @@ enum WatchPairingStore {
             kSecAttrAccount as String: account,
         ] as CFDictionary)
     }
+
+    // MARK: - Saved pump PIN (Tandem Mobi)
+    // The Mobi's 6-digit PIN is fixed (behind the cartridge), so the watch can save it to skip
+    // re-typing when re-pairing directly to the pump. Its own account, so `clear()` (drop the
+    // resume secret) leaves the saved PIN intact.
+    private static let pinAccount = "mobiPin"
+
+    static func savePin(_ pin: String) {
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: pinAccount,
+        ]
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = Data(pin.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
+    }
+
+    static func loadPin() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: pinAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+        else { return nil }
+        return s
+    }
+
+    static func clearPin() {
+        SecItemDelete([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: pinAccount,
+        ] as CFDictionary)
+    }
 }

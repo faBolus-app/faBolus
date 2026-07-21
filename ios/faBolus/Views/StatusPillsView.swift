@@ -13,14 +13,60 @@ struct StatusPillsView: View {
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         }
-        HStack(spacing: 10) {
-            pill(icon: batteryIcon(snapshot.batteryPercent),
-                 tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
-                 value: "\(snapshot.batteryPercent)%", label: "Pump")
-            pill(icon: snapshot.cgmActive ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-                 tint: snapshot.cgmActive ? AppTheme.inRange : .gray,
-                 value: snapshot.cgmActive ? "OK" : "—", label: "CGM")
+        // CGM pill shows the reading's age and turns warning-colored when stale (self-updating).
+        TimelineView(.periodic(from: .now, by: 20)) { ctx in
+            HStack(spacing: 10) {
+                pill(icon: batteryIcon(snapshot.batteryPercent),
+                     tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
+                     value: "\(snapshot.batteryPercent)%", label: "Pump")
+                cgmPill(now: ctx.date)
+            }
         }
+        // Basal + Control-IQ (from the CurrentBasalStatus / ControlIQInfoV2 reads).
+        HStack(spacing: 10) {
+            if snapshot.deliverySuspended {
+                pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
+            } else {
+                pill(icon: "waveform.path.ecg", tint: AppTheme.insulin,
+                     value: String(format: "%.2f U/hr", snapshot.basalRateUnitsPerHour), label: "Basal")
+            }
+            pill(icon: controlIQIcon, tint: snapshot.controlIQEnabled ? AppTheme.inRange : .gray,
+                 value: controlIQValue, label: "Control-IQ")
+        }
+    }
+
+    /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
+    private var controlIQValue: String {
+        guard snapshot.controlIQEnabled else { return "Off" }
+        switch snapshot.controlIQMode {
+        case 1: return "Sleep"
+        case 2: return "Exercise"
+        default: return "On"
+        }
+    }
+    private var controlIQIcon: String {
+        switch snapshot.controlIQMode {
+        case 1: return "moon.zzz.fill"
+        case 2: return "figure.run"
+        default: return "checkmark.circle.fill"
+        }
+    }
+
+    private func cgmPill(now: Date) -> some View {
+        let active = snapshot.cgmActive
+        // No reading → treat as hidden; otherwise fresh/stale/hidden by age.
+        let present: GlucosePresentation = snapshot.glucose == nil
+            ? .hidden : GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
+        let age = snapshot.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: now) }
+        let value: String
+        let tint: Color
+        switch present {
+        case .hidden: value = active ? "OK" : "—"; tint = active ? AppTheme.inRange : .gray
+        case .stale:  value = age ?? "—"; tint = AppTheme.low
+        case .fresh:  value = age ?? "OK"; tint = AppTheme.inRange
+        }
+        return pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
+                    tint: tint, value: value, label: "CGM")
     }
 
     /// SF Symbol whose fill level tracks the battery percentage.
