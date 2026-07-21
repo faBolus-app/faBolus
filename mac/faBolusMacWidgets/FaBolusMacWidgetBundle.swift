@@ -38,6 +38,11 @@ private enum MacWidgetUI {
         default: return .gray
         }
     }
+    /// Color for the glucose number honoring staleness + the user's "color by range" preference.
+    static func glucoseColor(_ snap: WidgetSnapshot) -> Color {
+        if snap.isGlucoseStale { return .secondary }
+        return DisplaySettings.widgetColorByRange ? glucoseColor(snap.rangeCategory) : .primary
+    }
 }
 
 // MARK: - Glucose
@@ -61,7 +66,7 @@ struct MacGlucoseView: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(snap.displayGlucose)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(snap.isGlucoseStale ? Color.secondary : MacWidgetUI.glucoseColor(snap.rangeCategory))
+                    .foregroundStyle(MacWidgetUI.glucoseColor(snap))
                 Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
             }
             if let d = snap.glucoseDate {
@@ -88,17 +93,27 @@ struct MacStatusWidget: Widget {
 
 struct MacStatusWidgetView: View {
     let snap: WidgetSnapshot
+    /// Reservoir and/or battery on one line, per the user's toggles (nil if both are off).
+    private var reservoirBatteryLine: String? {
+        var parts: [String] = []
+        if DisplaySettings.showReservoir { parts.append(String(format: "Reservoir %.0f U", snap.reservoirUnits)) }
+        if DisplaySettings.showBattery { parts.append("\(snap.batteryPercent)%") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(snap.displayGlucose).font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(snap.isGlucoseStale ? Color.secondary : MacWidgetUI.glucoseColor(snap.rangeCategory))
+                        .foregroundStyle(MacWidgetUI.glucoseColor(snap))
                     Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
                 }
-                Text(String(format: "IOB %.2f U", snap.iobUnits)).font(.caption)
-                Text(String(format: "Reservoir %.0f U · %d%%", snap.reservoirUnits, snap.batteryPercent))
-                    .font(.caption).foregroundStyle(.secondary)
+                if DisplaySettings.showIOB {
+                    Text(String(format: "IOB %.2f U", snap.iobUnits)).font(.caption)
+                }
+                if let line = reservoirBatteryLine {
+                    Text(line).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Sparkline(points: snap.recentPoints)
                 .frame(maxWidth: .infinity, maxHeight: 60)

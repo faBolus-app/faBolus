@@ -15,10 +15,10 @@ final class MacConnection {
     /// Whether the paired iPhone is currently connected. Driven by `MacRemoteModel.reachabilityDidChange`.
     var connected: Bool = false
 
-    @ObservationIgnored private let peer: PeerLink
+    @ObservationIgnored private let peer: BLELink
     @ObservationIgnored private let defaultsKey = "pairedPhone"
 
-    init(peer: PeerLink) {
+    init(peer: BLELink) {
         self.peer = peer
         pairedPhone = UserDefaults.standard.string(forKey: defaultsKey)
         connected = peer.isReachable

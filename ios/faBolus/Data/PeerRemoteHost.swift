@@ -2,18 +2,19 @@ import Foundation
 import faBolusCore
 import UIKit
 
-/// iPhone-side receiver for the **Mac** remote, carried over `PeerLink` (MultipeerConnectivity)
-/// since WatchConnectivity can't reach a Mac. Structurally identical to `PhoneRemoteHost` — it
+/// iPhone-side receiver for the **Mac** remote, carried over `BLELink` (Bluetooth LE) so it keeps
+/// working when the phone is locked or the app is backgrounded — the phone runs as a BLE peripheral
+/// under the `bluetooth-peripheral` background mode. Structurally identical to `PhoneRemoteHost` — it
 /// translates the transport's `RemoteCommand`s into the same `AppModel` calls and echoes status
 /// back — only the transport differs. `AppModel`'s echo broadcast fans out to every registered
 /// remote, and each remote ignores `requestId`s it didn't send, so the Mac and Apple Watch coexist.
 ///
-/// The Mac confirms on-device (hold-to-deliver / 1-2-3), like the Apple Watch and Garmin, so a
-/// `bolusRequest` is delivered directly through the validated signed path.
+/// The Mac confirms on-device (inline confirm), like the Apple Watch and Garmin, so a `bolusRequest`
+/// is delivered directly through the validated signed path.
 @MainActor
 public final class PeerRemoteHost {
-    // Advertise under the device name ("Zev's iPhone") so the Mac can identify it when pairing.
-    private let link = PeerLink(role: .advertiser, displayName: UIDevice.current.name)
+    // Advertise as a BLE peripheral under the device name ("Zev's iPhone") so the Mac identifies it.
+    private let link = BLELink(role: .peripheral, displayName: UIDevice.current.name)
     private weak var model: AppModel?
 
     public init(model: AppModel) {

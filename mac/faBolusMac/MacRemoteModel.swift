@@ -16,12 +16,21 @@ final class MacRemoteModel: RemoteClientModel {
     /// Discovery/pairing state for the Settings → Connection screen. (Named `pairing` to avoid the
     /// base model's `connection` string, which mirrors the pump connection state.)
     private(set) var pairing: MacConnection!
+    /// Display customization (menu bar + widgets).
+    let display = MacDisplayModel()
 
     /// Typed access to the underlying transport for pairing.
-    private var peer: PeerLink { link as! PeerLink }
+    private var peer: BLELink { link as! BLELink }
+
+    /// Signed delta since the previous reading (e.g. "+3"), or nil without two points.
+    var deltaText: String? {
+        guard history.count >= 2 else { return nil }
+        let delta = history[history.count - 1] - history[history.count - 2]
+        return delta >= 0 ? "+\(delta)" : "\(delta)"
+    }
 
     init() {
-        super.init(link: PeerLink(role: .browser))
+        super.init(link: BLELink(role: .central))
         pairing = MacConnection(peer: peer)   // reads the remembered phone and auto-connects
         widgetBolus = MacWidgetBolusReceiver(model: self)
         requestStatus()   // ask the phone for a snapshot as soon as we connect (queued until then)
