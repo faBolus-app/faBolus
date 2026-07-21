@@ -174,6 +174,20 @@ class RemoteClientModel {
         startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg))
     }
 
+    /// Preview of the units the phone would deliver for a carb amount — mirrors the pump calculator
+    /// (food = carbs ÷ carb ratio; plus a BG-vs-target correction minus IOB; rounded to 0.05 U), so a
+    /// remote can show the estimated dose like the Garmin/phone. Returns nil until the carb ratio is
+    /// known. A stale CGM value isn't used for the correction (matches `deliverCarbs`).
+    func estimatedUnits(forCarbs grams: Double) -> Double? {
+        guard carbRatio > 0, grams > 0 else { return carbRatio > 0 ? 0 : nil }
+        let food = grams / carbRatio
+        var correction = 0.0
+        if !isGlucoseStale, let g = glucose, isf > 0 {
+            correction = max(0, Double(g - targetBg) / Double(isf) - iobUnits)
+        }
+        return (max(0, food + correction) * 20).rounded() / 20
+    }
+
     /// Send a bolus command and enter the pending/delivering state, correlating future echoes by its
     /// `requestId`. Internal so a subclass can drive it with a caller-supplied requestId (e.g. the
     /// Mac's widget quick-bolus, which must correlate the phone's echo to the widget request).

@@ -81,6 +81,8 @@ struct MacBolusEntryView: View {
         Binding(get: { amount ?? 0 }, set: { amount = $0 })
     }
     private var amountText: String { String(format: isCarbs ? "%.0f %@" : "%.2f %@", value, unitLabel) }
+    /// In carbs mode, the units the phone would deliver (nil if unknown or nothing entered).
+    private var estUnits: Double? { (isCarbs && amount != nil) ? model.estimatedUnits(forCarbs: value) : nil }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -114,6 +116,12 @@ struct MacBolusEntryView: View {
                 }
                 .frame(maxWidth: .infinity)
 
+                // In carbs mode, preview the units the phone will deliver (like the Garmin).
+                if let u = estUnits {
+                    Text(String(format: "≈ %.2f U", u))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Button {
                     if let a = amount { amount = min(max(0, a), maxV) }   // clamp typed value
                     if canDeliver { confirming = true }
@@ -133,6 +141,10 @@ struct MacBolusEntryView: View {
         VStack(spacing: 8) {
             Text(isCarbs ? "Deliver \(Int(value)) g?" : "Deliver \(amountText)?")
                 .font(.callout.weight(.semibold))
+            if let u = estUnits {
+                Text(String(format: "≈ %.2f U", u))
+                    .font(.callout.monospacedDigit()).foregroundStyle(.primary)
+            }
             Text(isCarbs ? "The iPhone calculates the dose and delivers it on the pump."
                          : "The iPhone delivers this on the pump.")
                 .font(.caption).foregroundStyle(.secondary)
