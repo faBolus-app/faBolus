@@ -66,6 +66,39 @@ public protocol PumpBackend: AnyObject {
     /// Read the paired G6 CGM transmitter ID from the pump (for CGM-failover auto-fill). Returns nil
     /// if the pump can't/doesn't report it. Read-only.
     func readG6TransmitterId() async -> String?
+
+    // MARK: - Mobi workflows (A4) — the screenless Mobi needs a phone for these.
+
+    // CGM sensor session (non-insulin control). G6: set the transmitter id, then start with the
+    // sensor code ("0000"/0 to join an existing session). G7/ONE+: set the pairing code + sensor type.
+    func startG6Session(transmitterId: String, sensorCode: Int) async throws
+    func startG7Session(pairingCode: Int) async throws
+    func setSensorType(_ typeId: Int) async throws
+    func stopCgmSession() async throws
+    /// Poll the pump's CGM session status into `snapshot.cgmSessionActive`.
+    func refreshCgmSession() async
+
+    // Cartridge change / fill (INSULIN-AFFECTING — bench-validate on saline first). Multi-step:
+    // suspend → clear alerts → enter change mode → (swap) → exit → detect; fill tubing/cannula after.
+    func enterChangeCartridgeMode() async throws
+    func exitChangeCartridgeMode() async throws
+    func enterFillTubingMode() async throws
+    func exitFillTubingMode() async throws
+    /// Fill the cannula with `milliunits` (e.g. 300 = 0.3 U). Insulin-affecting; bounded by the UI.
+    func fillCannula(milliunits: Int) async throws
+    /// Poll the pump's cartridge/load status into `snapshot.cartridgeLoadState`.
+    func refreshLoadStatus() async
+
+    // Settings (non-insulin config).
+    func setMaxBolus(units: Double) async throws
+    func setMaxBasal(unitsPerHour: Double) async throws
+    /// Set the pump clock to the phone's current time.
+    func syncTimeToNow() async throws
+}
+
+/// The largest prime-cannula amount the UI allows (defense-in-depth on an insulin-dispensing step).
+public enum FillLimits {
+    public static let maxCannulaMilliunits = 1000   // 1.0 U — Tandem cannula prime is ~0.3 U
 }
 
 public enum ControlError: Error, LocalizedError {
@@ -82,6 +115,21 @@ public extension PumpBackend {
     func setMode(bitmap: Int) async throws { throw ControlError.notSupported }
     func playFindMyPump() async throws { throw ControlError.notSupported }
     func readG6TransmitterId() async -> String? { nil }
+
+    func startG6Session(transmitterId: String, sensorCode: Int) async throws { throw ControlError.notSupported }
+    func startG7Session(pairingCode: Int) async throws { throw ControlError.notSupported }
+    func setSensorType(_ typeId: Int) async throws { throw ControlError.notSupported }
+    func stopCgmSession() async throws { throw ControlError.notSupported }
+    func refreshCgmSession() async {}
+    func enterChangeCartridgeMode() async throws { throw ControlError.notSupported }
+    func exitChangeCartridgeMode() async throws { throw ControlError.notSupported }
+    func enterFillTubingMode() async throws { throw ControlError.notSupported }
+    func exitFillTubingMode() async throws { throw ControlError.notSupported }
+    func fillCannula(milliunits: Int) async throws { throw ControlError.notSupported }
+    func refreshLoadStatus() async {}
+    func setMaxBolus(units: Double) async throws { throw ControlError.notSupported }
+    func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
+    func syncTimeToNow() async throws { throw ControlError.notSupported }
 }
 
 public enum BolusError: Error, LocalizedError {
