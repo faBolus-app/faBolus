@@ -65,6 +65,7 @@ struct MenuBarContentView: View {
             if showingSettings {
                 ScrollView {
                     MacSettingsPane(model: model, display: model.display)
+                        .padding(.trailing, 12)   // keep content clear of the overlay scroll bar
                 }
                 .frame(maxHeight: 400)
             } else {
