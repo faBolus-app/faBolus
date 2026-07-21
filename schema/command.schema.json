@@ -158,6 +158,16 @@
       "type": "integer",
       "minimum": 0,
       "description": "Minutes after going stale to keep showing the greyed value before hiding it as '--' (statusRead reply). 0 = hide immediately when stale; omitted = never hide."
+    },
+    "detailsOrder": {
+      "type": "array",
+      "description": "Detail rows a remote's details screen should show, in order (statusRead reply). Hidden rows are omitted.",
+      "items": { "type": "string", "enum": ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"] }
+    },
+    "watchChartRanges": {
+      "type": "array",
+      "description": "Time ranges (hours) a remote's history chart cycles through on tap (statusRead reply).",
+      "items": { "type": "integer", "enum": [3, 6, 12, 24] }
     }
   },
   "additionalProperties": false
