@@ -69,6 +69,9 @@ public final class AppSettings {
     /// How the Garmin BG complication presents: "numericColor" (numeric value with range-coloring +
     /// a Latin trend in the unit slot) or "stringTrend" (a plain "124 ^" string, no color). Mirrored.
     public var garminComplicationDisplay: String { didSet { d.set(garminComplicationDisplay, forKey: "garminComplicationDisplay") } }
+    /// Which Garmin store app the phone pairs with: "beta" (id a1b2c3d4…) or "official" (id ded131…).
+    /// Developer setting; applied when the Garmin remote (re)registers — reopen the app after changing.
+    public var garminTargetApp: String { didSet { d.set(garminTargetApp, forKey: "garminTargetApp") } }
     public static let complicationDisplayOptions = ["numericColor", "stringTrend"]
     public static func complicationDisplayLabel(_ id: String) -> String {
         id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
@@ -190,6 +193,8 @@ public final class AppSettings {
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
         let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
+        let gt = d.string(forKey: "garminTargetApp") ?? "beta"
+        garminTargetApp = (gt == "official") ? "official" : "beta"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.

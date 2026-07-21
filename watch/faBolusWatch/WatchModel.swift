@@ -102,6 +102,12 @@ final class WatchModel {
             if cmd.requestId == pendingRequestId {
                 lastStatus = cmd.status
                 statusMessage = cmd.message
+                // Reflect the actual delivered amount from the outcome echo immediately, so the
+                // Details "Last bolus" shows the just-delivered value (e.g. 0.05 U) right away
+                // instead of the previous bolus until the next status push arrives.
+                if (cmd.status == .delivered || cmd.status == .cancelled), let d = cmd.deliveredUnits {
+                    lastBolusUnits = d
+                }
             }
         case .statusRead:
             // Treat a non-positive relayed value as "no reading" (nil) so the complication/UI show
@@ -123,7 +129,10 @@ final class WatchModel {
             if let r = cmd.watchChartRanges, !r.isEmpty { chartRanges = r }
             if let msg = cmd.message { connection = msg }
             if let h = cmd.history { history = h }
-            lastBolusUnits = cmd.lastBolusUnits
+            // Don't overwrite last-bolus from a routine status push while a bolus is in progress —
+            // that value is still the PREVIOUS bolus mid-delivery and would flicker (e.g. 1.9 → 0.05).
+            // The .delivered/.cancelled echo sets the correct amount instead.
+            if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let a = cmd.alerts { alerts = a }
             // Mirror the phone's staleness policy so the watch marks/hides + stops using stale
             // readings for carb→unit exactly like the phone.
