@@ -141,8 +141,22 @@ public struct PumpSnapshot: Sendable, Equatable {
 /// notification type onto this so the app (and remotes) never depend on a specific pump library.
 /// `kind` raw values match the remote-protocol alert kinds (reminder 0 / alert 1 / alarm 2 /
 /// cgmAlert 3) so `RemoteCommand.RemoteAlert` mapping is a straight passthrough.
-public enum PumpAlertKind: Int, Sendable, Equatable {
+public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIterable {
     case reminder = 0, alert = 1, alarm = 2, cgmAlert = 3
+
+    /// Human label for the alert-rule editor.
+    public var label: String {
+        switch self {
+        case .reminder: return "Reminder"
+        case .alert:    return "Alert"
+        case .alarm:    return "Alarm"
+        case .cgmAlert: return "CGM alert"
+        }
+    }
+
+    /// Whether an auto-rule may act on this kind. **Alarms are never auto-dismissed/snoozed** — they
+    /// are the pump's most-severe, safety-critical notifications.
+    public var isAutoRuleEligible: Bool { self != .alarm }
 }
 
 public struct PumpAlert: Identifiable, Sendable, Equatable {

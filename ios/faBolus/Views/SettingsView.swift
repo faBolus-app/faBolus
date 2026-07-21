@@ -69,6 +69,7 @@ struct SettingsView: View {
         case .bolus:   BolusSettingsView(settings: settings)
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
+        case .alerts:  AlertRulesView(settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
@@ -77,13 +78,14 @@ struct SettingsView: View {
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case bolus, display, cgm, pump, remotes, about
+    case bolus, display, cgm, alerts, pump, remotes, about
     var id: String { rawValue }
     var title: String {
         switch self {
         case .bolus: return "Bolus & entry"
         case .display: return "Display & chart"
         case .cgm: return "CGM & failover"
+        case .alerts: return "Alert rules"
         case .pump: return "Pump & control"
         case .remotes: return "Watch & Garmin"
         case .about: return "About & help"
@@ -94,6 +96,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .bolus: return "syringe.fill"
         case .display: return "chart.xyaxis.line"
         case .cgm: return "sensor.tag.radiowaves.forward.fill"
+        case .alerts: return "bell.badge.fill"
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
         case .about: return "info.circle"
@@ -127,6 +130,7 @@ enum SettingsIndex {
         .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
+        .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),

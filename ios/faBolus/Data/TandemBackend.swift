@@ -59,7 +59,30 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Expire acks whose alert is gone from the pump (condition resolved) or whose snooze has
         // elapsed, so a genuinely new occurrence shows (and re-notifies) again.
         acknowledged = acknowledged.filter { present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow }
+        applyAutoRules(raw, now: now)
         activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map(Self.toAlert)
+    }
+
+    /// Apply the user's conditional auto-rules (time-of-day / kind / glucose → auto-snooze or
+    /// auto-dismiss). Both actions record a local ack (hide + stop notifying); `autoDismiss` also
+    /// fires a signed dismiss on pumps that honor it. SAFETY: alarms **and** malfunctions are never
+    /// auto-acted — the malfunction list is excluded here, and the engine additionally refuses the
+    /// `.alarm` kind.
+    private func applyAutoRules(_ raw: [PumpNotification], now: Date) {
+        let rules = AppSettings.shared.alertRules
+        guard !rules.isEmpty else { return }
+        let protectedKeys = Set((malfunctionList + alarmList).map(noteKey))
+        for n in raw {
+            let key = noteKey(n)
+            if acknowledged[key] != nil || protectedKeys.contains(key) { continue }
+            let alert = Self.toAlert(n)
+            guard let action = AlertRuleEngine.action(for: alert, rules: rules, now: now,
+                                                      glucose: snapshot.glucose) else { continue }
+            acknowledged[key] = now   // hide locally + stop re-notifying (both actions)
+            if action == .autoDismiss, capabilities.supportsRemoteAlertDismiss {
+                Task { [weak self] in await self?.dismissNotification(alert) }
+            }
+        }
     }
     // Diagnostic: raw bitmaps + how many alert responses we've received (surfaced on the HUD to
     // confirm the pump is actually answering the alert polls).
