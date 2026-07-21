@@ -20,7 +20,6 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
 
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
-    private static let restoreIdentifier = "com.fabolus.app.cgm"
 
     // Sensor clock → wall clock. G7 timestamps are "seconds since pairing"; we anchor them to the
     // wall time a live message arrived: wall(s) = receivedAt + (s - messageTimestamp).
@@ -31,8 +30,9 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     func start() async {
         guard central == nil else { return }
         status = .searching
-        central = CBCentralManager(delegate: self, queue: .main,
-                                   options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier])
+        // No restore identifier — see DexcomG6BLESource: a duplicate restore id (launch source +
+        // test source) makes CBCentralManager.init assert. Passive failover needs no restoration.
+        central = CBCentralManager(delegate: self, queue: .main)
     }
 
     func stop() {

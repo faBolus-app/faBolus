@@ -22,7 +22,6 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
 
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
-    private static let restoreIdentifier = "com.fabolus.app.cgm.g6"
 
     /// Optional Dexcom transmitter ID (6 chars). Used only to pick the right transmitter by its
     /// advertised name suffix when several Dexcom sensors are in range; passive reads need no auth.
@@ -31,8 +30,12 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     func start() async {
         guard central == nil else { return }
         status = .searching
-        central = CBCentralManager(delegate: self, queue: .main,
-                                   options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier])
+        // NO CBCentralManagerOptionRestoreIdentifierKey: CoreBluetooth asserts (SIGABRT in
+        // -[CBCentralManager initWithDelegate:queue:options:]) when a restore identifier is used by
+        // more than one manager in the process — which happens when the launch-selected source and
+        // the "test failover" both build a G6 source, and on restore relaunches. A passive failover
+        // source doesn't need background state restoration (it re-scans on start), so skip it.
+        central = CBCentralManager(delegate: self, queue: .main)
     }
 
     func stop() {
