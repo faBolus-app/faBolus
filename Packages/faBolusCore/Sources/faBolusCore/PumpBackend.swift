@@ -38,6 +38,14 @@ public protocol PumpBackend: AnyObject {
     var lastBolusCancelled: Bool { get }
     /// Called by the view model to observe changes.
     var onChange: (@MainActor () -> Void)? { get set }
+
+    /// Decoded history-log events for the Logbook (B2), newest first. Backends that don't decode
+    /// history return `[]` (see the default). Populated from the pump's history backfill.
+    var historyEvents: [HistoryEvent] { get }
+}
+
+public extension PumpBackend {
+    var historyEvents: [HistoryEvent] { [] }
 }
 
 public enum BolusError: Error, LocalizedError {

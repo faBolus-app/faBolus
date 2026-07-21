@@ -22,8 +22,10 @@ struct RootTabView: View {
             AlertsScreenView(model: model)
                 .tabItem { Label("Alerts", systemImage: "bell.fill") }
                 .badge(model.activeNotifications.count).tag(2)
+            LogbookView(model: model)
+                .tabItem { Label("Logbook", systemImage: "clock.arrow.circlepath") }.tag(3)
             SettingsView(model: model)
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(3)
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(4)
         }
         .task { await autoReconnectIfNeeded() }
         .onChange(of: scenePhase) { _, phase in

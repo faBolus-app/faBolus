@@ -106,6 +106,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
     // the IOB series so both show pump history, not just data since the app connected).
     private var backfillBoluses: [(pumpSec: UInt32, units: Double, iob: Double)] = []
+    // Decoded typed history-log events for the Logbook (B2). Buffered across pages, mapped to
+    // neutral HistoryEvents in finishBackfill (where the pump→phone date conversion lives).
+    private var backfillEventLogs: [any HistoryLogEvent] = []
+    public private(set) var historyEvents: [HistoryEvent] = []
     private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page
     private var backfillFirstSeq: UInt32 = 0    // oldest available sequence number
     private var backfillPages = 0
@@ -464,7 +468,64 @@ public final class TandemBackend: NSObject, PumpBackend {
             if iob.count > 288 { iob.removeFirst(iob.count - 288) }
             iobHistory = iob
         }
+
+        // --- Logbook events (B2): map decoded typed events → neutral, newest first ---
+        if !backfillEventLogs.isEmpty {
+            var events = historyEvents
+            var seen = Set(historyEvents.map { $0.id })
+            for e in backfillEventLogs {
+                guard !seen.contains(e.sequenceNum), let ne = Self.neutralEvent(e, date: pumpDate(e.pumpTimeSec)) else { continue }
+                seen.insert(e.sequenceNum); events.append(ne)
+            }
+            events.sort { $0.date > $1.date }          // newest first
+            if events.count > 500 { events.removeLast(events.count - 500) }
+            historyEvents = events
+        }
         onChange?()
+    }
+
+    /// Maps a PumpX2Kit typed history-log event to a neutral `HistoryEvent` for the Logbook.
+    /// Returns nil to skip high-frequency / non-user-facing records (e.g. raw CGM samples — those
+    /// are shown on the chart, not the logbook). A curated set of the user-meaningful families.
+    static func neutralEvent(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
+        func u(_ f: Float) -> String { String(format: "%.2f U", f) }
+        let seq = e.sequenceNum
+        switch e {
+        case let m as BolusCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
+        case let m as BolexCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))
+        case let m as CarbEnteredHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs))
+        case let m as BGHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: "\(m.bg) mg/dL")
+        case let m as BasalRateChangeHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .basal, title: "Basal rate change", detail: u(m.commandBasalRate) + "/hr")
+        case let m as TempRateActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate started", detail: String(format: "%.0f%%", m.percent))
+        case is TempRateCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
+        case let m as PumpingSuspendedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin suspended", detail: m.reasonId == 0 ? "" : "reason \(m.reasonId)")
+        case is PumpingResumedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin resumed")
+        case let m as CartridgeFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge filled", detail: u(m.insulinActual))
+        case is CannulaFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cannula filled")
+        case is TubingFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Tubing filled")
+        case is CartridgeInsertedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge inserted")
+        case is CartridgeRemovedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge removed")
+        case let m as AlarmActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alarm, title: "Alarm", detail: "id \(m.alarmId)")
+        case let m as AlertActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alert, title: "Alert", detail: "id \(m.alertId)")
+        default:
+            return nil   // skip unmapped / high-frequency records (e.g. CGM samples shown on the chart)
+        }
     }
 }
 
@@ -480,7 +541,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
             didBackfill = false; backfillActive = false
             backfillTimer?.invalidate(); backfillTimer = nil
-            backfillBuffer.removeAll(); backfillBoluses.removeAll()
+            backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
         default: break
         }
         onChange?()
@@ -584,6 +645,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             backfillActive = true
             backfillBuffer.removeAll(keepingCapacity: true)
             backfillBoluses.removeAll(keepingCapacity: true)
+            backfillEventLogs.removeAll(keepingCapacity: true)
             backfillFirstSeq = m.firstSequenceNum
             backfillNextEnd = m.lastSequenceNum
             backfillPages = 0
@@ -592,6 +654,8 @@ extension TandemBackend: PumpBLEClientDelegate {
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
             for b in m.bolusRecords { backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
+            backfillEventLogs.append(contentsOf: m.events)
+            if backfillEventLogs.count > 2000 { backfillEventLogs.removeFirst(backfillEventLogs.count - 2000) }
             scheduleBackfillTick()   // debounce: page ends when frames stop arriving
         case let m as AlertStatusResponse: alertList = m.notifications; noteAlert("al", m.bitmap); mergeNotifications()
         case let m as AlarmStatusResponse: alarmList = m.notifications; noteAlert("am", m.bitmap); mergeNotifications()

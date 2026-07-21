@@ -11,6 +11,8 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+    /// Decoded history-log events for the Logbook (B2), newest first.
+    public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
@@ -123,6 +125,7 @@ public final class AppModel {
         glucoseHistory = source.glucoseHistory
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
+        historyEvents = source.historyEvents
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
