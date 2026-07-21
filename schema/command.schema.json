@@ -168,6 +168,11 @@
       "type": "array",
       "description": "Time ranges (hours) a remote's history chart cycles through on tap (statusRead reply).",
       "items": { "type": "integer", "enum": [3, 6, 12, 24] }
+    },
+    "garminComplicationDisplay": {
+      "type": "string",
+      "enum": ["numericColor", "stringTrend"],
+      "description": "How the Garmin BG complication presents (statusRead reply): numericColor = numeric value with range-coloring + Latin trend in the unit slot; stringTrend = a plain value+trend string, no color."
     }
   },
   "additionalProperties": false
