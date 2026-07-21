@@ -630,6 +630,21 @@ public final class TandemBackend: NSObject, PumpBackend {
     static func neutralEvent(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
         func u(_ f: Float) -> String { String(format: "%.2f U", f) }
         let seq = e.sequenceNum
+        // Resolve a pump alert/alarm/CGM-alert id to its (title, detail) using the same name tables
+        // the live-alert path uses (the history-log id shares that numbering). Falls back to a
+        // generic label + the raw id so an unknown id is still distinguishable, never mislabeled.
+        func alertName(_ id: Int) -> (String, String) {
+            if let n = AlertStatusResponse.name(for: id) { return (n.title, n.detail ?? "") }
+            return ("Alert", "id \(id)")
+        }
+        func alarmName(_ id: Int) -> (String, String) {
+            if let n = AlarmStatusResponse.name(for: id) { return (n.title, n.detail ?? "") }
+            return ("Alarm", "id \(id)")
+        }
+        func cgmAlertName(_ id: Int) -> (String, String) {
+            if let n = CGMAlertStatusResponse.name(for: id) { return (n.title, n.detail ?? "") }
+            return ("CGM alert", "id \(id)")
+        }
         switch e {
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
@@ -660,9 +675,24 @@ public final class TandemBackend: NSObject, PumpBackend {
         case is CartridgeRemovedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge removed")
         case let m as AlarmActivatedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .alarm, title: "Alarm", detail: "id \(m.alarmId)")
+            let n = alarmName(m.alarmId)
+            return HistoryEvent(id: seq, date: date, category: .alarm, title: n.0, detail: n.1)
+        case let m as AlarmClearedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alarm, title: alarmName(m.alarmId).0 + " cleared")
+        case let m as AlarmAckHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alarm, title: alarmName(m.alarmId).0 + " acknowledged")
         case let m as AlertActivatedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .alert, title: "Alert", detail: "id \(m.alertId)")
+            let n = alertName(m.alertId)
+            return HistoryEvent(id: seq, date: date, category: .alert, title: n.0, detail: n.1)
+        case let m as AlertClearedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alert, title: alertName(m.alertId).0 + " cleared")
+        case let m as AlertAckHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alert, title: alertName(m.alertId).0 + " acknowledged")
+        case let m as CgmAlertActivatedHistoryLog:
+            let n = cgmAlertName(m.alertId)
+            return HistoryEvent(id: seq, date: date, category: .alert, title: n.0, detail: n.1)
+        case let m as ReminderActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .reminder, title: "Reminder", detail: "id \(m.reminderId)")
         default:
             return nil   // skip unmapped / high-frequency records (e.g. CGM samples shown on the chart)
         }
