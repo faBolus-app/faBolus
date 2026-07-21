@@ -62,6 +62,10 @@ public protocol PumpBackend: AnyObject {
     func setMode(bitmap: Int) async throws
     /// Play the "find my pump" sound. Non-insulin.
     func playFindMyPump() async throws
+
+    /// Read the paired G6 CGM transmitter ID from the pump (for CGM-failover auto-fill). Returns nil
+    /// if the pump can't/doesn't report it. Read-only.
+    func readG6TransmitterId() async -> String?
 }
 
 public enum ControlError: Error, LocalizedError {
@@ -77,6 +81,7 @@ public extension PumpBackend {
     func stopTempBasal() async throws { throw ControlError.notSupported }
     func setMode(bitmap: Int) async throws { throw ControlError.notSupported }
     func playFindMyPump() async throws { throw ControlError.notSupported }
+    func readG6TransmitterId() async -> String? { nil }
 }
 
 public enum BolusError: Error, LocalizedError {

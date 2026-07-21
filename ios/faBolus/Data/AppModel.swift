@@ -285,6 +285,8 @@ public final class AppModel {
     public func stopTempBasal() async { await runControl { try await source.stopTempBasal() } }
     public func setMode(bitmap: Int) async { await runControl { try await source.setMode(bitmap: bitmap) } }
     public func playFindMyPump() async { await runControl { try await source.playFindMyPump() } }
+    /// Read the G6 transmitter ID from the pump (CGM-failover auto-fill). nil if unavailable.
+    public func readG6TransmitterId() async -> String? { await source.readG6TransmitterId() }
 
     // MARK: Remote (watch/Garmin) double-confirmation
 

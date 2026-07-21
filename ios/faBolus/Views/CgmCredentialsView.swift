@@ -5,7 +5,10 @@ import faBolusCore
 /// UserDefaults (`GlucoseSourceConfig`); passwords/tokens go to the Keychain (`CredentialStore`).
 /// Applied on the next launch (like the source/backend selection). Sensitive fields use SecureField.
 struct CgmCredentialsView: View {
+    let model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var readingTxId = false
+    @State private var readTxIdError: String?
 
     // LibreLinkUp (Libre 2/3)
     @State private var libreUser = ""
@@ -68,10 +71,28 @@ struct CgmCredentialsView: View {
             Section {
                 TextField("Transmitter ID (6 chars, optional)", text: $g6TransmitterID)
                     .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                Button {
+                    Task {
+                        readingTxId = true; readTxIdError = nil
+                        if let id = await model.readG6TransmitterId() {
+                            g6TransmitterID = id; save()
+                        } else {
+                            readTxIdError = "Couldn't read the transmitter ID — connect to the pump first (it reports the paired G6 transmitter)."
+                        }
+                        readingTxId = false
+                    }
+                } label: {
+                    HStack {
+                        Label("Read transmitter ID from pump", systemImage: "arrow.down.circle")
+                        if readingTxId { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(readingTxId)
+                if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
             } header: {
                 Text("Dexcom G5 / G6 / ONE (direct)")
             } footer: {
-                Text("Keep the official Dexcom app running — faBolus reads the transmitter passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed.")
+                Text("Keep the official Dexcom app running — faBolus reads the transmitter passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it automatically from the connected pump.")
             }
 
             if saved {
