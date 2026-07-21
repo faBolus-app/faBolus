@@ -24,9 +24,20 @@ struct CgmCredentialsView: View {
     // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
     @State private var g6TransmitterID = ""
 
-    @State private var saved = false
     @State private var testing = false
-    @State private var testResult: String?
+    @State private var results: [SourceResult] = []
+    @State private var savedNote = false
+
+    /// One method's save-&-test outcome, shown in the results list.
+    private struct SourceResult: Identifiable {
+        enum Status { case ok, warn, fail }
+        let id: String
+        let name: String
+        let status: Status
+        let detail: String
+        var symbol: String { status == .ok ? "checkmark.circle.fill" : status == .warn ? "exclamationmark.triangle.fill" : "xmark.circle.fill" }
+        var color: Color { status == .ok ? .green : status == .warn ? .orange : .red }
+    }
 
     var body: some View {
         Form {
@@ -95,40 +106,38 @@ struct CgmCredentialsView: View {
                 Text("Keep the official Dexcom app running — faBolus reads the transmitter passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it automatically from the connected pump.")
             }
 
-            if saved {
-                Label("Saved — reopen the app to apply.", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green).font(.footnote)
-            }
-
             Section {
                 Button {
-                    save(); saved = true
-                    Task { await testSelectedSource() }
+                    Task { await saveAndTestAll() }
                 } label: {
                     HStack {
-                        Label("Save & test failover source", systemImage: "bolt.horizontal.circle")
-                        if testing { Spacer(); ProgressView() }
+                        Image(systemName: "checkmark.circle")
+                        Text(testing ? "Testing…" : "Save & test").fontWeight(.semibold)
+                        Spacer()
+                        if testing { ProgressView() }
                     }
                 }
                 .disabled(testing)
-                if let r = testResult {
-                    Text(r).font(.footnote)
-                        .foregroundStyle(r.hasPrefix("✅") ? .green : (r.hasPrefix("⚠️") ? .orange : .secondary))
-                        .textSelection(.enabled)
+
+                ForEach(results) { r in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: r.symbol).foregroundStyle(r.color)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(r.name).font(.subheadline)
+                            Text(r.detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
-            } header: {
-                Text("Test")
+                if savedNote && results.isEmpty {
+                    Text("Saved. Enter credentials for a source above to test it.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             } footer: {
-                Text("Saves these credentials, then builds the **selected** failover source (Settings → CGM source) and tries to pull a live reading right now — so you can verify it works without disconnecting the pump or reopening the app.")
+                Text("Saves all credentials, then tries to pull a live reading from **every** source you've entered credentials for — so you can see which ones work. Then pick the one to use in Settings → CGM source.")
             }
         }
         .navigationTitle("CGM credentials")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save(); saved = true }
-            }
-        }
         .onAppear(perform: load)
     }
 
@@ -162,27 +171,43 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 
-    /// Build the currently-selected failover source, start it, and poll up to ~10 s for a live
-    /// reading — a self-contained diagnostic that verifies credentials + connectivity in-app.
-    @MainActor private func testSelectedSource() async {
-        testing = true; testResult = nil
+    private func filled(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// Save all credentials, then test **every** source that has credentials entered: build it, start
+    /// it, and poll ~7 s for a live reading, appending a per-method result as each finishes. Sources
+    /// with no credentials (G7 BLE, HealthKit, xDrip App Group) aren't cloud-testable and are skipped.
+    @MainActor private func saveAndTestAll() async {
+        save()
+        testing = true; savedNote = true; results = []
         defer { testing = false }
-        guard let descriptor = GlucoseSourceRegistry.selected(),
-              let source = GlucoseSourceRegistry.makeSelected() else {
-            testResult = "No failover source selected. Pick one in Settings → CGM source, then test."
-            return
-        }
-        await source.start()
-        for _ in 0..<10 {   // ~10 s: cloud pollers + BLE need a moment for the first reading
-            if let s = source.latest {
-                let age = Int(max(0, Date().timeIntervalSince(s.date)))
-                let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
-                let staleNote = GlucoseFreshness.isStale(s.date) ? " — STALE" : ""
-                testResult = "✅ \(descriptor.name): \(s.mgdl) mg/dL \(s.trend.rawValue) (\(ageStr))\(staleNote)"
-                return
+        let toTest: [String] = [
+            (filled(libreUser) && filled(librePass)) ? "librelinkup" : nil,
+            (filled(shareUser) && filled(sharePass)) ? "dexcom-share" : nil,
+            filled(nsURL) ? "nightscout" : nil,
+            filled(g6TransmitterID) ? "dexcom-g6-ble" : nil,
+        ].compactMap { $0 }
+
+        for id in toTest {
+            let name = GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
+            guard let source = GlucoseSourceRegistry.make(id: id) else {
+                results.append(SourceResult(id: id, name: name, status: .fail, detail: "couldn't build source"))
+                continue
             }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await source.start()
+            var result = SourceResult(id: id, name: name, status: .warn,
+                                      detail: "no reading yet — check credentials / that the sensor is sharing")
+            for _ in 0..<7 {   // ~7 s per source for the first reading
+                if let s = source.latest {
+                    let age = Int(max(0, Date().timeIntervalSince(s.date)))
+                    let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
+                    let stale = GlucoseFreshness.isStale(s.date) ? " · STALE" : ""
+                    result = SourceResult(id: id, name: name, status: .ok,
+                                          detail: "\(s.mgdl) mg/dL \(s.trend.rawValue) · \(ageStr)\(stale)")
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            results.append(result)
         }
-        testResult = "⚠️ No reading from \(descriptor.name) yet. Check the credentials above, that the sensor is sharing/nearby, and that this is the selected source."
     }
 }
