@@ -399,6 +399,15 @@ struct RemotesSettingsView: View {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
             }
             Section {
+                NavigationLink {
+                    MacPairingView()
+                } label: {
+                    Label("Mac remote", systemImage: "laptopcomputer")
+                }
+            } header: { Text("Mac") } footer: {
+                Text("Pair the faBolus Mac app to view status and send boluses from your Mac. First-time pairing needs a one-time code.")
+            }
+            Section {
                 ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
                     Label("“\(p)”", systemImage: "mic.fill").font(.callout)
                 }
