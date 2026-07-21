@@ -120,6 +120,11 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// tubing, 3 prime cannula, 4 prime nudge, 5 invalid, 6 unknown.
     public var cartridgeLoadState: Int = 6
     public var cartridgeLoadActive: Bool = false
+    /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
+    public var controlIQWeightLbs: Int = 0
+    public var controlIQTotalDailyInsulin: Int = 0
+    /// Insulin-delivery profiles (from ProfileStatus + IDPSettings), for the profile switcher.
+    public var profiles: [PumpProfileInfo] = []
     public init() {}
 
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
@@ -184,6 +189,8 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsCartridgeFill: Bool
     public var supportsLimits: Bool
     public var supportsTimeSync: Bool
+    public var supportsSounds: Bool
+    public var supportsReminders: Bool
 
     public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
                 supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
@@ -193,7 +200,9 @@ public struct PumpCapabilities: Sendable, Equatable {
                 supportsModes: Bool = false, supportsProfiles: Bool = false,
                 supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
                 supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
-                supportsTimeSync: Bool = false) {
+                supportsTimeSync: Bool = false, supportsSounds: Bool = false,
+                supportsReminders: Bool = false) {
+        self.supportsSounds = supportsSounds; self.supportsReminders = supportsReminders
         self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
         self.supportsAlertClear = supportsAlertClear
         self.supportsRemoteAlertDismiss = supportsRemoteAlertDismiss
@@ -211,13 +220,25 @@ public struct PumpCapabilities: Sendable, Equatable {
     public static let mobiAdvanced = PumpCapabilities(
         supportsSuspendResume: true, supportsTempBasal: true, supportsModes: true,
         supportsProfiles: true, supportsControlIQSettings: true, supportsCgmSession: true,
-        supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true)
+        supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true,
+        supportsReminders: true)   // supportsSounds intentionally off — see deferral note
 
     /// True if any advanced-control capability is available (gates the Pump Control entry).
     public var supportsAnyAdvancedControl: Bool {
         supportsSuspendResume || supportsTempBasal || supportsModes || supportsProfiles
             || supportsControlIQSettings || supportsCgmSession || supportsCartridgeFill
-            || supportsLimits || supportsTimeSync
+            || supportsLimits || supportsTimeSync || supportsSounds || supportsReminders
+    }
+}
+
+/// A pump insulin-delivery profile (IDP) summarized for the profile switcher/list.
+public struct PumpProfileInfo: Sendable, Equatable, Identifiable {
+    public var id: Int { idpId }
+    public var idpId: Int
+    public var name: String
+    public var active: Bool
+    public init(idpId: Int, name: String, active: Bool) {
+        self.idpId = idpId; self.name = name; self.active = active
     }
 }
 

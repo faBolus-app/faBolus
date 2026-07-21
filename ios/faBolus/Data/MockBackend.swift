@@ -159,4 +159,33 @@ public final class MockBackend: PumpBackend {
     public func setMaxBolus(units: Double) async throws { snapshot.maxBolusUnits = units; onChange?() }
     public func setMaxBasal(unitsPerHour: Double) async throws {}
     public func syncTimeToNow() async throws {}
+
+    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
+        snapshot.controlIQEnabled = enabled; snapshot.controlIQWeightLbs = weightLbs
+        snapshot.controlIQTotalDailyInsulin = totalDailyInsulinUnits; onChange?()
+    }
+    public func refreshControlIQSettings() async {
+        if snapshot.controlIQWeightLbs == 0 { snapshot.controlIQWeightLbs = 160; snapshot.controlIQTotalDailyInsulin = 45; onChange?() }
+    }
+    public func refreshProfiles() async {
+        if snapshot.profiles.isEmpty {
+            snapshot.profiles = [PumpProfileInfo(idpId: 1, name: "Default", active: true),
+                                 PumpProfileInfo(idpId: 2, name: "Weekend", active: false)]
+            onChange?()
+        }
+    }
+    public func setActiveProfile(idpId: Int) async throws {
+        snapshot.profiles = snapshot.profiles.map { PumpProfileInfo(idpId: $0.idpId, name: $0.name, active: $0.idpId == idpId) }; onChange?()
+    }
+    public func renameProfile(idpId: Int, name: String) async throws {
+        snapshot.profiles = snapshot.profiles.map { $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0 }; onChange?()
+    }
+    public func deleteProfile(idpId: Int) async throws { snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
+    public func setLowInsulinAlert(thresholdUnits: Int) async throws {}
+    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {}
+    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {}
+    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws {}
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {}
+    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws {}
+    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {}
 }
