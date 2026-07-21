@@ -118,9 +118,10 @@ enum SettingsIndex {
         .init(title: "iPhone increments", keywords: "bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "bolus carb step remote", category: .bolus),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
-        .init(title: "Customize details rows", keywords: "reorder hide fields", category: .display),
-        .init(title: "Customize dashboard pills", keywords: "reorder hide pills", category: .display),
-        .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap", category: .display),
+        .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
+        .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
+        .init(title: "Watch details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
+        .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
@@ -185,18 +186,15 @@ struct DisplaySettingsView: View {
                 NavigationLink {
                     CustomizeListView(title: "Details", allIds: AppSettings.detailFields,
                                       label: AppSettings.detailFieldLabel, order: $settings.detailsOrder,
-                                      shownFooter: "Rows shown on the phone Details card and the watch Details page. Drag to reorder, swipe to hide.")
-                } label: { LabeledContent("Details rows", value: "\(settings.detailsOrder.count) shown") }
+                                      shownFooter: "Rows shown on the phone Details card. Drag to reorder, swipe to hide.")
+                } label: { LabeledContent("Phone details rows", value: "\(settings.detailsOrder.count) shown") }
                 NavigationLink {
                     CustomizeListView(title: "Pills", allIds: AppSettings.pillItems,
                                       label: AppSettings.pillLabel, order: $settings.pillsOrder,
                                       shownFooter: "Status pills shown on the dashboard. Drag to reorder, swipe to hide.")
                 } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
-                NavigationLink { WatchChartRangesView(settings: settings) } label: {
-                    LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
-                }
             } header: { Text("Customize") } footer: {
-                Text("Choose which details, pills, and watch chart time ranges appear. Details + watch ranges are mirrored to the Apple Watch on its next update.")
+                Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Watch & Garmin.)")
             }
         }
         .navigationTitle("Display & chart")
@@ -229,7 +227,7 @@ struct CgmSettingsView: View {
                     ForEach(AppSettings.glucoseHideDelayOptions, id: \.self) { opt in Text(hideDelayLabel(opt)).tag(opt) }
                 }
             } header: { Text("Glucose staleness") } footer: {
-                Text("Older than “mark stale”, a reading is stale: shown greyed and **no longer used** to auto-fill a bolus carb→unit correction (this is also when the watch/Garmin stop using it for that). “Hide” is how long after going stale to keep showing the greyed value before replacing it with “–”: Immediately skips the greyed value, Never always keeps showing it. A hidden reading is still stale.")
+                Text("**Mark stale**: after this long, a reading is greyed and no longer auto-fills a correction. **Hide**: how long after that to keep showing the greyed value before it becomes “–”.")
             }
         }
         .navigationTitle("CGM & failover")
@@ -330,6 +328,18 @@ struct RemotesSettingsView: View {
                 }
             } header: { Text("Garmin remote") } footer: {
                 Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
+            }
+            Section {
+                NavigationLink {
+                    CustomizeListView(title: "Watch details", allIds: AppSettings.detailFields,
+                                      label: AppSettings.detailFieldLabel, order: $settings.watchDetailsOrder,
+                                      shownFooter: "Rows shown on the watch/Garmin Details page (independent of the phone). Drag to reorder, swipe to hide.")
+                } label: { LabeledContent("Watch details rows", value: "\(settings.watchDetailsOrder.count) shown") }
+                NavigationLink { WatchChartRangesView(settings: settings) } label: {
+                    LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
+                }
+            } header: { Text("Watch display") } footer: {
+                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. Mirrored to the remotes on the next update.")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
