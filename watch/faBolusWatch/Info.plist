@@ -25,6 +25,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.fabolus.app</string>
+	<string>$(APP_BUNDLE_ID)</string>
 </dict>
 </plist>

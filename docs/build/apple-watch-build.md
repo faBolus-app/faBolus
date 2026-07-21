@@ -31,7 +31,7 @@ The watch app is a separate *target* in the same project, so it needs your team 
 <li>In Xcode, click the blue <strong>faBolus</strong> project at the top of the sidebar.</li>
 <li>Under <strong>TARGETS</strong>, select <strong>faBolusWatch</strong>.</li>
 <li>On <strong>Signing &amp; Capabilities</strong>, tick <strong>Automatically manage signing</strong> and set your <strong>Team</strong>.</li>
-<li>If you changed the bundle identifier prefix for a free account, make sure this target is <code>&lt;your prefix&gt;.watch</code>.</li>
+<li>Nothing to change by hand here — the watch target's bundle ID is derived automatically from your <code>APP_BUNDLE_ID</code> (it becomes <code>&lt;your id&gt;.watch</code>).</li>
 </ol>
 
 ## Step B — Choose the watch and run

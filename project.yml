@@ -3,6 +3,14 @@ options:
   bundleIdPrefix: com.fabolus
   createIntermediateGroups: true
 
+# Build configuration is read from Config.xcconfig, which pulls in your personal,
+# gitignored LocalConfig.xcconfig (copy it from LocalConfig.xcconfig.example).
+# That's where APP_BUNDLE_ID and DEVELOPMENT_TEAM live — every identifier below is
+# derived from $(APP_BUNDLE_ID), so setting your own is a one-line change.
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+
 packages:
   faBolusCore:
     # Stable, pump/host-agnostic contracts + models (in-repo local package).
@@ -44,7 +52,7 @@ targets:
       path: ios/faBolus/faBolus.entitlements
       properties:
         # Shared container the app writes and the widgets read.
-        com.apple.security.application-groups: [group.com.fabolus.app]
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
     info:
       path: ios/faBolus/Info.plist
       properties:
@@ -66,14 +74,14 @@ targets:
         # Garmin Connect Mobile app.
         LSApplicationQueriesSchemes: [gcm-ciq]
         CFBundleURLTypes:
-          - CFBundleURLName: com.fabolus.app.ciq
+          - CFBundleURLName: $(APP_BUNDLE_ID).ciq
             CFBundleURLSchemes: [fabolusciq]
           # Deep links from the widgets (fabolus://bolus, fabolus://open).
-          - CFBundleURLName: com.fabolus.app.deeplink
+          - CFBundleURLName: $(APP_BUNDLE_ID).deeplink
             CFBundleURLSchemes: [fabolus]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -109,18 +117,18 @@ targets:
       path: watch/faBolusWatch/faBolusWatch.entitlements
       properties:
         # Device-local container shared with the watch complication.
-        com.apple.security.application-groups: [group.com.fabolus.app]
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
     info:
       path: watch/faBolusWatch/Info.plist
       properties:
         CFBundleDisplayName: faBolus
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
-        WKCompanionAppBundleIdentifier: com.fabolus.app
+        WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
         NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.watch
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -147,10 +155,10 @@ targets:
     entitlements:
       path: watch/faBolusWatchWidgets/faBolusWatchWidgets.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.fabolus.app]
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.watch.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch.widgets
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -176,10 +184,10 @@ targets:
     entitlements:
       path: ios/faBolusWidgets/faBolusWidgets.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.fabolus.app]
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.fabolus.app.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).widgets
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
