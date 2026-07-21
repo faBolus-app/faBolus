@@ -1,4 +1,5 @@
 import SwiftUI
+import faBolusCore
 
 /// Enter the cloud-follower credentials for the CGM failover sources. Non-secret fields persist to
 /// UserDefaults (`GlucoseSourceConfig`); passwords/tokens go to the Keychain (`CredentialStore`).
@@ -21,6 +22,8 @@ struct CgmCredentialsView: View {
     @State private var g6TransmitterID = ""
 
     @State private var saved = false
+    @State private var testing = false
+    @State private var testResult: String?
 
     var body: some View {
         Form {
@@ -75,6 +78,28 @@ struct CgmCredentialsView: View {
                 Label("Saved — reopen the app to apply.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.footnote)
             }
+
+            Section {
+                Button {
+                    save(); saved = true
+                    Task { await testSelectedSource() }
+                } label: {
+                    HStack {
+                        Label("Save & test failover source", systemImage: "bolt.horizontal.circle")
+                        if testing { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(testing)
+                if let r = testResult {
+                    Text(r).font(.footnote)
+                        .foregroundStyle(r.hasPrefix("✅") ? .green : (r.hasPrefix("⚠️") ? .orange : .secondary))
+                        .textSelection(.enabled)
+                }
+            } header: {
+                Text("Test")
+            } footer: {
+                Text("Saves these credentials, then builds the **selected** failover source (Settings → CGM source) and tries to pull a live reading right now — so you can verify it works without disconnecting the pump or reopening the app.")
+            }
         }
         .navigationTitle("CGM credentials")
         .navigationBarTitleDisplayMode(.inline)
@@ -114,5 +139,29 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(nsURL), "nightscout.url")
         CredentialStore.set(trimmed(nsToken), account: "nightscout.token")
         GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
+    }
+
+    /// Build the currently-selected failover source, start it, and poll up to ~10 s for a live
+    /// reading — a self-contained diagnostic that verifies credentials + connectivity in-app.
+    @MainActor private func testSelectedSource() async {
+        testing = true; testResult = nil
+        defer { testing = false }
+        guard let descriptor = GlucoseSourceRegistry.selected(),
+              let source = GlucoseSourceRegistry.makeSelected() else {
+            testResult = "No failover source selected. Pick one in Settings → CGM source, then test."
+            return
+        }
+        await source.start()
+        for _ in 0..<10 {   // ~10 s: cloud pollers + BLE need a moment for the first reading
+            if let s = source.latest {
+                let age = Int(max(0, Date().timeIntervalSince(s.date)))
+                let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
+                let staleNote = GlucoseFreshness.isStale(s.date) ? " — STALE" : ""
+                testResult = "✅ \(descriptor.name): \(s.mgdl) mg/dL \(s.trend.rawValue) (\(ageStr))\(staleNote)"
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        testResult = "⚠️ No reading from \(descriptor.name) yet. Check the credentials above, that the sensor is sharing/nearby, and that this is the selected source."
     }
 }

@@ -101,6 +101,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // a debounce timer (each page's stream ends when frames stop) rather than an exact record
     // count, because sequence numbers can be non-contiguous. Re-runs on each connect.
     private var didBackfill = false
+    /// Model detected from the BLE advertised name at discovery (Mobi advertises "…Mobi…"). This is
+    /// the reliable, direct model signal — the API version does NOT cleanly separate the two (newer
+    /// t:slim X2 firmware reports API >= 3.5). nil = name didn't identify it → fall back to API version.
+    private var detectedIsMobi: Bool?
     private var backfillActive = false
     private var backfillBuffer: [(pumpSec: UInt32, mgdl: Int)] = []
     // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
@@ -582,15 +586,24 @@ extension TandemBackend: PumpBLEClientDelegate {
             didBackfill = false; backfillActive = false
             backfillTimer?.invalidate(); backfillTimer = nil
             backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+            detectedIsMobi = nil   // re-detect the model on the next connect
         default: break
         }
         onChange?()
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
-        // Model detection is now driven by ApiVersionResponse (Mobi = API >= 3.5) once connected —
-        // the authoritative signal — rather than the BLE advertised name. See the ApiVersionResponse
-        // handler, which sets snapshot.isMobi + PumpModelStore.
+        // Authoritative model detection from the BLE advertised name: the Mobi advertises with
+        // "Mobi" in its name; anything else Tandem is a t:slim X2. This directly names the model,
+        // unlike the API version (a current t:slim X2 can report API >= 3.5, which would falsely
+        // read as Mobi). ApiVersionResponse is only a fallback when the name doesn't identify it.
+        if let name = peripheral.name, !name.isEmpty {
+            let isMobi = name.localizedCaseInsensitiveContains("mobi")
+            detectedIsMobi = isMobi
+            snapshot.isMobi = isMobi
+            snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
+            PumpModelStore.set(isMobi: isMobi)
+        }
         c.connect(peripheral)
     }
 
@@ -709,12 +722,14 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
         // Workstream B: pump model + basal + Control-IQ status.
         case let m as ApiVersionResponse:
-            snapshot.isMobi = m.isMobi
-            snapshot.pumpModelName = m.isMobi ? "Mobi" : "t:slim X2"
-            // Authoritative model detection: the pump reports its API version (Mobi = API >= 3.5),
-            // which supersedes the old BLE-advertised-name heuristic. Persist it so the PIN-save UI
-            // can act across launches.
-            PumpModelStore.set(isMobi: m.isMobi)
+            snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
+            // The BLE name (set at discovery) is authoritative for the model. Only fall back to the
+            // API-version heuristic if the name didn't identify it (e.g. name was unavailable).
+            if detectedIsMobi == nil {
+                snapshot.isMobi = m.isMobi
+                snapshot.pumpModelName = m.isMobi ? "Mobi" : "t:slim X2"
+                PumpModelStore.set(isMobi: m.isMobi)
+            }
             snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
         case let m as CurrentBasalStatusResponse:
             snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
