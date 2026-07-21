@@ -260,6 +260,7 @@ targets:
       - mac/faBolusMac
       # Shared remote-client state machine + the App Group snapshot/store (portable, no BLE/HealthKit).
       - path: Shared/RemoteClientModel.swift
+      - path: Shared/AuthenticatingRemoteClientModel.swift
       - path: Shared/WidgetShared.swift
       - path: Shared/DisplaySettings.swift
     dependencies:
