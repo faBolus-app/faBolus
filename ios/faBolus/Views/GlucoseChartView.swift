@@ -3,8 +3,9 @@ import faBolusCore
 import Charts
 
 /// modern chart: glucose (left axis, in-range band, range-colored points) plus an optional
-/// **IOB overlay** on a second (right) axis with **vertical bolus bars** (height ∝ units). Each
-/// axis can be toggled independently. IOB/bolus values (units) share the right-axis scale.
+/// **IOB line** and optional **vertical bolus bars** (height ∝ units) on a second (right) axis.
+/// Glucose, IOB, and bolus bars each toggle independently. IOB/bolus values (units) share the
+/// right-axis scale, which autoscales to whichever unit series are currently shown.
 struct GlucoseChartView: View {
     let readings: [GlucoseReading]
     var iob: [IOBSample] = []
@@ -12,6 +13,10 @@ struct GlucoseChartView: View {
     var windowHours: Int = 3
     var showGlucose: Bool = true
     var showIOB: Bool = true
+    var showBolusBars: Bool = true
+
+    /// True when any unit-scaled (right-axis) series is visible.
+    private var showUnitsAxis: Bool { showIOB || showBolusBars }
 
     private var start: Date { Date().addingTimeInterval(-Double(windowHours) * 3600) }
     private var visible: [GlucoseReading] { readings.filter { $0.date >= start } }
@@ -22,8 +27,10 @@ struct GlucoseChartView: View {
     // on the right axis. The units scale autoscales to the visible window.
     private let gLo = 40.0, gHi = 300.0
     private var iobMax: Double {
-        let m = max(visibleIOB.map(\.iob).max() ?? 0, visibleBoluses.map(\.units).max() ?? 0)
-        return max(4, (m * 1.1).rounded(.up))
+        // Autoscale the right axis to only the unit series that are actually shown.
+        let iobPeak = showIOB ? (visibleIOB.map(\.iob).max() ?? 0) : 0
+        let bolusPeak = showBolusBars ? (visibleBoluses.map(\.units).max() ?? 0) : 0
+        return max(4, (max(iobPeak, bolusPeak) * 1.1).rounded(.up))
     }
     private func scaleUnits(_ u: Double) -> Double { gLo + (u / iobMax) * (gHi - gLo) }
 
@@ -37,12 +44,14 @@ struct GlucoseChartView: View {
                         .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
                 }
             }
-            if showIOB {
+            if showBolusBars {
                 ForEach(visibleBoluses) { b in
                     RuleMark(x: .value("Time", b.date),
                              yStart: .value("Base", gLo), yEnd: .value("Bolus", scaleUnits(b.units)))
                         .foregroundStyle(AppTheme.insulin.opacity(0.55)).lineStyle(.init(lineWidth: 3))
                 }
+            }
+            if showIOB {
                 ForEach(visibleIOB) { s in
                     LineMark(x: .value("Time", s.date), y: .value("IOB", scaleUnits(s.iob)),
                              series: .value("Series", "IOB"))
@@ -59,7 +68,7 @@ struct GlucoseChartView: View {
                     AxisValueLabel { if let v = value.as(Int.self) { Text("\(v)") } }
                 }
             }
-            if showIOB {
+            if showUnitsAxis {
                 AxisMarks(position: .trailing, values: [scaleUnits(0), scaleUnits(iobMax / 2), scaleUnits(iobMax)]) { value in
                     AxisValueLabel {
                         if let p = value.as(Double.self) {
@@ -78,7 +87,7 @@ struct GlucoseChartView: View {
             if showGlucose { Text("mg/dL").font(.caption2).foregroundStyle(.secondary).padding(.leading, 2) }
         }
         .overlay(alignment: .topTrailing) {
-            if showIOB { Text("U").font(.caption2).foregroundStyle(AppTheme.insulin).padding(.trailing, 2) }
+            if showUnitsAxis { Text("U").font(.caption2).foregroundStyle(AppTheme.insulin).padding(.trailing, 2) }
         }
         .frame(height: 160)
     }
