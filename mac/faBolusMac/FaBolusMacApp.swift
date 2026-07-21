@@ -27,7 +27,10 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let d = model.display
-        if let g = model.glucose, !model.glucoseHidden {   // hide old readings past the phone's hide delay
+        // In the menu bar, hide the value once hidden — and (by default) once merely stale — so an old
+        // number can't read as current. The popover still shows the greyed value.
+        let hideStale = d.menuBarHideStale && model.isGlucoseStale
+        if let g = model.glucose, !model.glucoseHidden, !hideStale {
             var s = model.displayGlucose
             if d.menuBarShowUnits { s += " mg/dL" }
             if d.menuBarShowTrend { s += " \(model.trend)" }
