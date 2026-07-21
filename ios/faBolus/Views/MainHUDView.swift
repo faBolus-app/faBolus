@@ -60,23 +60,38 @@ struct DashboardView: View {
     }
 }
 
-/// Card listing everything sourced from the pump (scroll target for "more details").
+/// Card listing everything sourced from the pump (scroll target for "more details"). The rows shown
+/// and their order come from `AppSettings.detailsOrder` (customizable in Settings → Customize details).
 struct PumpDetailsCard: View {
     let snapshot: PumpSnapshot
+    private var order: [String] { AppSettings.shared.detailsOrder }
+
+    /// Value string for a detail field id, or nil to skip the row (no data).
+    private func value(_ id: String) -> String? {
+        switch id {
+        case "iob": return String(format: "%.2f U", snapshot.iobUnits)
+        case "reservoir": return "\(Int(snapshot.reservoirUnits)) U"
+        case "battery": return "\(snapshot.batteryPercent)%"
+        case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
+        case "lastBolus":
+            guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
+            return "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))"
+        case "carbRatio": return snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—"
+        case "isf": return snapshot.isf > 0 ? "\(snapshot.isf) mg/dL/U" : "—"
+        case "target": return snapshot.targetBg > 0 ? "\(snapshot.targetBg) mg/dL" : "—"
+        case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
+        default: return nil
+        }
+    }
 
     var body: some View {
+        let rows: [(id: String, value: String)] = order.compactMap { id in
+            value(id).map { (id, $0) }
+        }
         VStack(alignment: .leading, spacing: 0) {
-            row("Active insulin (IOB)", String(format: "%.2f U", snapshot.iobUnits))
-            row("Reservoir", "\(Int(snapshot.reservoirUnits)) U")
-            row("Pump battery", "\(snapshot.batteryPercent)%")
-            row("CGM", snapshot.cgmActive ? "Active" : "Inactive")
-            if let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate {
-                row("Last bolus", "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))")
+            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
+                row(AppSettings.detailFieldLabel(r.id), r.value, last: idx == rows.count - 1)
             }
-            row("Carb ratio", snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—")
-            row("Correction factor (ISF)", snapshot.isf > 0 ? "\(snapshot.isf) mg/dL/U" : "—")
-            row("Target glucose", snapshot.targetBg > 0 ? "\(snapshot.targetBg) mg/dL" : "—")
-            row("Max bolus", String(format: "%.1f U", snapshot.maxBolusUnits), last: true)
         }
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))

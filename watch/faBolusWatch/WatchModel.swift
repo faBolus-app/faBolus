@@ -29,6 +29,9 @@ final class WatchModel {
     var bolusIncrement: Double = 0.05
     var carbIncrement: Double = 5
     var defaultMode: String = "carbs"
+    // Customization mirrored from the phone (Plan B #3/#8).
+    var detailsOrder: [String] = ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"]
+    var chartRanges: [Int] = [3, 6, 12, 24]
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     var reachable: Bool = false
@@ -116,6 +119,8 @@ final class WatchModel {
             if let bi = cmd.bolusIncrement, bi > 0 { bolusIncrement = bi }
             if let ci = cmd.carbIncrement, ci > 0 { carbIncrement = ci }
             if let m = cmd.bolusMode { defaultMode = m }
+            if let d = cmd.detailsOrder, !d.isEmpty { detailsOrder = d }
+            if let r = cmd.watchChartRanges, !r.isEmpty { chartRanges = r }
             if let msg = cmd.message { connection = msg }
             if let h = cmd.history { history = h }
             lastBolusUnits = cmd.lastBolusUnits
