@@ -65,6 +65,13 @@ public final class AppSettings {
     /// login; it must never be left on in real use. See [[SimulatedGlucoseSource]].
     public var simulatedCgmEnabled: Bool { didSet { d.set(simulatedCgmEnabled, forKey: "simulatedCgmEnabled") } }
 
+    /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
+    /// auto-dismiss), persisted as JSON. **Alarms are never auto-acted** regardless of rules — the
+    /// engine hard-excludes them. See [[AlertRuleEngine]].
+    public var alertRules: [AlertRule] {
+        didSet { d.set((try? JSONEncoder().encode(alertRules)) ?? Data(), forKey: "alertRules") }
+    }
+
     /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
     /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
     public func advancedControlAllowed(isMobi: Bool) -> Bool {
@@ -192,6 +199,7 @@ public final class AppSettings {
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
+        alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.
