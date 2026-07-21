@@ -79,6 +79,7 @@ struct MacSettingsPane: View {
                     Text("1").tag(1.0); Text("5").tag(5.0); Text("10").tag(10.0); Text("15").tag(15.0)
                 }
             }
+            Toggle("Show carb bolus button in units", isOn: $display.carbButtonInUnits)
         }
     }
 

@@ -72,4 +72,8 @@ final class MacDisplayModel {
         get { _ = revision; return DisplaySettings.defaultBolusMode }
         set { DisplaySettings.defaultBolusMode = newValue; bump() }
     }
+    var carbButtonInUnits: Bool {
+        get { _ = revision; return DisplaySettings.carbButtonInUnits }
+        set { DisplaySettings.carbButtonInUnits = newValue; bump() }
+    }
 }

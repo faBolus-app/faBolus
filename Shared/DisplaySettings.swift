@@ -28,6 +28,8 @@ enum DisplaySettings {
     static var bolusIncrement: Double { get { number("macBolusIncrement", 0.05) } set { setNumber("macBolusIncrement", newValue) } }
     static var carbIncrement: Double { get { number("macCarbIncrement", 5) } set { setNumber("macCarbIncrement", newValue) } }
     static var defaultBolusMode: String { get { text("macDefaultBolusMode", "carbs") } set { setText("macDefaultBolusMode", newValue) } }
+    /// In carbs mode, label the deliver button with the estimated units (true) or the carb grams (false).
+    static var carbButtonInUnits: Bool { get { flag("macCarbButtonInUnits", true) } set { setFlag("macCarbButtonInUnits", newValue) } }
 
     // MARK: Menu bar
     /// Show the trend arrow next to the glucose value.
