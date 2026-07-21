@@ -50,7 +50,9 @@ public final class AppModel {
                              bolusIncrement: AppSettings.shared.watchBolusIncrement,
                              carbIncrement: AppSettings.shared.watchCarbIncrement,
                              screenOrder: AppSettings.shared.garminScreenOrder,
-                             defaultScreen: AppSettings.shared.garminDefaultScreen)
+                             defaultScreen: AppSettings.shared.garminDefaultScreen,
+                             glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
+                             glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes)
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).

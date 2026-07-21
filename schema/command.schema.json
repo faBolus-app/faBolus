@@ -148,6 +148,16 @@
       "type": "string",
       "enum": ["glance", "alerts", "history", "details"],
       "description": "Garmin remote screen shown first (statusRead reply)."
+    },
+    "glucoseStaleMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Minutes after which a CGM reading is stale (statusRead reply): remotes de-emphasize it and stop using it for carb→unit correction, matching the phone."
+    },
+    "glucoseHideDelayMinutes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Minutes after going stale to keep showing the greyed value before hiding it as '--' (statusRead reply). 0 = hide immediately when stale; omitted = never hide."
     }
   },
   "additionalProperties": false

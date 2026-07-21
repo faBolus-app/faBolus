@@ -65,6 +65,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var screenOrder: [String]?
     public var defaultScreen: String?
 
+    // Glucose staleness policy (statusRead reply), so remotes mark/hide + stop using stale readings
+    // for carb→unit exactly like the phone. Minutes; hideDelay nil = never hide, 0 = hide when stale.
+    public var glucoseStaleMinutes: Int?
+    public var glucoseHideDelayMinutes: Int?
+
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -75,7 +80,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 glucoseAgeSec: Double? = nil, history: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
-                screenOrder: [String]? = nil, defaultScreen: String? = nil) {
+                screenOrder: [String]? = nil, defaultScreen: String? = nil,
+                glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -89,6 +95,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
+        self.glucoseStaleMinutes = glucoseStaleMinutes; self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

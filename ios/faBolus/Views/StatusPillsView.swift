@@ -26,10 +26,17 @@ struct StatusPillsView: View {
 
     @ViewBuilder private func cgmPill(now: Date) -> some View {
         let active = snapshot.cgmActive
-        let stale = GlucoseFreshness.isStale(snapshot.glucoseDate, now: now)
-        let value: String = snapshot.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: now) }
-            ?? (active ? "OK" : "—")
-        let tint: Color = !active ? .gray : (stale && snapshot.glucose != nil ? AppTheme.low : AppTheme.inRange)
+        // No reading → treat as hidden; otherwise fresh/stale/hidden by age.
+        let present: GlucosePresentation = snapshot.glucose == nil
+            ? .hidden : GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
+        let age = snapshot.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: now) }
+        let value: String
+        let tint: Color
+        switch present {
+        case .hidden: value = active ? "OK" : "—"; tint = active ? AppTheme.inRange : .gray
+        case .stale:  value = age ?? "—"; tint = AppTheme.low
+        case .fresh:  value = age ?? "OK"; tint = AppTheme.inRange
+        }
         pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
              tint: tint, value: value, label: "CGM")
     }

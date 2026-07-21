@@ -29,9 +29,10 @@ struct StatusRingView: View {
     /// A stale reading is shown but de-emphasized (gray) with its age called out — "old is worse
     /// than nothing", so it's never presented as the current in-range/high/low value.
     @ViewBuilder private func content(now: Date) -> some View {
-        let stale = GlucoseFreshness.isStale(snapshot.glucoseDate, now: now)
+        let present = GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
+        let stale = present == .stale
         VStack(spacing: 2) {
-            if let g = snapshot.glucose {
+            if let g = snapshot.glucose, present != .hidden {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(g)")
                         .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -47,8 +48,10 @@ struct StatusRingView: View {
                         .foregroundStyle(stale ? AppTheme.low : .secondary)
                 }
             } else {
+                // No reading, or past the "hide" delay → show no value.
                 Text("—").font(.system(size: 44, weight: .bold, design: .rounded))
-                Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                Text(snapshot.glucose == nil ? "mg/dL" : "no recent CGM")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Text(snapshot.connection.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
