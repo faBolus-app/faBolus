@@ -131,7 +131,7 @@ faBolus is built on an open protocol core, and the Garmin watch app lives in its
     that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not
     exist without it.** The project also draws on the wider
     **[LoopKit](https://github.com/LoopKit)** / **Loop** ecosystem for parts of its visual design
-    and documentation. See [NOTICE.md](https://github.com/faBolus-app/faBolus/blob/master/NOTICE.md)
+    and documentation. See [NOTICE.md](https://github.com/faBolus-app/faBolus/blob/main/NOTICE.md)
     for full attributions.
 
 !!! note "Independent project"

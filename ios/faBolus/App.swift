@@ -7,6 +7,7 @@ struct FaBolusApp: App {
     // the Simulator by default; user-selectable when more than one backend is compiled in).
     @State private var model = AppModel(source: BackendRegistry.makeSelected())
     @State private var remoteHost: PhoneRemoteHost?
+    @State private var peerHost: PeerRemoteHost?
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: PumpAlertNotifier?
     @State private var widgetBolus: WidgetBolusReceiver?
@@ -27,6 +28,7 @@ struct FaBolusApp: App {
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
+                    if peerHost == nil { peerHost = PeerRemoteHost(model: model) }             // Mac (MultipeerConnectivity)
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil {
                         notifier = PumpAlertNotifier(model: model)                              // actionable alert notifications
