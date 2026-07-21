@@ -34,11 +34,12 @@ struct MacStatusPills: View {
     var model: MacRemoteModel
 
     var body: some View {
+        let d = model.display
         HStack(spacing: 8) {
-            pill("IOB", String(format: "%.2f U", model.iobUnits))
-            pill("Reservoir", String(format: "%.0f U", model.reservoirUnits))
-            pill("Battery", "\(model.batteryPercent)%")
-            if let last = model.lastBolusUnits {
+            if d.showIOB { pill("IOB", String(format: "%.2f U", model.iobUnits)) }
+            if d.showReservoir { pill("Reservoir", String(format: "%.0f U", model.reservoirUnits)) }
+            if d.showBattery { pill("Battery", "\(model.batteryPercent)%") }
+            if d.showLastBolus, let last = model.lastBolusUnits {
                 pill("Last", String(format: "%.2f U", last))
             }
         }
@@ -67,17 +68,23 @@ struct MacBolusEntryView: View {
 
     private var isDelivering: Bool { model.lastStatus == .delivering }
     private var isCarbs: Bool { mode == "carbs" }
-    private var step: Double { isCarbs ? model.carbIncrement : model.bolusIncrement }
+    private var step: Double { isCarbs ? model.display.carbIncrement : model.display.bolusIncrement }
     private var maxV: Double { isCarbs ? 200 : (model.maxBolusUnits > 0 ? model.maxBolusUnits : 25) }
     private var unitLabel: String { isCarbs ? "g" : "U" }
     private var canDeliver: Bool {
         model.reachable && !isDelivering && amount >= (isCarbs ? 1 : 0.05) && amount <= maxV
     }
 
+    private var amountText: String { String(format: isCarbs ? "%.0f %@" : "%.2f %@", amount, unitLabel) }
+
     var body: some View {
         VStack(spacing: 10) {
             if isDelivering {
                 deliveringView
+            } else if confirming {
+                // Inline confirm — a system confirmationDialog dismisses the menu-bar popover, so the
+                // second tap ("Deliver") never registers. Confirm in place instead.
+                confirmView
             } else {
                 Picker("", selection: $mode) {
                     Text("Carbs").tag("carbs")
@@ -87,35 +94,54 @@ struct MacBolusEntryView: View {
                 .labelsHidden()
                 .onChange(of: mode) { _, _ in amount = 0 }
 
-                HStack {
-                    Stepper(value: $amount, in: 0...maxV, step: step) {
-                        Text(String(format: isCarbs ? "%.0f %@" : "%.2f %@", amount, unitLabel))
-                            .font(.title3.monospacedDigit())
-                    }
+                // Type a value directly, or use the − / + stepper. Both edit the same amount.
+                HStack(spacing: 8) {
+                    TextField("Amount", value: $amount, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 84)
+                        .onSubmit { amount = min(max(0, amount), maxV) }
+                    Text(unitLabel).foregroundStyle(.secondary)
+                    Stepper("", value: $amount, in: 0...maxV, step: step)
+                        .labelsHidden()
+                    Spacer()
                 }
 
                 Button {
-                    confirming = true
+                    amount = min(max(0, amount), maxV)   // clamp any typed value before confirming
+                    if canDeliver { confirming = true }
                 } label: {
                     Text(isCarbs ? "Bolus \(Int(amount)) g" : String(format: "Bolus %.2f U", amount))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canDeliver)
-                .confirmationDialog("Deliver this bolus?", isPresented: $confirming) {
-                    Button(isCarbs ? "Deliver \(Int(amount)) g" : String(format: "Deliver %.2f U", amount),
-                           role: .destructive) {
-                        if isCarbs { model.deliverCarbs(amount) } else { model.deliverUnits(amount) }
-                        amount = 0
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(isCarbs ? "The iPhone will calculate the dose and deliver it on the pump."
-                                 : "The iPhone will deliver this on the pump.")
-                }
             }
         }
-        .onAppear { mode = model.defaultMode }
+        .onAppear { mode = model.display.defaultBolusMode }
+    }
+
+    private var confirmView: some View {
+        VStack(spacing: 8) {
+            Text(isCarbs ? "Deliver \(Int(amount)) g?" : "Deliver \(amountText)?")
+                .font(.callout.weight(.semibold))
+            Text(isCarbs ? "The iPhone calculates the dose and delivers it on the pump."
+                         : "The iPhone delivers this on the pump.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.center)
+            HStack {
+                Button("Back") { confirming = false }
+                    .buttonStyle(.bordered)
+                Button("Deliver") {
+                    if isCarbs { model.deliverCarbs(amount) } else { model.deliverUnits(amount) }
+                    amount = 0
+                    confirming = false
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
     }
 
     private var deliveringView: some View {

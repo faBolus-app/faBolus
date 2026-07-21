@@ -106,9 +106,9 @@ targets:
         # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
         LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
         TrioAppGroupIdentifier: group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group
-        # Keep the pump BLE connection alive in the background so a bolus relayed from the watch
-        # goes through without the app being in the foreground.
-        UIBackgroundModes: [bluetooth-central]
+        # Keep the pump BLE connection alive in the background (bluetooth-central), and act as a BLE
+        # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
+        UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
         UILaunchScreen: {}
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.
@@ -266,6 +266,7 @@ targets:
       # Shared remote-client state machine + the App Group snapshot/store (portable, no BLE/HealthKit).
       - path: Shared/RemoteClientModel.swift
       - path: Shared/WidgetShared.swift
+      - path: Shared/DisplaySettings.swift
     dependencies:
       # Contracts + models + the PeerLink transport. No PumpX2Kit/ConnectIQ — it's a remote.
       - package: faBolusCore
@@ -277,7 +278,9 @@ targets:
       path: mac/faBolusMac/faBolusMac.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        # MultipeerConnectivity discovery + transport on the local network.
+        # BLE central (connects to the iPhone peripheral) — works when the phone is locked/backgrounded.
+        com.apple.security.device.bluetooth: true
+        # MultipeerConnectivity discovery + transport on the local network (legacy PeerLink fallback).
         com.apple.security.network.client: true
         com.apple.security.network.server: true
         # Shared container the app writes and the Mac widgets read. macOS App Groups are Team-ID
@@ -292,6 +295,8 @@ targets:
         CFBundleDisplayName: faBolus
         # Menu-bar-only agent app: no Dock icon and no main window.
         LSUIElement: true
+        # BLE (primary transport to the iPhone) + local network (legacy MultipeerConnectivity).
+        NSBluetoothAlwaysUsageDescription: "faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked."
         NSLocalNetworkUsageDescription: "faBolus connects to your iPhone on the local network to show pump status and relay boluses."
         NSBonjourServices:
           - _fabolus-rmt._tcp
@@ -315,6 +320,7 @@ targets:
       - mac/faBolusMacWidgets
       - path: Shared/WidgetShared.swift
       - path: Shared/WidgetBolusIntents.swift
+      - path: Shared/DisplaySettings.swift
     info:
       path: mac/faBolusMacWidgets/Info.plist
       properties:

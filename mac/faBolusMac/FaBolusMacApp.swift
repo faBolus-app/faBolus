@@ -4,7 +4,7 @@ import faBolusCore
 
 /// Menu-bar-only remote (no Dock icon / no main window — see `LSUIElement` in project.yml). Shows
 /// the current glucose in the menu bar; clicking opens a popover with status, quick bolus, alerts,
-/// and (behind the gear) the iPhone pairing screen.
+/// and (behind the gear) display customization + iPhone pairing.
 @main
 struct FaBolusMacApp: App {
     @State private var model = MacRemoteModel()
@@ -14,35 +14,59 @@ struct FaBolusMacApp: App {
             MenuBarContentView(model: model)
                 .frame(width: 300)
         } label: {
-            Text(model.reachable ? "\(model.displayGlucose) \(model.trend)" : "—")
+            MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-/// The menu-bar popover. Toggles between the home view (status + bolus) and the connection
-/// (pairing) view via the gear button, so everything lives in the menu-bar tool.
+/// The label shown in the menu bar. Composed per the user's Display settings, optionally colored by
+/// glucose range.
+struct MenuBarLabel: View {
+    var model: MacRemoteModel
+
+    var body: some View {
+        let d = model.display
+        if let g = model.glucose {
+            var s = model.displayGlucose
+            if d.menuBarShowUnits { s += " mg/dL" }
+            if d.menuBarShowTrend { s += " \(model.trend)" }
+            if d.menuBarShowDelta, let delta = model.deltaText { s += " \(delta)" }
+            if d.menuBarShowIOB { s += String(format: " · %.1fU", model.iobUnits) }
+            let color: Color = (d.menuBarColorByRange && !model.isGlucoseStale) ? MacTheme.glucoseColor(g) : .primary
+            return Text(s).foregroundStyle(color)
+        } else {
+            return Text("—").foregroundStyle(.primary)
+        }
+    }
+}
+
+/// The menu-bar popover. Toggles between the home view (status + bolus) and the settings view
+/// (display options + connection) via the gear button, so everything lives in the menu-bar tool.
 struct MenuBarContentView: View {
     var model: MacRemoteModel
-    @State private var showingConnection = false
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Text(showingConnection ? "Connection" : "faBolus")
+                Text(showingSettings ? "Settings" : "faBolus")
                     .font(.headline)
                 Spacer()
                 Button {
-                    showingConnection.toggle()
+                    showingSettings.toggle()
                 } label: {
-                    Image(systemName: showingConnection ? "chevron.backward" : "gearshape")
+                    Image(systemName: showingSettings ? "chevron.backward" : "gearshape")
                 }
                 .buttonStyle(.borderless)
-                .help(showingConnection ? "Back" : "Connection settings")
+                .help(showingSettings ? "Back" : "Settings")
             }
 
-            if showingConnection {
-                MacConnectionView(model: model)
+            if showingSettings {
+                ScrollView {
+                    MacSettingsPane(model: model, display: model.display)
+                }
+                .frame(maxHeight: 400)
             } else {
                 MacStatusView(model: model)
                 MacStatusPills(model: model)
@@ -51,7 +75,7 @@ struct MenuBarContentView: View {
                 MacAlertsView(model: model)
                 if !model.pairing.connected {
                     Button {
-                        showingConnection = true
+                        showingSettings = true
                     } label: {
                         Label(model.pairing.pairedPhone == nil ? "No iPhone paired — set up"
                                                                : "iPhone not reachable",
@@ -71,5 +95,11 @@ struct MenuBarContentView: View {
             .font(.callout)
         }
         .padding(14)
+        .background {
+            // Optional solid (opaque) background instead of the translucent system material.
+            if model.display.solidBackground {
+                Rectangle().fill(Color(nsColor: .windowBackgroundColor)).ignoresSafeArea()
+            }
+        }
     }
 }
