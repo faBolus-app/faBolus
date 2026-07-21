@@ -101,6 +101,30 @@ struct PumpControlView: View {
                 }
             }
 
+            if caps.supportsControlIQSettings {
+                Section("Control-IQ") {
+                    NavigationLink { ControlIQSettingsView(model: model) } label: {
+                        Label("Control-IQ settings", systemImage: "brain.head.profile")
+                    }
+                }
+            }
+
+            if caps.supportsProfiles {
+                Section("Profiles") {
+                    NavigationLink { ProfilesView(model: model) } label: {
+                        Label("Insulin profiles", systemImage: "person.crop.circle")
+                    }
+                }
+            }
+
+            if caps.supportsReminders {
+                Section("Reminders & alerts") {
+                    NavigationLink { RemindersAlertsView(model: model) } label: {
+                        Label("Reminders & alert settings", systemImage: "bell.badge")
+                    }
+                }
+            }
+
             Section("Pump") {
                 Button { Task { busy = true; await model.playFindMyPump(); busy = false } }
                     label: { Label("Find my pump (play sound)", systemImage: "speaker.wave.3.fill") }
