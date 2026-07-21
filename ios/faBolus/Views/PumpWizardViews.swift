@@ -393,7 +393,7 @@ struct RemindersAlertsView: View {
             } header: {
                 Text("CGM high / low alerts")
             } footer: {
-                Text("Sets the pump's own CGM high/low alert thresholds.")
+                Text("⚠️ Experimental: the high vs low alert-type mapping is an **unverified best guess** — after setting, check on the pump that the intended threshold actually changed. See docs/UNVERIFIED-GUESSES.md.")
             }
             Section("CGM out-of-range alert") {
                 Toggle("Enabled", isOn: $cgmOorOn)
@@ -450,7 +450,7 @@ struct ProfileCreateView: View {
                     if model.lastError == nil { dismiss() }
                 }.disabled(busy || name.isEmpty)
             } footer: {
-                Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. Insulin-affecting — bench-validate on saline.")
+                Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. ⚠️ Experimental: some profile parameters use **unverified default values** (idpStatusId, bitmasks) — verify the created profile on the pump. Insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
@@ -486,7 +486,7 @@ struct ProfileSegmentsView: View {
                 }
                 if model.snapshot.viewedProfileSegments.isEmpty { Text("Loading segments…").foregroundStyle(.secondary) }
             } header: { Text("Time segments") } footer: {
-                Text("Each segment sets basal, carb ratio, ISF, and target from its start time until the next. Editing the basal schedule is insulin-affecting — bench-validate on saline.")
+                Text("Each segment sets basal, carb ratio, ISF, and target from its start time until the next. ⚠️ Experimental: segment writes use an unverified idpStatusId (0) — verify the result on the pump. Editing the basal schedule is insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
