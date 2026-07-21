@@ -20,6 +20,8 @@ struct WatchBolusView: View {
     private var step: Double { isCarbs ? model.carbIncrement : model.bolusIncrement }
     private var maxAmount: Double { isCarbs ? 200 : max(model.maxBolusUnits, 0.05) }
     private var amountLabel: String { isCarbs ? "\(Int(amount)) g" : String(format: "%.2f U", amount) }
+    /// In carbs mode, the units the phone would deliver (like the Garmin/Mac preview).
+    private var estUnits: Double? { (isCarbs && amount > 0) ? model.estimatedUnits(forCarbs: amount) : nil }
 
     var body: some View {
         Group {
@@ -46,6 +48,9 @@ struct WatchBolusView: View {
                     .digitalCrownRotation($amount, from: 0, through: maxAmount, by: step,
                                           sensitivity: .medium, isContinuous: false)
                 Text("Turn crown to set").font(.caption2).foregroundStyle(.secondary)
+                if let u = estUnits {
+                    Text(String(format: "≈ %.2f U", u)).font(.caption).foregroundStyle(.secondary)
+                }
 
                 Button { confirming = true } label: {
                     Label("Bolus \(amountLabel)", systemImage: "drop.fill")
@@ -61,7 +66,11 @@ struct WatchBolusView: View {
             Button("Deliver \(amountLabel)", role: .destructive) { deliver() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("faBolus is experimental and not FDA-cleared.")
+            if let u = estUnits {
+                Text(String(format: "≈ %.2f U will be delivered. faBolus is experimental and not FDA-cleared.", u))
+            } else {
+                Text("faBolus is experimental and not FDA-cleared.")
+            }
         }
     }
 
