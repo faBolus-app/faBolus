@@ -96,6 +96,21 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var carbRatio: Double = 0    // grams per unit
     public var isf: Int = 0             // correction factor, mg/dL per unit
     public var targetBg: Int = 0        // mg/dL
+
+    // Workstream B (controlX2 parity) status fields.
+    /// Pump model detection (from ApiVersionResponse). Mobi gates advanced control.
+    public var isMobi: Bool = false
+    public var pumpModelName: String = ""       // e.g. "t:slim X2" / "Mobi"
+    public var softwareVersion: String = ""
+    /// Current basal delivery rate (units/hr) and whether delivery is suspended.
+    public var basalRateUnitsPerHour: Double = 0
+    public var deliverySuspended: Bool = false
+    /// Active insulin-delivery profile name + Control-IQ user mode (0 none / sleep / exercise).
+    public var activeProfileName: String = ""
+    public var controlIQMode: Int = 0
+    public var controlIQEnabled: Bool = false
+    /// Active carbohydrates (COB), grams — shown alongside IOB when available.
+    public var cobGrams: Double = 0
     public init() {}
 
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
@@ -141,14 +156,52 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsHistoryBackfill: Bool
     /// The backend needs an interactive pairing flow (e.g. a 6-digit code).
     public var supportsPairing: Bool
+
+    // Advanced pump control (Workstream B / controlX2 parity) — write commands beyond bolus, mostly
+    // Mobi-only on real hardware. The UI must gate each on BOTH the flag here AND
+    // `AppSettings.advancedControlEnabled` (opt-in, default off). Defaults false so a backend only
+    // advertises what it (and the connected pump model) actually supports.
+    public var supportsSuspendResume: Bool
+    public var supportsTempBasal: Bool
+    public var supportsModes: Bool
+    public var supportsProfiles: Bool
+    public var supportsControlIQSettings: Bool
+    public var supportsCgmSession: Bool
+    public var supportsCartridgeFill: Bool
+    public var supportsLimits: Bool
+    public var supportsTimeSync: Bool
+
     public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
                 supportsAlertClear: Bool = true, supportsHistoryBackfill: Bool = true,
-                supportsPairing: Bool = true) {
+                supportsPairing: Bool = true,
+                supportsSuspendResume: Bool = false, supportsTempBasal: Bool = false,
+                supportsModes: Bool = false, supportsProfiles: Bool = false,
+                supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
+                supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
+                supportsTimeSync: Bool = false) {
         self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
         self.supportsAlertClear = supportsAlertClear; self.supportsHistoryBackfill = supportsHistoryBackfill
         self.supportsPairing = supportsPairing
+        self.supportsSuspendResume = supportsSuspendResume; self.supportsTempBasal = supportsTempBasal
+        self.supportsModes = supportsModes; self.supportsProfiles = supportsProfiles
+        self.supportsControlIQSettings = supportsControlIQSettings; self.supportsCgmSession = supportsCgmSession
+        self.supportsCartridgeFill = supportsCartridgeFill; self.supportsLimits = supportsLimits
+        self.supportsTimeSync = supportsTimeSync
     }
     public static let full = PumpCapabilities()
+
+    /// The advanced-control set for a Mobi pump (essentially all non-bolus control).
+    public static let mobiAdvanced = PumpCapabilities(
+        supportsSuspendResume: true, supportsTempBasal: true, supportsModes: true,
+        supportsProfiles: true, supportsControlIQSettings: true, supportsCgmSession: true,
+        supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true)
+
+    /// True if any advanced-control capability is available (gates the Pump Control entry).
+    public var supportsAnyAdvancedControl: Bool {
+        supportsSuspendResume || supportsTempBasal || supportsModes || supportsProfiles
+            || supportsControlIQSettings || supportsCgmSession || supportsCartridgeFill
+            || supportsLimits || supportsTimeSync
+    }
 }
 
 /// A bolus the user is about to confirm (modern: carbs + BG → recommended units).

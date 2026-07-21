@@ -25,6 +25,23 @@
     ONE+** directly over Bluetooth (also on Apple Watch), or **LibreLinkUp** (Libre 2/3), **Dexcom
     Share** (G6), **Nightscout**, or **Apple Health** (Eversense). The pump stays the primary
     source. See [CGM failover](operate/cgm-failover.md).
+??? question "Can I use faBolus and the official Tandem app (t:connect) at the same time?"
+    You can install both, but the pump pairs to **one** controller at a time — so only one can be
+    connected at once, and there's **no way to keep both paired or switch instantly**. The pump
+    never stores two pairings, and the 6-digit code can't be shared between the apps (each app runs
+    its own pairing handshake and derives its own key, so writing the code into both doesn't help).
+    Switching means putting the pump in **Pair Device** mode, which hands out a **new code**, and
+    pairing the app you want — which evicts the other. While faBolus stays the paired app it
+    reconnects with **no code** ("Connect (saved pairing)"); the new-code step only comes up when
+    you bounce between the two. On a **Tandem Mobi** switching is even more hands-on: it has no
+    screen, so re-pairing means placing the pump on its **charging pad** and **pressing its button
+    twice** (its PIN is fixed, behind the cartridge) — see [Pairing your pump](setup/pairing.md).
+
+    **faBolus is not a full replacement for the official app.** Some pump settings and configuration
+    — and certain **Mobi** functions — can only be changed in **t:connect**; faBolus doesn't support
+    them yet. A common setup: use faBolus day-to-day for monitoring and remote bolus, and when you
+    need an official-app-only setting, pair **t:connect**, make the change, then re-pair faBolus.
+    See [Pairing your pump](setup/pairing.md).
 
 ??? question "Do I need to be a programmer to build it?"
     No. The [build guide](build/index.md) walks through every step in plain language — get an

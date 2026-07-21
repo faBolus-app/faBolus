@@ -22,8 +22,10 @@ struct RootTabView: View {
             AlertsScreenView(model: model)
                 .tabItem { Label("Alerts", systemImage: "bell.fill") }
                 .badge(model.activeNotifications.count).tag(2)
+            LogbookView(model: model)
+                .tabItem { Label("Logbook", systemImage: "clock.arrow.circlepath") }.tag(3)
             SettingsView(model: model)
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(3)
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(4)
         }
         .task { await autoReconnectIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
@@ -39,6 +41,15 @@ struct RootTabView: View {
             Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
         } message: {
             Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)). Confirm to deliver.")
+        }
+        .alert("Remote pump-control request", isPresented: .constant(model.pendingRemoteControl != nil)) {
+            let action = model.pendingRemoteControl?.action
+            Button(action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil) {
+                Task { await model.confirmRemoteControl() }
+            }
+            Button("Reject", role: .cancel) { model.rejectRemoteControl() }
+        } message: {
+            Text("A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed.")
         }
     }
 }

@@ -39,6 +39,16 @@ live at the documentation site:**
 - [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md) ·
   [Siri & Shortcuts](docs/customize/shortcuts.md).
 
+## Using it alongside the official Tandem app
+
+The pump pairs to **one** controller at a time, so faBolus and the official **t:connect** app can
+both be installed but only one is connected at once — and switching is a full re-pair with a new
+6-digit code, not a quick toggle (the pump doesn't store two pairings, and the code can't be shared
+between apps). faBolus also isn't a full replacement: some pump settings and certain **Mobi**
+functions can only be changed in t:connect. Pick faBolus as your everyday controller (it reconnects
+with no code) and pair t:connect only when you need an official-app-only setting — then re-pair
+faBolus. More in the [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
+
 ## Known limitations (being worked on)
 
 Two features are known not to work correctly yet and are being fixed:
@@ -101,3 +111,18 @@ links Garmin's companion SDK — the **Connect IQ Mobile SDK for iOS**.
 The protocol/BLE/auth core ([`PumpX2Kit`](../PumpX2Kit)) supports read-only monitoring, JPAKE
 pairing, and a signed bolus path validated on hardware. This app layer is under active
 development on top of it.
+
+## Acknowledgments
+
+faBolus is built on **[pumpX2](https://github.com/jwoglom/pumpx2)** by **James Woglom
+([@jwoglom](https://github.com/jwoglom))**. His reverse-engineering of the Tandem pump's Bluetooth
+protocol is the foundation of this entire project — [`PumpX2Kit`](../PumpX2Kit) is a Swift port of
+that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not exist
+without it.** (faBolus is an independent reimplementation — not a fork of, affiliated with, or
+endorsed by pumpX2/controlX2.)
+
+It also draws on the wider **[LoopKit](https://github.com/LoopKit)** / **[Loop](https://github.com/LoopKit/Loop)**
+ecosystem: the app's visual design and parts of this documentation take inspiration from Loop and
+[LoopDocs](https://loopkit.github.io/loopdocs/).
+
+Full attributions are in [NOTICE.md](NOTICE.md).
