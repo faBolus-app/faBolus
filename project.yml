@@ -95,11 +95,6 @@ targets:
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
-        # Discover + talk to the faBolus Mac remote over the local network (MultipeerConnectivity).
-        NSLocalNetworkUsageDescription: "faBolus connects to the faBolus Mac app on your local network so you can view status and deliver boluses from your Mac."
-        NSBonjourServices:
-          - _fabolus-rmt._tcp
-          - _fabolus-rmt._udp
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
@@ -254,9 +249,9 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
 
-  # macOS remote app — a same-network remote for the iPhone host over MultipeerConnectivity
-  # (WatchConnectivity can't reach a Mac). It never touches the pump: it displays the status the
-  # phone relays and sends bolus/cancel/dismiss commands the phone executes. Menu-bar item + window.
+  # macOS remote app — a remote for the iPhone host over Bluetooth LE (works when the phone is
+  # locked/backgrounded). It never touches the pump: it displays the status the phone relays and sends
+  # bolus/cancel/dismiss commands the phone executes. Menu-bar item + window.
   faBolusMac:
     type: application
     platform: macOS
@@ -268,7 +263,7 @@ targets:
       - path: Shared/WidgetShared.swift
       - path: Shared/DisplaySettings.swift
     dependencies:
-      # Contracts + models + the PeerLink transport. No PumpX2Kit/ConnectIQ — it's a remote.
+      # Contracts + models + the BLE transport. No PumpX2Kit/ConnectIQ — it's a remote.
       - package: faBolusCore
         product: faBolusCore
       # Embeds the macOS WidgetKit extension.
@@ -280,8 +275,6 @@ targets:
         com.apple.security.app-sandbox: true
         # BLE central (connects to the iPhone peripheral) — works when the phone is locked/backgrounded.
         com.apple.security.device.bluetooth: true
-        # MultipeerConnectivity discovery + transport on the local network (legacy PeerLink fallback).
-        com.apple.security.network.client: true
         com.apple.security.network.server: true
         # Shared container the app writes and the Mac widgets read. macOS App Groups are Team-ID
         # prefixed, so this uses $(TeamIdentifierPrefix) (unlike the iOS/watch group ids).
@@ -295,12 +288,8 @@ targets:
         CFBundleDisplayName: faBolus
         # Menu-bar-only agent app: no Dock icon and no main window.
         LSUIElement: true
-        # BLE (primary transport to the iPhone) + local network (legacy MultipeerConnectivity).
+        # BLE is the transport to the iPhone (works when the phone is locked/backgrounded).
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked."
-        NSLocalNetworkUsageDescription: "faBolus connects to your iPhone on the local network to show pump status and relay boluses."
-        NSBonjourServices:
-          - _fabolus-rmt._tcp
-          - _fabolus-rmt._udp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac

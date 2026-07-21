@@ -26,12 +26,5 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_fabolus-rmt._tcp</string>
-		<string>_fabolus-rmt._udp</string>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>faBolus connects to your iPhone on the local network to show pump status and relay boluses.</string>
 </dict>
 </plist>
