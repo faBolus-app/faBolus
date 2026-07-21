@@ -63,7 +63,8 @@ struct MacStatusPills: View {
 struct MacBolusEntryView: View {
     var model: MacRemoteModel
     @State private var mode: String = "carbs"
-    @State private var amount: Double = 0
+    // Optional so the field starts empty (no stale value, no "0" to clear before typing).
+    @State private var amount: Double? = nil
     @State private var confirming = false
 
     private var isDelivering: Bool { model.lastStatus == .delivering }
@@ -71,11 +72,15 @@ struct MacBolusEntryView: View {
     private var step: Double { isCarbs ? model.display.carbIncrement : model.display.bolusIncrement }
     private var maxV: Double { isCarbs ? 200 : (model.maxBolusUnits > 0 ? model.maxBolusUnits : 25) }
     private var unitLabel: String { isCarbs ? "g" : "U" }
+    private var value: Double { amount ?? 0 }
     private var canDeliver: Bool {
-        model.reachable && !isDelivering && amount >= (isCarbs ? 1 : 0.05) && amount <= maxV
+        model.reachable && !isDelivering && value >= (isCarbs ? 1 : 0.05) && value <= maxV
     }
-
-    private var amountText: String { String(format: isCarbs ? "%.0f %@" : "%.2f %@", amount, unitLabel) }
+    /// Non-optional binding for the Stepper (treats an empty field as 0).
+    private var stepperBinding: Binding<Double> {
+        Binding(get: { amount ?? 0 }, set: { amount = $0 })
+    }
+    private var amountText: String { String(format: isCarbs ? "%.0f %@" : "%.2f %@", value, unitLabel) }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -92,7 +97,7 @@ struct MacBolusEntryView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .onChange(of: mode) { _, _ in amount = 0 }
+                .onChange(of: mode) { _, _ in amount = nil }
 
                 // Type a value directly, or use the − / + stepper. Both edit the same amount.
                 HStack(spacing: 8) {
@@ -101,19 +106,20 @@ struct MacBolusEntryView: View {
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 84)
-                        .onSubmit { amount = min(max(0, amount), maxV) }
+                        .onSubmit { if let a = amount { amount = min(max(0, a), maxV) } }
                     Text(unitLabel).foregroundStyle(.secondary)
-                    Stepper("", value: $amount, in: 0...maxV, step: step)
+                    Stepper("", value: stepperBinding, in: 0...maxV, step: step)
                         .labelsHidden()
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity)
 
                 Button {
-                    amount = min(max(0, amount), maxV)   // clamp any typed value before confirming
+                    if let a = amount { amount = min(max(0, a), maxV) }   // clamp typed value
                     if canDeliver { confirming = true }
                 } label: {
-                    Text(isCarbs ? "Bolus \(Int(amount)) g" : String(format: "Bolus %.2f U", amount))
+                    Text(amount == nil ? "Bolus"
+                                       : (isCarbs ? "Bolus \(Int(value)) g" : String(format: "Bolus %.2f U", value)))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -125,7 +131,7 @@ struct MacBolusEntryView: View {
 
     private var confirmView: some View {
         VStack(spacing: 8) {
-            Text(isCarbs ? "Deliver \(Int(amount)) g?" : "Deliver \(amountText)?")
+            Text(isCarbs ? "Deliver \(Int(value)) g?" : "Deliver \(amountText)?")
                 .font(.callout.weight(.semibold))
             Text(isCarbs ? "The iPhone calculates the dose and delivers it on the pump."
                          : "The iPhone delivers this on the pump.")
@@ -136,8 +142,8 @@ struct MacBolusEntryView: View {
                 Button("Back") { confirming = false }
                     .buttonStyle(.bordered)
                 Button("Deliver") {
-                    if isCarbs { model.deliverCarbs(amount) } else { model.deliverUnits(amount) }
-                    amount = 0
+                    if isCarbs { model.deliverCarbs(value) } else { model.deliverUnits(value) }
+                    amount = nil
                     confirming = false
                 }
                 .buttonStyle(.borderedProminent)
