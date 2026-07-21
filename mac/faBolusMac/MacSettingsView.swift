@@ -111,25 +111,48 @@ struct MacSettingsPane: View {
 }
 
 /// Connection pane: pick and pair the iPhone this Mac controls. The Mac discovers iPhones running
-/// faBolus over Bluetooth LE (it scans for faBolus's service, so only devices with the app appear —
-/// a real faBolus device is never filtered out). Pairing remembers one and reconnects automatically.
+/// faBolus over Bluetooth LE. First-time pairing requires the one-time code shown on the phone; once
+/// paired, a stored token reconnects automatically. "Connected" means authenticated, not just linked.
 struct MacConnectionView: View {
     var model: MacRemoteModel
+    @State private var codeEntry = ""
+
+    private var pairing: MacConnection { model.pairing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Circle().fill(model.pairing.connected ? Color.green : Color.secondary)
-                    .frame(width: 9, height: 9)
-                Text(model.pairing.connected ? "Connected" : "Not connected")
-                    .font(.callout)
+                Circle().fill(statusColor).frame(width: 9, height: 9)
+                Text(statusText).font(.callout)
                 Spacer()
-                if let paired = model.pairing.pairedPhone {
+                if let paired = pairing.pairedPhone {
                     Text(paired).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
 
-            if model.pairing.pairedPhone != nil {
+            if pairing.needsCode {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Enter the code shown in faBolus on \(pairing.pairingPhone ?? "your iPhone") — Settings → Watch & Garmin → Mac remote → Pair a Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        TextField("123456", text: $codeEntry)
+                            .textFieldStyle(.roundedBorder).frame(width: 90).onSubmit(submit)
+                        Button("Connect", action: submit)
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                            .disabled(codeEntry.filter(\.isNumber).count < MacPairing.codeLength)
+                        Button("Cancel") { codeEntry = ""; model.cancelPairing() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                }
+            }
+
+            if let err = pairing.pairingError {
+                Text(err).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if pairing.pairedPhone != nil && pairing.authenticated {
                 Button("Forget this iPhone", role: .destructive) { model.pairing.forget() }
                     .buttonStyle(.bordered).controlSize(.small)
             }
@@ -137,33 +160,51 @@ struct MacConnectionView: View {
             Divider()
 
             Text("Available iPhones").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            if model.pairing.discoveredPhones.isEmpty {
+            if pairing.discoveredPhones.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Searching…").font(.callout).foregroundStyle(.secondary)
                 }
             } else {
-                ForEach(model.pairing.discoveredPhones, id: \.self) { name in
+                ForEach(pairing.discoveredPhones, id: \.self) { name in
                     HStack {
                         Image(systemName: "iphone").foregroundStyle(.secondary)
                         Text(name).lineLimit(1)
                         Spacer()
-                        if model.pairing.pairedPhone == name {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(model.pairing.connected ? .green : .secondary)
+                        if pairing.pairedPhone == name {
+                            Image(systemName: pairing.authenticated ? "checkmark.circle.fill" : "ellipsis.circle")
+                                .foregroundStyle(pairing.authenticated ? .green : .secondary)
                         } else {
-                            Button("Pair") { model.pairing.pair(with: name) }
+                            Button("Pair") { codeEntry = ""; model.beginPair(with: name) }
                                 .buttonStyle(.bordered).controlSize(.small)
                         }
                     }
                 }
             }
 
-            Text("Keep both devices nearby (Bluetooth). Open faBolus on the iPhone at least once so it can advertise.")
+            Text("Keep both devices nearby (Bluetooth). Open faBolus on the iPhone at least once so it can advertise. First-time pairing needs the one-time code from the phone.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func submit() {
+        let code = codeEntry.filter(\.isNumber)
+        guard code.count == MacPairing.codeLength else { return }
+        model.submitCode(code)
+        codeEntry = ""
+    }
+
+    private var statusText: String {
+        if pairing.authenticated { return "Connected" }
+        if pairing.connected { return "Pairing…" }
+        return "Not connected"
+    }
+    private var statusColor: Color {
+        if pairing.authenticated { return .green }
+        if pairing.connected { return .orange }
+        return .secondary
     }
 }

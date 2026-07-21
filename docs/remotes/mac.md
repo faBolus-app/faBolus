@@ -15,14 +15,28 @@ iPhone is **locked or the app is in the background** (the phone acts as a BLE pe
 same background mode that keeps the pump link alive). The two devices do **not** need to be on the
 same Wi-Fi network; they just need to be in Bluetooth range.
 
-To pair:
+## Pairing (one-time code)
+
+Any Mac in Bluetooth range could reach the phone, so the iPhone **authenticates the Mac before it
+accepts anything**. First-time pairing needs a one-time code shown on the phone; you enter it once,
+then both ends store a long-term key and reconnect automatically.
 
 1. Open **faBolus on the iPhone** at least once so it starts advertising.
-2. On the Mac, click the menu-bar item → the **gear** (top-right) → **Connection**.
-3. Pick your iPhone under **Available iPhones** and click **Pair**. macOS will ask for **Bluetooth**
-   permission the first time — allow it.
+2. On the **iPhone**: **Settings → Watch & Garmin → Mac remote → Pair a Mac**. It shows a **6-digit
+   code** (valid ~5 minutes).
+3. On the **Mac**: menu-bar item → the **gear** (top-right) → **Connection**, pick your iPhone under
+   **Available iPhones**, click **Pair**, and type the code. macOS asks for **Bluetooth** permission
+   the first time — allow it.
 
-The Mac remembers the paired iPhone and reconnects automatically. **Forget this iPhone** clears it.
+"Connected" (green) means the Mac is **authenticated**; it reconnects on its own from then on.
+Revoke access with **Forget this iPhone** on the Mac, or **Forget** next to the Mac in the phone's
+*Mac remote* screen — a new code is then required to pair again.
+
+!!! note "How it works / security"
+    The code drives a mutual HMAC challenge–response (`MacPairing`): the phone refuses every
+    bolus/status/control command from an unauthenticated Mac, and a random 256-bit token — not the
+    code — secures each later reconnect. A 6-digit code is low-entropy, so do first-time pairing with
+    the two devices close by. See `MacPairing` in the source for the full design.
 
 ## The popover
 
