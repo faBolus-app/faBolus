@@ -56,8 +56,8 @@ public final class AppModel {
     }
 
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
-    public func dismissNotification(_ n: PumpAlert) async {
-        if childBlocked(.dismissAlerts) { return }
+    public func dismissNotification(_ n: PumpAlert, enforceChildLock: Bool = true) async {
+        if enforceChildLock, childBlocked(.dismissAlerts) { return }
         await source.dismissNotification(n); refresh()
     }
 
@@ -96,13 +96,17 @@ public final class AppModel {
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
-    public func dismissAlert(id: Int, kind: Int) async {
+    public func dismissAlert(id: Int, kind: Int, enforceChildLock: Bool = true) async {
         guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
-        await dismissNotification(n)
+        await dismissNotification(n, enforceChildLock: enforceChildLock)
     }
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
-    public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
+    public struct PendingRemoteBolus: Equatable, Sendable {
+        public let requestId: String; public let units: Double
+        /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
+        public var enforceChildLock: Bool = true
+    }
     public var pendingRemoteBolus: PendingRemoteBolus?
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
@@ -355,8 +359,8 @@ public final class AppModel {
         refresh()
     }
 
-    public func cancelBolus() async {
-        if childBlocked(.cancelBolus) { return }
+    public func cancelBolus(enforceChildLock: Bool = true) async {
+        if enforceChildLock, childBlocked(.cancelBolus) { return }
         await source.cancelBolus(); refresh()
     }
 
@@ -439,15 +443,15 @@ public final class AppModel {
 
     // MARK: Remote (watch/Garmin) double-confirmation
 
-    public func presentRemoteBolus(requestId: String, units: Double) {
-        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units)
+    public func presentRemoteBolus(requestId: String, units: Double, enforceChildLock: Bool = true) {
+        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units, enforceChildLock: enforceChildLock)
     }
 
     /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
     public func confirmRemoteBolus() async {
         guard let pending = pendingRemoteBolus else { return }
         pendingRemoteBolus = nil
-        if childBlocked(.bolus) {
+        if pending.enforceChildLock, childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
                                status: .failed, message: "Locked (child mode)"))
             return
@@ -478,8 +482,8 @@ public final class AppModel {
 
     /// Deliver a bolus already confirmed on the remote itself (e.g. Garmin hold-to-deliver) —
     /// no phone-side dialog. Echoes delivering → delivered/failed back to the remote.
-    public func remoteDeliver(requestId: String, units: Double) async {
-        if childBlocked(.bolus) {
+    public func remoteDeliver(requestId: String, units: Double, enforceChildLock: Bool = true) async {
+        if enforceChildLock, childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return
         }

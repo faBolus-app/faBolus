@@ -51,6 +51,7 @@ public final class PeerRemoteHost {
         }
         // If the user revokes a Mac that's currently connected, drop it immediately.
         pairing.onForget = { [weak self] id in
+            RemotePeerPolicyStore.remove(id)   // drop the revoked peer's permissions too
             guard let self, id == self.peerClientId else { return }
             self.resetAuth()
             self.bleLink.disconnectAll()
@@ -114,6 +115,7 @@ public final class PeerRemoteHost {
             if firstPairing, let code = pairingCode {
                 let token = MacPairing.newToken()
                 pairing.authorize(clientId: clientId, name: peerName ?? "Mac", token: token)
+                RemotePeerPolicyStore.ensureDefault(for: clientId)   // new peer starts view-only
                 sealed = MacPairing.sealToken(token, code: code)
             }
             let phoneProof = MacPairing.proof(secret: secret, label: "phone",
@@ -133,10 +135,25 @@ public final class PeerRemoteHost {
 
     // MARK: - Authenticated commands (unchanged behavior)
 
+    /// The authenticated peer's granted policy (permissions + bolus-approval mode). A peer with no
+    /// stored policy is a pre-existing full grant (the Mac paired before policies); new peers are
+    /// view-only until the host grants more.
+    private var policy: RemotePeerPolicy {
+        RemotePeerPolicyStore.effectivePolicy(for: peerClientId ?? "")
+    }
+
+    /// Reject a command the peer isn't permitted to run, echoing a failure back.
+    private func deny(_ requestId: String) {
+        link.send(RemoteCommand(kind: .bolusStatus, requestId: requestId,
+                                status: .failed, message: "Not permitted for this remote"))
+    }
+
     private func handleCommand(_ cmd: RemoteCommand) {
         guard let model else { return }
+        let policy = self.policy
         switch cmd.kind {
         case .bolusRequest:
+            guard policy.allows(.bolus) else { deny(cmd.requestId); return }
             Task {
                 let units: Double
                 if let carbs = cmd.carbsGrams, carbs > 0 {
@@ -150,19 +167,29 @@ public final class PeerRemoteHost {
                                                  status: .failed, message: "No insulin needed"))
                     return
                 }
-                await model.remoteDeliver(requestId: cmd.requestId, units: units)
+                // An authorized peer overrides child lock (enforceChildLock: false). Approval mode
+                // decides whether the host executes directly or must approve on-device first.
+                if policy.approvalMode == .hostApproval {
+                    model.presentRemoteBolus(requestId: cmd.requestId, units: units, enforceChildLock: false)
+                } else {
+                    await model.remoteDeliver(requestId: cmd.requestId, units: units, enforceChildLock: false)
+                }
             }
         case .cancelBolus:
-            Task { await model.cancelBolus() }
+            guard policy.allows(.cancelBolus) else { deny(cmd.requestId); return }
+            Task { await model.cancelBolus(enforceChildLock: false) }
         case .dismissAlert:
+            guard policy.allows(.dismissAlerts) else { deny(cmd.requestId); return }
             if let id = cmd.alertId, let k = cmd.alertKind {
-                Task { await model.dismissAlert(id: id, kind: k); self.link.send(model.statusCommand(includeHistory: true)) }
+                Task { await model.dismissAlert(id: id, kind: k, enforceChildLock: false); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
-            link.send(model.statusCommand(includeHistory: true))
+            link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
         case .suspendPump:
+            guard policy.allows(.suspendResume) else { deny(cmd.requestId); return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
         case .resumePump:
+            guard policy.allows(.suspendResume) else { deny(cmd.requestId); return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .resume)
         default:
             break
