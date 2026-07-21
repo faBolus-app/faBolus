@@ -120,6 +120,7 @@ enum SettingsIndex {
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
         .init(title: "iPhone increments", keywords: "bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "bolus carb step remote", category: .bolus),
+        .init(title: "Missed-bolus nudge", keywords: "unannounced meal reminder rising nudge", category: .bolus),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -171,6 +172,14 @@ struct BolusSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("Watch & Garmin increments") } footer: { Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone).") }
+            Section {
+                Toggle("Missed-bolus nudge", isOn: $settings.missedBolusNudgeEnabled)
+                if settings.missedBolusNudgeEnabled {
+                    Stepper("When above \(settings.missedBolusNudgeMgdl) mg/dL", value: $settings.missedBolusNudgeMgdl, in: 120...300, step: 10)
+                }
+            } header: { Text("Reminders") } footer: {
+                Text("Off by default. When on, shows a local reminder if glucose is climbing above this level with little insulin on board and no recent bolus — a possible unannounced meal. Advisory only; it never doses, and only fires while the app is running or woken by the pump.")
+            }
         }
         .navigationTitle("Bolus & entry")
     }

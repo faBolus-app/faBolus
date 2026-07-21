@@ -77,6 +77,12 @@ public final class AppSettings {
     /// follower source uses (plus an optional API secret). See [[NightscoutUploader]].
     public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
 
+    /// Optional local nudge when glucose is rising with no recent bolus (possible unannounced meal /
+    /// missed bolus). **Default OFF.** Advisory only — never doses. Only fires while the app is running
+    /// or BLE-woken (no background scheduler). `missedBolusNudgeMgdl` gates the glucose floor.
+    public var missedBolusNudgeEnabled: Bool { didSet { d.set(missedBolusNudgeEnabled, forKey: "missedBolusNudgeEnabled") } }
+    public var missedBolusNudgeMgdl: Int { didSet { d.set(missedBolusNudgeMgdl, forKey: "missedBolusNudgeMgdl") } }
+
     /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
     /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
     public func advancedControlAllowed(isMobi: Bool) -> Bool {
@@ -206,6 +212,8 @@ public final class AppSettings {
         simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
+        missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false
+        missedBolusNudgeMgdl = max(120, (d.object(forKey: "missedBolusNudgeMgdl") as? Int) ?? 180)
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.

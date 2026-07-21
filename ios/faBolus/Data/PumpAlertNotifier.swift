@@ -28,6 +28,16 @@ final class PumpAlertNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     private func key(_ n: PumpAlert) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
 
+    /// Post an advisory nudge (e.g. missed-bolus / unannounced-meal). Not a pump alert — no Clear
+    /// action, and it reuses one id so nudges don't stack. Debounced by the caller.
+    func nudge(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        center.add(UNNotificationRequest(identifier: "fabolus-nudge", content: content, trigger: nil))
+    }
+
     private func sync(_ notifications: [PumpAlert]) {
         let active = Set(notifications.map(key))
         // Post newly-active alerts.
