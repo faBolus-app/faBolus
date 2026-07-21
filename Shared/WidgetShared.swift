@@ -30,12 +30,17 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var isf: Int              // mg/dL per U (0 = unknown)
     public var targetBg: Int         // mg/dL (0 = unknown)
     public var maxBolusUnits: Double // pump's configured max
+    // The publisher's freshness policy (from the phone), so a widget in its own process greys/hides
+    // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
+    public var staleAfterSec: TimeInterval?   // grey after this age
+    public var hideAfterSec: TimeInterval?    // hide ("--") after this age; nil = never hide
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
-                carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0) {
+                carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
+                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -43,6 +48,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.activeAlerts = activeAlerts
         self.cgmActive = cgmActive; self.carbRatio = carbRatio; self.isf = isf
         self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
+        self.staleAfterSec = staleAfterSec; self.hideAfterSec = hideAfterSec
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
@@ -61,6 +67,20 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }
         return Date().timeIntervalSince(d) > 6 * 60
+    }
+
+    // Time-parameterized freshness honoring the publisher's policy — evaluated against the widget
+    // entry's date (not wall-clock `Date()`, which in a widget is prep time, not the display time).
+    private var staleLimit: TimeInterval { staleAfterSec ?? 6 * 60 }
+    /// Stale (show greyed) at `now`, per the published stale threshold.
+    public func isStale(asOf now: Date) -> Bool {
+        guard let d = glucoseDate else { return glucose != nil }
+        return now.timeIntervalSince(d) > staleLimit
+    }
+    /// Hidden ("--") at `now`: past the published hide delay (nil delay = never hide).
+    public func isHidden(asOf now: Date) -> Bool {
+        guard glucose != nil, let d = glucoseDate, let hide = hideAfterSec else { return false }
+        return now.timeIntervalSince(d) >= Swift.max(hide, staleLimit)
     }
     /// Glucose string, or "--" when missing/stale. A non-positive value is treated as "no reading"
     /// (defends the complication against ever rendering a literal "0").
