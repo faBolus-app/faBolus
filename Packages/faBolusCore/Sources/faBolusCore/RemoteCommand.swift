@@ -12,6 +12,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// Remote advanced-control requests (suspend/resume). The phone re-confirms on-device and
         /// only honors them when advanced control is enabled for a Mobi.
         case suspendPump, resumePump
+        /// Mac↔phone pairing handshake (see `MacPairing`). Carried over the BLE/Multipeer remote
+        /// link only — the phone gates all other kinds until the peer is authenticated. These are
+        /// intentionally NOT part of the shared watch/Garmin schema (command.schema.json / the
+        /// Monkey C mirror): the handshake is phone↔Mac-specific.
+        case authHello, authChallenge, authProof, authResult
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -81,6 +86,21 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// How the Garmin BG complication should present ("numericColor" | "stringTrend"). Mirrored.
     public var garminComplicationDisplay: String?
 
+    // MARK: Mac↔phone pairing handshake (see MacPairing)
+    // Swift-only fields with defaults, so the existing initializer, command.schema.json, and the
+    // Garmin Monkey C mirror all stay untouched. Present only on `auth*` kinds; nil (omitted from
+    // JSON) on every real command. base64 for the binary values.
+    /// The Mac's stable client id (authHello / authProof / authResult).
+    public var authClientId: String? = nil
+    /// A challenge nonce — the Mac's in authHello, the phone's in authChallenge (base64).
+    public var authNonce: String? = nil
+    /// An HMAC proof of the shared secret (authProof = Mac's, authResult = phone's; base64).
+    public var authProof: String? = nil
+    /// The long-term token, AES-GCM-sealed with a code-derived key, on first pairing only (base64).
+    public var authSealedToken: String? = nil
+    /// authResult outcome: true = authenticated; false = rejected (see `message`).
+    public var authOK: Bool? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -124,5 +144,19 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     }
     public static func from(_ dict: [String: Any]) throws -> RemoteCommand {
         try decode(try JSONSerialization.data(withJSONObject: dict))
+    }
+
+    /// Build a pairing-handshake command (see `MacPairing`, `PeerRemoteHost`, `MacRemoteModel`).
+    public static func auth(_ kind: Kind, clientId: String? = nil, nonce: String? = nil,
+                            proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,
+                            message: String? = nil) -> RemoteCommand {
+        var c = RemoteCommand(kind: kind)
+        c.authClientId = clientId
+        c.authNonce = nonce
+        c.authProof = proof
+        c.authSealedToken = sealedToken
+        c.authOK = ok
+        c.message = message
+        return c
     }
 }

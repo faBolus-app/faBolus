@@ -4,31 +4,129 @@ import UIKit
 
 /// iPhone-side receiver for the **Mac** remote, carried over `BLELink` (Bluetooth LE) so it keeps
 /// working when the phone is locked or the app is backgrounded — the phone runs as a BLE peripheral
-/// under the `bluetooth-peripheral` background mode. Structurally identical to `PhoneRemoteHost` — it
-/// translates the transport's `RemoteCommand`s into the same `AppModel` calls and echoes status
-/// back — only the transport differs. `AppModel`'s echo broadcast fans out to every registered
-/// remote, and each remote ignores `requestId`s it didn't send, so the Mac and Apple Watch coexist.
+/// under the `bluetooth-peripheral` background mode. Like `PhoneRemoteHost` it translates the
+/// transport's `RemoteCommand`s into `AppModel` calls and echoes status back — only the transport
+/// differs.
 ///
-/// The Mac confirms on-device (inline confirm), like the Apple Watch and Garmin, so a `bolusRequest`
-/// is delivered directly through the validated signed path.
+/// Unlike the Apple Watch (physically paired to the phone), any Mac in range could open the BLE
+/// link, so this host **authenticates the Mac before honoring anything**. A one-time 6-digit code
+/// shown on the phone (Settings → Pair a Mac) drives a mutual HMAC handshake (`MacPairing`); on
+/// success both ends persist a long-term token so later reconnects are automatic. Until a peer is
+/// authenticated, every bolus/cancel/control/status command is dropped and no status is pushed to
+/// it — the phone only exchanges `auth*` messages.
 @MainActor
 public final class PeerRemoteHost {
-    // Advertise as a BLE peripheral under the device name ("Zev's iPhone") so the Mac identifies it.
     private let link = BLELink(role: .peripheral, displayName: UIDevice.current.name)
     private weak var model: AppModel?
+    private let pairing = MacPairingCoordinator.shared
+
+    // Per-connection auth state. Reset whenever the link drops.
+    private var authenticated = false
+    private var peerClientId: String?
+    private var peerName: String?
+    private var macNonce: Data?
+    private var phoneNonce: Data?
+    private var secret: Data?          // code-derived (first pairing) or the stored token (reconnect)
+    private var firstPairing = false
+    private var pairingCode: String?   // the code in use, needed to seal the token on first pairing
 
     public init(model: AppModel) {
         self.model = model
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
-        model.addRemoteEcho { [weak self] cmd in self?.link.send(cmd) }
-        // Proactively push status (with history for the Mac chart) when pump data changes.
+        link.onReachabilityChange = { [weak self] reachable in
+            if !reachable { self?.resetAuth() }
+        }
+        // Status/echo go out only to an authenticated Mac (no glucose/pump leak to an unpaired peer).
+        model.addRemoteEcho { [weak self] cmd in
+            guard let self, self.authenticated else { return }
+            self.link.send(cmd)
+        }
         model.addStatusListener { [weak self] _ in
-            guard let self, let m = self.model else { return }
+            guard let self, self.authenticated, let m = self.model else { return }
             self.link.send(m.statusCommand(includeHistory: true))
+        }
+        // If the user revokes a Mac that's currently connected, drop it immediately.
+        pairing.onForget = { [weak self] id in
+            guard let self, id == self.peerClientId else { return }
+            self.resetAuth()
+            self.link.disconnectAll()
         }
     }
 
+    private func resetAuth() {
+        authenticated = false
+        peerClientId = nil; peerName = nil; macNonce = nil; phoneNonce = nil
+        secret = nil; firstPairing = false; pairingCode = nil
+        pairing.setConnected(false, name: nil)
+    }
+
     private func handle(_ cmd: RemoteCommand) {
+        switch cmd.kind {
+        case .authHello, .authProof:
+            handleAuth(cmd)
+        case .authChallenge, .authResult:
+            break   // phone-outbound only
+        default:
+            guard authenticated else { return }   // gate: ignore commands from an unauthenticated Mac
+            handleCommand(cmd)
+        }
+    }
+
+    // MARK: - Handshake (phone = verifier)
+
+    private func handleAuth(_ cmd: RemoteCommand) {
+        switch cmd.kind {
+        case .authHello:
+            guard let clientId = cmd.authClientId,
+                  let mNonceB64 = cmd.authNonce, let mNonce = Data(base64Encoded: mNonceB64) else { return }
+            let name = cmd.message ?? "Mac"
+            // Choose the secret: a known Mac reconnects with its token; a new Mac needs an open code.
+            if let token = pairing.token(for: clientId) {
+                secret = token; firstPairing = false; pairingCode = nil
+            } else if let code = pairing.validCode() {
+                secret = MacPairing.secret(code: code); firstPairing = true; pairingCode = code
+            } else {
+                link.send(.auth(.authResult, ok: false,
+                                message: "Open “Pair a Mac” in faBolus on your iPhone, then enter the code."))
+                return
+            }
+            peerClientId = clientId; peerName = name; macNonce = mNonce
+            let pNonce = MacPairing.newNonce(); phoneNonce = pNonce
+            link.send(.auth(.authChallenge, nonce: pNonce.base64EncodedString()))
+
+        case .authProof:
+            guard let clientId = peerClientId, let mNonce = macNonce, let pNonce = phoneNonce,
+                  let secret, let proof = cmd.authProof else { return }
+            guard MacPairing.verify(proof, secret: secret, label: "mac",
+                                    phoneNonce: pNonce, macNonce: mNonce, clientId: clientId) else {
+                link.send(.auth(.authResult, ok: false, message: "Incorrect code. Try again."))
+                // Keep the code window open so the user can retry, but drop this attempt's state.
+                peerClientId = nil; macNonce = nil; phoneNonce = nil; self.secret = nil
+                return
+            }
+            // Verified. On first pairing, mint + persist a long-term token and seal it for the Mac.
+            var sealed: String?
+            if firstPairing, let code = pairingCode {
+                let token = MacPairing.newToken()
+                pairing.authorize(clientId: clientId, name: peerName ?? "Mac", token: token)
+                sealed = MacPairing.sealToken(token, code: code)
+            }
+            let phoneProof = MacPairing.proof(secret: secret, label: "phone",
+                                              phoneNonce: pNonce, macNonce: mNonce, clientId: clientId)
+            authenticated = true
+            pairing.setConnected(true, name: peerName)
+            link.send(.auth(.authResult, proof: phoneProof, sealedToken: sealed, ok: true))
+            // Now that the Mac is trusted, send it a full snapshot.
+            if let m = model { link.send(m.statusCommand(includeHistory: true)) }
+
+        default:
+            break
+        }
+    }
+
+    // MARK: - Authenticated commands (unchanged behavior)
+
+    private func handleCommand(_ cmd: RemoteCommand) {
         guard let model else { return }
         switch cmd.kind {
         case .bolusRequest:
@@ -48,8 +146,6 @@ public final class PeerRemoteHost {
                 await model.remoteDeliver(requestId: cmd.requestId, units: units)
             }
         case .cancelBolus:
-            // The in-flight delivery loop echoes the single final status; no echo here (else the
-            // Mac would flip cancelled → delivered when the bolus finishes first).
             Task { await model.cancelBolus() }
         case .dismissAlert:
             if let id = cmd.alertId, let k = cmd.alertKind {
