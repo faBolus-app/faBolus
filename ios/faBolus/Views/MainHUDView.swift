@@ -31,13 +31,15 @@ struct DashboardView: View {
                     VStack(spacing: 6) {
                         GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                          boluses: model.bolusMarkers, windowHours: windowHours,
-                                         showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis)
+                                         showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
+                                         showBolusBars: settings.showBolusBars)
                         Picker("Window", selection: $windowHours) {
                             ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                         }.pickerStyle(.segmented)
                         HStack(spacing: 16) {
                             Toggle("Glucose", isOn: $settings.showGlucoseAxis)
                             Toggle("IOB", isOn: $settings.showIOBAxis)
+                            Toggle("Bolus", isOn: $settings.showBolusBars)
                         }.font(.caption).toggleStyle(.button).controlSize(.small)
                     }
                     .padding(.horizontal)

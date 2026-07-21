@@ -19,9 +19,11 @@ public final class AppSettings {
     // Watch / Garmin increments (sent to the remotes in the status payload) — independent of the phone.
     public var watchBolusIncrement: Double { didSet { d.set(watchBolusIncrement, forKey: "watchBolusIncrement") } }
     public var watchCarbIncrement: Double { didSet { d.set(watchCarbIncrement, forKey: "watchCarbIncrement") } }
-    /// Chart y-axis toggles (glucose + IOB overlay).
+    /// Chart series toggles. Glucose (left axis), the IOB line, and the bolus bars each toggle
+    /// independently; IOB + bolus bars share the right (units) axis.
     public var showGlucoseAxis: Bool { didSet { d.set(showGlucoseAxis, forKey: "showGlucoseAxis") } }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
+    public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -65,7 +67,9 @@ public final class AppSettings {
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
     public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
 
-    public static let bolusIncrements: [Double] = [0.01, 0.05, 0.1, 0.5, 1, 2]
+    // Smallest is 0.05 U — the pump's real minimum increment (sub-0.05 doses are rejected by the
+    // pump, so a 0.01 option was misleading). Any previously-persisted 0.01 is clamped up in init.
+    public static let bolusIncrements: [Double] = [0.05, 0.1, 0.5, 1, 2]
     public static let carbIncrements: [Double] = [1, 5, 10, 15]
 
     /// Mirror the phone increments + default mode to the App Group so the Quick-Bolus widget's
@@ -93,13 +97,16 @@ public final class AppSettings {
     private init() {
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
         let bi = d.object(forKey: "bolusIncrement") as? Double
-        bolusIncrement = bi ?? 0.05
+        // Clamp to the 0.05 minimum: a user who previously chose the (now-removed) 0.01 option would
+        // otherwise land on a value absent from `bolusIncrements`, showing an empty Picker.
+        bolusIncrement = max(0.05, bi ?? 0.05)
         let ci = d.object(forKey: "carbIncrement") as? Double
         carbIncrement = ci ?? 5
-        watchBolusIncrement = (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05)
+        watchBolusIncrement = max(0.05, (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05))
         watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
+        showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

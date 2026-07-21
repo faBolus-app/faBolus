@@ -56,7 +56,8 @@ struct SettingsView: View {
 
                 Section("Chart") {
                     Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
-                    Toggle("Show insulin (IOB) axis", isOn: $settings.showIOBAxis)
+                    Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
+                    Toggle("Show bolus bars", isOn: $settings.showBolusBars)
                 }
 
                 Section {
