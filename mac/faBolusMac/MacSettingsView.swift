@@ -48,20 +48,33 @@ struct MacSettingsPane: View {
         }
     }
 
+    // Segmented pickers (not .menu) — a pop-up menu won't open inside the menu-bar popover.
     private var bolus: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Default mode", selection: $display.defaultBolusMode) {
-                Text("Carbs").tag("carbs")
-                Text("Units").tag("units")
+        VStack(alignment: .leading, spacing: 10) {
+            labeled("Default mode") {
+                Picker("", selection: $display.defaultBolusMode) {
+                    Text("Carbs").tag("carbs")
+                    Text("Units").tag("units")
+                }
             }
-            Picker("Units step", selection: $display.bolusIncrement) {
-                ForEach([0.05, 0.1, 0.5, 1.0], id: \.self) { Text(String(format: "%.2f U", $0)).tag($0) }
+            labeled("Units step (U)") {
+                Picker("", selection: $display.bolusIncrement) {
+                    Text("0.05").tag(0.05); Text("0.1").tag(0.1); Text("0.5").tag(0.5); Text("1").tag(1.0)
+                }
             }
-            Picker("Carbs step", selection: $display.carbIncrement) {
-                ForEach([1.0, 5.0, 10.0, 15.0], id: \.self) { Text("\(Int($0)) g").tag($0) }
+            labeled("Carbs step (g)") {
+                Picker("", selection: $display.carbIncrement) {
+                    Text("1").tag(1.0); Text("5").tag(5.0); Text("10").tag(10.0); Text("15").tag(15.0)
+                }
             }
         }
-        .pickerStyle(.menu)
+    }
+
+    @ViewBuilder private func labeled<P: View>(_ title: String, @ViewBuilder _ picker: () -> P) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            picker().pickerStyle(.segmented).labelsHidden()
+        }
     }
 
     private var details: some View {

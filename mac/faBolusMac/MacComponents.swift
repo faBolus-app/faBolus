@@ -96,6 +96,7 @@ struct MacBolusEntryView: View {
 
                 // Type a value directly, or use the − / + stepper. Both edit the same amount.
                 HStack(spacing: 8) {
+                    Spacer(minLength: 0)
                     TextField("Amount", value: $amount, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
@@ -104,8 +105,9 @@ struct MacBolusEntryView: View {
                     Text(unitLabel).foregroundStyle(.secondary)
                     Stepper("", value: $amount, in: 0...maxV, step: step)
                         .labelsHidden()
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity)
 
                 Button {
                     amount = min(max(0, amount), maxV)   // clamp any typed value before confirming
