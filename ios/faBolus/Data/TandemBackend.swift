@@ -256,7 +256,9 @@ public final class TandemBackend: NSObject, PumpBackend {
 
         let deadline = Date().addingTimeInterval(min(600.0, max(60.0, units * 90.0)))   // upper bound
         while Date() < deadline && !cancelRequested {
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            // Poll ~2×/s so a small/finished bolus is detected quickly and the completion (and the
+            // remote "delivered/cancelled" echo) fires promptly, instead of lingering ~1.2 s+.
+            try? await Task.sleep(nanoseconds: 500_000_000)
             if cancelRequested { break }
             if let st = try? await currentBolusStatus(), st.bolusId != currentBolusId || !st.isActive {
                 break   // pump reports the bolus is no longer active

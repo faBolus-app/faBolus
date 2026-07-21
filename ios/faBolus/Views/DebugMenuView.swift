@@ -7,9 +7,20 @@ import faBolusCore
 /// but deliberately not wired to a button here (too dangerous without deliberate key handling).
 struct DebugMenuView: View {
     @Bindable var model: AppModel
+    @Bindable private var settings = AppSettings.shared
 
     var body: some View {
         Form {
+            Section {
+                Picker("Garmin target app", selection: $settings.garminTargetApp) {
+                    Text("Beta (faBolus Beta)").tag("beta")
+                    Text("Official (faBolus)").tag("official")
+                }
+            } header: {
+                Text("Developer — Garmin remote")
+            } footer: {
+                Text("Which published Garmin app the phone pairs with. After changing, re-run “Set up Garmin remote” (Settings → Watch & Garmin) or reopen the app for it to take effect. Beta = the original app id; Official = the second store copy.")
+            }
             Section("Pump identity") {
                 row("Model", model.snapshot.pumpModelName.isEmpty ? "—" : model.snapshot.pumpModelName)
                 row("Software", model.snapshot.softwareVersion.isEmpty ? "—" : model.snapshot.softwareVersion)

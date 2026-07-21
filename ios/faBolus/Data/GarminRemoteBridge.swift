@@ -10,8 +10,15 @@ import ConnectIQ
 final class GarminRemoteBridge: NSObject {
     /// Custom URL scheme for the SDK's device-selection callback (see Info.plist CFBundleURLTypes).
     static let urlScheme = "fabolusciq"
-    /// Our Monkey C app's UUID from garmin/manifest.xml (a1b2c3d4e5f600112233445566778899).
-    static let watchAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
+    /// The two published Garmin apps (garmin/manifest.xml + manifest-official.xml). The developer
+    /// panel picks which the phone pairs with (UserDefaults "garminTargetApp": beta|official).
+    static let betaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
+    static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
+    /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings).
+    /// Default beta (the historically-paired app).
+    static var watchAppUUID: UUID {
+        UserDefaults.standard.string(forKey: "garminTargetApp") == "official" ? officialAppUUID : betaAppUUID
+    }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 
     private weak var model: AppModel?
