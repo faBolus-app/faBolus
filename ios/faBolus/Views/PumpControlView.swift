@@ -69,6 +69,38 @@ struct PumpControlView: View {
                 }
             }
 
+            if caps.supportsCgmSession {
+                Section("CGM sensor") {
+                    NavigationLink { CgmSessionView(model: model) } label: {
+                        Label(model.snapshot.cgmSessionActive ? "CGM session — active" : "Start / stop CGM session",
+                              systemImage: "sensor.tag.radiowaves.forward.fill")
+                    }
+                }
+            }
+
+            if caps.supportsCartridgeFill {
+                Section("Cartridge & site") {
+                    NavigationLink { CartridgeWizardView(model: model) } label: {
+                        Label("Change cartridge / fill", systemImage: "cross.vial.fill")
+                    }
+                }
+            }
+
+            if caps.supportsLimits {
+                Section("Limits") {
+                    NavigationLink { PumpLimitsView(model: model) } label: {
+                        Label("Delivery limits", systemImage: "slider.horizontal.3")
+                    }
+                }
+            }
+
+            if caps.supportsTimeSync {
+                Section("Time") {
+                    Button { ask("Sync pump time?", "Set the pump clock to this phone's current time.", destructive: false) { await model.syncTimeToNow() } }
+                        label: { Label("Sync pump time to phone", systemImage: "clock.arrow.2.circlepath") }
+                }
+            }
+
             Section("Pump") {
                 Button { Task { busy = true; await model.playFindMyPump(); busy = false } }
                     label: { Label("Find my pump (play sound)", systemImage: "speaker.wave.3.fill") }
