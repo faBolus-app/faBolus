@@ -520,7 +520,7 @@ extension TandemBackend: PumpBLEClientDelegate {
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization { coordinator?.handle(frame: frame); return }
-        guard let parsed = try? ResponseParser.parse(frame: frame) else { return }
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else { return }
         switch parsed.message {
         case let m as ControlIQIOBResponse:
             snapshot.iobUnits = m.iobUnits
