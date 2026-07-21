@@ -26,15 +26,27 @@ struct MacSettingsPane: View {
         .font(.callout)
     }
 
-    /// A titled collapsible section with a hairline separator.
+    /// A titled collapsible section. Uses a plain Button header (not DisclosureGroup) — the
+    /// disclosure toggle is unreliable inside the menu-bar popover; a Button always registers.
     @ViewBuilder private func group<Content: View>(_ title: String, _ isOpen: Binding<Bool>,
-                                                   @ViewBuilder _ content: @escaping () -> Content) -> some View {
-        DisclosureGroup(isExpanded: isOpen) {
-            content().padding(.top, 6).padding(.leading, 2)
+                                                   @ViewBuilder _ content: () -> Content) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { isOpen.wrappedValue.toggle() }
         } label: {
-            Text(title).font(.callout.weight(.semibold))
+            HStack {
+                Text(title).font(.callout.weight(.semibold))
+                Spacer()
+                Image(systemName: isOpen.wrappedValue ? "chevron.down" : "chevron.right")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())   // whole row is the hit target
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .padding(.vertical, 5)
+
+        if isOpen.wrappedValue {
+            content().padding(.bottom, 4).padding(.leading, 2)
+        }
         Divider()
     }
 
