@@ -64,6 +64,43 @@ public final class AppModel {
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable { public let requestId: String; public let units: Double }
     public var pendingRemoteBolus: PendingRemoteBolus?
+
+    /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
+    public struct PendingRemoteControl: Equatable, Sendable {
+        public enum Action: String, Sendable { case suspend, resume }
+        public let requestId: String; public let action: Action
+    }
+    public var pendingRemoteControl: PendingRemoteControl?
+
+    /// Called by a remote bridge when the watch/Garmin requests suspend/resume. Only honored when
+    /// advanced control is enabled for a Mobi; otherwise rejected back to the remote. Never executes
+    /// directly — it stages a phone-side confirmation (RootTabView presents the alert).
+    public func requestRemoteControl(requestId: String, action: PendingRemoteControl.Action) {
+        guard advancedControlAllowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                                          message: "Advanced control is off"))
+            return
+        }
+        pendingRemoteControl = PendingRemoteControl(requestId: requestId, action: action)
+    }
+    public func confirmRemoteControl() async {
+        guard let p = pendingRemoteControl else { return }
+        pendingRemoteControl = nil
+        switch p.action {
+        case .suspend: await suspendDelivery()
+        case .resume: await resumeDelivery()
+        }
+        let ok = lastError == nil
+        echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId,
+                                      status: ok ? .delivered : .failed,
+                                      message: ok ? (p.action == .suspend ? "Suspended" : "Resumed") : (lastError ?? "Failed")))
+    }
+    public func rejectRemoteControl() {
+        if let p = pendingRemoteControl {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId, status: .cancelled, message: "Rejected on phone"))
+        }
+        pendingRemoteControl = nil
+    }
     /// Status-echo handlers registered by remote bridges (watch / Garmin). Broadcasts to all;
     /// each remote ignores statuses for requestIds it didn't send.
     private var remoteEchoes: [@MainActor (RemoteCommand) -> Void] = []
