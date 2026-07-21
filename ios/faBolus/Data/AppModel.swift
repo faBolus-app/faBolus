@@ -347,6 +347,14 @@ public final class AppModel {
         refresh()
     }
 
+    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
+    public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async {
+        if childBlocked(.bolus) { return }
+        do { _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits, durationMinutes: durationMinutes); lastError = nil }
+        catch { lastError = error.localizedDescription }
+        refresh()
+    }
+
     public func cancelBolus() async {
         if childBlocked(.cancelBolus) { return }
         await source.cancelBolus(); refresh()

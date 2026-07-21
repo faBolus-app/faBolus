@@ -20,6 +20,12 @@ struct BolusEntryView: View {
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
+    @State private var showReasoning = false
+    // Extended (combo) bolus
+    @State private var extendedOn = false
+    @State private var extendedDurationMin = 120
+    @State private var extendedNowPercent = 50
+    @State private var confirmingExtended = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -79,9 +85,20 @@ struct BolusEntryView: View {
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
-                        LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                        LabeledContent("Active insulin (IOB)", value: String(format: "−%.2f U", rec.iobUnits))
                         LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
+                        Button("Use") { unitsText = Self.trimUnits(rec.recommendedUnits) }.font(.caption)
+                        if settings.showBolusReasoning {
+                            DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
+                                LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
+                                LabeledContent("Active insulin (IOB)", value: String(format: "−%.2f U", rec.iobUnits))
+                                if let maxSafe = rec.maxSafeUnits {
+                                    LabeledContent("Max safe (est.)", value: String(format: "%.2f U", maxSafe))
+                                        .foregroundStyle(units > maxSafe ? AppTheme.low : .secondary)
+                                    Text("Advisory: a larger dose could take you below target given current BG, ISF, and IOB. Not a limit.")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -119,6 +136,22 @@ struct BolusEntryView: View {
                     .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus))
                 }
             }
+
+            // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple).
+            if settings.extendedBolusEnabled && !delivering {
+                Section("Extended (combo) bolus") {
+                    Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
+                    Stepper("Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
+                    let now = units * Double(extendedNowPercent) / 100
+                    Text("\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Button { confirmingExtended = true } label: {
+                        HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
+                    }
+                    .buttonStyle(.bordered).tint(AppTheme.insulin)
+                    .disabled(units < 0.4 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus))
+                }
+            }
         }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
@@ -145,6 +178,18 @@ struct BolusEntryView: View {
         } message: {
             Text("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
         }
+        .confirmationDialog("Extended bolus \(String(format: "%.2f U", units))?",
+                            isPresented: $confirmingExtended, titleVisibility: .visible) {
+            Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) { Task { await deliverExtended() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let now = units * Double(extendedNowPercent) / 100
+            Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
+        }
+    }
+
+    private func durationLabel(_ min: Int) -> String {
+        min % 60 == 0 ? "\(min / 60)h" : "\(min)m"
     }
 
     private func calculate() async {
@@ -157,6 +202,18 @@ struct BolusEntryView: View {
         delivering = true
         await model.deliverBolus(units: units)
         delivering = false
+        finishDelivery()
+    }
+
+    private func deliverExtended() async {
+        delivering = true
+        let now = units * Double(extendedNowPercent) / 100
+        await model.deliverExtendedBolus(totalUnits: units, nowUnits: now, durationMinutes: extendedDurationMin)
+        delivering = false
+        finishDelivery()
+    }
+
+    private func finishDelivery() {
         if embedded {
             unitsText = ""; carbsText = ""; recommendation = nil   // reset for the next one
         } else {

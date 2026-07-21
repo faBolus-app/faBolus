@@ -121,6 +121,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var calcSnapshot: BolusCalcDataSnapshotResponse?
 
     private static let food2 = 8   // manual units-only bolus type
+    private static let food2Extended = 12   // FOOD2(8) | EXTENDED(4) — combo/extended bolus (oracle-verified)
     /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
@@ -215,20 +216,58 @@ public final class TandemBackend: NSObject, PumpBackend {
             rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
         }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
+        // Advisory "max safe" hint: the largest dose that shouldn't push BG below a safe floor
+        // (max of target and 80), given current BG and ISF, after accounting for IOB already working —
+        // capped by the pump's max bolus. Never auto-filled; the UI shows it as a hint the user can hide.
+        if let bg = bgMgdl, let s = calcSnapshot, s.isf > 0 {
+            let floor = Double(max(s.targetBg, 80))
+            let toFloor = max(0, (Double(bg) - floor) / Double(s.isf) - snapshot.iobUnits)
+            let capped = min(toFloor, snapshot.maxBolusUnits)
+            rec.maxSafeUnits = (capped * 20).rounded() / 20
+        }
         return rec
     }
 
     /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
     /// policy to `.allowDelivery` only for this call.
     public func deliverBolus(units: Double) async throws -> Double {
-        guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
-        guard isPaired else { throw BolusError.pumpRejected("not paired") }
-        guard units <= snapshot.maxBolusUnits, units <= Interlocks.absoluteMaxUnits else {
-            throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
-        }
+        try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
+        return try await perform(totalMu: mu, extendedMu: 0, extendedSeconds: 0,
+                                 bitmask: Self.food2, displayUnits: units)
+    }
 
+    /// Delivers an **extended (combo)** bolus: `nowUnits` up front and the remainder over
+    /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the FOOD2|EXTENDED bitmask (12),
+    /// matching the pump's extended-bolus byte format (oracle-verified). Total must be ≥ 0.40 U.
+    public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double {
+        try validateDeliver(total: totalUnits)
+        let now = max(0, min(nowUnits, totalUnits))
+        let nowMu = UInt32((now * 1000).rounded())
+        let laterMu = UInt32((max(0, totalUnits - now) * 1000).rounded())
+        guard (nowMu + laterMu) >= InitiateBolusRequest.minExtendedBolusMilliunits else {
+            throw BolusError.pumpRejected("extended bolus below 0.40 u")
+        }
+        let seconds = UInt32(max(1, durationMinutes) * 60)
+        return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
+                                 bitmask: Self.food2Extended, displayUnits: totalUnits)
+    }
+
+    /// Shared pre-flight validation for any delivery (standard or extended).
+    private func validateDeliver(total: Double) throws {
+        guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
+        guard isPaired else { throw BolusError.pumpRejected("not paired") }
+        guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
+            throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
+        }
+    }
+
+    /// The validated signed delivery flow, shared by standard + extended boluses. When `extendedMu > 0`
+    /// it sends the full-form InitiateBolusRequest (now-portion `totalMu`, later-portion `extendedMu`
+    /// over `extendedSeconds`); otherwise a standard units-only bolus.
+    private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
+                         bitmask: Int, displayUnits units: Double) async throws -> Double {
         // Fresh signing timestamp (the pump validates the HMAC against its clock).
         let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
             timeCont = cont
@@ -257,10 +296,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         let ini: InitiateBolusResponse = try await withCheckedThrowingContinuation { cont in
             initiateCont = cont
             do {
-                try client.send(
-                    InitiateBolusRequest(totalVolume: mu, bolusID: perm.bolusId, bolusTypeBitmask: Self.food2),
-                    authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp,
-                    allowInsulinDelivery: true)
+                let request: InitiateBolusRequest = extendedMu > 0
+                    ? InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                           foodVolume: 0, correctionVolume: 0, bolusCarbs: 0, bolusBG: 0, bolusIOB: 0,
+                                           extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
+                    : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask)
+                try client.send(request, authenticationKey: authenticationKey,
+                                pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
             } catch { initiateCont = nil; cont.resume(throwing: error) }
         }
         guard ini.accepted else {

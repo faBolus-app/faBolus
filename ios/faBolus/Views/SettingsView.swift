@@ -132,6 +132,7 @@ enum SettingsIndex {
         .init(title: "iPhone increments", keywords: "bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "bolus carb step remote", category: .bolus),
         .init(title: "Missed-bolus nudge", keywords: "unannounced meal reminder rising nudge", category: .bolus),
+        .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -183,6 +184,12 @@ struct BolusSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("Watch & Garmin increments") } footer: { Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone).") }
+            Section {
+                Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
+                Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
+            } header: { Text("Bolus screen") } footer: {
+                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. Both off/hidden keep the screen simple.")
+            }
             Section {
                 Toggle("Missed-bolus nudge", isOn: $settings.missedBolusNudgeEnabled)
                 if settings.missedBolusNudgeEnabled {
