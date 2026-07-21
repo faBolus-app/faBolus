@@ -3,15 +3,15 @@ import Foundation
 #if canImport(CoreBluetooth) && !os(watchOS)
 import CoreBluetooth
 
-/// Bluetooth-LE transport for the phone↔Mac remote link. Unlike `PeerLink` (MultipeerConnectivity,
-/// Wi-Fi), BLE keeps working when the iPhone is **locked or backgrounded**: the phone runs as a BLE
-/// peripheral (GATT server) under the `bluetooth-peripheral` background mode — the same mechanism
-/// that keeps the pump link alive — and the Mac runs as a central. Carries `RemoteCommand`s as JSON
+/// Bluetooth-LE transport for the host↔remote link (phone↔Mac and phone↔phone). BLE keeps working
+/// when the host iPhone is **locked or backgrounded**: it runs as a BLE peripheral (GATT server)
+/// under the `bluetooth-peripheral` background mode — the same mechanism that keeps the pump link
+/// alive — and the remote (Mac or another iPhone) runs as a central. Carries `RemoteCommand`s as JSON
 /// with a 4-byte length-prefix framing so payloads larger than one ATT packet are fragmented and
 /// reassembled.
 ///
-/// Exposes the same surface as `PeerLink` (RemoteTransport + discovery/pairing) so it is a drop-in
-/// swap. `@unchecked Sendable`: all mutable state is confined to `queue` (also the CoreBluetooth
+/// Conforms to `RemoteTransport` (+ discovery/pairing). `@unchecked Sendable`: all mutable state is
+/// confined to `queue` (also the CoreBluetooth
 /// delegate queue); the public callbacks are re-dispatched to the main actor.
 public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     /// The iPhone host is the `peripheral`; the Mac remote is the `central`.
@@ -140,7 +140,7 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
         Task { @MainActor in self.onReachabilityChange?(r) }
     }
 
-    // MARK: Pairing (central / Mac side) — mirrors PeerLink's API
+    // MARK: Pairing (central / remote side)
 
     public func setPreferredPeer(_ name: String?) {
         queue.async { [weak self] in

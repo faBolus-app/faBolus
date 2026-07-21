@@ -28,7 +28,7 @@ struct FaBolusApp: App {
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
-                    if peerHost == nil { peerHost = PeerRemoteHost(model: model) }             // Mac (MultipeerConnectivity)
+                    if peerHost == nil { peerHost = PeerRemoteHost(model: model) }             // Mac / iPhone remote (BLE)
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil {
                         notifier = PumpAlertNotifier(model: model)                              // actionable alert notifications
