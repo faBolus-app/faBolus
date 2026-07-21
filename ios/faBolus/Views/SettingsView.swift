@@ -72,6 +72,9 @@ struct SettingsView: View {
                     Text("Glucose staleness")
                 } footer: {
                     Text("Older than “mark stale”, a reading is stale: shown greyed and **no longer used** to auto-fill a bolus carb→unit correction (this is also when the watch/Garmin stop using it for that). “Hide” is how long after going stale to keep showing the greyed value before replacing it with “–”: choose Immediately to skip the greyed value, or Never to always keep showing it. A hidden reading is still stale.")
+                }
+
+                Section {
                     Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
                     if settings.advancedControlEnabled {
                         if model.advancedControlAllowed {
