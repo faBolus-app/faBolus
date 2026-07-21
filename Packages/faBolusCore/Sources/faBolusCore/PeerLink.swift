@@ -21,6 +21,9 @@ public final class PeerLink: NSObject, RemoteTransport, @unchecked Sendable {
 
     public var onReceive: (@MainActor (RemoteCommand) -> Void)?
     public var onReachabilityChange: (@MainActor (Bool) -> Void)?
+    /// Invoked (on the main actor) with the current set of discovered peer names — the browser (Mac)
+    /// side of pairing, so the UI can list iPhones to pair with.
+    public var onPeersChanged: (@MainActor ([String]) -> Void)?
 
     /// Service type: 1–15 chars, lowercase letters/digits/hyphens (Bonjour rules). Shared by both ends.
     public static let defaultServiceType = "fabolus-rmt"
@@ -29,9 +32,13 @@ public final class PeerLink: NSObject, RemoteTransport, @unchecked Sendable {
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
 
-    /// Serializes access to `session.send` and the pending queue off the main actor.
+    /// Serializes access to `session.send`, the pending queue, and the discovery/pairing state.
     private let queue = DispatchQueue(label: "com.fabolus.peerlink")
     private var pending: [Data] = []
+    /// Discovered advertisers by display name (browser role). Only the `preferredPeerName` is invited.
+    private var foundPeers: [String: MCPeerID] = [:]
+    /// The paired peer to auto-connect to; nil until the user pairs one from the UI.
+    private var preferredPeerName: String?
 
     public init(role: Role, serviceType: String = PeerLink.defaultServiceType,
                 displayName: String = PeerLink.defaultDisplayName()) {
@@ -66,6 +73,28 @@ public final class PeerLink: NSObject, RemoteTransport, @unchecked Sendable {
     }
 
     public var isReachable: Bool { !session.connectedPeers.isEmpty }
+
+    /// The display name of the currently connected peer, if any (for status UI).
+    public var connectedPeerName: String? { session.connectedPeers.first?.displayName }
+
+    // MARK: Pairing (browser / Mac side)
+
+    /// Choose the peer to connect to. Persisted by the caller; passing the remembered name on launch
+    /// auto-connects. Invites the peer immediately if it's already been discovered. `nil` clears it.
+    public func setPreferredPeer(_ name: String?) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.preferredPeerName = name
+            if let name, let peerID = self.foundPeers[name] {
+                self.browser?.invitePeer(peerID, to: self.session, withContext: nil, timeout: 30)
+            }
+        }
+    }
+
+    /// Drop the current connection (used by "Forget this iPhone").
+    public func disconnectAll() {
+        session.disconnect()
+    }
 
     /// Send a command reliably to all connected peers; if none are connected yet it's queued and
     /// flushed on the next connect, so commands aren't dropped when briefly out of range.
@@ -122,12 +151,27 @@ extension PeerLink: MCNearbyServiceAdvertiserDelegate {
     }
 }
 
-// MARK: - Browser (Mac remote) — invite any host advertising the shared service.
+// MARK: - Browser (Mac remote) — discover advertising hosts; invite only the paired one.
 extension PeerLink: MCNearbyServiceBrowserDelegate {
     public func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID,
                         withDiscoveryInfo info: [String: String]?) {
-        browser.invitePeer(peerID, to: session, withContext: nil, timeout: 30)
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.foundPeers[peerID.displayName] = peerID
+            if peerID.displayName == self.preferredPeerName {
+                browser.invitePeer(peerID, to: self.session, withContext: nil, timeout: 30)
+            }
+            let names = Array(self.foundPeers.keys)
+            Task { @MainActor in self.onPeersChanged?(names) }
+        }
     }
-    public func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {}
+    public func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.foundPeers[peerID.displayName] = nil
+            let names = Array(self.foundPeers.keys)
+            Task { @MainActor in self.onPeersChanged?(names) }
+        }
+    }
 }
 #endif
