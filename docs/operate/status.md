@@ -41,6 +41,13 @@ stale.
     "Active Insulin" (IOB) means insulin on board. faBolus is a manual remote-bolus + status
     viewer, not an automated closed-loop system.
 
+## Statistics card
+
+Turn on **Settings → Display & chart → Show statistics card** to add a collapsible card below the
+chart with **Time-in-Range**, a color band breakdown (very-low → very-high), **GMI**, **average**, and
+**variability (CV)** over the last ~24 hours held in memory. It's off by default so the dashboard stays
+simple; the numbers are computed from the same rolling history the chart uses (not a long-term store).
+
 ## Next
 
 - [Deliver a bolus](bolus.md)
