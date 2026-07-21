@@ -2,33 +2,19 @@ import Foundation
 import faBolusCore
 import WidgetKit
 
-/// macOS remote state. A subclass of the shared `RemoteClientModel` that connects over `BLELink`
-/// (Bluetooth LE, central role), publishes a richer `WidgetSnapshot` for the Mac widgets, and relays
-/// the interactive quick-bolus widget's confirmed dose to the phone. It never touches the pump.
-///
-/// Before it can do any of that it must **authenticate** to the phone with the one-time-code
-/// handshake (`MacPairing`): on connect it sends `authHello`; a stored token authenticates a known
-/// phone automatically, otherwise the user enters the code shown on the phone. On success both ends
-/// hold a long-term token, so future reconnects need no code.
+/// macOS remote state. A thin subclass of the shared `AuthenticatingRemoteClientModel`: it supplies
+/// the Mac's token store + display name and wires the pairing UI (`MacConnection`), publishes a
+/// richer `WidgetSnapshot` for the Mac widgets, and relays the interactive quick-bolus widget's
+/// confirmed dose. The one-time-code handshake + channel encryption live in the shared base. It never
+/// touches the pump.
 @MainActor
-final class MacRemoteModel: RemoteClientModel {
+final class MacRemoteModel: AuthenticatingRemoteClientModel {
     private var widgetRequestId: String?
     private var widgetBolus: MacWidgetBolusReceiver?
     private(set) var pairing: MacConnection!
     let display = MacDisplayModel()
 
     private let ble: BLELink
-    private var peer: BLELink { ble }
-    private var sealed: SealedTransport? { link as? SealedTransport }
-    private let clientId = MacAuthStore.clientId()
-    private let macName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-
-    // Handshake state (one exchange at a time).
-    private var hsSecret: Data?
-    private var hsMacNonce: Data?
-    private var hsPhoneNonce: Data?
-    private var hsFirstPairing = false
-    private var hsCode: String?          // the code being tried on a first pairing
 
     var deltaText: String? {
         guard history.count >= 2 else { return nil }
@@ -39,25 +25,41 @@ final class MacRemoteModel: RemoteClientModel {
     init() {
         let ble = BLELink(role: .central)
         self.ble = ble
-        super.init(link: SealedTransport(inner: ble))   // encrypts all traffic after the handshake
+        let macName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        super.init(link: SealedTransport(inner: ble),
+                   clientId: MacAuthStore.clientId(), displayName: macName,
+                   tokenFor: { MacAuthStore.token(forPhone: $0) },
+                   saveToken: { MacAuthStore.saveToken($0, forPhone: $1) })
         pairing = MacConnection(peer: ble)   // reads the remembered phone and starts connecting
         widgetBolus = MacWidgetBolusReceiver(model: self)
         // No requestStatus() here — we ask only after we authenticate.
     }
 
-    override func reachabilityDidChange(_ r: Bool) {
-        super.reachabilityDidChange(r)
-        pairing?.connected = r
-        if r {
-            startHandshake()
-        } else {
-            pairing?.authenticated = false
-            sealed?.endSession()   // require a fresh handshake on the next connection
-            resetHandshake()
-        }
+    // MARK: - Shared-base hooks (wire the handshake to MacConnection's observable UI state)
+
+    override func currentHostName() -> String? { pairing?.pairedPhone }
+
+    override func handshakeNeedsCode() { pairing?.needsCode = true }
+
+    override func handshakeFailed(_ message: String) {
+        pairing.pairingError = message
+        pairing.needsCode = true   // let the user re-enter the code
     }
 
-    // MARK: - Pairing UI actions (called from MacConnectionView)
+    override func handshakeSucceeded() {
+        pairing.authenticated = true
+        pairing.needsCode = false
+        pairing.pairingPhone = nil
+        pairing.pairingError = nil
+    }
+
+    override func reachabilityDidChange(_ r: Bool) {
+        super.reachabilityDidChange(r)   // base drives the handshake + ends the sealed session
+        pairing?.connected = r
+        if !r { pairing?.authenticated = false }
+    }
+
+    // MARK: - Pairing UI actions (called from the Mac Settings/Connection view)
 
     /// Begin pairing with a discovered iPhone. A known phone (has a token) authenticates silently;
     /// a new one prompts for its one-time code.
@@ -75,10 +77,9 @@ final class MacRemoteModel: RemoteClientModel {
 
     /// The user entered the one-time code shown on the phone.
     func submitCode(_ code: String) {
-        hsCode = code.filter(\.isNumber)
         pairing.needsCode = false
         pairing.pairingError = nil
-        startHandshake()
+        provideCode(code)   // base restarts the handshake with the code
     }
 
     func cancelPairing() {
@@ -88,92 +89,24 @@ final class MacRemoteModel: RemoteClientModel {
         resetHandshake()
     }
 
-    private func resetHandshake() {
-        hsSecret = nil; hsMacNonce = nil; hsPhoneNonce = nil; hsFirstPairing = false; hsCode = nil
-    }
-
-    // MARK: - Handshake (Mac = prover)
-
-    private func startHandshake() {
-        guard peer.isReachable, !(pairing?.authenticated ?? false) else { return }
-        guard let name = pairing?.pairedPhone else { return }
-        if let token = MacAuthStore.token(forPhone: name) {
-            hsSecret = token; hsFirstPairing = false
-        } else if let code = hsCode {
-            hsSecret = MacPairing.secret(code: code); hsFirstPairing = true
-        } else {
-            pairing?.needsCode = true   // need the code before we can prove anything
-            return
-        }
-        let mNonce = MacPairing.newNonce(); hsMacNonce = mNonce
-        link.send(.auth(.authHello, clientId: clientId, nonce: mNonce.base64EncodedString(), message: macName))
-    }
+    // MARK: - Status + widget mirroring
 
     override func handle(_ cmd: RemoteCommand) {
-        switch cmd.kind {
-        case .authChallenge:
-            guard let secret = hsSecret, let mNonce = hsMacNonce,
-                  let pB64 = cmd.authNonce, let pNonce = Data(base64Encoded: pB64) else { return }
-            hsPhoneNonce = pNonce
-            let proof = MacPairing.proof(secret: secret, label: "mac",
-                                         phoneNonce: pNonce, macNonce: mNonce, clientId: clientId)
-            link.send(.auth(.authProof, clientId: clientId, proof: proof))
-
-        case .authResult:
-            handleAuthResult(cmd)
-
-        default:
-            super.handle(cmd)   // normal status/bolus echoes (only arrive once authenticated)
-            // Mirror the outcome of a widget-originated bolus back to the widget's App Group state.
-            if cmd.kind == .bolusStatus, cmd.requestId == widgetRequestId {
-                let phase: WidgetBolusPhase
-                switch cmd.status {
-                case .delivered: phase = .delivered
-                case .cancelled: phase = .cancelled
-                case .failed, .outOfRange: phase = .failed
-                default: phase = .delivering
-                }
-                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, deliveredUnits: cmd.deliveredUnits ?? 0,
-                                                             requestId: cmd.requestId, message: cmd.message ?? ""))
-                reloadQuickBolus()
-                if phase != .delivering { widgetRequestId = nil }
+        super.handle(cmd)   // base: auth handshake; else RemoteClientModel status/bolus handling
+        // Mirror the outcome of a widget-originated bolus back to the widget's App Group state.
+        if cmd.kind == .bolusStatus, cmd.requestId == widgetRequestId {
+            let phase: WidgetBolusPhase
+            switch cmd.status {
+            case .delivered: phase = .delivered
+            case .cancelled: phase = .cancelled
+            case .failed, .outOfRange: phase = .failed
+            default: phase = .delivering
             }
+            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, deliveredUnits: cmd.deliveredUnits ?? 0,
+                                                         requestId: cmd.requestId, message: cmd.message ?? ""))
+            reloadQuickBolus()
+            if phase != .delivering { widgetRequestId = nil }
         }
-    }
-
-    private func handleAuthResult(_ cmd: RemoteCommand) {
-        guard cmd.authOK == true else {
-            pairing.pairingError = cmd.message ?? "Pairing failed."
-            pairing.needsCode = true          // let the user re-enter the code
-            hsSecret = nil; hsFirstPairing = false; hsCode = nil
-            return
-        }
-        guard let secret = hsSecret, let mNonce = hsMacNonce, let pNonce = hsPhoneNonce,
-              let phoneProof = cmd.authProof,
-              MacPairing.verify(phoneProof, secret: secret, label: "phone",
-                                phoneNonce: pNonce, macNonce: mNonce, clientId: clientId) else {
-            pairing.pairingError = "Couldn’t verify the iPhone."
-            resetHandshake()
-            return
-        }
-        // On first pairing, unseal + persist the long-term token so later reconnects need no code.
-        if hsFirstPairing {
-            guard let sealed = cmd.authSealedToken, let code = hsCode,
-                  let token = MacPairing.openToken(sealed, code: code) else {
-                pairing.pairingError = "Pairing failed — please try again."
-                pairing.needsCode = true
-                return
-            }
-            MacAuthStore.saveToken(token, forPhone: pairing.pairedPhone ?? macName)
-        }
-        // Turn on channel encryption for the rest of this connection before any non-auth send.
-        sealed?.activateSession(secret: secret, phoneNonce: pNonce, macNonce: mNonce)
-        pairing.authenticated = true
-        pairing.needsCode = false
-        pairing.pairingPhone = nil
-        pairing.pairingError = nil
-        hsCode = nil; hsFirstPairing = false
-        requestStatus()   // now trusted — pull a fresh snapshot
     }
 
     // MARK: - Widget quick-bolus
