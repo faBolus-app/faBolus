@@ -73,10 +73,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var glucoseStaleMinutes: Int?
     public var glucoseHideDelayMinutes: Int?
 
-    // Apple-Watch-only customization mirrored from the phone (NOT part of the cross-remote JSON
-    // schema / Garmin mirror — Garmin ignores unknown keys, and the drift check only requires every
-    // *schema* property to have a Swift field, which these don't affect). detailsOrder = the detail
-    // rows + order for the watch Details page; watchChartRanges = the tap-through ranges (hours).
+    // Customization mirrored from the phone to the remotes (statusRead reply). detailsOrder = the
+    // detail rows + order for a remote's details screen; watchChartRanges = the tap-through history
+    // ranges (hours). Honored by both the Apple Watch and Garmin (schema + Monkey C mirror).
     public var detailsOrder: [String]?
     public var watchChartRanges: [Int]?
 
