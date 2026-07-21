@@ -141,6 +141,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
+    /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
+    private var viewedProfileId = -1
 
     /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile).
     private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
@@ -463,6 +465,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Profiles (IDP). Switch/rename/delete change the active basal profile → insulin-affecting.
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
+        viewedProfileId = -1                           // list refresh must not trigger segment reads
         try? client.send(ProfileStatusRequest())      // → IDPSettings cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
     }
@@ -477,6 +480,50 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func deleteProfile(idpId: Int) async throws {
         try await sendControl(DeleteIDPRequest(idpId: idpId, profileIndex: 0), delivery: true)
         await refreshProfiles()
+    }
+    public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+                              isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws {
+        try await sendControl(CreateIDPRequest(
+            name: name,
+            firstSegmentProfileCarbRatio: UInt32(max(0, (carbRatioGramsPerUnit * 1000).rounded())),
+            firstSegmentProfileStartTime: 0,
+            firstSegmentProfileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
+            firstSegmentProfileTargetBG: targetBg, firstSegmentProfileISF: isf,
+            profileInsulinDuration: insulinDurationMinutes,
+            timeSegmentBitmask: 1, bolusSettingsBitmask: 0, carbEntry: 1, idpSourceId: 0), delivery: true)
+        await refreshProfiles()
+    }
+    public func refreshProfileSegments(idpId: Int) async {
+        guard snapshot.connection == .connected else { return }
+        viewedProfileId = idpId
+        snapshot.viewedProfileSegments = []
+        try? client.send(IDPSettingsRequest(idpId: idpId))   // → segment reads cascade in didReceiveFrame
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+    }
+    public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                                  carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        try await setSegment(idpId: idpId, segmentIndex: 0, operationId: 1, startTimeMinutes: startTimeMinutes,
+                             basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+    }
+    public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                                     carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        try await setSegment(idpId: idpId, segmentIndex: segmentIndex, operationId: 0, startTimeMinutes: startTimeMinutes,
+                             basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+    }
+    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws {
+        try await setSegment(idpId: idpId, segmentIndex: segmentIndex, operationId: 2, startTimeMinutes: 0,
+                             basalRateUnitsPerHour: 0, carbRatioGramsPerUnit: 0, isf: 0, targetBg: 0)
+    }
+    // operationId: 0 modify, 1 create, 2 delete (IDPSegmentOperation). idpStatusId 0 = no special flags.
+    private func setSegment(idpId: Int, segmentIndex: Int, operationId: Int, startTimeMinutes: Int,
+                            basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        try await sendControl(SetIDPSegmentRequest(
+            idpId: idpId, profileIndex: 0, segmentIndex: segmentIndex, operationId: operationId,
+            profileStartTime: startTimeMinutes,
+            profileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
+            profileCarbRatio: UInt32(max(0, (carbRatioGramsPerUnit * 1000).rounded())),
+            profileTargetBG: targetBg, profileISF: isf, idpStatusId: 0), delivery: true)
+        await refreshProfileSegments(idpId: idpId)
     }
 
     // Reminders / alert thresholds — non-insulin config.
@@ -857,6 +904,18 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.profiles.removeAll { $0.idpId == m.idpId }
             snapshot.profiles.append(PumpProfileInfo(idpId: m.idpId, name: m.name, active: m.idpId == profileActiveIdpId))
             snapshot.profiles.sort { $0.idpId < $1.idpId }
+            // When viewing a specific profile's segments, read each one.
+            if m.idpId == viewedProfileId {
+                for i in 0..<max(0, m.numberOfProfileSegments) { try? client.send(IDPSegmentRequest(idpId: m.idpId, segmentIndex: i)) }
+            }
+        case let m as IDPSegmentResponse where m.idpId == viewedProfileId:
+            snapshot.viewedProfileSegments.removeAll { $0.segmentIndex == m.segmentIndex }
+            snapshot.viewedProfileSegments.append(PumpProfileSegment(
+                idpId: m.idpId, segmentIndex: m.segmentIndex, startTimeMinutes: m.profileStartTime,
+                basalRateUnitsPerHour: Double(m.profileBasalRate) / 1000.0,
+                carbRatioGramsPerUnit: Double(m.profileCarbRatio) / 1000.0,
+                isf: m.profileISF, targetBg: m.profileTargetBG))
+            snapshot.viewedProfileSegments.sort { $0.segmentIndex < $1.segmentIndex }
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
             snapshot.trend = m.trendArrow

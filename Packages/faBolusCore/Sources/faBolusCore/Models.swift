@@ -125,6 +125,8 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var controlIQTotalDailyInsulin: Int = 0
     /// Insulin-delivery profiles (from ProfileStatus + IDPSettings), for the profile switcher.
     public var profiles: [PumpProfileInfo] = []
+    /// Time-segments of the profile currently being viewed/edited (from IDPSegment reads).
+    public var viewedProfileSegments: [PumpProfileSegment] = []
     public init() {}
 
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
@@ -239,6 +241,24 @@ public struct PumpProfileInfo: Sendable, Equatable, Identifiable {
     public var active: Bool
     public init(idpId: Int, name: String, active: Bool) {
         self.idpId = idpId; self.name = name; self.active = active
+    }
+}
+
+/// One time-segment of a profile (for the segment editor). Times are minutes past midnight.
+public struct PumpProfileSegment: Sendable, Equatable, Identifiable {
+    public var id: Int { segmentIndex }
+    public var idpId: Int
+    public var segmentIndex: Int
+    public var startTimeMinutes: Int
+    public var basalRateUnitsPerHour: Double
+    public var carbRatioGramsPerUnit: Double
+    public var isf: Int
+    public var targetBg: Int
+    public init(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) {
+        self.idpId = idpId; self.segmentIndex = segmentIndex; self.startTimeMinutes = startTimeMinutes
+        self.basalRateUnitsPerHour = basalRateUnitsPerHour; self.carbRatioGramsPerUnit = carbRatioGramsPerUnit
+        self.isf = isf; self.targetBg = targetBg
     }
 }
 

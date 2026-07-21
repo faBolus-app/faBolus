@@ -105,6 +105,16 @@ public protocol PumpBackend: AnyObject {
     func setActiveProfile(idpId: Int) async throws
     func renameProfile(idpId: Int, name: String) async throws
     func deleteProfile(idpId: Int) async throws
+    /// Create a new profile with one initial time-segment (starting at midnight).
+    func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+                        isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws
+    /// Read a profile's time-segments into `snapshot.viewedProfileSegments`.
+    func refreshProfileSegments(idpId: Int) async
+    func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                           carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
+    func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                              carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
+    func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws
     // Reminders / alert thresholds (non-insulin config).
     func setLowInsulinAlert(thresholdUnits: Int) async throws
     func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws
@@ -157,6 +167,14 @@ public extension PumpBackend {
     func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
     func renameProfile(idpId: Int, name: String) async throws { throw ControlError.notSupported }
     func deleteProfile(idpId: Int) async throws { throw ControlError.notSupported }
+    func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+                       isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws { throw ControlError.notSupported }
+    func refreshProfileSegments(idpId: Int) async {}
+    func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                           carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws { throw ControlError.notSupported }
+    func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                              carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws { throw ControlError.notSupported }
+    func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws { throw ControlError.notSupported }
     func setLowInsulinAlert(thresholdUnits: Int) async throws { throw ControlError.notSupported }
     func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
     func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws { throw ControlError.notSupported }
