@@ -13,15 +13,23 @@ final class MacRemoteModel: RemoteClientModel {
     /// echoes can be mirrored back into `WidgetBolusStore` for in-place progress/cancel.
     private var widgetRequestId: String?
     private var widgetBolus: MacWidgetBolusReceiver?
+    /// Discovery/pairing state for the Settings → Connection screen. (Named `pairing` to avoid the
+    /// base model's `connection` string, which mirrors the pump connection state.)
+    private(set) var pairing: MacConnection!
+
+    /// Typed access to the underlying transport for pairing.
+    private var peer: PeerLink { link as! PeerLink }
 
     init() {
         super.init(link: PeerLink(role: .browser))
+        pairing = MacConnection(peer: peer)   // reads the remembered phone and auto-connects
         widgetBolus = MacWidgetBolusReceiver(model: self)
         requestStatus()   // ask the phone for a snapshot as soon as we connect (queued until then)
     }
 
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)
+        pairing?.connected = r
         if r { requestStatus() }   // fresh snapshot on (re)connect
     }
 

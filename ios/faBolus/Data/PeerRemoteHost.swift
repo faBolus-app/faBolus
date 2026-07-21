@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+import UIKit
 
 /// iPhone-side receiver for the **Mac** remote, carried over `PeerLink` (MultipeerConnectivity)
 /// since WatchConnectivity can't reach a Mac. Structurally identical to `PhoneRemoteHost` — it
@@ -11,7 +12,8 @@ import faBolusCore
 /// `bolusRequest` is delivered directly through the validated signed path.
 @MainActor
 public final class PeerRemoteHost {
-    private let link = PeerLink(role: .advertiser)
+    // Advertise under the device name ("Zev's iPhone") so the Mac can identify it when pairing.
+    private let link = PeerLink(role: .advertiser, displayName: UIDevice.current.name)
     private weak var model: AppModel?
 
     public init(model: AppModel) {

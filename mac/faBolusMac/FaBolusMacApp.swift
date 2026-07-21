@@ -21,6 +21,11 @@ struct FaBolusMacApp: App {
             Text(model.reachable ? "\(model.displayGlucose) \(model.trend)" : "—")
         }
         .menuBarExtraStyle(.window)
+
+        // Settings → Connection: select and pair the iPhone.
+        Settings {
+            MacSettingsView(model: model)
+        }
     }
 }
 
@@ -37,9 +42,19 @@ struct MenuBarContentView: View {
             MacBolusEntryView(model: model)
             MacAlertsView(model: model)
             Divider()
+            if !model.pairing.connected {
+                HStack(spacing: 6) {
+                    Image(systemName: "wifi.slash").foregroundStyle(.orange)
+                    Text(model.pairing.pairedPhone == nil ? "No iPhone paired" : "iPhone not reachable")
+                        .font(.caption)
+                    Spacer()
+                    SettingsLink { Text("Connection…") }
+                }
+            }
             HStack {
                 Button("Refresh") { model.requestStatus() }
                 Spacer()
+                SettingsLink { Text("Settings") }
                 Button("Open faBolus") { openWindow(id: "main") }
             }
             .font(.callout)
