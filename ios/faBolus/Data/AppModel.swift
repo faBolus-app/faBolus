@@ -178,9 +178,13 @@ public final class AppModel {
     private func evaluateSavePinOffer() {
         switch snapshot.connection {
         case .connected, .bolusing:
-            guard let code = enteredPairCode else { return }
+            guard enteredPairCode != nil else { return }
+            // Wait until the pump model is known — it comes from ApiVersionResponse (authoritative),
+            // which arrives shortly after connect, not at discovery. pumpModelName is empty until then.
+            guard !snapshot.pumpModelName.isEmpty else { return }
+            let code = enteredPairCode!
             enteredPairCode = nil
-            if PumpModelStore.isMobi() == true, code != PairingStore.loadPin() { savePinPrompt = code }
+            if snapshot.isMobi, code != PairingStore.loadPin() { savePinPrompt = code }
         case .disconnected, .error:
             enteredPairCode = nil   // pairing didn't complete — drop the pending offer
         default:

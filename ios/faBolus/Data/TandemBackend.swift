@@ -588,12 +588,9 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
-        // Detect the model from the BLE advertised name (jwoglom/pumpx2 uses the same signal):
-        // "Tandem Mobi …" vs "tslim X2 …". Persisted so the UI can offer to save the fixed Mobi PIN.
-        if let name = peripheral.name {
-            if name.hasPrefix("Tandem Mobi") { PumpModelStore.set(isMobi: true) }
-            else if name.hasPrefix("tslim X2") { PumpModelStore.set(isMobi: false) }
-        }
+        // Model detection is now driven by ApiVersionResponse (Mobi = API >= 3.5) once connected —
+        // the authoritative signal — rather than the BLE advertised name. See the ApiVersionResponse
+        // handler, which sets snapshot.isMobi + PumpModelStore.
         c.connect(peripheral)
     }
 
@@ -714,6 +711,10 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as ApiVersionResponse:
             snapshot.isMobi = m.isMobi
             snapshot.pumpModelName = m.isMobi ? "Mobi" : "t:slim X2"
+            // Authoritative model detection: the pump reports its API version (Mobi = API >= 3.5),
+            // which supersedes the old BLE-advertised-name heuristic. Persist it so the PIN-save UI
+            // can act across launches.
+            PumpModelStore.set(isMobi: m.isMobi)
             snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
         case let m as CurrentBasalStatusResponse:
             snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
