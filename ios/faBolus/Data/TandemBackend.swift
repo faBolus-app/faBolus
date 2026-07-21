@@ -13,8 +13,11 @@ import PumpX2BLE
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class TandemBackend: NSObject, PumpBackend {
-    /// Tandem (via PumpX2Kit) supports the full feature set.
-    public let capabilities: PumpCapabilities = .full
+    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Advanced control
+    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
+    /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
+    /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
+    public var capabilities: PumpCapabilities { snapshot.isMobi ? .mobiAdvanced : .full }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
@@ -103,6 +106,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
     // the IOB series so both show pump history, not just data since the app connected).
     private var backfillBoluses: [(pumpSec: UInt32, units: Double, iob: Double)] = []
+    // Decoded typed history-log events for the Logbook (B2). Buffered across pages, mapped to
+    // neutral HistoryEvents in finishBackfill (where the pump→phone date conversion lives).
+    private var backfillEventLogs: [any HistoryLogEvent] = []
+    public private(set) var historyEvents: [HistoryEvent] = []
     private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page
     private var backfillFirstSeq: UInt32 = 0    // oldest available sequence number
     private var backfillPages = 0
@@ -319,6 +326,46 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
+    // MARK: - Advanced control (B3)
+    // Each command is signed with a fresh pump-clock timestamp and sent under a raised WritePolicy
+    // that is restored via `defer`. Insulin-affecting commands use `.allowDelivery` +
+    // `allowInsulinDelivery: true`; non-insulin ones use `.allowNonDelivery`. The pump's response
+    // (parsed in didReceiveFrame) updates the snapshot. The UI only reaches these behind the
+    // advanced-control + Mobi gate; the WritePolicy + pump-side checks are the enforcement backstop.
+
+    private func refreshSigningTimestamp() async throws {
+        let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
+            timeCont = cont
+            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
+        }
+        signingTimestamp = time.currentTime
+    }
+
+    /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
+    /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
+    private func sendControl(_ message: Message, delivery: Bool) async throws {
+        guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
+            throw BolusError.notConnected
+        }
+        try await refreshSigningTimestamp()
+        let previous = client.writePolicy
+        client.writePolicy = delivery ? .allowDelivery : .allowNonDelivery
+        defer { client.writePolicy = previous }
+        _ = try client.send(message, authenticationKey: authenticationKey,
+                            pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
+        // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+
+    public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
+    public func resumeDelivery() async throws { try await sendControl(ResumePumpingRequest(), delivery: true) }
+    public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
+        try await sendControl(SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
+    }
+    public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
+    public func setMode(bitmap: Int) async throws { try await sendControl(SetModesRequest(bitmap: bitmap), delivery: true) }
+    public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
+
     // MARK: - Helpers (tiered polling to spare phone + pump battery)
 
     private var pollTick = 0
@@ -343,7 +390,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Slow/static settings (once per connect + every ~10 min): basal, calculator snapshot
     /// (carb ratio/ISF/target/max), and the pump-clock anchor.
     private func staticRead() {
-        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest()] {
+        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
+                           ApiVersionRequest(), ControlIQInfoV2Request()] {
             try? client.send(r)
         }
     }
@@ -460,7 +508,64 @@ public final class TandemBackend: NSObject, PumpBackend {
             if iob.count > 288 { iob.removeFirst(iob.count - 288) }
             iobHistory = iob
         }
+
+        // --- Logbook events (B2): map decoded typed events → neutral, newest first ---
+        if !backfillEventLogs.isEmpty {
+            var events = historyEvents
+            var seen = Set(historyEvents.map { $0.id })
+            for e in backfillEventLogs {
+                guard !seen.contains(e.sequenceNum), let ne = Self.neutralEvent(e, date: pumpDate(e.pumpTimeSec)) else { continue }
+                seen.insert(e.sequenceNum); events.append(ne)
+            }
+            events.sort { $0.date > $1.date }          // newest first
+            if events.count > 500 { events.removeLast(events.count - 500) }
+            historyEvents = events
+        }
         onChange?()
+    }
+
+    /// Maps a PumpX2Kit typed history-log event to a neutral `HistoryEvent` for the Logbook.
+    /// Returns nil to skip high-frequency / non-user-facing records (e.g. raw CGM samples — those
+    /// are shown on the chart, not the logbook). A curated set of the user-meaningful families.
+    static func neutralEvent(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
+        func u(_ f: Float) -> String { String(format: "%.2f U", f) }
+        let seq = e.sequenceNum
+        switch e {
+        case let m as BolusCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
+        case let m as BolexCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))
+        case let m as CarbEnteredHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs))
+        case let m as BGHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: "\(m.bg) mg/dL")
+        case let m as BasalRateChangeHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .basal, title: "Basal rate change", detail: u(m.commandBasalRate) + "/hr")
+        case let m as TempRateActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate started", detail: String(format: "%.0f%%", m.percent))
+        case is TempRateCompletedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
+        case let m as PumpingSuspendedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin suspended", detail: m.reasonId == 0 ? "" : "reason \(m.reasonId)")
+        case is PumpingResumedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin resumed")
+        case let m as CartridgeFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge filled", detail: u(m.insulinActual))
+        case is CannulaFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cannula filled")
+        case is TubingFilledHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Tubing filled")
+        case is CartridgeInsertedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge inserted")
+        case is CartridgeRemovedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge removed")
+        case let m as AlarmActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alarm, title: "Alarm", detail: "id \(m.alarmId)")
+        case let m as AlertActivatedHistoryLog:
+            return HistoryEvent(id: seq, date: date, category: .alert, title: "Alert", detail: "id \(m.alertId)")
+        default:
+            return nil   // skip unmapped / high-frequency records (e.g. CGM samples shown on the chart)
+        }
     }
 }
 
@@ -476,7 +581,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
             didBackfill = false; backfillActive = false
             backfillTimer?.invalidate(); backfillTimer = nil
-            backfillBuffer.removeAll(); backfillBoluses.removeAll()
+            backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
         default: break
         }
         onChange?()
@@ -520,7 +625,7 @@ extension TandemBackend: PumpBLEClientDelegate {
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization { coordinator?.handle(frame: frame); return }
-        guard let parsed = try? ResponseParser.parse(frame: frame) else { return }
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else { return }
         switch parsed.message {
         case let m as ControlIQIOBResponse:
             snapshot.iobUnits = m.iobUnits
@@ -580,6 +685,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             backfillActive = true
             backfillBuffer.removeAll(keepingCapacity: true)
             backfillBoluses.removeAll(keepingCapacity: true)
+            backfillEventLogs.removeAll(keepingCapacity: true)
             backfillFirstSeq = m.firstSequenceNum
             backfillNextEnd = m.lastSequenceNum
             backfillPages = 0
@@ -588,6 +694,8 @@ extension TandemBackend: PumpBLEClientDelegate {
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
             for b in m.bolusRecords { backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
+            backfillEventLogs.append(contentsOf: m.events)
+            if backfillEventLogs.count > 2000 { backfillEventLogs.removeFirst(backfillEventLogs.count - 2000) }
             scheduleBackfillTick()   // debounce: page ends when frames stop arriving
         case let m as AlertStatusResponse: alertList = m.notifications; noteAlert("al", m.bitmap); mergeNotifications()
         case let m as AlarmStatusResponse: alarmList = m.notifications; noteAlert("am", m.bitmap); mergeNotifications()
@@ -596,6 +704,20 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as MalfunctionBitmaskStatusResponse: malfunctionList = m.notifications; noteAlert("m", m.bitmap); mergeNotifications()
         case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
         case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
+        // Workstream B: pump model + basal + Control-IQ status.
+        case let m as ApiVersionResponse:
+            snapshot.isMobi = m.isMobi
+            snapshot.pumpModelName = m.isMobi ? "Mobi" : "t:slim X2"
+            snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
+        case let m as CurrentBasalStatusResponse:
+            snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
+        case let m as ControlIQInfoV2Response:
+            snapshot.controlIQMode = m.currentUserModeType
+            snapshot.controlIQEnabled = m.closedLoopEnabled
+        case let m as SuspendPumpingResponse:
+            if m.accepted { snapshot.deliverySuspended = true }
+        case let m as ResumePumpingResponse:
+            if m.accepted { snapshot.deliverySuspended = false }
         default: break
         }
         onChange?()

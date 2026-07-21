@@ -22,6 +22,34 @@ struct StatusPillsView: View {
                 cgmPill(now: ctx.date)
             }
         }
+        // Basal + Control-IQ (from the CurrentBasalStatus / ControlIQInfoV2 reads).
+        HStack(spacing: 10) {
+            if snapshot.deliverySuspended {
+                pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
+            } else {
+                pill(icon: "waveform.path.ecg", tint: AppTheme.insulin,
+                     value: String(format: "%.2f U/hr", snapshot.basalRateUnitsPerHour), label: "Basal")
+            }
+            pill(icon: controlIQIcon, tint: snapshot.controlIQEnabled ? AppTheme.inRange : .gray,
+                 value: controlIQValue, label: "Control-IQ")
+        }
+    }
+
+    /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
+    private var controlIQValue: String {
+        guard snapshot.controlIQEnabled else { return "Off" }
+        switch snapshot.controlIQMode {
+        case 1: return "Sleep"
+        case 2: return "Exercise"
+        default: return "On"
+        }
+    }
+    private var controlIQIcon: String {
+        switch snapshot.controlIQMode {
+        case 1: return "moon.zzz.fill"
+        case 2: return "figure.run"
+        default: return "checkmark.circle.fill"
+        }
     }
 
     private func cgmPill(now: Date) -> some View {

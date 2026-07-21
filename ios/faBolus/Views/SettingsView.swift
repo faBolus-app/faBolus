@@ -9,6 +9,9 @@ struct SettingsView: View {
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
     @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
+    // Hidden Debug menu (B4): revealed by tapping the disclaimer footer 7×.
+    @State private var debugTaps = 0
+    @State private var showDebug = false
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -69,6 +72,23 @@ struct SettingsView: View {
                     Text("Glucose staleness")
                 } footer: {
                     Text("Older than “mark stale”, a reading is stale: shown greyed and **no longer used** to auto-fill a bolus carb→unit correction (this is also when the watch/Garmin stop using it for that). “Hide” is how long after going stale to keep showing the greyed value before replacing it with “–”: choose Immediately to skip the greyed value, or Never to always keep showing it. A hidden reading is still stale.")
+                    Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
+                    if settings.advancedControlEnabled {
+                        if model.advancedControlAllowed {
+                            NavigationLink { PumpControlView(model: model) } label: {
+                                Label("Pump Control", systemImage: "slider.horizontal.3")
+                            }
+                        } else {
+                            Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
+                                 : "Advanced control requires a Tandem Mobi pump.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Advanced control")
+                } footer: {
+                    Text("Suspend/resume, temp basal, modes, and find-my-pump. Mobi only, off by default. "
+                         + "Insulin-affecting actions ask for confirmation.")
                 }
 
                 Section {
@@ -139,6 +159,21 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("faBolus is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom.")
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            debugTaps += 1
+                            if debugTaps >= 7 { showDebug = true }
+                        }
+                }
+
+                if showDebug {
+                    Section {
+                        NavigationLink { DebugMenuView(model: model) } label: {
+                            Label("Debug diagnostics", systemImage: "ladybug.fill")
+                        }
+                    } footer: {
+                        Text("Read-only diagnostics.")
+                    }
                 }
             }
             .navigationTitle("Settings")

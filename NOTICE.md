@@ -19,6 +19,12 @@ files originate in xDripG5 / CGMBLEKit, © 2015–2016 Nathan Racklyeft), used u
 LoopKit-specific coupling has been removed and the decoders are passive/read-only. The reproduced
 license and copyright are in `Packages/G7SensorKit/LICENSE`. The independent CGM seam that consumes
 them is modeled on LoopKit's `CGMManager` design.
+## Loop / LoopDocs (design + documentation)
+
+faBolus's visual design draws inspiration from the **[Loop](https://github.com/LoopKit/Loop)** app,
+and portions of this project's documentation are adapted from
+**[LoopDocs](https://loopkit.github.io/loopdocs/)**. faBolus is an independent project and is not
+affiliated with, or endorsed by, the Loop / LoopKit projects.
 
 Not affiliated with, endorsed by, or a product of **Tandem Diabetes Care** or **Dexcom**. Tandem,
 t:slim X2, Mobi, and Dexcom are trademarks of their respective owners.

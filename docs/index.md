@@ -124,6 +124,16 @@ faBolus is built on an open protocol core, and the Garmin watch app lives in its
 | **[faBolus](https://github.com/faBolus-app/faBolus)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
 | **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
 
+!!! quote "Built on pumpX2 — thank you, James Woglom"
+    faBolus stands on the shoulders of **[pumpX2](https://github.com/jwoglom/pumpx2)** by James
+    Woglom ([@jwoglom](https://github.com/jwoglom)). His reverse-engineering of the Tandem pump's
+    Bluetooth protocol is the foundation of this entire project — `PumpX2Kit` is a Swift port of
+    that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not
+    exist without it.** The project also draws on the wider
+    **[LoopKit](https://github.com/LoopKit)** / **Loop** ecosystem for parts of its visual design
+    and documentation. See [NOTICE.md](https://github.com/faBolus-app/faBolus/blob/master/NOTICE.md)
+    for full attributions.
+
 !!! note "Independent project"
     faBolus is an independent, open-source project. It is **not affiliated with, endorsed by, or
     a product of Tandem Diabetes Care or Dexcom.** Tandem, t:slim X2, Mobi, and Dexcom are

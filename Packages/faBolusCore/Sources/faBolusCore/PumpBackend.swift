@@ -38,6 +38,45 @@ public protocol PumpBackend: AnyObject {
     var lastBolusCancelled: Bool { get }
     /// Called by the view model to observe changes.
     var onChange: (@MainActor () -> Void)? { get set }
+
+    /// Decoded history-log events for the Logbook (B2), newest first. Backends that don't decode
+    /// history return `[]` (see the default). Populated from the pump's history backfill.
+    var historyEvents: [HistoryEvent] { get }
+
+    // MARK: - Advanced control (B3)
+    // Signed, mostly insulin-affecting write commands. The UI gates each on the matching
+    // `PumpCapabilities` flag AND `AppSettings.advancedControlEnabled` (default off) AND (in
+    // practice) a Mobi pump. Insulin-affecting ones must be bench-validated on saline before use.
+    // Default implementations throw `ControlError.notSupported` so non-Tandem backends compile.
+
+    /// Suspend all insulin delivery.
+    func suspendDelivery() async throws
+    /// Resume insulin delivery.
+    func resumeDelivery() async throws
+    /// Set a temporary basal rate (`percent` 0–250) for `durationMinutes` (15–4320). Control-IQ
+    /// must be off. Insulin-affecting.
+    func setTempBasal(percent: Int, durationMinutes: Int) async throws
+    /// Stop an active temp basal.
+    func stopTempBasal() async throws
+    /// Set the pump user-mode bitmap (sleep/exercise). Insulin-affecting (changes CIQ behavior).
+    func setMode(bitmap: Int) async throws
+    /// Play the "find my pump" sound. Non-insulin.
+    func playFindMyPump() async throws
+}
+
+public enum ControlError: Error, LocalizedError {
+    case notSupported
+    public var errorDescription: String? { "This pump doesn't support that action." }
+}
+
+public extension PumpBackend {
+    var historyEvents: [HistoryEvent] { [] }
+    func suspendDelivery() async throws { throw ControlError.notSupported }
+    func resumeDelivery() async throws { throw ControlError.notSupported }
+    func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
+    func stopTempBasal() async throws { throw ControlError.notSupported }
+    func setMode(bitmap: Int) async throws { throw ControlError.notSupported }
+    func playFindMyPump() async throws { throw ControlError.notSupported }
 }
 
 public enum BolusError: Error, LocalizedError {
