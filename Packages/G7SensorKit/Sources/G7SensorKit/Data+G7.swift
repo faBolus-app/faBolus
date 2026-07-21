@@ -3,16 +3,15 @@
 import Foundation
 
 extension Data {
-    private func toDefaultEndian<T: FixedWidthInteger>(_: T.Type) -> T {
-        return self.withUnsafeBytes({ (rawBufferPointer: UnsafeRawBufferPointer) -> T in
-            let bufferPointer = rawBufferPointer.bindMemory(to: T.self)
-            guard let pointer = bufferPointer.baseAddress else { return 0 }
-            return T(pointer.pointee)
-        })
-    }
-
+    /// Little-endian integer assembled byte-by-byte. Avoids binding memory + dereferencing: a
+    /// misaligned `pointee` load traps (EXC_BAD_ACCESS) on real ARM devices (only tolerated on the
+    /// simulator). This shift-assemble is alignment-safe and works on any Data/slice.
     func to<T: FixedWidthInteger>(_ type: T.Type) -> T {
-        return T(littleEndian: toDefaultEndian(type))
+        var value: T = 0
+        for (i, byte) in enumerated() where i < MemoryLayout<T>.size {
+            value |= T(truncatingIfNeeded: byte) << (8 * i)
+        }
+        return value
     }
 
     func toInt<T: FixedWidthInteger>() -> T {

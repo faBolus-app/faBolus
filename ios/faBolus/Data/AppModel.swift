@@ -204,20 +204,38 @@ public final class AppModel {
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
         source.onChange = { [weak self] in self?.refresh() }
-        // Optional glucose failover source: re-arbitrate whenever it has new data, and start it.
-        let gs = GlucoseSourceRegistry.makeSelected()
-        self.glucoseSource = gs
-        gs?.onChange = { [weak self] in self?.refresh() }
-        if let gs { Task { await gs.start() } }
-        // Re-arbitrate on a timer too: onChange only fires on NEW data, so when the pump is
-        // disconnected/quiet the failover wouldn't otherwise take over (or a value wouldn't age).
-        // This keeps the pump-vs-source freshness re-evaluated so failover stays live regardless.
-        if gs != nil {
+        // Optional glucose failover source, with a crash-loop guard: if the selected source was armed
+        // on the previous launch and never disarmed, it crashed during start — do NOT auto-start it
+        // again (that would brick every launch). The user re-enables it by re-selecting it in
+        // Settings (which clears the guard); by then any fix has shipped.
+        let selId = GlucoseSourceRegistry.selectedId()
+        if let selId, UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
+            UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
+            self.glucoseSource = nil
+            self.failoverAutoDisabled = selId
+        } else if let gs = GlucoseSourceRegistry.makeSelected(), let selId {
+            self.glucoseSource = gs
+            gs.onChange = { [weak self] in self?.refresh() }
+            UserDefaults.standard.set(selId, forKey: Self.sourceCrashGuardKey)   // arm
+            Task { await gs.start() }
+            // Disarm once it survives ~10s without crashing the launch.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                if UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
+                    UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
+                }
+            }
+            // Re-arbitrate on a timer too: onChange only fires on NEW data, so when the pump is
+            // disconnected/quiet the failover would not otherwise take over (or a value would not age).
             arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.refresh() }
             }
         }
     }
+
+    static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
+    /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
+    /// in Settings to try again.
+    public private(set) var failoverAutoDisabled: String?
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
     /// the bolus-entry sheet.
