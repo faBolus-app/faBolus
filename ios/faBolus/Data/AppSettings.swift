@@ -66,6 +66,13 @@ public final class AppSettings {
     /// the watch in the status payload; the Garmin app persists it locally so it survives restarts.
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
     public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
+    /// How the Garmin BG complication presents: "numericColor" (numeric value with range-coloring +
+    /// a Latin trend in the unit slot) or "stringTrend" (a plain "124 ^" string, no color). Mirrored.
+    public var garminComplicationDisplay: String { didSet { d.set(garminComplicationDisplay, forKey: "garminComplicationDisplay") } }
+    public static let complicationDisplayOptions = ["numericColor", "stringTrend"]
+    public static func complicationDisplayLabel(_ id: String) -> String {
+        id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
+    }
 
     /// Which detail rows show, and in what order, on the phone Details card + the watch Details page
     /// (mirrored to the watch). Hidden rows are simply absent from the array. Same reorder/hide model
@@ -171,6 +178,8 @@ public final class AppSettings {
         garminScreenOrder = order
         let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
+        let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
+        garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String], all: Self.pillItems)
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
