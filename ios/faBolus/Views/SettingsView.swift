@@ -8,6 +8,9 @@ struct SettingsView: View {
     @State private var settings = AppSettings.shared
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
+    // Hidden Debug menu (B4): revealed by tapping the disclaimer footer 7×.
+    @State private var debugTaps = 0
+    @State private var showDebug = false
 
     var body: some View {
         @Bindable var settings = settings   // local @Bindable for binding projection
@@ -128,6 +131,21 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("faBolus is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom.")
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            debugTaps += 1
+                            if debugTaps >= 7 { showDebug = true }
+                        }
+                }
+
+                if showDebug {
+                    Section {
+                        NavigationLink { DebugMenuView(model: model) } label: {
+                            Label("Debug diagnostics", systemImage: "ladybug.fill")
+                        }
+                    } footer: {
+                        Text("Read-only diagnostics.")
+                    }
                 }
             }
             .navigationTitle("Settings")
