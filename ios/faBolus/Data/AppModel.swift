@@ -56,7 +56,8 @@ public final class AppModel {
                              glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
                              glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes,
                              detailsOrder: AppSettings.shared.detailsOrder,
-                             watchChartRanges: AppSettings.shared.watchChartRanges)
+                             watchChartRanges: AppSettings.shared.watchChartRanges,
+                             garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay)
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).

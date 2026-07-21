@@ -78,6 +78,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     // ranges (hours). Honored by both the Apple Watch and Garmin (schema + Monkey C mirror).
     public var detailsOrder: [String]?
     public var watchChartRanges: [Int]?
+    /// How the Garmin BG complication should present ("numericColor" | "stringTrend"). Mirrored.
+    public var garminComplicationDisplay: String?
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
@@ -91,7 +93,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
                 glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil,
-                detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil) {
+                detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil,
+                garminComplicationDisplay: String? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -107,6 +110,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
         self.glucoseStaleMinutes = glucoseStaleMinutes; self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
         self.detailsOrder = detailsOrder; self.watchChartRanges = watchChartRanges
+        self.garminComplicationDisplay = garminComplicationDisplay
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }
