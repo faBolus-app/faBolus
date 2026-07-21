@@ -28,7 +28,10 @@ struct FaBolusApp: App {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
-                    if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
+                    if notifier == nil {
+                        notifier = PumpAlertNotifier(model: model)                              // actionable alert notifications
+                        model.onNudge = { [weak notifier] title, body in notifier?.nudge(title: title, body: body) }
+                    }
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     AppSettings.shared.syncWidgetConfig()
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
