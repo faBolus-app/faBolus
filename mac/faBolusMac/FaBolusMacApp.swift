@@ -27,7 +27,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         let d = model.display
-        if let g = model.glucose {
+        if let g = model.glucose, !model.glucoseHidden {   // hide old readings past the phone's hide delay
             var s = model.displayGlucose
             if d.menuBarShowUnits { s += " mg/dL" }
             if d.menuBarShowTrend { s += " \(model.trend)" }
