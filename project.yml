@@ -290,6 +290,8 @@ targets:
         # Team-prefixed App Group id exposed to code (WidgetStore reads AppGroupIdentifier at runtime).
         AppGroupIdentifier: $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
         CFBundleDisplayName: faBolus
+        # Menu-bar-only agent app: no Dock icon and no main window.
+        LSUIElement: true
         NSLocalNetworkUsageDescription: "faBolus connects to your iPhone on the local network to show pump status and relay boluses."
         NSBonjourServices:
           - _fabolus-rmt._tcp
