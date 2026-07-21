@@ -23,23 +23,6 @@ struct GlucoseChartView: View {
     private var visibleIOB: [IOBSample] { iob.filter { $0.date >= start } }
     private var visibleBoluses: [BolusMarker] { boluses.filter { $0.date >= start } }
 
-    // IOB samples grouped into contiguous runs. On a fresh connect the IOB series is sparse (one
-    // point per past bolus), so a single smoothed line would bulge into a big artificial arc across
-    // multi-hour gaps. Break the line wherever samples are >30 min apart and draw it straight, so it
-    // reads as real (piecewise) IOB rather than one giant curve.
-    private struct IOBPoint: Identifiable { let id: Int; let segment: Int; let date: Date; let iob: Double }
-    private var iobPoints: [IOBPoint] {
-        var out: [IOBPoint] = []
-        var segment = 0
-        var prev: Date?
-        for (i, s) in visibleIOB.enumerated() {
-            if let p = prev, s.date.timeIntervalSince(p) > 1800 { segment += 1 }
-            out.append(IOBPoint(id: i, segment: segment, date: s.date, iob: s.iob))
-            prev = s.date
-        }
-        return out
-    }
-
     // Glucose plot domain (left axis). IOB/bolus (units) are scaled into this domain and labeled
     // on the right axis. The units scale autoscales to the visible window.
     private let gLo = 40.0, gHi = 300.0
@@ -69,10 +52,10 @@ struct GlucoseChartView: View {
                 }
             }
             if showIOB {
-                ForEach(iobPoints) { p in
-                    LineMark(x: .value("Time", p.date), y: .value("IOB", scaleUnits(p.iob)),
-                             series: .value("IOB segment", p.segment))
-                        .foregroundStyle(AppTheme.insulin).interpolationMethod(.linear)
+                ForEach(visibleIOB) { s in
+                    LineMark(x: .value("Time", s.date), y: .value("IOB", scaleUnits(s.iob)),
+                             series: .value("Series", "IOB"))
+                        .foregroundStyle(AppTheme.insulin).interpolationMethod(.monotone)
                 }
             }
         }
