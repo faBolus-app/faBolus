@@ -300,27 +300,34 @@ struct ProfilesView: View {
         List {
             Section {
                 ForEach(model.snapshot.profiles) { p in
-                    HStack {
-                        Image(systemName: p.active ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(p.active ? AppTheme.inRange : .secondary)
-                        Text(p.name.isEmpty ? "Profile \(p.idpId)" : p.name)
-                        Spacer()
-                        if !p.active { Button("Switch") { switchTo = p }.font(.caption).buttonStyle(.bordered) }
+                    NavigationLink {
+                        ProfileSegmentsView(model: model, idpId: p.idpId, profileName: p.name.isEmpty ? "Profile \(p.idpId)" : p.name)
+                    } label: {
+                        HStack {
+                            Image(systemName: p.active ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(p.active ? AppTheme.inRange : .secondary)
+                            Text(p.name.isEmpty ? "Profile \(p.idpId)" : p.name)
+                            if p.active { Spacer(); Text("Active").font(.caption2).foregroundStyle(.secondary) }
+                        }
                     }
                     .swipeActions {
                         Button(role: .destructive) { deleteTarget = p } label: { Label("Delete", systemImage: "trash") }
                             .disabled(p.active)
                         Button { renameTarget = p; renameText = p.name } label: { Label("Rename", systemImage: "pencil") }.tint(.blue)
+                        if !p.active { Button { switchTo = p } label: { Label("Switch", systemImage: "arrow.left.arrow.right") }.tint(.green) }
                     }
                 }
                 if model.snapshot.profiles.isEmpty { Text("No profiles loaded yet.").foregroundStyle(.secondary) }
             } footer: {
-                Text("Switching the active profile changes your basal schedule and insulin settings. The active profile can't be deleted. (Creating/editing a profile's time segments isn't available here yet.)")
+                Text("Tap a profile to view/edit its time segments. Swipe to switch (changes your basal schedule), rename, or delete. The active profile can't be deleted.")
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Profiles")
         .disabled(busy)
+        .toolbar {
+            NavigationLink { ProfileCreateView(model: model) } label: { Image(systemName: "plus") }
+        }
         .task { await model.refreshProfiles() }
         .alert("Switch profile?", isPresented: Binding(get: { switchTo != nil }, set: { if !$0 { switchTo = nil } })) {
             Button("Switch", role: .destructive) { if let p = switchTo { run { await model.setActiveProfile(idpId: p.idpId) } } }
@@ -403,5 +410,150 @@ struct RemindersAlertsView: View {
         Button { busy = true; Task { await op(); busy = false } } label: {
             Label("Set", systemImage: "checkmark.circle").font(.subheadline)
         }.disabled(busy)
+    }
+}
+
+// MARK: - Profile create + segment editor
+
+/// Editable fields for one profile time-segment (reused by create + add/edit segment).
+struct SegmentFields {
+    var startHour: Double = 0            // 0–23; segments start on the hour here
+    var basal: Double = 0.8              // U/hr
+    var carbRatio: Double = 10           // g/U
+    var isf: Double = 40                 // mg/dL per U
+    var target: Double = 110             // mg/dL
+}
+
+struct ProfileCreateView: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var f = SegmentFields()
+    @State private var insulinDurationMin: Double = 300
+    @State private var busy = false
+
+    var body: some View {
+        Form {
+            Section("Name") { TextField("Profile name", text: $name) }
+            SegmentFieldsEditor(f: $f, showStart: false)
+            Section("Insulin duration") {
+                Stepper(value: $insulinDurationMin, in: 120...480, step: 15) {
+                    Text("\(Int(insulinDurationMin)) min (\(String(format: "%.1f", insulinDurationMin/60)) h)")
+                }
+            }
+            Section {
+                HoldToConfirmButton(title: "create profile", systemImage: "person.crop.circle.badge.plus") {
+                    busy = true
+                    await model.createProfile(name: name, basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio,
+                                              isf: Int(f.isf), targetBg: Int(f.target), insulinDurationMinutes: Int(insulinDurationMin))
+                    busy = false
+                    if model.lastError == nil { dismiss() }
+                }.disabled(busy || name.isEmpty)
+            } footer: {
+                Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. Insulin-affecting — bench-validate on saline.")
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("New Profile")
+    }
+}
+
+struct ProfileSegmentsView: View {
+    @Bindable var model: AppModel
+    let idpId: Int
+    let profileName: String
+    @State private var editing: PumpProfileSegment?    // non-nil = edit sheet
+    @State private var adding = false
+    @State private var busy = false
+
+    private func hhmm(_ min: Int) -> String { String(format: "%02d:%02d", min / 60, min % 60) }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(model.snapshot.viewedProfileSegments) { s in
+                    Button { editing = s } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(hhmm(s.startTimeMinutes)) · \(String(format: "%.2f", s.basalRateUnitsPerHour)) U/hr").fontWeight(.medium)
+                            Text("CR \(String(format: "%.0f", s.carbRatioGramsPerUnit)) g/U · ISF \(s.isf) · Target \(s.targetBg)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .swipeActions {
+                        Button(role: .destructive) { run { await model.deleteProfileSegment(idpId: idpId, segmentIndex: s.segmentIndex) } }
+                            label: { Label("Delete", systemImage: "trash") }
+                    }
+                }
+                if model.snapshot.viewedProfileSegments.isEmpty { Text("Loading segments…").foregroundStyle(.secondary) }
+            } header: { Text("Time segments") } footer: {
+                Text("Each segment sets basal, carb ratio, ISF, and target from its start time until the next. Editing the basal schedule is insulin-affecting — bench-validate on saline.")
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle(profileName)
+        .disabled(busy)
+        .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
+        .task { await model.refreshProfileSegments(idpId: idpId) }
+        .sheet(item: $editing) { seg in
+            SegmentEditSheet(title: "Edit segment", initial: seg) { f in
+                run { await model.modifyProfileSegment(idpId: idpId, segmentIndex: seg.segmentIndex, startTimeMinutes: Int(f.startHour) * 60,
+                                                       basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
+            }
+        }
+        .sheet(isPresented: $adding) {
+            SegmentEditSheet(title: "Add segment", initial: nil) { f in
+                run { await model.addProfileSegment(idpId: idpId, startTimeMinutes: Int(f.startHour) * 60,
+                                                    basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
+            }
+        }
+    }
+
+    private func run(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }
+}
+
+/// Sheet wrapping the segment-fields editor with a hold-to-confirm save (insulin-affecting).
+struct SegmentEditSheet: View {
+    let title: String
+    let initial: PumpProfileSegment?
+    let onSave: (SegmentFields) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var f = SegmentFields()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                SegmentFieldsEditor(f: $f, showStart: true)
+                Section {
+                    HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
+                        onSave(f); dismiss()
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .onAppear {
+                if let s = initial {
+                    f = SegmentFields(startHour: Double(s.startTimeMinutes / 60), basal: s.basalRateUnitsPerHour,
+                                      carbRatio: s.carbRatioGramsPerUnit, isf: Double(s.isf), target: Double(s.targetBg))
+                }
+            }
+        }
+    }
+}
+
+/// The shared set of steppers for a segment's clinical values.
+struct SegmentFieldsEditor: View {
+    @Binding var f: SegmentFields
+    let showStart: Bool
+    var body: some View {
+        if showStart {
+            Section("Start time") {
+                Stepper(value: $f.startHour, in: 0...23, step: 1) { Text(String(format: "%02d:00", Int(f.startHour))) }
+            }
+        }
+        Section("Basal rate") { Stepper(value: $f.basal, in: 0...15, step: 0.05) { Text("\(String(format: "%.2f", f.basal)) U/hr") } }
+        Section("Carb ratio") { Stepper(value: $f.carbRatio, in: 1...150, step: 1) { Text("\(Int(f.carbRatio)) g/U") } }
+        Section("Correction factor (ISF)") { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
+        Section("Target glucose") { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
     }
 }

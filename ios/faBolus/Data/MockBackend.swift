@@ -181,6 +181,35 @@ public final class MockBackend: PumpBackend {
         snapshot.profiles = snapshot.profiles.map { $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0 }; onChange?()
     }
     public func deleteProfile(idpId: Int) async throws { snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
+    public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+                              isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws {
+        let newId = (snapshot.profiles.map { $0.idpId }.max() ?? 0) + 1
+        snapshot.profiles.append(PumpProfileInfo(idpId: newId, name: name, active: false)); onChange?()
+    }
+    public func refreshProfileSegments(idpId: Int) async {
+        if snapshot.viewedProfileSegments.isEmpty {
+            snapshot.viewedProfileSegments = [PumpProfileSegment(idpId: idpId, segmentIndex: 0, startTimeMinutes: 0,
+                                                                 basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110)]
+            onChange?()
+        }
+    }
+    public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                                  carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        let idx = (snapshot.viewedProfileSegments.map { $0.segmentIndex }.max() ?? -1) + 1
+        snapshot.viewedProfileSegments.append(PumpProfileSegment(idpId: idpId, segmentIndex: idx, startTimeMinutes: startTimeMinutes,
+                                                                 basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg))
+        onChange?()
+    }
+    public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+                                     carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        snapshot.viewedProfileSegments = snapshot.viewedProfileSegments.map {
+            $0.segmentIndex == segmentIndex ? PumpProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes,
+                                                                 basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) : $0 }
+        onChange?()
+    }
+    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws {
+        snapshot.viewedProfileSegments.removeAll { $0.segmentIndex == segmentIndex }; onChange?()
+    }
     public func setLowInsulinAlert(thresholdUnits: Int) async throws {}
     public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {}
     public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {}
