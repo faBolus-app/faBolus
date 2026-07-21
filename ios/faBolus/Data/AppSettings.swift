@@ -23,6 +23,19 @@ public final class AppSettings {
     public var showGlucoseAxis: Bool { didSet { d.set(showGlucoseAxis, forKey: "showGlucoseAxis") } }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
 
+    /// Master opt-in for advanced pump control (suspend/resume, temp basal, modes, profiles,
+    /// Control-IQ settings, limits, cartridge/fill, time sync). **Default OFF.** Even when on, each
+    /// action is additionally gated on the pump advertising the capability (Mobi-only in practice)
+    /// via `advancedControlAllowed(_:isMobi:)`. Insulin-affecting actions still go through the
+    /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
+    public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
+
+    /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
+    /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
+    public func advancedControlAllowed(isMobi: Bool) -> Bool {
+        advancedControlEnabled && isMobi
+    }
+
     /// Garmin remote layout: the swipe order of its screens and which one opens first. Pushed to
     /// the watch in the status payload; the Garmin app persists it locally so it survives restarts.
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
@@ -63,6 +76,7 @@ public final class AppSettings {
         watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
+        advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
         // only if nothing valid is stored, so the watch is never left with no screens.
