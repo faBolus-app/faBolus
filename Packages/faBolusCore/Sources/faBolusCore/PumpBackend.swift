@@ -94,6 +94,26 @@ public protocol PumpBackend: AnyObject {
     func setMaxBasal(unitsPerHour: Double) async throws
     /// Set the pump clock to the phone's current time.
     func syncTimeToNow() async throws
+
+    // Control-IQ settings (non-insulin config; changes closed-loop behavior).
+    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
+    func refreshControlIQSettings() async
+    // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
+    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
+    // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
+    func refreshProfiles() async
+    func setActiveProfile(idpId: Int) async throws
+    func renameProfile(idpId: Int, name: String) async throws
+    func deleteProfile(idpId: Int) async throws
+    // Reminders / alert thresholds (non-insulin config).
+    func setLowInsulinAlert(thresholdUnits: Int) async throws
+    func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws
+    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws
+    func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws
+    // CGM alert thresholds.
+    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws
+    func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws
+    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws
 }
 
 /// The largest prime-cannula amount the UI allows (defense-in-depth on an insulin-dispensing step).
@@ -130,6 +150,20 @@ public extension PumpBackend {
     func setMaxBolus(units: Double) async throws { throw ControlError.notSupported }
     func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
+    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws { throw ControlError.notSupported }
+    func refreshControlIQSettings() async {}
+    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws { throw ControlError.notSupported }
+    func refreshProfiles() async {}
+    func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
+    func renameProfile(idpId: Int, name: String) async throws { throw ControlError.notSupported }
+    func deleteProfile(idpId: Int) async throws { throw ControlError.notSupported }
+    func setLowInsulinAlert(thresholdUnits: Int) async throws { throw ControlError.notSupported }
+    func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
+    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws { throw ControlError.notSupported }
+    func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
+    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws { throw ControlError.notSupported }
+    func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws { throw ControlError.notSupported }
+    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws { throw ControlError.notSupported }
 }
 
 public enum BolusError: Error, LocalizedError {

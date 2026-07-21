@@ -139,6 +139,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
     private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
+    /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
+    private var profileActiveIdpId = -1
 
     /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile).
     private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
@@ -445,6 +447,61 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func syncTimeToNow() async throws {
         let tandemEpoch = UInt32(max(0, Date().timeIntervalSince1970 - 1_199_145_600))   // Jan 1 2008 base
         try await sendControl(ChangeTimeDateRequest(tandemEpochTime: tandemEpoch), delivery: false)
+    }
+
+    // Control-IQ settings — non-insulin config.
+    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
+        try await sendControl(ChangeControlIQSettingsRequest(enabled: enabled, weightLbs: weightLbs,
+                                                             totalDailyInsulinUnits: totalDailyInsulinUnits), delivery: false)
+    }
+    public func refreshControlIQSettings() async {
+        guard snapshot.connection == .connected else { return }
+        try? client.send(ControlIQInfoV1Request())    // reply handled in didReceiveFrame
+        try? await Task.sleep(nanoseconds: 600_000_000)
+    }
+
+    // Profiles (IDP). Switch/rename/delete change the active basal profile → insulin-affecting.
+    public func refreshProfiles() async {
+        guard snapshot.connection == .connected else { return }
+        try? client.send(ProfileStatusRequest())      // → IDPSettings cascade in didReceiveFrame
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+    }
+    public func setActiveProfile(idpId: Int) async throws {
+        try await sendControl(SetActiveIDPRequest(idpId: idpId, profileIndex: 0), delivery: true)
+        await refreshProfiles()
+    }
+    public func renameProfile(idpId: Int, name: String) async throws {
+        try await sendControl(RenameIDPRequest(idpId: idpId, profileIndex: 0, profileName: name), delivery: true)
+        await refreshProfiles()
+    }
+    public func deleteProfile(idpId: Int) async throws {
+        try await sendControl(DeleteIDPRequest(idpId: idpId, profileIndex: 0), delivery: true)
+        await refreshProfiles()
+    }
+
+    // Reminders / alert thresholds — non-insulin config.
+    public func setLowInsulinAlert(thresholdUnits: Int) async throws {
+        try await sendControl(SetLowInsulinAlertRequest(insulinThreshold: thresholdUnits), delivery: false)
+    }
+    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {
+        try await sendControl(SetAutoOffAlertRequest(enableAutoOff: enabled, autoOffDuration: durationMinutes, bitmask: 0), delivery: false)
+    }
+    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {
+        try await sendControl(SetSiteChangeReminderRequest(enable: enabled, dayCount: days,
+                                                           timeOfDayMinutes: UInt32(max(0, timeOfDayMinutes)), bitmask: 0), delivery: false)
+    }
+    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws {
+        try await sendControl(SetPumpAlertSnoozeRequest(snoozeEnabled: enabled, snoozeDurationMins: durationMinutes), delivery: false)
+    }
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {
+        try await sendControl(CgmHighLowAlertRequest(alertType: alertType, threshold: thresholdMgdl,
+                                                     repeatDurationMinutes: repeatMinutes, enableAlert: enabled, bitmask: 0), delivery: false)
+    }
+    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws {
+        try await sendControl(CgmOutOfRangeAlertRequest(enable: enabled, alertDelay: delayMinutes, bitmask: 0), delivery: false)
+    }
+    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {
+        try await sendControl(CgmRiseFallAlertRequest(alertType: alertType, enable: enabled, mgPerDl: mgdlPerMin, bitmask: 0), delivery: false)
     }
 
     /// Read the paired G6 CGM transmitter ID from the pump (CGMHardwareInfoResponse.hardwareInfoString),
@@ -785,6 +842,18 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as LoadStatusResponse:
             snapshot.cartridgeLoadState = m.loadStateId
             snapshot.cartridgeLoadActive = m.isLoadingActive
+        case let m as ControlIQInfoV1Response:
+            snapshot.controlIQEnabled = m.closedLoopEnabled
+            snapshot.controlIQWeightLbs = m.weight
+            snapshot.controlIQTotalDailyInsulin = m.totalDailyInsulin
+        case let m as ProfileStatusResponse:
+            profileActiveIdpId = m.activeIdpId
+            snapshot.profiles = []
+            for id in m.presentIdpIds where id >= 0 { try? client.send(IDPSettingsRequest(idpId: id)) }
+        case let m as IDPSettingsResponse:
+            snapshot.profiles.removeAll { $0.idpId == m.idpId }
+            snapshot.profiles.append(PumpProfileInfo(idpId: m.idpId, name: m.name, active: m.idpId == profileActiveIdpId))
+            snapshot.profiles.sort { $0.idpId < $1.idpId }
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
             snapshot.trend = m.trendArrow

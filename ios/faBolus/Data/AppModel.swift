@@ -340,6 +340,23 @@ public final class AppModel {
     /// precondition). Exposed for the wizard's guard.
     public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }
 
+    // MARK: Config wizards (A4 continued)
+    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
+        await runControl { try await source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
+    }
+    public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
+    public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
+    public func setActiveProfile(idpId: Int) async { await runControl { try await source.setActiveProfile(idpId: idpId) } }
+    public func renameProfile(idpId: Int, name: String) async { await runControl { try await source.renameProfile(idpId: idpId, name: name) } }
+    public func deleteProfile(idpId: Int) async { await runControl { try await source.deleteProfile(idpId: idpId) } }
+    public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
+    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
+    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }
+    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes) } }
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async { await runControl { try await source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled) } }
+    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async { await runControl { try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes) } }
+    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async { await runControl { try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin) } }
+
     // MARK: Remote (watch/Garmin) double-confirmation
 
     public func presentRemoteBolus(requestId: String, units: Double) {
