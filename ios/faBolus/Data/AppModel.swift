@@ -319,6 +319,27 @@ public final class AppModel {
     /// Read the G6 transmitter ID from the pump (CGM-failover auto-fill). nil if unavailable.
     public func readG6TransmitterId() async -> String? { await source.readG6TransmitterId() }
 
+    // MARK: Mobi workflows (A4)
+    public func startG6Session(transmitterId: String, sensorCode: Int) async {
+        await runControl { try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode) }
+    }
+    public func startG7Session(pairingCode: Int) async { await runControl { try await source.startG7Session(pairingCode: pairingCode) } }
+    public func setSensorType(_ typeId: Int) async { await runControl { try await source.setSensorType(typeId) } }
+    public func stopCgmSession() async { await runControl { try await source.stopCgmSession() } }
+    public func refreshCgmSession() async { await source.refreshCgmSession(); refresh() }
+    public func enterChangeCartridgeMode() async { await runControl { try await source.enterChangeCartridgeMode() } }
+    public func exitChangeCartridgeMode() async { await runControl { try await source.exitChangeCartridgeMode() } }
+    public func enterFillTubingMode() async { await runControl { try await source.enterFillTubingMode() } }
+    public func exitFillTubingMode() async { await runControl { try await source.exitFillTubingMode() } }
+    public func fillCannula(milliunits: Int) async { await runControl { try await source.fillCannula(milliunits: milliunits) } }
+    public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
+    public func setMaxBolus(units: Double) async { await runControl { try await source.setMaxBolus(units: units) } }
+    public func setMaxBasal(unitsPerHour: Double) async { await runControl { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
+    public func syncTimeToNow() async { await runControl { try await source.syncTimeToNow() } }
+    /// Whether clearing active notifications is required before entering cartridge mode (controlX2
+    /// precondition). Exposed for the wizard's guard.
+    public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }
+
     // MARK: Remote (watch/Garmin) double-confirmation
 
     public func presentRemoteBolus(requestId: String, units: Double) {

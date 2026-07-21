@@ -388,6 +388,65 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func setMode(bitmap: Int) async throws { try await sendControl(SetModesRequest(bitmap: bitmap), delivery: true) }
     public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
 
+    // MARK: - Mobi workflows (A4)
+
+    // CGM session — all non-insulin (`.allowNonDelivery`).
+    public func startG6Session(transmitterId: String, sensorCode: Int) async throws {
+        let tx = transmitterId.trimmingCharacters(in: .whitespaces).uppercased()
+        if !tx.isEmpty {
+            try await sendControl(SetG6TransmitterIdRequest(txId: tx), delivery: false)
+            try? await Task.sleep(nanoseconds: 750_000_000)   // let the pump store the id (per controlX2)
+        }
+        try await sendControl(StartDexcomG6SensorSessionRequest(sensorCode: sensorCode), delivery: false)
+        await refreshCgmSession()
+    }
+    public func startG7Session(pairingCode: Int) async throws {
+        try await sendControl(SetDexcomG7PairingCodeRequest(pairingCode: pairingCode), delivery: false)
+        await refreshCgmSession()
+    }
+    public func setSensorType(_ typeId: Int) async throws {
+        try await sendControl(SetSensorTypeRequest(cgmSensorType: typeId), delivery: false)
+    }
+    public func stopCgmSession() async throws {
+        try await sendControl(StopDexcomCGMSensorSessionRequest(), delivery: false)
+        await refreshCgmSession()
+    }
+    public func refreshCgmSession() async {
+        guard snapshot.connection == .connected else { return }
+        try? client.send(CGMStatusRequest())          // reply handled in didReceiveFrame
+        try? await Task.sleep(nanoseconds: 600_000_000)
+    }
+
+    // Cartridge / fill — enter-mode + fill-cannula are insulin-affecting (`.allowDelivery`); the
+    // exits are not. The UI runs these behind the advanced-control + Mobi gate with confirmation.
+    public func enterChangeCartridgeMode() async throws { try await sendControl(EnterChangeCartridgeModeRequest(), delivery: true) }
+    public func exitChangeCartridgeMode() async throws { try await sendControl(ExitChangeCartridgeModeRequest(), delivery: false) }
+    public func enterFillTubingMode() async throws { try await sendControl(EnterFillTubingModeRequest(), delivery: true) }
+    public func exitFillTubingMode() async throws { try await sendControl(ExitFillTubingModeRequest(), delivery: false) }
+    public func fillCannula(milliunits: Int) async throws {
+        let clamped = max(0, min(milliunits, FillLimits.maxCannulaMilliunits))   // defense-in-depth bound
+        try await sendControl(FillCannulaRequest(primeSize: clamped), delivery: true)
+    }
+    public func refreshLoadStatus() async {
+        guard snapshot.connection == .connected else { return }
+        try? client.send(LoadStatusRequest())          // reply handled in didReceiveFrame
+        try? await Task.sleep(nanoseconds: 600_000_000)
+    }
+
+    // Settings — non-insulin config.
+    public func setMaxBolus(units: Double) async throws {
+        let clamped = max(0.05, min(units, Interlocks.absoluteMaxUnits))
+        try await sendControl(SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
+    }
+    public func setMaxBasal(unitsPerHour: Double) async throws {
+        let clamped = max(0, unitsPerHour)
+        try await sendControl(SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: UInt32((clamped * 1000).rounded())), delivery: false)
+    }
+    public func syncTimeToNow() async throws {
+        let tandemEpoch = UInt32(max(0, Date().timeIntervalSince1970 - 1_199_145_600))   // Jan 1 2008 base
+        try await sendControl(ChangeTimeDateRequest(tandemEpochTime: tandemEpoch), delivery: false)
+    }
+
     /// Read the paired G6 CGM transmitter ID from the pump (CGMHardwareInfoResponse.hardwareInfoString),
     /// so the CGM-failover setup can auto-fill it instead of the user looking it up. Requires a live
     /// connection; returns nil on timeout / not connected / empty.
@@ -692,6 +751,10 @@ extension TandemBackend: PumpBLEClientDelegate {
             if iobHistory.count > 288 { iobHistory.removeFirst() }
         case let m as InsulinStatusResponse: snapshot.reservoirUnits = Double(m.currentInsulinAmount)
         case let m as CurrentBatteryV2Response: snapshot.batteryPercent = m.batteryPercent
+        case let m as CGMStatusResponse: snapshot.cgmSessionActive = m.sessionActive
+        case let m as LoadStatusResponse:
+            snapshot.cartridgeLoadState = m.loadStateId
+            snapshot.cartridgeLoadActive = m.isLoadingActive
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
             snapshot.trend = m.trendArrow

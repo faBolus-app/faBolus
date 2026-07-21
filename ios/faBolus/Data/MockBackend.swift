@@ -6,7 +6,9 @@ import faBolusCore
 /// `PumpBackend` implementation — copy it as a starting point for a new backend.
 @MainActor
 public final class MockBackend: PumpBackend {
-    public let capabilities: PumpCapabilities = .full
+    // Presents as a Mobi with the full advanced-control surface so the control wizards are
+    // developable in the Simulator (they still require AppSettings.advancedControlEnabled = on).
+    public let capabilities: PumpCapabilities = .mobiAdvanced
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
@@ -59,6 +61,12 @@ public final class MockBackend: PumpBackend {
         snapshot.carbRatio = 10; snapshot.isf = 40; snapshot.targetBg = 110; snapshot.maxBolusUnits = 25
         snapshot.lastBolusUnits = 2.0
         snapshot.lastBolusDate = now.addingTimeInterval(-3600)
+        snapshot.isMobi = true
+        snapshot.pumpModelName = "Mobi (mock)"
+        snapshot.basalRateUnitsPerHour = 0.8
+        snapshot.controlIQEnabled = true
+        snapshot.cgmSessionActive = true
+        snapshot.cartridgeLoadState = 6      // unknown/idle
     }
 
     public func connect() async {
@@ -122,4 +130,33 @@ public final class MockBackend: PumpBackend {
     public func cancelBolus() async {
         snapshot.connection = .connected; onChange?()
     }
+
+    // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
+    public func suspendDelivery() async throws { snapshot.deliverySuspended = true; onChange?() }
+    public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
+    public func setTempBasal(percent: Int, durationMinutes: Int) async throws { onChange?() }
+    public func stopTempBasal() async throws { onChange?() }
+    public func setMode(bitmap: Int) async throws { snapshot.controlIQMode = bitmap; onChange?() }
+    public func playFindMyPump() async throws {}
+
+    public func startG6Session(transmitterId: String, sensorCode: Int) async throws { snapshot.cgmSessionActive = true; onChange?() }
+    public func startG7Session(pairingCode: Int) async throws { snapshot.cgmSessionActive = true; onChange?() }
+    public func setSensorType(_ typeId: Int) async throws {}
+    public func stopCgmSession() async throws { snapshot.cgmSessionActive = false; onChange?() }
+    public func refreshCgmSession() async {}
+
+    public func enterChangeCartridgeMode() async throws {
+        snapshot.deliverySuspended = true; snapshot.cartridgeLoadActive = true; snapshot.cartridgeLoadState = 0; onChange?()
+    }
+    public func exitChangeCartridgeMode() async throws { snapshot.cartridgeLoadState = 1; onChange?() }
+    public func enterFillTubingMode() async throws { snapshot.cartridgeLoadState = 2; onChange?() }
+    public func exitFillTubingMode() async throws { snapshot.cartridgeLoadState = 3; onChange?() }
+    public func fillCannula(milliunits: Int) async throws {
+        snapshot.cartridgeLoadActive = false; snapshot.cartridgeLoadState = 6; snapshot.deliverySuspended = false; onChange?()
+    }
+    public func refreshLoadStatus() async {}
+
+    public func setMaxBolus(units: Double) async throws { snapshot.maxBolusUnits = units; onChange?() }
+    public func setMaxBasal(unitsPerHour: Double) async throws {}
+    public func syncTimeToNow() async throws {}
 }

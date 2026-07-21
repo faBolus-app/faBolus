@@ -111,6 +111,15 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var controlIQEnabled: Bool = false
     /// Active carbohydrates (COB), grams — shown alongside IOB when available.
     public var cobGrams: Double = 0
+
+    // Mobi-workflow state (A4). Polled on demand while the relevant wizard is open.
+    /// Whether a CGM sensor session is currently active on the pump (from CGMStatus). Distinct from
+    /// `cgmActive` (which reflects a valid EGV reading — false during a valid session's warmup).
+    public var cgmSessionActive: Bool = false
+    /// Raw cartridge/load state id (LoadStatus.loadStateId): 0 change-cartridge, 1 load, 2 prime
+    /// tubing, 3 prime cannula, 4 prime nudge, 5 invalid, 6 unknown.
+    public var cartridgeLoadState: Int = 6
+    public var cartridgeLoadActive: Bool = false
     public init() {}
 
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
