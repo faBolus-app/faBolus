@@ -238,3 +238,170 @@ struct PumpLimitsView: View {
 
     private func set(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }
 }
+
+// MARK: - Control-IQ settings
+
+struct ControlIQSettingsView: View {
+    @Bindable var model: AppModel
+    @State private var enabled = true
+    @State private var weightLbs: Double = 150
+    @State private var tdi: Double = 40
+    @State private var busy = false
+    @State private var loaded = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Control-IQ closed loop", isOn: $enabled)
+            } footer: {
+                Text("Turning Control-IQ off stops automatic basal adjustments. Weight and total daily insulin are used by the algorithm.")
+            }
+            Section("Weight") {
+                Stepper(value: $weightLbs, in: 40...400, step: 1) { Text("\(Int(weightLbs)) lb") }
+            }
+            Section("Total daily insulin") {
+                Stepper(value: $tdi, in: 1...300, step: 1) { Text("\(Int(tdi)) U/day") }
+            }
+            Section {
+                Button { save() } label: { Label(busy ? "Saving…" : "Save Control-IQ settings", systemImage: "checkmark.circle") }
+                    .disabled(busy)
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Control-IQ")
+        .task {
+            await model.refreshControlIQSettings()
+            if !loaded {
+                enabled = model.snapshot.controlIQEnabled
+                if model.snapshot.controlIQWeightLbs > 0 { weightLbs = Double(model.snapshot.controlIQWeightLbs) }
+                if model.snapshot.controlIQTotalDailyInsulin > 0 { tdi = Double(model.snapshot.controlIQTotalDailyInsulin) }
+                loaded = true
+            }
+        }
+    }
+
+    private func save() {
+        busy = true
+        Task { await model.setControlIQ(enabled: enabled, weightLbs: Int(weightLbs), totalDailyInsulinUnits: Int(tdi)); busy = false }
+    }
+}
+
+// MARK: - Insulin profiles (switch / rename / delete)
+
+struct ProfilesView: View {
+    @Bindable var model: AppModel
+    @State private var busy = false
+    @State private var switchTo: PumpProfileInfo?
+    @State private var deleteTarget: PumpProfileInfo?
+    @State private var renameTarget: PumpProfileInfo?
+    @State private var renameText = ""
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(model.snapshot.profiles) { p in
+                    HStack {
+                        Image(systemName: p.active ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(p.active ? AppTheme.inRange : .secondary)
+                        Text(p.name.isEmpty ? "Profile \(p.idpId)" : p.name)
+                        Spacer()
+                        if !p.active { Button("Switch") { switchTo = p }.font(.caption).buttonStyle(.bordered) }
+                    }
+                    .swipeActions {
+                        Button(role: .destructive) { deleteTarget = p } label: { Label("Delete", systemImage: "trash") }
+                            .disabled(p.active)
+                        Button { renameTarget = p; renameText = p.name } label: { Label("Rename", systemImage: "pencil") }.tint(.blue)
+                    }
+                }
+                if model.snapshot.profiles.isEmpty { Text("No profiles loaded yet.").foregroundStyle(.secondary) }
+            } footer: {
+                Text("Switching the active profile changes your basal schedule and insulin settings. The active profile can't be deleted. (Creating/editing a profile's time segments isn't available here yet.)")
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Profiles")
+        .disabled(busy)
+        .task { await model.refreshProfiles() }
+        .alert("Switch profile?", isPresented: Binding(get: { switchTo != nil }, set: { if !$0 { switchTo = nil } })) {
+            Button("Switch", role: .destructive) { if let p = switchTo { run { await model.setActiveProfile(idpId: p.idpId) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Make “\(switchTo?.name ?? "")” the active profile? This changes your basal schedule.") }
+        .alert("Delete profile?", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+            Button("Delete", role: .destructive) { if let p = deleteTarget { run { await model.deleteProfile(idpId: p.idpId) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Delete “\(deleteTarget?.name ?? "")”? This can't be undone.") }
+        .alert("Rename profile", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Save") { if let p = renameTarget { run { await model.renameProfile(idpId: p.idpId, name: renameText) } } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func run(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }
+}
+
+// MARK: - Reminders & alert settings
+
+struct RemindersAlertsView: View {
+    @Bindable var model: AppModel
+    @State private var lowInsulin: Double = 20
+    @State private var autoOffOn = true
+    @State private var autoOffHrs: Double = 12
+    @State private var siteOn = true
+    @State private var siteDays: Double = 3
+    @State private var snoozeOn = true
+    @State private var snoozeMin: Double = 30
+    @State private var cgmHigh: Double = 180
+    @State private var cgmLow: Double = 70
+    @State private var cgmOorOn = true
+    @State private var cgmOorDelay: Double = 20
+    @State private var busy = false
+
+    var body: some View {
+        Form {
+            Section("Low insulin alert") {
+                Stepper(value: $lowInsulin, in: 5...50, step: 5) { Text("Alert at \(Int(lowInsulin)) U") }
+                setButton { await model.setLowInsulinAlert(thresholdUnits: Int(lowInsulin)) }
+            }
+            Section("Auto-off") {
+                Toggle("Enabled", isOn: $autoOffOn)
+                Stepper(value: $autoOffHrs, in: 1...24, step: 1) { Text("\(Int(autoOffHrs)) h without interaction") }
+                setButton { await model.setAutoOffAlert(enabled: autoOffOn, durationMinutes: Int(autoOffHrs) * 60) }
+            }
+            Section("Site-change reminder") {
+                Toggle("Enabled", isOn: $siteOn)
+                Stepper(value: $siteDays, in: 1...5, step: 1) { Text("Every \(Int(siteDays)) days") }
+                setButton { await model.setSiteChangeReminder(enabled: siteOn, days: Int(siteDays), timeOfDayMinutes: 9 * 60) }
+            }
+            Section("Alert snooze") {
+                Toggle("Enabled", isOn: $snoozeOn)
+                Stepper(value: $snoozeMin, in: 5...120, step: 5) { Text("\(Int(snoozeMin)) min") }
+                setButton { await model.setAlertSnooze(enabled: snoozeOn, durationMinutes: Int(snoozeMin)) }
+            }
+            Section {
+                Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text("High alert at \(Int(cgmHigh)) mg/dL") }
+                setButton { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
+                Stepper(value: $cgmLow, in: 60...120, step: 5) { Text("Low alert at \(Int(cgmLow)) mg/dL") }
+                setButton { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
+            } header: {
+                Text("CGM high / low alerts")
+            } footer: {
+                Text("Sets the pump's own CGM high/low alert thresholds.")
+            }
+            Section("CGM out-of-range alert") {
+                Toggle("Enabled", isOn: $cgmOorOn)
+                Stepper(value: $cgmOorDelay, in: 20...300, step: 5) { Text("After \(Int(cgmOorDelay)) min") }
+                setButton { await model.setCgmOutOfRangeAlert(enabled: cgmOorOn, delayMinutes: Int(cgmOorDelay)) }
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Reminders & Alerts")
+        .disabled(busy)
+    }
+
+    @ViewBuilder private func setButton(_ op: @escaping () async -> Void) -> some View {
+        Button { busy = true; Task { await op(); busy = false } } label: {
+            Label("Set", systemImage: "checkmark.circle").font(.subheadline)
+        }.disabled(busy)
+    }
+}
