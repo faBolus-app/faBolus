@@ -25,3 +25,6 @@ site/
 
 # The `build/` rule above is for Xcode output — do NOT let it swallow the docs build guide.
 !docs/build/
+
+# Derived xcodegen spec from scripts/generate-project.sh
+project.generated.yml
