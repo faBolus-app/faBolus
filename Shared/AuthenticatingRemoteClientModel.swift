@@ -62,15 +62,19 @@ class AuthenticatingRemoteClientModel: RemoteClientModel {
 
     func startHandshake() {
         guard link.isReachable, !authenticated, let host = currentHostName() else { return }
-        if let token = tokenFor(host) {
-            hsSecret = token; hsFirstPairing = false
-        } else if let code = hsCode {
+        // Prefer a freshly-provided code (the user just scanned/typed one → intent to (re)pair) over a
+        // stored token; otherwise reconnect silently with the token. We tell the host which we used
+        // (`firstPairing`) so it picks the SAME secret — an asymmetric "forget" can't desync the ends.
+        if let code = hsCode {
             hsSecret = MacPairing.secret(code: code); hsFirstPairing = true
+        } else if let token = tokenFor(host) {
+            hsSecret = token; hsFirstPairing = false
         } else {
             handshakeNeedsCode(); return
         }
         let nonce = MacPairing.newNonce(); hsClientNonce = nonce
-        link.send(.auth(.authHello, clientId: clientId, nonce: nonce.base64EncodedString(), message: displayName))
+        link.send(.auth(.authHello, clientId: clientId, nonce: nonce.base64EncodedString(),
+                        message: displayName, firstPairing: hsFirstPairing))
     }
 
     override func handle(_ cmd: RemoteCommand) {

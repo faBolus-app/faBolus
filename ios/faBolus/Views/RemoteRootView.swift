@@ -6,7 +6,6 @@ import faBolusCore
 /// model is owned by `AppRouter` and stays alive across switches. Switch back to this phone's own pump
 /// under Settings → Controlling.
 struct RemoteRootView: View {
-    @Bindable var host: AppModel
     @Bindable var remote: PhoneRemoteClientModel
 
     var body: some View {
@@ -24,8 +23,8 @@ struct RemoteRootView: View {
             }
             .tabItem { Label("Remote", systemImage: "iphone.gen3.radiowaves.left.and.right") }
 
-            // Settings stay app-wide (the "Controlling" switcher lives here to get back to this pump).
-            SettingsView(model: host)
+            // Trimmed, remote-only settings (incl. the "Controlling" switch back to this phone's pump).
+            RemoteSettingsView(remote: remote)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
     }

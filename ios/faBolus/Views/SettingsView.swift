@@ -22,7 +22,6 @@ let faBolusHelpURL = URL(string: "https://faBolus.org")!
 /// About) instead of one long list, with a search field that jumps to any setting, plus a Help link.
 struct SettingsView: View {
     @Bindable var model: AppModel
-    @Environment(AppRouter.self) private var router
     @State private var settings = AppSettings.shared
     @State private var query = ""
 
@@ -36,17 +35,6 @@ struct SettingsView: View {
     @ViewBuilder private var settingsList: some View {
             List {
                 if query.isEmpty {
-                    Section {
-                        Button { router.controlThisPump() } label: {
-                            controllingRow("This phone's pump", "cross.case.fill", selected: router.target == .thisPump)
-                        }.tint(.primary)
-                        Button { router.controlRemote() } label: {
-                            controllingRow(router.remote?.conn.pairedHost.map { "Remote: \($0)" } ?? "Remote (another phone)",
-                                           "iphone.gen3.radiowaves.left.and.right", selected: router.target == .remote)
-                        }.tint(.primary)
-                    } header: { Text("Controlling") } footer: {
-                        Text("Use this phone for its own pump, or turn the whole app into a remote for another phone's pump. Switching is instant and your pairing is remembered.")
-                    }
                     Section {
                         ForEach(SettingsCategory.allCases) { cat in
                             NavigationLink { destination(cat) } label: {
@@ -85,15 +73,6 @@ struct SettingsView: View {
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
-    }
-
-    @ViewBuilder private func controllingRow(_ title: String, _ icon: String, selected: Bool) -> some View {
-        HStack {
-            Label(title, systemImage: icon)
-            Spacer()
-            if selected { Image(systemName: "checkmark").foregroundStyle(.tint) }
-        }
-        .contentShape(Rectangle())
     }
 
     @ViewBuilder private func destination(_ cat: SettingsCategory) -> some View {
@@ -469,19 +448,15 @@ struct RemotesSettingsView: View {
                 Text("Pair the faBolus Mac app or a parent's iPhone to view status and send boluses. First-time pairing needs a one-time code or QR scan; the host grants each remote its own permissions.")
             }
             Section {
-                Button { router.controlRemote() } label: {
-                    Label("Control another phone", systemImage: "iphone.gen3.radiowaves.left.and.right")
-                }.tint(.primary)
-            } header: { Text("Use this phone as a remote") } footer: {
-                Text("Switch this whole app into Remote mode to view and control another phone's pump (e.g. your child's). That phone must have “Allow remote devices” on and pair with you. Switch back anytime under Settings → Controlling.")
-            }
-            Section {
                 ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
                     Label("“\(p)”", systemImage: "mic.fill").font(.callout)
                 }
             } header: { Text("Siri (read-only)") } footer: {
                 Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
             }
+            // Switch the whole app between controlling this phone's pump and acting as a remote for
+            // another phone. Kept at the bottom since it's a mode change, not a per-remote setting.
+            ControllingSection()
         }
         .navigationTitle("Remotes & devices")
     }
