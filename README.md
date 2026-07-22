@@ -149,3 +149,10 @@ ecosystem: the app's visual design and parts of this documentation take inspirat
 [LoopDocs](https://loopkit.github.io/loopdocs/).
 
 Full attributions are in [NOTICE.md](NOTICE.md).
+
+## License & trademark
+
+Code is MIT-licensed (see [LICENSE](LICENSE)). **faBolus™** is a trademark of Tia Geri — the license
+covers the source code, not the name, logo, or branding. Forks are welcome under the MIT terms;
+please don't use the faBolus name in a way that implies your fork is the official project. See
+[NOTICE.md](NOTICE.md) for details.

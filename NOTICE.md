@@ -2,6 +2,13 @@
 
 faBolus is an independent, open-source project, licensed under the MIT License (see `LICENSE`).
 
+## The faBolus™ name
+
+**faBolus™** is a trademark of Tia Geri. The MIT License covers this project's **source code**; it
+does not grant any right to use the "faBolus" name, logo, or branding. You are free to fork and
+reuse the code under the MIT terms, but please do not use the faBolus name in a way that suggests
+your fork is the official project or is endorsed by it.
+
 It is built on the Tandem pump Bluetooth protocol as reverse-engineered by the
 **[pumpX2](https://github.com/jwoglom/pumpx2)** project (© James Woglom, MIT License). faBolus is an
 independent reimplementation for iPhone / Apple Watch / Garmin; it is **not** a fork of, affiliated
