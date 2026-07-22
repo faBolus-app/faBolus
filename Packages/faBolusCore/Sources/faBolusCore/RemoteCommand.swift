@@ -63,11 +63,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var reservoirUnits: Double?
     public var batteryPercent: Double?
     public var lastBolusUnits: Double?
+    /// Current basal delivery rate (units/hr), so a remote's basal pill matches the host.
+    public var basalRate: Double?
     /// Seconds since the current CGM reading was taken (so a remote can show "Nm ago" and hide
     /// readings older than 6 minutes).
     public var glucoseAgeSec: Double?
     /// Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot.
     public var history: [Int]?
+    /// Unix-second timestamp for each `history` point (same length/order). Lets an iPhone/Mac remote
+    /// plot readings at their REAL times (with gaps), instead of assuming uniform 5-min spacing ending
+    /// "now". Optional — Garmin ignores it and uses the plain `history`.
+    public var historyEpochs: [Int]?
     /// Active pump alerts/alarms (statusRead reply), for a remote to view.
     public var alerts: [RemoteAlert]?
     /// The alert to clear (dismissAlert command): its id + kind from the alerts list.
@@ -133,7 +139,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
-                glucoseAgeSec: Double? = nil, history: [Int]? = nil,
+                basalRate: Double? = nil,
+                glucoseAgeSec: Double? = nil, history: [Int]? = nil, historyEpochs: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
@@ -148,8 +155,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.carbRatio = carbRatio; self.isf = isf; self.targetBg = targetBg
         self.maxBolusUnits = maxBolusUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
-        self.lastBolusUnits = lastBolusUnits
-        self.glucoseAgeSec = glucoseAgeSec; self.history = history
+        self.lastBolusUnits = lastBolusUnits; self.basalRate = basalRate
+        self.glucoseAgeSec = glucoseAgeSec; self.history = history; self.historyEpochs = historyEpochs
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen

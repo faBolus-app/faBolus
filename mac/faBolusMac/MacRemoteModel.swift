@@ -140,8 +140,14 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
     override func publishSnapshot() {
         let now = Date()
         let recent = history.suffix(48)
-        let points = recent.enumerated().map { i, mgdl in
-            WidgetSnapshot.Point(t: now.addingTimeInterval(Double(i - recent.count) * 300), mgdl: mgdl)
+        // Prefer the host's real per-point timestamps (accurate, honors gaps); else estimate 5-min spacing.
+        let points: [WidgetSnapshot.Point]
+        if historyDates.count == history.count, !historyDates.isEmpty {
+            points = zip(historyDates, history).suffix(48).map { WidgetSnapshot.Point(t: $0, mgdl: $1) }
+        } else {
+            points = recent.enumerated().map { i, mgdl in
+                WidgetSnapshot.Point(t: now.addingTimeInterval(Double(i - recent.count) * 300), mgdl: mgdl)
+            }
         }
         let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
                                   iobUnits: iobUnits, reservoirUnits: reservoirUnits,

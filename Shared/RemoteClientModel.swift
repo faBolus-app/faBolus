@@ -19,11 +19,13 @@ class RemoteClientModel {
     var glucoseDate: Date?             // for staleness
     var trend: String = "→"           // Unicode arrow
     var history: [Int] = []            // recent mg/dL, oldest→newest (for the chart)
+    var historyDates: [Date] = []      // real timestamp per history point (same length), when the host sends them
     // Pump status
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var batteryPercent: Int = 0
     var lastBolusUnits: Double?
+    var basalRate: Double = 0          // units/hr, mirrored from the host
     var connection: String = ""
     // Calculator settings (mirrored from the phone)
     var carbRatio: Double = 0
@@ -135,11 +137,17 @@ class RemoteClientModel {
             } else if lastStatus == .delivering && sawPhoneBolusing {
                 lastStatus = .delivered
             }
-            if let h = cmd.history { history = h }
+            if let h = cmd.history {
+                history = h
+                // Real per-point timestamps when the host sends them (accurate plot, honors gaps); else
+                // clear so the chart falls back to the uniform-spacing estimate.
+                historyDates = cmd.historyEpochs.map { $0.map { Date(timeIntervalSince1970: TimeInterval($0)) } } ?? []
+            }
             // Don't overwrite last-bolus from a routine status push while a bolus is genuinely in
             // progress — that value is still the PREVIOUS bolus mid-delivery and would flicker
             // (e.g. 1.9 → 0.05). The .delivered/.cancelled echo (or the recovery above) settles it.
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
+            if let b = cmd.basalRate { basalRate = b }
             if let a = cmd.alerts { alerts = a }
             // Mirror the phone's staleness policy so the remote marks/hides + stops using stale
             // readings for carb→unit exactly like the phone.

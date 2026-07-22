@@ -21,7 +21,11 @@ struct RemoteRootView: View {
                 .navigationTitle(remote.conn.authenticated ? (remote.conn.pairedHost ?? "Remote") : "Pair a remote")
                 .navigationBarTitleDisplayMode(.inline)
             }
-            .tabItem { Label("Remote", systemImage: "iphone.gen3.radiowaves.left.and.right") }
+            .tabItem { Label("Dashboard", systemImage: "gauge.with.dots.needle.bottom.50percent") }
+
+            RemoteAlertsView(model: remote)
+                .tabItem { Label("Alerts", systemImage: "bell.fill") }
+                .badge(remote.alerts.count)
 
             // Trimmed, remote-only settings (incl. the "Controlling" switch back to this phone's pump).
             RemoteSettingsView(remote: remote)
