@@ -24,11 +24,23 @@ public final class AppModel {
     /// instead of the pump; `nil` when the pump feed is live. The UI only shows a badge when non-nil.
     public var failoverBadge: (name: String, reason: String)? {
         guard case let .failover(sourceID, reason) = glucoseProvenance else { return nil }
-        let name = GlucoseSourceRegistry.descriptor(id: sourceID)?.name ?? sourceID
+        let full = GlucoseSourceRegistry.descriptor(id: sourceID)?.name ?? sourceID
+        let name = Self.shortSourceName(full)
         switch reason {
-        case .pumpMissing: return (name, "pump has no CGM reading")
-        case .pumpStale:   return (name, "pump CGM reading went stale")
+        case .pumpMissing: return (name, "Showing \(full) — the pump has no CGM reading.")
+        case .pumpStale:   return (name, "Showing \(full) — the pump's CGM reading went stale.")
         }
+    }
+
+    /// A compact source name for the small "via …" failover badge — drops the parenthetical/qualifier
+    /// so no source name overruns the ring (e.g. "Dexcom Share (cloud, last resort)" → "Dexcom Share",
+    /// "Dexcom G7 / ONE+ (direct BLE)" → "Dexcom G7").
+    static func shortSourceName(_ full: String) -> String {
+        var s = full
+        for sep in [" (", " — ", " / "] {
+            if let r = s.range(of: sep) { s = String(s[..<r.lowerBound]) }
+        }
+        return s.trimmingCharacters(in: .whitespaces)
     }
 
     /// The active backend's capabilities, so the UI can hide unsupported features.

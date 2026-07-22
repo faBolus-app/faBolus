@@ -25,6 +25,14 @@ final class GarminRemoteBridge: NSObject {
     private var device: IQDevice?
     private var app: IQApp?
 
+    // Connect IQ's sendMessage is serial + asynchronous: firing another before the last completes
+    // backs up a queue, so the watch replays stale status and a bolus's terminal echo gets stuck
+    // behind it. We keep at most ONE send in flight, coalesce status pushes (only the latest matters),
+    // and never drop command echoes (bolus outcome, etc.) — echoes are sent first.
+    private var sendInFlight = false
+    private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
+    private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
+
     init(model: AppModel) {
         self.model = model
         super.init()
@@ -75,9 +83,37 @@ final class GarminRemoteBridge: NSObject {
         ConnectIQ.sharedInstance().register(forAppMessages: app, delegate: self)
     }
 
+    /// Enqueue a command for the watch. Status pushes are coalesced (latest wins); everything else
+    /// (bolus echoes, etc.) is queued in order and sent first, so a stale backlog can't delay a
+    /// bolus's "delivered"/"cancelled" outcome or make the CGM lag behind the phone.
     private func send(_ cmd: RemoteCommand) {
-        guard let app, let dict = try? cmd.asDictionary() else { return }
-        ConnectIQ.sharedInstance().sendMessage(dict, to: app, progress: nil, completion: { _ in })
+        guard let dict = try? cmd.asDictionary() else { return }
+        if cmd.kind == .statusRead {
+            pendingStatus = dict
+        } else {
+            echoQueue.append(dict)
+        }
+        pump()
+    }
+
+    private func pump() {
+        guard let app, !sendInFlight else { return }
+        let next: [String: Any]
+        if !echoQueue.isEmpty {
+            next = echoQueue.removeFirst()
+        } else if let status = pendingStatus {
+            next = status; pendingStatus = nil
+        } else {
+            return
+        }
+        sendInFlight = true
+        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.sendInFlight = false
+                self.pump()   // drain the next queued message (echo first, else the latest status)
+            }
+        }
     }
 
     private func handle(_ cmd: RemoteCommand) {
