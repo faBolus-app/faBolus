@@ -22,6 +22,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// bytes; the inner command is only visible to the paired peer. BLE-only, not in the shared
         /// watch/Garmin schema.
         case sealed
+        /// Reverse approval (opt-in): the host asks a paired remote to approve a bolus the **child**
+        /// started on the host's own phone. `bolusApprovalRequest` carries the units; the remote replies
+        /// `bolusApprovalResponse` with `approved`. Off by default; BLE-only, not in the shared schema.
+        case bolusApprovalRequest, bolusApprovalResponse
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -113,6 +117,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// now and the remainder over `extendedMinutes`. Both nil ⇒ a standard bolus.
     public var extendedMinutes: Int? = nil
     public var extendedNowUnits: Double? = nil
+
+    /// Reverse-approval outcome on a `bolusApprovalResponse`: true = the remote approved the host's
+    /// bolus, false = denied.
+    public var approved: Bool? = nil
 
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,

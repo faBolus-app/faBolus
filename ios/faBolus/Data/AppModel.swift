@@ -346,10 +346,53 @@ public final class AppModel {
 
     public func deliverBolus(units: Double) async {
         if childBlocked(.bolus) { return }
+        // Reverse approval (opt-in): if this phone requires a paired remote to approve its own boluses,
+        // stage the request and wait rather than delivering immediately.
+        if AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
+            requestRemoteApproval(units: units)
+            return
+        }
+        await performLocalBolus(units: units)
+    }
+
+    private func performLocalBolus(units: Double) async {
         do { _ = try await source.deliverBolus(units: units); lastError = nil }
         catch { lastError = error.localizedDescription }
         refresh()
     }
+
+    // MARK: Reverse approval (host bolus approved by a paired remote)
+
+    /// A bolus this phone started that's awaiting a paired remote's approval.
+    public struct PendingApproval: Equatable, Sendable { public let requestId: String; public let units: Double }
+    public private(set) var pendingApproval: PendingApproval?
+    private var hasPairedRemote: Bool { !MacPairingCoordinator.shared.pairedMacs.isEmpty }
+
+    private func requestRemoteApproval(units: Double) {
+        let id = UUID().uuidString
+        pendingApproval = PendingApproval(requestId: id, units: units)
+        lastError = nil
+        echo(RemoteCommand(kind: .bolusApprovalRequest, requestId: id, units: units))
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+            guard let self, self.pendingApproval?.requestId == id else { return }
+            self.resolveRemoteApproval(requestId: id, approved: false, reason: "No response from the remote")
+        }
+    }
+
+    /// Called when a remote answers (via `PeerRemoteHost`) or the request times out.
+    public func resolveRemoteApproval(requestId: String, approved: Bool, reason: String? = nil) {
+        guard let p = pendingApproval, p.requestId == requestId else { return }
+        pendingApproval = nil
+        if approved {
+            Task { await performLocalBolus(units: p.units) }
+        } else {
+            lastError = "Bolus not approved" + (reason.map { " — \($0)" } ?? "")
+        }
+    }
+
+    /// Cancel a bolus that's waiting for remote approval (user backed out).
+    public func cancelPendingApproval() { pendingApproval = nil }
 
     /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,

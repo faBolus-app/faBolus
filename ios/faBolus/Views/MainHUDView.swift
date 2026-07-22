@@ -20,6 +20,15 @@ struct DashboardView: View {
 
                     AlertsBannerView(model: model)
 
+                    if let pending = model.pendingApproval {
+                        VStack(spacing: 6) {
+                            HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
+                            Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
+                    }
+
                     if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                         Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                             Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)

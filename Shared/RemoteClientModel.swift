@@ -43,6 +43,8 @@ class RemoteClientModel {
     var lastStatus: RemoteCommand.Status?
     var statusMessage: String?
     var pendingRequestId: String?
+    /// A bolus the host started that's awaiting THIS remote's approval (reverse approval): (id, units).
+    var incomingApproval: (requestId: String, units: Double)?
 
     /// Whether the phone has been seen bolusing since this request started — so a lost/late terminal
     /// echo can be recovered from the connection state (see handle(.statusRead)).
@@ -141,9 +143,20 @@ class RemoteClientModel {
             if let s = cmd.glucoseStaleMinutes { GlucoseFreshness.staleAfter = TimeInterval(s) * 60 }
             GlucoseFreshness.hideAfter = cmd.glucoseHideDelayMinutes.map { GlucoseFreshness.staleAfter + TimeInterval($0) * 60 }
             publishSnapshot()
+        case .bolusApprovalRequest:
+            incomingApproval = (cmd.requestId, cmd.units ?? 0)
         default:
             break
         }
+    }
+
+    /// Approve or deny a host-initiated bolus (reverse approval).
+    func respondToApproval(_ approved: Bool) {
+        guard let a = incomingApproval else { return }
+        var cmd = RemoteCommand(kind: .bolusApprovalResponse, requestId: a.requestId)
+        cmd.approved = approved
+        link.send(cmd)
+        incomingApproval = nil
     }
 
     /// Publish the latest glucose/pump state to the App Group so this device's widgets/complication

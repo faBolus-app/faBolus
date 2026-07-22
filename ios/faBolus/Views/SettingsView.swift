@@ -402,6 +402,7 @@ struct RemotesSettingsView: View {
                 Toggle("Allow remote devices (Bluetooth)", isOn: $settings.remoteBluetoothEnabled)
                 if settings.remoteBluetoothEnabled {
                     Toggle("Read-only (block remote bolus & pump changes)", isOn: $settings.remoteBluetoothReadOnly)
+                    Toggle("Require a remote to approve my boluses", isOn: $settings.requireRemoteBolusApproval)
                 }
             } header: { Text("Remote access") } footer: {
                 Text("Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (unless read-only) deliver boluses — even when this phone is locked. Pairing is authenticated and the link is end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected — they aren't discoverable by other devices.)")
