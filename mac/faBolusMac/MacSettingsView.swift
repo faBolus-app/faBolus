@@ -116,6 +116,7 @@ struct MacSettingsPane: View {
 struct MacConnectionView: View {
     var model: MacRemoteModel
     @State private var codeEntry = ""
+    @State private var showScanner = false
 
     private var pairing: MacConnection { model.pairing }
 
@@ -130,9 +131,14 @@ struct MacConnectionView: View {
                 }
             }
 
+            if !pairing.authenticated {
+                Button { showScanner = true } label: { Label("Scan pairing QR", systemImage: "qrcode.viewfinder") }
+                    .controlSize(.small)
+            }
+
             if pairing.needsCode {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Enter the code shown in faBolus on \(pairing.pairingPhone ?? "your iPhone") — Settings → Watch & Garmin → Mac remote → Pair a Mac.")
+                    Text("Scan the QR shown in faBolus on \(pairing.pairingPhone ?? "your iPhone") (Settings → Watch & Garmin → Remote access → Pair a remote), or type the code:")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {
@@ -182,12 +188,24 @@ struct MacConnectionView: View {
                 }
             }
 
-            Text("Keep both devices nearby (Bluetooth). Open faBolus on the iPhone at least once so it can advertise. First-time pairing needs the one-time code from the phone.")
+            Text("Keep both devices nearby (Bluetooth). On the iPhone, turn on Settings → Watch & Garmin → Remote access, then Pair a remote. Scan its QR here, or type the one-time code.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $showScanner) {
+            VStack(spacing: 12) {
+                Text("Scan the QR shown on your iPhone").font(.headline)
+                MacQRScanner { scanned in
+                    showScanner = false
+                    if let payload = PeerPairingPayload(qrString: scanned) { model.applyScannedPayload(payload) }
+                }
+                .frame(width: 360, height: 360)
+                Button("Cancel") { showScanner = false }
+            }
+            .padding()
+        }
     }
 
     private func submit() {

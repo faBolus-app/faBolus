@@ -82,6 +82,15 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
         provideCode(code)   // base restarts the handshake with the code
     }
 
+    /// A scanned pairing QR: select the encoded iPhone and use its high-entropy code.
+    func applyScannedPayload(_ payload: PeerPairingPayload) {
+        pairing.pairingError = nil
+        pairing.pairingPhone = payload.hostName
+        pairing.needsCode = false
+        pairing.connect(to: payload.hostName)
+        provideCode(payload.code)
+    }
+
     func cancelPairing() {
         pairing.needsCode = false
         pairing.pairingPhone = nil
