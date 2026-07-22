@@ -278,6 +278,9 @@ targets:
         com.apple.security.app-sandbox: true
         # BLE central (connects to the iPhone peripheral) — works when the phone is locked/backgrounded.
         com.apple.security.device.bluetooth: true
+        # Camera access to scan the pairing QR code. Required in the sandbox even with
+        # NSCameraUsageDescription — without it AVCaptureDevice access is denied and the scanner is black.
+        com.apple.security.device.camera: true
         com.apple.security.network.server: true
         # Shared container the app writes and the Mac widgets read. macOS App Groups are Team-ID
         # prefixed, so this uses $(TeamIdentifierPrefix) (unlike the iOS/watch group ids).
