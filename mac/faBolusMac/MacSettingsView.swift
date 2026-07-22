@@ -52,6 +52,7 @@ struct MacSettingsPane: View {
 
     private var menuBar: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Toggle("Hide stale reading (show \"—\")", isOn: $display.menuBarHideStale)
             Toggle("Color value by glucose range", isOn: $display.menuBarColorByRange)
             Toggle("Trend arrow", isOn: $display.menuBarShowTrend)
             Toggle("Delta from last reading", isOn: $display.menuBarShowDelta)

@@ -32,6 +32,9 @@ enum DisplaySettings {
     static var carbButtonInUnits: Bool { get { flag("macCarbButtonInUnits", true) } set { setFlag("macCarbButtonInUnits", newValue) } }
 
     // MARK: Menu bar
+    /// Hide a stale reading in the menu-bar item (show "—") instead of a greyed value, so an old
+    /// number can't be mistaken for current. Default on; the popover still shows it greyed.
+    static var menuBarHideStale: Bool { get { flag("mbHideStale", true) } set { setFlag("mbHideStale", newValue) } }
     /// Show the trend arrow next to the glucose value.
     static var menuBarShowTrend: Bool { get { flag("mbShowTrend", true) } set { setFlag("mbShowTrend", newValue) } }
     /// Color the menu-bar value by glucose range (low/in-range/high/urgent).
