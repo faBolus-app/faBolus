@@ -50,8 +50,8 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 | **Xcode 16+** | Builds the iPhone / Apple Watch app | [Install Xcode](build/xcode.md) |
 | **XcodeGen** | Generates the Xcode project from `project.yml` (`brew install xcodegen`) | [Install Xcode](build/xcode.md) |
 | **[PumpX2Kit](https://github.com/faBolus-app/PumpX2Kit)** | The protocol/Bluetooth core the app is built on (downloaded alongside the app) | [Build the app](build/build-app.md#download) |
-| **Connect IQ Mobile SDK for iOS** | Lets the iPhone talk to the Garmin watch (required by the app build) | [Build the app](build/build-app.md#connectiq) |
-| **Connect IQ device SDK** | Builds the Garmin watch app itself | [Build for Garmin](build/garmin-build.md) |
+| **Connect IQ Mobile SDK for iOS** *(optional)* | Lets the iPhone talk to a Garmin watch — only needed if you want the Garmin remote. If it's absent, the app auto-builds without Garmin. | [Build the app](build/build-app.md#connectiq) |
+| **Connect IQ device SDK** *(optional)* | Builds the Garmin watch app itself — only for Garmin users | [Build for Garmin](build/garmin-build.md) |
 
 !!! note "For contributors validating the protocol"
     Verifying the protocol core (PumpX2Kit's byte-exact tests) also needs a **JDK 17+** to run

@@ -21,12 +21,14 @@ Any Mac in Bluetooth range could reach the phone, so the iPhone **authenticates 
 accepts anything**. First-time pairing uses a **QR code** (or a typed one-time code) shown on the
 phone; both ends then store a long-term key and reconnect automatically.
 
-1. On the **iPhone**: turn on **Settings → Watch & Garmin → Remote access → “Allow remote devices”**
+1. On the **iPhone**: turn on **Settings → Remotes & devices → Remote access → “Allow remote devices”**
    (off by default — see the security note below). Open faBolus once so it starts advertising.
 2. On the **iPhone**: under **Remotes → Pair a remote**, choose **Pair with QR code** (recommended)
    or a typed code (valid ~5 minutes).
-3. On the **Mac**: menu-bar item → the **gear** → **Connection** → **Scan pairing QR** (webcam) — or
-   pick your iPhone under **Available iPhones**, click **Pair**, and type the code. macOS asks for
+3. On the **Mac**: menu-bar item → the **gear** → **Connection** → **Scan pairing QR** — or
+   pick your iPhone under **Available iPhones**, click **Pair**, and type the code. The QR scanner
+   opens in **its own window** (not inside the menu-bar popover), so the app stays in the menu bar
+   while you scan; **Cancel** or a successful scan closes just that window. macOS asks for
    **Bluetooth** (and, for QR, **Camera**) permission the first time — allow it.
 
 "Connected" (green) means the Mac is **authenticated**; it reconnects on its own from then on.

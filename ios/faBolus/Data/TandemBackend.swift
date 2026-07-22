@@ -13,19 +13,21 @@ import PumpX2BLE
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class TandemBackend: NSObject, PumpBackend {
-    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Most advanced control
-    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill) is
-    /// genuinely Mobi-only in the protocol (those requests are `supportedDevices=MOBI_ONLY`), so it's
-    /// advertised only once we detect a Mobi. **Time/date sync is the exception**: `ChangeTimeDateRequest`
-    /// is `SupportedDevices.ALL`, so it works on t:slim X2 too and is enabled for both models. The UI
-    /// still additionally gates control on `AppSettings.advancedControlEnabled`.
+    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Advanced control
+    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
+    /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
+    /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
+    ///
+    /// Note on time sync: `ChangeTimeDateRequest` is *unannotated* in the reverse-engineered protocol,
+    /// so it falls back to `SupportedDevices.ALL` — but that default is an assumption, not a tested
+    /// guarantee. On real t:slim X2 hardware the signed time write is **not** honored (the pump doesn't
+    /// change its clock, and `sendControl` can't tell — it doesn't inspect the response status), so
+    /// time sync stays Mobi-only.
     public var capabilities: PumpCapabilities {
         var caps = snapshot.isMobi ? PumpCapabilities.mobiAdvanced : PumpCapabilities.full
         // t:slim X2 firmware silently rejects *remote* notification dismissal (Tandem's own app
         // disables it there); only Mobi honors it. On t:slim, "Clear" only snoozes locally in faBolus.
         caps.supportsRemoteAlertDismiss = snapshot.isMobi
-        // Time/date sync is not model-gated in the protocol — enable it for t:slim X2 as well as Mobi.
-        caps.supportsTimeSync = true
         return caps
     }
     public private(set) var snapshot = PumpSnapshot()

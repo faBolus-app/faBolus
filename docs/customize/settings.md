@@ -17,13 +17,15 @@ Watch and Garmin remotes so all three behave consistently.
 
 ## Bolus defaults & increments
 
-- **Default bolus mode** — open the bolus screen in **Carbs** or **Units**.
+- **Phone default mode** — open the bolus screen on the phone in **Carbs** or **Units**.
+- **Watch/Garmin default mode** — the same choice for the remotes, set independently of the phone
+  (previously a single shared setting).
 - **Bolus increment** — the step size for the units stepper (e.g. 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U).
 - **Carb increment** — the step size for carb entry (e.g. 1 / 5 / 10 / 15 g).
 - **Watch & Garmin increments** — a separate set applied on the remotes, so the wrist can use
   bigger steps than the phone.
 
-These propagate to the Apple Watch and Garmin (default mode on open, and the − / + step).
+The remote defaults and increments propagate to the Apple Watch and Garmin.
 
 ## Dashboard chart
 
@@ -44,6 +46,18 @@ The **Connect** control adapts to your state — first-time pairing (enter the 6
 **Connect (saved pairing)** to reconnect with no code, and **Re-pair with new code** after a pump
 reset. The app auto-reconnects to a saved pump and uses iOS state restoration in the background.
 See [Pairing](../setup/pairing.md).
+
+## Pump clock (Tandem Mobi only)
+
+!!! note "Mobi only"
+    This section appears **only on Tandem Mobi**. The t:slim X2 does not accept a time write from
+    faBolus, so the feature is hidden there.
+
+Under **Settings → Pump → Pump clock**:
+
+- **Keep pump clock synced to phone** (default **on**) — keeps the Mobi's clock matched to the phone.
+  It writes the time **at most once a day**, and **immediately** on a time-zone or clock change.
+- **Sync pump time now** — a button to push the phone's current time to the pump on demand.
 
 ## Garmin remote
 

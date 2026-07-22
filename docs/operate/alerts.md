@@ -24,8 +24,8 @@ The app polls the pump's notification bitmaps frequently and groups them by seve
 
 Notifications appear most-serious first, each with a **Clear** button (a signed dismiss sent to
 the pump). On the Apple Watch and Garmin, the **Alerts** screen shows the same list — tap a row to
-clear it, and the watch relays the request to the phone. When connected, a small diagnostic line
-shows the raw pump bitmaps and poll count so you can confirm the pump is reporting.
+clear it, and the watch relays the request to the phone. (The raw pump bitmaps and poll count are no
+longer shown on the Alerts screen — they now live only in the hidden debug panel.)
 
 ## Condition-based (CGM) alerts
 

@@ -287,8 +287,8 @@ struct PumpSettingsView: View {
                     Button("Forget pairing", role: .destructive) { model.forgetPairing() }
                 }
             }
-            // Pump clock sync works on every Tandem model (t:slim X2 + Mobi) and isn't advanced control,
-            // so it's its own section — no need to enable advanced control to use it.
+            // Pump clock sync isn't advanced control, so it's its own section — no need to enable
+            // advanced control. Only shown on pumps that honor the time write (Mobi; t:slim X2 rejects it).
             if model.capabilities.supportsTimeSync {
                 Section {
                     Toggle("Keep pump clock synced to phone", isOn: $settings.autoSyncPumpTime)
@@ -297,7 +297,7 @@ struct PumpSettingsView: View {
                     } label: { Label("Sync pump time now", systemImage: "clock.arrow.2.circlepath") }
                         .disabled(model.snapshot.connection != .connected)
                 } header: { Text("Pump clock") } footer: {
-                    Text("Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST). Works on t:slim X2 and Mobi.")
+                    Text("Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST).")
                 }
             }
             // Advanced control is Mobi-only, so the whole section is hidden unless a Mobi is paired

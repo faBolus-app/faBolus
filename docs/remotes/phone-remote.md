@@ -14,14 +14,17 @@ it relays confirmed commands to the host over an encrypted Bluetooth link.
 
 **On the host (child's) phone**
 
-1. **Settings → Watch & Garmin → Remote access → “Allow remote devices”** (off by default).
+1. **Settings → Remotes & devices → Remote access → “Allow remote devices”** (off by default).
 2. **Remotes → Pair a remote → Pair with QR code** (recommended) — or a typed 6-digit code.
 3. Choose what this remote may do (see [permissions](#security-permissions)).
 
 **On the remote (parent's) phone**
 
-1. **Settings → Watch & Garmin → Control another phone.**
-2. **Scan the host's QR code** (or pick the host under *Nearby hosts* and type the code).
+1. **Settings → Remotes & devices → Control another phone.**
+2. **Scan the host's QR code** (or pick the host under *Nearby hosts* and type the code). Pairing is
+   **by the code** — the remote connects to any nearby faBolus host, so it works even when the host
+   phone is **locked or backgrounded**. The device list prunes devices that are no longer nearby, and
+   a backgrounded host shows a readable **“faBolus device (xxxx)”** label instead of a raw UUID.
 3. Once paired, you'll see the host's status and — if the host granted it — can bolus, cancel, and
    clear alerts. Pairing is remembered; it reconnects automatically.
 

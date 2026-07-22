@@ -25,6 +25,16 @@ When it's on, blocked actions simply no-op with a short note on whichever device
 The default posture is **block anything that gives insulin, allow the safe things** — then re-enable
 specific items if you want (tap *Unlock to edit* and enter the PIN).
 
+## Require a remote to approve boluses
+
+Inside the Child mode screen (shown only while child mode is on) is **Require a remote to approve my
+bolus**. When it's on, a bolus started on the child's phone doesn't deliver immediately — it **waits for
+a paired parent device (Mac or iPhone) to approve it** within about 60 seconds. If no approval arrives
+in time, the bolus is **cancelled** and nothing is delivered.
+
+It only takes effect while child mode is enabled, and it needs **remote Bluetooth turned on** with a
+**parent device already paired**. (This was previously a standalone remote setting; it now lives here.)
+
 !!! info "It covers every device"
     Enforcement lives in the phone app, which owns the pump link — so a blocked bolus can't be driven
     from the watch, Garmin, or a widget either. If **Change settings** is blocked, the whole Settings

@@ -4,6 +4,11 @@ A modern remote at parity with the phone and Garmin. **The watch never touches t
 PumpX2Kit runs on the iPhone, and the watch relays commands over WatchConnectivity. To install
 it, see [Add the Apple Watch app](../build/apple-watch-build.md).
 
+!!! note "The watch app is an optional build"
+    The phone app can be built without the watch app (`FABOLUS_WATCH=0`). When it is, the **Apple
+    Watch** section under **Settings → Remotes & devices** shows an “Apple Watch app not included”
+    note — rebuild with the watch app to enable it.
+
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
   ![Apple Watch glance](../assets/screenshots/watch-glance.svg)
@@ -43,14 +48,14 @@ it, see [Add the Apple Watch app](../build/apple-watch-build.md).
 </div>
 
 - Tap **Bolus**, pick **Carbs** or **Units** (default from Settings), set the amount with the
-  **Digital Crown** (step = the *Watch & Garmin* increment from Settings), then **Bolus**.
+  **Digital Crown** (step = the *Remotes & devices* increment from Settings), then **Bolus**.
 - Confirm on the watch (a deliberate confirmation). The iPhone then delivers
   **directly** through the validated signed path — like the Garmin remote — converting carbs to
   units with the pump's calculator. You can **Cancel** while it's delivering.
 - If the iPhone is out of range, the request is queued/failed cleanly — never silently delivered.
 
 The watch honors its own bolus/carb increments and default mode, set in
-**iPhone → Settings → Watch & Garmin increments** and **Default mode**.
+**iPhone → Settings → Remotes & devices increments** and **Default mode**.
 
 ## Watch-face complication
 

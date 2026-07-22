@@ -30,7 +30,8 @@ takes about a minute (see [Keeping the app running](updating.md)).
 ## The whole process, start to finish
 
 Five short chapters. The first three get the app on your iPhone; the last two are optional
-watches.
+watches. Both watches are optional at build time — the phone app builds and runs fine on its own,
+and you can add either one later.
 
 <div class="grid cards" markdown>
 

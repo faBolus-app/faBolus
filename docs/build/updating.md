@@ -39,19 +39,19 @@ When the project gets updates, refresh your copy with **GitHub Desktop** — no 
 <li>Open <strong>GitHub Desktop</strong>.</li>
 <li>Pick <strong>PumpX2Kit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
 <li>Do the same for <strong>faBolus</strong>.</li>
-<li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>xcodegen generate</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
+<li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>./scripts/generate-project.sh</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
 </ol>
 
 ??? note "Advanced: update from the Terminal (optional)"
     ```sh
     cd ~/Documents/faBolus/PumpX2Kit && git pull --recurse-submodules
     cd ~/Documents/faBolus/faBolus && git pull
-    xcodegen generate
+    ./scripts/generate-project.sh
     open faBolus.xcodeproj
     ```
 
 If a build ever fails right after updating, see [Troubleshooting](../troubleshoot.md) — the usual
-fixes are re-fetching the helper files and re-running `xcodegen generate`.
+fixes are re-fetching the helper files and re-running `./scripts/generate-project.sh`.
 
 ## Updating the watch and Garmin apps
 

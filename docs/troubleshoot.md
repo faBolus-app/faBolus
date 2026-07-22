@@ -69,7 +69,20 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     high). Also note the dismiss path isn't fully verified yet — see
     [Alerts & alarms](operate/alerts.md).
 
-## Watch & Garmin
+## Remotes & devices
+
+??? question "Phone-to-phone pairing doesn't connect when the host is locked"
+    This is fixed. Pairing is now **by the code**: the remote connects to any nearby faBolus host, so
+    scanning the QR or typing the PIN works even when the host phone is **locked or backgrounded**. The
+    device list also prunes hosts that are no longer nearby and shows a readable **“faBolus device
+    (xxxx)”** label for a backgrounded host instead of a long raw UUID. Make sure both phones have
+    Bluetooth on and are in range, and that the host has **Allow remote devices** turned on.
+
+??? question "The Mac QR scanner shows a black window, or the app seems to quit when scanning"
+    Both are fixed. The Mac app now has the camera entitlement, so scanning prompts for macOS camera
+    permission the first time (allow it) and shows the live camera instead of black. The scanner also
+    opens in **its own window** rather than inside the menu-bar popover — **Cancel** or a successful
+    scan closes just that window and the app stays in the menu bar.
 
 ??? question "The Apple Watch app won't install"
     Watch installs are finicky: keep the watch on its charger and unlocked, install the phone app
