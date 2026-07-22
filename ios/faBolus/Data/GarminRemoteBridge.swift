@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+#if GARMIN
 import ConnectIQ
 
 /// Bridges the Garmin venu3s (Connect IQ) remote to the iPhone host. Receives the watch app's
@@ -153,3 +154,17 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
     }
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {}
 }
+
+#else
+
+/// Stub used when the app is built **without** the Garmin Connect IQ SDK (the `GARMIN` compile flag is
+/// off because the SDK wasn't present at build time — see `scripts/generate-project.sh`). The Garmin
+/// remote is unavailable; the Remotes & devices screen shows why. Keeps the same surface `App` uses
+/// (`init(model:)` + `handleOpenURL(_:)`) so nothing else changes.
+@MainActor
+final class GarminRemoteBridge {
+    init(model: AppModel) { model.garminStatus = nil }
+    func handleOpenURL(_ url: URL) {}
+}
+
+#endif

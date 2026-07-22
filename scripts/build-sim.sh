@@ -8,7 +8,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-xcodegen generate >/dev/null
+# Auto-detects the Garmin SDK and honors FABOLUS_WATCH so the app builds without them.
+./scripts/generate-project.sh >/dev/null
 
 xcodebuild \
   -project faBolus.xcodeproj \

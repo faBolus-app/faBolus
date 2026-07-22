@@ -115,14 +115,19 @@ Full walkthrough: [docs/build](docs/build/index.md). In short:
 ```sh
 git clone --recurse-submodules https://github.com/faBolus-app/PumpX2Kit.git
 git clone https://github.com/faBolus-app/faBolus.git
-# Place the Connect IQ Mobile SDK where project.yml expects it (see docs), then:
 cd faBolus
-xcodegen generate
-open faBolus.xcodeproj      # set your Team under Signing & Capabilities, then Run
+./scripts/generate-project.sh      # generates faBolus.xcodeproj (auto-detects the Garmin SDK)
+open faBolus.xcodeproj             # set your Team under Signing & Capabilities, then Run
 ```
 
-Requires **Xcode 16+**, an **Apple ID** (free works; paid recommended), and — because the app
-links Garmin's companion SDK — the **Connect IQ Mobile SDK for iOS**.
+Requires **Xcode 16+** and an **Apple ID** (free works; paid recommended).
+
+**Garmin and the Apple Watch are optional at build time.** `scripts/generate-project.sh` auto-detects
+the **Connect IQ Mobile SDK for iOS**: if it's not present, the app builds **without** Garmin (no SDK
+needed) and shows a note where Garmin pairing would be. To use a Garmin watch, place the Connect IQ
+SDK where `project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script. To
+build the phone app **without the Apple Watch** app, run `FABOLUS_WATCH=0 ./scripts/generate-project.sh`
+(force Garmin on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works and includes both.
 
 ## Status
 

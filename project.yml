@@ -24,10 +24,12 @@ packages:
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
+  # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
     # Garmin Connect IQ Mobile SDK for iOS (binary xcframework). Not committed (Garmin
     # license). Place it where the docs describe. Path is relative to this repo.
     path: ../../vendor/connectiq-companion-app-sdk-ios-1.8.0
+  # <<< GARMIN
 
 targets:
   # iOS host app — owns the pump connection (PumpX2Kit) and the main HUD.
@@ -54,13 +56,17 @@ targets:
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
+      # >>> GARMIN (stripped by scripts/generate-project.sh when the SDK is absent)
       - package: ConnectIQ
         product: ConnectIQ
+      # <<< GARMIN
       # Embeds the WidgetKit extension (Lock Screen + Home Screen widgets).
       - target: faBolusWidgets
+      # >>> WATCH (stripped by scripts/generate-project.sh when FABOLUS_WATCH=0)
       # Embeds the watchOS companion app so it installs to the paired watch with the phone app.
       - target: faBolusWatch
         embed: true
+      # <<< WATCH
     entitlements:
       path: ios/faBolus/faBolus.entitlements
       properties:
@@ -125,6 +131,14 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+      # Feature compile flags. Defaults enable Garmin (ConnectIQ) + the embedded Watch app;
+      # scripts/generate-project.sh removes the GARMIN / WATCH_EMBEDDED tokens (and the package/embed
+      # above) when the Garmin SDK is absent or FABOLUS_WATCH=0, so the app compiles without them.
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # (The glucose complication extension is temporarily NOT embedded: it needs the App Group

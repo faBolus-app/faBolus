@@ -363,6 +363,7 @@ struct RemotesSettingsView: View {
     ]
     var body: some View {
         Form {
+            #if GARMIN
             Section {
                 Button { model.setupGarmin?() } label: {
                     Label("Set up Garmin remote", systemImage: "applewatch.radiowaves.left.and.right")
@@ -379,6 +380,22 @@ struct RemotesSettingsView: View {
             } header: { Text("Garmin remote") } footer: {
                 Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
             }
+            #else
+            Section {
+                Label("Garmin remote unavailable", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            } header: { Text("Garmin remote") } footer: {
+                Text("This build was compiled **without the Garmin Connect IQ SDK**, so the Garmin remote can't be enabled. To use a Garmin watch, install the Connect IQ SDK and rebuild (see the README / scripts/generate-project.sh).")
+            }
+            #endif
+            #if !WATCH_EMBEDDED
+            Section {
+                Label("Apple Watch app not included", systemImage: "applewatch.slash")
+                    .foregroundStyle(.secondary)
+            } header: { Text("Apple Watch") } footer: {
+                Text("This build was compiled without the Apple Watch app (FABOLUS_WATCH=0), so nothing installs to a paired watch. Rebuild with the watch enabled (the default) to use it — see scripts/generate-project.sh.")
+            }
+            #endif
             Section {
                 Picker("Default mode", selection: $settings.watchDefaultBolusMode) {
                     Text("Carbs").tag(BolusMode.carbs)
