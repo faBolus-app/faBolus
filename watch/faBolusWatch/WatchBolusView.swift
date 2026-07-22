@@ -56,8 +56,12 @@ struct WatchBolusView: View {
                     Label("Bolus \(amountLabel)", systemImage: "drop.fill")
                 }
                 .tint(.indigo)
-                .disabled(amount <= 0 || !model.reachable)
+                .disabled(amount <= 0 || !model.reachable || !model.pumpConnected)
 
+                if model.reachable && !model.pumpConnected {
+                    Label("Pump not connected", systemImage: "wifi.slash")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
                 Text("Experimental").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.top, 4)

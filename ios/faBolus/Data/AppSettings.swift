@@ -78,6 +78,19 @@ public final class AppSettings {
     /// `capabilities.supportsTimeSync`; not insulin-affecting and independent of `advancedControlEnabled`.
     public var autoSyncPumpTime: Bool { didSet { d.set(autoSyncPumpTime, forKey: "autoSyncPumpTime") } }
 
+    /// **Auto Exercise mode** — when a workout starts (via the Shortcuts automation the user sets up),
+    /// switch the pump into Control-IQ Exercise mode, and back to normal when it ends. **Default OFF.**
+    /// Auto-switching applies only to a **Mobi** (t:slim X2 can't; it gets a reminder if `modeReminders`
+    /// is on). See [[jwoglom-parity-roadmap]].
+    public var autoExerciseMode: Bool { didSet { d.set(autoExerciseMode, forKey: "autoExerciseMode") } }
+    /// **Auto Sleep mode** — when the iPhone enters Sleep Focus (via the Shortcuts automation), switch
+    /// the pump into Sleep mode, and back when it ends. **Default OFF.** Mobi-only auto-switch.
+    public var autoSleepMode: Bool { didSet { d.set(autoSleepMode, forKey: "autoSleepMode") } }
+    /// **Mode reminders** — when an auto mode-switch can't be applied automatically (a t:slim, or the
+    /// pump isn't connected), post a notification reminding the user to switch modes on the pump
+    /// themselves. **Default OFF.**
+    public var modeReminders: Bool { didSet { d.set(modeReminders, forKey: "modeReminders") } }
+
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
     /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
     /// cost. Unlike the Apple Watch / Garmin links (bound to your own paired device, not discoverable
@@ -255,6 +268,9 @@ public final class AppSettings {
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
         autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
+        autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
+        autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
+        modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
@@ -312,6 +328,9 @@ public final class AppSettings {
             "glucoseStaleMinutes": .int(glucoseStaleMinutes),
             "advancedControlEnabled": .bool(advancedControlEnabled),
             "autoSyncPumpTime": .bool(autoSyncPumpTime),
+            "autoExerciseMode": .bool(autoExerciseMode),
+            "autoSleepMode": .bool(autoSleepMode),
+            "modeReminders": .bool(modeReminders),
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
@@ -360,6 +379,9 @@ public final class AppSettings {
         if let v = i("glucoseStaleMinutes") { glucoseStaleMinutes = v }
         if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
         if let v = b("advancedControlEnabled") { advancedControlEnabled = v }
+        if let v = b("autoExerciseMode") { autoExerciseMode = v }
+        if let v = b("autoSleepMode") { autoSleepMode = v }
+        if let v = b("modeReminders") { modeReminders = v }
         if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }

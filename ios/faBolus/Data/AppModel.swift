@@ -273,10 +273,16 @@ public final class AppModel {
     /// Human-readable Garmin remote status (device name / selection result) for the HUD.
     public var garminStatus: String?
 
+    /// Weak reference to the live model, so headless App Intents (activity/sleep mode automation)
+    /// can reach it when the app is running. nil when the app process isn't alive — the intent then
+    /// falls back to a queued request + reminder (see `ModeAutomation`).
+    public static weak var shared: AppModel?
+
     public init(source: PumpBackend) {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
+        Self.shared = self
         source.onChange = { [weak self] in self?.refresh() }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
         for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
@@ -343,6 +349,7 @@ public final class AppModel {
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
+        if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
         pushStatusIfNeeded()
         if alertsChanged {
             onNotificationsChange?(activeNotifications)
@@ -434,6 +441,10 @@ public final class AppModel {
             && !AppSettings.shared.phoneReadOnly   // read-only hides the Pump Control entry entirely
     }
 
+    /// True only while the pump is actively connected — the gate every pump-touching action + control
+    /// screen uses so nothing that requires the pump is tappable when it isn't there.
+    public var pumpReady: Bool { snapshot.connection == .connected }
+
     private func runControl(_ op: () async throws -> Void) async {
         if childBlocked(.advancedControl) { refresh(); return }
         if readOnlyBlocked("Pump control") { refresh(); return }
@@ -450,6 +461,29 @@ public final class AppModel {
     }
     public func stopTempBasal() async { await runControl { try await source.stopTempBasal() } }
     public func setMode(bitmap: Int) async { await runControl { try await source.setMode(bitmap: bitmap) } }
+    /// Pump user-mode toggles. The **command** bitmap (wire contract, see PumpX2
+    /// `SetModesRequest.ModeCommand`) is `sleepOn=1, sleepOff=2, exerciseOn=3, exerciseOff=4` —
+    /// distinct from the *reported* state `snapshot.controlIQMode` (0=normal, 1=sleep, 2=exercise).
+    /// Mobi-only + Control-IQ-must-be-on; gated in the UI by `advancedControlAllowed`.
+    public func setSleepMode(_ on: Bool) async { await setMode(bitmap: on ? 1 : 2) }
+    public func setExerciseMode(_ on: Bool) async { await setMode(bitmap: on ? 3 : 4) }
+    /// Return to normal by clearing whichever special mode is currently active.
+    public func setNormalMode() async {
+        switch snapshot.controlIQMode {
+        case 1: await setSleepMode(false)
+        case 2: await setExerciseMode(false)
+        default: break
+        }
+    }
+    /// Whether pump mode-switching is currently possible (advanced control on, Mobi, connected).
+    public var canControlModes: Bool { advancedControlAllowed && capabilities.supportsModes && pumpReady }
+    /// Apply an activity/sleep mode toggle (used by the Shortcuts automation via `ModeAutomation`).
+    func applyMode(_ mode: ModeAutomation.Mode, on: Bool) async {
+        switch mode {
+        case .exercise: await setExerciseMode(on)
+        case .sleep: await setSleepMode(on)
+        }
+    }
     public func playFindMyPump() async { await runControl { try await source.playFindMyPump() } }
     /// Read the G6 transmitter ID from the pump (CGM-failover auto-fill). nil if unavailable.
     public func readG6TransmitterId() async -> String? { await source.readG6TransmitterId() }
@@ -545,7 +579,7 @@ public final class AppModel {
 
     /// Whether backed-up pump settings can be auto-applied to the CURRENT pump (Mobi + Advanced control
     /// on + not read-only). On t:slim the caller shows them for manual re-entry instead.
-    public var canApplyPumpSettings: Bool { advancedControlAllowed }
+    public var canApplyPumpSettings: Bool { advancedControlAllowed && pumpReady }
 
     /// Auto-apply backed-up therapy settings to the current pump — **Mobi only**, after the caller's
     /// review + confirmation. **Creates** each profile (with its segments), then sets Control-IQ + max

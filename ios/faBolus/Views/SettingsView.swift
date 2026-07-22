@@ -140,8 +140,8 @@ enum SettingsIndex {
     }
     static let entries: [Entry] = [
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
-        .init(title: "iPhone increments", keywords: "bolus carb step 0.05", category: .bolus),
-        .init(title: "Watch & Garmin increments", keywords: "bolus carb step remote", category: .bolus),
+        .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
+        .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
         .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
@@ -155,6 +155,7 @@ enum SettingsIndex {
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
+        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
@@ -182,7 +183,7 @@ struct BolusSettingsView: View {
                 }
             } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Apple Watch and Garmin bolus screens.") }
             Section {
-                Picker("Bolus increment", selection: $settings.bolusIncrement) {
+                Picker("Unit increment", selection: $settings.bolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
                 }
                 Picker("Carb increment", selection: $settings.carbIncrement) {
@@ -190,7 +191,7 @@ struct BolusSettingsView: View {
                 }
             } header: { Text("iPhone increments") } footer: { Text("Steps for the iPhone bolus screen and the Home-Screen widget.") }
             Section {
-                Picker("Bolus increment", selection: $settings.watchBolusIncrement) {
+                Picker("Unit increment", selection: $settings.watchBolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
                 }
                 Picker("Carb increment", selection: $settings.watchCarbIncrement) {
@@ -331,6 +332,16 @@ struct PumpSettingsView: View {
                     Text("Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation.")
                 }
             }
+            Section {
+                Toggle("Auto Exercise mode on workout", isOn: $settings.autoExerciseMode)
+                Toggle("Auto Sleep mode on Sleep Focus", isOn: $settings.autoSleepMode)
+                Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
+                NavigationLink { ModeAutomationHelpView() } label: {
+                    Label("How to set up the automations", systemImage: "wand.and.stars")
+                }
+            } header: { Text("Activity & sleep automation") } footer: {
+                Text("Switch the pump into **Exercise** mode when a workout starts and **Sleep** mode when your iPhone enters Sleep Focus, via Apple Shortcuts automations you set up once. **Auto-switching is Mobi-only** (needs Advanced control on); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default.")
+            }
             if BackendRegistry.enabled.count > 1 {
                 Section {
                     Picker("Pump backend", selection: $selectedBackend) {
@@ -418,7 +429,7 @@ struct RemotesSettingsView: View {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-                Picker("Bolus increment", selection: $settings.watchBolusIncrement) {
+                Picker("Unit increment", selection: $settings.watchBolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
                 }
                 Picker("Carb increment", selection: $settings.watchCarbIncrement) {

@@ -54,7 +54,7 @@ it, see [Add the Apple Watch app](../build/apple-watch-build.md).
   units with the pump's calculator. You can **Cancel** while it's delivering.
 - If the iPhone is out of range, the request is queued/failed cleanly — never silently delivered.
 
-The watch honors its own bolus/carb increments and default mode, set in
+The watch honors its own unit/carb increments and default mode, set in
 **iPhone → Settings → Remotes & devices increments** and **Default mode**.
 
 ## Watch-face complication

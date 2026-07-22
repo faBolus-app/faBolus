@@ -99,6 +99,7 @@ nav:
       - Bolus & cancel: operate/bolus.md
       - Alerts & alarms: operate/alerts.md
       - CGM failover: operate/cgm-failover.md
+      - Activity & sleep automation: operate/activity-sleep-automation.md
       - Child (locked) mode: operate/child-mode.md
       - Backup & restore: operate/backup-restore.md
   - Customize:

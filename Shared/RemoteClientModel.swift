@@ -63,6 +63,11 @@ class RemoteClientModel {
         reachable = link.isReachable
     }
 
+    /// True when the host reports the pump actively connected (or mid-delivery) — the gate for any
+    /// action that needs the pump. Mirrors the host's `pumpReady`; the strings are
+    /// `PumpConnectionState.rawValue` ("Connected" / "Delivering…").
+    var pumpConnected: Bool { connection == "Connected" || connection == "Delivering…" }
+
     /// Called when the link's reachability changes. Base updates `reachable`; subclasses override to
     /// add behavior (e.g. start/stop a direct-CGM failover) and must call `super`.
     func reachabilityDidChange(_ r: Bool) { reachable = r }

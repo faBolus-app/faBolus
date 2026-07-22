@@ -51,10 +51,16 @@ struct WatchGlanceView: View {
                     .font(.caption2)
                     .foregroundStyle(model.reachable ? .green : .orange)
 
+                if model.reachable && !model.pumpConnected {
+                    Label("Pump not connected", systemImage: "wifi.slash")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+
                 if !model.readOnly {
                     Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
                         .tint(.indigo)
-                        .disabled(!model.reachable)
+                        // Needs both the phone link AND the pump actually connected.
+                        .disabled(!model.reachable || !model.pumpConnected)
                 }
             }
             .padding(.top, 4)

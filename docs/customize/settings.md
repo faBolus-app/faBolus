@@ -20,7 +20,7 @@ Watch and Garmin remotes so all three behave consistently.
 - **Phone default mode** — open the bolus screen on the phone in **Carbs** or **Units**.
 - **Watch/Garmin default mode** — the same choice for the remotes, set independently of the phone
   (previously a single shared setting).
-- **Bolus increment** — the step size for the units stepper (e.g. 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U).
+- **Unit increment** — the step size for the units stepper (e.g. 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U).
 - **Carb increment** — the step size for carb entry (e.g. 1 / 5 / 10 / 15 g).
 - **Watch & Garmin increments** — a separate set applied on the remotes, so the wrist can use
   bigger steps than the phone.
@@ -58,6 +58,13 @@ Under **Settings → Pump → Pump clock**:
 - **Keep pump clock synced to phone** (default **on**) — keeps the Mobi's clock matched to the phone.
   It writes the time **at most once a day**, and **immediately** on a time-zone or clock change.
 - **Sync pump time now** — a button to push the phone's current time to the pump on demand.
+
+## Activity & sleep automation
+
+Under **Settings → Pump → Activity & sleep automation** — switch the pump into **Exercise** mode on a
+workout and **Sleep** mode when the iPhone enters Sleep Focus, via Apple Shortcuts automations. All
+**off by default**; auto-switching is **Mobi only** (t:slim gets an optional reminder). See
+[Activity & sleep automation](../operate/activity-sleep-automation.md) for the full setup.
 
 ## Garmin remote
 
