@@ -14,8 +14,10 @@ struct MacQRScanner: NSViewControllerRepresentable {
     final class ScannerVC: NSViewController, AVCaptureMetadataOutputObjectsDelegate {
         var onScan: ((String) -> Void)?
         private let session = AVCaptureSession()
+        private let metadataOutput = AVCaptureMetadataOutput()
         private var preview: AVCaptureVideoPreviewLayer?
         private var didScan = false
+        private var configured = false
 
         override func loadView() { view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 360)) }
 
@@ -23,15 +25,17 @@ struct MacQRScanner: NSViewControllerRepresentable {
             super.viewDidLoad()
             view.wantsLayer = true
             view.layer?.backgroundColor = .black
+            session.beginConfiguration()
             guard let device = AVCaptureDevice.default(for: .video),
                   let input = try? AVCaptureDeviceInput(device: device),
-                  session.canAddInput(input) else { return }
+                  session.canAddInput(input), session.canAddOutput(metadataOutput) else {
+                session.commitConfiguration(); return
+            }
             session.addInput(input)
-            let output = AVCaptureMetadataOutput()
-            guard session.canAddOutput(output) else { return }
-            session.addOutput(output)
-            output.setMetadataObjectsDelegate(self, queue: .main)
-            output.metadataObjectTypes = [.qr]
+            session.addOutput(metadataOutput)
+            metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
+            session.commitConfiguration()
+            configured = true
             let preview = AVCaptureVideoPreviewLayer(session: session)
             preview.videoGravity = .resizeAspectFill
             preview.frame = view.bounds
@@ -42,7 +46,19 @@ struct MacQRScanner: NSViewControllerRepresentable {
 
         override func viewWillAppear() {
             super.viewWillAppear()
-            if !session.isRunning { DispatchQueue.global(qos: .userInitiated).async { [session] in session.startRunning() } }
+            guard configured, !session.isRunning else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                self.session.startRunning()
+                // `availableMetadataObjectTypes` is only populated once the session is running with an
+                // active connection (macOS differs from iOS). Setting `.qr` before that throws
+                // NSInvalidArgumentException and hard-crashes — so set it here, guarded.
+                DispatchQueue.main.async {
+                    if self.metadataOutput.availableMetadataObjectTypes.contains(.qr) {
+                        self.metadataOutput.metadataObjectTypes = [.qr]
+                    }
+                }
+            }
         }
         override func viewWillDisappear() {
             super.viewWillDisappear()

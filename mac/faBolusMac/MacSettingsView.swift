@@ -8,19 +8,19 @@ struct MacSettingsPane: View {
     var model: MacRemoteModel
     @Bindable var display: MacDisplayModel
 
-    @State private var showConnection = true
     @State private var showMenuBar = false
     @State private var showBolus = false
     @State private var showDetails = false
     @State private var showAppearance = false
+    @State private var showConnection = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            group("Connection", $showConnection) { MacConnectionView(model: model) }
             group("Menu bar", $showMenuBar) { menuBar }
             group("Bolus entry", $showBolus) { bolus }
             group("Status details", $showDetails) { details }
             group("Appearance", $showAppearance) { appearance }
+            group("Connection", $showConnection) { MacConnectionView(model: model) }
         }
         .toggleStyle(.switch)
         .controlSize(.small)
@@ -128,8 +128,10 @@ struct MacConnectionView: View {
                 Circle().fill(statusColor).frame(width: 9, height: 9)
                 Text(statusText).font(.callout)
                 Spacer()
-                if let paired = pairing.pairedPhone {
-                    Text(paired).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                // Prefer the live Bluetooth name (e.g. "Tia's iPhone") over the persisted paired name
+                // (often the generic "iPhone" from the QR payload).
+                if let name = pairing.connectedName ?? pairing.pairedPhone {
+                    Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
 

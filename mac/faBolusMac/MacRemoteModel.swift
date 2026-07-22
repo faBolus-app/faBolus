@@ -56,6 +56,7 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)   // base drives the handshake + ends the sealed session
         pairing?.connected = r
+        pairing?.connectedName = r ? ble.connectedPeerName : nil
         if !r { pairing?.authenticated = false }
     }
 

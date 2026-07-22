@@ -14,6 +14,10 @@ final class MacConnection {
     var discoveredPhones: [String] = []
     /// The paired iPhone's name (persisted), or nil if none chosen yet.
     var pairedPhone: String?
+    /// The live Bluetooth name of the connected iPhone (e.g. "Tia's iPhone"). More reliable than the
+    /// persisted `pairedPhone`, which comes from the QR payload and is often the generic "iPhone"
+    /// (iOS hides the real device name from apps without a special entitlement). Shown when connected.
+    var connectedName: String?
     /// Whether the BLE link to the paired iPhone is up (transport-level).
     var connected: Bool = false
 

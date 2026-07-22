@@ -197,7 +197,11 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     }
 
     private func emitPeers() {
-        let names = Set(discovered.values.map { $0.name }).sorted()
+        // Exclude the peer we're already connected to — it's shown as the connected device, not as a
+        // "pair me" option. Otherwise the same phone appears twice (its BLE name in the list vs. the
+        // paired name in the header), which reads as two devices.
+        let connectedId = connectedPeripheral?.identifier
+        let names = Set(discovered.values.filter { $0.peripheral.identifier != connectedId }.map { $0.name }).sorted()
         Task { @MainActor in self.onPeersChanged?(names) }
     }
 
@@ -318,6 +322,7 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
         connectedPeripheral = peripheral
         peripheral.delegate = self
         peripheral.discoverServices([Self.serviceUUID])
+        emitPeers()   // drop the now-connected peer from the discoverable list
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
@@ -326,6 +331,7 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
             connectedPeripheral = nil; commandChar = nil; writing = false; txChunks.removeAll(); rxBuffer.removeAll()
         }
         reportReachability()
+        emitPeers()   // the peer is discoverable again now that it's disconnected
         // Auto-reconnect to the (or any) faBolus peer when the remote still wants a connection.
         if wantsConnection { connectBestCandidate() }
     }
