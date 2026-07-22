@@ -13,6 +13,8 @@ public final class AppSettings {
     public static let shared = AppSettings()
 
     public var defaultBolusMode: BolusMode { didSet { d.set(defaultBolusMode.rawValue, forKey: "defaultBolusMode"); syncWidgetConfig() } }
+    // Watch / Garmin default entry mode (sent to the remotes) — independent of the phone.
+    public var watchDefaultBolusMode: BolusMode { didSet { d.set(watchDefaultBolusMode.rawValue, forKey: "watchDefaultBolusMode") } }
     // Phone increments (iPhone bolus entry + the Home-Screen widget).
     public var bolusIncrement: Double { didSet { d.set(bolusIncrement, forKey: "bolusIncrement"); syncWidgetConfig() } }
     public var carbIncrement: Double { didSet { d.set(carbIncrement, forKey: "carbIncrement"); syncWidgetConfig() } }
@@ -59,6 +61,12 @@ public final class AppSettings {
     /// via `advancedControlAllowed(_:isMobi:)`. Insulin-affecting actions still go through the
     /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
+
+    /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
+    /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON** — the
+    /// time/date write works on every Tandem model (t:slim X2 + Mobi) and isn't insulin-affecting.
+    /// Independent of `advancedControlEnabled`. Turn off to leave the pump clock untouched.
+    public var autoSyncPumpTime: Bool { didSet { d.set(autoSyncPumpTime, forKey: "autoSyncPumpTime") } }
 
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
     /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
@@ -219,6 +227,9 @@ public final class AppSettings {
 
     private init() {
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
+        // Watch default: fall back to the phone default for existing users who never set it separately.
+        watchDefaultBolusMode = BolusMode(rawValue: d.string(forKey: "watchDefaultBolusMode")
+            ?? d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
         let bi = d.object(forKey: "bolusIncrement") as? Double
         // Clamp to the 0.05 minimum: a user who previously chose the (now-removed) 0.01 option would
         // otherwise land on a value absent from `bolusIncrements`, showing an empty Picker.
@@ -234,6 +245,7 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
+        autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         remoteBluetoothReadOnly = (d.object(forKey: "remoteBluetoothReadOnly") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false

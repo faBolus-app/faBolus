@@ -90,7 +90,7 @@ public final class AppModel {
                              glucoseAgeSec: age,
                              history: (history?.isEmpty ?? true) ? nil : history,
                              alerts: alertList,
-                             bolusMode: AppSettings.shared.defaultBolusMode.rawValue,
+                             bolusMode: AppSettings.shared.watchDefaultBolusMode.rawValue,
                              bolusIncrement: AppSettings.shared.watchBolusIncrement,
                              carbIncrement: AppSettings.shared.watchCarbIncrement,
                              screenOrder: AppSettings.shared.garminScreenOrder,
@@ -261,6 +261,12 @@ public final class AppModel {
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
         source.onChange = { [weak self] in self?.refresh() }
+        // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
+        for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.maybeAutoSyncPumpTime(force: true) }
+            }
+        }
         // Optional glucose failover source, with a crash-loop guard: if the selected source was armed
         // on the previous launch and never disarmed, it crashed during start — do NOT auto-start it
         // again (that would brick every launch). The user re-enables it by re-selecting it in
@@ -319,6 +325,7 @@ public final class AppModel {
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         evaluateSavePinOffer()
+        maybeAutoSyncPumpTime()
         pushStatusIfNeeded()
         if alertsChanged {
             onNotificationsChange?(activeNotifications)
@@ -336,9 +343,9 @@ public final class AppModel {
 
     public func deliverBolus(units: Double) async {
         if childBlocked(.bolus) { return }
-        // Reverse approval (opt-in): if this phone requires a paired remote to approve its own boluses,
-        // stage the request and wait rather than delivering immediately.
-        if AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
+        // Reverse approval (child-mode-only): when child mode is on and set to require a paired
+        // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
+        if AppSettings.shared.childModeEnabled, AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
             requestRemoteApproval(units: units)
             return
         }
@@ -443,6 +450,26 @@ public final class AppModel {
     public func setMaxBolus(units: Double) async { await runControl { try await source.setMaxBolus(units: units) } }
     public func setMaxBasal(unitsPerHour: Double) async { await runControl { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
     public func syncTimeToNow() async { await runControl { try await source.syncTimeToNow() } }
+
+    private var timeSyncInFlight = false
+    private static let lastTimeSyncKey = "lastPumpTimeSyncEpoch"
+    /// Auto-sync the pump clock to the phone (opt-in via `autoSyncPumpTime`, default on). Runs at most
+    /// once a day on the refresh cadence, and immediately when `force` (a clock/time-zone change).
+    /// No-op unless a time-sync-capable pump is connected and idle; best-effort (retries next cycle).
+    func maybeAutoSyncPumpTime(force: Bool = false) {
+        guard AppSettings.shared.autoSyncPumpTime, capabilities.supportsTimeSync else { return }
+        guard snapshot.connection == .connected, !timeSyncInFlight else { return }
+        let lastEpoch = UserDefaults.standard.double(forKey: Self.lastTimeSyncKey)
+        let due = force || lastEpoch == 0
+            || Date().timeIntervalSince1970 - lastEpoch > 24 * 60 * 60
+        guard due else { return }
+        timeSyncInFlight = true
+        Task { @MainActor in
+            defer { timeSyncInFlight = false }
+            await runControl { try await source.syncTimeToNow() }
+            if lastError == nil { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastTimeSyncKey) }
+        }
+    }
     /// Whether clearing active notifications is required before entering cartridge mode (controlX2
     /// precondition). Exposed for the wizard's guard.
     public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }

@@ -18,7 +18,7 @@ let faBolusHelpURL = URL(string: "https://faBolus.org")!
 
 // MARK: - Settings root (categorized + searchable, iOS-Settings style)
 
-/// Settings tab. Grouped into category subscreens (Bolus / Display / CGM / Pump / Watch & Garmin /
+/// Settings tab. Grouped into category subscreens (Bolus / Display / CGM / Pump / Remotes & devices /
 /// About) instead of one long list, with a search field that jumps to any setting, plus a Help link.
 struct SettingsView: View {
     @Bindable var model: AppModel
@@ -98,7 +98,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cgm: return "CGM & failover"
         case .alerts: return "Alert rules"
         case .pump: return "Pump & control"
-        case .remotes: return "Watch & Garmin"
+        case .remotes: return "Remotes & devices"
         case .about: return "About & help"
         }
     }
@@ -161,11 +161,15 @@ struct BolusSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Default mode", selection: $settings.defaultBolusMode) {
+                Picker("Phone default mode", selection: $settings.defaultBolusMode) {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-            } header: { Text("Bolus entry") } footer: { Text("Default entry mode for the iPhone, the widget, and the remotes.") }
+                Picker("Watch/Garmin default mode", selection: $settings.watchDefaultBolusMode) {
+                    Text("Carbs").tag(BolusMode.carbs)
+                    Text("Units").tag(BolusMode.units)
+                }
+            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Apple Watch and Garmin bolus screens.") }
             Section {
                 Picker("Bolus increment", selection: $settings.bolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
@@ -222,7 +226,7 @@ struct DisplaySettingsView: View {
                                       shownFooter: "Status pills shown on the dashboard. Drag to reorder, swipe to hide.")
                 } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
             } header: { Text("Customize") } footer: {
-                Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Watch & Garmin.)")
+                Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
             }
         }
         .navigationTitle("Display & chart")
@@ -283,6 +287,19 @@ struct PumpSettingsView: View {
                     Button("Forget pairing", role: .destructive) { model.forgetPairing() }
                 }
             }
+            // Pump clock sync works on every Tandem model (t:slim X2 + Mobi) and isn't advanced control,
+            // so it's its own section — no need to enable advanced control to use it.
+            if model.capabilities.supportsTimeSync {
+                Section {
+                    Toggle("Keep pump clock synced to phone", isOn: $settings.autoSyncPumpTime)
+                    Button {
+                        Task { await model.syncTimeToNow() }
+                    } label: { Label("Sync pump time now", systemImage: "clock.arrow.2.circlepath") }
+                        .disabled(model.snapshot.connection != .connected)
+                } header: { Text("Pump clock") } footer: {
+                    Text("Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST). Works on t:slim X2 and Mobi.")
+                }
+            }
             // Advanced control is Mobi-only, so the whole section is hidden unless a Mobi is paired
             // (or it's already enabled, so it can still be turned off). t:slim users never see it.
             if model.snapshot.isMobi || settings.advancedControlEnabled {
@@ -335,7 +352,7 @@ struct PumpSettingsView: View {
     }
 }
 
-// MARK: - Watch & Garmin
+// MARK: - Remotes & devices
 
 struct RemotesSettingsView: View {
     @Bindable var model: AppModel
@@ -363,14 +380,18 @@ struct RemotesSettingsView: View {
                 Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
             }
             Section {
+                Picker("Default mode", selection: $settings.watchDefaultBolusMode) {
+                    Text("Carbs").tag(BolusMode.carbs)
+                    Text("Units").tag(BolusMode.units)
+                }
                 Picker("Bolus increment", selection: $settings.watchBolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
                 }
                 Picker("Carb increment", selection: $settings.watchCarbIncrement) {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
-            } header: { Text("Bolus increments") } footer: {
-                Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same setting as under Bolus & entry.")
+            } header: { Text("Watch/Garmin bolus") } footer: {
+                Text("Default entry mode and increments for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same settings as under Bolus & entry.")
             }
             Section {
                 NavigationLink {
@@ -391,7 +412,6 @@ struct RemotesSettingsView: View {
                 Toggle("Allow remote devices (Bluetooth)", isOn: $settings.remoteBluetoothEnabled)
                 if settings.remoteBluetoothEnabled {
                     Toggle("Read-only (block remote bolus & pump changes)", isOn: $settings.remoteBluetoothReadOnly)
-                    Toggle("Require a remote to approve my boluses", isOn: $settings.requireRemoteBolusApproval)
                 }
             } header: { Text("Remote access") } footer: {
                 Text("Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (unless read-only) deliver boluses — even when this phone is locked. Pairing is authenticated and the link is end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected — they aren't discoverable by other devices.)")
@@ -424,7 +444,7 @@ struct RemotesSettingsView: View {
                 Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
             }
         }
-        .navigationTitle("Watch & Garmin")
+        .navigationTitle("Remotes & devices")
     }
 }
 

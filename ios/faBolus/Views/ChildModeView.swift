@@ -96,6 +96,15 @@ struct ChildModeView: View {
                         Button("Unlock to edit (PIN)") { showVerifyToEdit = true }
                     }
                 }
+
+                Section {
+                    Toggle("Require a parent to approve boluses", isOn: $settings.requireRemoteBolusApproval)
+                        .disabled(!unlockedForEditing)
+                } header: {
+                    Text("Parent approval")
+                } footer: {
+                    Text("When on, a bolus started on this phone waits for a paired parent device (Mac or iPhone) to approve it — it isn't delivered until then, and is cancelled if no one responds within a minute. Requires **Remotes & devices → Allow remote devices** to be on and a parent device paired.")
+                }
             }
         }
         .navigationTitle("Child mode")

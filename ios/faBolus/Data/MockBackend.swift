@@ -113,10 +113,6 @@ public final class MockBackend: PumpBackend {
         let correction = bgMgdl.map { max(0, Double($0 - 110) / 40.0) } ?? 0
         rec.recommendedUnits = max(0, (carbUnits + correction - snapshot.iobUnits))
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // round to 0.05u
-        if let bg = bgMgdl {
-            let toFloor = max(0, Double(bg - 90) / 40.0 - snapshot.iobUnits)
-            rec.maxSafeUnits = (min(toFloor, snapshot.maxBolusUnits) * 20).rounded() / 20
-        }
         return rec
     }
 

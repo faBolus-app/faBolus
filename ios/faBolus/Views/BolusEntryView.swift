@@ -70,17 +70,26 @@ struct BolusEntryView: View {
             if mode == .carbs {
                 Section("Entry") {
                     HStack(spacing: 6) {
-                        TextField("0", text: $carbsText)
-                            .keyboardType(.numberPad).fixedSize()
-                            .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
-                        Text("g carbs").foregroundStyle(.secondary)
-                        Spacer()
+                        // The value + unit share one large tap target that focuses the field — the
+                        // TextField itself is only ~one glyph wide (.fixedSize), so tapping the empty
+                        // row space used to miss. Visuals are unchanged; only the hit area grows.
+                        HStack(spacing: 6) {
+                            TextField("0", text: $carbsText)
+                                .keyboardType(.numberPad).fixedSize()
+                                .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
+                            Text("g carbs").foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { focus = .carbs }
                         Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
                     }
                     LabeledContent("Blood glucose") {
                         TextField("mg/dL", text: $bg).keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { focus = .bg }
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
@@ -89,12 +98,6 @@ struct BolusEntryView: View {
                             DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
                                 LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
                                 LabeledContent("Active insulin (IOB)", value: String(format: "−%.2f U", rec.iobUnits))
-                                if let maxSafe = rec.maxSafeUnits {
-                                    LabeledContent("Max safe (est.)", value: String(format: "%.2f U", maxSafe))
-                                        .foregroundStyle(units > maxSafe ? AppTheme.low : .secondary)
-                                    Text("Advisory: a larger dose could take you below target given current BG, ISF, and IOB. Not a limit.")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
                             }
                         }
                     }
@@ -111,12 +114,17 @@ struct BolusEntryView: View {
                     }
                 } else {
                     HStack(spacing: 6) {
-                        TextField("0", text: $unitsText)
-                            .keyboardType(.decimalPad).fixedSize()
-                            .font(.title3.weight(.semibold)).focused($focus, equals: .units)
-                            .foregroundStyle(overMax ? AppTheme.low : .primary)
-                        Text("U").foregroundStyle(.secondary)
-                        Spacer()
+                        // Enlarged tap target (see the carbs field) — visuals unchanged.
+                        HStack(spacing: 6) {
+                            TextField("0", text: $unitsText)
+                                .keyboardType(.decimalPad).fixedSize()
+                                .font(.title3.weight(.semibold)).focused($focus, equals: .units)
+                                .foregroundStyle(overMax ? AppTheme.low : .primary)
+                            Text("U").foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { focus = .units }
                         Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
                     }
                     if overMax {
