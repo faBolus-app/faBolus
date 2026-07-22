@@ -659,7 +659,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// (carb ratio/ISF/target/max), and the pump-clock anchor.
     private func staticRead() {
         for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
-                           ApiVersionRequest(), ControlIQInfoV2Request()] {
+                           ApiVersionRequest(), ControlIQInfoV2Request(), BasalLimitSettingsRequest()] {
             try? client.send(r)
         }
     }
@@ -1059,6 +1059,8 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
         case let m as CurrentBasalStatusResponse:
             snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
+        case let m as BasalLimitSettingsResponse:
+            snapshot.maxBasalUnitsPerHour = m.basalLimitUnitsPerHour
         case let m as ControlIQInfoV2Response:
             snapshot.controlIQMode = m.currentUserModeType
             snapshot.controlIQEnabled = m.closedLoopEnabled

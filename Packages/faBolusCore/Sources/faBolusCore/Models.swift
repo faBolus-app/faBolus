@@ -104,6 +104,8 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var softwareVersion: String = ""
     /// Current basal delivery rate (units/hr) and whether delivery is suspended.
     public var basalRateUnitsPerHour: Double = 0
+    /// Configured max basal-rate limit (units/hr), from BasalLimitSettings. 0 = unknown/not read.
+    public var maxBasalUnitsPerHour: Double = 0
     public var deliverySuspended: Bool = false
     /// Active insulin-delivery profile name + Control-IQ user mode (0 none / sleep / exercise).
     public var activeProfileName: String = ""

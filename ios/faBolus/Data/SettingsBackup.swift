@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+import CryptoKit
+import CommonCrypto
+import Security
 import faBolusCore
 
 /// Builds and applies `FaBolusBackup` files. The app-settings section covers non-secret preferences
@@ -80,6 +83,62 @@ enum SettingsBackup {
     static func suggestedFilename() -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         return "faBolus-backup-\(f.string(from: Date()))"
+    }
+}
+
+/// Optional password encryption for a backup file: PBKDF2-HMAC-SHA256 (200k iterations) derives a key
+/// from the user's password; the JSON is sealed with AES-GCM. Used when the backup includes secrets so
+/// the file isn't plaintext. Wrong password fails to open (authenticated) — there's no recovery, so the
+/// UI warns to remember it.
+enum BackupCrypto {
+    enum CryptoError: Error { case badPassword, malformed }
+
+    private struct Envelope: Codable {
+        var fabolusEncrypted = true
+        var v = 1
+        var iterations: Int
+        var salt: Data
+        var box: Data   // AES.GCM.SealedBox.combined (nonce + ciphertext + tag)
+    }
+
+    /// True if `data` is an encrypted faBolus backup envelope (vs. a plain backup JSON).
+    static func isEncrypted(_ data: Data) -> Bool {
+        struct Probe: Codable { let fabolusEncrypted: Bool? }
+        return (try? JSONDecoder().decode(Probe.self, from: data))?.fabolusEncrypted == true
+    }
+
+    static func encrypt(_ plaintext: Data, password: String) throws -> Data {
+        let salt = randomData(16)
+        let iterations = 200_000
+        let key = try deriveKey(password: password, salt: salt, iterations: iterations)
+        guard let combined = try AES.GCM.seal(plaintext, using: key).combined else { throw CryptoError.malformed }
+        return try JSONEncoder().encode(Envelope(iterations: iterations, salt: salt, box: combined))
+    }
+
+    static func decrypt(_ data: Data, password: String) throws -> Data {
+        let env = try JSONDecoder().decode(Envelope.self, from: data)
+        let key = try deriveKey(password: password, salt: env.salt, iterations: env.iterations)
+        do { return try AES.GCM.open(try AES.GCM.SealedBox(combined: env.box), using: key) }
+        catch { throw CryptoError.badPassword }
+    }
+
+    private static func randomData(_ count: Int) -> Data {
+        var d = Data(count: count)
+        _ = d.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+        return d
+    }
+
+    private static func deriveKey(password: String, salt: Data, iterations: Int) throws -> SymmetricKey {
+        var derived = [UInt8](repeating: 0, count: 32)
+        let pw = Array(password.utf8)
+        let status = salt.withUnsafeBytes { saltBuf in
+            CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), pw, pw.count,
+                                 saltBuf.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                                 CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), UInt32(iterations),
+                                 &derived, derived.count)
+        }
+        guard status == kCCSuccess else { throw CryptoError.malformed }
+        return SymmetricKey(data: Data(derived))
     }
 }
 

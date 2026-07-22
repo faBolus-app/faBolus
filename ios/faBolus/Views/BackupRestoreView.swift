@@ -10,13 +10,21 @@ struct BackupRestoreView: View {
     @State private var includeApp = true
     @State private var includePump = false
     @State private var includeSecrets = false
+    @State private var encryptFile = false
+    @State private var password = ""
+    @State private var passwordConfirm = ""
 
     @State private var exporting = false
     @State private var exportDoc: BackupDocument?
     @State private var importing = false
     @State private var parsed: ParsedBackup?
+    @State private var encryptedData: Data?     // awaiting a password to decrypt on import
+    @State private var importPassword = ""
+    @State private var askImportPassword = false
     @State private var busy = false
     @State private var message: String?
+
+    private var encryptReady: Bool { !encryptFile || (!password.isEmpty && password == passwordConfirm) }
 
     private var pumpConnected: Bool { model.snapshot.connection == .connected }
 
@@ -27,7 +35,21 @@ struct BackupRestoreView: View {
                 Toggle("Pump settings", isOn: $includePump).disabled(!pumpConnected)
                 Toggle("Include credentials & pairing", isOn: $includeSecrets)
             } header: { Text("Back up") } footer: {
-                Text("Choose what to save. **Pump settings** need a connected pump\(pumpConnected ? "" : " — connect first"). **Credentials & pairing** adds your CGM logins and the pump PIN to the file — leave off unless you need a full restore, and then treat the file as sensitive.")
+                Text("Choose what to save. **Pump settings** need a connected pump\(pumpConnected ? "" : " — connect first"). **Credentials & pairing** adds your CGM logins and the pump PIN to the file — leave off unless you need a full restore, and then encrypt it below.")
+            }
+            Section {
+                Toggle("Encrypt with a password", isOn: $encryptFile)
+                if encryptFile {
+                    SecureField("Password", text: $password)
+                    SecureField("Confirm password", text: $passwordConfirm)
+                    if !password.isEmpty && password != passwordConfirm {
+                        Text("Passwords don't match.").font(.caption).foregroundStyle(.red)
+                    }
+                }
+            } header: { Text("Encryption") } footer: {
+                Text(includeSecrets
+                     ? "**Recommended — this backup will contain secrets.** The file is encrypted (AES-GCM); you'll need this password to restore it. There's no recovery if you forget it."
+                     : "Encrypts the backup file with a password (AES-GCM). You'll need it to restore — there's no recovery if you forget it.")
             }
             Section {
                 Button {
@@ -35,7 +57,7 @@ struct BackupRestoreView: View {
                 } label: {
                     HStack { Label("Create backup…", systemImage: "square.and.arrow.up"); if busy { Spacer(); ProgressView() } }
                 }
-                .disabled(busy || (!includeApp && !includePump))
+                .disabled(busy || (!includeApp && !includePump) || !encryptReady)
                 Button {
                     importing = true
                 } label: { Label("Restore from a file…", systemImage: "square.and.arrow.down") }
@@ -61,6 +83,18 @@ struct BackupRestoreView: View {
             }
         }
         .sheet(item: $parsed) { p in RestoreSheet(model: model, backup: p.backup) }
+        .alert("Encrypted backup", isPresented: $askImportPassword) {
+            SecureField("Password", text: $importPassword)
+            Button("Decrypt") {
+                guard let data = encryptedData else { return }
+                encryptedData = nil
+                do { decodeAndPresent(try BackupCrypto.decrypt(data, password: importPassword)) }
+                catch { message = "Incorrect password, or the file is damaged." }
+            }
+            Button("Cancel", role: .cancel) { encryptedData = nil }
+        } message: {
+            Text("This backup is password-protected. Enter the password you set when you created it.")
+        }
     }
 
     private func createBackup() async {
@@ -73,20 +107,32 @@ struct BackupRestoreView: View {
                                    appSettings: includeApp ? SettingsBackup.appSettingsSnapshot() : nil,
                                    secrets: includeSecrets ? SettingsBackup.secretsSnapshot() : nil,
                                    pumpSettings: pump)
-        do { exportDoc = BackupDocument(data: try backup.encoded()); exporting = true }
-        catch { message = "Couldn't build the backup: \(error.localizedDescription)" }
+        do {
+            var data = try backup.encoded()
+            if encryptFile { data = try BackupCrypto.encrypt(data, password: password) }
+            exportDoc = BackupDocument(data: data); exporting = true
+        } catch { message = "Couldn't build the backup: \(error.localizedDescription)" }
     }
 
     private func loadBackup(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { message = "Couldn't read the file."; return }
+        if BackupCrypto.isEncrypted(data) {
+            encryptedData = data; importPassword = ""; askImportPassword = true   // prompt for the password
+        } else {
+            decodeAndPresent(data)
+        }
+    }
+
+    private func decodeAndPresent(_ data: Data) {
         do {
-            let backup = try FaBolusBackup.decode(try Data(contentsOf: url))
+            let backup = try FaBolusBackup.decode(data)
             guard backup.meta.schemaVersion <= FaBolusBackup.currentSchema else {
                 message = "This backup was made by a newer version of faBolus. Update the app first."; return
             }
             parsed = ParsedBackup(backup: backup)
-        } catch { message = "That doesn't look like a faBolus backup: \(error.localizedDescription)" }
+        } catch { message = "That doesn't look like a faBolus backup." }
     }
 }
 
@@ -174,6 +220,7 @@ private struct PumpReconfigureView: View {
             }
             Section {
                 if let mb = pump.maxBolusUnits { LabeledContent("Max bolus", value: String(format: "%.1f U", mb)) }
+                if let mbasal = pump.maxBasalUnitsPerHour { LabeledContent("Max basal", value: String(format: "%.2f U/hr", mbasal)) }
                 if let e = pump.controlIQEnabled { LabeledContent("Control-IQ", value: e ? "On" : "Off") }
                 if let w = pump.controlIQWeightLbs { LabeledContent("Weight", value: "\(w) lb") }
                 if let t = pump.controlIQTotalDailyInsulin { LabeledContent("Total daily insulin", value: "\(t) U") }
