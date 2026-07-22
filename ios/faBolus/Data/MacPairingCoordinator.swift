@@ -23,6 +23,8 @@ final class MacPairingCoordinator {
     private(set) var connectedName: String?
     /// Set briefly after a successful pairing so the UI can confirm ("Paired with …").
     var justPaired: String?
+    /// Whether the open window is QR (high-entropy code, shown as a QR to scan) vs a 6-digit code.
+    private(set) var activeIsQR = false
 
     /// Invoked by `PeerRemoteHost` to kick a Mac whose authorization was just revoked.
     @ObservationIgnored var onForget: ((String) -> Void)?
@@ -37,17 +39,26 @@ final class MacPairingCoordinator {
 
     // MARK: UI actions
 
-    /// Open a pairing window and return the code to display.
+    /// Open a pairing window and return the code to display. `viaQR` uses a high-entropy code shown as
+    /// a QR (scanned, never typed); otherwise a 6-digit code the user types on the remote.
     @discardableResult
-    func beginPairing() -> String {
-        let code = MacPairing.newCode()
+    func beginPairing(viaQR: Bool = false) -> String {
+        let code = viaQR ? MacPairing.newStrongCode() : MacPairing.newCode()
         activeCode = code
+        activeIsQR = viaQR
         codeExpiry = Date().addingTimeInterval(Self.codeLifetime)
         justPaired = nil
         return code
     }
 
-    func cancelPairing() { activeCode = nil; codeExpiry = nil }
+    /// The QR string for the open window (nil unless a QR window is active). `hostName` must match the
+    /// BLE peripheral display name so the scanning remote auto-selects this phone.
+    func qrString(hostName: String) -> String? {
+        guard activeIsQR, let code = validCode() else { return nil }
+        return PeerPairingPayload(hostName: hostName, code: code).qrString()
+    }
+
+    func cancelPairing() { activeCode = nil; codeExpiry = nil; activeIsQR = false }
 
     func forget(_ id: String) {
         MacRemoteAuthStore.forget(clientId: id)
