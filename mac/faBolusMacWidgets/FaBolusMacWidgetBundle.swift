@@ -25,8 +25,22 @@ struct MacWidgetProvider: TimelineProvider {
     func placeholder(in context: Context) -> MacWidgetEntry { MacWidgetEntry(date: Date(), snap: .placeholder) }
     func getSnapshot(in context: Context, completion: @escaping (MacWidgetEntry) -> Void) { completion(current()) }
     func getTimeline(in context: Context, completion: @escaping (Timeline<MacWidgetEntry>) -> Void) {
-        let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-        completion(Timeline(entries: [current()], policy: .after(next)))
+        let snap = WidgetStore.load() ?? .placeholder
+        let now = Date()
+        // Extra entries at the stale/hide crossings so the widget greys/hides at the right moment
+        // (the view reads each entry's date, not wall-clock, since a widget renders ahead of time).
+        var dates: [Date] = [now]
+        if let d = snap.glucoseDate {
+            let stale = d.addingTimeInterval(snap.staleAfterSec ?? 6 * 60)
+            if stale > now { dates.append(stale) }
+            if let hide = snap.hideAfterSec {
+                let hideAt = d.addingTimeInterval(max(hide, snap.staleAfterSec ?? 6 * 60))
+                if hideAt > now { dates.append(hideAt) }
+            }
+        }
+        dates.append(now.addingTimeInterval(15 * 60))
+        let entries = Set(dates).sorted().map { MacWidgetEntry(date: $0, snap: snap) }
+        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(15 * 60))))
     }
     private func current() -> MacWidgetEntry { MacWidgetEntry(date: Date(), snap: WidgetStore.load() ?? .placeholder) }
 }
@@ -38,10 +52,16 @@ private enum MacWidgetUI {
         default: return .gray
         }
     }
-    /// Color for the glucose number honoring staleness + the user's "color by range" preference.
-    static func glucoseColor(_ snap: WidgetSnapshot) -> Color {
-        if snap.isGlucoseStale { return .secondary }
+    /// Color for the glucose number at `now`, honoring the phone's stale policy + "color by range".
+    static func glucoseColor(_ snap: WidgetSnapshot, now: Date) -> Color {
+        if snap.isStale(asOf: now) { return .secondary }
         return DisplaySettings.widgetColorByRange ? glucoseColor(snap.rangeCategory) : .primary
+    }
+    /// Glucose number to show at `now`: value while fresh/stale (greyed via color), "--" when hidden.
+    static func glucoseText(_ snap: WidgetSnapshot, now: Date) -> String {
+        if snap.isHidden(asOf: now) { return "--" }
+        guard let g = snap.glucose, g > 0 else { return "--" }
+        return "\(g)"
     }
 }
 
@@ -50,7 +70,7 @@ private enum MacWidgetUI {
 struct MacGlucoseWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusMacGlucose", provider: MacWidgetProvider()) { entry in
-            MacGlucoseView(snap: entry.snap)
+            MacGlucoseView(snap: entry.snap, now: entry.date)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Glucose")
@@ -61,16 +81,20 @@ struct MacGlucoseWidget: Widget {
 
 struct MacGlucoseView: View {
     let snap: WidgetSnapshot
+    let now: Date
     var body: some View {
+        let hidden = snap.isHidden(asOf: now)
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(snap.displayGlucose)
+                Text(MacWidgetUI.glucoseText(snap, now: now))
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(MacWidgetUI.glucoseColor(snap))
-                Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
+                    .foregroundStyle(MacWidgetUI.glucoseColor(snap, now: now))
+                if !hidden {
+                    Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
+                }
             }
             if let d = snap.glucoseDate {
-                Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)
+                Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live "5 min" age
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,7 +106,7 @@ struct MacGlucoseView: View {
 struct MacStatusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusMacStatus", provider: MacWidgetProvider()) { entry in
-            MacStatusWidgetView(snap: entry.snap)
+            MacStatusWidgetView(snap: entry.snap, now: entry.date)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Status")
@@ -93,6 +117,7 @@ struct MacStatusWidget: Widget {
 
 struct MacStatusWidgetView: View {
     let snap: WidgetSnapshot
+    let now: Date
     /// Reservoir and/or battery on one line, per the user's toggles (nil if both are off).
     private var reservoirBatteryLine: String? {
         var parts: [String] = []
@@ -104,9 +129,14 @@ struct MacStatusWidgetView: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(snap.displayGlucose).font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(MacWidgetUI.glucoseColor(snap))
-                    Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
+                    Text(MacWidgetUI.glucoseText(snap, now: now)).font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(MacWidgetUI.glucoseColor(snap, now: now))
+                    if !snap.isHidden(asOf: now) {
+                        Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
+                    }
+                }
+                if let d = snap.glucoseDate {
+                    Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live age
                 }
                 if DisplaySettings.showIOB {
                     Text(String(format: "IOB %.2f U", snap.iobUnits)).font(.caption)

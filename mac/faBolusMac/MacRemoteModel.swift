@@ -147,7 +147,9 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
                                   batteryPercent: batteryPercent, lastBolusUnits: lastBolusUnits,
                                   connected: reachable, updatedAt: now, recentPoints: Array(points),
                                   activeAlerts: alerts.map(\.title), cgmActive: cgmActive,
-                                  carbRatio: carbRatio, isf: isf, targetBg: targetBg, maxBolusUnits: maxBolusUnits)
+                                  carbRatio: carbRatio, isf: isf, targetBg: targetBg, maxBolusUnits: maxBolusUnits,
+                                  // Publish the phone's freshness policy so the widgets grey/hide like the app.
+                                  staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter)
         WidgetStore.save(snap)
         WidgetBolusStore.increment = bolusIncrement
         WidgetBolusStore.carbIncrement = carbIncrement

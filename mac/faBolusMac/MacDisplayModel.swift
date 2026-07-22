@@ -11,6 +11,10 @@ final class MacDisplayModel {
     private var revision = 0
     private func bump() { revision &+= 1; WidgetCenter.shared.reloadAllTimelines() }
 
+    var menuBarHideStale: Bool {
+        get { _ = revision; return DisplaySettings.menuBarHideStale }
+        set { DisplaySettings.menuBarHideStale = newValue; bump() }
+    }
     var menuBarShowTrend: Bool {
         get { _ = revision; return DisplaySettings.menuBarShowTrend }
         set { DisplaySettings.menuBarShowTrend = newValue; bump() }
