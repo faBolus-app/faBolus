@@ -76,7 +76,9 @@ public final class AppModel {
         let alertList = activeNotifications.map {
             RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
         }
-        let history = includeHistory ? Array(glucoseHistory.suffix(288).map { $0.mgdl }) : nil
+        let recent = includeHistory ? Array(glucoseHistory.suffix(288)) : []
+        let history = includeHistory ? recent.map { $0.mgdl } : nil
+        let historyEpochs = includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
         return RemoteCommand(kind: .statusRead, units: s.iobUnits,
                              bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
                              trend: GlucoseTrend.token(from: s.trend),
@@ -87,8 +89,10 @@ public final class AppModel {
                              reservoirUnits: s.reservoirUnits,
                              batteryPercent: Double(s.batteryPercent),
                              lastBolusUnits: s.lastBolusUnits,
+                             basalRate: s.basalRateUnitsPerHour,
                              glucoseAgeSec: age,
                              history: (history?.isEmpty ?? true) ? nil : history,
+                             historyEpochs: (historyEpochs?.isEmpty ?? true) ? nil : historyEpochs,
                              alerts: alertList,
                              bolusMode: AppSettings.shared.watchDefaultBolusMode.rawValue,
                              bolusIncrement: AppSettings.shared.watchBolusIncrement,

@@ -76,6 +76,7 @@ struct RemoteDashboardView: View {
     var showBolusButton = true
     var showForget = true
     @State private var showBolus = false
+    @State private var windowHours = 6
 
     var body: some View {
         ScrollView {
@@ -85,7 +86,13 @@ struct RemoteDashboardView: View {
                     Label("Reconnecting…", systemImage: "wifi.exclamationmark").font(.caption).foregroundStyle(.secondary)
                 }
                 StatusPillsView(snapshot: model.asSnapshot).padding(.horizontal)
-                GlucoseChartView(readings: model.readings, iob: [], boluses: [], windowHours: 6,
+                if model.chartRanges.count > 1 {
+                    Picker("Range", selection: $windowHours) {
+                        ForEach(model.chartRanges, id: \.self) { Text("\($0)h").tag($0) }
+                    }
+                    .pickerStyle(.segmented).padding(.horizontal)
+                }
+                GlucoseChartView(readings: model.readings, iob: [], boluses: [], windowHours: windowHours,
                                  showGlucose: true, showIOB: false, showBolusBars: false)
                     .padding(.horizontal)
 
@@ -128,6 +135,30 @@ struct RemoteDashboardView: View {
             Button("Deny", role: .cancel) { model.respondToApproval(false) }
         } message: {
             Text("\(model.conn.pairedHost ?? "The host") is asking to deliver \(String(format: "%.2f U", model.incomingApproval?.units ?? 0)).")
+        }
+    }
+}
+
+/// The host's active alerts, with Clear — mirrors the host's Alerts tab. Clearing relays to the host.
+struct RemoteAlertsView: View {
+    @Bindable var model: PhoneRemoteClientModel
+    var body: some View {
+        NavigationStack {
+            List {
+                if model.alerts.isEmpty {
+                    ContentUnavailableView("No active alerts", systemImage: "bell.slash",
+                                           description: Text("Alerts on the host pump show here."))
+                } else {
+                    ForEach(model.alerts, id: \.id) { a in
+                        HStack {
+                            Label(a.title, systemImage: "bell.fill")
+                            Spacer()
+                            Button("Clear") { model.dismissAlert(a) }.font(.caption)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Alerts")
         }
     }
 }
@@ -217,12 +248,17 @@ extension RemoteClientModel {
         s.targetBg = targetBg
         s.maxBolusUnits = maxBolusUnits
         s.lastBolusUnits = lastBolusUnits
+        s.basalRateUnitsPerHour = basalRate
         s.connection = reachable ? .connected : .disconnected
         return s
     }
-    /// Synthesize dated readings from the relayed mg/dL history (5-min spacing ending now) so the
-    /// host's chart + stats views render unchanged.
+    /// Dated readings for the host's chart + stats views. Uses the REAL per-point timestamps the host
+    /// relays (`historyDates`) so the plot matches the host exactly (correct times, honoring gaps).
+    /// Falls back to a uniform 5-min estimate ending at the last reading only if timestamps are absent.
     var readings: [GlucoseReading] {
+        if historyDates.count == history.count, !historyDates.isEmpty {
+            return zip(historyDates, history).map { GlucoseReading(date: $0, mgdl: $1) }
+        }
         let now = glucoseDate ?? Date()
         let n = history.count
         return history.enumerated().map { i, mgdl in
