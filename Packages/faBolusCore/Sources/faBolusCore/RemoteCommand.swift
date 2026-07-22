@@ -109,6 +109,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var authSealedToken: String? = nil
     /// authResult outcome: true = authenticated; false = rejected (see `message`).
     public var authOK: Bool? = nil
+    /// authHello only: the remote's intent — true = first-time/re-pair using a one-time code, false =
+    /// reconnect using a stored token. The host uses this to pick the SAME secret the remote used, so an
+    /// asymmetric "forget" (one side dropped its token) can't leave the two ends on mismatched secrets.
+    public var authFirstPairing: Bool? = nil
     /// The AES-GCM-sealed inner command (base64 combined box) on a `.sealed` envelope. See
     /// `SealedTransport`. Present only on `.sealed`; nil on every other kind.
     public var sealedPayload: String? = nil
@@ -170,7 +174,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Build a pairing-handshake command (see `MacPairing`, `PeerRemoteHost`, `MacRemoteModel`).
     public static func auth(_ kind: Kind, clientId: String? = nil, nonce: String? = nil,
                             proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,
-                            message: String? = nil) -> RemoteCommand {
+                            message: String? = nil, firstPairing: Bool? = nil) -> RemoteCommand {
         var c = RemoteCommand(kind: kind)
         c.authClientId = clientId
         c.authNonce = nonce
@@ -178,6 +182,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         c.authSealedToken = sealedToken
         c.authOK = ok
         c.message = message
+        c.authFirstPairing = firstPairing
         return c
     }
 

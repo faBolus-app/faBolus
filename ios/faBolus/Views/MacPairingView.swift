@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Settings → Watch & Garmin → Remote access → pairing. Start a pairing window — a **QR to scan**
+/// Settings → Remotes & devices → Remote access → pairing. Start a pairing window — a **QR to scan**
 /// (recommended, higher-entropy) or a **one-time code** to type — see the connected remote, and forget
 /// paired remotes. Works for the Mac app and a parent iPhone. The handshake itself runs in
 /// `PeerRemoteHost`; this view only drives `MacPairingCoordinator`.
@@ -85,7 +85,7 @@ struct MacPairingView: View {
         }
         .navigationTitle("Remotes")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Mac paired", isPresented: Binding(
+        .alert("Remote paired", isPresented: Binding(
             get: { pairing.justPaired != nil },
             set: { if !$0 { pairing.justPaired = nil } }
         )) {

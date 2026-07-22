@@ -91,15 +91,24 @@ public final class PeerRemoteHost {
         case .authHello:
             guard let clientId = cmd.authClientId,
                   let mNonceB64 = cmd.authNonce, let mNonce = Data(base64Encoded: mNonceB64) else { return }
-            let name = cmd.message ?? "Mac"
-            // Choose the secret: a known Mac reconnects with its token; a new Mac needs an open code.
-            if let token = pairing.token(for: clientId) {
-                secret = token; firstPairing = false; pairingCode = nil
-            } else if let code = pairing.validCode() {
+            let name = cmd.message ?? "remote"
+            // Pick the SAME secret the remote used (it tells us via `authFirstPairing`): re-pairing uses
+            // the open one-time code; a silent reconnect uses the stored token. Honoring the remote's
+            // intent means an asymmetric "forget" (one side dropped its token) can't leave the ends on
+            // mismatched secrets — the old "Incorrect code" on re-pair after forgetting.
+            let wantsFirstPairing = cmd.authFirstPairing ?? (pairing.token(for: clientId) == nil)
+            if wantsFirstPairing {
+                guard let code = pairing.validCode() else {
+                    link.send(.auth(.authResult, ok: false,
+                                    message: "Open “Pair a remote” in faBolus on the host phone, then scan or enter the code."))
+                    return
+                }
                 secret = MacPairing.secret(code: code); firstPairing = true; pairingCode = code
+            } else if let token = pairing.token(for: clientId) {
+                secret = token; firstPairing = false; pairingCode = nil
             } else {
                 link.send(.auth(.authResult, ok: false,
-                                message: "Open “Pair a Mac” in faBolus on your iPhone, then enter the code."))
+                                message: "This phone forgot the pairing. Open “Pair a remote” here and re-scan the QR."))
                 return
             }
             peerClientId = clientId; peerName = name; macNonce = mNonce

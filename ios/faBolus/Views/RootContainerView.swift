@@ -15,7 +15,7 @@ struct RootContainerView: View {
                 RootTabView(model: model)
             case .remote:
                 if let remote = router.remote {
-                    RemoteRootView(host: model, remote: remote)
+                    RemoteRootView(remote: remote)
                 } else {
                     RootTabView(model: model)   // safety fallback (shouldn't happen)
                 }
