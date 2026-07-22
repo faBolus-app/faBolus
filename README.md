@@ -46,6 +46,13 @@ live at the documentation site:**
 - [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md) ·
   [Siri & Shortcuts](docs/customize/shortcuts.md).
 
+## 💬 Feedback
+
+Bug, confusion, or an idea — technical or not? See **[Send feedback](docs/feedback.md)**, or go
+straight to the [feedback form](https://github.com/faBolus-app/faBolus/issues/new?labels=feedback&template=feedback.md)
+(or email [feedback@fabolus.org](mailto:feedback@fabolus.org)). faBolus is experimental and not
+FDA-cleared — for anything urgent about your therapy, contact your healthcare provider.
+
 ## Using it alongside the official Tandem app
 
 The pump pairs to **one** controller at a time, so faBolus and the official **t:connect** app can
