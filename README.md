@@ -1,9 +1,15 @@
 # faBolus
 
-A remote-bolus and status-viewing app — iPhone, Apple Watch, Garmin, and a Mac menu-bar app —
-designed to be **pump-agnostic**. The iPhone owns the pump's Bluetooth connection; the watch, Garmin,
-and Mac are thin remotes that relay confirmed commands to the phone. The **Mac** connects over
-Bluetooth LE, so it keeps working when the iPhone is locked or backgrounded.
+A remote-bolus and status-viewing app — iPhone, Apple Watch, Garmin, a Mac menu-bar app, and a
+**second iPhone as a remote** — designed to be **pump-agnostic**. The iPhone owns the pump's Bluetooth
+connection; the watch, Garmin, Mac, and a remote iPhone are thin remotes that relay confirmed commands
+to the phone. The **Mac and a remote iPhone** connect over Bluetooth LE, so they keep working when the
+host iPhone is locked or backgrounded.
+
+The **iPhone-to-iPhone remote** (e.g. a parent controlling a child's pump) is local-only (no cloud),
+authenticated (one-time QR/code) and **end-to-end encrypted**, opt-in and off by default, with
+per-remote permissions, a read-only mode, and optional reverse approval. It's proximity-range
+(Bluetooth), not internet-distance. See [docs/remotes/phone-remote.md](docs/remotes/phone-remote.md).
 
 **Today it supports one pump:** the Tandem **t:slim X2 / Mobi** (via [`PumpX2Kit`](../PumpX2Kit)).
 The app talks only to a backend interface, so support for other pumps can be added as new backends
@@ -66,7 +72,7 @@ Two features are known not to work correctly yet and are being fixed:
 ```
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
                              #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, the transport
-                             #    seam — RemoteLink/PeerLink/BLELink — GlucoseSource + GlucoseArbiter)
+                             #    seam — RemoteLink (watch) / BLELink (Mac+iPhone) + SealedTransport — GlucoseSource + GlucoseArbiter)
 Packages/G7SensorKit/        # Dexcom G7/ONE+ BLE decoders, vendored from LoopKit (MIT), LoopKit-free
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts

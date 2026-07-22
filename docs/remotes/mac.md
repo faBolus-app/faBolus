@@ -18,25 +18,29 @@ same Wi-Fi network; they just need to be in Bluetooth range.
 ## Pairing (one-time code)
 
 Any Mac in Bluetooth range could reach the phone, so the iPhone **authenticates the Mac before it
-accepts anything**. First-time pairing needs a one-time code shown on the phone; you enter it once,
-then both ends store a long-term key and reconnect automatically.
+accepts anything**. First-time pairing uses a **QR code** (or a typed one-time code) shown on the
+phone; both ends then store a long-term key and reconnect automatically.
 
-1. Open **faBolus on the iPhone** at least once so it starts advertising.
-2. On the **iPhone**: **Settings → Watch & Garmin → Mac remote → Pair a Mac**. It shows a **6-digit
-   code** (valid ~5 minutes).
-3. On the **Mac**: menu-bar item → the **gear** (top-right) → **Connection**, pick your iPhone under
-   **Available iPhones**, click **Pair**, and type the code. macOS asks for **Bluetooth** permission
-   the first time — allow it.
+1. On the **iPhone**: turn on **Settings → Watch & Garmin → Remote access → “Allow remote devices”**
+   (off by default — see the security note below). Open faBolus once so it starts advertising.
+2. On the **iPhone**: under **Remotes → Pair a remote**, choose **Pair with QR code** (recommended)
+   or a typed code (valid ~5 minutes).
+3. On the **Mac**: menu-bar item → the **gear** → **Connection** → **Scan pairing QR** (webcam) — or
+   pick your iPhone under **Available iPhones**, click **Pair**, and type the code. macOS asks for
+   **Bluetooth** (and, for QR, **Camera**) permission the first time — allow it.
 
 "Connected" (green) means the Mac is **authenticated**; it reconnects on its own from then on.
-Revoke access with **Forget this iPhone** on the Mac, or **Forget** next to the Mac in the phone's
-*Mac remote* screen — a new code is then required to pair again.
+Revoke access with **Forget this iPhone** on the Mac, or **Forget** next to the remote in the phone's
+*Remotes* screen — a new code is then required to pair again.
 
 !!! note "How it works / security"
-    The code drives a mutual HMAC challenge–response (`MacPairing`): the phone refuses every
-    bolus/status/control command from an unauthenticated Mac, and a random 256-bit token — not the
-    code — secures each later reconnect. A 6-digit code is low-entropy, so do first-time pairing with
-    the two devices close by. See `MacPairing` in the source for the full design.
+    The code drives a mutual HMAC challenge–response (`MacPairing`); the phone refuses every
+    bolus/status/control command from an unauthenticated remote, a random 256-bit token secures each
+    later reconnect, and **the whole channel is end-to-end encrypted** (AES-GCM, `SealedTransport`).
+    The **QR** code is high-entropy (128-bit), so prefer it; a typed 6-digit code is low-entropy, so
+    do that pairing with the devices close by. **Remote access is opt-in and off by default**: while
+    off, the phone advertises nothing. A **read-only** switch (and per-remote permissions) limit what
+    a remote may do — see [Remote access & permissions](phone-remote.md#security-permissions).
 
 ## The popover
 

@@ -107,6 +107,7 @@ nav:
       - Apple Watch: remotes/apple-watch.md
       - Garmin: remotes/garmin.md
       - Mac menu bar: remotes/mac.md
+      - iPhone remote: remotes/phone-remote.md
       - iPhone widgets: remotes/iphone-widgets.md
   - Help:
       - Troubleshooting: troubleshoot.md
