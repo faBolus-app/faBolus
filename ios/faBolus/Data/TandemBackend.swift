@@ -13,15 +13,19 @@ import PumpX2BLE
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class TandemBackend: NSObject, PumpBackend {
-    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Advanced control
-    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
-    /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
-    /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
+    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Most advanced control
+    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill) is
+    /// genuinely Mobi-only in the protocol (those requests are `supportedDevices=MOBI_ONLY`), so it's
+    /// advertised only once we detect a Mobi. **Time/date sync is the exception**: `ChangeTimeDateRequest`
+    /// is `SupportedDevices.ALL`, so it works on t:slim X2 too and is enabled for both models. The UI
+    /// still additionally gates control on `AppSettings.advancedControlEnabled`.
     public var capabilities: PumpCapabilities {
         var caps = snapshot.isMobi ? PumpCapabilities.mobiAdvanced : PumpCapabilities.full
         // t:slim X2 firmware silently rejects *remote* notification dismissal (Tandem's own app
         // disables it there); only Mobi honors it. On t:slim, "Clear" only snoozes locally in faBolus.
         caps.supportsRemoteAlertDismiss = snapshot.isMobi
+        // Time/date sync is not model-gated in the protocol — enable it for t:slim X2 as well as Mobi.
+        caps.supportsTimeSync = true
         return caps
     }
     public private(set) var snapshot = PumpSnapshot()
@@ -216,15 +220,6 @@ public final class TandemBackend: NSObject, PumpBackend {
             rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
         }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
-        // Advisory "max safe" hint: the largest dose that shouldn't push BG below a safe floor
-        // (max of target and 80), given current BG and ISF, after accounting for IOB already working —
-        // capped by the pump's max bolus. Never auto-filled; the UI shows it as a hint the user can hide.
-        if let bg = bgMgdl, let s = calcSnapshot, s.isf > 0 {
-            let floor = Double(max(s.targetBg, 80))
-            let toFloor = max(0, (Double(bg) - floor) / Double(s.isf) - snapshot.iobUnits)
-            let capped = min(toFloor, snapshot.maxBolusUnits)
-            rec.maxSafeUnits = (capped * 20).rounded() / 20
-        }
         return rec
     }
 

@@ -282,9 +282,5 @@ public struct BolusRecommendation: Sendable, Equatable {
     public var bgMgdl: Int? = nil
     public var recommendedUnits: Double = 0
     public var iobUnits: Double = 0
-    /// Advisory only: the largest dose that shouldn't drive glucose below a safe floor given the
-    /// current BG, ISF, and IOB — capped by the pump's max bolus. `nil` when it can't be computed
-    /// (no BG / no calc settings). Never auto-filled into the dose; shown as a hint the user can hide.
-    public var maxSafeUnits: Double? = nil
     public init() {}
 }
