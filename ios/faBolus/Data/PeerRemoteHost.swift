@@ -201,6 +201,11 @@ public final class PeerRemoteHost {
             if let id = cmd.alertId, let k = cmd.alertKind {
                 Task { await model.dismissAlert(id: id, kind: k, enforceChildLock: false); self.link.send(model.statusCommand(includeHistory: true)) }
             }
+        case .bolusApprovalResponse:
+            // The remote answered a reverse-approval request for a bolus the host started. Any
+            // authenticated remote may approve (it's the parent's oversight role); no extra permission.
+            model.resolveRemoteApproval(requestId: cmd.requestId, approved: cmd.approved ?? false,
+                                        reason: (cmd.approved ?? false) ? nil : "Denied on the remote")
         case .statusRead:
             link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
         case .suspendPump:

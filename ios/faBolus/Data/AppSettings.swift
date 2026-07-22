@@ -77,6 +77,11 @@ public final class AppSettings {
     /// extended bolus, or suspend/resume**. **Default OFF** (peers use their granted permissions).
     public var remoteBluetoothReadOnly: Bool { didSet { d.set(remoteBluetoothReadOnly, forKey: "remoteBluetoothReadOnly") } }
 
+    /// Reverse approval (opt-in): a bolus started on **this** phone must be approved by a paired remote
+    /// (e.g. a parent) before it delivers. **Default OFF.** Only takes effect when a remote is paired;
+    /// if no paired remote responds within the timeout the bolus is aborted (safe default).
+    public var requireRemoteBolusApproval: Bool { didSet { d.set(requireRemoteBolusApproval, forKey: "requireRemoteBolusApproval") } }
+
     /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
     /// auto-dismiss), persisted as JSON. **Alarms are never auto-acted** regardless of rules — the
     /// engine hard-excludes them. See [[AlertRuleEngine]].
@@ -243,6 +248,7 @@ public final class AppSettings {
         simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         remoteBluetoothReadOnly = (d.object(forKey: "remoteBluetoothReadOnly") as? Bool) ?? false
+        requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false

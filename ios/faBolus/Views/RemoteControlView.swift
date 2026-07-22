@@ -34,6 +34,15 @@ struct RemoteControlView: View {
             }
         }
         .sheet(isPresented: $showBolus) { RemoteBolusSheet(model: model) }
+        .alert("Approve bolus?", isPresented: Binding(
+            get: { model.incomingApproval != nil },
+            set: { if !$0 { model.respondToApproval(false) } }
+        )) {
+            Button("Approve", role: .destructive) { model.respondToApproval(true) }
+            Button("Deny", role: .cancel) { model.respondToApproval(false) }
+        } message: {
+            Text("\(model.conn.pairedHost ?? "The host") is asking to deliver \(String(format: "%.2f U", model.incomingApproval?.units ?? 0)).")
+        }
     }
 
     // MARK: Pairing
