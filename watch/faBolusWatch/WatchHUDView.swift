@@ -51,9 +51,11 @@ struct WatchGlanceView: View {
                     .font(.caption2)
                     .foregroundStyle(model.reachable ? .green : .orange)
 
-                Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
-                    .tint(.indigo)
-                    .disabled(!model.reachable)
+                if !model.readOnly {
+                    Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
+                        .tint(.indigo)
+                        .disabled(!model.reachable)
+                }
             }
             .padding(.top, 4)
         }

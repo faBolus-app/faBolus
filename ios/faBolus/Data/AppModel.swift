@@ -61,6 +61,12 @@ public final class AppModel {
         lastError = "Locked (child mode): \(feature.label.lowercased()) is disabled."
         return true
     }
+    /// True when read-only mode is on (this phone is a safe viewer): blocks bolusing + pump control.
+    private func readOnlyBlocked(_ what: String = "This action") -> Bool {
+        guard AppSettings.shared.phoneReadOnly else { return false }
+        lastError = "\(what) is disabled — the app is in read-only mode."
+        return true
+    }
 
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
     public func dismissNotification(_ n: PumpAlert, enforceChildLock: Bool = true) async {
@@ -103,11 +109,18 @@ public final class AppModel {
                              glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes,
                              detailsOrder: AppSettings.shared.watchDetailsOrder,   // remotes use the watch-specific order
                              watchChartRanges: AppSettings.shared.watchChartRanges,
-                             garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay)
+                             garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
+                             remotesReadOnly: AppSettings.shared.remotesReadOnly)
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
     public func dismissAlert(id: Int, kind: Int, enforceChildLock: Bool = true) async {
+        // In read-only mode the phone's own alert-clearing is off unless the sub-option allows it.
+        // (`enforceChildLock` marks the phone's own path; remote dismisses pass false.)
+        if enforceChildLock, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
+            lastError = "Clearing alerts is disabled in read-only mode."
+            return
+        }
         guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
         await dismissNotification(n, enforceChildLock: enforceChildLock)
     }
@@ -357,6 +370,7 @@ public final class AppModel {
     }
 
     private func performLocalBolus(units: Double) async {
+        if readOnlyBlocked("Bolus") { return }
         do { _ = try await source.deliverBolus(units: units); lastError = nil }
         catch { lastError = error.localizedDescription }
         refresh()
@@ -399,6 +413,7 @@ public final class AppModel {
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      enforceChildLock: Bool = true) async {
         if enforceChildLock, childBlocked(.bolus) { return }
+        if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
         do { _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits, durationMinutes: durationMinutes); lastError = nil }
         catch { lastError = error.localizedDescription }
         refresh()
@@ -416,10 +431,12 @@ public final class AppModel {
     public var advancedControlAllowed: Bool {
         AppSettings.shared.advancedControlAllowed(isMobi: snapshot.isMobi)
             && capabilities.supportsAnyAdvancedControl
+            && !AppSettings.shared.phoneReadOnly   // read-only hides the Pump Control entry entirely
     }
 
     private func runControl(_ op: () async throws -> Void) async {
         if childBlocked(.advancedControl) { refresh(); return }
+        if readOnlyBlocked("Pump control") { refresh(); return }
         do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
         refresh()
         // Control actions (suspend/resume, temp basal, modes…) are time-sensitive: push the new state

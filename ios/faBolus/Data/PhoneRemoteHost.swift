@@ -24,6 +24,11 @@ public final class PhoneRemoteHost {
         guard let model else { return }
         switch cmd.kind {
         case .bolusRequest:
+            guard !AppSettings.shared.remotesReadOnly else {
+                link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                                        status: .failed, message: "Read-only mode"))
+                return
+            }
             // The Apple Watch confirms on-device (hold-to-deliver), like the Garmin — deliver
             // directly through the validated signed path. Carbs are converted to units first.
             Task {
@@ -52,8 +57,10 @@ public final class PhoneRemoteHost {
         case .statusRead:
             link.send(model.statusCommand(includeHistory: true))
         case .suspendPump:
+            guard !AppSettings.shared.remotesReadOnly else { return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
         case .resumePump:
+            guard !AppSettings.shared.remotesReadOnly else { return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .resume)
         default:
             break

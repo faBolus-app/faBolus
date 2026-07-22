@@ -135,7 +135,11 @@ final class GarminRemoteBridge: NSObject {
         switch cmd.kind {
         case .bolusRequest:
             // The watch already confirmed via hold-to-deliver — deliver directly, no phone
-            // dialog. The pump still enforces max + signing.
+            // dialog. The pump still enforces max + signing. Blocked when Garmin is read-only.
+            guard !AppSettings.shared.remotesReadOnly else {
+                send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
+                return
+            }
             guard let units = cmd.units else { return }
             Task { await model.remoteDeliver(requestId: cmd.requestId, units: units) }
         case .cancelBolus:

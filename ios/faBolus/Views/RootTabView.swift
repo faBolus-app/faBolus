@@ -5,6 +5,7 @@ import faBolusCore
 /// the remote-bolus confirm, the widget deep link) live here.
 struct RootTabView: View {
     @Bindable var model: AppModel
+    @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection = 0
 
@@ -17,8 +18,10 @@ struct RootTabView: View {
         TabView(selection: $selection) {
             DashboardView(model: model)
                 .tabItem { Label("Dashboard", systemImage: "gauge.with.dots.needle.bottom.50percent") }.tag(0)
-            NavigationStack { BolusEntryView(model: model, embedded: true) }
-                .tabItem { Label("Bolus", systemImage: "drop.fill") }.tag(1)
+            if !settings.phoneReadOnly {
+                NavigationStack { BolusEntryView(model: model, embedded: true) }
+                    .tabItem { Label("Bolus", systemImage: "drop.fill") }.tag(1)
+            }
             AlertsScreenView(model: model)
                 .tabItem { Label("Alerts", systemImage: "bell.fill") }
                 .badge(model.activeNotifications.count).tag(2)
@@ -32,7 +35,8 @@ struct RootTabView: View {
             if phase == .active { Task { await autoReconnectIfNeeded() } }
         }
         .onChange(of: model.openBolusRequested) { _, requested in
-            if requested { selection = 1; model.openBolusRequested = false }  // widget deep link → Bolus
+            // Widget deep link → Bolus tab (no-op in read-only, where the tab is hidden).
+            if requested { if !settings.phoneReadOnly { selection = 1 }; model.openBolusRequested = false }
         }
         .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
             Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {

@@ -39,6 +39,8 @@ class RemoteClientModel {
     // Customization mirrored from the phone.
     var detailsOrder: [String] = ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"]
     var chartRanges: [Int] = [3, 6, 12, 24]
+    /// Read-only mode pushed from the phone (watch/Garmin view-only): hide the bolus affordance.
+    var readOnly: Bool = false
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     var reachable: Bool = false
@@ -148,6 +150,7 @@ class RemoteClientModel {
             // (e.g. 1.9 → 0.05). The .delivered/.cancelled echo (or the recovery above) settles it.
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let b = cmd.basalRate { basalRate = b }
+            if let ro = cmd.remotesReadOnly { readOnly = ro }
             if let a = cmd.alerts { alerts = a }
             // Mirror the phone's staleness policy so the remote marks/hides + stops using stale
             // readings for carb→unit exactly like the phone.
