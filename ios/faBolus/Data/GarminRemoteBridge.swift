@@ -18,16 +18,26 @@ final class GarminRemoteBridge: NSObject {
     /// store requires a unique app id per beta listing — see faBolusGarmin/scripts/beta-build.sh) sets
     /// `GARMIN_BETA_APP_ID` in LocalConfig.xcconfig (→ Info.plist `GarminBetaAppID`) to the id that
     /// script prints, so the phone targets their beta app. Falls back to the shared default.
+    /// The shared/published beta id (used when no personal beta id was configured).
+    static let sharedBetaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
     static let betaAppUUID: UUID = {
         if let s = Bundle.main.object(forInfoDictionaryKey: "GarminBetaAppID") as? String,
            let id = UUID(uuidString: s.trimmingCharacters(in: .whitespaces)) { return id }
-        return UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
+        return sharedBetaAppUUID
     }()
     static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
-    /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings).
-    /// Default official; only "beta" selects the beta app.
+    /// True when this build was configured with a PERSONAL beta app id (GARMIN_BETA_APP_ID) — i.e. the
+    /// self-compiler ran faBolusGarmin/scripts/beta-build.sh, which set it. Used to auto-target the beta.
+    static var hasPersonalBetaId: Bool { betaAppUUID != sharedBetaAppUUID }
+    /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings). An
+    /// explicit debug-panel choice wins; otherwise a build with a personal beta id targets that beta
+    /// automatically (no toggle needed), and a stock build targets official.
     static var watchAppUUID: UUID {
-        UserDefaults.standard.string(forKey: "garminTargetApp") == "beta" ? betaAppUUID : officialAppUUID
+        switch UserDefaults.standard.string(forKey: "garminTargetApp") {
+        case "beta": return betaAppUUID
+        case "official": return officialAppUUID
+        default: return hasPersonalBetaId ? betaAppUUID : officialAppUUID
+        }
     }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 
