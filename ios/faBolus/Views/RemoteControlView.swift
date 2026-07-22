@@ -62,7 +62,7 @@ struct RemoteControlView: View {
                     Label(err, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
                 }
             } header: { Text("Pair with the host phone") } footer: {
-                Text("On the host phone: Settings → Watch & Garmin → Remote access → turn on “Allow remote devices”, then Pair a remote → QR. Scan it here. The host controls what this phone may do.")
+                Text("On the host phone: Settings → Remotes & devices → Remote access → turn on “Allow remote devices”, then Pair a remote → QR. Scan it here. The host controls what this phone may do.")
             }
 
             Section("Nearby hosts") {

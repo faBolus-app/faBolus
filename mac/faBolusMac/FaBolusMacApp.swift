@@ -102,8 +102,9 @@ struct MenuBarContentView: View {
 
             Divider()
             HStack {
-                Button("Refresh") { model.requestStatus() }
                 Spacer()
+                // Status auto-updates (the phone pushes on every change + on reconnect), so no manual
+                // refresh is needed — just Quit.
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
             .font(.callout)
