@@ -59,6 +59,7 @@ struct MenuBarLabel: View {
 struct MenuBarContentView: View {
     var model: MacRemoteModel
     @State private var showingSettings = false
+    @State private var showDetails = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -84,9 +85,25 @@ struct MenuBarContentView: View {
             } else {
                 MacStatusView(model: model)
                 MacStatusPills(model: model)
+                MacChartView(model: model)
                 Divider()
                 MacBolusEntryView(model: model)
                 MacAlertsView(model: model)
+                // Full pump data, mirroring the watch Details page. Collapsible (a Button, not a
+                // DisclosureGroup — the disclosure toggle is unreliable in the menu-bar popover).
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { showDetails.toggle() }
+                } label: {
+                    HStack {
+                        Text("Details").font(.callout.weight(.semibold))
+                        Spacer()
+                        Image(systemName: showDetails ? "chevron.down" : "chevron.right")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showDetails { MacDetailsView(model: model) }
                 if !model.pairing.connected {
                     Button {
                         showingSettings = true

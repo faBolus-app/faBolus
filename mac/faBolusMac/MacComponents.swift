@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import faBolusCore
 
 // MARK: - Status (glucose + trend + pills)
@@ -56,6 +57,96 @@ struct MacStatusPills: View {
         }
         .padding(.vertical, 6).padding(.horizontal, 10)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - Glucose chart (mirrors the watch chart)
+
+/// Recent glucose history: in-range band (70–180), points colored by band, Y 40–300. Click to cycle
+/// through the phone's chart ranges (default 3/6/12/24 h). Uses the host's real per-point timestamps
+/// when available, else estimates 5-min spacing.
+struct MacChartView: View {
+    var model: MacRemoteModel
+    @State private var rangeIndex = 0
+
+    private var ranges: [Int] { model.chartRanges.isEmpty ? [6] : model.chartRanges }
+    private var windowHours: Int { ranges[min(rangeIndex, ranges.count - 1)] }
+
+    private var points: [(date: Date, mgdl: Int)] {
+        let n = model.history.count
+        let count = min(n, windowHours * 12)
+        guard count > 0 else { return [] }
+        let hist = Array(model.history.suffix(count))
+        if model.historyDates.count == n {
+            return Array(zip(model.historyDates.suffix(count), hist)).map { ($0, $1) }
+        }
+        let now = model.glucoseDate ?? Date()
+        return hist.enumerated().map { i, m in (now.addingTimeInterval(Double(i - (hist.count - 1)) * 300), m) }
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack {
+                Text("History").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(windowHours)h").font(.caption2).foregroundStyle(.secondary)
+            }
+            let pts = points
+            if pts.isEmpty {
+                Text("No history yet").font(.caption).foregroundStyle(.secondary).frame(height: 90)
+            } else {
+                Chart {
+                    RectangleMark(yStart: .value("lo", 70), yEnd: .value("hi", 180))
+                        .foregroundStyle(.green.opacity(0.12))
+                    ForEach(pts.indices, id: \.self) { i in
+                        PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
+                            .foregroundStyle(MacTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
+                    }
+                }
+                .chartYScale(domain: 40...300)
+                .chartYAxis { AxisMarks(values: [70, 180, 250]) }
+                .chartXAxis(.hidden)
+                .frame(height: 90)
+                .contentShape(Rectangle())
+                .onTapGesture { rangeIndex = (rangeIndex + 1) % ranges.count }   // click to change range
+            }
+        }
+    }
+}
+
+// MARK: - Details (all pump data, mirrors the watch Details page)
+
+/// Every relayed pump/calc field, matching the watch Details page (plus basal). Value-only mirror.
+struct MacDetailsView: View {
+    var model: MacRemoteModel
+
+    private var rows: [(String, String)] {
+        var out: [(String, String)] = [
+            ("Active insulin", String(format: "%.2f U", model.iobUnits)),
+            ("Reservoir", "\(Int(model.reservoirUnits)) U"),
+            ("Pump battery", model.batteryPercent > 0 ? "\(model.batteryPercent)%" : "—"),
+            ("Basal", String(format: "%.2f U/hr", model.basalRate)),
+            ("CGM", model.cgmActive ? "Active" : "Inactive"),
+        ]
+        if let last = model.lastBolusUnits { out.append(("Last bolus", String(format: "%.2f U", last))) }
+        out.append(("Carb ratio", model.carbRatio > 0 ? String(format: "%.0f g/U", model.carbRatio) : "—"))
+        out.append(("Correction (ISF)", model.isf > 0 ? "\(model.isf)" : "—"))
+        out.append(("Target", model.targetBg > 0 ? "\(model.targetBg)" : "—"))
+        out.append(("Max bolus", String(format: "%.1f U", model.maxBolusUnits)))
+        if !model.connection.isEmpty { out.append(("Pump", model.connection)) }
+        return out
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(rows, id: \.0) { r in
+                HStack {
+                    Text(r.0).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(r.1).font(.caption.monospacedDigit()).fontWeight(.medium)
+                }
+            }
+        }
     }
 }
 
