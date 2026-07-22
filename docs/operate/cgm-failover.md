@@ -136,24 +136,20 @@ glucose ring shows a small **"via &lt;source&gt;"** badge — e.g. *via Dexcom S
 details) for the reason. When the pump feed is the one being shown, no badge appears, so the dashboard
 stays clean in the normal case.
 
-## Testing failover without a sensor
+## Testing your failover sources
 
-The cloud sources can be exercised by entering credentials, but the direct-BLE / Apple Health / xDrip
-paths need real hardware or data. To test the whole failover pipeline (the badge, the chart backfill,
-staleness) without any of that, turn on **Settings → CGM &amp; failover → Testing → Simulated CGM**, then
-pick **Simulated CGM** as the failover source. It emits a smooth synthetic curve that sweeps through
-low / in-range / high.
-
-!!! warning "Simulated readings are fake"
-    The Simulated CGM is a diagnostic tool. Its numbers are not real glucose — never leave it selected
-    in real use. Turning the toggle off clears it if it was the active source.
+Open **Settings → CGM &amp; failover → CGM credentials &amp; testing** and tap **Save &amp; test**. faBolus tries
+to pull a live reading from each source and shows which work — including the **credential-free** ones
+(Dexcom **G7**/G6 direct BLE and the xDrip **App Group**) plus any cloud sources you've entered logins
+for. Direct-BLE sources need the sensor nearby and can take up to ~30 seconds; a green check with a
+value + age means it's pulling data.
 
 ## Uploading to Nightscout
 
-faBolus can also **push** data to a Nightscout site (the reverse of the follower). Under **Settings →
-CGM &amp; failover → CGM account credentials → Nightscout upload**, turn on **Upload to Nightscout** and
-(optionally) enter an API secret. It uploads glucose **entries**, bolus **treatments**, and pump
-**devicestatus** (IOB / reservoir / battery) to the site configured above.
+faBolus can also **push** data to a Nightscout site (the reverse of the follower). Turn it on under
+**Settings → CGM &amp; failover → Nightscout upload**; set the site URL, token, and (optional) API secret
+under **CGM credentials &amp; testing**. It uploads glucose **entries**, bolus **treatments**, and pump
+**devicestatus** (IOB / reservoir / battery).
 
 !!! note "Off by default"
     Uploading sends your health data off-device, so it's strictly opt-in. It de-dupes by timestamp and
