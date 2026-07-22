@@ -253,8 +253,11 @@ public struct PumpProfileInfo: Sendable, Equatable, Identifiable {
     public var idpId: Int
     public var name: String
     public var active: Bool
-    public init(idpId: Int, name: String, active: Bool) {
+    /// Insulin duration (DIA) for this profile, minutes. 0 = unknown/not read.
+    public var insulinDurationMinutes: Int
+    public init(idpId: Int, name: String, active: Bool, insulinDurationMinutes: Int = 0) {
         self.idpId = idpId; self.name = name; self.active = active
+        self.insulinDurationMinutes = insulinDurationMinutes
     }
 }
 

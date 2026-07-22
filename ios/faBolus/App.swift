@@ -43,6 +43,7 @@ struct FaBolusApp: App {
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
+                    ICloudSettingsSync.shared.start()   // optional; no-op unless built with ICLOUD_SYNC
                     AppSettings.shared.syncWidgetConfig()
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
@@ -52,6 +53,8 @@ struct FaBolusApp: App {
                     if phase == .active {
                         widgetBolus?.handlePending()
                         if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
+                    } else if phase == .background {
+                        ICloudSettingsSync.shared.push()   // optional; no-op unless built with ICLOUD_SYNC
                     }
                 }
                 .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }

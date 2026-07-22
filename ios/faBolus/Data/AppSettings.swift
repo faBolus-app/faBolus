@@ -286,4 +286,94 @@ public final class AppSettings {
         watchChartRanges = (storedRanges?.isEmpty ?? true) ? Self.chartRangeOptions : storedRanges!.sorted()
         applyFreshness()   // didSet doesn't fire during init; push thresholds into faBolusCore now
     }
+
+    // MARK: - Backup / restore (see SettingsBackup + BackupModels)
+
+    /// Snapshot the non-secret preferences for a backup. Excludes derived/cache keys and all secrets
+    /// (those live in the Keychain — see SettingsBackup). `nil`-valued optionals are omitted.
+    public func backupSnapshot() -> [String: BackupValue] {
+        var m: [String: BackupValue] = [
+            "defaultBolusMode": .string(defaultBolusMode.rawValue),
+            "bolusIncrement": .double(bolusIncrement),
+            "carbIncrement": .double(carbIncrement),
+            "extendedBolusEnabled": .bool(extendedBolusEnabled),
+            "showBolusReasoning": .bool(showBolusReasoning),
+            "watchDefaultBolusMode": .string(watchDefaultBolusMode.rawValue),
+            "watchBolusIncrement": .double(watchBolusIncrement),
+            "watchCarbIncrement": .double(watchCarbIncrement),
+            "showGlucoseAxis": .bool(showGlucoseAxis),
+            "showIOBAxis": .bool(showIOBAxis),
+            "showBolusBars": .bool(showBolusBars),
+            "showStats": .bool(showStats),
+            "detailsOrder": .stringArray(detailsOrder),
+            "watchDetailsOrder": .stringArray(watchDetailsOrder),
+            "pillsOrder": .stringArray(pillsOrder),
+            "watchChartRanges": .intArray(watchChartRanges),
+            "glucoseStaleMinutes": .int(glucoseStaleMinutes),
+            "advancedControlEnabled": .bool(advancedControlEnabled),
+            "autoSyncPumpTime": .bool(autoSyncPumpTime),
+            "phoneReadOnly": .bool(phoneReadOnly),
+            "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
+            "remotesReadOnly": .bool(remotesReadOnly),
+            "remoteBluetoothEnabled": .bool(remoteBluetoothEnabled),
+            "requireRemoteBolusApproval": .bool(requireRemoteBolusApproval),
+            "garminScreenOrder": .stringArray(garminScreenOrder),
+            "garminDefaultScreen": .string(garminDefaultScreen),
+            "garminComplicationDisplay": .string(garminComplicationDisplay),
+            "garminTargetApp": .string(garminTargetApp),
+            "nightscoutUploadEnabled": .bool(nightscoutUploadEnabled),
+            "childModeEnabled": .bool(childModeEnabled),
+        ]
+        if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
+        if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
+        if let d2 = d.data(forKey: "childAllowed") { m["childAllowed"] = .data(d2) }
+        return m
+    }
+
+    /// Apply a backed-up preferences dict. Assigns the real properties (so `didSet` persists + updates
+    /// the live UI). Keys absent from the backup are left unchanged.
+    public func applyBackup(_ m: [String: BackupValue]) {
+        func b(_ k: String) -> Bool? { if case .bool(let v)? = m[k] { return v }; return nil }
+        func i(_ k: String) -> Int? { if case .int(let v)? = m[k] { return v }; return nil }
+        func dbl(_ k: String) -> Double? { if case .double(let v)? = m[k] { return v }; return nil }
+        func s(_ k: String) -> String? { if case .string(let v)? = m[k] { return v }; return nil }
+        func sa(_ k: String) -> [String]? { if case .stringArray(let v)? = m[k] { return v }; return nil }
+        func ia(_ k: String) -> [Int]? { if case .intArray(let v)? = m[k] { return v }; return nil }
+        func dat(_ k: String) -> Data? { if case .data(let v)? = m[k] { return v }; return nil }
+
+        if let v = s("defaultBolusMode"), let mode = BolusMode(rawValue: v) { defaultBolusMode = mode }
+        if let v = dbl("bolusIncrement") { bolusIncrement = v }
+        if let v = dbl("carbIncrement") { carbIncrement = v }
+        if let v = b("extendedBolusEnabled") { extendedBolusEnabled = v }
+        if let v = b("showBolusReasoning") { showBolusReasoning = v }
+        if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
+        if let v = dbl("watchBolusIncrement") { watchBolusIncrement = v }
+        if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
+        if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
+        if let v = b("showIOBAxis") { showIOBAxis = v }
+        if let v = b("showBolusBars") { showBolusBars = v }
+        if let v = b("showStats") { showStats = v }
+        if let v = sa("detailsOrder") { detailsOrder = v }
+        if let v = sa("watchDetailsOrder") { watchDetailsOrder = v }
+        if let v = sa("pillsOrder") { pillsOrder = v }
+        if let v = ia("watchChartRanges") { watchChartRanges = v }
+        if let v = i("glucoseStaleMinutes") { glucoseStaleMinutes = v }
+        if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
+        if let v = b("advancedControlEnabled") { advancedControlEnabled = v }
+        if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
+        if let v = b("phoneReadOnly") { phoneReadOnly = v }
+        if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
+        if let v = b("remotesReadOnly") { remotesReadOnly = v }
+        if let v = b("remoteBluetoothEnabled") { remoteBluetoothEnabled = v }
+        if let v = b("requireRemoteBolusApproval") { requireRemoteBolusApproval = v }
+        if let v = sa("garminScreenOrder") { garminScreenOrder = v }
+        if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
+        if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
+        if let v = s("garminTargetApp") { garminTargetApp = v }
+        if let v = b("nightscoutUploadEnabled") { nightscoutUploadEnabled = v }
+        if let v = b("childModeEnabled") { childModeEnabled = v }
+        if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
+        if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
+        applyFreshness(); syncWidgetConfig()
+    }
 }
