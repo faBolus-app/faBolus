@@ -9,6 +9,11 @@ import faBolusCore
 struct FaBolusMacApp: App {
     @State private var model = MacRemoteModel()
 
+    /// Id of the standalone pairing window. The QR scanner lives here rather than in a `.sheet` inside
+    /// the menu-bar popover: opening the camera makes the transient `MenuBarExtra(.window)` popover
+    /// resign key and collapse, which (with no Dock icon / main window) looked like the app quitting.
+    static let pairWindowID = "pair-iphone"
+
     var body: some Scene {
         MenuBarExtra {
             MenuBarContentView(model: model)
@@ -17,6 +22,11 @@ struct FaBolusMacApp: App {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Pair iPhone", id: Self.pairWindowID) {
+            MacPairWindowView(model: model)
+        }
+        .windowResizability(.contentSize)
     }
 }
 

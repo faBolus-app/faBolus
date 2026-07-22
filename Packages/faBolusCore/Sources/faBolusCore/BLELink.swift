@@ -35,12 +35,23 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     private var statusChar: CBMutableCharacteristic?
     private var subscribedCentrals: [CBCentral] = []
 
-    // Central (Mac) state
+    // Central (Mac / remote iPhone) state
+    private struct DiscoveredPeer { let peripheral: CBPeripheral; var name: String; var lastSeen: Date }
     private var centralManager: CBCentralManager?
-    private var discovered: [String: CBPeripheral] = [:]   // name → peripheral (retained so we can connect)
+    // Keyed by the STABLE peripheral identifier, not the advertised name: a backgrounded/locked host
+    // stops advertising its LocalName, so keying by name split one device across a name and a UUID and
+    // broke reconnect/matching. The display name is carried alongside for the UI.
+    private var discovered: [UUID: DiscoveredPeer] = [:]
     private var connectedPeripheral: CBPeripheral?
     private var commandChar: CBCharacteristic?
+    /// A name hint (the paired-host name) for picking among several visible peers. BLE selection is NOT
+    /// gated on it — a backgrounded host advertises no name, so we connect to any faBolus peer and let
+    /// the code/token handshake authenticate the right one.
     private var preferredPeerName: String?
+    /// The remote wants to be connected (pairing or reconnecting) → auto-connect to a faBolus peer.
+    private var wantsConnection = false
+    private var pruneTimer: DispatchSourceTimer?
+    private static let peerStale: TimeInterval = 12   // evict peers not re-seen within this window
     private var writing = false
 
     // Framing
@@ -146,10 +157,48 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
         queue.async { [weak self] in
             guard let self else { return }
             self.preferredPeerName = name
-            if let name, let p = self.discovered[name], self.connectedPeripheral == nil {
-                self.centralManager?.connect(p, options: nil)
-            }
+            self.wantsConnection = (name != nil)
+            if name != nil, self.connectedPeripheral == nil { self.connectBestCandidate() }
         }
+    }
+
+    /// Connect to the best available faBolus peer: one whose advertised name matches the hint, else the
+    /// most-recently-seen. Called whenever we want a connection and aren't connected yet. All discovered
+    /// peers advertise our service (the scan is service-filtered), so any of them is a valid host — the
+    /// pairing code / stored token authenticates the correct one.
+    private func connectBestCandidate() {
+        guard connectedPeripheral == nil, wantsConnection, !discovered.isEmpty else { return }
+        let pick = discovered.values.first(where: { $0.name == preferredPeerName })
+            ?? discovered.values.max(by: { $0.lastSeen < $1.lastSeen })
+        if let pick { centralManager?.connect(pick.peripheral, options: nil) }
+    }
+
+    /// Scan for faBolus hosts. `allowDuplicates` so `lastSeen` refreshes and stale peers can be pruned.
+    private func startScanning() {
+        centralManager?.scanForPeripherals(withServices: [Self.serviceUUID],
+                                           options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+        guard pruneTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 4, repeating: 4)
+        t.setEventHandler { [weak self] in self?.pruneStalePeers() }
+        pruneTimer = t
+        t.resume()
+    }
+
+    /// Drop peers not re-seen within `peerStale` (they walked away or stopped advertising), keeping the
+    /// connected one. Re-emits the list so the UI doesn't show ghosts.
+    private func pruneStalePeers() {
+        let cutoff = Date().addingTimeInterval(-Self.peerStale)
+        let before = discovered.count
+        discovered = discovered.filter {
+            $0.value.peripheral.identifier == connectedPeripheral?.identifier || $0.value.lastSeen >= cutoff
+        }
+        if discovered.count != before { emitPeers() }
+    }
+
+    private func emitPeers() {
+        let names = Set(discovered.values.map { $0.name }).sorted()
+        Task { @MainActor in self.onPeersChanged?(names) }
     }
 
     public func disconnectAll() {
@@ -171,8 +220,10 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
                 self.subscribedCentrals.removeAll()
             case .central:
                 self.centralManager?.stopScan()
+                self.pruneTimer?.cancel(); self.pruneTimer = nil
                 if let p = self.connectedPeripheral { self.centralManager?.cancelPeripheralConnection(p) }
                 self.connectedPeripheral = nil; self.commandChar = nil
+                self.discovered.removeAll(); self.wantsConnection = false
             }
             self.txChunks.removeAll(); self.rxBuffer.removeAll()
         }
@@ -235,7 +286,7 @@ extension BLELink: CBPeripheralManagerDelegate {
 extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central.state == .poweredOn else { return }
-        central.scanForPeripherals(withServices: [Self.serviceUUID], options: nil)
+        startScanning()
     }
 
     public func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
@@ -247,18 +298,20 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     private func name(for peripheral: CBPeripheral, _ adv: [String: Any]) -> String {
-        (adv[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? peripheral.identifier.uuidString
+        if let n = adv[CBAdvertisementDataLocalNameKey] as? String, !n.isEmpty { return n }
+        if let n = peripheral.name, !n.isEmpty { return n }
+        // Backgrounded/locked host: no name in the advert. It IS a faBolus host (service-filtered scan);
+        // show a stable, readable label with a short id suffix so multiple such peers stay distinct.
+        return "faBolus device (\(peripheral.identifier.uuidString.suffix(4)))"
     }
 
     public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        let n = name(for: peripheral, advertisementData)
-        discovered[n] = peripheral
-        if n == preferredPeerName, connectedPeripheral == nil {
-            central.connect(peripheral, options: nil)
-        }
-        let names = Array(discovered.keys)
-        Task { @MainActor in self.onPeersChanged?(names) }
+        discovered[peripheral.identifier] = DiscoveredPeer(peripheral: peripheral,
+                                                           name: name(for: peripheral, advertisementData),
+                                                           lastSeen: Date())
+        if connectedPeripheral == nil, wantsConnection { connectBestCandidate() }
+        emitPeers()
     }
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -273,8 +326,8 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
             connectedPeripheral = nil; commandChar = nil; writing = false; txChunks.removeAll(); rxBuffer.removeAll()
         }
         reportReachability()
-        // Auto-reconnect to the paired peer when it comes back.
-        if let name = preferredPeerName, let p = discovered[name] { central.connect(p, options: nil) }
+        // Auto-reconnect to the (or any) faBolus peer when the remote still wants a connection.
+        if wantsConnection { connectBestCandidate() }
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {

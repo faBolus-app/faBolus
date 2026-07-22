@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import faBolusCore
 
 /// Settings shown inside the menu-bar popover, organized into collapsible sections so it isn't
@@ -117,7 +118,7 @@ struct MacSettingsPane: View {
 struct MacConnectionView: View {
     var model: MacRemoteModel
     @State private var codeEntry = ""
-    @State private var showScanner = false
+    @Environment(\.openWindow) private var openWindow
 
     private var pairing: MacConnection { model.pairing }
 
@@ -133,13 +134,13 @@ struct MacConnectionView: View {
             }
 
             if !pairing.authenticated {
-                Button { showScanner = true } label: { Label("Scan pairing QR", systemImage: "qrcode.viewfinder") }
+                Button { openWindow(id: FaBolusMacApp.pairWindowID) } label: { Label("Scan pairing QR", systemImage: "qrcode.viewfinder") }
                     .controlSize(.small)
             }
 
             if pairing.needsCode {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Scan the QR shown in faBolus on \(pairing.pairingPhone ?? "your iPhone") (Settings → Watch & Garmin → Remote access → Pair a remote), or type the code:")
+                    Text("Scan the QR shown in faBolus on \(pairing.pairingPhone ?? "your iPhone") (Settings → Remotes & devices → Remote access → Pair a remote), or type the code:")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {
@@ -189,24 +190,12 @@ struct MacConnectionView: View {
                 }
             }
 
-            Text("Keep both devices nearby (Bluetooth). On the iPhone, turn on Settings → Watch & Garmin → Remote access, then Pair a remote. Scan its QR here, or type the one-time code.")
+            Text("Keep both devices nearby (Bluetooth). On the iPhone, turn on Settings → Remotes & devices → Remote access, then Pair a remote. Scan its QR here, or type the one-time code.")
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $showScanner) {
-            VStack(spacing: 12) {
-                Text("Scan the QR shown on your iPhone").font(.headline)
-                MacQRScanner { scanned in
-                    showScanner = false
-                    if let payload = PeerPairingPayload(qrString: scanned) { model.applyScannedPayload(payload) }
-                }
-                .frame(width: 360, height: 360)
-                Button("Cancel") { showScanner = false }
-            }
-            .padding()
-        }
     }
 
     private func submit() {
@@ -225,5 +214,32 @@ struct MacConnectionView: View {
         if pairing.authenticated { return .green }
         if pairing.connected { return .orange }
         return .secondary
+    }
+}
+
+/// Standalone QR-scan window (see `FaBolusMacApp.pairWindowID`). Kept out of the menu-bar popover so
+/// opening the camera doesn't dismiss the popover; Cancel/scan closes just this window (the app stays
+/// running in the menu bar).
+struct MacPairWindowView: View {
+    var model: MacRemoteModel
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Scan the QR shown on your iPhone").font(.headline)
+            Text("On the iPhone: Settings → Remotes & devices → Allow remote devices, then Pair a remote.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            MacQRScanner { scanned in
+                if let payload = PeerPairingPayload(qrString: scanned) { model.applyScannedPayload(payload) }
+                dismissWindow(id: FaBolusMacApp.pairWindowID)
+            }
+            .frame(width: 360, height: 360)
+            Button("Cancel") { dismissWindow(id: FaBolusMacApp.pairWindowID) }
+        }
+        .padding()
+        .frame(width: 400)
+        // LSUIElement app: bring the new window to the front when it opens.
+        .onAppear { NSApp.activate(ignoringOtherApps: true) }
     }
 }
