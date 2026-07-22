@@ -473,7 +473,7 @@ struct AboutSettingsView: View {
             Section {
                 if let g = model.garminStatus { Text(g).font(.caption).foregroundStyle(.secondary) }
             } footer: {
-                Text("faBolus is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom.")
+                Text("faBolus™ is an independent, open-source project, in development for experimental use. Not FDA-cleared. Not affiliated with Tandem Diabetes Care or Dexcom. faBolus™ is a trademark of Tia Geri.")
                     .contentShape(Rectangle())
                     .onTapGesture { debugTaps += 1; if debugTaps >= 7 { showDebug = true } }
             }
