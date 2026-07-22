@@ -61,10 +61,15 @@ struct StatusRingView: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let f = failover {
                 // Only shown while a failover source is supplying the live value (pump feed stale/
-                // missing). Tap for the reason; nothing is drawn when the pump feed is live.
+                // missing). Kept to one line and bounded well inside the 180pt ring so no source name
+                // overruns; the full reason is on the accessibility hint.
                 Label("via \(f.name)", systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption2).foregroundStyle(.orange)
                     .labelStyle(.titleAndIcon)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.75)
+                    .frame(maxWidth: 140)
                     .help(f.reason)
                     .accessibilityHint(f.reason)
             }
