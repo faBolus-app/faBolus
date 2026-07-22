@@ -15,5 +15,10 @@ APP_BUNDLE_ID = com.fabolus.app
 // developer.apple.com → Account → Membership.)
 DEVELOPMENT_TEAM =
 
+// Connect IQ BETA app id the phone pairs with (dashed UUID). Defaults to the shared beta app. If you
+// build your OWN private Garmin beta (faBolusGarmin/scripts/beta-build.sh — the store requires a unique
+// id per beta listing), set this to the id that script prints, in LocalConfig.xcconfig.
+GARMIN_BETA_APP_ID = A1B2C3D4-E5F6-0011-2233-445566778899
+
 // Local, gitignored overrides win over the defaults above. Keep this the last line.
 #include? "LocalConfig.xcconfig"

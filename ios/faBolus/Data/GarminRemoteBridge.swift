@@ -13,7 +13,16 @@ final class GarminRemoteBridge: NSObject {
     static let urlScheme = "fabolusciq"
     /// The two published Garmin apps (garmin/manifest.xml + manifest-official.xml). The developer
     /// panel picks which the phone pairs with (UserDefaults "garminTargetApp": beta|official).
-    static let betaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
+    ///
+    /// The BETA id is configurable: a self-compiler who builds their OWN private beta (the Connect IQ
+    /// store requires a unique app id per beta listing — see faBolusGarmin/scripts/beta-build.sh) sets
+    /// `GARMIN_BETA_APP_ID` in LocalConfig.xcconfig (→ Info.plist `GarminBetaAppID`) to the id that
+    /// script prints, so the phone targets their beta app. Falls back to the shared default.
+    static let betaAppUUID: UUID = {
+        if let s = Bundle.main.object(forInfoDictionaryKey: "GarminBetaAppID") as? String,
+           let id = UUID(uuidString: s.trimmingCharacters(in: .whitespaces)) { return id }
+        return UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
+    }()
     static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
     /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings).
     /// Default official; only "beta" selects the beta app.

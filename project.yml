@@ -93,6 +93,10 @@ targets:
         AppGroupIdentifier: group.$(APP_BUNDLE_ID)
         # Garmin Connect builds its "select devices for <app>" screen from CFBundleDisplayName.
         CFBundleDisplayName: faBolus
+        # The Connect IQ BETA app id the phone pairs with (dashed UUID). Self-compilers who build their
+        # own private beta set GARMIN_BETA_APP_ID in LocalConfig.xcconfig (see faBolusGarmin/scripts/
+        # beta-build.sh). Defaults to the shared beta id via Config.xcconfig.
+        GarminBetaAppID: $(GARMIN_BETA_APP_ID)
         # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
         CFBundleSpokenName: "Fabolus"
         # iOS allows at most 3 alternative names.
