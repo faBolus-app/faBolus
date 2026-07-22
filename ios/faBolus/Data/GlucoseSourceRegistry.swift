@@ -27,16 +27,8 @@ public enum GlucoseSourceRegistry {
                                 sensors: ["xDrip4iOS (any sensor, local)"]) { XDripAppGroupSource() },
     ]
 
-    /// Testing-only sources, hidden from the picker unless `AppSettings.simulatedCgmEnabled` is on.
-    /// The simulator needs no credentials or hardware, so it's the only way to exercise the failover
-    /// pipeline (arbiter, badge, chart merge, staleness) without a real sensor or cloud login.
-    public static let testing: [GlucoseSourceDescriptor] = [
-        GlucoseSourceDescriptor(id: "simulated", name: "Simulated CGM (testing only — fake data)",
-                                sensors: ["Synthetic"]) { SimulatedGlucoseSource() },
-    ]
-
-    /// Every descriptor, real + testing — used for id lookups so a selected simulator still resolves.
-    private static var all: [GlucoseSourceDescriptor] { enabled + testing }
+    /// Every descriptor — used for id lookups.
+    private static var all: [GlucoseSourceDescriptor] { enabled }
 
     private static let key = "selectedGlucoseSourceId"
 
@@ -50,8 +42,7 @@ public enum GlucoseSourceRegistry {
         UserDefaults.standard.removeObject(forKey: "glucoseSourceCrashGuard")
     }
 
-    /// The selected descriptor if it's still available, else nil. Searches real + testing sources so
-    /// a selected simulator resolves even though it isn't shown in the picker by default.
+    /// The selected descriptor if it's still available, else nil.
     public static func selected() -> GlucoseSourceDescriptor? {
         guard let id = selectedId() else { return nil }
         return all.first { $0.id == id }

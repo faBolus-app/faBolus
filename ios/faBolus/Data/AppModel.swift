@@ -50,11 +50,6 @@ public final class AppModel {
     /// notifications the user can act on.
     public var onNotificationsChange: (@MainActor ([PumpAlert]) -> Void)?
 
-    /// Fired (title, body) when the optional missed-bolus / unannounced-meal nudge should be shown.
-    /// Wired to the notifier in `App`. Advisory only — never doses.
-    public var onNudge: (@MainActor (String, String) -> Void)?
-    private var lastNudge = Date.distantPast
-
     // MARK: Child (locked) mode gate
 
     /// Whether `feature` is permitted right now. In child mode, blocked actions no-op with a message.
@@ -323,7 +318,6 @@ public final class AppModel {
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
-        evaluateMissedBolusNudge()
         evaluateSavePinOffer()
         pushStatusIfNeeded()
         if alertsChanged {
@@ -332,22 +326,6 @@ public final class AppModel {
         }
     }
 
-    /// Optional missed-bolus / unannounced-meal nudge: glucose rising past a floor, with little IOB
-    /// and no recent bolus. Advisory only — never doses. Debounced to at most once per 30 min. Only
-    /// runs while the app is live/BLE-woken (no background scheduler).
-    private func evaluateMissedBolusNudge() {
-        guard AppSettings.shared.missedBolusNudgeEnabled else { return }
-        guard let g = snapshot.glucose, !snapshot.isGlucoseStale else { return }
-        let trend = GlucoseTrend(rawValue: snapshot.trend) ?? .flat
-        let rising = trend == .up || trend == .upUp || trend == .rising
-        guard rising, g >= AppSettings.shared.missedBolusNudgeMgdl else { return }
-        let recentBolus = snapshot.lastBolusDate.map { Date().timeIntervalSince($0) < 20 * 60 } ?? false
-        guard !recentBolus, snapshot.iobUnits < 0.5 else { return }
-        guard Date().timeIntervalSince(lastNudge) > 30 * 60 else { return }
-        lastNudge = Date()
-        onNudge?("Rising glucose — bolus?",
-                 "Glucose is \(g) mg/dL and climbing with little insulin on board and no recent bolus.")
-    }
 
     public func connect() async { await source.connect(); refresh() }
     public func disconnect() { source.disconnect(); refresh() }

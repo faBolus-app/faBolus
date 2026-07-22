@@ -131,13 +131,11 @@ enum SettingsIndex {
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
         .init(title: "iPhone increments", keywords: "bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "bolus carb step remote", category: .bolus),
-        .init(title: "Missed-bolus nudge", keywords: "unannounced meal reminder rising nudge", category: .bolus),
         .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
         .init(title: "Statistics card", keywords: "time in range tir gmi average cv stats a1c", category: .display),
-        .init(title: "Simulated CGM (testing)", keywords: "test failover fake simulator cgm", category: .cgm),
         .init(title: "Watch details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
         .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
@@ -189,14 +187,6 @@ struct BolusSettingsView: View {
                 Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
             } header: { Text("Bolus screen") } footer: {
                 Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. Both off/hidden keep the screen simple.")
-            }
-            Section {
-                Toggle("Missed-bolus nudge", isOn: $settings.missedBolusNudgeEnabled)
-                if settings.missedBolusNudgeEnabled {
-                    Stepper("When above \(settings.missedBolusNudgeMgdl) mg/dL", value: $settings.missedBolusNudgeMgdl, in: 120...300, step: 10)
-                }
-            } header: { Text("Reminders") } footer: {
-                Text("Off by default. When on, shows a local reminder if glucose is climbing above this level with little insulin on board and no recent bolus — a possible unannounced meal. Advisory only; it never doses, and only fires while the app is running or woken by the pump.")
             }
         }
         .navigationTitle("Bolus & entry")
@@ -251,27 +241,16 @@ struct CgmSettingsView: View {
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
-                    if settings.simulatedCgmEnabled {
-                        ForEach(GlucoseSourceRegistry.testing) { Text($0.name).tag($0.id) }
-                    }
                 }
                 .onChange(of: selectedGlucoseSource) { _, id in GlucoseSourceRegistry.select(id.isEmpty ? nil : id) }
-                NavigationLink("CGM account credentials") { CgmCredentialsView(model: model) }
+                NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
             } header: { Text("Glucose failover") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
             }
             Section {
-                Toggle("Simulated CGM (testing)", isOn: $settings.simulatedCgmEnabled)
-                    .onChange(of: settings.simulatedCgmEnabled) { _, on in
-                        // Turning it off while it's the active source clears the selection so fake
-                        // data can't linger as the failover feed.
-                        if !on, selectedGlucoseSource == "simulated" {
-                            selectedGlucoseSource = ""
-                            GlucoseSourceRegistry.select(nil)
-                        }
-                    }
-            } header: { Text("Testing") } footer: {
-                Text("Adds a **Simulated CGM** option above that emits fake glucose (a smooth sweep through low/in-range/high) so you can test the failover badge, chart, and staleness without a real sensor or a cloud login. **Never leave this selected in real use — the readings are not real.**")
+                Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
+            } header: { Text("Nightscout upload") } footer: {
+                Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to your Nightscout site. **Off by default — this sends your health data off-device.** Set the site URL, token, and (optional) API secret under **CGM credentials & testing**.")
             }
             Section {
                 Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
@@ -382,6 +361,16 @@ struct RemotesSettingsView: View {
                 }
             } header: { Text("Garmin remote") } footer: {
                 Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
+            }
+            Section {
+                Picker("Bolus increment", selection: $settings.watchBolusIncrement) {
+                    ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
+                }
+                Picker("Carb increment", selection: $settings.watchCarbIncrement) {
+                    ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
+                }
+            } header: { Text("Bolus increments") } footer: {
+                Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same setting as under Bolus & entry.")
             }
             Section {
                 NavigationLink {

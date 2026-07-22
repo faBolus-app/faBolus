@@ -27,14 +27,6 @@ struct AlertsScreenView: View {
                                 .padding(.horizontal)
                         }
                     }
-                    if model.snapshot.connection == .connected {
-                        // Diagnostic: after tapping Clear, this shows the pump's ack — status 0
-                        // usually means accepted; a non-zero status means the pump rejected it.
-                        Label(model.alertDebug, systemImage: "stethoscope")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .padding(8).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                            .frame(maxWidth: .infinity)
-                    }
                 }
                 .padding(.vertical)
             }

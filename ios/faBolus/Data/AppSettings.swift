@@ -60,11 +60,6 @@ public final class AppSettings {
     /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
-    /// Testing opt-in: expose the **Simulated CGM** failover source in the CGM picker. **Default OFF.**
-    /// The simulator emits fake glucose to exercise the failover pipeline without a sensor or cloud
-    /// login; it must never be left on in real use. See [[SimulatedGlucoseSource]].
-    public var simulatedCgmEnabled: Bool { didSet { d.set(simulatedCgmEnabled, forKey: "simulatedCgmEnabled") } }
-
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
     /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
     /// cost. Unlike the Apple Watch / Garmin links (bound to your own paired device, not discoverable
@@ -93,12 +88,6 @@ public final class AppSettings {
     /// health data off-device, so it's strictly opt-in. Uses the same `nightscout.url` + token the
     /// follower source uses (plus an optional API secret). See [[NightscoutUploader]].
     public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
-
-    /// Optional local nudge when glucose is rising with no recent bolus (possible unannounced meal /
-    /// missed bolus). **Default OFF.** Advisory only — never doses. Only fires while the app is running
-    /// or BLE-woken (no background scheduler). `missedBolusNudgeMgdl` gates the glucose floor.
-    public var missedBolusNudgeEnabled: Bool { didSet { d.set(missedBolusNudgeEnabled, forKey: "missedBolusNudgeEnabled") } }
-    public var missedBolusNudgeMgdl: Int { didSet { d.set(missedBolusNudgeMgdl, forKey: "missedBolusNudgeMgdl") } }
 
     /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
     /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
@@ -245,14 +234,11 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
-        simulatedCgmEnabled = (d.object(forKey: "simulatedCgmEnabled") as? Bool) ?? false
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         remoteBluetoothReadOnly = (d.object(forKey: "remoteBluetoothReadOnly") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
-        missedBolusNudgeEnabled = (d.object(forKey: "missedBolusNudgeEnabled") as? Bool) ?? false
-        missedBolusNudgeMgdl = max(120, (d.object(forKey: "missedBolusNudgeMgdl") as? Int) ?? 180)
         extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         childModeEnabled = (d.object(forKey: "childModeEnabled") as? Bool) ?? false
