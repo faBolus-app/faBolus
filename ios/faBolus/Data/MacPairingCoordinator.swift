@@ -21,8 +21,10 @@ final class MacPairingCoordinator {
     /// Whether an authenticated Mac is currently connected, and its name.
     private(set) var connected: Bool = false
     private(set) var connectedName: String?
-    /// Set briefly after a successful pairing so the UI can confirm ("Paired with …").
+    /// Set briefly after a successful pairing so the UI can confirm + prompt for this device's
+    /// permissions. `justPairedClientId` keys the new peer's policy.
     var justPaired: String?
+    var justPairedClientId: String?
     /// Whether the open window is QR (high-entropy code, shown as a QR to scan) vs a 6-digit code.
     private(set) var activeIsQR = false
 
@@ -83,6 +85,13 @@ final class MacPairingCoordinator {
         cancelPairing()
         reload()
         justPaired = name
+        justPairedClientId = clientId
+    }
+
+    // MARK: Per-device permissions (read-only vs. control), editable anytime.
+    func policy(for clientId: String) -> RemotePeerPolicy { RemotePeerPolicyStore.effectivePolicy(for: clientId) }
+    func setPolicy(_ policy: RemotePeerPolicy, for clientId: String) {
+        RemotePeerPolicyStore.setPolicy(policy, for: clientId)
     }
 
     func setConnected(_ c: Bool, name: String?) {

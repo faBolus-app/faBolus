@@ -45,9 +45,13 @@ public struct RemotePeerPolicy: Codable, Equatable, Sendable {
         self.permissions = permissions; self.approvalMode = approvalMode
     }
     public func allows(_ p: RemotePermission) -> Bool { permissions.contains(p) }
+    /// Read-only = no insulin-affecting or write permissions at all (status viewing only).
+    public var isViewOnly: Bool { permissions.isEmpty }
 
     /// New peers start here (see status only until the host grants more).
     public static let viewOnly = RemotePeerPolicy(permissions: [], approvalMode: .auto)
+    /// Everything a remote can do (used by the per-device "allow control" choice).
+    public static let fullControl = RemotePeerPolicy(permissions: Set(RemotePermission.allCases), approvalMode: .auto)
     /// Migration default for a peer paired before per-peer policies existed (unchanged behavior).
     public static let legacyFull = RemotePeerPolicy(permissions: Set(RemotePermission.allCases), approvalMode: .auto)
 }

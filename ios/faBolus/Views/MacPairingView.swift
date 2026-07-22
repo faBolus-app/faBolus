@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import faBolusCore
 
 /// Settings → Remotes & devices → Remote access → pairing. Start a pairing window — a **QR to scan**
 /// (recommended, higher-entropy) or a **one-time code** to type — see the connected remote, and forget
@@ -69,35 +70,105 @@ struct MacPairingView: View {
             }
 
             if !pairing.pairedMacs.isEmpty {
-                Section("Paired remotes") {
+                Section {
                     ForEach(pairing.pairedMacs) { mac in
-                        HStack {
-                            Image(systemName: mac.name.localizedCaseInsensitiveContains("iphone") ? "iphone" : "laptopcomputer")
-                                .foregroundStyle(.secondary)
-                            Text(mac.name).lineLimit(1)
-                            Spacer()
-                            Button("Forget", role: .destructive) { pairing.forget(mac.id) }
-                                .buttonStyle(.borderless)
+                        NavigationLink {
+                            RemotePeerPermissionsView(clientId: mac.id, name: mac.name)
+                        } label: {
+                            HStack {
+                                Image(systemName: mac.name.localizedCaseInsensitiveContains("iphone") ? "iphone" : "laptopcomputer")
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(mac.name).lineLimit(1)
+                                    Text(pairing.policy(for: mac.id).isViewOnly ? "View only" : "Can control")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
+                } header: { Text("Paired remotes") } footer: {
+                    Text("Tap a device to set what it can do (view-only vs. control) or to forget it.")
                 }
             }
         }
         .navigationTitle("Remotes")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Remote paired", isPresented: Binding(
+        .alert("“\(pairing.justPaired ?? "")” paired", isPresented: Binding(
             get: { pairing.justPaired != nil },
-            set: { if !$0 { pairing.justPaired = nil } }
+            set: { if !$0 { clearJustPaired() } }
         )) {
-            Button("OK", role: .cancel) { pairing.justPaired = nil }
+            Button("Allow control") {
+                if let id = pairing.justPairedClientId { pairing.setPolicy(.fullControl, for: id) }
+                clearJustPaired()
+            }
+            Button("View only", role: .cancel) {
+                if let id = pairing.justPairedClientId { pairing.setPolicy(.viewOnly, for: id) }
+                clearJustPaired()
+            }
         } message: {
-            Text("“\(pairing.justPaired ?? "")” can now control this phone. It will reconnect automatically from now on.")
+            Text("Choose what this device may do. View only shows status but can't deliver boluses or change the pump — you can change this anytime under Paired remotes.")
         }
     }
+
+    private func clearJustPaired() { pairing.justPaired = nil; pairing.justPairedClientId = nil }
 
     /// "123456" -> "123 456" for readability.
     private func spaced(_ code: String) -> String {
         let mid = code.index(code.startIndex, offsetBy: code.count / 2)
         return "\(code[..<mid]) \(code[mid...])"
     }
+}
+
+/// Per-device permissions for one paired remote (Mac or iPhone). A prominent **Read-only** toggle
+/// (view status only) plus, when off, the granular actions and how its boluses are confirmed. Saved
+/// immediately to `RemotePeerPolicyStore` and enforced by `PeerRemoteHost`.
+struct RemotePeerPermissionsView: View {
+    let clientId: String
+    let name: String
+    @State private var pairing = MacPairingCoordinator.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var policy = RemotePeerPolicy.viewOnly
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Read-only (view status only)", isOn: Binding(
+                    get: { policy.isViewOnly },
+                    set: { ro in policy = ro ? .viewOnly : .fullControl; save() }
+                ))
+            } footer: {
+                Text("When read-only, “\(name)” can see status but can't deliver boluses or change the pump.")
+            }
+
+            if !policy.isViewOnly {
+                Section("Allowed actions") {
+                    ForEach(RemotePermission.allCases) { p in
+                        Toggle(p.label, isOn: Binding(
+                            get: { policy.allows(p) },
+                            set: { on in if on { policy.permissions.insert(p) } else { policy.permissions.remove(p) }; save() }
+                        ))
+                    }
+                }
+                Section {
+                    Picker("Boluses", selection: Binding(
+                        get: { policy.approvalMode },
+                        set: { policy.approvalMode = $0; save() }
+                    )) {
+                        ForEach(RemoteApprovalMode.allCases) { Text($0.label).tag($0) }
+                    }
+                } header: { Text("Bolus confirmation") } footer: {
+                    Text("“Remote confirms” lets the device deliver after confirming on its own screen; “I approve on this phone” makes each bolus wait for your OK here.")
+                }
+            }
+
+            Section {
+                Button("Forget this device", role: .destructive) { pairing.forget(clientId); dismiss() }
+            }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { policy = pairing.policy(for: clientId) }
+    }
+
+    private func save() { pairing.setPolicy(policy, for: clientId) }
 }

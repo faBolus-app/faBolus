@@ -75,11 +75,6 @@ public final class AppSettings {
     /// is authenticated (one-time code + token) and end-to-end encrypted ([[SealedTransport]]).
     public var remoteBluetoothEnabled: Bool { didSet { d.set(remoteBluetoothEnabled, forKey: "remoteBluetoothEnabled") } }
 
-    /// When remote Bluetooth is on, restrict remote peers to **read-only + safe** actions: status
-    /// viewing, cancelling a running bolus (stops insulin), and clearing alerts — but **no bolus,
-    /// extended bolus, or suspend/resume**. **Default OFF** (peers use their granted permissions).
-    public var remoteBluetoothReadOnly: Bool { didSet { d.set(remoteBluetoothReadOnly, forKey: "remoteBluetoothReadOnly") } }
-
     /// Reverse approval (opt-in): a bolus started on **this** phone must be approved by a paired remote
     /// (e.g. a parent) before it delivers. **Default OFF.** Only takes effect when a remote is paired;
     /// if no paired remote responds within the timeout the bolus is aborted (safe default).
@@ -247,7 +242,6 @@ public final class AppSettings {
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
-        remoteBluetoothReadOnly = (d.object(forKey: "remoteBluetoothReadOnly") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
