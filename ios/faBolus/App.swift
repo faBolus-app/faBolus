@@ -26,7 +26,7 @@ struct FaBolusApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView(model: model)
+            RootContainerView(model: model)
                 .alert("Save this pump's PIN?", isPresented: Binding(
                     get: { model.savePinPrompt != nil },
                     set: { if !$0 { model.dismissSavePinPrompt() } }

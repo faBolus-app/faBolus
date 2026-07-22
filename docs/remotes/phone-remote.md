@@ -20,13 +20,25 @@ it relays confirmed commands to the host over an encrypted Bluetooth link.
 
 **On the remote (parent's) phone**
 
-1. **Settings → Remotes & devices → Control another phone.**
+1. **Settings → Remotes & devices → Control another phone.** This switches the whole app into
+   **Remote mode** (see below).
 2. **Scan the host's QR code** (or pick the host under *Nearby hosts* and type the code). Pairing is
    **by the code** — the remote connects to any nearby faBolus host, so it works even when the host
    phone is **locked or backgrounded**. The device list prunes devices that are no longer nearby, and
    a backgrounded host shows a readable **“faBolus device (xxxx)”** label instead of a raw UUID.
 3. Once paired, you'll see the host's status and — if the host granted it — can bolus, cancel, and
    clear alerts. Pairing is remembered; it reconnects automatically.
+
+## Remote mode (app-wide) & switching
+
+"Control another phone" puts the **whole app** into **Remote mode**: the app operates against the
+paired host's pump and looks like a host (a Remote dashboard + Settings), rather than being a screen
+buried in Settings. The remote connection stays alive as you move around the app.
+
+Switch between controlling **this phone's own pump** and the **remote** host anytime under
+**Settings → Controlling** — the choice is remembered across launches, so a phone used purely as a
+remote reopens straight into Remote mode. (A phone can do both: use its own pump *and* act as a remote,
+switching between them.)
 
 ## What the remote can do
 

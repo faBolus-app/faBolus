@@ -1,53 +1,20 @@
 import SwiftUI
 import faBolusCore
 
-/// "Control another phone" — this iPhone acting as a remote for another phone's pump. Pairs over BLE
-/// (QR or code), then mirrors the host: status (reusing the host dashboard subviews), alerts, and a
-/// bolus screen that confirms on THIS device. The central runs only while this screen is open.
-struct RemoteControlView: View {
-    @State private var model = PhoneRemoteClientModel()
+/// This iPhone acting as a **remote** for another phone's pump. Split into reusable pieces so it can
+/// drive either a single Settings screen or the whole app (see `RemoteRootView` / app-wide Remote
+/// mode). The model is owned by the caller (the `AppRouter`) and kept alive across tab switches — these
+/// views never tear it down.
+
+// MARK: - Pairing
+
+/// Pair with a host phone over BLE (QR or 6-digit code), then the caller shows the connected UI.
+struct RemotePairingView: View {
+    @Bindable var model: PhoneRemoteClientModel
     @State private var showScanner = false
     @State private var codeEntry = ""
-    @State private var showBolus = false
 
     var body: some View {
-        Group {
-            if model.conn.authenticated {
-                connectedBody
-            } else {
-                pairingBody
-            }
-        }
-        .navigationTitle("Remote control")
-        .navigationBarTitleDisplayMode(.inline)
-        .onDisappear { model.stop() }
-        .sheet(isPresented: $showScanner) {
-            NavigationStack {
-                QRScannerView { scanned in
-                    showScanner = false
-                    if let payload = PeerPairingPayload(qrString: scanned) { model.applyScannedPayload(payload) }
-                }
-                .ignoresSafeArea()
-                .navigationTitle("Scan the host's QR")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showScanner = false } } }
-            }
-        }
-        .sheet(isPresented: $showBolus) { RemoteBolusSheet(model: model) }
-        .alert("Approve bolus?", isPresented: Binding(
-            get: { model.incomingApproval != nil },
-            set: { if !$0 { model.respondToApproval(false) } }
-        )) {
-            Button("Approve", role: .destructive) { model.respondToApproval(true) }
-            Button("Deny", role: .cancel) { model.respondToApproval(false) }
-        } message: {
-            Text("\(model.conn.pairedHost ?? "The host") is asking to deliver \(String(format: "%.2f U", model.incomingApproval?.units ?? 0)).")
-        }
-    }
-
-    // MARK: Pairing
-
-    private var pairingBody: some View {
         Form {
             Section {
                 Button { showScanner = true } label: { Label("Scan the host's QR code", systemImage: "qrcode.viewfinder") }
@@ -85,11 +52,32 @@ struct RemoteControlView: View {
                 }
             }
         }
+        .sheet(isPresented: $showScanner) {
+            NavigationStack {
+                QRScannerView { scanned in
+                    showScanner = false
+                    if let payload = PeerPairingPayload(qrString: scanned) { model.applyScannedPayload(payload) }
+                }
+                .ignoresSafeArea()
+                .navigationTitle("Scan the host's QR")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showScanner = false } } }
+            }
+        }
     }
+}
 
-    // MARK: Connected (full-parity mirror)
+// MARK: - Connected dashboard (full-parity mirror of the host)
 
-    private var connectedBody: some View {
+/// The host's live status + chart + alerts, rendered through the host's own subviews. `showBolusButton`
+/// is off when a dedicated Bolus tab already exists (app-wide Remote mode).
+struct RemoteDashboardView: View {
+    @Bindable var model: PhoneRemoteClientModel
+    var showBolusButton = true
+    var showForget = true
+    @State private var showBolus = false
+
+    var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 StatusRingView(snapshot: model.asSnapshot)
@@ -115,24 +103,38 @@ struct RemoteControlView: View {
                     }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
                 }
 
-                Button { showBolus = true } label: {
-                    Label("Bolus", systemImage: "syringe.fill").frame(maxWidth: .infinity)
+                if showBolusButton {
+                    Button { showBolus = true } label: {
+                        Label("Bolus", systemImage: "syringe.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).tint(AppTheme.insulin).padding(.horizontal)
+                    .disabled(!model.reachable)
                 }
-                .buttonStyle(.borderedProminent).tint(AppTheme.insulin).padding(.horizontal)
-                .disabled(!model.reachable)
 
                 if let msg = model.statusMessage { Text(msg).font(.caption).foregroundStyle(.secondary) }
                 Text("Remote — commands run on the host phone, which decides what's allowed.")
                     .font(.caption2).foregroundStyle(.secondary).padding(.top, 4)
-                Button("Forget this host", role: .destructive) { model.conn.forget() }.font(.caption)
+                if showForget {
+                    Button("Forget this host", role: .destructive) { model.conn.forget() }.font(.caption)
+                }
             }.padding(.vertical)
+        }
+        .sheet(isPresented: $showBolus) { RemoteBolusSheet(model: model) }
+        .alert("Approve bolus?", isPresented: Binding(
+            get: { model.incomingApproval != nil },
+            set: { if !$0 { model.respondToApproval(false) } }
+        )) {
+            Button("Approve", role: .destructive) { model.respondToApproval(true) }
+            Button("Deny", role: .cancel) { model.respondToApproval(false) }
+        } message: {
+            Text("\(model.conn.pairedHost ?? "The host") is asking to deliver \(String(format: "%.2f U", model.incomingApproval?.units ?? 0)).")
         }
     }
 }
 
 /// Compact remote bolus entry (carbs or units, optional extended split). Confirms on this device;
 /// the host runs it (subject to the permissions the host granted this remote).
-private struct RemoteBolusSheet: View {
+struct RemoteBolusSheet: View {
     let model: PhoneRemoteClientModel
     @Environment(\.dismiss) private var dismiss
     @State private var mode = 0            // 0 = carbs, 1 = units
@@ -201,7 +203,7 @@ private struct RemoteBolusSheet: View {
 }
 
 // MARK: - Adapter: present the remote read-model through the host's value-driven subviews.
-private extension RemoteClientModel {
+extension RemoteClientModel {
     var asSnapshot: PumpSnapshot {
         var s = PumpSnapshot()
         s.glucose = glucose
