@@ -4,6 +4,11 @@ import Foundation
 /// (TandemBackend/PumpX2Kit, MockBackend, or a community backend) conforms to this; the app depends
 /// only on this protocol + the neutral models, never on a specific pump library. Async streaming of
 /// snapshots keeps the HUD reactive.
+///
+/// **To add a pump:** conform a new type to this protocol, register it in `BackendRegistry.enabled`
+/// (in the app target), and rely on the default-throwing extension for actions your pump can't do.
+/// **To add an action:** add the method here + a default-throwing impl in the extension below, then
+/// implement it in `TandemBackend` **and** `MockBackend`, and surface it via `AppModel`.
 @MainActor
 public protocol PumpBackend: AnyObject {
     /// What this backend supports, so the UI adapts (carbs mode, cancel, alerts, pairing).

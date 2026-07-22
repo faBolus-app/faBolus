@@ -3,6 +3,10 @@ import Foundation
 /// The transport-agnostic surface a remote client (Apple Watch, Mac, or another iPhone) drives to
 /// talk to the host. `RemoteLink` (WatchConnectivity) and `BLELink` (Bluetooth LE) both conform, so a
 /// single `RemoteClientModel` works over either link without knowing which one it holds.
+///
+/// **To add a transport:** conform a new type to this protocol (send/receive encoded `RemoteCommand`s);
+/// wrap it in `SealedTransport` if the medium isn't already encrypted, and it drops into
+/// `RemoteClientModel` / the `*RemoteHost` bridges unchanged.
 public protocol RemoteTransport: AnyObject {
     /// Invoked (on the main actor) with each decoded command received from the peer.
     var onReceive: (@MainActor (RemoteCommand) -> Void)? { get set }
