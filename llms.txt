@@ -6,6 +6,10 @@
 > FDA-cleared. This file orients an LLM helping either a **user** set up/use the app or a **developer**
 > add features / debug. Paths are repo-relative; every file has a doc-comment header — read it first.
 
+## Start with
+- [AGENTS.md](AGENTS.md) — workflow, commands, how-to-add-X, and gotchas (read this if you're editing).
+- [docs/glossary.md](docs/glossary.md) — terms (IOB, ISF, TIR, host/remote, JPAKE, sealed transport…).
+
 ## Safety invariants (never violate)
 - Every insulin-affecting command goes: UI confirm/hold → backend clamp (`Interlocks.absoluteMaxUnits`
   = 25 U, ≥ 0.05 U) → transport `WritePolicy` (`.readOnly` default) → signed + `modifiesInsulinDelivery`

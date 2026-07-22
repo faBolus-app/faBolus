@@ -82,6 +82,9 @@ public enum GlucoseSourceStatus: Sendable, Equatable {
 /// glucose goes stale (pump↔phone, watch↔phone, or pump↔sensor drops). Parallels `PumpBackend`
 /// (async + `onChange`, the repo doesn't use Combine) and mirrors LoopKit's `CGMManager`. Sources are
 /// **read-only** and must never displace the pump or the official vendor app.
+///
+/// **To add a CGM source:** conform a new type to this protocol, then add a `GlucoseSourceDescriptor`
+/// for it to `GlucoseSourceRegistry.enabled` (in the app target). `GlucoseArbiter` handles failover.
 @MainActor
 public protocol GlucoseSource: AnyObject {
     /// Stable id (matches its `GlucoseSourceDescriptor.id`), stamped onto every `GlucoseSample`.
