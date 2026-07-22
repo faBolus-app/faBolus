@@ -23,9 +23,14 @@ public enum MacPairing {
 
     // MARK: - Material generation
 
-    /// A fresh 6-digit numeric pairing code (leading zeros preserved).
+    /// A fresh 6-digit numeric pairing code (leading zeros preserved). For manual typing.
     public static func newCode() -> String {
         (0..<codeLength).map { _ in String(Int.random(in: 0...9)) }.joined()
+    }
+    /// A high-entropy (128-bit) hex code for **QR** pairing — never typed, only scanned, so it closes
+    /// the offline-brute-force window the 6-digit code documents. Fed through the same handshake.
+    public static func newStrongCode() -> String {
+        randomBytes(16).map { String(format: "%02x", $0) }.joined()
     }
     /// A stable per-Mac identifier (generated once, persisted by the Mac; not secret).
     public static func newClientId() -> String { UUID().uuidString }

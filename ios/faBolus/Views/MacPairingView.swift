@@ -1,10 +1,13 @@
 import SwiftUI
+import UIKit
 
-/// Settings → Watch & Garmin → "Mac remote". Start a pairing window (shows a one-time code the user
-/// types on the Mac), see the connected Mac, and forget paired Macs. The handshake itself runs in
+/// Settings → Watch & Garmin → Remote access → pairing. Start a pairing window — a **QR to scan**
+/// (recommended, higher-entropy) or a **one-time code** to type — see the connected remote, and forget
+/// paired remotes. Works for the Mac app and a parent iPhone. The handshake itself runs in
 /// `PeerRemoteHost`; this view only drives `MacPairingCoordinator`.
 struct MacPairingView: View {
     @State private var pairing = MacPairingCoordinator.shared
+    private var hostName: String { UIDevice.current.name }   // must match PeerRemoteHost's BLE name
 
     var body: some View {
         Form {
@@ -20,15 +23,21 @@ struct MacPairingView: View {
             }
 
             Section {
-                if let code = pairing.activeCode {
+                if pairing.activeCode != nil {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Enter this code on your Mac")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Text(spaced(code))
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .textSelection(.enabled)
+                        if let qr = pairing.qrString(hostName: hostName) {
+                            Text("Scan this on the remote (Mac or parent iPhone)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            QRCodeView(string: qr).frame(maxWidth: .infinity, alignment: .center)
+                        } else if let code = pairing.activeCode {
+                            Text("Enter this code on the remote")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Text(spaced(code))
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .textSelection(.enabled)
+                        }
                         if let exp = pairing.codeExpiry {
                             TimelineView(.periodic(from: .now, by: 1)) { _ in
                                 let secs = max(0, Int(exp.timeIntervalSinceNow))
@@ -38,29 +47,33 @@ struct MacPairingView: View {
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
-                        Text("On the Mac: open faBolus → Settings → Connection, choose this iPhone, then type the code.")
-                            .font(.caption).foregroundStyle(.secondary)
                         Button("Cancel", role: .cancel) { pairing.cancelPairing() }
                     }
                     .padding(.vertical, 4)
                 } else {
                     Button {
-                        pairing.beginPairing()
+                        pairing.beginPairing(viaQR: true)
                     } label: {
-                        Label("Pair a Mac", systemImage: "laptopcomputer.and.arrow.down")
+                        Label("Pair with QR code", systemImage: "qrcode")
+                    }
+                    Button {
+                        pairing.beginPairing(viaQR: false)
+                    } label: {
+                        Label("Pair with a code instead", systemImage: "textformat.123")
                     }
                 }
             } header: {
-                Text("Pair a Mac")
+                Text("Pair a remote")
             } footer: {
-                Text("The faBolus Mac app is a remote — it shows status and can send boluses your phone delivers. Pairing requires this one-time code so only a Mac you approve can connect.")
+                Text("Pair the faBolus Mac app or a parent's iPhone — it shows status and can send boluses your phone delivers. QR is recommended (higher-entropy, just scan it); a typed code works if the remote has no camera. Only a remote you pair can connect.")
             }
 
             if !pairing.pairedMacs.isEmpty {
-                Section("Paired Macs") {
+                Section("Paired remotes") {
                     ForEach(pairing.pairedMacs) { mac in
                         HStack {
-                            Image(systemName: "laptopcomputer").foregroundStyle(.secondary)
+                            Image(systemName: mac.name.localizedCaseInsensitiveContains("iphone") ? "iphone" : "laptopcomputer")
+                                .foregroundStyle(.secondary)
                             Text(mac.name).lineLimit(1)
                             Spacer()
                             Button("Forget", role: .destructive) { pairing.forget(mac.id) }
@@ -70,7 +83,7 @@ struct MacPairingView: View {
                 }
             }
         }
-        .navigationTitle("Mac remote")
+        .navigationTitle("Remotes")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Mac paired", isPresented: Binding(
             get: { pairing.justPaired != nil },
