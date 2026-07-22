@@ -199,6 +199,15 @@ class RemoteClientModel {
         link.send(cmd)
     }
 
+    /// Send an extended (combo) bolus the remote already confirmed: `nowUnits` up front, the rest over
+    /// `durationMinutes`. The host runs it through the same signed path as a standard bolus.
+    func deliverExtended(totalUnits: Double, nowUnits: Double, durationMinutes: Int) {
+        var cmd = RemoteCommand(kind: .bolusRequest, units: totalUnits)
+        cmd.extendedNowUnits = nowUnits
+        cmd.extendedMinutes = durationMinutes
+        startPending(cmd)
+    }
+
     func cancel() {
         guard let id = pendingRequestId else { return }
         link.send(RemoteCommand(kind: .cancelBolus, requestId: id))

@@ -95,6 +95,8 @@ targets:
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
+        # Scan a host phone's pairing QR code when using this phone as a remote.
+        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by

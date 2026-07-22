@@ -164,8 +164,9 @@ public final class PeerRemoteHost {
         let policy = self.policy
         switch cmd.kind {
         case .bolusRequest:
+            let isExtended = cmd.extendedMinutes != nil
             guard !readOnly else { deny(cmd.requestId); return }
-            guard policy.allows(.bolus) else { deny(cmd.requestId); return }
+            guard policy.allows(isExtended ? .extendedBolus : .bolus) else { deny(cmd.requestId); return }
             Task {
                 let units: Double
                 if let carbs = cmd.carbsGrams, carbs > 0 {
@@ -179,9 +180,14 @@ public final class PeerRemoteHost {
                                                  status: .failed, message: "No insulin needed"))
                     return
                 }
-                // An authorized peer overrides child lock (enforceChildLock: false). Approval mode
-                // decides whether the host executes directly or must approve on-device first.
-                if policy.approvalMode == .hostApproval {
+                // An authorized peer overrides child lock (enforceChildLock: false). Extended boluses
+                // always execute directly (no on-device approval-mode split in v1); standard boluses
+                // honor the peer's approval mode.
+                if isExtended {
+                    let now = cmd.extendedNowUnits ?? 0
+                    await model.deliverExtendedBolus(totalUnits: units, nowUnits: now,
+                                                     durationMinutes: cmd.extendedMinutes ?? 0, enforceChildLock: false)
+                } else if policy.approvalMode == .hostApproval {
                     model.presentRemoteBolus(requestId: cmd.requestId, units: units, enforceChildLock: false)
                 } else {
                     await model.remoteDeliver(requestId: cmd.requestId, units: units, enforceChildLock: false)
