@@ -62,6 +62,16 @@ public final class AppSettings {
     /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
+    /// **Read-only mode (this phone).** Turns the app into a safe viewer: bolusing and all pump control
+    /// are disabled and their UI (Bolus tab, Pump Control) is hidden. **Default OFF.** Clearing pump
+    /// alerts is also disabled by default while read-only, unless `readOnlyAllowAlertClear` is on.
+    public var phoneReadOnly: Bool { didSet { d.set(phoneReadOnly, forKey: "phoneReadOnly") } }
+    /// Sub-option of read-only mode: still allow clearing/snoozing pump alerts. **Default OFF.**
+    public var readOnlyAllowAlertClear: Bool { didSet { d.set(readOnlyAllowAlertClear, forKey: "readOnlyAllowAlertClear") } }
+    /// **Read-only mode for the Apple Watch + Garmin remotes.** They hide their bolus screen/button and
+    /// can't deliver (the host refuses too); viewing stays. Independent of the phone flag. **Default OFF.**
+    public var remotesReadOnly: Bool { didSet { d.set(remotesReadOnly, forKey: "remotesReadOnly") } }
+
     /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
     /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON.** Only
     /// active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
@@ -207,10 +217,11 @@ public final class AppSettings {
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
-    public static let garminScreens: [String] = ["glance", "alerts", "history", "details"]
+    public static let garminScreens: [String] = ["glance", "glucose", "alerts", "history", "details"]
     public static func garminScreenLabel(_ id: String) -> String {
         switch id {
-        case "glance": return "Glance (glucose HUD)"
+        case "glance": return "Glance (glucose + bolus)"
+        case "glucose": return "Glucose only (no bolus button)"
         case "alerts": return "Alerts"
         case "history": return "History plot"
         case "details": return "Details"
@@ -240,6 +251,9 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
+        phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
+        readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
+        remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
         autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false

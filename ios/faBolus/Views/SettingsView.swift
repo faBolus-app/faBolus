@@ -43,6 +43,14 @@ struct SettingsView: View {
                         }
                     }
                     Section {
+                        Toggle("Read-only mode", isOn: $settings.phoneReadOnly)
+                        if settings.phoneReadOnly {
+                            Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
+                        }
+                    } header: { Text("Safety") } footer: {
+                        Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+                    }
+                    Section {
                         NavigationLink { ChildModeView(settings: settings) } label: {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
@@ -364,6 +372,11 @@ struct RemotesSettingsView: View {
     ]
     var body: some View {
         Form {
+            Section {
+                Toggle("Read-only (Apple Watch & Garmin)", isOn: $settings.remotesReadOnly)
+            } header: { Text("Watch & Garmin access") } footer: {
+                Text("Hides the bolus button/screen on the Apple Watch and Garmin so they only show pump + CGM data (they can't deliver). The phone is unaffected — this is separate from the phone's own read-only mode.")
+            }
             #if GARMIN
             Section {
                 Button { model.setupGarmin?() } label: {

@@ -100,6 +100,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var watchChartRanges: [Int]?
     /// How the Garmin BG complication should present ("numericColor" | "stringTrend"). Mirrored.
     public var garminComplicationDisplay: String?
+    /// Read-only mode for the WATCH + GARMIN remotes: when true they hide their bolus screen/button and
+    /// won't request a bolus (the host also refuses). Status/viewing stays. Mirrored (schema + Monkey C).
+    public var remotesReadOnly: Bool?
 
     // MARK: Mac↔phone pairing handshake (see MacPairing)
     // Swift-only fields with defaults, so the existing initializer, command.schema.json, and the
@@ -146,7 +149,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
                 glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil,
                 detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil,
-                garminComplicationDisplay: String? = nil) {
+                garminComplicationDisplay: String? = nil, remotesReadOnly: Bool? = nil) {
         self.version = Self.schemaVersion
         self.kind = kind; self.requestId = requestId; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
@@ -163,6 +166,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.glucoseStaleMinutes = glucoseStaleMinutes; self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
         self.detailsOrder = detailsOrder; self.watchChartRanges = watchChartRanges
         self.garminComplicationDisplay = garminComplicationDisplay
+        self.remotesReadOnly = remotesReadOnly
     }
 
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }

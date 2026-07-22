@@ -24,7 +24,10 @@ struct WatchRootView: View {
             WatchDirectView()
         }
         .tabViewStyle(.page)
-        .sheet(isPresented: $showBolus) { WatchBolusView(model: model) }
+        // The load-bearing block: the bolus sheet can never present in read-only mode, however showBolus is set.
+        .sheet(isPresented: Binding(get: { showBolus && !model.readOnly }, set: { showBolus = $0 })) {
+            WatchBolusView(model: model)
+        }
         .onAppear { model.requestStatus() }
     }
 }

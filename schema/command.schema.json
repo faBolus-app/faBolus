@@ -173,6 +173,10 @@
       "type": "string",
       "enum": ["numericColor", "stringTrend"],
       "description": "How the Garmin BG complication presents (statusRead reply): numericColor = numeric value with range-coloring + Latin trend in the unit slot; stringTrend = a plain value+trend string, no color."
+    },
+    "remotesReadOnly": {
+      "type": "boolean",
+      "description": "Read-only mode for the Apple Watch + Garmin remotes (statusRead reply): when true they hide the bolus screen/button and won't request a bolus (the host also refuses)."
     }
   },
   "additionalProperties": false
