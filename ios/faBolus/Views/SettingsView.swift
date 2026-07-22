@@ -420,6 +420,13 @@ struct RemotesSettingsView: View {
                 Text("Pair the faBolus Mac app or a parent's iPhone to view status and send boluses. First-time pairing needs a one-time code or QR scan; the host grants each remote its own permissions.")
             }
             Section {
+                NavigationLink { RemoteControlView() } label: {
+                    Label("Control another phone", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                }
+            } header: { Text("Use this phone as a remote") } footer: {
+                Text("Connect to another phone running faBolus (e.g. your child's) to view and control its pump. That phone must have “Allow remote devices” on and pair with you.")
+            }
+            Section {
                 ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
                     Label("“\(p)”", systemImage: "mic.fill").font(.callout)
                 }

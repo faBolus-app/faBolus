@@ -109,6 +109,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// `SealedTransport`. Present only on `.sealed`; nil on every other kind.
     public var sealedPayload: String? = nil
 
+    /// Extended (combo) bolus params on a `bolusRequest`: total is `units`, delivered `extendedNowUnits`
+    /// now and the remainder over `extendedMinutes`. Both nil ⇒ a standard bolus.
+    public var extendedMinutes: Int? = nil
+    public var extendedNowUnits: Double? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,

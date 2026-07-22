@@ -43,8 +43,10 @@ class AuthenticatingRemoteClientModel: RemoteClientModel {
     func handshakeSucceeded() {}
 
     // MARK: Handshake control
-    /// Provide the one-time code the user typed (or scanned), then (re)start the handshake.
-    func provideCode(_ code: String) { hsCode = code.filter(\.isNumber); startHandshake() }
+    /// Provide the one-time code the user typed or scanned, then (re)start the handshake. Kept verbatim
+    /// (trimmed) — a scanned QR code is high-entropy hex, so we must NOT strip non-digits here; the
+    /// manual 6-digit entry field does its own numeric filtering before calling this.
+    func provideCode(_ code: String) { hsCode = code.trimmingCharacters(in: .whitespacesAndNewlines); startHandshake() }
     func resetHandshake() { hsSecret = nil; hsClientNonce = nil; hsHostNonce = nil; hsFirstPairing = false; hsCode = nil }
 
     override func reachabilityDidChange(_ r: Bool) {
