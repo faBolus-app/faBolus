@@ -537,6 +537,7 @@ public final class AppModel {
         let s = snapshot
         return PumpSettingsBackup(profiles: profs,
                                   maxBolusUnits: s.maxBolusUnits > 0 ? s.maxBolusUnits : nil,
+                                  maxBasalUnitsPerHour: s.maxBasalUnitsPerHour > 0 ? s.maxBasalUnitsPerHour : nil,
                                   controlIQEnabled: s.controlIQEnabled,
                                   controlIQWeightLbs: s.controlIQWeightLbs > 0 ? s.controlIQWeightLbs : nil,
                                   controlIQTotalDailyInsulin: s.controlIQTotalDailyInsulin > 0 ? s.controlIQTotalDailyInsulin : nil)
@@ -573,6 +574,7 @@ public final class AppModel {
             }
         }
         if let mb = p.maxBolusUnits { await setMaxBolus(units: mb); if lastError != nil { return false } }
+        if let mbasal = p.maxBasalUnitsPerHour { await setMaxBasal(unitsPerHour: mbasal); if lastError != nil { return false } }
         if let ciq = p.controlIQEnabled {
             await setControlIQ(enabled: ciq, weightLbs: p.controlIQWeightLbs ?? snapshot.controlIQWeightLbs,
                                totalDailyInsulinUnits: p.controlIQTotalDailyInsulin ?? snapshot.controlIQTotalDailyInsulin)

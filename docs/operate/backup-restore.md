@@ -15,11 +15,15 @@ Pick what to include, then **Create backup…** and save the `.json` file wherev
   CGM-failover config (source, usernames, region, URL), alert rules, remotes/watch/Garmin options,
   read-only mode, child-mode allow-list, etc. (Not your CGM passwords or pump PIN — see below.)
 - **Pump settings** — your pump's therapy settings: profiles (basal, carb ratio, ISF, target, insulin
-  duration per time segment), max bolus, and Control-IQ. Needs a **connected pump**. Readable on both
-  **t:slim X2** and **Mobi**.
+  duration per time segment), max bolus, **max basal**, and Control-IQ. Needs a **connected pump**.
+  Readable on both **t:slim X2** and **Mobi**.
 - **Include credentials & pairing** *(off by default)* — adds your CGM logins and the saved pump PIN to
-  the file so a restore is complete without re-entering them. **Only turn this on if you need it, and
-  then treat the file as sensitive** (it contains secrets).
+  the file so a restore is complete without re-entering them. **Only turn this on if you need it** — and
+  then **encrypt** the file (below).
+- **Encrypt with a password** — encrypts the whole backup file (AES-GCM; the key is derived from your
+  password). Recommended whenever the file contains credentials. You'll need the same password to
+  restore, and **there's no recovery if you forget it**. Restoring an encrypted file prompts for the
+  password automatically.
 
 ## Restore
 
