@@ -85,6 +85,11 @@ targets:
         # enable HealthKit under Signing & Capabilities). See docs/operate/cgm-failover.md.
         # com.apple.developer.healthkit: true
         # com.apple.developer.healthkit.access: []
+        # Automatic iCloud backup of app settings (Backup & restore) is OPT-IN for the same reason:
+        # iCloud needs the paid Apple Developer Program. To enable auto-sync across your devices,
+        # uncomment the key below AND add ICLOUD_SYNC to SWIFT_ACTIVE_COMPILATION_CONDITIONS. The
+        # default file-based backup/restore works on a free account with no entitlement.
+        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(APP_BUNDLE_ID)
     info:
       path: ios/faBolus/Info.plist
       properties:

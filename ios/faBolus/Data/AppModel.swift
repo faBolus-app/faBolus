@@ -515,6 +515,72 @@ public final class AppModel {
         await runControl { try await source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async { await runControl { try await source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex) } }
+    // MARK: Backup / reconfigure
+
+    /// Read the pump's therapy settings for a backup. Works on **t:slim X2 and Mobi** (all reads are
+    /// `SupportedDevices.ALL`). Reads each profile's segments sequentially.
+    func readPumpSettingsForBackup() async -> PumpSettingsBackup {
+        await refreshProfiles()
+        var profs: [PumpSettingsBackup.ProfileBackup] = []
+        for p in snapshot.profiles {
+            await refreshProfileSegments(idpId: p.idpId)
+            let segs = snapshot.viewedProfileSegments
+                .filter { $0.idpId == p.idpId }
+                .sorted { $0.startTimeMinutes < $1.startTimeMinutes }
+                .map { PumpSettingsBackup.SegmentBackup(startTimeMinutes: $0.startTimeMinutes,
+                        basalRateUnitsPerHour: $0.basalRateUnitsPerHour,
+                        carbRatioGramsPerUnit: $0.carbRatioGramsPerUnit, isf: $0.isf, targetBg: $0.targetBg) }
+            profs.append(.init(name: p.name, active: p.active,
+                               insulinDurationMinutes: p.insulinDurationMinutes, segments: segs))
+        }
+        await refreshControlIQSettings()
+        let s = snapshot
+        return PumpSettingsBackup(profiles: profs,
+                                  maxBolusUnits: s.maxBolusUnits > 0 ? s.maxBolusUnits : nil,
+                                  controlIQEnabled: s.controlIQEnabled,
+                                  controlIQWeightLbs: s.controlIQWeightLbs > 0 ? s.controlIQWeightLbs : nil,
+                                  controlIQTotalDailyInsulin: s.controlIQTotalDailyInsulin > 0 ? s.controlIQTotalDailyInsulin : nil)
+    }
+
+    /// Whether backed-up pump settings can be auto-applied to the CURRENT pump (Mobi + Advanced control
+    /// on + not read-only). On t:slim the caller shows them for manual re-entry instead.
+    public var canApplyPumpSettings: Bool { advancedControlAllowed }
+
+    /// Auto-apply backed-up therapy settings to the current pump — **Mobi only**, after the caller's
+    /// review + confirmation. **Creates** each profile (with its segments), then sets Control-IQ + max
+    /// bolus. Experimental/unvalidated; therapy-defining, so it's fully gated + confirmed upstream.
+    /// Returns false (and sets `lastError`) on the first failure.
+    func applyPumpSettings(_ p: PumpSettingsBackup) async -> Bool {
+        guard advancedControlAllowed else {
+            lastError = "Reconfiguring the pump needs a Tandem Mobi with Advanced control enabled."
+            return false
+        }
+        for prof in p.profiles {
+            guard let first = prof.segments.first else { continue }
+            let before = Set(snapshot.profiles.map(\.idpId))
+            await createProfile(name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
+                                carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
+                                targetBg: first.targetBg,
+                                insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
+            if lastError != nil { return false }
+            await refreshProfiles()
+            guard let newId = snapshot.profiles.map(\.idpId).first(where: { !before.contains($0) }) else { continue }
+            for seg in prof.segments.dropFirst() {
+                await addProfileSegment(idpId: newId, startTimeMinutes: seg.startTimeMinutes,
+                                        basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
+                                        carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
+                if lastError != nil { return false }
+            }
+        }
+        if let mb = p.maxBolusUnits { await setMaxBolus(units: mb); if lastError != nil { return false } }
+        if let ciq = p.controlIQEnabled {
+            await setControlIQ(enabled: ciq, weightLbs: p.controlIQWeightLbs ?? snapshot.controlIQWeightLbs,
+                               totalDailyInsulinUnits: p.controlIQTotalDailyInsulin ?? snapshot.controlIQTotalDailyInsulin)
+            if lastError != nil { return false }
+        }
+        return true
+    }
+
     public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
     public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
     public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }

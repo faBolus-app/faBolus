@@ -54,8 +54,11 @@ struct SettingsView: View {
                         NavigationLink { ChildModeView(settings: settings) } label: {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
+                        NavigationLink { BackupRestoreView(model: model) } label: {
+                            Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
+                        }
                     } footer: {
-                        Text("Lock this device for a child: block boluses/settings behind a PIN.")
+                        Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {

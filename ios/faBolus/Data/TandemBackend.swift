@@ -966,7 +966,8 @@ extension TandemBackend: PumpBLEClientDelegate {
             for id in m.presentIdpIds where id >= 0 { try? client.send(IDPSettingsRequest(idpId: id)) }
         case let m as IDPSettingsResponse:
             snapshot.profiles.removeAll { $0.idpId == m.idpId }
-            snapshot.profiles.append(PumpProfileInfo(idpId: m.idpId, name: m.name, active: m.idpId == profileActiveIdpId))
+            snapshot.profiles.append(PumpProfileInfo(idpId: m.idpId, name: m.name, active: m.idpId == profileActiveIdpId,
+                                                     insulinDurationMinutes: m.insulinDuration))
             snapshot.profiles.sort { $0.idpId < $1.idpId }
             // When viewing a specific profile's segments, read each one.
             if m.idpId == viewedProfileId {
