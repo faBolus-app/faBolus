@@ -26,18 +26,12 @@ final class GarminRemoteBridge: NSObject {
         return sharedBetaAppUUID
     }()
     static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
-    /// True when this build was configured with a PERSONAL beta app id (GARMIN_BETA_APP_ID) — i.e. the
-    /// self-compiler ran faBolusGarmin/scripts/beta-build.sh, which set it. Used to auto-target the beta.
-    static var hasPersonalBetaId: Bool { betaAppUUID != sharedBetaAppUUID }
-    /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings). An
-    /// explicit debug-panel choice wins; otherwise a build with a personal beta id targets that beta
-    /// automatically (no toggle needed), and a stock build targets official.
+    /// The currently-targeted app UUID. Read from UserDefaults (not the MainActor AppSettings).
+    /// **Default is BETA** — the official store listing is dormant for now, so beta is the live app
+    /// (a personal beta id if one was configured, else the shared beta). Official is opt-in only, via
+    /// the debug panel.
     static var watchAppUUID: UUID {
-        switch UserDefaults.standard.string(forKey: "garminTargetApp") {
-        case "beta": return betaAppUUID
-        case "official": return officialAppUUID
-        default: return hasPersonalBetaId ? betaAppUUID : officialAppUUID
-        }
+        UserDefaults.standard.string(forKey: "garminTargetApp") == "official" ? officialAppUUID : betaAppUUID
     }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 

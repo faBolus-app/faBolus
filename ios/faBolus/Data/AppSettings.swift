@@ -261,8 +261,8 @@ public final class AppSettings {
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
         let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
-        let gt = d.string(forKey: "garminTargetApp") ?? "official"   // default to the official app
-        garminTargetApp = (gt == "beta") ? "beta" : "official"
+        let gt = d.string(forKey: "garminTargetApp") ?? "beta"   // default to beta (official listing is dormant)
+        garminTargetApp = (gt == "official") ? "official" : "beta"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.
