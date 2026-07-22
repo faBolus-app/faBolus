@@ -21,7 +21,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   status, last bolus, pump time).
 - **Settings** (persisted, shared to remotes via the App Group / status payload):
   - Default bolus entry mode: **Carbs** (new default) or Units.
-  - **Bolus increment**: 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U.
+  - **Unit increment**: 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U.
   - **Carb increment**: 1 / 5 / 10 / 15 g.
   - (Y-axis toggles from step 3 live here too, or on the chart.)
 - Apply the default mode + increments in the iOS bolus entry; propagate to Garmin + Apple Watch

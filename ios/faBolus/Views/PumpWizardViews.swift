@@ -118,6 +118,7 @@ struct CgmSessionView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("CGM Session")
+        .disabled(!model.pumpReady)   // pump-required; blocked if it drops mid-session
         .task { await model.refreshCgmSession() }
     }
 
@@ -196,6 +197,7 @@ struct CartridgeWizardView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Cartridge & Fill")
+        .disabled(!model.pumpReady)
         .task { await model.refreshLoadStatus() }
     }
 
@@ -233,6 +235,7 @@ struct PumpLimitsView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Delivery Limits")
+        .disabled(!model.pumpReady)
         .onAppear { maxBolus = min(max(0.5, model.snapshot.maxBolusUnits), Interlocks.absoluteMaxUnits) }
     }
 
@@ -269,6 +272,7 @@ struct ControlIQSettingsView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Control-IQ")
+        .disabled(!model.pumpReady)
         .task {
             await model.refreshControlIQSettings()
             if !loaded {
@@ -324,7 +328,7 @@ struct ProfilesView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Profiles")
-        .disabled(busy)
+        .disabled(busy || !model.pumpReady)
         .toolbar {
             NavigationLink { ProfileCreateView(model: model) } label: { Image(systemName: "plus") }
         }
@@ -403,7 +407,7 @@ struct RemindersAlertsView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("Reminders & Alerts")
-        .disabled(busy)
+        .disabled(busy || !model.pumpReady)
     }
 
     @ViewBuilder private func setButton(_ op: @escaping () async -> Void) -> some View {
@@ -455,6 +459,7 @@ struct ProfileCreateView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle("New Profile")
+        .disabled(!model.pumpReady)
     }
 }
 
@@ -491,7 +496,7 @@ struct ProfileSegmentsView: View {
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
         .navigationTitle(profileName)
-        .disabled(busy)
+        .disabled(busy || !model.pumpReady)
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .task { await model.refreshProfileSegments(idpId: idpId) }
         .sheet(item: $editing) { seg in

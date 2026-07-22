@@ -23,7 +23,7 @@
 <ol class="cx2-steps">
 <li>Open the <strong>Bolus</strong> tab (enabled only when connected). It opens in your default mode (Carbs or Units) from <a href="../customize/settings/">Settings</a>.</li>
 <li>Either enter <strong>units</strong> directly, or enter <strong>carbs</strong> (and optionally <strong>BG</strong>) — the recommendation updates <strong>automatically as you type</strong>, using the pump's own calculator (carb ratio, ISF, target, IOB) to suggest a dose. (There's no separate button to press; tapping anywhere on the carbs/units row focuses the field.)</li>
-<li>Adjust units with the stepper (step = your <strong>bolus increment</strong> from Settings). The <strong>max-units clamp</strong> blocks anything over your pump's configured ceiling.</li>
+<li>Adjust units with the stepper (step = your <strong>unit increment</strong> from Settings). The <strong>max-units clamp</strong> blocks anything over your pump's configured ceiling.</li>
 <li>Tap <strong>Bolus N U</strong>, then confirm the dialog.</li>
 </ol>
 

@@ -32,7 +32,7 @@ last published value and hide any reading older than 6 minutes.
 </figure>
 
 Quick Bolus mirrors the Garmin flow, right on the Home Screen: tap the **Units / Carbs** label to
-switch modes, set the amount with **− / +** (step = your iPhone bolus/carb increment; units
+switch modes, set the amount with **− / +** (step = your iPhone unit/carb increment; units
 clamped to the pump's max, carbs to 200 g), tap **Bolus**, then confirm with a sequential
 **1 → 2 → 3** tap (a wrong/late tap within 20 s resets). In carbs mode the app converts to units
 with the pump's calculator before delivering. Completing it delivers **in place**: the widget

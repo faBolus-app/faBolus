@@ -207,6 +207,7 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     public func disconnect() {
         pollTimer?.invalidate(); pollTimer = nil
+        predictivePollTimer?.invalidate(); predictivePollTimer = nil
         client.disconnect()
     }
 
@@ -664,11 +665,68 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
+    // MARK: - CGM reading time + predictive polling (Bug 5)
+
+    /// Latest CGM reading time seen from the pump (its own clock), used to detect a *new* reading.
+    private var lastCgmPumpSec: UInt32 = 0
+    private var predictivePollTimer: Timer?
+    private var predictiveBurstDeadline: Date?
+    /// Predictive burst tuning. CGM cadence is ~5 min; start a little early and keep trying past the
+    /// expected time until the reading advances, polling only the single EGV request (battery-light).
+    private static let cgmIntervalSec: Double = 300
+    private static let predictiveLeadSec: Double = 20
+    private static let predictiveWindowSec: Double = 150
+    private static let predictivePollEverySec: Double = 10
+    /// Master switch; if predictive polling ever proves costly, set false to fall back to age-fix-only.
+    var predictivePollingEnabled = true
+
+    /// Convert a pump-clock reading timestamp to a real `Date` via the phone↔pump anchor. Clamps to
+    /// `now`; falls back to `now` when there's no anchor or the result is implausibly far off (a sign
+    /// the timestamp base is wrong), so a bad value can never masquerade as fresh or ancient.
+    private func cgmReadingDate(pumpSec: UInt32, now: Date) -> Date {
+        guard pumpSec > 0, let a = pumpTimeAnchor else { return now }
+        let candidate = a.phone.addingTimeInterval(Double(Int64(pumpSec) - Int64(a.pump)))
+        if candidate > now.addingTimeInterval(60) { return now }                 // future → clamp
+        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return now }         // absurd past → fall back
+        return candidate
+    }
+
+    /// Line up a short EGV-only poll burst around the next expected reading (~5 min after this one).
+    /// A newly-arrived reading reschedules this, which naturally ends the previous burst.
+    private func schedulePredictiveBurst(afterReadingAt readingDate: Date) {
+        guard predictivePollingEnabled else { return }
+        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        let expected = readingDate.addingTimeInterval(Self.cgmIntervalSec)
+        predictiveBurstDeadline = expected.addingTimeInterval(Self.predictiveWindowSec)
+        let delay = max(1, expected.addingTimeInterval(-Self.predictiveLeadSec).timeIntervalSinceNow)
+        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+            MainActor.assumeIsolated { self.runPredictiveBurst() }
+        }
+    }
+
+    private func runPredictiveBurst() {
+        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        // Skip while a bolus is delivering (that path already fast-polls) or when disconnected.
+        guard predictivePollingEnabled, snapshot.connection == .connected else { return }
+        try? client.send(CurrentEgvGuiDataV2Request())
+        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: Self.predictivePollEverySec, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                guard self.snapshot.connection == .connected,
+                      let deadline = self.predictiveBurstDeadline, Date() < deadline else {
+                    self.predictivePollTimer?.invalidate(); self.predictivePollTimer = nil; return
+                }
+                try? self.client.send(CurrentEgvGuiDataV2Request())
+            }
+        }
+    }
+
     private func startPolling() {
         fastRead(); staticRead()
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()
+        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        lastCgmPumpSec = 0
         // Tick every 15 s: alerts every tick (~15 s, so a new alert appears quickly on phone +
         // watch), the fuller fast-read every 4th tick (~60 s), settings every ~10 min. Alert
         // reads are cheap empty-cargo requests, so the tighter cadence barely affects battery.
@@ -985,19 +1043,30 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.cgmActive = m.hasValidReading
             snapshot.trend = m.trendArrow
             if m.hasValidReading {
+                // Age must reflect the pump's OWN reading time, not when the phone happened to poll
+                // it (which understated age and lagged the pump). Convert `bgReadingTimestampSeconds`
+                // via the same phone↔pump clock anchor the LastBolus case uses (timezone-agnostic).
+                // Fall back to receive time if there's no anchor yet or the timestamp looks bad.
                 let now = Date()
+                let readingDate = cgmReadingDate(pumpSec: m.bgReadingTimestampSeconds, now: now)
                 snapshot.glucose = m.cgmReading
-                snapshot.glucoseDate = now
+                snapshot.glucoseDate = readingDate
                 // Append on a value change OR every ~4.5 min, so a stable BG still advances the
-                // plot to "now" (a value-only de-dup left the newest point drifting into the past).
+                // plot (a value-only de-dup left the newest point drifting into the past).
                 if let last = glucoseHistory.last {
-                    if last.mgdl != m.cgmReading || now.timeIntervalSince(last.date) > 270 {
-                        glucoseHistory.append(GlucoseReading(date: now, mgdl: m.cgmReading))
+                    if last.mgdl != m.cgmReading || readingDate.timeIntervalSince(last.date) > 270 {
+                        glucoseHistory.append(GlucoseReading(date: readingDate, mgdl: m.cgmReading))
                     }
                 } else {
-                    glucoseHistory.append(GlucoseReading(date: now, mgdl: m.cgmReading))
+                    glucoseHistory.append(GlucoseReading(date: readingDate, mgdl: m.cgmReading))
                 }
                 if glucoseHistory.count > 288 { glucoseHistory.removeFirst() }
+                // Predictive polling: as soon as the pump's reading timestamp advances, line up a
+                // short burst near the next expected reading so the phone grabs it within seconds.
+                if m.bgReadingTimestampSeconds > lastCgmPumpSec {
+                    lastCgmPumpSec = m.bgReadingTimestampSeconds
+                    schedulePredictiveBurst(afterReadingAt: readingDate)
+                }
             }
         case let m as LastBolusStatusV2Response:
             if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }

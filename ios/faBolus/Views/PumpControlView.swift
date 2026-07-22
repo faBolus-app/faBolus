@@ -24,6 +24,13 @@ struct PumpControlView: View {
 
     var body: some View {
         Form {
+            if !model.pumpReady {
+                Section {
+                    Label("Pump not connected. Reconnect to make changes — these controls stay disabled until the pump is back.",
+                          systemImage: "wifi.slash")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 Label("Advanced control is enabled for this Mobi. Insulin-affecting actions ask for "
                       + "confirmation and are bench-validated. Use with care.", systemImage: "exclamationmark.shield.fill")
@@ -60,12 +67,16 @@ struct PumpControlView: View {
             }
 
             if caps.supportsModes {
-                Section("Mode") {
+                Section {
                     Text("Current: \(modeName(model.snapshot.controlIQMode))").font(.subheadline).foregroundStyle(.secondary)
-                    ForEach([(0, "Normal"), (1, "Sleep"), (2, "Exercise")], id: \.0) { bitmap, name in
-                        Button { ask("Set \(name) mode?", "Changes Control-IQ behavior.", destructive: true) { await model.setMode(bitmap: bitmap) } }
-                            label: { Label(name, systemImage: bitmap == 1 ? "moon.zzz.fill" : bitmap == 2 ? "figure.run" : "checkmark.circle") }
-                    }
+                    Button { ask("Set Normal mode?", "Clears Sleep/Exercise and returns Control-IQ to normal targets.", destructive: true) { await model.setNormalMode() } }
+                        label: { Label("Normal", systemImage: "checkmark.circle") }
+                    Button { ask("Set Sleep mode?", "Control-IQ uses your sleep glucose targets.", destructive: true) { await model.setSleepMode(true) } }
+                        label: { Label("Sleep", systemImage: "moon.zzz.fill") }
+                    Button { ask("Set Exercise mode?", "Control-IQ raises your glucose target for activity.", destructive: true) { await model.setExerciseMode(true) } }
+                        label: { Label("Exercise", systemImage: "figure.run") }
+                } header: { Text("Mode") } footer: {
+                    Text("Requires Control-IQ to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings.")
                 }
             }
 
@@ -135,7 +146,8 @@ struct PumpControlView: View {
             }
         }
         .navigationTitle("Pump Control")
-        .disabled(busy)
+        // Gate every action (and the NavigationLinks into the wizards) on a live pump connection.
+        .disabled(busy || !model.pumpReady)
         .alert(item: $confirm) { action in
             Alert(title: Text(action.title), message: Text(action.message),
                   primaryButton: action.destructive

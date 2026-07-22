@@ -152,7 +152,16 @@ public final class MockBackend: PumpBackend {
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws { onChange?() }
     public func stopTempBasal() async throws { onChange?() }
-    public func setMode(bitmap: Int) async throws { snapshot.controlIQMode = bitmap; onChange?() }
+    public func setMode(bitmap: Int) async throws {
+        // Translate the command bitmap (1=sleepOn,2=sleepOff,3=exOn,4=exOff) to the reported
+        // state (0=normal,1=sleep,2=exercise) the UI reads from controlIQMode.
+        switch bitmap {
+        case 1: snapshot.controlIQMode = 1
+        case 3: snapshot.controlIQMode = 2
+        default: snapshot.controlIQMode = 0   // sleepOff / exerciseOff → normal
+        }
+        onChange?()
+    }
     public func playFindMyPump() async throws {}
 
     public func startG6Session(transmitterId: String, sensorCode: Int) async throws { snapshot.cgmSessionActive = true; onChange?() }
