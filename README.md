@@ -67,10 +67,9 @@ change it on the Connect screen. More in the [FAQ](docs/faq.md) and [Pairing](do
 
 ## Known limitations (being worked on)
 
-Two features are known not to work correctly yet and are being fixed:
-
-1. **Garmin BG complication reads 0.** The Garmin watch complication doesn't update with the live
-   CGM value — it currently shows `0` instead of the reading.
+1. **Garmin BG complication reading 0** — a fix is in (the publisher now writes the numeric value in a
+   guaranteed minimal update, so a firmware-rejected extra param can't leave it at 0); **pending
+   on-device verification** on the venu3s.
 2. **Alert clear doesn't reach the pump.** Clearing an alert removes it from the phone and watch UI
    **but does not clear it on the pump itself**.
 
