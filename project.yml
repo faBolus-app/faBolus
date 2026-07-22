@@ -293,6 +293,7 @@ targets:
         LSUIElement: true
         # BLE is the transport to the iPhone (works when the phone is locked/backgrounded).
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked."
+        NSCameraUsageDescription: "faBolus uses the camera to scan the pairing QR code shown on your iPhone."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac

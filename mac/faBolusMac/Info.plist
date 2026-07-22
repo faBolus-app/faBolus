@@ -26,5 +26,7 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>faBolus uses the camera to scan the pairing QR code shown on your iPhone.</string>
 </dict>
 </plist>
