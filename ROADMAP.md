@@ -78,6 +78,21 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 - Apple Watch full parity (history plot, details screen) if wanted.
 - The signed dismiss path and all delivery paths remain **experimental / in development.**
 
+### Chained remotes (parent's own Watch/Mac → parent phone → child host) — designed, NOT enabled
+The iPhone-to-iPhone remote ships; driving the child host from the parent's *own* Apple Watch or Mac
+(relayed through the parent phone) is deferred because it can't be done safely without on-device
+testing across 3 devices, and the naïve wiring risks the shipped watch↔host path. Concrete blockers:
+- **Single `WCSession`:** a second WatchConnectivity host on the parent phone would steal the delegate
+  from the app's `PhoneRemoteHost`, and `addRemoteEcho`/`addStatusListener` aren't removable (they'd
+  leak/duplicate). Needs removable listeners + a single host whose target switches.
+- **CoreBluetooth one-restore-id-per-central:** relaying to the child means a *second* restorable
+  central alongside the pump central → the documented SIGABRT risk (`DexcomG6BLESource` note).
+- **Safe path:** a `RelayBackend: PumpBackend` that forwards to the child over the existing
+  `SealedTransport`/`BLELink` and maps relayed status into `PumpSnapshot`. Then the parent phone's
+  existing `AppModel` + all its leaves (watch/Garmin/Mac/widgets) work unchanged, sourcing the child.
+- Already free today: the parent watch's glucose **complication** reflects the child while the parent
+  phone is on the remote screen (`RemoteClientModel.publishSnapshot` → App Group).
+
 ### Apple Watch host / phone-as-remote swap (tracked, not started)
 Make the **watch the pump host** and the **phone a remote**. The pump allows only one paired
 controller (see `docs/setup/pairing.md`), so this is a full re-pair that evicts the phone — not a
