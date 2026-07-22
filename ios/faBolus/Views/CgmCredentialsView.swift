@@ -22,7 +22,6 @@ struct CgmCredentialsView: View {
     @State private var nsURL = ""
     @State private var nsToken = ""
     @State private var nsApiSecret = ""
-    @State private var settings = AppSettings.shared
     // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
     @State private var g6TransmitterID = ""
 
@@ -75,22 +74,12 @@ struct CgmCredentialsView: View {
                 TextField("Site URL (https://…)", text: $nsURL)
                     .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Token (optional)", text: $nsToken)
+                SecureField("API secret (optional, for upload)", text: $nsApiSecret)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
             } header: {
                 Text("Nightscout (any CGM)")
             } footer: {
-                Text("A Nightscout site already receiving your CGM data. Token is optional if the site allows unauthenticated reads.")
-            }
-
-            Section {
-                Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
-                if settings.nightscoutUploadEnabled {
-                    SecureField("API secret (optional)", text: $nsApiSecret)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-            } header: {
-                Text("Nightscout upload")
-            } footer: {
-                Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to the site above. Uses an API secret if provided, otherwise the token. **Off by default — this sends your health data off-device.**")
+                Text("A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**.")
             }
 
             Section {
@@ -147,10 +136,10 @@ struct CgmCredentialsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Saves all credentials, then tries to pull a live reading from **every** source you've entered credentials for — so you can see which ones work. Then pick the one to use in Settings → CGM source.")
+                Text("Saves credentials, then tries to pull a live reading from each source — the credential-free ones (Dexcom G7/G6 direct BLE, xDrip App Group) plus any you've entered logins for — so you can see which actually work. Then pick the one to use above. Direct-BLE sources need the sensor nearby and can take up to ~30 s.")
             }
         }
-        .navigationTitle("CGM credentials")
+        .navigationTitle("CGM credentials & testing")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
     }
@@ -189,21 +178,21 @@ struct CgmCredentialsView: View {
 
     private func filled(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    /// Save all credentials, then test **every** source that has credentials entered: build it, start
-    /// it, and poll ~7 s for a live reading, appending a per-method result as each finishes. Sources
-    /// with no credentials (G7 BLE, HealthKit, xDrip App Group) aren't cloud-testable and are skipped.
+    /// Save all credentials, then test each source: build it, start it, and poll for a live reading,
+    /// appending a per-method result as each finishes. Always tests the **credential-free** sources
+    /// (Dexcom G7/G6 direct BLE, xDrip App Group); also tests the cloud sources you've entered logins
+    /// for. Direct-BLE sources need the sensor nearby and get a longer window.
     @MainActor private func saveAndTestAll() async {
         save()
         testing = true; savedNote = true; results = []
         defer { testing = false }
-        let toTest: [String] = [
-            (filled(libreUser) && filled(librePass)) ? "librelinkup" : nil,
-            (filled(shareUser) && filled(sharePass)) ? "dexcom-share" : nil,
-            filled(nsURL) ? "nightscout" : nil,
-            // Direct G6 is passive/experimental and needs no credentials (the transmitter ID is
-            // optional), so test it whenever it's the selected source — don't gate on the tx id.
-            (GlucoseSourceRegistry.selectedId() == "dexcom-g6-ble" || filled(g6TransmitterID)) ? "dexcom-g6-ble" : nil,
-        ].compactMap { $0 }
+        // Credential-free failovers first (the common case: "can my G7 pull values?"), then any
+        // cloud sources with credentials entered.
+        var toTest: [String] = ["dexcom-g7-ble", "xdrip-appgroup"]
+        if GlucoseSourceRegistry.selectedId() == "dexcom-g6-ble" || filled(g6TransmitterID) { toTest.append("dexcom-g6-ble") }
+        if filled(libreUser) && filled(librePass) { toTest.append("librelinkup") }
+        if filled(shareUser) && filled(sharePass) { toTest.append("dexcom-share") }
+        if filled(nsURL) { toTest.append("nightscout") }
 
         for id in toTest {
             let name = GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
@@ -213,10 +202,10 @@ struct CgmCredentialsView: View {
             }
             await source.start()
             var result = SourceResult(id: id, name: name, status: .warn,
-                                      detail: "no reading yet — check credentials / that the sensor is sharing")
-            // Direct BLE (G6) can take longer to see the first message and a G6 only emits every
-            // ~5 min, so give it a longer window; cloud sources answer fast.
-            let attempts = (id == "dexcom-g6-ble") ? 30 : 8
+                                      detail: "no reading yet — check the sensor is nearby / sharing")
+            // Direct BLE (G7/G6) can take longer to see the first message (and a sensor emits only
+            // every ~5 min), so give it a longer window; cloud + local App Group answer fast.
+            let attempts = (id == "dexcom-g7-ble" || id == "dexcom-g6-ble") ? 30 : 8
             for _ in 0..<attempts {
                 if let s = source.latest {
                     let age = Int(max(0, Date().timeIntervalSince(s.date)))

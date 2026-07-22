@@ -81,12 +81,10 @@ struct BolusEntryView: View {
                         TextField("mg/dL", text: $bg).keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
                     }
-                    Button("Calculate recommendation") { Task { await calculate() } }
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
                         LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
-                        Button("Use") { unitsText = Self.trimUnits(rec.recommendedUnits) }.font(.caption)
                         if settings.showBolusReasoning {
                             DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
                                 LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
@@ -163,7 +161,12 @@ struct BolusEntryView: View {
             // Never auto-fill the correction BG from a stale CGM value (see GlucoseFreshness.staleAfter).
             // The user can still type one in manually.
             if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)" }
+            if mode == .carbs { Task { await calculate() } }
         }
+        // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
+        .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
+        .onChange(of: bg) { _, _ in if mode == .carbs { Task { await calculate() } } }
+        .onChange(of: mode) { _, newMode in if newMode == .carbs { Task { await calculate() } } }
         .toolbar {
             if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             ToolbarItemGroup(placement: .keyboard) {
@@ -193,6 +196,8 @@ struct BolusEntryView: View {
     }
 
     private func calculate() async {
+        // Nothing entered yet → no recommendation card.
+        guard carbs > 0 || (Int(bg) ?? 0) > 0 else { recommendation = nil; unitsText = ""; return }
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         recommendation = rec
         unitsText = rec.recommendedUnits > 0 ? Self.trimUnits(rec.recommendedUnits) : ""
