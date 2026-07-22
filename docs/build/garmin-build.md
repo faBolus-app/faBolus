@@ -99,9 +99,20 @@ there — that's expected. It's just for checking the screens look right.
 
 ## Step 5 — Put it on your watch
 
-Connect your venu3s to the computer with its cable and copy the built app onto it, **or** upload
-it to the Connect IQ store as a private beta and install it from **Garmin Connect** on your phone.
-The faBolusGarmin README has the exact, current steps for the venu3s.
+Easiest: publish it as your **own private beta** with one command. The Connect IQ store needs a unique
+app id per beta listing, so faBolusGarmin ships a script that handles everything automatable:
+
+```sh
+cd faBolusGarmin && ./scripts/beta-build.sh
+```
+
+It generates your personal app id (once), builds a signed store `.iq`, **and points the iPhone app at
+it automatically** (writes `GARMIN_BETA_APP_ID` into `faBolus/LocalConfig.xcconfig` and regenerates the
+project — no files to edit, no debug toggle). Then just: **Run** the iPhone app in Xcode, and **upload**
+the revealed `.iq` at the Connect IQ dashboard → install to your watch from the Garmin Connect IQ Store
+app. Full details + prerequisites: [faBolusGarmin `docs/STORE-BUILDS.md`](https://github.com/faBolus-app/faBolusGarmin/blob/main/docs/STORE-BUILDS.md).
+
+(Alternatively, sideload over USB with a developer key — see the faBolusGarmin README.)
 
 ## Step 6 — Pair the remote to your iPhone
 

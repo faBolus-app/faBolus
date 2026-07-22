@@ -41,18 +41,23 @@ Revoke access with **Forget this iPhone** on the Mac, or **Forget** next to the 
     later reconnect, and **the whole channel is end-to-end encrypted** (AES-GCM, `SealedTransport`).
     The **QR** code is high-entropy (128-bit), so prefer it; a typed 6-digit code is low-entropy, so
     do that pairing with the devices close by. **Remote access is opt-in and off by default**: while
-    off, the phone advertises nothing. A **read-only** switch (and per-remote permissions) limit what
-    a remote may do — see [Remote access & permissions](phone-remote.md#security-permissions).
+    off, the phone advertises nothing. Each device's permissions (**view-only vs. control**) are chosen
+    when you pair it and editable per device — see
+    [Remote access & permissions](phone-remote.md#security-permissions).
 
 ## The popover
 
 - **Status** — big glucose + trend (greyed with its age when stale), plus pills for IOB, reservoir,
   battery, and last bolus (each can be turned off — see below).
+- **Chart** — recent glucose history: in-range band, points colored by range; **click the chart** to
+  cycle the time window (3 / 6 / 12 / 24 h). Plotted at the readings' real times.
+- **Details** — a collapsible section with all the pump data, mirroring the watch: IOB, reservoir,
+  battery, **basal**, CGM, last bolus, carb ratio, correction (ISF), target, max bolus, pump connection.
 - **Quick bolus** — choose **Carbs** or **Units**, set the amount, tap **Bolus**, then **Deliver**
   to confirm in place. Carbs are converted to a dose by the iPhone's calculator; the pump enforces
   its max and signs delivery. While a bolus is in flight you get a progress row + **Cancel bolus**.
 - **Alerts** — active pump alerts, each with **Dismiss** (relayed to the phone's signed clear).
-- **Refresh** re-requests a status snapshot; **Quit** exits the app.
+- **Quit** exits the app. (Status updates on its own — there's no manual refresh button.)
 
 ## Display customization
 

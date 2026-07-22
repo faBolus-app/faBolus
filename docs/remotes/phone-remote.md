@@ -42,10 +42,14 @@ switching between them.)
 
 ## What the remote can do
 
-A mirror of the host dashboard: glucose ring + trend, chart, pills, optional statistics, alerts, and a
-**bolus** screen (standard **and** extended/combo) that you confirm on the remote. Every action is
-limited to what the host granted, and every bolus still runs through the host's validated signed path
-(max-bolus clamp + interlocks) — the remote only *requests*.
+A mirror of the host dashboard: glucose ring + trend, pills (including **basal**), a **glucose chart**
+with selectable range (3/6/12/24 h) plotted at the readings' real times, optional statistics, an
+**Alerts** tab (view + clear), and a **bolus** screen (standard **and** extended/combo) confirmed on
+the remote. Every action is limited to what the host granted, and every bolus still runs through the
+host's validated signed path (max-bolus clamp + interlocks) — the remote only *requests*.
+
+> The remote receives glucose history but not the host's IOB-line or bolus-bar history, so its chart is
+> glucose-only, and there's no Logbook — those live on the host phone.
 
 ## Security & permissions {#security-permissions}
 
@@ -59,12 +63,15 @@ limited to what the host granted, and every bolus still runs through the host's 
   Bluetooth service — a small added attack surface, which is why it's opt-in with a warning. Your
   **Apple Watch and Garmin are unaffected** (they're bound to your own paired device, not discoverable
   by others — no gate needed).
-- **Per-remote permissions.** A new remote starts **view-only**; the host grants each of *bolus*,
-  *extended bolus*, *cancel*, *dismiss alerts*, *suspend/resume* individually, per remote.
-- **Per-remote bolus mode.** Each remote is either *auto-execute* (the parent confirms on their phone;
-  the host runs it) or *host approval* (the host phone must approve on-device first).
-- **Read-only switch.** A single host toggle blocks all insulin-affecting writes over Bluetooth
-  (bolus/extended/suspend-resume) while still allowing status, cancel, and alert-dismiss.
+- **Per-device read-only, asked at pairing.** When you pair a device the host asks **"Allow control"**
+  vs **"View only"** for *that* device. View-only sees status but can't deliver boluses or change the
+  pump. Change it anytime under **Pair a remote → tap the device** — each paired device shows "View
+  only" or "Can control". (There's no longer a single global read-only switch; it's per device.)
+- **Granular per-device permissions.** When a device isn't read-only, you grant each of *bolus*,
+  *extended bolus*, *cancel*, *dismiss alerts*, *suspend/resume* individually — in the same per-device
+  editor.
+- **Per-device bolus mode.** Each device is either *auto-execute* (the remote confirms on its own
+  screen; the host runs it) or *host approval* (the host phone must approve on-device first).
 - **Overrides child lock.** An authorized parent remote is governed only by its granted permissions —
   so you can disable the child's *local* bolus with [child mode](../operate/child-mode.md) yet still
   bolus from the parent phone.
