@@ -5,6 +5,11 @@ remote**: it messages the iPhone host via the Connect IQ mobile SDK, and the pho
 interlock and delivers through PumpX2Kit. To build and install it, see
 [Build the Garmin remote](../build/garmin-build.md).
 
+!!! note "Garmin support is an optional build"
+    The iPhone side of the Garmin bridge is compiled in only when the app is built with the Connect
+    IQ SDK. If it was built without the SDK, the **Garmin** section under **Settings → Remotes &
+    devices** shows a note saying so — rebuild with the Connect IQ SDK to enable it.
+
 !!! note "The Garmin app lives in its own repo"
     The Garmin app is maintained in the separate
     **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
@@ -86,9 +91,10 @@ The app publishes a **public BG complication** (value + a trend arrow, no units)
 minutes shows `--`. It refreshes while the app is open and via a background refresh (~5 min);
 fresh data needs the iPhone app open and connected.
 
-!!! warning "Known issue — being fixed"
-    The BG complication doesn't update with the live CGM value yet — it currently shows `0` instead
-    of the reading. A fix is in progress.
+!!! note "Fixed — pending on-device verification"
+    The BG complication previously showed `0` instead of the live CGM value. The publisher now
+    writes a numeric value first so the complication updates. This is fixed pending final
+    verification on real hardware.
 
 <figure class="cx2-shot watch" markdown="span">
   ![Garmin BG complication](../assets/screenshots/garmin-complication.svg)

@@ -34,7 +34,7 @@ the guess, where it lives, and how to verify.
   runtime honors.
 - **Where:** `faBolusGarmin/source/app/BgComplication.mc` (`publish`),
   `resources-complications/complications/complications.xml` (`<range>` bands).
-- **Fallback:** the in-app "Complication display" option (faBolus → Settings → Watch & Garmin) has a
+- **Fallback:** the in-app "Complication display" option (faBolus → Settings → Remotes & devices) has a
   "value + trend" **string** mode that works without color if the numeric+color path fails.
 - **Verify:** on a real Garmin watch, add the faBolus BG complication to a Face It watch face; confirm
   it shows the number + arrow and colors by range. If blank/0, switch to the string mode; if the unit

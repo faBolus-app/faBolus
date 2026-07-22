@@ -35,8 +35,10 @@ at runtime, so adding another Garmin watch or Edge cycling computer is usually j
 
 ## What you'll need
 
-- The **iPhone app already built** ([Step 3](build-app.md)) — the Garmin can't do anything on its
-  own.
+- The **iPhone app already built _with Garmin support_** — that means you completed
+  [Step 2](build-app.md#connectiq) (added the Connect IQ Mobile SDK) before generating and building
+  the app. If you skipped it, the app was built without Garmin and its **Remotes & devices** settings
+  section says so; add the SDK, re-run [Step 3](build-app.md), and rebuild first.
 - **Visual Studio Code** (free) with Garmin's **Monkey C** extension (installs the tools for you).
 - The **Garmin Connect** app on your iPhone, with your **venu3s** already paired to it.
 

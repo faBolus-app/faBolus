@@ -18,10 +18,18 @@ how it works day to day.)
 
 ## Before you start
 
-- You've already completed [Build the iPhone app](build-app.md).
+- You've already completed [Build the iPhone app](build-app.md). The watch app is **included by
+  default** when you generate the project, so it's already a target in your Xcode project — nothing
+  extra to download.
 - You installed the **watchOS** platform in Xcode (from [step 2](xcode.md)). If you skipped it:
   **Xcode → Settings → Components** and add the watchOS simulator/runtime.
 - Your Apple Watch is paired to the iPhone you're installing to.
+
+!!! note "Built the phone app without the watch?"
+    Only relevant if you used the command-line `FABOLUS_WATCH=0` flag (see
+    [Advanced](advanced.md)) — then the watch app isn't in your project and the app's **Remotes &
+    devices** settings section says so. Re-run `./scripts/generate-project.sh` (with `FABOLUS_WATCH`
+    unset) to include it, then reopen the project.
 
 ## Step A — Confirm the watch target is signed
 

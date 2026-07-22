@@ -63,9 +63,9 @@ public final class AppSettings {
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
     /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
-    /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON** — the
-    /// time/date write works on every Tandem model (t:slim X2 + Mobi) and isn't insulin-affecting.
-    /// Independent of `advancedControlEnabled`. Turn off to leave the pump clock untouched.
+    /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON.** Only
+    /// active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
+    /// `capabilities.supportsTimeSync`; not insulin-affecting and independent of `advancedControlEnabled`.
     public var autoSyncPumpTime: Bool { didSet { d.set(autoSyncPumpTime, forKey: "autoSyncPumpTime") } }
 
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While

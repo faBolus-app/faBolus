@@ -57,10 +57,13 @@ Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>
     git clone https://github.com/faBolus-app/faBolus.git
     ```
 
-## Step 2 — Add the Garmin helper file {#connectiq}
+## Step 2 — Add the Garmin helper file (optional) {#connectiq}
 
-The app is wired to talk to Garmin watches, so it needs one file from Garmin to build — **even if
-you never use a Garmin.** You download it once and drop it into a folder. No commands.
+**Only do this step if you want to use a Garmin watch or cycling computer as a remote.** If you
+don't, **skip straight to Step 3** — the build script notices the Garmin SDK isn't there and builds
+the app without Garmin. (You can always add Garmin later by doing this step and re-running Step 3.)
+
+To include Garmin, you download one file from Garmin once and drop it into a folder. No commands.
 
 <ol class="cx2-steps">
 <li>Go to the <a href="https://developer.garmin.com/connect-iq/sdk/">Garmin Connect IQ SDK page</a> and download the <strong>Connect IQ Companion (Mobile) SDK for iOS</strong>. (You'll make a free Garmin account and accept their license.)</li>
@@ -73,6 +76,10 @@ you never use a Garmin.** You download it once and drop it into a folder. No com
 **Success looks like:** **Documents → vendor** contains the
 `connectiq-companion-app-sdk-ios-1.8.0` folder. (So `Documents` now has both a **faBolus**
 folder and a **vendor** folder.)
+
+**Skipped this step?** That's fine — the build in Step 3 will simply leave Garmin out, and inside
+the app the **Remotes & devices** settings section shows a note that it was built without the
+Garmin SDK.
 </div>
 
 ??? note "If you saved things somewhere else"
@@ -84,9 +91,10 @@ folder and a **vendor** folder.)
 
 ## Step 3 — Create the project (the one Terminal step)
 
-The project is described by a small text file, and a tiny free tool called **XcodeGen** turns it
-into the file Xcode opens. This is the only step that uses the **Terminal**. It's two commands —
-just copy, paste, and press Return.
+The project is described by a small text file, and a short **script** (which uses a tiny free tool
+called **XcodeGen**) turns it into the file Xcode opens. The script automatically detects whether
+you added the Garmin SDK in Step 2 and builds with or without Garmin accordingly. This is the only
+step that uses the **Terminal**. It's two commands — just copy, paste, and press Return.
 
 !!! info "What's the Terminal?"
     The **Terminal** is a Mac app where you type commands instead of clicking. Find it in
@@ -120,7 +128,7 @@ folder from Finder into the Terminal window** (it fills in the path for you), th
 
 ```sh
 cd ~/Documents/faBolus/faBolus
-xcodegen generate
+./scripts/generate-project.sh
 ```
 
 <div class="cx2-check" markdown>
@@ -169,7 +177,7 @@ Then do the same **Team** choice for the other rows in the TARGETS list:
           Group are all derived from this automatically — you don't touch them.
         - **`DEVELOPMENT_TEAM`** — your 10-character Team ID (or leave it blank and pick your Team
           in Xcode's Signing tab).
-    3. Save, then re-do **Step 3b** (`xcodegen generate`) and reopen the project.
+    3. Save, then re-do **Step 3b** (`./scripts/generate-project.sh`) and reopen the project.
 
     `LocalConfig.xcconfig` stays on your machine (it's gitignored), so your details are never
     committed or shared. This is a normal one-time setup.
