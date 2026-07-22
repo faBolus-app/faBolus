@@ -43,6 +43,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>GarminBetaAppID</key>
+	<string>$(GARMIN_BETA_APP_ID)</string>
 	<key>INAlternativeAppNames</key>
 	<array>
 		<dict>
