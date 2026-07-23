@@ -20,6 +20,42 @@ jobs:
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
 
+  ios-build:
+    name: iOS app build (TandemBackend / AppModel / widgets)
+    runs-on: macos-15
+    steps:
+      # Two-level checkout so the project's relative package paths resolve (see watch-build).
+      - name: Checkout faBolus
+        uses: actions/checkout@v4
+        with:
+          path: repos/faBolus
+
+      - name: Checkout PumpX2Kit (local package dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: faBolus-app/PumpX2Kit
+          submodules: recursive
+          path: repos/PumpX2Kit
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Generate with the credential-gated pieces stripped (no private Nudge SDK, no Garmin SDK), then
+      # build the full iOS app for the Simulator. This is the audit-T-01 gap: the iOS app — TandemBackend
+      # (signed bolus flow, transaction serialization), AppModel.remoteDeliver, the widget receiver, and
+      # the pairing hosts — was never compiled in CI before, only faBolusCore + the watch.
+      - name: Generate the Xcode project (no private SDK, no Garmin)
+        working-directory: repos/faBolus
+        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+
+      - name: Build iOS app (Simulator, signing off)
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
   watch-build:
     name: watchOS app + complication build
     runs-on: macos-15
