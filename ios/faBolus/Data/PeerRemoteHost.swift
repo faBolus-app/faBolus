@@ -204,8 +204,11 @@ public final class PeerRemoteHost {
                 Task { await model.dismissAlert(id: id, kind: k, enforceChildLock: false); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .bolusApprovalResponse:
-            // The remote answered a reverse-approval request for a bolus the host started. Any
-            // authenticated remote may approve (it's the parent's oversight role); no extra permission.
+            // The remote answered a reverse-approval request for a bolus the host started. Only a peer
+            // explicitly granted the approver role may do so (audit A-06); the requestId is a single-use
+            // nonce bound to the host's pending request (60 s expiry) and the dose comes from the host's
+            // own pending state, never from this response.
+            guard policy.allows(.approveBolus) else { deny(cmd.requestId); return }
             model.resolveRemoteApproval(requestId: cmd.requestId, approved: cmd.approved ?? false,
                                         reason: (cmd.approved ?? false) ? nil : "Denied on the remote")
         case .statusRead:

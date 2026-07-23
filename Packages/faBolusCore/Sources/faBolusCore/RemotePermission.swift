@@ -9,6 +9,7 @@ public enum RemotePermission: String, Codable, CaseIterable, Sendable, Identifia
     case cancelBolus      // stop a running bolus
     case dismissAlerts    // clear/snooze pump alerts
     case suspendResume    // suspend / resume insulin
+    case approveBolus     // answer a reverse-approval request for a host-initiated bolus (audit A-06)
 
     public var id: String { rawValue }
 
@@ -19,6 +20,7 @@ public enum RemotePermission: String, Codable, CaseIterable, Sendable, Identifia
         case .cancelBolus:   return "Cancel a running bolus"
         case .dismissAlerts: return "Clear / snooze alerts"
         case .suspendResume: return "Suspend / resume insulin"
+        case .approveBolus:  return "Approve this phone's boluses"
         }
     }
 }
