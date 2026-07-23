@@ -34,6 +34,11 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     private var peripheralManager: CBPeripheralManager?
     private var statusChar: CBMutableCharacteristic?
     private var subscribedCentrals: [CBCentral] = []
+    /// Audit A-08: serve exactly ONE central at a time. The first to subscribe is adopted; any other is
+    /// ignored (not broadcast to, its writes dropped) until the accepted one unsubscribes/disconnects.
+    /// This matches the single-identity auth in `PeerRemoteHost` (A-01) and keeps the one shared
+    /// `rxBuffer` unambiguous — two centrals could otherwise interleave frames into it.
+    private var acceptedCentral: CBCentral?
 
     // Central (Mac / remote iPhone) state
     private struct DiscoveredPeer { let peripheral: CBPeripheral; var name: String; var lastSeen: Date }
@@ -230,6 +235,8 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
                 self.peripheralManager?.stopAdvertising()
                 self.peripheralManager?.removeAllServices()
                 self.subscribedCentrals.removeAll()
+                self.acceptedCentral = nil
+                self.rxBuffer.removeAll(keepingCapacity: false)
             case .central:
                 self.centralManager?.stopScan()
                 self.pruneTimer?.cancel(); self.pruneTimer = nil
@@ -271,6 +278,10 @@ extension BLELink: CBPeripheralManagerDelegate {
 
     public func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,
                                   didSubscribeTo characteristic: CBCharacteristic) {
+        // Audit A-08: adopt the first central; ignore any other while one is active (CoreBluetooth can't
+        // refuse the subscribe, but we never broadcast to it and drop its writes below).
+        if acceptedCentral == nil { acceptedCentral = central; rxBuffer.removeAll(keepingCapacity: false) }
+        guard central.identifier == acceptedCentral?.identifier else { return }
         if !subscribedCentrals.contains(where: { $0.identifier == central.identifier }) {
             subscribedCentrals.append(central)
         }
@@ -281,6 +292,11 @@ extension BLELink: CBPeripheralManagerDelegate {
     public func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,
                                   didUnsubscribeFrom characteristic: CBCharacteristic) {
         subscribedCentrals.removeAll { $0.identifier == central.identifier }
+        // Free the slot when the accepted central leaves so the next one can be adopted (A-08).
+        if central.identifier == acceptedCentral?.identifier {
+            acceptedCentral = nil
+            rxBuffer.removeAll(keepingCapacity: false)
+        }
         reportReachability()
     }
 
@@ -289,8 +305,15 @@ extension BLELink: CBPeripheralManagerDelegate {
     }
 
     public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
-        for r in requests { if let v = r.value { ingest(v) } }
-        if let first = requests.first { peripheral.respond(to: first, withResult: .success) }
+        // Only ingest writes from the accepted central (audit A-08) — a second central's frames must not
+        // interleave into the shared rxBuffer. Reject others' writes explicitly.
+        for r in requests where r.central.identifier == acceptedCentral?.identifier {
+            if let v = r.value { ingest(v) }
+        }
+        if let first = requests.first {
+            let ok = first.central.identifier == acceptedCentral?.identifier
+            peripheral.respond(to: first, withResult: ok ? .success : .insufficientAuthorization)
+        }
     }
 }
 
