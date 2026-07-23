@@ -367,6 +367,7 @@ struct RemindersAlertsView: View {
     @State private var cgmOorOn = true
     @State private var cgmOorDelay: Double = 20
     @State private var busy = false
+    @State private var unverified = UnverifiedFeatureGate()
 
     var body: some View {
         Form {
@@ -391,9 +392,9 @@ struct RemindersAlertsView: View {
             }
             Section {
                 Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text("High alert at \(Int(cgmHigh)) mg/dL") }
-                setButton { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
+                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
                 Stepper(value: $cgmLow, in: 60...120, step: 5) { Text("Low alert at \(Int(cgmLow)) mg/dL") }
-                setButton { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
+                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
             } header: {
                 Text("CGM high / low alerts")
             } footer: {
@@ -408,10 +409,19 @@ struct RemindersAlertsView: View {
         }
         .navigationTitle("Reminders & Alerts")
         .disabled(busy || !model.pumpReady)
+        .unverifiedFeatureGate(unverified)
     }
 
     @ViewBuilder private func setButton(_ op: @escaping () async -> Void) -> some View {
         Button { busy = true; Task { await op(); busy = false } } label: {
+            Label("Set", systemImage: "checkmark.circle").font(.subheadline)
+        }.disabled(busy)
+    }
+
+    /// A `setButton` that first requires the untested-feature acknowledgement (the high/low alert-type
+    /// mapping is a best guess — see docs/UNVERIFIED-GUESSES.md #1).
+    @ViewBuilder private func unverifiedSetButton(_ feature: String, _ op: @escaping () async -> Void) -> some View {
+        Button { unverified.request(feature) { busy = true; Task { await op(); busy = false } } } label: {
             Label("Set", systemImage: "checkmark.circle").font(.subheadline)
         }.disabled(busy)
     }
@@ -435,6 +445,7 @@ struct ProfileCreateView: View {
     @State private var f = SegmentFields()
     @State private var insulinDurationMin: Double = 300
     @State private var busy = false
+    @State private var unverified = UnverifiedFeatureGate()
 
     var body: some View {
         Form {
@@ -447,11 +458,17 @@ struct ProfileCreateView: View {
             }
             Section {
                 HoldToConfirmButton(title: "create profile", systemImage: "person.crop.circle.badge.plus") {
-                    busy = true
-                    await model.createProfile(name: name, basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio,
-                                              isf: Int(f.isf), targetBg: Int(f.target), insulinDurationMinutes: Int(insulinDurationMin))
-                    busy = false
-                    if model.lastError == nil { dismiss() }
+                    // Hold completed → still require the explicit untested-feature acknowledgement, since
+                    // some IDP-create parameters are unverified best guesses (docs/UNVERIFIED-GUESSES.md #2).
+                    unverified.request("Creating a pump profile (basal/CR/ISF/target schedule)") {
+                        Task {
+                            busy = true
+                            await model.createProfile(name: name, basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio,
+                                                      isf: Int(f.isf), targetBg: Int(f.target), insulinDurationMinutes: Int(insulinDurationMin))
+                            busy = false
+                            if model.lastError == nil { dismiss() }
+                        }
+                    }
                 }.disabled(busy || name.isEmpty)
             } footer: {
                 Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. ⚠️ Experimental: some profile parameters use **unverified default values** (idpStatusId, bitmasks) — verify the created profile on the pump. Insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
@@ -460,6 +477,7 @@ struct ProfileCreateView: View {
         }
         .navigationTitle("New Profile")
         .disabled(!model.pumpReady)
+        .unverifiedFeatureGate(unverified)
     }
 }
 
@@ -523,6 +541,7 @@ struct SegmentEditSheet: View {
     let onSave: (SegmentFields) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var f = SegmentFields()
+    @State private var unverified = UnverifiedFeatureGate()
 
     var body: some View {
         NavigationStack {
@@ -530,11 +549,15 @@ struct SegmentEditSheet: View {
                 SegmentFieldsEditor(f: $f, showStart: true)
                 Section {
                     HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
-                        onSave(f); dismiss()
+                        // Basal-schedule write with an unverified idpStatusId (docs/UNVERIFIED-GUESSES.md #2).
+                        unverified.request("Editing a profile time-segment (the basal schedule)") {
+                            onSave(f); dismiss()
+                        }
                     }
                 }
             }
             .navigationTitle(title)
+            .unverifiedFeatureGate(unverified)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .onAppear {
                 if let s = initial {

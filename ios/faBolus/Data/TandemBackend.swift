@@ -450,6 +450,14 @@ public final class TandemBackend: NSObject, PumpBackend {
         // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
         let carbsInt = max(0, min(Self.maxCarbGrams, carbsGrams.map { Int($0.rounded()) } ?? 0))
         let bgInt = max(0, min(600, bgMgdl ?? 0))
+        // bolusIOB metadata (audit C-07): send the IOB the calculator used — the pump's Control-IQ IOB
+        // (`snapshot.iobUnits`, from ControlIQIOBResponse) — in **milliunits**, matching the reference
+        // app's captured request. Byte-locked against oracle vector ID10653
+        // (InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle: bolusIOB 130 == 0.13 U), so this
+        // is verifiable WITHOUT a bench. Metadata only — it never changes the delivered dose. Guarded so a
+        // non-finite/absurd IOB can't trap the UInt32 conversion; 0 when IOB is unknown (unchanged behavior).
+        let iobU = snapshot.iobUnits.isFinite ? max(0.0, snapshot.iobUnits) : 0.0
+        let bolusIobMu = UInt32(min((iobU * 1000).rounded(), 1_000_000))
         // Oracle bolus-type selection (audit C-07): carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
         let extended = extendedMu > 0
         let foodBit = carbsInt > 0 ? Self.food1 : Self.food2
