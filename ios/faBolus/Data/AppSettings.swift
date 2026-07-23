@@ -35,6 +35,10 @@ public final class AppSettings {
     /// so the default is unlimited; this only exists for users who prefer data-minimization.
     public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
 
+    /// "Smart Assist" advisory guardrails (DosingSafetyKit): predicted-low / stacking / oversized-bolus
+    /// warnings at bolus time. **OFF by default** — advisory only, never blocks a dose.
+    public var smartAssistEnabled: Bool { didSet { d.set(smartAssistEnabled, forKey: "smartAssistEnabled") } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -266,6 +270,7 @@ public final class AppSettings {
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
+        smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

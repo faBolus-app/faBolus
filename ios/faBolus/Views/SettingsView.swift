@@ -64,6 +64,11 @@ struct SettingsView: View {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
                     Section {
+                        Toggle("Smart Assist (advisory)", isOn: $settings.smartAssistEnabled)
+                    } header: { Text("Smart Assist") } footer: {
+                        Text("Shows **advisory** warnings when a bolus you're about to give looks likely to cause a low, or is stacking on active insulin. It never blocks or changes a dose — you decide. Off by default.")
+                    }
+                    Section {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")
                         }
