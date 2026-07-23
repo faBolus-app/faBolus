@@ -372,3 +372,18 @@ schemes:
     build:
       targets:
         faBolusWatch: all
+
+  # Primary app scheme, shared so it survives project regeneration (otherwise it's only an
+  # Xcode auto-created user scheme that gets wiped whenever generate-project.sh runs).
+  faBolus:
+    build:
+      targets:
+        faBolus: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
