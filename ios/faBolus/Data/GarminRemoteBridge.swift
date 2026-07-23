@@ -55,6 +55,10 @@ final class GarminRemoteBridge: NSObject {
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
+        // Phone tells the watch when to run wrist eating-sensing (battery: only when wanted).
+        model.onWantAccelSensing = { [weak self] on in
+            self?.sendRaw(["v": 1, "type": "eating_sense", "on": on])
+        }
         restoreDevice()
     }
 
@@ -107,6 +111,13 @@ final class GarminRemoteBridge: NSObject {
         } else {
             echoQueue.append(dict)
         }
+        pump()
+    }
+
+    /// Send an out-of-band control dict (e.g. eating_sense) to the watch — queued like an echo so it
+    /// respects the single-in-flight discipline. Not a RemoteCommand (no safety-critical schema).
+    private func sendRaw(_ dict: [String: Any]) {
+        echoQueue.append(dict)
         pump()
     }
 
