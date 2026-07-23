@@ -71,6 +71,10 @@ targets:
         product: AlertIntelligenceKit
       - package: faBolusNudge
         product: AutotuneKit
+      - package: faBolusNudge
+        product: EatingDetectionKit
+      - package: faBolusNudge
+        product: ModelCatalogKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
