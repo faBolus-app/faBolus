@@ -31,6 +31,10 @@ struct BolusEntryView: View {
 
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
+    /// Advisory Smart Assist warnings for the current entry (empty unless the feature is on). Never blocks.
+    private var smartWarnings: [String] {
+        model.smartAssistWarnings(units: units, carbs: carbs, recommendedUnits: recommendation?.recommendedUnits)
+    }
     private var maxUnits: Double { model.snapshot.maxBolusUnits }
     private var overMax: Bool { units > maxUnits }
 
@@ -135,6 +139,11 @@ struct BolusEntryView: View {
                         Label("Bolus is disabled by child mode", systemImage: "lock.fill")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    // Smart Assist (advisory) — never blocks; the deliver button stays enabled.
+                    ForEach(smartWarnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
@@ -214,6 +223,7 @@ struct BolusEntryView: View {
     private func deliver() async {
         delivering = true
         await model.deliverBolus(units: units)
+        if carbs > 0 { model.recordCarbs(grams: carbs) }   // persist carbs for insights/sensitivity
         delivering = false
         finishDelivery()
     }

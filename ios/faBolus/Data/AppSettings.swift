@@ -31,6 +31,32 @@ public final class AppSettings {
     /// in-memory ~24 h history). **Default OFF** so regular use stays clean. See [[GlucoseStatistics]].
     public var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
 
+    /// Persistent-history retention in days; **0 = keep everything** (default). Storage is ~1 MB/month,
+    /// so the default is unlimited; this only exists for users who prefer data-minimization.
+    public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
+
+    /// "Smart Assist" advisory guardrails (DosingSafetyKit): predicted-low / stacking / oversized-bolus
+    /// warnings at bolus time. **OFF by default** — advisory only, never blocks a dose.
+    public var smartAssistEnabled: Bool { didSet { d.set(smartAssistEnabled, forKey: "smartAssistEnabled") } }
+
+    /// Predictive-low (hypo) alerts (GlucoseIntelligenceKit). **OFF by default** — advisory in-app warning.
+    public var hypoAlertsEnabled: Bool { didSet { d.set(hypoAlertsEnabled, forKey: "hypoAlertsEnabled") } }
+
+    /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
+    public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
+    /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
+    public var eatingTriggerConfig: EatingTriggerConfig {
+        didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
+    }
+    /// On-device personalization for the nudge: adapt the wrist threshold (and, when the model is
+    /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
+    public var eatingLearnFromFeedback: Bool { didSet { d.set(eatingLearnFromFeedback, forKey: "eatingLearnFromFeedback") } }
+
+    /// Cached basal schedule (24 hourly U/hr) for settings-advice/autotune, from an external source
+    /// (Nightscout profile) or the pump. Empty = unknown. `basalScheduleSource` labels its origin.
+    public var basalScheduleByHour: [Double] { didSet { d.set(basalScheduleByHour, forKey: "basalScheduleByHour") } }
+    public var basalScheduleSource: String { didSet { d.set(basalScheduleSource, forKey: "basalScheduleSource") } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -261,6 +287,19 @@ public final class AppSettings {
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
+        historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
+        smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
+        hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
+        eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
+        eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
+        if let data = d.data(forKey: "eatingTriggerConfig"),
+           let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
+            eatingTriggerConfig = cfg
+        } else {
+            eatingTriggerConfig = EatingTriggerConfig()
+        }
+        basalScheduleByHour = (d.array(forKey: "basalScheduleByHour") as? [Double]) ?? []
+        basalScheduleSource = d.string(forKey: "basalScheduleSource") ?? ""
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

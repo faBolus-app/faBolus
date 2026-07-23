@@ -28,3 +28,8 @@ site/
 
 # Derived xcodegen spec from scripts/generate-project.sh
 project.generated.yml
+
+# ML model binaries (bundled locally / shipped as release assets, not committed)
+*.mlpackage
+*.mlmodel
+*.mlmodelc

@@ -1,0 +1,17 @@
+{
+  "models": [
+    {
+      "id": "EatingDetector",
+      "task": "eating",
+      "version": 1,
+      "active": true,
+      "sampleRateHz": 25,
+      "windowSamples": 150,
+      "channels": ["ax", "ay", "az", "gx", "gy", "gz"],
+      "mean": [-0.20759, 0.04368, 2.15417, 0.60862, 0.68022, 0.44540],
+      "std": [4.55292, 3.60938, 3.50476, 21.85199, 20.27900, 18.53563],
+      "metrics": {"pr_auc": 0.85, "roc_auc": 0.90},
+      "notes": "preliminary permissive (MIT-clean) eating detector; 6s/25Hz 6-DoF window; standardize on-device with mean/std"
+    }
+  ]
+}

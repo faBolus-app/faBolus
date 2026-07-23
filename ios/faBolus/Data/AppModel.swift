@@ -1,5 +1,10 @@
 import Foundation
 import faBolusCore
+import HistoryStore
+import DosingSafetyKit
+import GlucoseIntelligenceKit
+import TherapyInsightsKit
+import AlertIntelligenceKit
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
@@ -11,6 +16,82 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+
+    // Persistent history (SwiftData) — write-through target for long-term glucose/bolus history; powers
+    // time-in-range / future plotting and feeds the advisory tools. Optional so a store-init failure
+    // never breaks the app. See MIGRATION.md (Phase 2).
+    private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    private var lastGlucoseIngest = Date.distantPast
+    private var lastBolusIngest = Date.distantPast
+
+    // Predictive-low (GlucoseIntelligenceKit) — advisory, gated by AppSettings.hypoAlertsEnabled.
+    private let hypoEngine = SmartAssist.makeHypoEngine()
+    private var lastHypoIngest = Date.distantPast
+    private(set) var hypoWarning: HypoAlert?
+
+    // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
+    @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
+    @ObservationIgnored private var lastEatingConfig: Data?
+    @ObservationIgnored private let mealDetector = MealDetector()
+    /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
+    @ObservationIgnored public var latestAccelProb: Double?
+    @ObservationIgnored private var lastAccelWindowAt = Date.distantPast
+    @ObservationIgnored private var lastAccelWindowRaw: [Float]?   // last window (to label from feedback)
+    @ObservationIgnored private let accelPipeline = EatingAccelPipeline()
+    /// Optional location gate + on-device personalization (both advisory, on-device, off/gentle by default).
+    @ObservationIgnored private let eatingLocation = EatingLocationGate()
+    @ObservationIgnored private let eatingPersonalization = EatingPersonalization()
+    /// Set by the Garmin/watch bridge — the phone calls this to start/stop wrist sensing on demand
+    /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
+    @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
+    @ObservationIgnored private var lastWantAccel = false
+    private(set) var eatingNudge: EatingAlert?
+
+    private func setWantAccelSensing(_ on: Bool) {
+        guard on != lastWantAccel else { return }
+        lastWantAccel = on
+        onWantAccelSensing?(on)
+    }
+
+    /// Feed a raw IMU window from the Garmin watch (imu_window message) → phone-side p(eating).
+    public func ingestGarminIMUWindow(rawWindow raw: [Float]) {
+        guard let p = accelPipeline.predict(rawWindow: raw) else { return }
+        latestAccelProb = p
+        lastAccelWindowAt = Date()
+        lastAccelWindowRaw = raw            // retained on-device to label if the user gives feedback
+    }
+
+    /// Hook up on-device personalization: reload inference with the user's fine-tuned model when one is
+    /// produced, and prefer any personalized model from a previous run. Call once after init.
+    func setupEatingPersonalization() {
+        eatingPersonalization.onModelUpdated = { [weak self] in
+            guard let self else { return }
+            if AppSettings.shared.eatingLearnFromFeedback {
+                self.accelPipeline.applyPersonalizedModel(self.eatingPersonalization.personalizedModelURL)
+            }
+        }
+        if AppSettings.shared.eatingLearnFromFeedback {
+            accelPipeline.applyPersonalizedModel(eatingPersonalization.personalizedModelURL)
+        }
+    }
+
+    /// The user acted on the eating nudge (opened the bolus screen) → treat as a confirmed meal: teach
+    /// the personalizer + learn this as a meal place. Advisory-only feedback.
+    public func eatingNudgeActedOn() {
+        if AppSettings.shared.eatingLearnFromFeedback {
+            eatingPersonalization.recordFeedback(eating: true, window: lastAccelWindowRaw)
+        }
+        eatingLocation.recordMealHere()
+        eatingNudge = nil
+    }
+
+    /// Apple Watch on-device path: the watch already ran the model and relays a p(eating). Feed it
+    /// straight into the same accel signal the Garmin window path produces, then re-fuse the nudge.
+    public func ingestWatchEatingEvent(prob: Double, at: Date = Date()) {
+        latestAccelProb = prob
+        lastAccelWindowAt = at
+        updateEatingNudge()
+    }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -85,7 +166,7 @@ public final class AppModel {
         let recent = includeHistory ? Array(glucoseHistory.suffix(288)) : []
         let history = includeHistory ? recent.map { $0.mgdl } : nil
         let historyEpochs = includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
-        return RemoteCommand(kind: .statusRead, units: s.iobUnits,
+        var cmd = RemoteCommand(kind: .statusRead, units: s.iobUnits,
                              bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
                              trend: GlucoseTrend.token(from: s.trend),
                              carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
@@ -111,6 +192,10 @@ public final class AppModel {
                              watchChartRanges: AppSettings.shared.watchChartRanges,
                              garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
                              remotesReadOnly: AppSettings.shared.remotesReadOnly)
+        // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
+        // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
+        cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
+        return cmd
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
@@ -316,6 +401,7 @@ public final class AppModel {
                 Task { @MainActor in self?.refresh() }
             }
         }
+        setupEatingPersonalization()
     }
 
     static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
@@ -326,6 +412,245 @@ public final class AppModel {
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
     /// the bolus-entry sheet.
     public var openBolusRequested = false
+
+    /// Write only NEW readings/boluses into the persistent store (never re-insert the rolling buffer).
+    private func persistNewHistory(provenance: GlucoseProvenance) {
+        guard let history else { return }
+        let sourceID: String
+        let priority: Int
+        switch provenance {
+        case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
+        default:                    sourceID = "pump"; priority = 50    // pump-relayed
+        }
+        let newGlucose = glucoseHistory.filter { $0.date > lastGlucoseIngest }
+        if !newGlucose.isEmpty {
+            history.ingestGlucose(newGlucose, sourceID: sourceID, priority: priority)
+            lastGlucoseIngest = newGlucose.map(\.date).max() ?? lastGlucoseIngest
+        }
+        let newBoluses = bolusMarkers.filter { $0.date > lastBolusIngest }
+        if !newBoluses.isEmpty {
+            history.ingestBoluses(newBoluses, sourceID: "pump")
+            lastBolusIngest = newBoluses.map(\.date).max() ?? lastBolusIngest
+        }
+    }
+
+    /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
+    public func storedStatistics(days: Int = 90) -> GlucoseStatistics? {
+        guard let history else { return nil }
+        let end = Date(); let start = end.addingTimeInterval(-Double(days) * 86400)
+        return history.statistics(in: start...end)
+    }
+
+    /// Wipe all persisted history (Settings → data-minimization / "Clear history").
+    public func clearStoredHistory() { history?.clear() }
+
+    /// Advisory "Smart Assist" warnings for a bolus the user is about to give (predicted low / stacking /
+    /// oversized). Empty when the feature is off or nothing's concerning. Advisory only — never blocks.
+    public func smartAssistWarnings(units: Double, carbs: Double, recommendedUnits: Double?) -> [String] {
+        guard AppSettings.shared.smartAssistEnabled else { return [] }
+        return SmartAssist.warnings(units: units, carbs: carbs, recommendedUnits: recommendedUnits,
+                                    snapshot: snapshot, glucoseHistory: glucoseHistory,
+                                    bolusMarkers: bolusMarkers).map(\.message)
+    }
+
+    /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
+    public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
+
+    /// Apply a retention window (days); 0 = keep everything. Safe to call any time (e.g. on launch and
+    /// when the setting changes).
+    public func applyRetention(days: Int) {
+        guard days > 0, let history else { return }
+        history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
+    }
+
+    private var hypoDelegateSet = false
+    /// Feed new readings to the predictive-low engine; it publishes via the delegate below (advisory).
+    private func updateHypoWarning() {
+        guard AppSettings.shared.hypoAlertsEnabled else { hypoWarning = nil; return }
+        if !hypoDelegateSet { hypoEngine.delegate = self; hypoDelegateSet = true }
+        let fresh = glucoseHistory.filter { $0.date > lastHypoIngest }.sorted { $0.date < $1.date }
+        for r in fresh {
+            hypoEngine.ingest(GlucoseIntelligenceKit.CGMReading(mgdl: Double(r.mgdl), date: r.date))
+        }
+        lastHypoIngest = fresh.last?.date ?? lastHypoIngest
+        if let w = hypoWarning, Date().timeIntervalSince(w.at) > Double(w.horizonMinutes) * 60 {
+            hypoWarning = nil   // expire past its horizon
+        }
+    }
+
+    /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
+    /// have carb context. Source = faBolus (its own entry).
+    public func recordCarbs(grams: Double) {
+        guard grams > 0 else { return }
+        history?.ingestCarbs([(date: Date(), grams: grams)], sourceID: "fabolus")
+    }
+
+    /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
+    public func therapyInsights() -> [PatternInsights.Insight] {
+        let range = Date().addingTimeInterval(-90 * 86400)...Date()
+        let cgm = history?.glucose(in: range) ?? glucoseHistory
+        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
+    }
+
+    /// Best available basal schedule (24 hourly U/hr) — external (Nightscout profile) or pump. nil if unknown.
+    public func basalByHour() -> [Double]? {
+        let s = AppSettings.shared.basalScheduleByHour
+        return s.count == 24 ? s : nil
+    }
+    /// Human label for where the basal schedule came from ("" if none).
+    public var basalScheduleSource: String { AppSettings.shared.basalScheduleSource }
+
+    /// Insulin-sensitivity assessment (autosens-style) over the last ~14 days of stored data.
+    public func sensitivityState() -> SensitivityMonitor.State? {
+        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
+        let range = Date().addingTimeInterval(-14 * 86400)...Date()
+        return SmartAssist.sensitivity(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
+                                       carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
+                                       isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+    }
+
+    /// Settings advice (ISF / carb-ratio, and basal drift once a basal schedule is available). Advisory;
+    /// needs weeks of data for confidence.
+    public func settingsAdvice() -> TherapyAdvice? {
+        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
+        let range = Date().addingTimeInterval(-30 * 86400)...Date()
+        return SmartAssist.settingsAdvice(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
+                                          carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
+                                          isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+    }
+
+    /// Run the REAL oref0 autotune over stored data (experimental; needs weeks of data). On-demand only
+    /// (heavy: loads the oref JS bundle in JavaScriptCore) — runs off the main actor.
+    public func autotuneSuggestions() async -> [String] {
+        guard let history, let basal = basalByHour(), snapshot.isf > 0, snapshot.carbRatio > 0 else { return [] }
+        let range = Date().addingTimeInterval(-30 * 86400)...Date()
+        let cgm = history.glucose(in: range), bol = history.boluses(in: range)
+        let isf = snapshot.isf, cr = snapshot.carbRatio, tgt = snapshot.targetBg
+        return await Task.detached {
+            AutotuneAdapter.suggestions(cgm: cgm, boluses: bol, basalByHour: basal, isf: isf,
+                                        carbRatio: cr, targetBg: tgt, diaHours: 6) ?? []
+        }.value
+    }
+
+    private var lastNSBackfill = Date.distantPast
+    /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
+    /// schedule into faBolus. Throttled hourly. Best-effort/background.
+    private func maybeBackfillNightscout() {
+        guard GlucoseSourceConfig.string("nightscout.url") != nil,
+              Date().timeIntervalSince(lastNSBackfill) > 3600 else { return }
+        lastNSBackfill = Date()
+        let nsPrimary = GlucoseSourceRegistry.selectedId() == "nightscout"
+        Task { [weak self] in
+            guard let r = await NightscoutBackfill.fetch() else { return }
+            await MainActor.run {
+                guard let self else { return }
+                if nsPrimary {   // else the pump already provides boluses/carbs — avoid double-counting
+                    self.history?.ingestCarbs(r.carbs, sourceID: "nightscout")
+                    self.history?.ingestBoluses(r.insulin.map { BolusMarker(date: $0.date, units: $0.units) },
+                                                sourceID: "nightscout")
+                }
+                if let b = r.basalByHour, b.count == 24, AppSettings.shared.basalScheduleSource != "Pump" {
+                    AppSettings.shared.basalScheduleByHour = b
+                    AppSettings.shared.basalScheduleSource = "Nightscout"
+                }
+            }
+        }
+    }
+
+    /// Capture the pump's active basal schedule (fallback when no external profile is available).
+    public func captureBasalScheduleFromPump() async {
+        guard snapshot.connection == .connected else { return }
+        let backup = await readPumpSettingsForBackup()
+        guard let active = backup.profiles.first(where: { $0.active }) ?? backup.profiles.first,
+              !active.segments.isEmpty else { return }
+        let segs = active.segments.sorted { $0.startTimeMinutes < $1.startTimeMinutes }
+        let byHour: [Double] = (0..<24).map { hour in
+            let m = hour * 60
+            return (segs.last { $0.startTimeMinutes <= m } ?? segs[0]).basalRateUnitsPerHour
+        }
+        AppSettings.shared.basalScheduleByHour = byHour
+        AppSettings.shared.basalScheduleSource = "Pump"
+    }
+
+    /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
+    @ObservationIgnored private var alertIntel = AppModel.loadAlertIntel()
+    private static func loadAlertIntel() -> AlertIntelligence {
+        if let d = UserDefaults.standard.data(forKey: "alertIntel"),
+           let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d) { return a }
+        return AlertIntelligence()
+    }
+    private func saveAlertIntel() {
+        if let d = try? JSONEncoder().encode(alertIntel) { UserDefaults.standard.set(d, forKey: "alertIntel") }
+    }
+    /// User dismissed the predictive-low banner → teach the fatigue layer + clear it.
+    public func dismissHypoWarning() {
+        alertIntel.record("predicted_low", .dismissed); saveAlertIntel(); hypoWarning = nil
+    }
+
+    /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
+    /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
+    private func updateEatingNudge() {
+        guard AppSettings.shared.eatingNudgesEnabled else {
+            eatingNudge = nil; setWantAccelSensing(false); eatingLocation.setEnabled(false); return
+        }
+        var cfg = AppSettings.shared.eatingTriggerConfig
+        // On-device threshold adaptation: raise the wrist threshold by the learned bias (fewer false
+        // alerts for users who report them). Off = no change.
+        if AppSettings.shared.eatingLearnFromFeedback {
+            cfg.accelThreshold = min(0.98, cfg.accelThreshold + eatingPersonalization.thresholdBias)
+        }
+        eatingLocation.setEnabled(cfg.locationEnabled)
+        if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
+        guard let history else { return }
+
+        let range = Date().addingTimeInterval(-2 * 3600)...Date()
+        var meal: MealDetector.Result?
+        if cfg.mode.usesCGM, snapshot.isf > 0, snapshot.carbRatio > 0 {
+            meal = mealDetector.detect(
+                glucose: history.glucose(in: range).map { (date: $0.date, mgdl: Double($0.mgdl)) },
+                doses: history.boluses(in: range).map { (date: $0.date, units: $0.units) },
+                announcedCarbs: history.carbs(in: range),
+                carbRatio: snapshot.carbRatio, isf: Double(snapshot.isf))
+        }
+        // Battery: for cgmThenAccel, only spin up the wrist sensor once the CGM hints a possible meal;
+        // other accel modes keep it on while enabled.
+        let wantAccel = cfg.mode.usesAccel && (cfg.mode == .cgmThenAccel ? (meal?.score ?? 0) >= 0.3 : true)
+        setWantAccelSensing(wantAccel)
+
+        let minsSinceBolus = bolusMarkers.map(\.date).max()
+            .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
+        // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
+        let accelFresh = Date().timeIntervalSince(lastAccelWindowAt) < 120 ? latestAccelProb : nil
+        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
+                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
+                                    atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
+
+        if case .fire = eatingEngine.evaluate(signals) {
+            if case .suppress = alertIntel.decide(AlertIntelligenceKit.Alert(kind: "eating", severity: 1)) { return }
+            eatingNudge = EatingAlert(estimatedCarbs: meal?.estimatedCarbs ?? 0, at: Date())
+        }
+    }
+
+    /// User dismissed the eating nudge → teach the eating fatigue layer + the on-device personalizer
+    /// (a false alert), then clear it.
+    public func dismissEatingNudge() {
+        alertIntel.record("eating", .dismissed); saveAlertIntel()
+        if AppSettings.shared.eatingLearnFromFeedback {
+            eatingPersonalization.recordFeedback(eating: false, window: lastAccelWindowRaw)
+        }
+        eatingNudge = nil
+    }
+
+    /// Learned meal-place count + personalization stats (for the settings screen).
+    public var eatingLearnedPlaceCount: Int { eatingLocation.learnedPlaceCount }
+    public var eatingFeedbackStats: (confirmed: Int, falseAlerts: Int) {
+        (eatingPersonalization.confirmedTrue, eatingPersonalization.confirmedFalse)
+    }
+    public func resetEatingPersonalization() {
+        eatingPersonalization.reset()
+        eatingLocation.reset()
+        accelPipeline.applyPersonalizedModel(nil)
+    }
 
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
@@ -347,6 +672,10 @@ public final class AppModel {
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
+        persistNewHistory(provenance: provenance)
+        updateHypoWarning()
+        maybeBackfillNightscout()
+        updateEatingNudge()
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
@@ -712,5 +1041,21 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .cancelled))
         }
         pendingRemoteBolus = nil
+    }
+}
+
+// Predictive-low engine callback (advisory). `ingest` is only ever called on the main actor (from
+// refresh), so the delegate fires on main — assumeIsolated publishes synchronously without a cross-actor send.
+extension AppModel: GlucoseIntelligenceDelegate {
+    nonisolated public func glucoseIntelligence(_ g: GlucoseIntelligence, didPredictLow warning: HypoWarning) {
+        let alert = HypoAlert(horizonMinutes: warning.horizonMinutes, probability: warning.probability,
+                              projectedLowMgdl: warning.projectedLowMgdl, at: warning.at,
+                              nocturnal: warning.nocturnal)
+        Task { @MainActor in
+            // Learned fatigue layer: rate-limit / quiet-hours / auto-quiet a kind the user keeps dismissing.
+            let decision = self.alertIntel.decide(AlertIntelligenceKit.Alert(kind: "predicted_low", severity: 2))
+            if case .suppress = decision { return }
+            self.hypoWarning = alert
+        }
     }
 }

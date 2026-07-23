@@ -21,6 +21,19 @@ packages:
   DexcomG6Kit:
     # Dexcom G5/G6/ONE passive glucose-message decoders, vendored from LoopKit/CGMBLEKit (MIT).
     path: Packages/DexcomG6Kit
+  HistoryStore:
+    # faBolus-owned persistent glucose/insulin/carb history (SwiftData) — powers TIR/plotting and
+    # feeds the advisory tools. In-repo local package. See MIGRATION.md.
+    path: Packages/HistoryStore
+  ShareClient:
+    # Dexcom Share follower core, vendored from LoopKit/dexcom-share-client-swift (MIT) — the
+    # validated client Loop uses. Powers DexcomShareSource. See Phase 6 in MIGRATION.md.
+    path: Packages/ShareClient
+  faBolusNudge:
+    # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
+    # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
+    url: https://github.com/faBolus-app/faBolusNudge.git
+    revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -50,6 +63,24 @@ targets:
         product: G7SensorKit
       - package: DexcomG6Kit
         product: DexcomG6Kit
+      - package: HistoryStore
+        product: HistoryStore
+      - package: ShareClient
+        product: ShareClient
+      - package: faBolusNudge
+        product: DosingSafetyKit
+      - package: faBolusNudge
+        product: GlucoseIntelligenceKit
+      - package: faBolusNudge
+        product: TherapyInsightsKit
+      - package: faBolusNudge
+        product: AlertIntelligenceKit
+      - package: faBolusNudge
+        product: AutotuneKit
+      - package: faBolusNudge
+        product: EatingDetectionKit
+      - package: faBolusNudge
+        product: ModelCatalogKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
@@ -164,6 +195,10 @@ targets:
       - path: Shared
         excludes:
           - WidgetBolusIntents.swift
+      # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
+      # Bundle the eating model + manifest on the watch for the on-device path.
+      - path: ios/faBolus/Models
+      # <<< ONWATCH_EATING
     dependencies:
       # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
       - target: faBolusWatchWidgets
@@ -180,6 +215,13 @@ targets:
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
+      # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
+      # On-device eating detector (EatingDetectionKit) + its model catalog. Needs HealthKit (below).
+      - package: faBolusNudge
+        product: EatingDetectionKit
+      - package: faBolusNudge
+        product: ModelCatalogKit
+      # <<< ONWATCH_EATING
     entitlements:
       path: watch/faBolusWatch/faBolusWatch.entitlements
       properties:
@@ -190,6 +232,12 @@ targets:
         # the watchOS Apple Health failover. See docs/operate/cgm-failover.md.
         # com.apple.developer.healthkit: true
         # com.apple.developer.healthkit.access: []
+        # >>> ONWATCH_EATING
+        # On-device eating detection keeps sensing alive via an HKWorkoutSession → needs HealthKit.
+        # This is the PAID-account requirement; generate-project.sh omits it unless the flag is on.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        # <<< ONWATCH_EATING
     info:
       path: watch/faBolusWatch/Info.plist
       properties:
@@ -203,6 +251,11 @@ targets:
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed when your iPhone is out of range."
         # Keep a direct CGM (G7) BLE link alive in the background as a failover when the phone is unreachable.
         UIBackgroundModes: [bluetooth-central]
+        # >>> ONWATCH_EATING (stripped unless FABOLUS_ONWATCH_EATING=1)
+        # On-device eating sensing keeps CoreMotion alive via a workout session while sensing.
+        WKBackgroundModes: [workout-processing]
+        NSMotionUsageDescription: "faBolus senses wrist motion on-device to detect when you're likely eating, so it can remind you to bolus. Advisory only — it never doses."
+        # <<< ONWATCH_EATING
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch
@@ -213,6 +266,14 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "4"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon   # watchOS won't install without an app icon
+      # >>> ONWATCH_EATING (whole block stripped unless FABOLUS_ONWATCH_EATING=1, so the default
+      # watch build is byte-identical to today — no flag, no HealthKit, free-account-safe)
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG FABOLUS_ONWATCH_EATING
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_ONWATCH_EATING
+      # <<< ONWATCH_EATING
 
   # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
   # app publishes to the shared App Group; never touches Bluetooth.

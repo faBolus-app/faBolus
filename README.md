@@ -24,6 +24,14 @@ or a local App Group (universal — Libre 1/2, Dexcom G5/G6/ONE, …); and **Lib
 the primary source; a stale reading is shown marked (never as current). See
 [the CGM failover docs](docs/operate/cgm-failover.md).
 
+**Eating nudges (optional, off by default):** faBolus can remind you to bolus when you're probably
+eating — **advisory only, never doses**. It fuses wrist motion (a small on-device model, from a
+**Garmin** or **Apple Watch**), a **CGM unannounced-meal** signal (a port of Loop's missed-meal
+detection), a no-recent-bolus gate, and an optional on-device **location** gate. You choose which
+signals must agree, with live "≈ false alerts/day · % meals caught · time-to-alert · battery"
+guidance, and it **learns from your feedback on-device** (adapts the threshold, and fine-tunes the
+model when supported). Everything runs on-device. See [the eating-nudge docs](docs/operate/eating-nudges.md).
+
 > _Built by Zev and Tia in tandem._
 
 > [!WARNING]
@@ -80,6 +88,7 @@ Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + n
                              #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, the transport
                              #    seam — RemoteLink (watch) / BLELink (Mac+iPhone) + SealedTransport — GlucoseSource + GlucoseArbiter)
 Packages/G7SensorKit/        # Dexcom G7/ONE+ BLE decoders, vendored from LoopKit (MIT), LoopKit-free
+Packages/ShareClient/        # Dexcom Share follower, vendored from LoopKit/dexcom-share-client-swift (MIT)
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
 ios/faBolus/Data/Sources/    # CGM failover impls: cloud (LibreLinkUp/Nightscout/Share) + HealthKit + creds
@@ -128,6 +137,12 @@ needed) and shows a note where Garmin pairing would be. To use a Garmin watch, p
 SDK where `project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script. To
 build the phone app **without the Apple Watch** app, run `FABOLUS_WATCH=0 ./scripts/generate-project.sh`
 (force Garmin on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works and includes both.
+
+**On-watch eating detection needs a paid account** (HealthKit + a workout session). It's **off by
+default and auto-excluded on a free account** — every paid-only piece (the HealthKit entitlement,
+background modes, the model, the compile flag) is stripped so the app still builds and installs. Turn
+it on once you have the paid program with `FABOLUS_ONWATCH_EATING=1 ./scripts/generate-project.sh`.
+The **Garmin** eating path (phone-side inference) needs none of this and works on a free account.
 
 ## Status
 

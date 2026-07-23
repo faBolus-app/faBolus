@@ -57,8 +57,21 @@ struct SettingsView: View {
                         NavigationLink { BackupRestoreView(model: model) } label: {
                             Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         }
+                        NavigationLink { DataHistoryView(model: model) } label: {
+                            Label("Data & history", systemImage: "chart.bar.doc.horizontal")
+                        }
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
+                    }
+                    Section {
+                        Toggle("Bolus guardrail", isOn: $settings.smartAssistEnabled)
+                        Toggle("Predictive-low alerts", isOn: $settings.hypoAlertsEnabled)
+                        NavigationLink { EatingNudgeSettingsView() } label: {
+                            Label(settings.eatingNudgesEnabled ? "Eating nudges (on)" : "Eating nudges",
+                                  systemImage: "fork.knife")
+                        }
+                    } header: { Text("Smart Assist") } footer: {
+                        Text("**Advisory only** — never blocks or changes a dose. The bolus guardrail warns when a dose looks likely to cause a low or is stacking on active insulin. Predictive-low alerts warn in-app when a sustained low looks likely soon. Both off by default. Retrospective insights are under Data & History.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {
