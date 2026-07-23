@@ -151,7 +151,11 @@ public final class PeerRemoteHost {
             var sealed: String?
             if firstPairing, let code = pairingCode {
                 let token = MacPairing.newToken()
+                // Capture the pairing entropy BEFORE authorize() (which clears the window state): only a
+                // QR (128-bit) pairing may later be granted control (audit A-11).
+                let viaQR = pairing.activeIsQR
                 pairing.authorize(clientId: clientId, name: peerName ?? "Mac", token: token)
+                RemotePeerPolicyStore.setPairedViaQR(clientId, viaQR)
                 RemotePeerPolicyStore.ensureDefault(for: clientId)   // new peer starts view-only
                 sealed = MacPairing.sealToken(token, code: code)
             }

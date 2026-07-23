@@ -97,16 +97,24 @@ struct MacPairingView: View {
             get: { pairing.justPaired != nil },
             set: { if !$0 { clearJustPaired() } }
         )) {
-            Button("Allow control") {
-                if let id = pairing.justPairedClientId { pairing.setPolicy(.fullControl, for: id) }
-                clearJustPaired()
+            // Audit A-11: only a QR-paired (high-entropy) peer may be offered control; a manual-code
+            // peer is view-only until re-paired via QR.
+            if let id = pairing.justPairedClientId, RemotePeerPolicyStore.canGrantControl(id) {
+                Button("Allow control") {
+                    pairing.setPolicy(.fullControl, for: id)
+                    clearJustPaired()
+                }
             }
             Button("View only", role: .cancel) {
                 if let id = pairing.justPairedClientId { pairing.setPolicy(.viewOnly, for: id) }
                 clearJustPaired()
             }
         } message: {
-            Text("Choose what this device may do. View only shows status but can't deliver boluses or change the pump — you can change this anytime under Paired remotes.")
+            if let id = pairing.justPairedClientId, RemotePeerPolicyStore.canGrantControl(id) {
+                Text("Choose what this device may do. View only shows status but can't deliver boluses or change the pump — you can change this anytime under Paired remotes.")
+            } else {
+                Text("This device was paired with a 6-digit code, so it stays view-only (it can see status but can't deliver boluses or change the pump). To let it control the pump, forget it and re-pair by scanning the QR code.")
+            }
         }
     }
 
@@ -128,19 +136,26 @@ struct RemotePeerPermissionsView: View {
     @State private var pairing = MacPairingCoordinator.shared
     @Environment(\.dismiss) private var dismiss
     @State private var policy = RemotePeerPolicy.viewOnly
+    /// Audit A-11: only a QR-paired peer may be granted control; a manual-code peer is locked view-only.
+    private var canControl: Bool { RemotePeerPolicyStore.canGrantControl(clientId) }
 
     var body: some View {
         Form {
             Section {
                 Toggle("Read-only (view status only)", isOn: Binding(
-                    get: { policy.isViewOnly },
+                    get: { policy.isViewOnly || !canControl },
                     set: { ro in policy = ro ? .viewOnly : .fullControl; save() }
                 ))
+                .disabled(!canControl)
             } footer: {
-                Text("When read-only, “\(name)” can see status but can't deliver boluses or change the pump.")
+                if canControl {
+                    Text("When read-only, “\(name)” can see status but can't deliver boluses or change the pump.")
+                } else {
+                    Text("“\(name)” was paired with a 6-digit code, so it stays view-only. To let it control the pump, forget it and re-pair by scanning the QR code.")
+                }
             }
 
-            if !policy.isViewOnly {
+            if canControl && !policy.isViewOnly {
                 Section("Allowed actions") {
                     ForEach(RemotePermission.allCases) { p in
                         Toggle(p.label, isOn: Binding(
