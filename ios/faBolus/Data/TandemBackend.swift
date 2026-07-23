@@ -168,8 +168,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
     private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
     private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
-    /// Resumed when the next CGM reading arrives, for `refreshGlucoseNow()`. Void (best-effort).
-    private var glucoseReadCont: CheckedContinuation<Void, Never>?
+    // Single-flight glucose refresh (audit C-05). Concurrent callers coalesce onto ONE in-flight pump
+    // read and are all resumed exactly once when the CGM reading arrives, on timeout, or on disconnect —
+    // fixing the old single-slot design where a second caller orphaned the first (permanent hang) and a
+    // stale timeout could resume a newer request. The generation tag makes a timeout a no-op once its
+    // read has completed.
+    private var glucoseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var glucoseReadGeneration = 0
+    private var glucoseReadInFlight = false
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
@@ -241,17 +247,32 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Force a fresh CGM read and wait (bounded ~2.5 s) for it, so a correction uses the newest value.
+    /// Single-flight (audit C-05): concurrent callers coalesce onto one pump read; all are resumed
+    /// exactly once when the reading arrives, on timeout, or on disconnect.
     public func refreshGlucoseNow() async {
         guard snapshot.connection == .connected else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            glucoseReadCont = cont
+            glucoseWaiters.append(cont)
+            if glucoseReadInFlight { return }   // join the in-flight read
+            glucoseReadInFlight = true
+            glucoseReadGeneration &+= 1
+            let gen = glucoseReadGeneration
             try? client.send(CurrentEgvGuiDataV2Request())
-            // Safety timeout so we never hang if the pump doesn't answer.
+            // Safety timeout so we never hang if the pump doesn't answer. Tagged by generation, so a
+            // stale timeout whose read already completed is a no-op.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                guard let self, let c = self.glucoseReadCont else { return }
-                self.glucoseReadCont = nil; c.resume()
+                guard let self, self.glucoseReadInFlight, self.glucoseReadGeneration == gen else { return }
+                self.completeGlucoseRead()
             }
         }
+    }
+
+    /// Resume every coalesced glucose waiter exactly once (CGM arrival, timeout, or disconnect).
+    private func completeGlucoseRead() {
+        glucoseReadInFlight = false
+        let waiters = glucoseWaiters
+        glucoseWaiters.removeAll()
+        for w in waiters { w.resume() }
     }
 
     /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
@@ -993,6 +1014,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         case .ready: snapshot.connection = .connected
         case .disconnected, .idle:
             snapshot.connection = .disconnected
+            // Resume any glucose-refresh waiters so they don't hang across a disconnect (audit C-05).
+            if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
             didBackfill = false; backfillActive = false
             backfillTimer?.invalidate(); backfillTimer = nil
@@ -1124,8 +1147,8 @@ extension TandemBackend: PumpBLEClientDelegate {
                     schedulePredictiveBurst(afterReadingAt: readingDate)
                 }
             }
-            // Wake any `refreshGlucoseNow()` waiter now that a reading has arrived.
-            if let c = glucoseReadCont { glucoseReadCont = nil; c.resume() }
+            // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived.
+            if glucoseReadInFlight { completeGlucoseRead() }
         case let m as LastBolusStatusV2Response:
             if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }
             snapshot.lastBolusUnits = m.deliveredUnits
