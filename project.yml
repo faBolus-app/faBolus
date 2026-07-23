@@ -25,6 +25,11 @@ packages:
     # faBolus-owned persistent glucose/insulin/carb history (SwiftData) — powers TIR/plotting and
     # feeds the advisory tools. In-repo local package. See MIGRATION.md.
     path: Packages/HistoryStore
+  faBolusNudge:
+    # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
+    # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
+    url: https://github.com/faBolus-app/faBolusNudge.git
+    revision: b56967efe41563c1ab30585b6ffe455f481c3a36
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -56,6 +61,8 @@ targets:
         product: DexcomG6Kit
       - package: HistoryStore
         product: HistoryStore
+      - package: faBolusNudge
+        product: DosingSafetyKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit

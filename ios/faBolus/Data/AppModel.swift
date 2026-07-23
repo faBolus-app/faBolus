@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import HistoryStore
+import DosingSafetyKit
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
@@ -365,6 +366,15 @@ public final class AppModel {
 
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
+
+    /// Advisory "Smart Assist" warnings for a bolus the user is about to give (predicted low / stacking /
+    /// oversized). Empty when the feature is off or nothing's concerning. Advisory only — never blocks.
+    public func smartAssistWarnings(units: Double, carbs: Double, recommendedUnits: Double?) -> [String] {
+        guard AppSettings.shared.smartAssistEnabled else { return [] }
+        return SmartAssist.warnings(units: units, carbs: carbs, recommendedUnits: recommendedUnits,
+                                    snapshot: snapshot, glucoseHistory: glucoseHistory,
+                                    bolusMarkers: bolusMarkers).map(\.message)
+    }
 
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
