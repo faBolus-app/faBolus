@@ -1073,6 +1073,13 @@ public final class AppModel {
                                                 enforceChildLock: enforceChildLock, peerId: peerId)
     }
 
+    /// Drop a pending host-approval bolus bound to `peerId` (audit A-01). When a peer re-handshakes or
+    /// its auth fails, any awaiting-approval bolus tied to that peer's now-invalidated session must not
+    /// survive to be confirmed against a different/re-paired identity.
+    public func clearPendingRemoteBolus(forPeer peerId: String) {
+        if pendingRemoteBolus?.peerId == peerId { pendingRemoteBolus = nil }
+    }
+
     /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
     /// Routes through `remoteDeliver` so the carb recompute + divergence guard + carb recording apply.
     public func confirmRemoteBolus() async {

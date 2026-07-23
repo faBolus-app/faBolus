@@ -38,8 +38,8 @@ public enum RemoteApprovalMode: String, Codable, Sendable, CaseIterable, Identif
 
 /// The host's policy for one paired peer: what it may do + how its boluses are confirmed. Persisted
 /// per peer (keyed by the peer's client id). A brand-new peer is created **view-only**; a peer with no
-/// stored policy at all (i.e. paired before this feature existed — the original Mac) is treated as a
-/// full grant so its behavior is unchanged.
+/// stored policy at all is **deny-by-default** (view-only) — audit A-01 removed the old
+/// "unknown peer ⇒ full grant" migration fallback.
 public struct RemotePeerPolicy: Codable, Equatable, Sendable {
     public var permissions: Set<RemotePermission>
     public var approvalMode: RemoteApprovalMode
@@ -54,6 +54,4 @@ public struct RemotePeerPolicy: Codable, Equatable, Sendable {
     public static let viewOnly = RemotePeerPolicy(permissions: [], approvalMode: .auto)
     /// Everything a remote can do (used by the per-device "allow control" choice).
     public static let fullControl = RemotePeerPolicy(permissions: Set(RemotePermission.allCases), approvalMode: .auto)
-    /// Migration default for a peer paired before per-peer policies existed (unchanged behavior).
-    public static let legacyFull = RemotePeerPolicy(permissions: Set(RemotePermission.allCases), approvalMode: .auto)
 }

@@ -63,11 +63,22 @@ public final class PeerRemoteHost {
     }
 
     private func resetAuth() {
+        clearSession()
+        pairing.setConnected(false, name: nil)
+    }
+
+    /// Tear down ALL per-connection trust: authenticated flag, the sealed channel key/counters, the
+    /// bound identity/handshake nonces/secret, and any pending host-approval bolus tied to the peer.
+    /// Audit A-01 — a new `authHello` or a failed proof must not inherit any prior connection's trust,
+    /// so both begin by calling this. (Distinct from `resetAuth`, which also flips the pairing UI to
+    /// disconnected — not wanted mid-handshake.)
+    private func clearSession() {
+        let oldPeer = peerClientId
         authenticated = false
         peerClientId = nil; peerName = nil; macNonce = nil; phoneNonce = nil
         secret = nil; firstPairing = false; pairingCode = nil
         link.endSession()   // next connection must re-handshake before any real command flows
-        pairing.setConnected(false, name: nil)
+        if let oldPeer { model?.clearPendingRemoteBolus(forPeer: oldPeer) }
     }
 
     /// Stop advertising and drop any connection (called when the user turns remote Bluetooth off).
@@ -93,6 +104,11 @@ public final class PeerRemoteHost {
     private func handleAuth(_ cmd: RemoteCommand) {
         switch cmd.kind {
         case .authHello:
+            // Audit A-01: a fresh hello starts a brand-new handshake — invalidate any existing sealed
+            // session + bound identity + pending bolus FIRST, so a mid-session re-hello can't ride on
+            // the previous peer's trust. (In-session cleartext auth is already dropped by
+            // SealedTransport; this covers a reconnect where the link didn't cleanly signal drop.)
+            clearSession()
             guard let clientId = cmd.authClientId,
                   let mNonceB64 = cmd.authNonce, let mNonce = Data(base64Encoded: mNonceB64) else { return }
             let name = cmd.message ?? "remote"
@@ -125,8 +141,10 @@ public final class PeerRemoteHost {
             guard MacPairing.verify(proof, secret: secret, label: "mac",
                                     phoneNonce: pNonce, macNonce: mNonce, clientId: clientId) else {
                 link.send(.auth(.authResult, ok: false, message: "Incorrect code. Try again."))
-                // Keep the code window open so the user can retry, but drop this attempt's state.
-                peerClientId = nil; macNonce = nil; phoneNonce = nil; self.secret = nil
+                // Audit A-01: a failed proof drops ALL attempt state (identity, nonces, secret, pairing
+                // mode, sealed key, pending bolus) — never leave a half-authorized session behind. The
+                // one-time code window stays open (in MacPairingCoordinator) so the user can retry.
+                clearSession()
                 return
             }
             // Verified. On first pairing, mint + persist a long-term token and seal it for the Mac.

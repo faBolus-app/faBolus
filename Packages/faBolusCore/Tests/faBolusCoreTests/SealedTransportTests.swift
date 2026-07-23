@@ -89,6 +89,29 @@ final class SealedTransportTests: XCTestCase {
         XCTAssertEqual(count, 1)   // the replayed frame is dropped
     }
 
+    /// Audit A-01: once a session is live, a cleartext auth frame injected on the wire must be dropped
+    /// on receive (a real re-handshake only follows a link teardown that clears the key).
+    func testInSessionCleartextAuthDropped() async {
+        let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
+        let sa = SealedTransport(inner: a), sb = SealedTransport(inner: b)
+        let secret = Data("123456".utf8), pn = Data(repeating: 1, count: 16), mn = Data(repeating: 2, count: 16)
+        sa.activateSession(secret: secret, phoneNonce: pn, macNonce: mn)
+        sb.activateSession(secret: secret, phoneNonce: pn, macNonce: mn)
+
+        var authSeen = 0
+        sb.onReceive = { if SealedTransport.isAuth($0.kind) { authSeen += 1 } }
+        // Attacker injects a raw cleartext authHello into b's live session.
+        b.onReceive?(.auth(.authHello, clientId: "attacker"))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(authSeen, 0, "in-session cleartext auth must be dropped")
+
+        // After the session ends (link teardown), auth frames flow again for the next handshake.
+        sb.endSession()
+        b.onReceive?(.auth(.authHello, clientId: "peer"))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(authSeen, 1)
+    }
+
     func testAuthPassesButRealCommandBlockedBeforeSession() async {
         let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
         let sa = SealedTransport(inner: a); _ = SealedTransport(inner: b)

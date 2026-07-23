@@ -3,8 +3,9 @@ import faBolusCore
 
 /// Per-peer authorization policy (permissions + approval mode), keyed by the peer's client id. These
 /// aren't secret (the pairing **token** lives in the Keychain via `MacRemoteAuthStore`), so they live
-/// in UserDefaults. A peer with **no** stored entry is treated as a full grant — migration for a Mac
-/// paired before per-peer policies existed; brand-new peers get a **view-only** entry at pairing time.
+/// in UserDefaults. A peer with **no** stored entry (or an empty client id) is **deny-by-default**
+/// (view-only) — audit A-01: an unknown/unbound peer must never inherit a silent full grant. Brand-new
+/// peers get a **view-only** entry at pairing time (`ensureDefault`); the host grants more explicitly.
 enum RemotePeerPolicyStore {
     private static let key = "remotePeerPolicies"   // JSON [clientId: RemotePeerPolicy]
 
@@ -19,8 +20,13 @@ enum RemotePeerPolicyStore {
 
     /// Stored policy for a peer, or nil if it has none yet.
     static func policy(for clientId: String) -> RemotePeerPolicy? { load()[clientId] }
-    /// Effective policy used for gating: stored, else legacy-full (pre-existing peer).
-    static func effectivePolicy(for clientId: String) -> RemotePeerPolicy { load()[clientId] ?? .legacyFull }
+    /// Effective policy used for gating. **Deny-by-default** (audit A-01): an empty client id, or one
+    /// with no stored entry, resolves to `.viewOnly` — never a silent full grant. Real peers are granted
+    /// explicitly (via `ensureDefault` at pairing, or the host's per-peer editor).
+    static func effectivePolicy(for clientId: String) -> RemotePeerPolicy {
+        guard !clientId.isEmpty else { return .viewOnly }
+        return load()[clientId] ?? .viewOnly
+    }
     static func setPolicy(_ p: RemotePeerPolicy, for clientId: String) {
         var m = load(); m[clientId] = p; save(m)
     }
