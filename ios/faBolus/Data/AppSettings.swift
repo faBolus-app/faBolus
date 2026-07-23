@@ -39,6 +39,9 @@ public final class AppSettings {
     /// warnings at bolus time. **OFF by default** — advisory only, never blocks a dose.
     public var smartAssistEnabled: Bool { didSet { d.set(smartAssistEnabled, forKey: "smartAssistEnabled") } }
 
+    /// Predictive-low (hypo) alerts (GlucoseIntelligenceKit). **OFF by default** — advisory in-app warning.
+    public var hypoAlertsEnabled: Bool { didSet { d.set(hypoAlertsEnabled, forKey: "hypoAlertsEnabled") } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -271,6 +274,7 @@ public final class AppSettings {
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
+        hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

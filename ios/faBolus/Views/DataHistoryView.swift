@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import TherapyInsightsKit
 
 /// Data & History settings — time-in-range from the persisted store, storage size, an optional
 /// retention (auto-delete) control, and a clear-history action. Storage is ~1 MB/month, so the default
@@ -9,6 +10,7 @@ struct DataHistoryView: View {
     @State private var settings = AppSettings.shared
     @State private var confirmClear = false
     @State private var stats: GlucoseStatistics?
+    @State private var insights: [PatternInsights.Insight] = []
 
     private let retentionOptions: [(label: String, days: Int)] = [
         ("Keep everything", 0), ("90 days", 90), ("1 year", 365),
@@ -25,6 +27,17 @@ struct DataHistoryView: View {
                 } else {
                     Text("No stored history yet — it fills in as glucose comes in.")
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            if !insights.isEmpty {
+                Section("Insights") {
+                    ForEach(insights.indices, id: \.self) { i in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(insights[i].title).font(.subheadline.weight(.semibold))
+                            Text(insights[i].detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
@@ -64,5 +77,8 @@ struct DataHistoryView: View {
         return mb < 1 ? String(format: "~%.0f KB", mb * 1000) : String(format: "~%.1f MB", mb)
     }
 
-    private func reload() { stats = model.storedStatistics(days: 90) }
+    private func reload() {
+        stats = model.storedStatistics(days: 90)
+        insights = model.therapyInsights()
+    }
 }

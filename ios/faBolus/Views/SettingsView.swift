@@ -64,9 +64,10 @@ struct SettingsView: View {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
                     Section {
-                        Toggle("Smart Assist (advisory)", isOn: $settings.smartAssistEnabled)
+                        Toggle("Bolus guardrail", isOn: $settings.smartAssistEnabled)
+                        Toggle("Predictive-low alerts", isOn: $settings.hypoAlertsEnabled)
                     } header: { Text("Smart Assist") } footer: {
-                        Text("Shows **advisory** warnings when a bolus you're about to give looks likely to cause a low, or is stacking on active insulin. It never blocks or changes a dose — you decide. Off by default.")
+                        Text("**Advisory only** — never blocks or changes a dose. The bolus guardrail warns when a dose looks likely to cause a low or is stacking on active insulin. Predictive-low alerts warn in-app when a sustained low looks likely soon. Both off by default. Retrospective insights are under Data & History.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {

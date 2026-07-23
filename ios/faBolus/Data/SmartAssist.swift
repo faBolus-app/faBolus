@@ -1,6 +1,24 @@
 import Foundation
 import faBolusCore
 import DosingSafetyKit
+import GlucoseIntelligenceKit
+import TherapyInsightsKit
+
+/// A Sendable, faBolus-local view of a predictive-low warning (so it can cross actor isolation and drive
+/// the UI without coupling stored state to the SDK's type).
+struct HypoAlert: Sendable, Equatable {
+    let horizonMinutes: Int
+    let probability: Double
+    let projectedLowMgdl: Double?
+    let at: Date
+    let nocturnal: Bool
+    var message: String {
+        if let low = projectedLowMgdl {
+            return "Low likely within ~\(horizonMinutes) min (projected ~\(Int(low)) mg/dL)."
+        }
+        return "Low likely within ~\(horizonMinutes) min."
+    }
+}
 
 /// Bridges faBolus data to the DosingSafetyKit guardrail (advisory only). Given the bolus the user is
 /// about to give + recent history + the pump's ISF/CR, it returns warnings (predicted low, insulin
@@ -25,5 +43,27 @@ enum SmartAssist {
             DosingSafetyKit.GlucoseSample(mgdl: Double($0.mgdl), date: $0.date)
         }
         return safety.evaluateBolus(proposal, recentDoses: doses, recentGlucose: cgm)
+    }
+
+    // MARK: Predictive-low (GlucoseIntelligenceKit)
+
+    /// A stateful hypo engine (heuristic — no model file needed). Feed new readings via `ingest`.
+    static func makeHypoEngine() -> GlucoseIntelligence {
+        GlucoseIntelligence(predictor: HeuristicHypoPredictor(lowThreshold: 70, horizonSteps: 6))
+    }
+
+    /// Sensor-trust (compression-low / noise) assessment over recent CGM.
+    static func sensorTrust(recent: [GlucoseReading]) -> GlucoseIntelligenceKit.SensorTrust {
+        SensorTrustAssessor().assess(recent: recent.map {
+            GlucoseIntelligenceKit.CGMReading(mgdl: Double($0.mgdl), date: $0.date)
+        })
+    }
+
+    // MARK: Retrospective insights (TherapyInsightsKit)
+
+    static func insights(cgm: [GlucoseReading]) -> [PatternInsights.Insight] {
+        PatternInsights().insights(cgm: cgm.map {
+            TherapyInsightsKit.CGMPoint(mgdl: Double($0.mgdl), date: $0.date)
+        })
     }
 }
