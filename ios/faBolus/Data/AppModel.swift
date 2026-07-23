@@ -35,7 +35,16 @@ public final class AppModel {
     @ObservationIgnored private let mealDetector = MealDetector()
     /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
     @ObservationIgnored public var latestAccelProb: Double?
+    @ObservationIgnored private var lastAccelWindowAt = Date.distantPast
+    @ObservationIgnored private let accelPipeline = EatingAccelPipeline()
     private(set) var eatingNudge: EatingAlert?
+
+    /// Feed a raw IMU window from the Garmin watch (imu_window message) → phone-side p(eating).
+    public func ingestGarminIMUWindow(rawWindow raw: [Float]) {
+        guard let p = accelPipeline.predict(rawWindow: raw) else { return }
+        latestAccelProb = p
+        lastAccelWindowAt = Date()
+    }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -545,7 +554,9 @@ public final class AppModel {
         }
         let minsSinceBolus = bolusMarkers.map(\.date).max()
             .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
-        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? latestAccelProb : nil,
+        // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
+        let accelFresh = Date().timeIntervalSince(lastAccelWindowAt) < 120 ? latestAccelProb : nil
+        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
                                     cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus)
 
         if case .fire = eatingEngine.evaluate(signals) {

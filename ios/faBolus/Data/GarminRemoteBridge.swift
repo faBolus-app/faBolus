@@ -166,7 +166,15 @@ final class GarminRemoteBridge: NSObject {
 // Connect IQ delegate callbacks (Obj-C, nonisolated) — hop onto the main actor.
 extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
     nonisolated func receivedMessage(_ message: Any!, from app: IQApp!) {
-        guard let dict = message as? [String: Any], let cmd = try? RemoteCommand.from(dict) else { return }
+        guard let dict = message as? [String: Any] else { return }
+        // Eating-detection IMU windows ride an out-of-band envelope (not the safety-critical
+        // RemoteCommand schema) — route them to phone-side inference before RemoteCommand parsing.
+        if dict["type"] as? String == "imu_window" {
+            let raw = (dict["data"] as? [Any])?.compactMap { ($0 as? NSNumber)?.floatValue } ?? []
+            Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
+            return
+        }
+        guard let cmd = try? RemoteCommand.from(dict) else { return }
         Task { @MainActor in self.handle(cmd) }
     }
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {}
