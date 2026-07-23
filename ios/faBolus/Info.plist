@@ -72,6 +72,8 @@
 	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default.</string>
 	<key>TrioAppGroupIdentifier</key>
 	<string>group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group</string>
 	<key>UIBackgroundModes</key>
