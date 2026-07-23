@@ -69,4 +69,21 @@ Insulin, plus whether the iPhone is reachable.
 Learn how to use it — including the bolus flow — on the
 [Apple Watch remote](../remotes/apple-watch.md) page.
 
+## Optional: on-watch eating detection
+
+The Apple Watch can run the [eating-nudge](../operate/eating-nudges.md) model **on-device** and relay
+the result to your phone. This needs the **paid** Apple Developer Program — an `HKWorkoutSession`
+keeps the sensors alive, which requires the HealthKit capability.
+
+It's **off by default and automatically excluded on a free account**: the HealthKit entitlement,
+`workout-processing` background mode, the bundled model, and the feature's compile flag are all
+stripped so the watch app still builds and installs. To enable it once you have the paid program:
+
+```bash
+FABOLUS_ONWATCH_EATING=1 ./scripts/generate-project.sh
+```
+
+then enable **HealthKit** under **Signing & Capabilities** for the watch target. The **Garmin**
+eating path (the phone runs the model) needs none of this and works on a free account.
+
 Next (optional): [Add a Garmin :material-arrow-right:](garmin-build.md)
