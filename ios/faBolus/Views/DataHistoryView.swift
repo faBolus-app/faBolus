@@ -13,6 +13,7 @@ struct DataHistoryView: View {
     @State private var insights: [PatternInsights.Insight] = []
     @State private var sensitivity: SensitivityMonitor.State?
     @State private var advice: TherapyAdvice?
+    @State private var autotune: [String] = []
 
     private let retentionOptions: [(label: String, days: Int)] = [
         ("Keep everything", 0), ("90 days", 90), ("1 year", 365),
@@ -63,6 +64,9 @@ struct DataHistoryView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    ForEach(autotune.indices, id: \.self) { i in
+                        Text(autotune[i]).font(.caption).foregroundStyle(.secondary)
+                    }
                 } header: { Text("Settings suggestions (advisory)") } footer: {
                     Text("Derived from your own data — **advisory only, discuss with your clinician** before changing pump settings.\(model.basalByHour() == nil ? " (Basal suggestions need the pump's basal schedule — connect the pump or a Nightscout profile.)" : "")")
                 }
@@ -97,6 +101,7 @@ struct DataHistoryView: View {
         .task {
             // Fallback: grab the pump's basal schedule if no external one is cached (enables basal advice).
             if model.basalByHour() == nil { await model.captureBasalScheduleFromPump(); reload() }
+            autotune = await model.autotuneSuggestions()   // real oref autotune (experimental)
         }
         .onChange(of: settings.historyRetentionDays) { _, days in
             model.applyRetention(days: days); reload()
@@ -110,7 +115,7 @@ struct DataHistoryView: View {
 
     private var hasSuggestions: Bool {
         (sensitivity != nil && sensitivity?.level != .unknown) || advice?.isf != nil || advice?.carbRatio != nil
-            || (advice?.basalByHour.contains { $0 != nil } ?? false)
+            || (advice?.basalByHour.contains { $0 != nil } ?? false) || !autotune.isEmpty
     }
 
     private func reload() {

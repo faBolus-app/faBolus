@@ -450,6 +450,19 @@ public final class AppModel {
                                           isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
     }
 
+    /// Run the REAL oref0 autotune over stored data (experimental; needs weeks of data). On-demand only
+    /// (heavy: loads the oref JS bundle in JavaScriptCore) — runs off the main actor.
+    public func autotuneSuggestions() async -> [String] {
+        guard let history, let basal = basalByHour(), snapshot.isf > 0, snapshot.carbRatio > 0 else { return [] }
+        let range = Date().addingTimeInterval(-30 * 86400)...Date()
+        let cgm = history.glucose(in: range), bol = history.boluses(in: range)
+        let isf = snapshot.isf, cr = snapshot.carbRatio, tgt = snapshot.targetBg
+        return await Task.detached {
+            AutotuneAdapter.suggestions(cgm: cgm, boluses: bol, basalByHour: basal, isf: isf,
+                                        carbRatio: cr, targetBg: tgt, diaHours: 6) ?? []
+        }.value
+    }
+
     private var lastNSBackfill = Date.distantPast
     /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
     /// schedule into faBolus. Throttled hourly. Best-effort/background.

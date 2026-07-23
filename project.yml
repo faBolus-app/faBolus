@@ -69,6 +69,8 @@ targets:
         product: TherapyInsightsKit
       - package: faBolusNudge
         product: AlertIntelligenceKit
+      - package: faBolusNudge
+        product: AutotuneKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
