@@ -56,6 +56,9 @@ public final class PhoneRemoteHost {
             }
         case .statusRead:
             link.send(model.statusCommand(includeHistory: true))
+        case .eatingEvent:
+            // Apple Watch on-device detector relayed a p(eating) — feed the fusion engine. Advisory.
+            if let p = cmd.eatingProb { model.ingestWatchEatingEvent(prob: p) }
         case .suspendPump:
             guard !AppSettings.shared.remotesReadOnly else { return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)

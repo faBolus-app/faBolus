@@ -26,6 +26,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// started on the host's own phone. `bolusApprovalRequest` carries the units; the remote replies
         /// `bolusApprovalResponse` with `approved`. Off by default; BLE-only, not in the shared schema.
         case bolusApprovalRequest, bolusApprovalResponse
+        /// Advisory eating-detection (Phase 5). `eatingEvent` is sent watch→phone when the watch's
+        /// on-device detector flags likely eating (`eatingProb`); the phone fuses it into the nudge
+        /// engine. The phone signals whether the watch should be sensing via `eatingSensingOn` on the
+        /// routine status push (battery). Advisory only — never doses; not safety-critical.
+        case eatingEvent
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -103,6 +108,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Read-only mode for the WATCH + GARMIN remotes: when true they hide their bolus screen/button and
     /// won't request a bolus (the host also refuses). Status/viewing stays. Mirrored (schema + Monkey C).
     public var remotesReadOnly: Bool?
+
+    // Advisory eating-detection (Phase 5). Not part of the safety-critical schema.
+    public var eatingProb: Double? = nil       // eatingEvent: watch's on-device p(eating) ∈ [0,1]
+    public var eatingSensingOn: Bool? = nil    // status push: should the watch run wrist eating-sensing?
 
     // MARK: Mac↔phone pairing handshake (see MacPairing)
     // Swift-only fields with defaults, so the existing initializer, command.schema.json, and the
