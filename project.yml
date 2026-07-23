@@ -29,7 +29,7 @@ packages:
     # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
     # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
     url: https://github.com/faBolus-app/faBolusNudge.git
-    revision: b56967efe41563c1ab30585b6ffe455f481c3a36
+    revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
