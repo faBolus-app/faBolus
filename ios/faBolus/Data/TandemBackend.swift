@@ -472,7 +472,13 @@ public final class TandemBackend: NSObject, PumpBackend {
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         }
         if bgInt > 0 {
-            try? client.send(RemoteBgEntryRequest(bg: bgInt, useForCgmCalibration: false, isAutopopBg: false,
+            // Match the reference app's captured RemoteBgEntryRequest exactly (audit C-07): all six
+            // real-app BLE captures (RemoteBgEntryRequestTest.ID10652/10676/10677/10678 + the two G7
+            // calibrate vectors) send entryType = MANUAL (byte 3 = 0) and source = REMOTE (byte 4 = 1) —
+            // "entered remotely via BLE" — for a bolus-window BG. faBolus previously sent source = PUMP
+            // (0) via the isAutopopBg=false convenience, contradicting every capture; ground truth is
+            // MANUAL/REMOTE. entryTypeId 0 = MANUAL, sourceId 1 = REMOTE (BloodGlucoseReadingType/Source).
+            try? client.send(RemoteBgEntryRequest(bg: bgInt, useForCgmCalibration: false, entryTypeId: 0, sourceId: 1,
                                                   pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         }
@@ -771,7 +777,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             firstSegmentProfileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
             firstSegmentProfileTargetBG: targetBg, firstSegmentProfileISF: isf,
             profileInsulinDuration: insulinDurationMinutes,
-            timeSegmentBitmask: 1, bolusSettingsBitmask: 0, carbEntry: 1, idpSourceId: 0), delivery: true)
+            // Reference-captured new-profile values (audit C-07, CreateIDPRequestTest.new1 + the field
+            // doc-comments): timeSegmentBitmask 31 = all segment fields set; bolusSettingsBitmask 5 =
+            // insulinDuration|carbEntry; idpSourceId 255 (0xFF / -1 sentinel) = brand-new profile, not a
+            // duplicate. faBolus previously sent 1 / 0 / 0, which tells the pump almost nothing is set
+            // (and idpSourceId 0 reads as "duplicate profile 0"). Still bench-gated (insulin-affecting).
+            timeSegmentBitmask: 31, bolusSettingsBitmask: 5, carbEntry: 1, idpSourceId: 255), delivery: true)
         await refreshProfiles()
     }
     public func refreshProfileSegments(idpId: Int) async {
@@ -795,7 +806,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await setSegment(idpId: idpId, segmentIndex: segmentIndex, operationId: 2, startTimeMinutes: 0,
                              basalRateUnitsPerHour: 0, carbRatioGramsPerUnit: 0, isf: 0, targetBg: 0)
     }
-    // operationId: 0 modify, 1 create, 2 delete (IDPSegmentOperation). idpStatusId 0 = no special flags.
+    // operationId: 0 modify, 1 create, 2 delete (IDPSegmentOperation). idpStatusId is a CHANGED-FIELDS
+    // bitmask (IDPSegmentStatus: BASAL_RATE 1 | CARB_RATIO 2 | TARGET_BG 4 | CORRECTION_FACTOR 8 |
+    // START_TIME 16). Audit C-07: the captured SetIDPSegmentRequest vectors pass this bitmask (a new
+    // segment used 31 = all fields); faBolus previously sent 0, telling the pump NO field changed — the
+    // likely reason segment writes didn't take. We set all fields each call, so 31 (all) for create/modify;
+    // 0 for delete (nothing to mark). Reference-aligned but still bench-gated (basal schedule).
+    private static let idpAllSegmentFields = 31
     private func setSegment(idpId: Int, segmentIndex: Int, operationId: Int, startTimeMinutes: Int,
                             basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
         try await sendControl(SetIDPSegmentRequest(
@@ -803,7 +820,8 @@ public final class TandemBackend: NSObject, PumpBackend {
             profileStartTime: startTimeMinutes,
             profileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
             profileCarbRatio: UInt32(max(0, (carbRatioGramsPerUnit * 1000).rounded())),
-            profileTargetBG: targetBg, profileISF: isf, idpStatusId: 0), delivery: true)
+            profileTargetBG: targetBg, profileISF: isf,
+            idpStatusId: operationId == 2 ? 0 : Self.idpAllSegmentFields), delivery: true)
         await refreshProfileSegments(idpId: idpId)
     }
 

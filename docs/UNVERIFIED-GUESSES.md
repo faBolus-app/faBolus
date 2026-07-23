@@ -11,45 +11,55 @@ feature is untested and "will likely not work" before they run — not just the 
 (`ios/faBolus/Views/UnverifiedFeatureGate.swift`, wired in `PumpWizardViews.swift` / `SettingsView.swift`).
 
 ## 1. CGM alert type (high vs low)
-- **Guess:** `alertType: 1` = High, `alertType: 0` = Low in `CgmHighLowAlertRequest`.
+- **Guess (still open):** faBolus sends `alertType: 1` = High, `alertType: 0` = Low in
+  `CgmHighLowAlertRequest`. The jwoglom reference documents the OPPOSITE with named constants
+  (`ALERT_TYPE_HIGH = 0`, `ALERT_TYPE_LOW = 1`) — so faBolus is **likely reversed**. But the oracle's
+  `CgmHighLowAlertRequestTest` has **no captured BLE payload** (`// TODO: add tests…`), so there is no
+  ground truth, and flipping which threshold a safety alert sets is not something to change on a doc
+  alone. Left as-is and **gated by the blocking untested-feature modal** pending a pump/capture check.
 - **Where:** `ios/faBolus/Views/PumpWizardViews.swift` → `RemindersAlertsView` (CGM high/low section);
   backend `TandemBackend.setCgmHighLowAlert`. Rise/fall (`CgmRiseFallAlertRequest`) is not surfaced.
 - **Risk:** low (only sets which threshold changes; non-insulin). Worst case: sets the wrong one.
-- **Verify:** set a distinctive high/low threshold, then read it on the pump (Options → CGM alerts)
-  and confirm which one moved. Flip the mapping if reversed.
+- **Verify:** set a distinctive high/low threshold, then read it on the pump (Options → CGM alerts) and
+  confirm which one moved. If reversed (as the reference implies), swap to high→0 / low→1 in
+  `RemindersAlertsView` and drop the gate.
 
 ## 2. IDP profile create + segment parameters
-- **Guesses:**
-  - `CreateIDPRequest`: `timeSegmentBitmask: 1`, `bolusSettingsBitmask: 0`, `carbEntry: 1`,
-    `idpSourceId: 0`, `firstSegmentProfileStartTime: 0`.
-  - `SetIDPSegmentRequest`: `idpStatusId: 0`, `profileIndex: 0`. operationId 0/1/2 = modify/create/
-    delete is confirmed (pumpX2 `IDPSegmentOperation`), but `idpStatusId` semantics are not.
+- **Now aligned to captured reference values (audit C-07), still bench-gated:** the field bitmasks were
+  best guesses (`0`/`1`) that the reference captures contradict; faBolus now sends the captured values:
+  - `CreateIDPRequest`: `timeSegmentBitmask: 31` (all segment fields), `bolusSettingsBitmask: 5`
+    (insulinDuration|carbEntry), `idpSourceId: 255` (0xFF = brand-new, not a duplicate), `carbEntry: 1`
+    — from `CreateIDPRequestTest.new1` + the field doc-comments. (Was `1 / 0 / 0`, i.e. "almost nothing
+    set" and "duplicate profile 0".)
+  - `SetIDPSegmentRequest`: `idpStatusId` = the changed-fields bitmask (`31` = all) for create/modify,
+    `0` for delete — from the captured `SetIDPSegmentRequest` vectors. (Was `0` = "nothing changed",
+    the likely reason writes didn't take.) Byte-locked in `RemoteEntryAndIdpOracleTests`.
 - **Where:** `TandemBackend.createProfile` / `setSegment`; UI in `PumpWizardViews.swift`
   (`ProfileCreateView`, `ProfileSegmentsView`, `SegmentEditSheet`).
 - **Risk:** insulin-affecting (changes the basal schedule). Gated behind advanced-control + Mobi +
-  hold-to-confirm. **Bench-validate on saline before real use.**
-- **Verify:** create/edit a profile, then read it back on the pump and confirm every field (start
-  time, basal, carb ratio, ISF, target, insulin duration) matches. Note whether `idpStatusId` needs
-  a non-zero bitmask (see `IDPSegmentResponse.IDPSegmentStatus`).
+  hold-to-confirm **+ the blocking untested-feature modal**. Values match the reference, but the
+  end-to-end pump write is unproven — **bench-validate on saline before real use.**
+- **Verify:** create/edit a profile, then read it back on the pump and confirm every field (start time,
+  basal, carb ratio, ISF, target, insulin duration) matches.
 
-## 3. Garmin complication `:unit` key + numeric color path
-- **Guess:** publishing `Complications.updateComplication` with a numeric `:value` + a Latin trend
-  arrow in `:unit` (singular) + restored `<range>` bands yields a range-colored value with trend.
-  The SDK typedef (`api.mir`) says `:unit`; the HTML doc example says `:units` — unverified which the
-  runtime honors.
-- **Where:** `faBolusGarmin/source/app/BgComplication.mc` (`publish`),
+## 3. Garmin complication `:unit` key + numeric color path — RESOLVED against the SDK
+- **Resolved (no guess left):** the Connect IQ SDK's own type source
+  (`.../connectiq-sdk-mac-9.2.0.../bin/api.mir`, `Complications.Data` typedef) defines the accepted keys
+  as exactly `:value`, `:unit` (**singular**), `:shortLabel`, `:ranges`. `:units` (plural) appears ONLY
+  in one typo-ridden Core-Topics doc example and is **not** an SDK key — so there was never a real
+  ambiguity. `BgComplication` now makes a single SDK-correct `updateComplication` call with a numeric
+  `:value`, the trend arrow in `:unit`, `:shortLabel`, and `:ranges` breakpoints. The only documented
+  throw is `OperationNotAllowedException` (id not yet owned) — unknown keys are ignored at runtime, not
+  thrown — so the old two-phase / `:units`-fallback dance was unnecessary (removed).
+- **Color:** `:ranges` are numeric breakpoints; the CONSUMER (Face It / the watch face) colors by them —
+  a publisher can't set the color itself. The real "reads 0" bug was a String `:value`; a numeric
+  `:value` (as sent now) is the fix.
+- **Where:** `faBolusGarmin/source/app/BgComplication.mc` (`pushComplication`),
   `resources-complications/complications/complications.xml` (`<range>` bands).
-- **Now throw-safe (no bench needed for robustness):** `pushComplication` tries the arrow under `:unit`
-  first and, if that firmware *rejects* the key (throws), retries under `:units` — so whichever spelling
-  the runtime accepts wins, and step-1's numeric value always lands regardless (`BgComplication.enrich`).
-  This removes the "one wrong key wipes the whole update" failure, but does NOT by itself confirm which
-  key actually *renders* the arrow.
-- **Fallback:** the in-app "Complication display" option (faBolus → Settings → Remotes & devices) has a
-  "value + trend" **string** mode that works without color if the numeric+color path fails.
-- **Verify (Connect IQ simulator — NOT pump-bench):** this is fully checkable without any pump. Build for
-  a complications device (e.g. venu3s) and run in the CIQ simulator with a Face It face; confirm the
-  number + arrow + range color render. If the arrow shows, the cascade picked the right key. Then confirm
-  once on a real watch. (Only the *rendering* needs a screen; there is no pump dependency here.)
+- **Fallback:** the in-app "Complication display" option has a "value + trend" **string** mode.
+- **Optional confirm (Connect IQ simulator — NOT pump-bench):** run a complications device (e.g. venu3s)
+  in the CIQ simulator with a Face It face to eyeball the number + arrow + coloring. Not required for
+  correctness — the API usage now matches the SDK type source.
 
 ## 4. Carb-bolus pump metadata (FOOD1 / foodVolume / bolusIOB / isAutopopBg) — audit C-07
 - **Now correct + oracle-locked:** a carb bolus sends `bolusTypeBitmask = FOOD1 (1)` (not FOOD2) with
@@ -62,17 +72,19 @@ feature is untested and "will likely not work" before they run — not just the 
   by `InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle` (vector ID10653: `bolusIOB 130` ==
   0.13 U). Verifiable purely against the oracle, so this is no longer a guess. Metadata only — never
   changes the delivered dose.
-- **Still unverified (guesses, bench-gate before trusting the pump graph / Control-IQ carb awareness):**
-  - `RemoteBgEntryRequest.isAutopopBg` is hard-coded **false** even for a CGM-sourced BG (provenance isn't
-    threaded through the backend yet). The byte *format* is oracle-locked; whether the pump treats an
-    autopop=true remote BG differently is the bench-only part, so it's left conservative (false).
-  - **Extended + carbs**: `foodVolume` is left 0 for the extended path (no oracle vector for a combo bolus
-    with carbs); the FOOD1|EXTENDED bit selection is applied but the component-volume split is a guess.
+- **BG entry now matches captured ground truth (no longer a guess):** the six captured real-app
+  `RemoteBgEntryRequest` vectors all send `entryType = MANUAL (0)` + `source = REMOTE (1)`. faBolus now
+  sends exactly that (was `source = PUMP (0)` via the old `isAutopopBg:false` convenience — which
+  contradicted every capture). Byte-locked in `RemoteEntryAndIdpOracleTests`. The "isAutopopBg" concept
+  was a misread: the real app doesn't set an autopop flag, it always uses MANUAL/REMOTE.
+- **Still unverified (bench-gate before trusting the pump graph / Control-IQ carb awareness):**
+  - **Extended + carbs**: `foodVolume` is left 0 for the extended path (**no oracle vector exists** for a
+    combo bolus with carbs, so the component-volume split can't be verified without a bench or a capture
+    from the reference app); the FOOD1|EXTENDED bit selection is applied but the split is unproven.
   - The `RemoteCarbEntry/BgEntry` inserts are best-effort `try?` (a rejected entry never aborts the
     bolus) with no ack/rollback.
 - **Verify (saline):** deliver a carb bolus; confirm the carb amount shows on the pump / t:connect and
-  Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery. Then thread CGM
-  provenance into `isAutopopBg` and remove that bullet.
+  Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery.
 
 ## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental)
 - Marked experimental in the CGM source picker; a passive G6 read may never connect (G6 needs an
