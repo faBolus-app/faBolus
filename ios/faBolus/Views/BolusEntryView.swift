@@ -31,6 +31,10 @@ struct BolusEntryView: View {
     private enum BGSource { case none, cgm, manual }
     @State private var bgSource: BGSource = .none
     @State private var preparingDeliver = false
+    /// Wall-clock (receive) time the CGM value last changed on the phone — used to catch a reading that
+    /// landed in the last ~2 s before the user tapped deliver (the on-screen dose may not reflect it yet).
+    @State private var lastCGMChangeAt: Date?
+    @State private var tick = Date()   // drives the live "N min ago" readout while the screen is open
     /// Set when a fresh CGM pulled at delivery time would change the dose — asks the user which to use.
     @State private var cgmUpdate: CGMUpdatePrompt?
     private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double }
@@ -248,8 +252,18 @@ struct BolusEntryView: View {
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
         .onChange(of: bg) { _, _ in if mode == .carbs { Task { await calculate() } } }
         .onChange(of: mode) { _, newMode in if newMode == .carbs { Task { await calculate() } } }
-        // Keep the CGM-sourced BG live as new readings arrive while the screen is open.
-        .onChange(of: model.snapshot.glucoseDate) { _, _ in syncBGFromCGM() }
+        // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
+        // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
+        .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
+        // Keep the CGM as fresh as possible while the screen is open: re-pull every 30 s and tick the
+        // age label. The task is cancelled automatically when the screen closes (no background drain).
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                if Task.isCancelled { break }
+                await model.refreshGlucoseNow(); syncBGFromCGM(); tick = Date()
+            }
+        }
         .toolbar {
             if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             ToolbarItemGroup(placement: .keyboard) {
@@ -309,13 +323,18 @@ struct BolusEntryView: View {
     /// (via the `cgmUpdate` prompt) instead of silently delivering the stale-based dose.
     private func attemptDeliver() async {
         if mode == .carbs, bgSource == .cgm, carbs > 0 {
+            // A reading that landed in the last ~2 s may not be reflected in the on-screen dose yet, so
+            // treat any resulting change as worth confirming (not just a >0.10 U divergence).
+            let justChanged = lastCGMChangeAt.map { Date().timeIntervalSince($0) <= 2 } ?? false
+            let priorUnits = units
             preparingDeliver = true
             await model.refreshGlucoseNow()
             preparingDeliver = false
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
                 let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g)
-                if abs(rec.recommendedUnits - units) > AppModel.remoteDivergenceLimitUnits {
-                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: units)
+                let delta = abs(rec.recommendedUnits - priorUnits)
+                if delta > AppModel.remoteDivergenceLimitUnits || (justChanged && delta > 0.0001) {
+                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits)
                     return   // wait for the user's choice in the CGM-updated dialog
                 }
             }

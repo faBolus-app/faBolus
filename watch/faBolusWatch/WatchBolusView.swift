@@ -30,6 +30,9 @@ struct WatchBolusView: View {
         .navigationTitle("Bolus")
         .onAppear {
             if !modeInit { mode = Mode(rawValue: model.defaultMode) ?? .carbs; modeInit = true }
+            // Poll once on entering (not continuously — battery): ask the phone to force a fresh CGM
+            // read so the estimate is current. The host also re-reads at delivery + runs the guard.
+            model.requestStatus(forceGlucose: true)
         }
     }
 

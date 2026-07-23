@@ -46,7 +46,11 @@ public final class PhoneRemoteHost {
                 Task { await model.dismissAlert(id: id, kind: k); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
-            link.send(model.statusCommand(includeHistory: true))
+            if cmd.forceGlucose == true {
+                Task { await model.refreshGlucoseNow(); self.link.send(model.statusCommand(includeHistory: true)) }
+            } else {
+                link.send(model.statusCommand(includeHistory: true))
+            }
         case .eatingEvent:
             // Apple Watch on-device detector relayed a p(eating) — feed the fusion engine. Advisory.
             if let p = cmd.eatingProb { model.ingestWatchEatingEvent(prob: p) }

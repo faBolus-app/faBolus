@@ -255,6 +255,11 @@ class RemoteClientModel {
     }
 
     func requestStatus() { link.send(RemoteCommand(kind: .statusRead)) }
+    /// Request status and (optionally) ask the host to force a fresh CGM read first — used when opening
+    /// the bolus screen so the estimate is off the newest value.
+    func requestStatus(forceGlucose: Bool) {
+        var c = RemoteCommand(kind: .statusRead); c.forceGlucose = forceGlucose; link.send(c)
+    }
 
     /// modern band color index for a glucose value (0 low, 1 in-range, 2 high, 3 urgent-high).
     nonisolated static func band(_ mgdl: Int) -> Int {

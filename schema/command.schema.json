@@ -41,6 +41,10 @@
       "minimum": 0,
       "description": "The dose the remote computed/showed for a carb bolusRequest. The host recomputes authoritatively from carbsGrams and rejects the bolus if the two diverge beyond its safety limit (stale-settings guard). Absent for a units-only request."
     },
+    "forceGlucose": {
+      "type": "boolean",
+      "description": "On a statusRead, asks the host to force a fresh CGM read from the pump before replying. A remote sets this when opening its bolus screen so the shown estimate is off the newest value."
+    },
     "confirmToken": {
       "type": "string",
       "description": "Opaque token issued by the host for a specific bolusRequest; echoed by the remote in bolusConfirm to complete the double-confirmation. Single-use, short-lived.",

@@ -167,7 +167,11 @@ final class GarminRemoteBridge: NSObject {
                 Task { await model.dismissAlert(id: id, kind: k); send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
-            send(model.statusCommand(includeHistory: true))
+            if cmd.forceGlucose == true {
+                Task { await model.refreshGlucoseNow(); self.send(model.statusCommand(includeHistory: true)) }
+            } else {
+                send(model.statusCommand(includeHistory: true))
+            }
         default: break
         }
     }

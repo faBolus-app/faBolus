@@ -207,7 +207,11 @@ public final class PeerRemoteHost {
             model.resolveRemoteApproval(requestId: cmd.requestId, approved: cmd.approved ?? false,
                                         reason: (cmd.approved ?? false) ? nil : "Denied on the remote")
         case .statusRead:
-            link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
+            if cmd.forceGlucose == true {
+                Task { await model.refreshGlucoseNow(); self.link.send(model.statusCommand(includeHistory: true)) }
+            } else {
+                link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
+            }
         case .suspendPump:
             guard policy.allows(.suspendResume) else { deny(cmd.requestId); return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)

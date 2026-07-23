@@ -146,6 +146,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// units-mode request. Swift-only additive field (set post-init), mirrored in the JSON schema.
     public var remoteEstimateUnits: Double? = nil
 
+    /// On a `statusRead`, asks the host to force a fresh CGM read from the pump before replying (a
+    /// remote sets this when opening its bolus screen, so the shown estimate is off the newest value).
+    /// Omitted/false = reply from the host's current snapshot. Swift-only additive field.
+    public var forceGlucose: Bool? = nil
+
     /// Reverse-approval outcome on a `bolusApprovalResponse`: true = the remote approved the host's
     /// bolus, false = denied.
     public var approved: Bool? = nil
