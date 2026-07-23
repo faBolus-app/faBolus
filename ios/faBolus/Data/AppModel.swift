@@ -366,6 +366,16 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
+    /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
+    public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
+
+    /// Apply a retention window (days); 0 = keep everything. Safe to call any time (e.g. on launch and
+    /// when the setting changes).
+    public func applyRetention(days: Int) {
+        guard days > 0, let history else { return }
+        history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
+    }
+
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).

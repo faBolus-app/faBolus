@@ -57,6 +57,9 @@ struct SettingsView: View {
                         NavigationLink { BackupRestoreView(model: model) } label: {
                             Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         }
+                        NavigationLink { DataHistoryView(model: model) } label: {
+                            Label("Data & history", systemImage: "chart.bar.doc.horizontal")
+                        }
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
