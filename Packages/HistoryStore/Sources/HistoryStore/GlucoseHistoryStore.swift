@@ -83,6 +83,13 @@ public final class GlucoseHistoryStore {
         return ((try? context.fetch(desc)) ?? []).map { BolusMarker(date: $0.date, units: $0.units) }
     }
 
+    public func carbs(in range: ClosedRange<Date>) -> [(date: Date, grams: Double)] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredCarb>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date)]
+        return ((try? context.fetch(desc)) ?? []).map { (date: $0.date, grams: $0.grams) }
+    }
+
     /// Time-in-range / GMI / CV over the window, using faBolusCore's stats on the merged readings.
     public func statistics(in range: ClosedRange<Date>) -> GlucoseStatistics {
         GlucoseStatistics(readings: glucose(in: range))

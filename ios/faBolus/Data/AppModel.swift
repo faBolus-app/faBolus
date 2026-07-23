@@ -4,6 +4,7 @@ import HistoryStore
 import DosingSafetyKit
 import GlucoseIntelligenceKit
 import TherapyInsightsKit
+import AlertIntelligenceKit
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
@@ -408,10 +409,52 @@ public final class AppModel {
         }
     }
 
+    /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
+    /// have carb context. Source = faBolus (its own entry).
+    public func recordCarbs(grams: Double) {
+        guard grams > 0 else { return }
+        history?.ingestCarbs([(date: Date(), grams: grams)], sourceID: "fabolus")
+    }
+
     /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
     public func therapyInsights() -> [PatternInsights.Insight] {
-        let cgm = history?.glucose(in: Date().addingTimeInterval(-90 * 86400)...Date()) ?? glucoseHistory
-        return SmartAssist.insights(cgm: cgm)
+        let range = Date().addingTimeInterval(-90 * 86400)...Date()
+        let cgm = history?.glucose(in: range) ?? glucoseHistory
+        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
+    }
+
+    /// Insulin-sensitivity assessment (autosens-style) over the last ~14 days of stored data.
+    public func sensitivityState() -> SensitivityMonitor.State? {
+        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
+        let range = Date().addingTimeInterval(-14 * 86400)...Date()
+        return SmartAssist.sensitivity(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
+                                       carbs: history.carbs(in: range), isf: snapshot.isf,
+                                       carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+    }
+
+    /// Settings advice (ISF / carb-ratio from the user's own outcomes). Basal advice is omitted until the
+    /// pump's basal schedule is persisted. Needs weeks of data for confidence.
+    public func settingsAdvice() -> TherapyAdvice? {
+        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
+        let range = Date().addingTimeInterval(-30 * 86400)...Date()
+        return SmartAssist.settingsAdvice(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
+                                          carbs: history.carbs(in: range), isf: snapshot.isf,
+                                          carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+    }
+
+    /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
+    @ObservationIgnored private var alertIntel = AppModel.loadAlertIntel()
+    private static func loadAlertIntel() -> AlertIntelligence {
+        if let d = UserDefaults.standard.data(forKey: "alertIntel"),
+           let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d) { return a }
+        return AlertIntelligence()
+    }
+    private func saveAlertIntel() {
+        if let d = try? JSONEncoder().encode(alertIntel) { UserDefaults.standard.set(d, forKey: "alertIntel") }
+    }
+    /// User dismissed the predictive-low banner → teach the fatigue layer + clear it.
+    public func dismissHypoWarning() {
+        alertIntel.record("predicted_low", .dismissed); saveAlertIntel(); hypoWarning = nil
     }
 
     private func refresh() {
@@ -811,6 +854,11 @@ extension AppModel: GlucoseIntelligenceDelegate {
         let alert = HypoAlert(horizonMinutes: warning.horizonMinutes, probability: warning.probability,
                               projectedLowMgdl: warning.projectedLowMgdl, at: warning.at,
                               nocturnal: warning.nocturnal)
-        Task { @MainActor in self.hypoWarning = alert }
+        Task { @MainActor in
+            // Learned fatigue layer: rate-limit / quiet-hours / auto-quiet a kind the user keeps dismissing.
+            let decision = self.alertIntel.decide(AlertIntelligenceKit.Alert(kind: "predicted_low", severity: 2))
+            if case .suppress = decision { return }
+            self.hypoWarning = alert
+        }
     }
 }

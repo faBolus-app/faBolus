@@ -67,6 +67,8 @@ targets:
         product: GlucoseIntelligenceKit
       - package: faBolusNudge
         product: TherapyInsightsKit
+      - package: faBolusNudge
+        product: AlertIntelligenceKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
