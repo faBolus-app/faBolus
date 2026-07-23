@@ -25,6 +25,10 @@ packages:
     # faBolus-owned persistent glucose/insulin/carb history (SwiftData) — powers TIR/plotting and
     # feeds the advisory tools. In-repo local package. See MIGRATION.md.
     path: Packages/HistoryStore
+  ShareClient:
+    # Dexcom Share follower core, vendored from LoopKit/dexcom-share-client-swift (MIT) — the
+    # validated client Loop uses. Powers DexcomShareSource. See Phase 6 in MIGRATION.md.
+    path: Packages/ShareClient
   faBolusNudge:
     # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
     # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
@@ -61,6 +65,8 @@ targets:
         product: DexcomG6Kit
       - package: HistoryStore
         product: HistoryStore
+      - package: ShareClient
+        product: ShareClient
       - package: faBolusNudge
         product: DosingSafetyKit
       - package: faBolusNudge
