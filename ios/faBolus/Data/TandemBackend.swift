@@ -168,6 +168,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
     private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
     private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
+    /// Resumed when the next CGM reading arrives, for `refreshGlucoseNow()`. Void (best-effort).
+    private var glucoseReadCont: CheckedContinuation<Void, Never>?
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
@@ -224,6 +226,20 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
         return rec
+    }
+
+    /// Force a fresh CGM read and wait (bounded ~2.5 s) for it, so a correction uses the newest value.
+    public func refreshGlucoseNow() async {
+        guard snapshot.connection == .connected else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            glucoseReadCont = cont
+            try? client.send(CurrentEgvGuiDataV2Request())
+            // Safety timeout so we never hang if the pump doesn't answer.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let self, let c = self.glucoseReadCont else { return }
+                self.glucoseReadCont = nil; c.resume()
+            }
+        }
     }
 
     /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
@@ -1090,6 +1106,8 @@ extension TandemBackend: PumpBLEClientDelegate {
                     schedulePredictiveBurst(afterReadingAt: readingDate)
                 }
             }
+            // Wake any `refreshGlucoseNow()` waiter now that a reading has arrived.
+            if let c = glucoseReadCont { glucoseReadCont = nil; c.resume() }
         case let m as LastBolusStatusV2Response:
             if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }
             snapshot.lastBolusUnits = m.deliveredUnits

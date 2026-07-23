@@ -35,6 +35,10 @@ public protocol PumpBackend: AnyObject {
     /// Compute a bolus recommendation for the given carbs/BG (uses the pump's calculator on
     /// the live source; a simple model on the mock).
     func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation
+    /// Request the newest CGM reading from the pump **now** and wait briefly for it (bounded), so a
+    /// correction is computed off the freshest possible value. Best-effort: returns when the reading
+    /// arrives or a short timeout elapses. Default no-op for backends that can't force a read.
+    func refreshGlucoseNow() async
     /// Deliver a bolus of the given units. Returns the **actual delivered** units
     /// (may be a partial amount if cancelled mid-delivery). Check `lastBolusCancelled`.
     /// `carbsGrams`/`bgMgdl` are optional **metadata** recorded on the pump (pump graph / t:connect /
@@ -153,6 +157,7 @@ public enum ControlError: Error, LocalizedError {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    func refreshGlucoseNow() async {}
 
     /// Units-only convenience — forwards with no carb/BG metadata. Keeps existing call sites terse.
     func deliverBolus(units: Double) async throws -> Double {

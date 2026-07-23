@@ -769,6 +769,10 @@ public final class AppModel {
         await source.recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
+    /// Force the pump to report its newest CGM reading and wait briefly for it (bolus screen uses this
+    /// on open and again right before delivery so a correction is off the freshest value).
+    public func refreshGlucoseNow() async { await source.refreshGlucoseNow(); refresh() }
+
     /// Conservative safety limit for the wrist/Mac-vs-host dose comparison. If a remote's own carb→unit
     /// estimate and the host's authoritative recompute differ by more than this, the bolus is rejected
     /// (the remote acted on stale settings/IOB/glucose). 0.10 U = two 0.05 U increments — tight enough to
@@ -1097,6 +1101,8 @@ public final class AppModel {
         // Resolve the authoritative dose.
         let dose: Double
         if let carbs = carbsGrams, carbs > 0 {
+            // Pull the freshest CGM before computing a correction (unless the remote sent its own BG).
+            if bgMgdl == nil { await refreshGlucoseNow() }
             let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: bgMgdl ?? snapshot.glucose)
             dose = rec.recommendedUnits
             // Wrist/Mac-vs-host divergence guard (fail safe).

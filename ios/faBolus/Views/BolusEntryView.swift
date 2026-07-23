@@ -26,8 +26,32 @@ struct BolusEntryView: View {
     @State private var extendedDurationMin = 120
     @State private var extendedNowPercent = 50
     @State private var confirmingExtended = false
+    /// Where the correction BG came from: auto-filled from the CGM, or typed by the user. Only a
+    /// CGM-sourced BG is auto-refreshed / re-checked for freshness (a typed BG is the user's own).
+    private enum BGSource { case none, cgm, manual }
+    @State private var bgSource: BGSource = .none
+    @State private var preparingDeliver = false
+    /// Set when a fresh CGM pulled at delivery time would change the dose — asks the user which to use.
+    @State private var cgmUpdate: CGMUpdatePrompt?
+    private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double }
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
+
+    /// BG field binding that flags a user edit as `.manual` (auto-fills set `bg` directly + mark `.cgm`).
+    private var bgField: Binding<String> {
+        Binding(get: { bg }, set: { bg = $0; bgSource = $0.isEmpty ? .none : .manual })
+    }
+    /// Auto-fill the correction BG from the current CGM when the user hasn't typed their own and the
+    /// reading is fresh; keeps it live as new readings arrive. No-op once the user edits the field.
+    private func syncBGFromCGM() {
+        guard bgSource != .manual, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale else { return }
+        let s = "\(g)"
+        if bg != s { bg = s; bgSource = .cgm; if mode == .carbs { Task { await calculate() } } }
+    }
+    /// True when the shown dose leans on a CGM value that is now stale (advisory, not a block).
+    private var staleCGMCorrection: Bool {
+        mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (Int(bg) ?? 0) > 0
+    }
 
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
@@ -44,9 +68,23 @@ struct BolusEntryView: View {
         return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
                       units, carbs, rec.recommendedUnits)
     }
+    private var cgmAgeMinutes: Int? {
+        model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
+    }
+    /// "124 mg/dL · 2 min ago" for the live CGM readout on the bolus screen (nil when no reading).
+    private var cgmReadout: String? {
+        guard let g = model.snapshot.glucose else { return nil }
+        guard let d = model.snapshot.glucoseDate else { return "\(g) mg/dL" }
+        return "\(g) mg/dL · \(GlucoseFreshness.ageLabel(for: d, now: Date()))"
+    }
     private var confirmMessage: String {
-        let disclaimer = "faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver."
-        return carbOverrideWarning.map { $0 + "\n\n" + disclaimer } ?? disclaimer
+        var parts: [String] = []
+        if staleCGMCorrection, let m = cgmAgeMinutes {
+            parts.append("⚠️ Your CGM reading is \(m) min old — this correction may be based on outdated glucose.")
+        }
+        if let w = carbOverrideWarning { parts.append(w) }
+        parts.append("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
+        return parts.joined(separator: "\n\n")
     }
     private var maxUnits: Double { model.snapshot.maxBolusUnits }
     private var overMax: Bool { units > maxUnits }
@@ -102,11 +140,18 @@ struct BolusEntryView: View {
                         Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
                     }
                     LabeledContent("Blood glucose") {
-                        TextField("mg/dL", text: $bg).keyboardType(.numberPad)
+                        TextField("mg/dL", text: bgField).keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { focus = .bg }
+                    // Live CGM readout — refreshed on open and kept current while the screen is up.
+                    if let readout = cgmReadout {
+                        let stale = model.snapshot.isGlucoseStale
+                        Label(readout, systemImage: stale ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
+                            .font(.caption)
+                            .foregroundStyle(stale ? .orange : .secondary)
+                    }
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
@@ -193,15 +238,18 @@ struct BolusEntryView: View {
                 mode = model.capabilities.supportsCarbEntry ? settings.defaultBolusMode : .units
                 modeInitialized = true
             }
-            // Never auto-fill the correction BG from a stale CGM value (see GlucoseFreshness.staleAfter).
-            // The user can still type one in manually.
-            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)" }
+            // Pull the freshest CGM the moment the screen opens, then auto-fill the correction BG from
+            // it (never from a stale value). The user can still type their own.
+            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)"; bgSource = .cgm }
             if mode == .carbs { Task { await calculate() } }
+            Task { await model.refreshGlucoseNow(); syncBGFromCGM() }
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
         .onChange(of: bg) { _, _ in if mode == .carbs { Task { await calculate() } } }
         .onChange(of: mode) { _, newMode in if newMode == .carbs { Task { await calculate() } } }
+        // Keep the CGM-sourced BG live as new readings arrive while the screen is open.
+        .onChange(of: model.snapshot.glucoseDate) { _, _ in syncBGFromCGM() }
         .toolbar {
             if !embedded { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             ToolbarItemGroup(placement: .keyboard) {
@@ -211,10 +259,28 @@ struct BolusEntryView: View {
         }
         .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
                             isPresented: $confirming, titleVisibility: .visible) {
-            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await deliver() } }
+            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmMessage)
+        }
+        .confirmationDialog("CGM updated", isPresented: Binding(get: { cgmUpdate != nil },
+                                                               set: { if !$0 { cgmUpdate = nil } }),
+                            titleVisibility: .visible) {
+            if let u = cgmUpdate {
+                Button("Use \(u.newBG) mg/dL → \(String(format: "%.2f U", u.newUnits))") {
+                    bg = "\(u.newBG)"; bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
+                    cgmUpdate = nil; Task { await deliver() }
+                }
+                Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
+                    cgmUpdate = nil; Task { await deliver() }
+                }
+                Button("Cancel", role: .cancel) { cgmUpdate = nil }
+            }
+        } message: {
+            if let u = cgmUpdate {
+                Text("Your CGM changed while this dose was on screen. The new reading (\(u.newBG) mg/dL) suggests \(String(format: "%.2f U", u.newUnits)) instead of \(String(format: "%.2f U", u.oldUnits)).")
+            }
         }
         .confirmationDialog("Extended bolus \(String(format: "%.2f U", units))?",
                             isPresented: $confirmingExtended, titleVisibility: .visible) {
@@ -236,6 +302,25 @@ struct BolusEntryView: View {
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         recommendation = rec
         unitsText = rec.recommendedUnits > 0 ? Self.trimUnits(rec.recommendedUnits) : ""
+    }
+
+    /// Pull the freshest CGM right before delivering. If the correction leans on the CGM and the new
+    /// value would change the dose by more than the safety limit, ask the user which value to use
+    /// (via the `cgmUpdate` prompt) instead of silently delivering the stale-based dose.
+    private func attemptDeliver() async {
+        if mode == .carbs, bgSource == .cgm, carbs > 0 {
+            preparingDeliver = true
+            await model.refreshGlucoseNow()
+            preparingDeliver = false
+            if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
+                let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g)
+                if abs(rec.recommendedUnits - units) > AppModel.remoteDivergenceLimitUnits {
+                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: units)
+                    return   // wait for the user's choice in the CGM-updated dialog
+                }
+            }
+        }
+        await deliver()
     }
 
     private func deliver() async {
