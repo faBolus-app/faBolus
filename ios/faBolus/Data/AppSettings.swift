@@ -48,6 +48,9 @@ public final class AppSettings {
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
     }
+    /// On-device personalization for the nudge: adapt the wrist threshold (and, when the model is
+    /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
+    public var eatingLearnFromFeedback: Bool { didSet { d.set(eatingLearnFromFeedback, forKey: "eatingLearnFromFeedback") } }
 
     /// Cached basal schedule (24 hourly U/hr) for settings-advice/autotune, from an external source
     /// (Nightscout profile) or the pump. Empty = unknown. `basalScheduleSource` labels its origin.
@@ -288,6 +291,7 @@ public final class AppSettings {
         smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
         hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
+        eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg
