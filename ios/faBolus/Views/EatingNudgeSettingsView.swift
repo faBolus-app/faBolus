@@ -57,6 +57,24 @@ struct EatingNudgeSettingsView: View {
                     Stepper("Skip if bolused within: \(settings.eatingTriggerConfig.minMinutesSinceBolus) min",
                             value: cfg.minMinutesSinceBolus, in: 0...120, step: 5)
                     Toggle("Only at meal places (location)", isOn: cfg.locationEnabled)
+                    if settings.eatingTriggerConfig.locationEnabled {
+                        Text("Learns the coarse places you eat (on-device) and skips nudges elsewhere. Needs a few meals to learn first — \(AppModel.shared?.eatingLearnedPlaceCount ?? 0) place(s) learned. Never gates until then.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                Section {
+                    Toggle("Learn from my feedback", isOn: $settings.eatingLearnFromFeedback)
+                    if settings.eatingLearnFromFeedback, let m = AppModel.shared {
+                        let s = m.eatingFeedbackStats
+                        LabeledContent("You confirmed", value: "\(s.confirmed) meal(s)")
+                        LabeledContent("False alerts", value: "\(s.falseAlerts)")
+                        Button("Reset personalization", role: .destructive) { m.resetEatingPersonalization() }
+                    }
+                } header: {
+                    Text("Personalization (on-device)")
+                } footer: {
+                    Text("Adapts the wrist threshold from your responses (and fine-tunes the model on-device when supported). Acting on a nudge = a real meal; dismissing it = a false alert. Everything stays on your device.")
                 }
             }
         }

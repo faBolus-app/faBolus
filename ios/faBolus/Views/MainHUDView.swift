@@ -34,8 +34,14 @@ struct DashboardView: View {
 
                     if let eating = model.eatingNudge {
                         HStack {
-                            Label(eating.message, systemImage: "fork.knife")
-                                .font(.subheadline).foregroundStyle(.orange)
+                            // Tapping = "yes, I'm eating" → open Bolus + teach the on-device personalizer.
+                            Button {
+                                model.eatingNudgeActedOn()
+                                if !settings.phoneReadOnly { model.openBolusRequested = true }
+                            } label: {
+                                Label(eating.message, systemImage: "fork.knife")
+                                    .font(.subheadline).foregroundStyle(.orange)
+                            }.buttonStyle(.plain)
                             Spacer()
                             Button { model.dismissEatingNudge() } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)

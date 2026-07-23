@@ -36,7 +36,11 @@ public final class AppModel {
     /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
     @ObservationIgnored public var latestAccelProb: Double?
     @ObservationIgnored private var lastAccelWindowAt = Date.distantPast
+    @ObservationIgnored private var lastAccelWindowRaw: [Float]?   // last window (to label from feedback)
     @ObservationIgnored private let accelPipeline = EatingAccelPipeline()
+    /// Optional location gate + on-device personalization (both advisory, on-device, off/gentle by default).
+    @ObservationIgnored private let eatingLocation = EatingLocationGate()
+    @ObservationIgnored private let eatingPersonalization = EatingPersonalization()
     /// Set by the Garmin/watch bridge — the phone calls this to start/stop wrist sensing on demand
     /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
     @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
@@ -54,6 +58,31 @@ public final class AppModel {
         guard let p = accelPipeline.predict(rawWindow: raw) else { return }
         latestAccelProb = p
         lastAccelWindowAt = Date()
+        lastAccelWindowRaw = raw            // retained on-device to label if the user gives feedback
+    }
+
+    /// Hook up on-device personalization: reload inference with the user's fine-tuned model when one is
+    /// produced, and prefer any personalized model from a previous run. Call once after init.
+    func setupEatingPersonalization() {
+        eatingPersonalization.onModelUpdated = { [weak self] in
+            guard let self else { return }
+            if AppSettings.shared.eatingLearnFromFeedback {
+                self.accelPipeline.applyPersonalizedModel(self.eatingPersonalization.personalizedModelURL)
+            }
+        }
+        if AppSettings.shared.eatingLearnFromFeedback {
+            accelPipeline.applyPersonalizedModel(eatingPersonalization.personalizedModelURL)
+        }
+    }
+
+    /// The user acted on the eating nudge (opened the bolus screen) → treat as a confirmed meal: teach
+    /// the personalizer + learn this as a meal place. Advisory-only feedback.
+    public func eatingNudgeActedOn() {
+        if AppSettings.shared.eatingLearnFromFeedback {
+            eatingPersonalization.recordFeedback(eating: true, window: lastAccelWindowRaw)
+        }
+        eatingLocation.recordMealHere()
+        eatingNudge = nil
     }
 
     /// Apple Watch on-device path: the watch already ran the model and relays a p(eating). Feed it
@@ -372,6 +401,7 @@ public final class AppModel {
                 Task { @MainActor in self?.refresh() }
             }
         }
+        setupEatingPersonalization()
     }
 
     static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
@@ -560,8 +590,16 @@ public final class AppModel {
     /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
     /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
     private func updateEatingNudge() {
-        guard AppSettings.shared.eatingNudgesEnabled else { eatingNudge = nil; setWantAccelSensing(false); return }
-        let cfg = AppSettings.shared.eatingTriggerConfig
+        guard AppSettings.shared.eatingNudgesEnabled else {
+            eatingNudge = nil; setWantAccelSensing(false); eatingLocation.setEnabled(false); return
+        }
+        var cfg = AppSettings.shared.eatingTriggerConfig
+        // On-device threshold adaptation: raise the wrist threshold by the learned bias (fewer false
+        // alerts for users who report them). Off = no change.
+        if AppSettings.shared.eatingLearnFromFeedback {
+            cfg.accelThreshold = min(0.98, cfg.accelThreshold + eatingPersonalization.thresholdBias)
+        }
+        eatingLocation.setEnabled(cfg.locationEnabled)
         if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
         guard let history else { return }
 
@@ -584,7 +622,8 @@ public final class AppModel {
         // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
         let accelFresh = Date().timeIntervalSince(lastAccelWindowAt) < 120 ? latestAccelProb : nil
         let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
-                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus)
+                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
+                                    atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
 
         if case .fire = eatingEngine.evaluate(signals) {
             if case .suppress = alertIntel.decide(AlertIntelligenceKit.Alert(kind: "eating", severity: 1)) { return }
@@ -592,9 +631,25 @@ public final class AppModel {
         }
     }
 
-    /// User dismissed the eating nudge → teach the eating fatigue layer + clear it.
+    /// User dismissed the eating nudge → teach the eating fatigue layer + the on-device personalizer
+    /// (a false alert), then clear it.
     public func dismissEatingNudge() {
-        alertIntel.record("eating", .dismissed); saveAlertIntel(); eatingNudge = nil
+        alertIntel.record("eating", .dismissed); saveAlertIntel()
+        if AppSettings.shared.eatingLearnFromFeedback {
+            eatingPersonalization.recordFeedback(eating: false, window: lastAccelWindowRaw)
+        }
+        eatingNudge = nil
+    }
+
+    /// Learned meal-place count + personalization stats (for the settings screen).
+    public var eatingLearnedPlaceCount: Int { eatingLocation.learnedPlaceCount }
+    public var eatingFeedbackStats: (confirmed: Int, falseAlerts: Int) {
+        (eatingPersonalization.confirmedTrue, eatingPersonalization.confirmedFalse)
+    }
+    public func resetEatingPersonalization() {
+        eatingPersonalization.reset()
+        eatingLocation.reset()
+        accelPipeline.applyPersonalizedModel(nil)
     }
 
     private func refresh() {
