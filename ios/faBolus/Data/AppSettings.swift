@@ -42,6 +42,13 @@ public final class AppSettings {
     /// Predictive-low (hypo) alerts (GlucoseIntelligenceKit). **OFF by default** — advisory in-app warning.
     public var hypoAlertsEnabled: Bool { didSet { d.set(hypoAlertsEnabled, forKey: "hypoAlertsEnabled") } }
 
+    /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
+    public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
+    /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
+    public var eatingTriggerConfig: EatingTriggerConfig {
+        didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
+    }
+
     /// Cached basal schedule (24 hourly U/hr) for settings-advice/autotune, from an external source
     /// (Nightscout profile) or the pump. Empty = unknown. `basalScheduleSource` labels its origin.
     public var basalScheduleByHour: [Double] { didSet { d.set(basalScheduleByHour, forKey: "basalScheduleByHour") } }
@@ -280,6 +287,13 @@ public final class AppSettings {
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
         hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
+        eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
+        if let data = d.data(forKey: "eatingTriggerConfig"),
+           let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
+            eatingTriggerConfig = cfg
+        } else {
+            eatingTriggerConfig = EatingTriggerConfig()
+        }
         basalScheduleByHour = (d.array(forKey: "basalScheduleByHour") as? [Double]) ?? []
         basalScheduleSource = d.string(forKey: "basalScheduleSource") ?? ""
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
