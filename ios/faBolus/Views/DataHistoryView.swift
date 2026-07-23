@@ -55,8 +55,16 @@ struct DataHistoryView: View {
                     if let cr = advice?.carbRatio {
                         LabeledContent("Suggested carb ratio", value: "\(Int(cr)) g/U")
                     }
+                    if let basal = advice?.basalByHour, basal.contains(where: { $0 != nil }) {
+                        let n = basal.filter { $0 != nil }.count
+                        LabeledContent("Basal tweaks suggested", value: "\(n) hour\(n == 1 ? "" : "s")")
+                        if !model.basalScheduleSource.isEmpty {
+                            Text("Basal schedule from \(model.basalScheduleSource).")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 } header: { Text("Settings suggestions (advisory)") } footer: {
-                    Text("Derived from your own data — **advisory only, discuss with your clinician** before changing pump settings. Basal suggestions are omitted until the pump's basal schedule is available.")
+                    Text("Derived from your own data — **advisory only, discuss with your clinician** before changing pump settings.\(model.basalByHour() == nil ? " (Basal suggestions need the pump's basal schedule — connect the pump or a Nightscout profile.)" : "")")
                 }
             }
 
@@ -86,6 +94,10 @@ struct DataHistoryView: View {
             Button("Cancel", role: .cancel) {}
         }
         .onAppear { model.applyRetention(days: settings.historyRetentionDays); reload() }
+        .task {
+            // Fallback: grab the pump's basal schedule if no external one is cached (enables basal advice).
+            if model.basalByHour() == nil { await model.captureBasalScheduleFromPump(); reload() }
+        }
         .onChange(of: settings.historyRetentionDays) { _, days in
             model.applyRetention(days: days); reload()
         }
@@ -98,6 +110,7 @@ struct DataHistoryView: View {
 
     private var hasSuggestions: Bool {
         (sensitivity != nil && sensitivity?.level != .unknown) || advice?.isf != nil || advice?.carbRatio != nil
+            || (advice?.basalByHour.contains { $0 != nil } ?? false)
     }
 
     private func reload() {
