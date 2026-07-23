@@ -230,13 +230,27 @@ public final class AppModel {
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable {
-        public let requestId: String; public let units: Double
-        public var carbsGrams: Double? = nil; public var bgMgdl: Int? = nil; public var remoteEstimate: Double? = nil
+        public let requestId: String
+        /// The FROZEN authoritative dose shown to and confirmed by the approver — this is exactly what
+        /// delivers, with no recompute at confirm time (audit C-02). For a units request it equals the
+        /// requested units; for a carb request it is the host-computed dose.
+        public let units: Double
+        public var carbsGrams: Double? = nil
+        /// The glucose the frozen dose was computed from (fresh host reading, or nil for carbs-only).
+        public var bgMgdl: Int? = nil
+        public var bgDate: Date? = nil          // provenance/age of that glucose (shown to approver)
+        public var iobUnits: Double? = nil       // IOB the calc used (shown to approver)
+        public var remoteEstimate: Double? = nil
+        public var requestedUnits: Double? = nil // original request units, for the idempotency doseKey
+        public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
         /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
         public var enforceChildLock: Bool = true
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
     }
+    /// A host-approval prompt older than this is stale (BG/IOB may have drifted) → fail closed and require
+    /// the remote to re-send (audit C-02).
+    private static let remoteApprovalMaxAge: TimeInterval = 120
     public var pendingRemoteBolus: PendingRemoteBolus?
 
     /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
@@ -1063,14 +1077,29 @@ public final class AppModel {
 
     public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
                                    bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                                   enforceChildLock: Bool = true, peerId: String = "local") {
+                                   enforceChildLock: Bool = true, peerId: String = "local") async {
         // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
         // stack a second confirmation prompt for the same (peer, requestId).
         if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
         if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
-        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units, carbsGrams: carbsGrams,
-                                                bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
-                                                enforceChildLock: enforceChildLock, peerId: peerId)
+        if enforceChildLock, childBlocked(.bolus) {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+            return
+        }
+        // Freeze the authoritative dose BEFORE presenting (audit C-02): the approver must see the real
+        // units, carbs, and the fresh glucose the dose was computed from — never a placeholder "0.00 U".
+        // resolveRemoteDose fail-closes (and echoes `.failed`) on a missing estimate or divergence.
+        guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
+                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate) else { return }
+        guard resolved.units > 0 else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
+            return
+        }
+        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: resolved.units,
+                                                carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
+                                                bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
+                                                remoteEstimate: remoteEstimate, requestedUnits: units,
+                                                createdAt: Date(), enforceChildLock: enforceChildLock, peerId: peerId)
     }
 
     /// Drop a pending host-approval bolus bound to `peerId` (audit A-01). When a peer re-handshakes or
@@ -1080,14 +1109,23 @@ public final class AppModel {
         if pendingRemoteBolus?.peerId == peerId { pendingRemoteBolus = nil }
     }
 
-    /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
-    /// Routes through `remoteDeliver` so the carb recompute + divergence guard + carb recording apply.
+    /// The phone user's confirmation (second confirm) — delivers the FROZEN dose exactly as shown and
+    /// echoes status to the remote. No recompute here (audit C-02): the number approved is the number
+    /// delivered. A stale approval (inputs may have drifted since it was frozen) fails closed.
     public func confirmRemoteBolus() async {
         guard let pending = pendingRemoteBolus else { return }
         pendingRemoteBolus = nil
-        await remoteDeliver(requestId: pending.requestId, units: pending.units, carbsGrams: pending.carbsGrams,
-                            bgMgdl: pending.bgMgdl, remoteEstimate: pending.remoteEstimate,
-                            enforceChildLock: pending.enforceChildLock, peerId: pending.peerId)
+        if Date().timeIntervalSince(pending.createdAt) > Self.remoteApprovalMaxAge {
+            let msg = "Approval expired — ask the remote to send it again."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return
+        }
+        let resolved = ResolvedBolus(units: pending.units, carbsGrams: pending.carbsGrams,
+                                     recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits)
+        let dkey = RemoteBolusLedger.doseKey(units: pending.requestedUnits, carbsGrams: pending.carbsGrams,
+                                             bgMgdl: pending.bgMgdl)
+        await executeResolved(resolved, requestId: pending.requestId, peerId: pending.peerId, doseKey: dkey)
     }
 
     /// Build the final bolus-status echo, distinguishing a full delivery from a cancelled
@@ -1115,48 +1153,68 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return
         }
-        // Resolve the authoritative dose. `recordedBg` is the glucose the dose was actually computed
-        // from — it is what we send to the pump as metadata, so the record can't disagree with the
-        // dose input (audit C-06).
-        let dose: Double
-        var recordedBg: Int? = bgMgdl
-        if let carbs = carbsGrams, carbs > 0 {
-            // The remote's own estimate is REQUIRED for a carb request: without it the divergence guard
-            // can't run, so fail closed rather than open (audit C-06).
-            guard let est = remoteEstimate, est.isFinite else {
-                let msg = "Missing dose estimate — reopen the remote and try again."
-                echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-                lastError = msg; notifyRemoteBolusRejected(msg)
-                return
-            }
-            // A correction must use a FRESH HOST reading, never the client-supplied BG (audit C-06/A-04):
-            // force a host CGM read and use it only if it passes the same freshness rule as the UI.
-            // Otherwise fall back to a carbs-only (food) dose — never silently correct off a stale value.
-            await refreshGlucoseNow()
-            let freshBg: Int? = (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
-            recordedBg = freshBg
-            let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
-            dose = rec.recommendedUnits
-            // Wrist/Mac-vs-host divergence guard (advisory defense-in-depth, not authentication).
-            if abs(dose - est) > Self.remoteDivergenceLimitUnits {
-                let msg = String(format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
-                echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-                lastError = msg
-                notifyRemoteBolusRejected(msg)
-                return
-            }
-        } else {
-            dose = units ?? 0
-            recordedBg = bgMgdl
+        guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
+                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate) else { return }
+        let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
+    }
+
+    /// A frozen, ready-to-deliver bolus: the authoritative dose + the exact inputs it was computed from.
+    /// Once resolved, delivery uses THESE values verbatim — the number seen/approved is the number that
+    /// delivers (audit C-02/C-04).
+    struct ResolvedBolus: Equatable, Sendable {
+        let units: Double            // frozen authoritative dose
+        let carbsGrams: Double?
+        let recordedBg: Int?         // the glucose the dose was computed from (→ pump metadata)
+        let bgDate: Date?            // provenance/age of that glucose
+        let iobUnits: Double?        // IOB the calc used
+    }
+
+    /// Resolve + FREEZE the authoritative dose for a remote/widget request (audit C-02/C-04/C-06). For a
+    /// carb request this forces a FRESH host CGM read and computes the dose off it (falling back to a
+    /// carbs-only dose if the reading is stale — never silently correcting off a stale/client value), then
+    /// runs the divergence guard vs the remote's estimate. Returns nil (after echoing `.failed` for the
+    /// request) on any fail-closed condition. `recordedBg` is the glucose actually used, so the pump
+    /// metadata can never disagree with the dose input.
+    private func resolveRemoteDose(requestId: String, units: Double?, carbsGrams: Double?,
+                                   bgMgdl: Int?, remoteEstimate: Double?) async -> ResolvedBolus? {
+        guard let carbs = carbsGrams, carbs > 0 else {
+            return ResolvedBolus(units: units ?? 0, carbsGrams: nil, recordedBg: bgMgdl, bgDate: nil, iobUnits: nil)
         }
-        guard dose > 0 else {
+        // The remote's own estimate is REQUIRED for a carb request: without it the divergence guard
+        // can't run, so fail closed rather than open (audit C-06).
+        guard let est = remoteEstimate, est.isFinite else {
+            let msg = "Missing dose estimate — reopen the remote and try again."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return nil
+        }
+        await refreshGlucoseNow()
+        let freshBg: Int? = (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
+        let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
+        let dose = rec.recommendedUnits
+        // Wrist/Mac-vs-host divergence guard (advisory defense-in-depth, not authentication).
+        if abs(dose - est) > Self.remoteDivergenceLimitUnits {
+            let msg = String(format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return nil
+        }
+        return ResolvedBolus(units: dose, carbsGrams: carbs, recordedBg: freshBg,
+                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits)
+    }
+
+    /// Deliver a frozen `ResolvedBolus` through the idempotency ledger + validated signed path, echoing
+    /// status to the remote. `doseKey` is derived from the ORIGINAL request params so a retry idempotently
+    /// replays (audit A-02); the delivered dose/carbs/BG are the frozen resolved values.
+    private func executeResolved(_ r: ResolvedBolus, requestId: String, peerId: String, doseKey: String) async {
+        guard r.units > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
         // Idempotency gate (audit A-02). `begin` is synchronous, so it marks this request in-flight
         // before the first `await` below — a concurrent or retried duplicate cannot double-deliver.
-        let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: dkey) {
+        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey) {
         case .proceed:
             break
         case .duplicateInFlight:
@@ -1174,8 +1232,8 @@ public final class AppModel {
         }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
-            let delivered = try await source.deliverBolus(units: dose, carbsGrams: carbsGrams, bgMgdl: recordedBg)
-            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
+            let delivered = try await source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams, bgMgdl: r.recordedBg)
+            if let c = r.carbsGrams, c > 0 { recordCarbs(grams: c) }
             let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
                                      status: (outcome.status ?? .delivered).rawValue,
@@ -1210,6 +1268,12 @@ public final class AppModel {
         if childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return (0, false, "Locked (child mode)")
+        }
+        // The Quick-Bolus widget is a LOCAL surface, so it must honor phone read-only (audit A-05) — the
+        // remote-peer paths intentionally bypass it, but the widget must not.
+        if readOnlyBlocked("Bolus") {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "faBolus is read-only"))
+            return (0, false, "faBolus is read-only")
         }
         // Idempotency gate (audit A-02): a re-fired widget request can't deliver twice.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)

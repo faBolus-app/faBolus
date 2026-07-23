@@ -206,7 +206,7 @@ public final class PeerRemoteHost {
                     await model.deliverExtendedBolus(totalUnits: units, nowUnits: cmd.extendedNowUnits ?? 0,
                                                      durationMinutes: cmd.extendedMinutes ?? 0, enforceChildLock: false)
                 } else if policy.approvalMode == .hostApproval {
-                    model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
+                    await model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
                                              peerId: self.peerClientId ?? "peer")

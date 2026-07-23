@@ -46,14 +46,26 @@ final class WidgetBolusReceiver {
     func handlePending() {
         guard let model, let r = WidgetBolusStore.takePending() else { return }
         Task {
-            // Carbs → units via the pump's calculator (same as the Garmin remote); units go as-is.
-            let units: Double
-            if r.mode == "carbs" {
-                let rec = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.snapshot.glucose)
-                units = rec.recommendedUnits
-            } else {
-                units = r.amount
+            // Read-only is a local gate the widget must respect too (audit A-05).
+            if AppSettings.shared.phoneReadOnly {
+                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
+                                                             message: "faBolus is read-only"))
+                reload(); return
             }
+            if r.mode == "carbs" {
+                // Audit C-03: the widget confirmed GRAMS, not units, and would dose off possibly-stale
+                // glucose. A carb bolus must NOT deliver in place — stage a host-owned review that
+                // freezes the real units (fresh CGM, fail-closed) and needs an in-app confirm.
+                // `presentRemoteBolus` resolves + freezes; the widget tells the user to finish in-app.
+                let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.snapshot.glucose).recommendedUnits
+                await model.presentRemoteBolus(requestId: r.requestId, units: 0, carbsGrams: r.amount,
+                                               bgMgdl: nil, remoteEstimate: est, enforceChildLock: true, peerId: "widget")
+                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
+                                                             message: "Open faBolus to confirm the dose"))
+                reload(); return
+            }
+            // Units mode: an explicit unit amount the user set on the widget — deliver in place.
+            let units = r.amount
             guard units > 0 else {
                 WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
                                                              message: "No insulin needed"))
@@ -61,10 +73,7 @@ final class WidgetBolusReceiver {
             }
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: r.requestId))
             reload()
-            // Record carbs on the pump + locally for a carb-mode widget bolus (units-mode has none).
-            let carbs: Double? = r.mode == "carbs" ? r.amount : nil
-            let bg: Int? = r.mode == "carbs" ? model.snapshot.glucose : nil
-            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units, carbsGrams: carbs, bgMgdl: bg)
+            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units, carbsGrams: nil, bgMgdl: nil)
             let phase: WidgetBolusPhase = out.error != nil ? .failed : (out.cancelled ? .cancelled : .delivered)
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, units: units,
                                                          deliveredUnits: out.delivered, requestId: r.requestId,
