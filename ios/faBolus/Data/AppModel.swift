@@ -234,8 +234,14 @@ public final class AppModel {
         public var carbsGrams: Double? = nil; public var bgMgdl: Int? = nil; public var remoteEstimate: Double? = nil
         /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
         public var enforceChildLock: Bool = true
+        /// Authenticated originator, for idempotency (audit A-02).
+        public var peerId: String = "local"
     }
     public var pendingRemoteBolus: PendingRemoteBolus?
+
+    /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
+    /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
+    private var remoteBolusLedger = RemoteBolusLedger()
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
     public struct PendingRemoteControl: Equatable, Sendable {
@@ -1057,10 +1063,14 @@ public final class AppModel {
 
     public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
                                    bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                                   enforceChildLock: Bool = true) {
+                                   enforceChildLock: Bool = true, peerId: String = "local") {
+        // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
+        // stack a second confirmation prompt for the same (peer, requestId).
+        if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
+        if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
         pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units, carbsGrams: carbsGrams,
                                                 bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
-                                                enforceChildLock: enforceChildLock)
+                                                enforceChildLock: enforceChildLock, peerId: peerId)
     }
 
     /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
@@ -1070,7 +1080,7 @@ public final class AppModel {
         pendingRemoteBolus = nil
         await remoteDeliver(requestId: pending.requestId, units: pending.units, carbsGrams: pending.carbsGrams,
                             bgMgdl: pending.bgMgdl, remoteEstimate: pending.remoteEstimate,
-                            enforceChildLock: pending.enforceChildLock)
+                            enforceChildLock: pending.enforceChildLock, peerId: pending.peerId)
     }
 
     /// Build the final bolus-status echo, distinguishing a full delivery from a cancelled
@@ -1093,7 +1103,7 @@ public final class AppModel {
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
                               bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                              enforceChildLock: Bool = true) async {
+                              enforceChildLock: Bool = true, peerId: String = "local") async {
         if enforceChildLock, childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return
@@ -1120,13 +1130,38 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
+        // Idempotency gate (audit A-02). `begin` is synchronous, so it marks this request in-flight
+        // before the first `await` below — a concurrent or retried duplicate cannot double-deliver.
+        let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: dkey) {
+        case .proceed:
+            break
+        case .duplicateInFlight:
+            return   // already delivering this exact request; do nothing
+        case .replay(let status, let message, let deliveredUnits):
+            // Terminal outcome already recorded — re-echo it without touching the pump.
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
+                               status: RemoteCommand.Status(rawValue: status) ?? .failed,
+                               deliveredUnits: deliveredUnits, message: message))
+            return
+        case .conflict:
+            let msg = "Duplicate request id with different dose — rejected."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            return
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: dose, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
-            echo(bolusOutcome(requestId: requestId, delivered: delivered))
+            let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
+                                     status: (outcome.status ?? .delivered).rawValue,
+                                     message: outcome.message, deliveredUnits: delivered)
+            echo(outcome)
             lastError = nil
         } catch {
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId, status: RemoteCommand.Status.failed.rawValue,
+                                     message: error.localizedDescription)
             lastError = error.localizedDescription
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
                                status: .failed, message: error.localizedDescription))
@@ -1153,15 +1188,35 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return (0, false, "Locked (child mode)")
         }
+        // Idempotency gate (audit A-02): a re-fired widget request can't deliver twice.
+        let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        switch remoteBolusLedger.begin(peerId: "widget", requestId: requestId, doseKey: dkey) {
+        case .proceed:
+            break
+        case .duplicateInFlight:
+            return (0, false, nil)   // already delivering; don't deliver again
+        case .replay(let status, _, let deliveredUnits):
+            return (deliveredUnits ?? 0, status == RemoteCommand.Status.cancelled.rawValue, nil)
+        case .conflict:
+            let msg = "Duplicate request id with different dose — rejected."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            return (0, false, msg)
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
-            echo(bolusOutcome(requestId: requestId, delivered: delivered))
+            let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
+            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
+                                     status: (outcome.status ?? .delivered).rawValue,
+                                     message: outcome.message, deliveredUnits: delivered)
+            echo(outcome)
             lastError = nil
             refresh()
             return (delivered, source.lastBolusCancelled, nil)
         } catch {
+            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
+                                     status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
             lastError = error.localizedDescription
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: error.localizedDescription))
             refresh()

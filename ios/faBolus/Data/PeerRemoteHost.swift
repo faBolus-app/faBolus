@@ -186,11 +186,13 @@ public final class PeerRemoteHost {
                 } else if policy.approvalMode == .hostApproval {
                     model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
+                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                             peerId: self.peerClientId ?? "peer")
                 } else {
                     await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                               carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
+                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                              peerId: self.peerClientId ?? "peer")
                 }
             }
         case .cancelBolus:
