@@ -3,9 +3,12 @@
    framed device screenshots. Tuned for both light and dark. */
 
 :root {
-  --cx2-blurple: #635bff;
-  --cx2-blurple-dark: #5249e0;
-  --cx2-blurple-soft: #eeecff;
+  /* Brand accent tuned to the faBolus app icon (blue → purple gradient). */
+  --fabolus-blue: #2b50be;
+  --fabolus-purple: #5039b8;
+  --cx2-blurple: #4a3fbf;        /* logo indigo-purple (mid gradient) */
+  --cx2-blurple-dark: #372e9e;
+  --cx2-blurple-soft: #ecebfa;
   --cx2-ink: #0a2540;          /* deep navy ink */
   --cx2-slate: #3c4257;
   --cx2-muted: #6b7280;
@@ -38,8 +41,8 @@
 
 [data-md-color-scheme="slate"] {
   --md-hue: 222;
-  --md-accent-fg-color: #a6a0ff;
-  --md-typeset-a-color: #a6a0ff;
+  --md-accent-fg-color: #a79df5;
+  --md-typeset-a-color: #a79df5;
   --md-default-bg-color: #0b1220;
   --cx2-line: #232c40;
   --cx2-line-soft: #1a2233;
