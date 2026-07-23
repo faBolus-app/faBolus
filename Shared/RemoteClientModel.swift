@@ -210,18 +210,17 @@ class RemoteClientModel {
         startPending(cmd)
     }
 
-    /// Preview of the units the phone would deliver for a carb amount — mirrors the pump calculator
-    /// (food = carbs ÷ carb ratio; plus a BG-vs-target correction minus IOB; rounded to 0.05 U), so a
-    /// remote can show the estimated dose like the Garmin/phone. Returns nil until the carb ratio is
-    /// known. A stale CGM value isn't used for the correction (matches `deliverCarbs`).
+    /// Preview of the units the phone would deliver for a carb amount — uses the single oracle-backed
+    /// `BolusMath` calculator (audit C-01), so this estimate matches the host's authoritative recompute
+    /// and the wrist-vs-host divergence guard rarely trips on identical inputs. Returns nil until the
+    /// carb ratio is known. A stale CGM value isn't used for the correction (matches `deliverCarbs`).
     func estimatedUnits(forCarbs grams: Double) -> Double? {
         guard carbRatio > 0, grams > 0 else { return carbRatio > 0 ? 0 : nil }
-        let food = grams / carbRatio
-        var correction = 0.0
-        if !isGlucoseStale, let g = glucose, isf > 0 {
-            correction = max(0, Double(g - targetBg) / Double(isf) - iobUnits)
-        }
-        return (max(0, food + correction) * 20).rounded() / 20
+        let bg: Int? = (!isGlucoseStale) ? glucose : nil
+        let profile = BolusMath.Profile(carbRatioGramsPerUnit: carbRatio, isfMgdlPerUnit: isf,
+                                        targetBgMgdl: targetBg, iobUnits: iobUnits)
+        let units = BolusMath.recommendedUnits(carbsGrams: grams, bgMgdl: bg, profile: profile)
+        return (units * 20).rounded() / 20   // snap to 0.05 u for display/divergence parity
     }
 
     /// Send a bolus command and enter the pending/delivering state, correlating future echoes by its

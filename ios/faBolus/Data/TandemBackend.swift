@@ -216,15 +216,27 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
+        let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
         if let s = calcSnapshot, s.carbRatio > 0 {
-            let food = carbsGrams / s.carbRatioGramsPerUnit
-            let correction = (bgMgdl != nil && s.isf > 0)
-                ? max(0, Double(bgMgdl! - s.targetBg) / Double(s.isf) - snapshot.iobUnits) : 0
-            rec.recommendedUnits = max(0, food + correction)
+            // Verified pump profile → the single oracle-backed calculator (audit C-01). Below-target
+            // BG now correctly *reduces* the dose; IOB only offsets a BG correction, matching the pump.
+            let profile = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit,
+                                            isfMgdlPerUnit: s.isf, targetBgMgdl: s.targetBg,
+                                            iobUnits: snapshot.iobUnits)
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: bgMgdl, profile: profile)
+            rec.inputsVerified = true
         } else {
-            rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
+            // Guarded fallback (audit C-01): the verified profile hasn't arrived. Use the SAME
+            // calculator with an explicitly-assumed carb ratio and compute carbs-only (no correction
+            // off an unknown ISF/target), then flag it so the UI requires the user to confirm the
+            // assumed value before delivering — never auto-deliver on unverified inputs.
+            let assumed = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
+                                            targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: nil, profile: assumed)
+            rec.inputsVerified = false
+            rec.assumedProfile = assumed
         }
-        rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
+        rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // snap to 0.05 u pump increment
         return rec
     }
 
