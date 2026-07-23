@@ -18,6 +18,14 @@ struct DashboardView: View {
                     // and Garmin setup live in the Settings tab now (not the toolbar).
                     StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
+                    if let hypo = model.hypoWarning {
+                        Label(hypo.message, systemImage: "arrow.down.circle.fill")
+                            .font(.subheadline).foregroundStyle(.orange)
+                            .padding().frame(maxWidth: .infinity)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .padding(.horizontal)
+                    }
+
                     AlertsBannerView(model: model)
 
                     if let pending = model.pendingApproval {
