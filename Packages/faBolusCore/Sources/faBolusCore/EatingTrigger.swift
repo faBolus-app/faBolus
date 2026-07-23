@@ -118,20 +118,68 @@ public struct EatingTriggerEstimate: Equatable, Sendable {
     public let battery: Battery
 }
 
+/// Accelerometer-model operating points **from the model's own held-out assessment** (faBolusNudge
+/// `RESULTS_SUMMARY.md`), shipped in the ModelCatalogKit manifest so the guidance reflects the ACTUAL
+/// deployed model — not a hand-picked guess. The app passes the manifest's metrics; `faBolusDefault` is
+/// the documented fallback.
+public struct EatingModelMetrics: Codable, Equatable, Sendable {
+    public struct OperatingPoint: Codable, Equatable, Sendable {
+        public let threshold: Double          // accel enter-threshold
+        public let recall: Double             // meal recall (0…1)
+        public let falseAlertsPerDay: Double
+        public init(threshold: Double, recall: Double, falseAlertsPerDay: Double) {
+            self.threshold = threshold; self.recall = recall; self.falseAlertsPerDay = falseAlertsPerDay
+        }
+    }
+    public let operatingPoints: [OperatingPoint]
+    public let source: String
+    public init(operatingPoints: [OperatingPoint], source: String) {
+        self.operatingPoints = operatingPoints.sorted { $0.threshold < $1.threshold }
+        self.source = source
+    }
+    /// Clamped linear interpolation of (recall, FA/day) at an enter-threshold.
+    public func at(_ t: Double) -> (recall: Double, falseAlertsPerDay: Double) {
+        guard let lo = operatingPoints.first, let hi = operatingPoints.last else { return (0, 0) }
+        if t <= lo.threshold { return (lo.recall, lo.falseAlertsPerDay) }
+        if t >= hi.threshold { return (hi.recall, hi.falseAlertsPerDay) }
+        for i in 1..<operatingPoints.count {
+            let a = operatingPoints[i - 1], b = operatingPoints[i]
+            if t <= b.threshold {
+                let f = (t - a.threshold) / (b.threshold - a.threshold)
+                return (a.recall + f * (b.recall - a.recall),
+                        a.falseAlertsPerDay + f * (b.falseAlertsPerDay - a.falseAlertsPerDay))
+            }
+        }
+        return (hi.recall, hi.falseAlertsPerDay)
+    }
+    /// From the held-out free-living assessment (episode-scale + debounce, 45 held-out meals — the
+    /// largest sample in RESULTS_SUMMARY.md). Ship the deployed model's real points via the manifest.
+    public static let faBolusDefault = EatingModelMetrics(operatingPoints: [
+        .init(threshold: 0.80, recall: 0.62, falseAlertsPerDay: 7.2),
+        .init(threshold: 0.85, recall: 0.62, falseAlertsPerDay: 4.1),
+        .init(threshold: 0.90, recall: 0.51, falseAlertsPerDay: 2.2),
+        .init(threshold: 0.95, recall: 0.49, falseAlertsPerDay: 0.6),
+    ], source: "held-out free-living assessment")
+}
+
 public enum EatingTriggerEstimator {
-    private static let accelBaseFA = 4.0
+    // CGM unannounced-meal signal: no per-threshold assessment yet — a documented literature placeholder
+    // (Loop Missed-Meal-style), to be replaced by the ported detector's own eval.
     private static let cgmBaseFA = 1.5
-    private static let accelBaseRecall = 0.60
     private static let cgmBaseRecall = 0.55
     private static let cgmDetectionLagSec = 20 * 60
     private static let accelDetectionLagSec = 60
 
-    public static func estimate(_ c: EatingTriggerConfig) -> EatingTriggerEstimate {
+    /// `accelMetrics` come from the accel model's held-out assessment (via the manifest).
+    public static func estimate(_ c: EatingTriggerConfig,
+                                accelMetrics: EatingModelMetrics = .faBolusDefault) -> EatingTriggerEstimate {
         func scaled(baseFA: Double, baseRecall: Double, threshold: Double, ref: Double) -> (fa: Double, recall: Double) {
             let strictness = max(0.1, threshold / ref)
             return (baseFA / (strictness * strictness), min(0.95, baseRecall / strictness))
         }
-        let a = scaled(baseFA: accelBaseFA, baseRecall: accelBaseRecall, threshold: c.accelThreshold, ref: 0.85)
+        // Accelerometer FA/recall come straight from the model's assessed operating points.
+        let ap = accelMetrics.at(c.accelThreshold)
+        let a = (fa: ap.falseAlertsPerDay, recall: ap.recall)
         let g = scaled(baseFA: cgmBaseFA, baseRecall: cgmBaseRecall, threshold: c.cgmMealThreshold, ref: 0.5)
 
         var fa = 0.0, recall = 0.0, lag = 0, battery: EatingTriggerEstimate.Battery = .low

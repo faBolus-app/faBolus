@@ -85,4 +85,28 @@ final class EatingTriggerTests: XCTestCase {
         var c = EatingTriggerConfig(); c.mode = .cgmOnly
         XCTAssertEqual(EatingTriggerEstimator.estimate(c).battery, EatingTriggerEstimate.Battery.none)
     }
+
+    // MARK: accel numbers come from the model's assessment (not hardcoded guesses)
+
+    func testAccelEstimateComesFromAssessmentOperatingPoints() {
+        var c = EatingTriggerConfig(); c.mode = .accelOnly; c.accelThreshold = 0.85; c.confirmationDelaySeconds = 0
+        let e = EatingTriggerEstimator.estimate(c)   // default metrics = the held-out assessment
+        XCTAssertEqual(e.falseAlertsPerDay, 4.1, accuracy: 0.05, "0.85 operating point from RESULTS_SUMMARY")
+        XCTAssertEqual(e.recallPercent, 62)
+    }
+
+    func testAccelMetricsInterpolateBetweenOperatingPoints() {
+        let mid = EatingModelMetrics.faBolusDefault.at(0.875)  // halfway between 0.85 (4.1) and 0.90 (2.2)
+        XCTAssertEqual(mid.falseAlertsPerDay, (4.1 + 2.2) / 2, accuracy: 0.05)
+        XCTAssertEqual(mid.recall, (0.62 + 0.51) / 2, accuracy: 0.01)
+    }
+
+    func testCustomAccelMetricsOverrideDefault() {
+        var c = EatingTriggerConfig(); c.mode = .accelOnly; c.accelThreshold = 0.9; c.confirmationDelaySeconds = 0
+        let m = EatingModelMetrics(operatingPoints: [.init(threshold: 0.9, recall: 0.8, falseAlertsPerDay: 1.0)],
+                                   source: "test")
+        let e = EatingTriggerEstimator.estimate(c, accelMetrics: m)
+        XCTAssertEqual(e.falseAlertsPerDay, 1.0, accuracy: 0.05)
+        XCTAssertEqual(e.recallPercent, 80)
+    }
 }
