@@ -140,6 +140,12 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var extendedMinutes: Int? = nil
     public var extendedNowUnits: Double? = nil
 
+    /// The dose the REMOTE computed and showed for a carb `bolusRequest` (its own carbs→units estimate).
+    /// The host recomputes authoritatively from `carbsGrams`; if the two differ by more than the host's
+    /// safety limit the bolus is rejected (the remote acted on stale settings/IOB/glucose). nil for a
+    /// units-mode request. Swift-only additive field (set post-init), mirrored in the JSON schema.
+    public var remoteEstimateUnits: Double? = nil
+
     /// Reverse-approval outcome on a `bolusApprovalResponse`: true = the remote approved the host's
     /// bolus, false = denied.
     public var approved: Bool? = nil

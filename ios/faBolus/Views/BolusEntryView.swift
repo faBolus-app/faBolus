@@ -35,6 +35,19 @@ struct BolusEntryView: View {
     private var smartWarnings: [String] {
         model.smartAssistWarnings(units: units, carbs: carbs, recommendedUnits: recommendation?.recommendedUnits)
     }
+    /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
+    /// for a carb bolus, so the carbs recorded on the pump won't match the delivered units. Uses the same
+    /// conservative 0.10 U limit as the remote divergence guard.
+    private var carbOverrideWarning: String? {
+        guard mode == .carbs, carbs > 0, let rec = recommendation, rec.recommendedUnits > 0,
+              abs(units - rec.recommendedUnits) > AppModel.remoteDivergenceLimitUnits else { return nil }
+        return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
+                      units, carbs, rec.recommendedUnits)
+    }
+    private var confirmMessage: String {
+        let disclaimer = "faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver."
+        return carbOverrideWarning.map { $0 + "\n\n" + disclaimer } ?? disclaimer
+    }
     private var maxUnits: Double { model.snapshot.maxBolusUnits }
     private var overMax: Bool { units > maxUnits }
 
@@ -144,6 +157,11 @@ struct BolusEntryView: View {
                         Label(warning, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote).foregroundStyle(.orange)
                     }
+                    // Dose overridden away from the carb recommendation (advisory; carbs still logged).
+                    if let w = carbOverrideWarning {
+                        Label(w, systemImage: "pencil.and.outline")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
@@ -196,7 +214,7 @@ struct BolusEntryView: View {
             Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await deliver() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
+            Text(confirmMessage)
         }
         .confirmationDialog("Extended bolus \(String(format: "%.2f U", units))?",
                             isPresented: $confirmingExtended, titleVisibility: .visible) {
@@ -222,8 +240,9 @@ struct BolusEntryView: View {
 
     private func deliver() async {
         delivering = true
-        await model.deliverBolus(units: units)
-        if carbs > 0 { model.recordCarbs(grams: carbs) }   // persist carbs for insights/sensitivity
+        // Carbs/BG go to the pump as recorded metadata (graph / t:connect / Control-IQ) and are logged
+        // locally for the smart features — carb recording is centralized in the model now.
+        await model.deliverBolus(units: units, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: Int(bg))
         delivering = false
         finishDelivery()
     }
@@ -231,7 +250,8 @@ struct BolusEntryView: View {
     private func deliverExtended() async {
         delivering = true
         let now = units * Double(extendedNowPercent) / 100
-        await model.deliverExtendedBolus(totalUnits: units, nowUnits: now, durationMinutes: extendedDurationMin)
+        await model.deliverExtendedBolus(totalUnits: units, nowUnits: now, durationMinutes: extendedDurationMin,
+                                         carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: Int(bg))
         delivering = false
         finishDelivery()
     }

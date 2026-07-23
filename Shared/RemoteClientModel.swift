@@ -199,11 +199,15 @@ class RemoteClientModel {
         startPending(RemoteCommand(kind: .bolusRequest, units: units))
     }
 
-    /// Send a carbs bolus; the phone converts carbs→units with the pump's calculator, then delivers.
-    /// A stale CGM value is never sent for the correction (matches the phone's rule).
+    /// Send a carbs bolus; the host (phone) is the single calculator — it recomputes the authoritative
+    /// dose from these carbs and delivers. We also include THIS client's own estimate so the host can
+    /// reject the bolus if the two diverge (a stale-settings guard). A stale CGM value is never sent for
+    /// the correction (matches the phone's rule). Covers Watch + Mac + remote-iPhone (shared base).
     func deliverCarbs(_ grams: Double) {
         let bg: Double? = isGlucoseStale ? nil : glucose.map(Double.init)
-        startPending(RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg))
+        var cmd = RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg)
+        cmd.remoteEstimateUnits = estimatedUnits(forCarbs: grams)
+        startPending(cmd)
     }
 
     /// Preview of the units the phone would deliver for a carb amount — mirrors the pump calculator

@@ -27,6 +27,22 @@
 <li>Tap <strong>Bolus N U</strong>, then confirm the dialog.</li>
 </ol>
 
+!!! note "Carbs are recorded on the pump"
+    When you deliver a **carb** bolus, faBolus sends the carb amount (and BG, if entered) to the pump
+    as part of the bolus, so the carbs show up on the **pump graph / t:connect** and feed Control-IQ's
+    carb awareness. The delivered **units are still computed by faBolus** — the pump can't calculate a
+    dose from carbs, so faBolus mirrors its calculator (carb ratio, ISF, target, IOB) and the carbs
+    ride along as recorded metadata.
+
+## Carb boluses from a remote (single calculator + safety guard)
+
+When you enter **carbs** on the Apple Watch, Garmin, Mac, or a remote iPhone, the **host phone is the
+single calculator**: it recomputes the dose from your carbs using its live settings and delivers that.
+The remote also sends the estimate it showed you, and the phone **compares** the two — if they differ
+by more than **0.10 U** (a sign the remote was working from stale settings, IOB, or glucose) the bolus
+is **not delivered**; the remote shows "Dose changed since your estimate — reopen and confirm," and you
+retry with fresh data. Units-mode entries are delivered exactly as confirmed.
+
 ## Cancel & partial delivery
 
 While a bolus is delivering, a prominent **Cancel** button is available on the HUD and the bolus
@@ -48,10 +64,12 @@ See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).
 ## Under the hood (for the curious)
 
 ??? info "The signed delivery sequence"
-    Via PumpX2Kit: `BolusPermissionRequest` → `InitiateBolusRequest` (signed and
-    insulin-delivery-gated) → status polling until the bolus finishes or is cancelled →
-    `LastBolusStatus` for the delivered amount. Every outgoing message is asserted byte-exact
-    against the pumpX2 `cliparser` oracle.
+    Via PumpX2Kit: `BolusPermissionRequest` → *(carb bolus only)* best-effort `RemoteCarbEntryRequest`
+    + `RemoteBgEntryRequest` to record the carbs/BG on the pump → `InitiateBolusRequest` (signed and
+    insulin-delivery-gated; also carries `bolusCarbs`/`bolusBG` inline) → status polling until the bolus
+    finishes or is cancelled → `LastBolusStatus` for the delivered amount. The carb/BG records are
+    best-effort — a rejected record never blocks the bolus. Every outgoing message is asserted
+    byte-exact against the pumpX2 `cliparser` oracle.
 
 ## Recommendation reasoning
 

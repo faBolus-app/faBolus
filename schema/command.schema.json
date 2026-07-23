@@ -36,6 +36,11 @@
       "minimum": 0,
       "description": "Optional BG for the calculator flow (Milestone 2 follow-on)."
     },
+    "remoteEstimateUnits": {
+      "type": "number",
+      "minimum": 0,
+      "description": "The dose the remote computed/showed for a carb bolusRequest. The host recomputes authoritatively from carbsGrams and rejects the bolus if the two diverge beyond its safety limit (stale-settings guard). Absent for a units-only request."
+    },
     "confirmToken": {
       "type": "string",
       "description": "Opaque token issued by the host for a specific bolusRequest; echoed by the remote in bolusConfirm to complete the double-confirmation. Single-use, short-lived.",

@@ -29,22 +29,13 @@ public final class PhoneRemoteHost {
                                         status: .failed, message: "Read-only mode"))
                 return
             }
-            // The Apple Watch confirms on-device (hold-to-deliver), like the Garmin — deliver
-            // directly through the validated signed path. Carbs are converted to units first.
+            // The Apple Watch confirms on-device (hold-to-deliver), like the Garmin. The host is the
+            // single calculator: `remoteDeliver` recomputes carbs→units, runs the divergence guard vs
+            // the watch's own estimate, records carbs on the pump, and echoes the outcome.
             Task {
-                let units: Double
-                if let carbs = cmd.carbsGrams, carbs > 0 {
-                    let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: cmd.bgMgdl.map(Int.init) ?? model.snapshot.glucose)
-                    units = rec.recommendedUnits
-                } else {
-                    units = cmd.units ?? 0
-                }
-                guard units > 0 else {
-                    self.link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
-                                                 status: .failed, message: "No insulin needed"))
-                    return
-                }
-                await model.remoteDeliver(requestId: cmd.requestId, units: units)
+                await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
+                                          carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
+                                          remoteEstimate: cmd.remoteEstimateUnits)
             }
         case .cancelBolus:
             // The in-flight delivery loop echoes the single final status; no echo here (else the

@@ -151,8 +151,12 @@ final class GarminRemoteBridge: NSObject {
                 send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
                 return
             }
-            guard let units = cmd.units else { return }
-            Task { await model.remoteDeliver(requestId: cmd.requestId, units: units) }
+            // Units mode sends `units`; carbs mode sends `carbsGrams` (+ bgMgdl + the Garmin's own
+            // estimate). The host recomputes carbs→units, runs the divergence guard, records carbs.
+            guard cmd.units != nil || (cmd.carbsGrams ?? 0) > 0 else { return }
+            Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
+                                             carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
+                                             remoteEstimate: cmd.remoteEstimateUnits) }
         case .cancelBolus:
             // Just request the cancel; the in-flight delivery loop echoes the single final
             // status (cancelled · partial, or delivered if it finished first). No echo here, or

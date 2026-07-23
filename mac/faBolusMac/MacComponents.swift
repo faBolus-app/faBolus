@@ -163,6 +163,11 @@ struct MacBolusEntryView: View {
     @State private var confirming = false
 
     private var isDelivering: Bool { model.lastStatus == .delivering }
+    /// A rejected/failed bolus (e.g. the host's divergence guard) — shown in the entry form so the
+    /// reason is visible in the popover (the delivering view only shows while actively delivering).
+    private var showFailure: Bool {
+        (model.lastStatus == .failed || model.lastStatus == .outOfRange) && (model.statusMessage?.isEmpty == false)
+    }
     private var isCarbs: Bool { mode == "carbs" }
     private var step: Double { isCarbs ? model.display.carbIncrement : model.display.bolusIncrement }
     private var maxV: Double { isCarbs ? 200 : (model.maxBolusUnits > 0 ? model.maxBolusUnits : 25) }
@@ -198,6 +203,10 @@ struct MacBolusEntryView: View {
                 // second tap ("Deliver") never registers. Confirm in place instead.
                 confirmView
             } else {
+                if showFailure, let m = model.statusMessage {
+                    Text(m).font(.caption).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+                }
                 Picker("", selection: $mode) {
                     Text("Carbs").tag("carbs")
                     Text("Units").tag("units")

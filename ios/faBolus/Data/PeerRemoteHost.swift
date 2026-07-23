@@ -170,30 +170,27 @@ public final class PeerRemoteHost {
         case .bolusRequest:
             let isExtended = cmd.extendedMinutes != nil
             guard policy.allows(isExtended ? .extendedBolus : .bolus) else { deny(cmd.requestId); return }
+            // An authorized peer overrides child lock (enforceChildLock: false). Extended boluses
+            // resolve to units client-side (units-based, no carb record/guard); standard boluses go
+            // through `remoteDeliver`, which is the single calculator + carb-record + divergence guard.
             Task {
-                let units: Double
-                if let carbs = cmd.carbsGrams, carbs > 0 {
-                    let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: cmd.bgMgdl.map(Int.init) ?? model.snapshot.glucose)
-                    units = rec.recommendedUnits
-                } else {
-                    units = cmd.units ?? 0
-                }
-                guard units > 0 else {
-                    self.link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
-                                                 status: .failed, message: "No insulin needed"))
-                    return
-                }
-                // An authorized peer overrides child lock (enforceChildLock: false). Extended boluses
-                // always execute directly (no on-device approval-mode split in v1); standard boluses
-                // honor the peer's approval mode.
                 if isExtended {
-                    let now = cmd.extendedNowUnits ?? 0
-                    await model.deliverExtendedBolus(totalUnits: units, nowUnits: now,
+                    let units = cmd.units ?? 0
+                    guard units > 0 else {
+                        self.link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                                                     status: .failed, message: "No insulin needed"))
+                        return
+                    }
+                    await model.deliverExtendedBolus(totalUnits: units, nowUnits: cmd.extendedNowUnits ?? 0,
                                                      durationMinutes: cmd.extendedMinutes ?? 0, enforceChildLock: false)
                 } else if policy.approvalMode == .hostApproval {
-                    model.presentRemoteBolus(requestId: cmd.requestId, units: units, enforceChildLock: false)
+                    model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
+                                             carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
+                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
                 } else {
-                    await model.remoteDeliver(requestId: cmd.requestId, units: units, enforceChildLock: false)
+                    await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
+                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
+                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
                 }
             }
         case .cancelBolus:

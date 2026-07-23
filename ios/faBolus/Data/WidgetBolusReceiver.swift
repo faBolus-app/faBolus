@@ -61,7 +61,10 @@ final class WidgetBolusReceiver {
             }
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: r.requestId))
             reload()
-            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units)
+            // Record carbs on the pump + locally for a carb-mode widget bolus (units-mode has none).
+            let carbs: Double? = r.mode == "carbs" ? r.amount : nil
+            let bg: Int? = r.mode == "carbs" ? model.snapshot.glucose : nil
+            let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units, carbsGrams: carbs, bgMgdl: bg)
             let phase: WidgetBolusPhase = out.error != nil ? .failed : (out.cancelled ? .cancelled : .delivered)
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, units: units,
                                                          deliveredUnits: out.delivered, requestId: r.requestId,

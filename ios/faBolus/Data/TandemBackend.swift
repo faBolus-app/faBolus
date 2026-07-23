@@ -228,18 +228,20 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
     /// policy to `.allowDelivery` only for this call.
-    public func deliverBolus(units: Double) async throws -> Double {
+    public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
         return try await perform(totalMu: mu, extendedMu: 0, extendedSeconds: 0,
-                                 bitmask: Self.food2, displayUnits: units)
+                                 bitmask: Self.food2, displayUnits: units,
+                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Delivers an **extended (combo)** bolus: `nowUnits` up front and the remainder over
     /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the FOOD2|EXTENDED bitmask (12),
     /// matching the pump's extended-bolus byte format (oracle-verified). Total must be ≥ 0.40 U.
-    public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double {
+    public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+                                     carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: totalUnits)
         let now = max(0, min(nowUnits, totalUnits))
         let nowMu = UInt32((now * 1000).rounded())
@@ -249,7 +251,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         let seconds = UInt32(max(1, durationMinutes) * 60)
         return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
-                                 bitmask: Self.food2Extended, displayUnits: totalUnits)
+                                 bitmask: Self.food2Extended, displayUnits: totalUnits,
+                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Shared pre-flight validation for any delivery (standard or extended).
@@ -265,7 +268,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// it sends the full-form InitiateBolusRequest (now-portion `totalMu`, later-portion `extendedMu`
     /// over `extendedSeconds`); otherwise a standard units-only bolus.
     private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
-                         bitmask: Int, displayUnits units: Double) async throws -> Double {
+                         bitmask: Int, displayUnits units: Double,
+                         carbsGrams: Double? = nil, bgMgdl: Int? = nil) async throws -> Double {
         // Fresh signing timestamp (the pump validates the HMAC against its clock).
         let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
             timeCont = cont
@@ -291,14 +295,32 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         currentBolusId = perm.bolusId
 
+        // Record carbs/BG on the pump BEFORE initiating — this is what populates the carb amount on
+        // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT
+        // change the delivered dose). Best-effort: a failed entry must NEVER abort the bolus, so the
+        // InitiateBolus below still fires. Also mirrored inline in InitiateBolusRequest.bolusCarbs/BG.
+        let carbsInt = carbsGrams.map { Int($0.rounded()) } ?? 0
+        let bgInt = bgMgdl ?? 0
+        if carbsInt > 0 {
+            try? client.send(RemoteCarbEntryRequest(carbs: carbsInt, unknown: 1,
+                                                    pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
+                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        }
+        if bgInt > 0 {
+            try? client.send(RemoteBgEntryRequest(bg: bgInt, useForCgmCalibration: false, isAutopopBg: false,
+                                                  pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
+                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+        }
+
         let ini: InitiateBolusResponse = try await withCheckedThrowingContinuation { cont in
             initiateCont = cont
             do {
                 let request: InitiateBolusRequest = extendedMu > 0
                     ? InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: 0, correctionVolume: 0, bolusCarbs: 0, bolusBG: 0, bolusIOB: 0,
+                                           foodVolume: 0, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
                                            extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
-                    : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask)
+                    : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                           bolusCarbs: carbsInt, bolusBG: bgInt)
                 try client.send(request, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
             } catch { initiateCont = nil; cont.resume(throwing: error) }

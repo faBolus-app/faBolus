@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+import UserNotifications
 import HistoryStore
 #if FABOLUS_NUDGE
 import DosingSafetyKit
@@ -230,6 +231,7 @@ public final class AppModel {
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
     public struct PendingRemoteBolus: Equatable, Sendable {
         public let requestId: String; public let units: Double
+        public var carbsGrams: Double? = nil; public var bgMgdl: Int? = nil; public var remoteEstimate: Double? = nil
         /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
         public var enforceChildLock: Bool = true
     }
@@ -767,20 +769,30 @@ public final class AppModel {
         await source.recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
-    public func deliverBolus(units: Double) async {
+    /// Conservative safety limit for the wrist/Mac-vs-host dose comparison. If a remote's own carb→unit
+    /// estimate and the host's authoritative recompute differ by more than this, the bolus is rejected
+    /// (the remote acted on stale settings/IOB/glucose). 0.10 U = two 0.05 U increments — tight enough to
+    /// catch real drift, loose enough to ignore pure rounding.
+    static let remoteDivergenceLimitUnits = 0.10
+
+    public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async {
         if childBlocked(.bolus) { return }
         // Reverse approval (child-mode-only): when child mode is on and set to require a paired
         // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
         if AppSettings.shared.childModeEnabled, AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
-            requestRemoteApproval(units: units)
+            requestRemoteApproval(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
             return
         }
-        await performLocalBolus(units: units)
+        await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
-    private func performLocalBolus(units: Double) async {
+    private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async {
         if readOnlyBlocked("Bolus") { return }
-        do { _ = try await source.deliverBolus(units: units); lastError = nil }
+        do {
+            _ = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
+            lastError = nil
+        }
         catch { lastError = error.localizedDescription }
         refresh()
     }
@@ -788,13 +800,16 @@ public final class AppModel {
     // MARK: Reverse approval (host bolus approved by a paired remote)
 
     /// A bolus this phone started that's awaiting a paired remote's approval.
-    public struct PendingApproval: Equatable, Sendable { public let requestId: String; public let units: Double }
+    public struct PendingApproval: Equatable, Sendable {
+        public let requestId: String; public let units: Double
+        public var carbsGrams: Double? = nil; public var bgMgdl: Int? = nil
+    }
     public private(set) var pendingApproval: PendingApproval?
     private var hasPairedRemote: Bool { !MacPairingCoordinator.shared.pairedMacs.isEmpty }
 
-    private func requestRemoteApproval(units: Double) {
+    private func requestRemoteApproval(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) {
         let id = UUID().uuidString
-        pendingApproval = PendingApproval(requestId: id, units: units)
+        pendingApproval = PendingApproval(requestId: id, units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         lastError = nil
         echo(RemoteCommand(kind: .bolusApprovalRequest, requestId: id, units: units))
         Task { [weak self] in
@@ -809,7 +824,7 @@ public final class AppModel {
         guard let p = pendingApproval, p.requestId == requestId else { return }
         pendingApproval = nil
         if approved {
-            Task { await performLocalBolus(units: p.units) }
+            Task { await performLocalBolus(units: p.units, carbsGrams: p.carbsGrams, bgMgdl: p.bgMgdl) }
         } else {
             lastError = "Bolus not approved" + (reason.map { " — \($0)" } ?? "")
         }
@@ -820,10 +835,17 @@ public final class AppModel {
 
     /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+                                     carbsGrams: Double? = nil, bgMgdl: Int? = nil,
                                      enforceChildLock: Bool = true) async {
         if enforceChildLock, childBlocked(.bolus) { return }
         if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
-        do { _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits, durationMinutes: durationMinutes); lastError = nil }
+        do {
+            _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
+                                                      durationMinutes: durationMinutes,
+                                                      carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
+            lastError = nil
+        }
         catch { lastError = error.localizedDescription }
         refresh()
     }
@@ -1029,29 +1051,22 @@ public final class AppModel {
 
     // MARK: Remote (watch/Garmin) double-confirmation
 
-    public func presentRemoteBolus(requestId: String, units: Double, enforceChildLock: Bool = true) {
-        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units, enforceChildLock: enforceChildLock)
+    public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
+                                   bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
+                                   enforceChildLock: Bool = true) {
+        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: units, carbsGrams: carbsGrams,
+                                                bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
+                                                enforceChildLock: enforceChildLock)
     }
 
     /// The phone user's confirmation (second confirm) — delivers and echoes status to the remote.
+    /// Routes through `remoteDeliver` so the carb recompute + divergence guard + carb recording apply.
     public func confirmRemoteBolus() async {
         guard let pending = pendingRemoteBolus else { return }
         pendingRemoteBolus = nil
-        if pending.enforceChildLock, childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                               status: .failed, message: "Locked (child mode)"))
-            return
-        }
-        do {
-            let delivered = try await source.deliverBolus(units: pending.units)
-            echo(bolusOutcome(requestId: pending.requestId, delivered: delivered))
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId,
-                               status: .failed, message: error.localizedDescription))
-        }
-        refresh()
+        await remoteDeliver(requestId: pending.requestId, units: pending.units, carbsGrams: pending.carbsGrams,
+                            bgMgdl: pending.bgMgdl, remoteEstimate: pending.remoteEstimate,
+                            enforceChildLock: pending.enforceChildLock)
     }
 
     /// Build the final bolus-status echo, distinguishing a full delivery from a cancelled
@@ -1066,16 +1081,43 @@ public final class AppModel {
                              deliveredUnits: delivered)
     }
 
-    /// Deliver a bolus already confirmed on the remote itself (e.g. Garmin hold-to-deliver) —
-    /// no phone-side dialog. Echoes delivering → delivered/failed back to the remote.
-    public func remoteDeliver(requestId: String, units: Double, enforceChildLock: Bool = true) async {
+    /// Deliver a bolus requested by a remote (Watch / Garmin / Mac / remote-iPhone). The **host is the
+    /// single calculator**: for a carb request the host recomputes the authoritative dose here and
+    /// compares it to the remote's own `remoteEstimate` — if they diverge beyond
+    /// `remoteDivergenceLimitUnits` the bolus is **rejected** (stale-settings guard) rather than
+    /// delivering a surprising amount. Units-mode requests deliver the sent `units` unchanged. Carbs are
+    /// recorded on the pump (metadata, via the backend) and locally for the smart features.
+    public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
+                              bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
+                              enforceChildLock: Bool = true) async {
         if enforceChildLock, childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return
         }
+        // Resolve the authoritative dose.
+        let dose: Double
+        if let carbs = carbsGrams, carbs > 0 {
+            let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: bgMgdl ?? snapshot.glucose)
+            dose = rec.recommendedUnits
+            // Wrist/Mac-vs-host divergence guard (fail safe).
+            if let est = remoteEstimate, abs(dose - est) > Self.remoteDivergenceLimitUnits {
+                let msg = String(format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
+                echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+                lastError = msg
+                notifyRemoteBolusRejected(msg)
+                return
+            }
+        } else {
+            dose = units ?? 0
+        }
+        guard dose > 0 else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
+            return
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
-            let delivered = try await source.deliverBolus(units: units)
+            let delivered = try await source.deliverBolus(units: dose, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
         } catch {
@@ -1086,17 +1128,29 @@ public final class AppModel {
         refresh()
     }
 
+    /// Post a local notification when a remote carb bolus is rejected by the divergence guard, so the
+    /// phone user sees why (the remote also shows the `.failed` message). Best-effort.
+    private func notifyRemoteBolusRejected(_ message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Remote bolus not delivered"
+        content.body = message
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "remoteBolusRejected", content: content, trigger: nil))
+    }
+
     /// Deliver a bolus confirmed on the Quick-Bolus widget (its 1-2-3 tap is the confirmation).
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
-    public func deliverWidgetBolus(requestId: String, units: Double) async -> (delivered: Double, cancelled: Bool, error: String?) {
+    public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async -> (delivered: Double, cancelled: Bool, error: String?) {
         if childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return (0, false, "Locked (child mode)")
         }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
-            let delivered = try await source.deliverBolus(units: units)
+            let delivered = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
             refresh()
