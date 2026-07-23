@@ -4,9 +4,11 @@ import faBolusCore
 import ConnectIQ
 
 /// Bridges the Garmin venu3s (Connect IQ) remote to the iPhone host. Receives the watch app's
-/// messages via the Connect IQ Mobile SDK, maps them to `RemoteCommand`, and routes them
-/// through the same double-confirm flow as the Apple Watch (`AppModel`). Status is echoed back
-/// to the watch. Requires the Garmin Connect Mobile app installed + the watch paired to it.
+/// messages via the Connect IQ Mobile SDK, maps them to `RemoteCommand`, and routes them to `AppModel`.
+/// Like the Apple Watch, the watch confirms on-device (hold-to-deliver) and the host delivers directly
+/// — there is NO second human confirmation on the phone. The host still recomputes carbs→units, runs
+/// the divergence guard, and enforces the max-bolus clamp + message signing. Status is echoed back to
+/// the watch. Requires the Garmin Connect Mobile app installed + the watch paired to it.
 @MainActor
 final class GarminRemoteBridge: NSObject {
     /// Custom URL scheme for the SDK's device-selection callback (see Info.plist CFBundleURLTypes).

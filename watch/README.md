@@ -10,5 +10,5 @@ Screens: glance, chart, details, alerts; plus a watch-face **complication**.
 **Build & usage:** see the docs — [add the Apple Watch app](../docs/build/apple-watch-build.md)
 and [Apple Watch remote](../docs/remotes/apple-watch.md).
 
-> A standalone build (running `PumpX2Kit` on-watch, no phone) is designed but not built — see
-> [Independent Apple Watch](../docs/design/independent-watch.md).
+> A standalone build (running `PumpX2Kit` on-watch, no phone) is designed but not built, and not yet
+> documented. (Design notes live with the watch-install / independent-pairing work, currently paused.)

@@ -45,8 +45,17 @@ struct PinEntryView: View {
             guard pin == confirm else { error = "PINs don't match."; return }
             onSuccess(digits); dismiss()
         case .verify:
+            // Enforce the brute-force lockout (audit A-10).
+            let locked = ChildModeStore.lockoutRemaining
+            if locked > 0 {
+                error = "Too many attempts. Try again in \(Int(locked.rounded(.up)))s."; pin = ""; return
+            }
             if ChildModeStore.verify(digits) { onSuccess(digits); dismiss() }
-            else { error = "Incorrect PIN."; pin = "" }
+            else {
+                let now = ChildModeStore.lockoutRemaining
+                error = now > 0 ? "Locked. Try again in \(Int(now.rounded(.up)))s." : "Incorrect PIN."
+                pin = ""
+            }
         }
     }
 }

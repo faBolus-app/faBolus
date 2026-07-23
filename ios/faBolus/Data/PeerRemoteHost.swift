@@ -32,6 +32,10 @@ public final class PeerRemoteHost {
     private var secret: Data?          // code-derived (first pairing) or the stored token (reconnect)
     private var firstPairing = false
     private var pairingCode: String?   // the code in use, needed to seal the token on first pairing
+    /// Rate-limit a peer's forced CGM reads (audit C-05): a view-only peer can't spam pump reads.
+    /// Only throttles the on-screen-open freshness poll — the pre-delivery refresh is never throttled.
+    private var lastForcedGlucose: Date?
+    private static let forcedGlucoseMinInterval: TimeInterval = 5
 
     public init(model: AppModel) {
         self.model = model
@@ -212,7 +216,10 @@ public final class PeerRemoteHost {
             model.resolveRemoteApproval(requestId: cmd.requestId, approved: cmd.approved ?? false,
                                         reason: (cmd.approved ?? false) ? nil : "Denied on the remote")
         case .statusRead:
-            if cmd.forceGlucose == true {
+            let now = Date()
+            let throttled = lastForcedGlucose.map { now.timeIntervalSince($0) < Self.forcedGlucoseMinInterval } ?? false
+            if cmd.forceGlucose == true && !throttled {
+                lastForcedGlucose = now
                 Task { await model.refreshGlucoseNow(); self.link.send(model.statusCommand(includeHistory: true)) }
             } else {
                 link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed
