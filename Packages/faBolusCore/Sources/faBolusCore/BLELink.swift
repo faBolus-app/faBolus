@@ -133,14 +133,22 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     // MARK: Receive / reassembly (called on `queue`)
 
+    /// Hard cap on a single reassembled frame (audit A-07): a malicious/garbled central can otherwise
+    /// declare a ~4 GB length prefix and make us buffer toward it unboundedly (memory-exhaustion DoS).
+    /// Generously above any real command (see `RemoteCommand.maxEncodedBytes`).
+    private static let maxFrameBytes = 64 * 1024
+
     private func ingest(_ chunk: Data) {
         rxBuffer.append(chunk)
         while rxBuffer.count >= 4 {
             let len = Int(rxBuffer.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) })
+            // Reject an oversized declared length before buffering toward it: drop + resync (a
+            // well-behaved peer never sends this; a hostile one can't exhaust memory).
+            if len > Self.maxFrameBytes { rxBuffer.removeAll(keepingCapacity: false); break }
             guard rxBuffer.count >= 4 + len else { break }
             let msg = rxBuffer.subdata(in: 4..<(4 + len))
             rxBuffer.removeSubrange(0..<(4 + len))
-            if let cmd = try? RemoteCommand.decode(msg) {
+            if let cmd = try? RemoteCommand.decodeValidated(msg) {
                 Task { @MainActor in self.onReceive?(cmd) }
             }
         }

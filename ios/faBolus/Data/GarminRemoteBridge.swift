@@ -193,7 +193,7 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
             Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
             return
         }
-        guard let cmd = try? RemoteCommand.from(dict) else { return }
+        guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }   // audit A-07
         Task { @MainActor in self.handle(cmd) }
     }
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {}

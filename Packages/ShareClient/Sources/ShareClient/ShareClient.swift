@@ -255,9 +255,11 @@ public class ShareClient {
                             }
                             
                             if let trend = trend {
+                                // Guard the casts: malformed Dexcom Share JSON with an out-of-range
+                                // glucose/trend would otherwise trap (audit A-07). Clamp to valid ranges.
                                 transformed.append(ShareGlucose(
-                                    glucose: UInt16(glucose),
-                                    trend: UInt8(trend),
+                                    glucose: UInt16(min(max(glucose, 0), Int(UInt16.max))),
+                                    trend: UInt8(min(max(trend, 0), Int(UInt8.max))),
                                     timestamp: try self.parseDate(wt)
                                 ))
                             } else {

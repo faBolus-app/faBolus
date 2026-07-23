@@ -105,7 +105,7 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
         let counter = ctrData.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
         guard let box = try? AES.GCM.SealedBox(combined: boxData),
               let opened = try? AES.GCM.open(box, using: key, authenticating: ctrData),
-              let cmd = try? RemoteCommand.decode(opened) else { return nil }
+              let cmd = try? RemoteCommand.decodeValidated(opened) else { return nil }   // audit A-07
         return (cmd, counter)
     }
 

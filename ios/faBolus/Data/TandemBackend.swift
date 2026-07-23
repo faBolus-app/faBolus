@@ -271,13 +271,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: totalUnits)
-        let now = max(0, min(nowUnits, totalUnits))
+        let safeNow = nowUnits.isFinite ? nowUnits : 0          // audit A-07: no NaN into UInt32(...)
+        let now = max(0, min(safeNow, totalUnits))
         let nowMu = UInt32((now * 1000).rounded())
         let laterMu = UInt32((max(0, totalUnits - now) * 1000).rounded())
         guard (nowMu + laterMu) >= InitiateBolusRequest.minExtendedBolusMilliunits else {
             throw BolusError.pumpRejected("extended bolus below 0.40 u")
         }
-        let seconds = UInt32(max(1, durationMinutes) * 60)
+        // Clamp duration to [1 min, 24 h] so `UInt32(minutes * 60)` can neither overflow nor trap.
+        let clampedMinutes = max(1, min(durationMinutes, 24 * 60))
+        let seconds = UInt32(clampedMinutes * 60)
         return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
                                  bitmask: Self.food2Extended, displayUnits: totalUnits,
                                  carbsGrams: carbsGrams, bgMgdl: bgMgdl)
@@ -287,6 +290,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func validateDeliver(total: Double) throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
+        // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap
+        // (audit A-07). The max clamp only bounds the upper end.
+        guard total.isFinite, total >= 0 else { throw BolusError.pumpRejected("invalid dose") }
         guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
             throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
         }
