@@ -63,6 +63,10 @@ targets:
         product: HistoryStore
       - package: faBolusNudge
         product: DosingSafetyKit
+      - package: faBolusNudge
+        product: GlucoseIntelligenceKit
+      - package: faBolusNudge
+        product: TherapyInsightsKit
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit

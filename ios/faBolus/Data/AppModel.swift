@@ -2,6 +2,8 @@ import Foundation
 import faBolusCore
 import HistoryStore
 import DosingSafetyKit
+import GlucoseIntelligenceKit
+import TherapyInsightsKit
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
@@ -20,6 +22,11 @@ public final class AppModel {
     private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
     private var lastGlucoseIngest = Date.distantPast
     private var lastBolusIngest = Date.distantPast
+
+    // Predictive-low (GlucoseIntelligenceKit) — advisory, gated by AppSettings.hypoAlertsEnabled.
+    private let hypoEngine = SmartAssist.makeHypoEngine()
+    private var lastHypoIngest = Date.distantPast
+    private(set) var hypoWarning: HypoAlert?
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -386,6 +393,27 @@ public final class AppModel {
         history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
     }
 
+    private var hypoDelegateSet = false
+    /// Feed new readings to the predictive-low engine; it publishes via the delegate below (advisory).
+    private func updateHypoWarning() {
+        guard AppSettings.shared.hypoAlertsEnabled else { hypoWarning = nil; return }
+        if !hypoDelegateSet { hypoEngine.delegate = self; hypoDelegateSet = true }
+        let fresh = glucoseHistory.filter { $0.date > lastHypoIngest }.sorted { $0.date < $1.date }
+        for r in fresh {
+            hypoEngine.ingest(GlucoseIntelligenceKit.CGMReading(mgdl: Double(r.mgdl), date: r.date))
+        }
+        lastHypoIngest = fresh.last?.date ?? lastHypoIngest
+        if let w = hypoWarning, Date().timeIntervalSince(w.at) > Double(w.horizonMinutes) * 60 {
+            hypoWarning = nil   // expire past its horizon
+        }
+    }
+
+    /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
+    public func therapyInsights() -> [PatternInsights.Insight] {
+        let cgm = history?.glucose(in: Date().addingTimeInterval(-90 * 86400)...Date()) ?? glucoseHistory
+        return SmartAssist.insights(cgm: cgm)
+    }
+
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
@@ -407,6 +435,7 @@ public final class AppModel {
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
+        updateHypoWarning()
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
@@ -772,5 +801,16 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .cancelled))
         }
         pendingRemoteBolus = nil
+    }
+}
+
+// Predictive-low engine callback (advisory). `ingest` is only ever called on the main actor (from
+// refresh), so the delegate fires on main — assumeIsolated publishes synchronously without a cross-actor send.
+extension AppModel: GlucoseIntelligenceDelegate {
+    nonisolated public func glucoseIntelligence(_ g: GlucoseIntelligence, didPredictLow warning: HypoWarning) {
+        let alert = HypoAlert(horizonMinutes: warning.horizonMinutes, probability: warning.probability,
+                              projectedLowMgdl: warning.projectedLowMgdl, at: warning.at,
+                              nocturnal: warning.nocturnal)
+        Task { @MainActor in self.hypoWarning = alert }
     }
 }
