@@ -37,7 +37,12 @@ struct BolusEntryView: View {
     @State private var tick = Date()   // drives the live "N min ago" readout while the screen is open
     /// Set when a fresh CGM pulled at delivery time would change the dose — asks the user which to use.
     @State private var cgmUpdate: CGMUpdatePrompt?
-    private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double }
+    /// `newBG == -1` means "no fresh CGM available" — the correction is dropped (carbs-only) rather than
+    /// dosed off a stale on-screen value (audit C-04 fail-closed). `extended` routes the choice back to
+    /// the matching delivery path so standard + extended share one confirm flow.
+    private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double; let extended: Bool }
+    /// Supersedes out-of-order async recommendation results (audit C-04).
+    @State private var calcSeq = 0
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -123,7 +128,7 @@ struct BolusEntryView: View {
                     Text("Units").tag(BolusMode.units)
                 }
                 .pickerStyle(.segmented)
-                .disabled(delivering)
+                .disabled(delivering || preparingDeliver)
             }
 
             if mode == .carbs {
@@ -212,10 +217,10 @@ struct BolusEntryView: View {
                             .font(.footnote).foregroundStyle(.orange)
                     }
                     Button { confirming = true } label: {
-                        HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", units))"); Spacer() }
+                        HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
                     .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
-                    .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus))
+                    .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus) || preparingDeliver)
                 }
             }
 
@@ -231,7 +236,7 @@ struct BolusEntryView: View {
                         HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
                     .buttonStyle(.bordered).tint(AppTheme.insulin)
-                    .disabled(units < 0.4 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus))
+                    .disabled(units < 0.4 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus) || preparingDeliver)
                 }
             }
         }
@@ -282,32 +287,48 @@ struct BolusEntryView: View {
         }
         .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
                             isPresented: $confirming, titleVisibility: .visible) {
-            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver() } }
+            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver(extended: false) } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmMessage)
         }
-        .confirmationDialog("CGM updated", isPresented: Binding(get: { cgmUpdate != nil },
-                                                               set: { if !$0 { cgmUpdate = nil } }),
+        .confirmationDialog(cgmUpdate?.newBG == -1 ? "CGM unavailable" : "CGM updated",
+                            isPresented: Binding(get: { cgmUpdate != nil },
+                                                 set: { if !$0 { cgmUpdate = nil } }),
                             titleVisibility: .visible) {
             if let u = cgmUpdate {
-                Button("Use \(u.newBG) mg/dL → \(String(format: "%.2f U", u.newUnits))") {
-                    bg = "\(u.newBG)"; bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
-                    cgmUpdate = nil; Task { await deliver() }
+                if u.newBG == -1 {
+                    // No fresh CGM — the only safe options are the carbs-only dose or cancel.
+                    Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
+                        let ext = u.extended; cgmUpdate = nil
+                        Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil, extended: ext)) }
+                    }
+                    Button("Cancel", role: .cancel) { cgmUpdate = nil }
+                } else {
+                    Button("Use \(u.newBG) mg/dL → \(String(format: "%.2f U", u.newUnits))") {
+                        bg = "\(u.newBG)"; bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
+                        let ext = u.extended; let bgv = u.newBG; let uu = u.newUnits; cgmUpdate = nil
+                        Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                    }
+                    Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
+                        let ext = u.extended; let uu = u.oldUnits; let bgv = Int(bg); cgmUpdate = nil
+                        Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                    }
+                    Button("Cancel", role: .cancel) { cgmUpdate = nil }
                 }
-                Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
-                    cgmUpdate = nil; Task { await deliver() }
-                }
-                Button("Cancel", role: .cancel) { cgmUpdate = nil }
             }
         } message: {
             if let u = cgmUpdate {
-                Text("Your CGM changed while this dose was on screen. The new reading (\(u.newBG) mg/dL) suggests \(String(format: "%.2f U", u.newUnits)) instead of \(String(format: "%.2f U", u.oldUnits)).")
+                if u.newBG == -1 {
+                    Text("No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel.")
+                } else {
+                    Text("Your CGM changed while this dose was on screen. The new reading (\(u.newBG) mg/dL) suggests \(String(format: "%.2f U", u.newUnits)) instead of \(String(format: "%.2f U", u.oldUnits)).")
+                }
             }
         }
         .confirmationDialog("Extended bolus \(String(format: "%.2f U", units))?",
                             isPresented: $confirmingExtended, titleVisibility: .visible) {
-            Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) { Task { await deliverExtended() } }
+            Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver(extended: true) } }
             Button("Cancel", role: .cancel) {}
         } message: {
             let now = units * Double(extendedNowPercent) / 100
@@ -322,49 +343,70 @@ struct BolusEntryView: View {
     private func calculate() async {
         // Nothing entered yet → no recommendation card.
         guard carbs > 0 || (Int(bg) ?? 0) > 0 else { recommendation = nil; unitsText = ""; return }
+        // Generation token (audit C-04): a newer edit supersedes this calc, so an out-of-order async
+        // result can't overwrite the field with a stale dose.
+        calcSeq &+= 1
+        let seq = calcSeq
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
+        guard seq == calcSeq else { return }
         recommendation = rec
         unitsText = rec.recommendedUnits > 0 ? Self.trimUnits(rec.recommendedUnits) : ""
     }
 
-    /// Pull the freshest CGM right before delivering. If the correction leans on the CGM and the new
-    /// value would change the dose by more than the safety limit, ask the user which value to use
-    /// (via the `cgmUpdate` prompt) instead of silently delivering the stale-based dose.
-    private func attemptDeliver() async {
+    /// Immutable, confirmed bolus (audit C-04): captured once at confirm time; delivery uses exactly
+    /// these values and never re-reads live `@State` that could change under it.
+    private struct FrozenBolus { let units: Double; let carbsGrams: Double?; let bgMgdl: Int?; let extendedNow: Double? ; let extendedDurationMin: Int? }
+
+    /// Validate a correction against a FRESH CGM read, then freeze + deliver. Shared by the standard and
+    /// extended paths (audit C-04 "same path"). For a CGM-based correction it pulls a fresh reading and:
+    /// diverges → asks the user (cgmUpdate prompt); fresh & close → uses the fresh value; **stale/missing
+    /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
+    /// stale on-screen value.
+    private func attemptDeliver(extended: Bool) async {
+        preparingDeliver = true
+        defer { preparingDeliver = false }
         if mode == .carbs, bgSource == .cgm, carbs > 0 {
-            // A reading that landed in the last ~2 s may not be reflected in the on-screen dose yet, so
-            // treat any resulting change as worth confirming (not just a >0.10 U divergence).
             let justChanged = lastCGMChangeAt.map { Date().timeIntervalSince($0) <= 2 } ?? false
             let priorUnits = units
-            preparingDeliver = true
             await model.refreshGlucoseNow()
-            preparingDeliver = false
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
                 let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g)
                 let delta = abs(rec.recommendedUnits - priorUnits)
                 if delta > AppModel.remoteDivergenceLimitUnits || (justChanged && delta > 0.0001) {
-                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits)
+                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
                     return   // wait for the user's choice in the CGM-updated dialog
                 }
+                await deliverFrozen(freeze(units: priorUnits, bg: g, extended: extended))
+                return
             }
+            // Fail closed: CGM stale/missing — never correct off the stale on-screen value. Deliver the
+            // carbs-only dose after the user confirms (newBG = -1 signals "no fresh CGM" in the dialog).
+            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil)
+            cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
+            return
         }
-        await deliver()
+        // No CGM correction (units mode, manual BG, or no carbs): freeze the on-screen values as-is.
+        await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
     }
 
-    private func deliver() async {
-        delivering = true
-        // Carbs/BG go to the pump as recorded metadata (graph / t:connect / Control-IQ) and are logged
-        // locally for the smart features — carb recording is centralized in the model now.
-        await model.deliverBolus(units: units, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: Int(bg))
-        delivering = false
-        finishDelivery()
+    /// Build the immutable proposal from confirmed values.
+    private func freeze(units u: Double, bg bgVal: Int?, extended: Bool) -> FrozenBolus {
+        FrozenBolus(units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
+                    extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
+                    extendedDurationMin: extended ? extendedDurationMin : nil)
     }
 
-    private func deliverExtended() async {
+    /// Deliver exactly the frozen proposal — the only place that calls the backend (audit C-04).
+    private func deliverFrozen(_ f: FrozenBolus) async {
         delivering = true
-        let now = units * Double(extendedNowPercent) / 100
-        await model.deliverExtendedBolus(totalUnits: units, nowUnits: now, durationMinutes: extendedDurationMin,
-                                         carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: Int(bg))
+        if let now = f.extendedNow, let dur = f.extendedDurationMin {
+            await model.deliverExtendedBolus(totalUnits: f.units, nowUnits: now, durationMinutes: dur,
+                                             carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl)
+        } else {
+            // Carbs/BG go to the pump as recorded metadata (graph / t:connect / Control-IQ) and are logged
+            // locally for the smart features — carb recording is centralized in the model.
+            await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl)
+        }
         delivering = false
         finishDelivery()
     }
