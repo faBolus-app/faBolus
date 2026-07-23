@@ -55,6 +55,10 @@ final class GarminRemoteBridge: NSObject {
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
+        // Phone tells the watch when to run wrist eating-sensing (battery: only when wanted).
+        model.onWantAccelSensing = { [weak self] on in
+            self?.sendRaw(["v": 1, "type": "eating_sense", "on": on])
+        }
         restoreDevice()
     }
 
@@ -107,6 +111,13 @@ final class GarminRemoteBridge: NSObject {
         } else {
             echoQueue.append(dict)
         }
+        pump()
+    }
+
+    /// Send an out-of-band control dict (e.g. eating_sense) to the watch — queued like an echo so it
+    /// respects the single-in-flight discipline. Not a RemoteCommand (no safety-critical schema).
+    private func sendRaw(_ dict: [String: Any]) {
+        echoQueue.append(dict)
         pump()
     }
 
@@ -166,7 +177,15 @@ final class GarminRemoteBridge: NSObject {
 // Connect IQ delegate callbacks (Obj-C, nonisolated) — hop onto the main actor.
 extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
     nonisolated func receivedMessage(_ message: Any!, from app: IQApp!) {
-        guard let dict = message as? [String: Any], let cmd = try? RemoteCommand.from(dict) else { return }
+        guard let dict = message as? [String: Any] else { return }
+        // Eating-detection IMU windows ride an out-of-band envelope (not the safety-critical
+        // RemoteCommand schema) — route them to phone-side inference before RemoteCommand parsing.
+        if dict["type"] as? String == "imu_window" {
+            let raw = (dict["data"] as? [Any])?.compactMap { ($0 as? NSNumber)?.floatValue } ?? []
+            Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
+            return
+        }
+        guard let cmd = try? RemoteCommand.from(dict) else { return }
         Task { @MainActor in self.handle(cmd) }
     }
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {}

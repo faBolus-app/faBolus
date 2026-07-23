@@ -18,6 +18,40 @@ struct DashboardView: View {
                     // and Garmin setup live in the Settings tab now (not the toolbar).
                     StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
+                    if let hypo = model.hypoWarning {
+                        HStack {
+                            Label(hypo.message, systemImage: "arrow.down.circle.fill")
+                                .font(.subheadline).foregroundStyle(.orange)
+                            Spacer()
+                            Button { model.dismissHypoWarning() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                    }
+
+                    if let eating = model.eatingNudge {
+                        HStack {
+                            // Tapping = "yes, I'm eating" → open Bolus + teach the on-device personalizer.
+                            Button {
+                                model.eatingNudgeActedOn()
+                                if !settings.phoneReadOnly { model.openBolusRequested = true }
+                            } label: {
+                                Label(eating.message, systemImage: "fork.knife")
+                                    .font(.subheadline).foregroundStyle(.orange)
+                            }.buttonStyle(.plain)
+                            Spacer()
+                            Button { model.dismissEatingNudge() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                    }
+
                     AlertsBannerView(model: model)
 
                     if let pending = model.pendingApproval {
