@@ -586,7 +586,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         signingTimestamp = time.currentTime
 
         let previous = client.writePolicy
-        client.writePolicy = .allowNonDelivery
+        // Dismissing an alert is a BENIGN signed op (audit P-01) — it needs only the benign tier, not the
+        // therapy-config-capable `.allowNonDelivery`.
+        client.writePolicy = .allowBenignControl
         defer { client.writePolicy = previous; releasePumpTx() }
         lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
         alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
