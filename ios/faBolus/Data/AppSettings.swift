@@ -42,6 +42,11 @@ public final class AppSettings {
     /// Predictive-low (hypo) alerts (GlucoseIntelligenceKit). **OFF by default** — advisory in-app warning.
     public var hypoAlertsEnabled: Bool { didSet { d.set(hypoAlertsEnabled, forKey: "hypoAlertsEnabled") } }
 
+    /// Cached basal schedule (24 hourly U/hr) for settings-advice/autotune, from an external source
+    /// (Nightscout profile) or the pump. Empty = unknown. `basalScheduleSource` labels its origin.
+    public var basalScheduleByHour: [Double] { didSet { d.set(basalScheduleByHour, forKey: "basalScheduleByHour") } }
+    public var basalScheduleSource: String { didSet { d.set(basalScheduleSource, forKey: "basalScheduleSource") } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -275,6 +280,8 @@ public final class AppSettings {
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
         hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
+        basalScheduleByHour = (d.array(forKey: "basalScheduleByHour") as? [Double]) ?? []
+        basalScheduleSource = d.string(forKey: "basalScheduleSource") ?? ""
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false

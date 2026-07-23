@@ -423,23 +423,71 @@ public final class AppModel {
         return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
     }
 
+    /// Best available basal schedule (24 hourly U/hr) — external (Nightscout profile) or pump. nil if unknown.
+    public func basalByHour() -> [Double]? {
+        let s = AppSettings.shared.basalScheduleByHour
+        return s.count == 24 ? s : nil
+    }
+    /// Human label for where the basal schedule came from ("" if none).
+    public var basalScheduleSource: String { AppSettings.shared.basalScheduleSource }
+
     /// Insulin-sensitivity assessment (autosens-style) over the last ~14 days of stored data.
     public func sensitivityState() -> SensitivityMonitor.State? {
         guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
         let range = Date().addingTimeInterval(-14 * 86400)...Date()
         return SmartAssist.sensitivity(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                       carbs: history.carbs(in: range), isf: snapshot.isf,
-                                       carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+                                       carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
+                                       isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
     }
 
-    /// Settings advice (ISF / carb-ratio from the user's own outcomes). Basal advice is omitted until the
-    /// pump's basal schedule is persisted. Needs weeks of data for confidence.
+    /// Settings advice (ISF / carb-ratio, and basal drift once a basal schedule is available). Advisory;
+    /// needs weeks of data for confidence.
     public func settingsAdvice() -> TherapyAdvice? {
         guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
         let range = Date().addingTimeInterval(-30 * 86400)...Date()
         return SmartAssist.settingsAdvice(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                          carbs: history.carbs(in: range), isf: snapshot.isf,
-                                          carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+                                          carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
+                                          isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
+    }
+
+    private var lastNSBackfill = Date.distantPast
+    /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
+    /// schedule into faBolus. Throttled hourly. Best-effort/background.
+    private func maybeBackfillNightscout() {
+        guard GlucoseSourceConfig.string("nightscout.url") != nil,
+              Date().timeIntervalSince(lastNSBackfill) > 3600 else { return }
+        lastNSBackfill = Date()
+        let nsPrimary = GlucoseSourceRegistry.selectedId() == "nightscout"
+        Task { [weak self] in
+            guard let r = await NightscoutBackfill.fetch() else { return }
+            await MainActor.run {
+                guard let self else { return }
+                if nsPrimary {   // else the pump already provides boluses/carbs — avoid double-counting
+                    self.history?.ingestCarbs(r.carbs, sourceID: "nightscout")
+                    self.history?.ingestBoluses(r.insulin.map { BolusMarker(date: $0.date, units: $0.units) },
+                                                sourceID: "nightscout")
+                }
+                if let b = r.basalByHour, b.count == 24, AppSettings.shared.basalScheduleSource != "Pump" {
+                    AppSettings.shared.basalScheduleByHour = b
+                    AppSettings.shared.basalScheduleSource = "Nightscout"
+                }
+            }
+        }
+    }
+
+    /// Capture the pump's active basal schedule (fallback when no external profile is available).
+    public func captureBasalScheduleFromPump() async {
+        guard snapshot.connection == .connected else { return }
+        let backup = await readPumpSettingsForBackup()
+        guard let active = backup.profiles.first(where: { $0.active }) ?? backup.profiles.first,
+              !active.segments.isEmpty else { return }
+        let segs = active.segments.sorted { $0.startTimeMinutes < $1.startTimeMinutes }
+        let byHour: [Double] = (0..<24).map { hour in
+            let m = hour * 60
+            return (segs.last { $0.startTimeMinutes <= m } ?? segs[0]).basalRateUnitsPerHour
+        }
+        AppSettings.shared.basalScheduleByHour = byHour
+        AppSettings.shared.basalScheduleSource = "Pump"
     }
 
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
@@ -479,6 +527,7 @@ public final class AppModel {
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         updateHypoWarning()
+        maybeBackfillNightscout()
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
