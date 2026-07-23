@@ -255,13 +255,22 @@ struct BolusEntryView: View {
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
         .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
-        // Keep the CGM as fresh as possible while the screen is open: re-pull every 30 s and tick the
-        // age label. The task is cancelled automatically when the screen closes (no background drain).
+        // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
+        // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
+        // actually aging (>90 s); otherwise the app-wide predictive poll has already refreshed it, so
+        // there's zero extra BLE traffic. The loop self-stops after ~30 min so a screen left open by
+        // accident can't drain battery or flood the pump, and it's cancelled outright when the screen
+        // closes. `refreshGlucoseNow` itself no-ops unless the pump is connected (never during a bolus).
         .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            var ticks = 0
+            while !Task.isCancelled && ticks < 30 {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
                 if Task.isCancelled { break }
-                await model.refreshGlucoseNow(); syncBGFromCGM(); tick = Date()
+                ticks += 1
+                tick = Date()   // refresh the "N min ago" label
+                if let d = model.snapshot.glucoseDate, Date().timeIntervalSince(d) > 90 {
+                    await model.refreshGlucoseNow(); syncBGFromCGM()
+                }
             }
         }
         .toolbar {
