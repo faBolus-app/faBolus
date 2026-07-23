@@ -10,6 +10,7 @@ copyright: >-
 
 theme:
   name: material
+  custom_dir: overrides   # persistent safety banner lives in overrides/main.html (block announce)
   language: en
   font:
     text: Inter

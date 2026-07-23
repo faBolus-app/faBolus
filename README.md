@@ -1,3 +1,10 @@
+> [!CAUTION]
+> **Not a medical device — do not use it for treatment decisions.** faBolus is experimental software
+> under active development. It is **not FDA-cleared or approved** and has **not** been clinically
+> validated. **Do not rely on it to make or carry out any insulin-dosing, treatment, or other clinical
+> decision.** It is for software development and evaluation only — always confirm every reading and dose
+> directly on your pump and CGM, and talk to your healthcare provider about your therapy.
+
 # faBolus
 
 A remote-bolus and status-viewing app — iPhone, Apple Watch, Garmin, a Mac menu-bar app, and a
@@ -72,14 +79,6 @@ with no code) and pair t:connect only when you need an official-app-only setting
 faBolus. To make that re-pair a easier on a **Tandem Mobi** (whose PIN is fixed), faBolus offers to
 **save the PIN** the first time it recognizes a Mobi, so switching back is a bit easier; you can clear or
 change it on the Connect screen. More in the [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
-
-## Known limitations (being worked on)
-
-1. **Garmin BG complication reading 0** — a fix is in (the publisher now writes the numeric value in a
-   guaranteed minimal update, so a firmware-rejected extra param can't leave it at 0); **pending
-   on-device verification** on the venu3s.
-2. **Alert clear doesn't reach the pump.** Clearing an alert removes it from the phone and watch UI
-   **but does not clear it on the pump itself**.
 
 ## Layout
 

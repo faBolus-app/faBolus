@@ -42,13 +42,12 @@ dismiss acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack
 
 Clearing sends a **signed `DismissNotificationRequest`** with the notification's id and kind. It's
 signed like a bolus but does **not** modify insulin delivery, so it runs under a restricted
-"non-delivery" write policy.
+**benign-control** write policy (it can acknowledge alerts but physically can't dispense insulin). The
+pump's dismiss acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack N (rejected)`).
 
-!!! warning "Known issue — clearing doesn't reach the pump yet"
-    Clearing currently removes the alert from the **phone and watch UI but does not clear it on the
-    pump itself**. The dismiss path is validated by construction (its bytes are asserted exactly and
-    it uses the same signing/framing proven byte-exact for boluses), but it isn't yet dismissing on
-    the pump in practice. A fix is in progress — don't rely on it to clear alerts on the pump.
+Acknowledgeable pump alerts and alarms clear on the pump this way. **Condition-based CGM alerts** (see
+above) are the exception: the pump keeps re-raising them while glucose is out of range, so faBolus
+snoozes those on your phone instead of dismissing on the pump.
 
 ## Conditional auto-rules
 

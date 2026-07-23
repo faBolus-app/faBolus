@@ -86,15 +86,16 @@ faBolus adapts to your device automatically:
 
 ## BG complication
 
-The app publishes a **public BG complication** (value + a trend arrow, no units) that Garmin
-**Face It** faces and Connect IQ faces can show on your watch face. A reading older than 6
-minutes shows `--`. It refreshes while the app is open and via a background refresh (~5 min);
-fresh data needs the iPhone app open and connected.
+The app publishes a **public BG complication** (a numeric value + a trend arrow) that Garmin
+**Face It** faces and Connect IQ faces can show on your watch face; the number is range-colored by the
+face. It refreshes while the app is open and via a background refresh (~5 min); fresh data needs the
+iPhone app open and connected.
 
-!!! note "Fixed — pending on-device verification"
-    The BG complication previously showed `0` instead of the live CGM value. The publisher now
-    writes a numeric value first so the complication updates. This is fixed pending final
-    verification on real hardware.
+!!! note "Complication staleness"
+    A numeric complication can't render `--`, so when a reading goes stale the trend arrow is dropped
+    but the last number stays on screen — the complication can lag the CGM (and shows nothing new while
+    the phone is unreachable). Use the in-app screens, or the "value + trend" **string** display mode,
+    when you need staleness called out. Set the style in **Settings → Remotes & devices**.
 
 <figure class="cx2-shot watch" markdown="span">
   ![Garmin BG complication](../assets/screenshots/garmin-complication.svg)
