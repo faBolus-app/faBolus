@@ -129,7 +129,7 @@ struct GetConnectionIntent: AppIntent {
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<Bool> & ProvidesDialog {
         let s = try loadSnap()
-        return .result(value: s.connected, dialog: s.connected ? "Connected" : "Not connected")
+        return .result(value: s.connected, dialog: IntentDialog(stringLiteral: s.connected ? "Connected" : "Not connected"))
     }
 }
 
@@ -139,7 +139,7 @@ struct GetCGMActiveIntent: AppIntent {
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<Bool> & ProvidesDialog {
         let s = try loadSnap()
-        return .result(value: s.cgmActive, dialog: s.cgmActive ? "CGM active" : "CGM inactive")
+        return .result(value: s.cgmActive, dialog: IntentDialog(stringLiteral: s.cgmActive ? "CGM active" : "CGM inactive"))
     }
 }
 

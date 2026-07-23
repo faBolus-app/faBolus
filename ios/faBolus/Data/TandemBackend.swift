@@ -244,8 +244,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         pumpTxBusy = false
         if !pumpTxWaiters.isEmpty { pumpTxWaiters.removeFirst().resume() }
     }
-    /// Run a signed/control transaction under the serialization lock.
-    private func withPumpTx<T>(_ body: () async throws -> T) async throws -> T {
+    /// Run a signed/control transaction under the serialization lock. `body` is `@MainActor` so its
+    /// (possibly non-Sendable) result doesn't cross an actor boundary back to this @MainActor method —
+    /// Swift 6 strict concurrency on older toolchains (the CI Xcode) rejects the nonisolated form.
+    private func withPumpTx<T>(_ body: @MainActor () async throws -> T) async throws -> T {
         await acquirePumpTx()
         defer { releasePumpTx() }
         return try await body()
