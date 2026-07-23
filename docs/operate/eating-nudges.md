@@ -79,6 +79,9 @@ With **Learn from my feedback** on (the default), the nudge adapts to you — al
 
 - **Tapping the nudge** ("yes, I'm eating") opens the bolus screen and counts as a real meal.
 - **Dismissing it** (✕) counts as a false alert.
+- **Pre-bolusing** — if you bolus and then the model recognizes eating shortly after, faBolus records
+  that as a real meal **silently** (no nudge, since you already dosed). So pre-bolused meals still
+  teach the detector, even though you were never prompted.
 
 Over time this **raises the wrist threshold** for people who get false alerts (fewer interruptions),
 and — when the bundled model supports on-device updates — **fine-tunes the model** to your own motion.

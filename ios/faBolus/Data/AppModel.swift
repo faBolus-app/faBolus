@@ -45,6 +45,8 @@ public final class AppModel {
     /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
     @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
     @ObservationIgnored private var lastWantAccel = false
+    /// De-dupes eating "positive" training examples to ~one per meal (nudge-acted OR silent pre-bolus).
+    @ObservationIgnored private var lastEatingPositiveAt = Date.distantPast
     private(set) var eatingNudge: EatingAlert?
 
     private func setWantAccelSensing(_ on: Bool) {
@@ -81,6 +83,7 @@ public final class AppModel {
         if AppSettings.shared.eatingLearnFromFeedback {
             eatingPersonalization.recordFeedback(eating: true, window: lastAccelWindowRaw)
         }
+        lastEatingPositiveAt = Date()   // de-dupe against the silent pre-bolus positive path
         eatingLocation.recordMealHere()
         eatingNudge = nil
     }
@@ -624,6 +627,18 @@ public final class AppModel {
         let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
                                     cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
                                     atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
+
+        // Silent positive training example: eating is *recognized* but the nudge is gated by a recent
+        // bolus → you pre-bolused. No prompt (you already dosed), but label it a true meal for the
+        // on-device personalizer/trainer. Debounced to ~one per meal; window passed only when fresh.
+        if AppSettings.shared.eatingLearnFromFeedback,
+           eatingEngine.signalsMet(signals),
+           minsSinceBolus < Double(cfg.minMinutesSinceBolus),
+           Date().timeIntervalSince(lastEatingPositiveAt) > 90 * 60 {
+            lastEatingPositiveAt = Date()
+            eatingPersonalization.recordFeedback(eating: true, window: accelFresh != nil ? lastAccelWindowRaw : nil)
+            eatingLocation.recordMealHere()
+        }
 
         if case .fire = eatingEngine.evaluate(signals) {
             if case .suppress = alertIntel.decide(AlertIntelligenceKit.Alert(kind: "eating", severity: 1)) { return }

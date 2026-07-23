@@ -71,6 +71,20 @@ public final class EatingTriggerEngine {
     public func setConfig(_ c: EatingTriggerConfig) { config = c; conditionSince = nil }
     public func reset() { conditionSince = nil }
 
+    /// Whether the accel/CGM signals meet the configured combination (ignores the bolus/location
+    /// gates and the confirmation delay). Used to detect that eating was *recognized* even when a nudge
+    /// is suppressed — e.g. a pre-bolus meal, which is a silent positive training example.
+    public func signalsMet(_ s: EatingSignals) -> Bool {
+        let accelPos = (s.accelProb ?? -1) >= config.accelThreshold
+        let cgmPos = (s.cgmMealScore ?? -1) >= config.cgmMealThreshold
+        switch config.mode {
+        case .accelOnly:                 return accelPos
+        case .cgmOnly:                   return cgmPos
+        case .either:                    return accelPos || cgmPos
+        case .bothAlways, .cgmThenAccel: return accelPos && cgmPos   // cgmThenAccel differs only in *when*
+        }                                                            // accel is sensed (wiring/battery)
+    }
+
     public func evaluate(_ s: EatingSignals, now: Date = Date()) -> EatingDecision {
         if s.minutesSinceBolus < Double(config.minMinutesSinceBolus) {
             conditionSince = nil
@@ -81,16 +95,7 @@ public final class EatingTriggerEngine {
             return .suppress(reason: "not at a meal location")
         }
 
-        let accelPos = (s.accelProb ?? -1) >= config.accelThreshold
-        let cgmPos = (s.cgmMealScore ?? -1) >= config.cgmMealThreshold
-        let met: Bool
-        switch config.mode {
-        case .accelOnly:                 met = accelPos
-        case .cgmOnly:                   met = cgmPos
-        case .either:                    met = accelPos || cgmPos
-        case .bothAlways, .cgmThenAccel: met = accelPos && cgmPos   // cgmThenAccel differs only in *when*
-        }                                                            // accel is sensed (wiring/battery)
-        guard met else {
+        guard signalsMet(s) else {
             conditionSince = nil
             return .hold(reason: "signals not met")
         }

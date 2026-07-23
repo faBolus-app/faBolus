@@ -13,6 +13,23 @@ final class EatingTriggerTests: XCTestCase {
         XCTAssertEqual(e.evaluate(s, now: t0), .suppress(reason: "bolused in the last 20 min"))
     }
 
+    // `signalsMet` reports recognition regardless of the bolus/location gates — this is what lets the
+    // app capture a pre-bolus meal (recognized, but the nudge is gated) as a silent positive example.
+    func testSignalsMetIgnoresGates() {
+        var c = EatingTriggerConfig(); c.mode = .accelOnly; c.accelThreshold = 0.85
+        let e = EatingTriggerEngine(config: c)
+        XCTAssertTrue(e.signalsMet(EatingSignals(accelProb: 0.9)))
+        XCTAssertFalse(e.signalsMet(EatingSignals(accelProb: 0.5)))
+        // Recognized even with a very recent bolus (the gate is separate) — the pre-bolus case.
+        XCTAssertTrue(e.signalsMet(EatingSignals(accelProb: 0.9, minutesSinceBolus: 2)))
+        // But the full decision still suppresses the *nudge* on that recent bolus.
+        var c0 = c; c0.confirmationDelaySeconds = 0
+        let e0 = EatingTriggerEngine(config: c0)
+        if case .suppress = e0.evaluate(EatingSignals(accelProb: 0.9, minutesSinceBolus: 2), now: t0) {} else {
+            XCTFail("nudge should be suppressed by the recent bolus")
+        }
+    }
+
     func testLocationGateSuppressesWhenNotAtMealPlace() {
         var c = EatingTriggerConfig(); c.mode = .either; c.confirmationDelaySeconds = 0; c.locationEnabled = true
         let e = EatingTriggerEngine(config: c)
