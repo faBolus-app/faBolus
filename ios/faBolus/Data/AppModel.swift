@@ -1108,15 +1108,30 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
             return
         }
-        // Resolve the authoritative dose.
+        // Resolve the authoritative dose. `recordedBg` is the glucose the dose was actually computed
+        // from — it is what we send to the pump as metadata, so the record can't disagree with the
+        // dose input (audit C-06).
         let dose: Double
+        var recordedBg: Int? = bgMgdl
         if let carbs = carbsGrams, carbs > 0 {
-            // Pull the freshest CGM before computing a correction (unless the remote sent its own BG).
-            if bgMgdl == nil { await refreshGlucoseNow() }
-            let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: bgMgdl ?? snapshot.glucose)
+            // The remote's own estimate is REQUIRED for a carb request: without it the divergence guard
+            // can't run, so fail closed rather than open (audit C-06).
+            guard let est = remoteEstimate, est.isFinite else {
+                let msg = "Missing dose estimate — reopen the remote and try again."
+                echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+                lastError = msg; notifyRemoteBolusRejected(msg)
+                return
+            }
+            // A correction must use a FRESH HOST reading, never the client-supplied BG (audit C-06/A-04):
+            // force a host CGM read and use it only if it passes the same freshness rule as the UI.
+            // Otherwise fall back to a carbs-only (food) dose — never silently correct off a stale value.
+            await refreshGlucoseNow()
+            let freshBg: Int? = (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
+            recordedBg = freshBg
+            let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
             dose = rec.recommendedUnits
-            // Wrist/Mac-vs-host divergence guard (fail safe).
-            if let est = remoteEstimate, abs(dose - est) > Self.remoteDivergenceLimitUnits {
+            // Wrist/Mac-vs-host divergence guard (advisory defense-in-depth, not authentication).
+            if abs(dose - est) > Self.remoteDivergenceLimitUnits {
                 let msg = String(format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
                 echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
                 lastError = msg
@@ -1125,6 +1140,7 @@ public final class AppModel {
             }
         } else {
             dose = units ?? 0
+            recordedBg = bgMgdl
         }
         guard dose > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
@@ -1151,7 +1167,7 @@ public final class AppModel {
         }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
-            let delivered = try await source.deliverBolus(units: dose, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            let delivered = try await source.deliverBolus(units: dose, carbsGrams: carbsGrams, bgMgdl: recordedBg)
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
