@@ -60,6 +60,20 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug CODE_SIGNING_ALLOWED=NO build
 
+      # Audit C-08: behavioral e2e for the remote-delivery decision logic — divergence guard,
+      # freeze-before-approve (C-02), child/read-only action gates (A-05), idempotency wiring
+      # (A-02) — running the real AppModel against MockBackend on a booted Simulator. A concrete
+      # destination (not `generic/…`) is required to actually run the tests.
+      - name: Run app behavioral tests (Simulator)
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          DEST=$(xcrun simctl list devices available | grep -Eo 'iPhone [0-9]+' | head -1)
+          echo "Testing on: ${DEST:-iPhone 16}"
+          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
+            -destination "platform=iOS Simulator,name=${DEST:-iPhone 16}" \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO test
+
   watch-build:
     name: watchOS app + complication build
     runs-on: macos-15
