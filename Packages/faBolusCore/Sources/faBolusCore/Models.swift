@@ -287,5 +287,11 @@ public struct BolusRecommendation: Sendable, Equatable {
     public var bgMgdl: Int? = nil
     public var recommendedUnits: Double = 0
     public var iobUnits: Double = 0
+    /// False when the pump's verified bolus-calculator profile (carb ratio / ISF / target) was not
+    /// available and `assumedProfile` was used instead. Callers MUST require an explicit user
+    /// confirmation of the assumed values before delivering, and never auto-deliver (audit C-01).
+    public var inputsVerified: Bool = true
+    /// The assumed profile used when `inputsVerified == false`, so the UI can show and confirm it.
+    public var assumedProfile: BolusMath.Profile? = nil
     public init() {}
 }

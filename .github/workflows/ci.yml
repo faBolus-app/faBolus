@@ -16,9 +16,63 @@ jobs:
       - name: Contract drift check
         run: ./scripts/check-schema-drift.sh
 
+      # Provenance chain (audit L-01): every vendored/local package must carry a LICENSE + an SBOM row.
+      - name: SBOM / license provenance check
+        run: ./scripts/check-sbom.sh
+
       # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
+
+  ios-build:
+    name: iOS app build (TandemBackend / AppModel / widgets)
+    runs-on: macos-15
+    steps:
+      # Two-level checkout so the project's relative package paths resolve (see watch-build).
+      - name: Checkout faBolus
+        uses: actions/checkout@v4
+        with:
+          path: repos/faBolus
+
+      - name: Checkout PumpX2Kit (local package dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: faBolus-app/PumpX2Kit
+          submodules: recursive
+          path: repos/PumpX2Kit
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Generate with the credential-gated pieces stripped (no private Nudge SDK, no Garmin SDK), then
+      # build the full iOS app for the Simulator. This is the audit-T-01 gap: the iOS app — TandemBackend
+      # (signed bolus flow, transaction serialization), AppModel.remoteDeliver, the widget receiver, and
+      # the pairing hosts — was never compiled in CI before, only faBolusCore + the watch.
+      - name: Generate the Xcode project (no private SDK, no Garmin)
+        working-directory: repos/faBolus
+        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+
+      - name: Build iOS app (Simulator, signing off)
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
+      # Audit C-08: behavioral e2e for the remote-delivery decision logic — divergence guard,
+      # freeze-before-approve (C-02), child/read-only action gates (A-05), idempotency wiring
+      # (A-02) — running the real AppModel against MockBackend on a booted Simulator. A concrete
+      # destination (not `generic/…`) is required to actually run the tests.
+      - name: Run app behavioral tests (Simulator)
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          DEST=$(xcrun simctl list devices available | grep -Eo 'iPhone [0-9]+' | head -1)
+          echo "Testing on: ${DEST:-iPhone 16}"
+          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
+            -destination "platform=iOS Simulator,name=${DEST:-iPhone 16}" \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO test
 
   watch-build:
     name: watchOS app + complication build

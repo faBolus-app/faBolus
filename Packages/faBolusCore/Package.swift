@@ -12,6 +12,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "faBolusCore"),
-        .testTarget(name: "faBolusCoreTests", dependencies: ["faBolusCore"]),
+        .testTarget(name: "faBolusCoreTests", dependencies: ["faBolusCore"],
+                    resources: [.process("Fixtures")]),
     ]
 )

@@ -17,8 +17,10 @@ public struct G7GlucoseMessage: Equatable {
     public let age: UInt16
 
     public var hasReliableGlucose: Bool { algorithmState.hasReliableGlucose }
-    /// Sensor-clock timestamp (seconds since pairing) of the glucose reading itself.
-    public var glucoseTimestamp: UInt32 { messageTimestamp - UInt32(age) }
+    /// Sensor-clock timestamp (seconds since pairing) of the glucose reading itself. Guard the unsigned
+    /// subtraction: a malformed sensor frame where `age > messageTimestamp` would otherwise underflow
+    /// and trap (audit A-07).
+    public var glucoseTimestamp: UInt32 { messageTimestamp >= UInt32(age) ? messageTimestamp - UInt32(age) : 0 }
     public var trendDirection: G7TrendDirection? { G7TrendDirection(rate: trend) }
 
     public init?(data: Data) {

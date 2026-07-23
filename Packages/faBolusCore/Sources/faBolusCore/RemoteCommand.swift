@@ -202,6 +202,109 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try decode(try JSONSerialization.data(withJSONObject: dict))
     }
 
+    // MARK: Runtime validation (audit A-07)
+    // `Codable` alone accepts any well-formed JSON — including a wrong schema version, an out-of-range
+    // or non-finite dose, an unbounded id/string, or a megabyte-long array — before the backend clamp
+    // is ever reached. Validated decoders enforce a hard byte cap + per-field bounds on every command
+    // arriving from an (untrusted) transport, so malformed input fails closed instead of trapping or
+    // exhausting memory. The final dose clamp in the backend remains the last line of defense.
+
+    public enum ValidationError: Error, Equatable, CustomStringConvertible {
+        case tooLarge(Int)
+        case badVersion(Int)
+        case badRequestId
+        case oversizedString(String)
+        case nonFinite(String)
+        case outOfRange(String)
+        case tooManyElements(String)
+        public var description: String {
+            switch self {
+            case .tooLarge(let n):        return "command too large (\(n) bytes)"
+            case .badVersion(let v):      return "unsupported schema version \(v)"
+            case .badRequestId:           return "missing or oversized requestId"
+            case .oversizedString(let f): return "oversized string field: \(f)"
+            case .nonFinite(let f):       return "non-finite number: \(f)"
+            case .outOfRange(let f):      return "value out of range: \(f)"
+            case .tooManyElements(let f): return "too many elements: \(f)"
+            }
+        }
+    }
+
+    public static let maxEncodedBytes = 32 * 1024
+    public static let maxRequestIdLength = 128
+    public static let maxStringLength = 1024
+    public static let maxBlobLength = 16 * 1024      // base64 sealed payload / token
+    public static let maxArrayCount = 1024
+
+    /// Decode with a hard byte cap and full field validation. Use on every untrusted transport path.
+    public static func decodeValidated(_ data: Data) throws -> RemoteCommand {
+        guard data.count <= maxEncodedBytes else { throw ValidationError.tooLarge(data.count) }
+        let cmd = try JSONDecoder().decode(RemoteCommand.self, from: data)
+        try cmd.validate()
+        return cmd
+    }
+
+    /// Validated `[String: Any]` decode (WatchConnectivity / Garmin dictionaries).
+    public static func fromValidated(_ dict: [String: Any]) throws -> RemoteCommand {
+        try decodeValidated(try JSONSerialization.data(withJSONObject: dict))
+    }
+
+    /// Enforce schema version, id/string/array bounds, and finite, non-negative, in-range numbers.
+    public func validate() throws {
+        guard version == Self.schemaVersion else { throw ValidationError.badVersion(version) }
+        guard !requestId.isEmpty, requestId.count <= Self.maxRequestIdLength else { throw ValidationError.badRequestId }
+
+        // Every Double field must be finite (rejects NaN/Inf smuggled via non-JSON encoders).
+        let allDoubles: [(String, Double?)] = [
+            ("units", units), ("carbsGrams", carbsGrams), ("bgMgdl", bgMgdl),
+            ("deliveredUnits", deliveredUnits), ("remoteEstimateUnits", remoteEstimateUnits),
+            ("extendedNowUnits", extendedNowUnits), ("carbRatio", carbRatio), ("isf", isf),
+            ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
+            ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
+            ("glucoseAgeSec", glucoseAgeSec), ("eatingProb", eatingProb),
+        ]
+        for (name, v) in allDoubles where v != nil {
+            guard v!.isFinite else { throw ValidationError.nonFinite(name) }
+        }
+
+        // Dose-defining inputs: non-negative + sane upper bounds (the backend clamp is the hard limit).
+        func range(_ name: String, _ v: Double?, _ lo: Double, _ hi: Double) throws {
+            if let v, v < lo || v > hi { throw ValidationError.outOfRange(name) }
+        }
+        try range("units", units, 0, 100)
+        try range("carbsGrams", carbsGrams, 0, 2000)
+        try range("bgMgdl", bgMgdl, 0, 2000)
+        try range("deliveredUnits", deliveredUnits, 0, 100)
+        try range("remoteEstimateUnits", remoteEstimateUnits, 0, 100)
+        try range("extendedNowUnits", extendedNowUnits, 0, 100)
+        try range("eatingProb", eatingProb, 0, 1)
+        if let m = extendedMinutes, m < 0 || m > 24 * 60 { throw ValidationError.outOfRange("extendedMinutes") }
+
+        // String length caps.
+        let strings: [(String, String?)] = [
+            ("message", message), ("confirmToken", confirmToken), ("trend", trend),
+            ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
+            ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
+            ("authNonce", authNonce), ("authProof", authProof),
+        ]
+        for (name, s) in strings where s != nil {
+            guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }
+        }
+        for (name, s) in [("sealedPayload", sealedPayload), ("authSealedToken", authSealedToken)] where s != nil {
+            guard s!.count <= Self.maxBlobLength else { throw ValidationError.oversizedString(name) }
+        }
+
+        // Array element caps.
+        let arrays: [(String, Int?)] = [
+            ("history", history?.count), ("historyEpochs", historyEpochs?.count),
+            ("alerts", alerts?.count), ("screenOrder", screenOrder?.count),
+            ("detailsOrder", detailsOrder?.count), ("watchChartRanges", watchChartRanges?.count),
+        ]
+        for (name, c) in arrays where c != nil {
+            guard c! <= Self.maxArrayCount else { throw ValidationError.tooManyElements(name) }
+        }
+    }
+
     /// Build a pairing-handshake command (see `MacPairing`, `PeerRemoteHost`, `MacRemoteModel`).
     public static func auth(_ kind: Kind, clientId: String? = nil, nonce: String? = nil,
                             proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,

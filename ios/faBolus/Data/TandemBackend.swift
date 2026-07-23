@@ -126,8 +126,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Latest bolus-calculator settings (carb ratio / ISF / target) for recommendBolus.
     private var calcSnapshot: BolusCalcDataSnapshotResponse?
 
-    private static let food2 = 8   // manual units-only bolus type
-    private static let food2Extended = 12   // FOOD2(8) | EXTENDED(4) — combo/extended bolus (oracle-verified)
+    // Oracle bolus-type bits (audit C-07, BolusDeliveryHistoryLog.BolusType): FOOD1 is used when there
+    // ARE carbs, FOOD2 when there are none. `perform` selects between them by carb presence and OR-s in
+    // EXTENDED for a combo bolus — it no longer hard-codes FOOD2 with carbs populated (which was
+    // internally inconsistent with the reverse-engineered reference).
+    private static let food1 = 1    // carbs present
+    private static let food2 = 8    // units-only (no carbs)
+    private static let extendedBit = 4
+    private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion (audit C-07)
     /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
@@ -168,30 +174,107 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
     private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
     private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
-    /// Resumed when the next CGM reading arrives, for `refreshGlucoseNow()`. Void (best-effort).
-    private var glucoseReadCont: CheckedContinuation<Void, Never>?
+    // Single-flight glucose refresh (audit C-05). Concurrent callers coalesce onto ONE in-flight pump
+    // read and are all resumed exactly once when the CGM reading arrives, on timeout, or on disconnect —
+    // fixing the old single-slot design where a second caller orphaned the first (permanent hang) and a
+    // stale timeout could resume a newer request. The generation tag makes a timeout a no-op once its
+    // read has completed.
+    private var glucoseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var glucoseReadGeneration = 0
+    private var glucoseReadInFlight = false
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
 
-    /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile).
+    /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile). Both carry a
+    /// bounded timeout (audit A-03) so a single lost status reply can't freeze the poll loop past its
+    /// deadline; the timeout is gated on `pumpTxGeneration` so it can't misfire onto a later transaction.
     private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
-        try await withCheckedThrowingContinuation { cont in
+        let gen = pumpTxGeneration
+        return try await withCheckedThrowingContinuation { cont in
             bolusStatusCont = cont
+            scheduleResponseTimeout(seconds: 4) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.bolusStatusCont else { return }
+                self.bolusStatusCont = nil; c.resume(throwing: BolusError.pumpRejected("no bolus-status response (timeout)"))
+            }
             do { try client.send(CurrentBolusStatusRequest()) } catch { bolusStatusCont = nil; cont.resume(throwing: error) }
         }
     }
     private func lastBolusStatus() async throws -> LastBolusStatusV2Response {
-        try await withCheckedThrowingContinuation { cont in
+        let gen = pumpTxGeneration
+        return try await withCheckedThrowingContinuation { cont in
             lastBolusCont = cont
+            scheduleResponseTimeout(seconds: 4) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.lastBolusCont else { return }
+                self.lastBolusCont = nil; c.resume(throwing: BolusError.pumpRejected("no last-bolus response (timeout)"))
+            }
             do { try client.send(LastBolusStatusV2Request()) } catch { lastBolusCont = nil; cont.resume(throwing: error) }
         }
     }
 
     public var writePolicy: PumpBLEClient.WritePolicy {
         get { client.writePolicy } set { client.writePolicy = newValue }
+    }
+
+    // MARK: - Signed-transaction serialization (audit A-03)
+    // Every top-level signed/control workflow (bolus, suspend/resume, temp-basal, modes, cartridge,
+    // dismiss-notification) runs under this async lock so two never interleave and clobber each other's
+    // response continuation slot. The in-bolus status polls + `cancelBolus` are intentionally NOT gated:
+    // they operate within / against the already-held bolus transaction. `@MainActor` gives mutual
+    // exclusion between awaits; the lock adds it across them.
+    private var pumpTxBusy = false
+    private var pumpTxWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Bumped on each acquire so a stale per-request timeout from a prior transaction can't fire on a
+    /// later one that happens to reuse the same continuation slot.
+    private var pumpTxGeneration = 0
+    /// True while a bolus (standard/extended) is mid-flight — a second delivery is rejected, not queued
+    /// (queuing manual double-taps would double-dose). Set synchronously right after the guard.
+    private var deliveryInProgress = false
+
+    private func acquirePumpTx() async {
+        while pumpTxBusy {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in pumpTxWaiters.append(c) }
+        }
+        pumpTxBusy = true
+        pumpTxGeneration &+= 1
+    }
+    private func releasePumpTx() {
+        pumpTxBusy = false
+        if !pumpTxWaiters.isEmpty { pumpTxWaiters.removeFirst().resume() }
+    }
+    /// Run a signed/control transaction under the serialization lock.
+    private func withPumpTx<T>(_ body: () async throws -> T) async throws -> T {
+        await acquirePumpTx()
+        defer { releasePumpTx() }
+        return try await body()
+    }
+
+    /// Fire `fire` after `seconds` on the main actor — used as a per-request response watchdog so a lost
+    /// pump reply can't suspend a signed transaction forever (which would also skip the `defer` that
+    /// restores `writePolicy`). The closure is a no-op if its transaction generation is stale or the
+    /// continuation slot has already been cleared by the real response.
+    private func scheduleResponseTimeout(seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            fire()
+        }
+    }
+
+    /// Resume EVERY outstanding signed-flow continuation with an error (audit A-03). Called on disconnect
+    /// and on a transport/parse error so a lost pump response can't leave a signed transaction suspended
+    /// forever. Idempotent: each slot is nil-checked and cleared.
+    private func failPumpWaiters(_ error: Error) {
+        timeCont?.resume(throwing: error); timeCont = nil
+        permissionCont?.resume(throwing: error); permissionCont = nil
+        initiateCont?.resume(throwing: error); initiateCont = nil
+        bolusStatusCont?.resume(throwing: error); bolusStatusCont = nil
+        lastBolusCont?.resume(throwing: error); lastBolusCont = nil
+        cgmHwCont?.resume(returning: nil); cgmHwCont = nil
+        // Belt-and-suspenders: a terminated transaction must never leave delivery writes enabled on the
+        // persistent client into the next connection.
+        client.writePolicy = .readOnly
     }
 
     public override init() {
@@ -216,65 +299,96 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
+        let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
         if let s = calcSnapshot, s.carbRatio > 0 {
-            let food = carbsGrams / s.carbRatioGramsPerUnit
-            let correction = (bgMgdl != nil && s.isf > 0)
-                ? max(0, Double(bgMgdl! - s.targetBg) / Double(s.isf) - snapshot.iobUnits) : 0
-            rec.recommendedUnits = max(0, food + correction)
+            // Verified pump profile → the single oracle-backed calculator (audit C-01). Below-target
+            // BG now correctly *reduces* the dose; IOB only offsets a BG correction, matching the pump.
+            let profile = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit,
+                                            isfMgdlPerUnit: s.isf, targetBgMgdl: s.targetBg,
+                                            iobUnits: snapshot.iobUnits)
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: bgMgdl, profile: profile)
+            rec.inputsVerified = true
         } else {
-            rec.recommendedUnits = max(0, carbsGrams / 10.0 - snapshot.iobUnits)
+            // Guarded fallback (audit C-01): the verified profile hasn't arrived. Use the SAME
+            // calculator with an explicitly-assumed carb ratio and compute carbs-only (no correction
+            // off an unknown ISF/target), then flag it so the UI requires the user to confirm the
+            // assumed value before delivering — never auto-deliver on unverified inputs.
+            let assumed = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
+                                            targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: nil, profile: assumed)
+            rec.inputsVerified = false
+            rec.assumedProfile = assumed
         }
-        rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // 0.05 u steps
+        rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // snap to 0.05 u pump increment
         return rec
     }
 
     /// Force a fresh CGM read and wait (bounded ~2.5 s) for it, so a correction uses the newest value.
+    /// Single-flight (audit C-05): concurrent callers coalesce onto one pump read; all are resumed
+    /// exactly once when the reading arrives, on timeout, or on disconnect.
     public func refreshGlucoseNow() async {
         guard snapshot.connection == .connected else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            glucoseReadCont = cont
+            glucoseWaiters.append(cont)
+            if glucoseReadInFlight { return }   // join the in-flight read
+            glucoseReadInFlight = true
+            glucoseReadGeneration &+= 1
+            let gen = glucoseReadGeneration
             try? client.send(CurrentEgvGuiDataV2Request())
-            // Safety timeout so we never hang if the pump doesn't answer.
+            // Safety timeout so we never hang if the pump doesn't answer. Tagged by generation, so a
+            // stale timeout whose read already completed is a no-op.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                guard let self, let c = self.glucoseReadCont else { return }
-                self.glucoseReadCont = nil; c.resume()
+                guard let self, self.glucoseReadInFlight, self.glucoseReadGeneration == gen else { return }
+                self.completeGlucoseRead()
             }
         }
     }
 
-    /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
-    /// policy to `.allowDelivery` only for this call.
+    /// Resume every coalesced glucose waiter exactly once (CGM arrival, timeout, or disconnect).
+    private func completeGlucoseRead() {
+        glucoseReadInFlight = false
+        let waiters = glucoseWaiters
+        glucoseWaiters.removeAll()
+        for w in waiters { w.resume() }
+    }
+
+    /// Delivers a standard bolus via the validated signed path. Raises the write policy to
+    /// `.allowDelivery` only for this call. `perform` picks FOOD1/FOOD2 by carb presence (audit C-07).
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
         return try await perform(totalMu: mu, extendedMu: 0, extendedSeconds: 0,
-                                 bitmask: Self.food2, displayUnits: units,
-                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Delivers an **extended (combo)** bolus: `nowUnits` up front and the remainder over
-    /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the FOOD2|EXTENDED bitmask (12),
-    /// matching the pump's extended-bolus byte format (oracle-verified). Total must be ≥ 0.40 U.
+    /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the EXTENDED bit set (oracle-
+    /// verified byte format); `perform` OR-s FOOD1/FOOD2 by carb presence. Total must be ≥ 0.40 U.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: totalUnits)
-        let now = max(0, min(nowUnits, totalUnits))
+        let safeNow = nowUnits.isFinite ? nowUnits : 0          // audit A-07: no NaN into UInt32(...)
+        let now = max(0, min(safeNow, totalUnits))
         let nowMu = UInt32((now * 1000).rounded())
         let laterMu = UInt32((max(0, totalUnits - now) * 1000).rounded())
         guard (nowMu + laterMu) >= InitiateBolusRequest.minExtendedBolusMilliunits else {
             throw BolusError.pumpRejected("extended bolus below 0.40 u")
         }
-        let seconds = UInt32(max(1, durationMinutes) * 60)
+        // Clamp duration to [1 min, 24 h] so `UInt32(minutes * 60)` can neither overflow nor trap.
+        let clampedMinutes = max(1, min(durationMinutes, 24 * 60))
+        let seconds = UInt32(clampedMinutes * 60)
         return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
-                                 bitmask: Self.food2Extended, displayUnits: totalUnits,
-                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Shared pre-flight validation for any delivery (standard or extended).
     private func validateDeliver(total: Double) throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
+        // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap
+        // (audit A-07). The max clamp only bounds the upper end.
+        guard total.isFinite, total >= 0 else { throw BolusError.pumpRejected("invalid dose") }
         guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
             throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
         }
@@ -284,11 +398,24 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// it sends the full-form InitiateBolusRequest (now-portion `totalMu`, later-portion `extendedMu`
     /// over `extendedSeconds`); otherwise a standard units-only bolus.
     private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
-                         bitmask: Int, displayUnits units: Double,
+                         displayUnits units: Double,
                          carbsGrams: Double? = nil, bgMgdl: Int? = nil) async throws -> Double {
+        // Audit A-03: reject a second bolus while one is mid-flight (set synchronously so a double-tap
+        // can't slip past before the flag is raised). Then serialize behind any other signed transaction.
+        guard !deliveryInProgress else { throw BolusError.pumpRejected("a bolus is already in progress") }
+        deliveryInProgress = true
+        defer { deliveryInProgress = false }
+        await acquirePumpTx()
+        defer { releasePumpTx() }
+        let gen = pumpTxGeneration
+
         // Fresh signing timestamp (the pump validates the HMAC against its clock).
         let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
             timeCont = cont
+            scheduleResponseTimeout(seconds: 5) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
+                self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
+            }
             do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
         }
         signingTimestamp = time.currentTime
@@ -300,6 +427,10 @@ public final class TandemBackend: NSObject, PumpBackend {
 
         let perm: BolusPermissionResponse = try await withCheckedThrowingContinuation { cont in
             permissionCont = cont
+            scheduleResponseTimeout(seconds: 8) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.permissionCont else { return }
+                self.permissionCont = nil; c.resume(throwing: BolusError.pumpRejected("no permission response (timeout)"))
+            }
             do {
                 try client.send(BolusPermissionRequest(), authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp)
@@ -315,8 +446,26 @@ public final class TandemBackend: NSObject, PumpBackend {
         // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT
         // change the delivered dose). Best-effort: a failed entry must NEVER abort the bolus, so the
         // InitiateBolus below still fires. Also mirrored inline in InitiateBolusRequest.bolusCarbs/BG.
-        let carbsInt = carbsGrams.map { Int($0.rounded()) } ?? 0
-        let bgInt = bgMgdl ?? 0
+        // Bound carbs before the Int/UInt16 conversion so a garbage value can't overflow or land as an
+        // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
+        let carbsInt = max(0, min(Self.maxCarbGrams, carbsGrams.map { Int($0.rounded()) } ?? 0))
+        let bgInt = max(0, min(600, bgMgdl ?? 0))
+        // bolusIOB metadata (audit C-07): send the IOB the calculator used — the pump's Control-IQ IOB
+        // (`snapshot.iobUnits`, from ControlIQIOBResponse) — in **milliunits**, matching the reference
+        // app's captured request. Byte-locked against oracle vector ID10653
+        // (InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle: bolusIOB 130 == 0.13 U), so this
+        // is verifiable WITHOUT a bench. Metadata only — it never changes the delivered dose. Guarded so a
+        // non-finite/absurd IOB can't trap the UInt32 conversion; 0 when IOB is unknown (unchanged behavior).
+        let iobU = snapshot.iobUnits.isFinite ? max(0.0, snapshot.iobUnits) : 0.0
+        let bolusIobMu = UInt32(min((iobU * 1000).rounded(), 1_000_000))
+        // Oracle bolus-type selection (audit C-07): carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
+        let extended = extendedMu > 0
+        let foodBit = carbsInt > 0 ? Self.food1 : Self.food2
+        let bitmask = extended ? (foodBit | Self.extendedBit) : foodBit
+        // For a standard carb bolus the reference puts the whole dose in `foodVolume` (correction 0);
+        // units-only and the extended path keep foodVolume 0 (extended+carbs foodVolume is unverified —
+        // see docs/UNVERIFIED-GUESSES.md).
+        let foodVolume: UInt32 = (carbsInt > 0 && !extended) ? totalMu : 0
         if carbsInt > 0 {
             try? client.send(RemoteCarbEntryRequest(carbs: carbsInt, unknown: 1,
                                                     pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
@@ -330,13 +479,18 @@ public final class TandemBackend: NSObject, PumpBackend {
 
         let ini: InitiateBolusResponse = try await withCheckedThrowingContinuation { cont in
             initiateCont = cont
+            scheduleResponseTimeout(seconds: 8) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.initiateCont else { return }
+                self.initiateCont = nil; c.resume(throwing: BolusError.pumpRejected("no initiate response (timeout)"))
+            }
             do {
-                let request: InitiateBolusRequest = extendedMu > 0
+                let request: InitiateBolusRequest = extended
                     ? InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: 0, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
                                            extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
                     : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           bolusCarbs: carbsInt, bolusBG: bgInt)
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                                           extendedVolume: 0, extendedSeconds: 0, extended3: 0)
                 try client.send(request, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
             } catch { initiateCont = nil; cont.resume(throwing: error) }
@@ -361,6 +515,9 @@ public final class TandemBackend: NSObject, PumpBackend {
             // remote "delivered/cancelled" echo) fires promptly, instead of lingering ~1.2 s+.
             try? await Task.sleep(nanoseconds: 500_000_000)
             if cancelRequested { break }
+            // Stop polling (and release the transaction lock) promptly if the link dropped — otherwise
+            // a disconnect mid-bolus would spin here until the deadline holding the lock (audit A-03).
+            guard snapshot.connection == .bolusing else { break }
             if let st = try? await currentBolusStatus(), st.bolusId != currentBolusId || !st.isActive {
                 break   // pump reports the bolus is no longer active
             }
@@ -377,7 +534,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         lastBolusCancelled = cancelRequested
         cancelRequested = false
         currentBolusId = 0
-        snapshot.connection = .connected
+        // Don't stomp a disconnect that happened mid-bolus back to `.connected` (audit A-03).
+        if snapshot.connection == .bolusing { snapshot.connection = .connected }
         snapshot.lastBolusUnits = delivered
         snapshot.iobUnits += delivered
         if delivered > 0 {
@@ -418,16 +576,28 @@ public final class TandemBackend: NSObject, PumpBackend {
             onChange?()
             return
         }
-        // Fresh signing timestamp for the HMAC.
-        guard let time = try? await withCheckedThrowingContinuation({ (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
-            timeCont = cont
-            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
-        }) else { return }
+        // Fresh signing timestamp for the HMAC. Serialized behind any other signed transaction and
+        // timed-out so a lost time-sync reply can't hang / clobber another transaction (audit A-03).
+        await acquirePumpTx()
+        let gen = pumpTxGeneration
+        let time: TimeSinceResetResponse
+        do {
+            time = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
+                timeCont = cont
+                scheduleResponseTimeout(seconds: 5) { [weak self] in
+                    guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
+                    self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
+                }
+                do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
+            }
+        } catch { releasePumpTx(); return }
         signingTimestamp = time.currentTime
 
         let previous = client.writePolicy
-        client.writePolicy = .allowNonDelivery
-        defer { client.writePolicy = previous }
+        // Dismissing an alert is a BENIGN signed op (audit P-01) — it needs only the benign tier, not the
+        // therapy-config-capable `.allowNonDelivery`.
+        client.writePolicy = .allowBenignControl
+        defer { client.writePolicy = previous; releasePumpTx() }
         lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
         alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
         // Surface a send failure directly (the request otherwise fails silently) so a non-arriving
@@ -463,8 +633,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     // advanced-control + Mobi gate; the WritePolicy + pump-side checks are the enforcement backstop.
 
     private func refreshSigningTimestamp() async throws {
+        let gen = pumpTxGeneration
         let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
             timeCont = cont
+            scheduleResponseTimeout(seconds: 5) { [weak self] in
+                guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
+                self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
+            }
             do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
         }
         signingTimestamp = time.currentTime
@@ -472,18 +647,21 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
     /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
+    /// Serialized behind any other signed transaction (audit A-03) so its `timeCont` can't be clobbered.
     private func sendControl(_ message: Message, delivery: Bool) async throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
             throw BolusError.notConnected
         }
-        try await refreshSigningTimestamp()
-        let previous = client.writePolicy
-        client.writePolicy = delivery ? .allowDelivery : .allowNonDelivery
-        defer { client.writePolicy = previous }
-        _ = try client.send(message, authenticationKey: authenticationKey,
-                            pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
-        // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        try await withPumpTx {
+            try await refreshSigningTimestamp()
+            let previous = client.writePolicy
+            client.writePolicy = delivery ? .allowDelivery : .allowNonDelivery
+            defer { client.writePolicy = previous }
+            _ = try client.send(message, authenticationKey: authenticationKey,
+                                pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
+            // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 
     public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
@@ -975,6 +1153,10 @@ extension TandemBackend: PumpBLEClientDelegate {
         case .ready: snapshot.connection = .connected
         case .disconnected, .idle:
             snapshot.connection = .disconnected
+            // Resume any glucose-refresh waiters so they don't hang across a disconnect (audit C-05).
+            if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+            // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
+            failPumpWaiters(BolusError.notConnected)
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
             didBackfill = false; backfillActive = false
             backfillTimer?.invalidate(); backfillTimer = nil
@@ -1106,8 +1288,8 @@ extension TandemBackend: PumpBLEClientDelegate {
                     schedulePredictiveBurst(afterReadingAt: readingDate)
                 }
             }
-            // Wake any `refreshGlucoseNow()` waiter now that a reading has arrived.
-            if let c = glucoseReadCont { glucoseReadCont = nil; c.resume() }
+            // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived.
+            if glucoseReadInFlight { completeGlucoseRead() }
         case let m as LastBolusStatusV2Response:
             if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }
             snapshot.lastBolusUnits = m.deliveredUnits
@@ -1185,6 +1367,11 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didError error: Error) {
-        snapshot.connection = .disconnected; onChange?()
+        snapshot.connection = .disconnected
+        // A transport error orphans any in-flight signed transaction — resume its waiters and drop
+        // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
+        if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+        failPumpWaiters(error)
+        onChange?()
     }
 }

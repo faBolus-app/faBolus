@@ -44,7 +44,21 @@ struct RootTabView: View {
             }
             Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
         } message: {
-            Text("A remote requested \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0)). Confirm to deliver.")
+            // Show the FROZEN dose + the exact inputs it was computed from (audit C-02) — never "0.00 U".
+            if let p = model.pendingRemoteBolus {
+                var parts = [String(format: "A remote requested %.2f U.", p.units)]
+                if let c = p.carbsGrams, c > 0 { parts.append(String(format: "Carbs: %.0f g.", c)) }
+                if let bg = p.bgMgdl {
+                    let age = p.bgDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
+                    parts.append(age != nil ? "BG: \(bg) mg/dL (\(age!) min ago)." : "BG: \(bg) mg/dL.")
+                } else if let c = p.carbsGrams, c > 0 {
+                    parts.append("No fresh CGM — carbs only, no correction.")
+                }
+                if let iob = p.iobUnits { parts.append(String(format: "IOB: %.2f U.", iob)) }
+                parts.append("Confirm to deliver.")
+                return Text(parts.joined(separator: " "))
+            }
+            return Text("Confirm to deliver.")
         }
         .alert("Remote pump-control request", isPresented: .constant(model.pendingRemoteControl != nil)) {
             let action = model.pendingRemoteControl?.action

@@ -432,6 +432,29 @@ targets:
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
 
+  # Behavioral e2e suite (audit C-08 / T-01). A hosted unit-test bundle that drives the real
+  # AppModel remote-delivery decision logic — the divergence guard, freeze-before-approve
+  # (C-02), the child/read-only action gates (A-05), and the idempotency-ledger wiring (A-02) —
+  # against the in-memory MockBackend, so it runs on the Simulator with no pump/BLE hardware.
+  # (TandemBackend-internal paths that need CoreBluetooth — pump-transaction drop/timeout A-03,
+  # glucose single-flight C-05 — are still bench/BLE-mock scoped; see docs/UNVERIFIED-GUESSES.md.)
+  faBolusAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - ios/faBolusAppTests
+    dependencies:
+      - target: faBolus
+      - package: faBolusCore
+        product: faBolusCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).appTests
+        SWIFT_VERSION: "6.0"
+        CODE_SIGNING_ALLOWED: NO
+
 schemes:
   # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
   # iOS faBolus app, so it doesn't require Garmin's ConnectIQ SDK (not available in CI). Catches
@@ -447,8 +470,14 @@ schemes:
     build:
       targets:
         faBolus: all
+        # Compiled only for the test action (so build-sim.sh / the CI `build` step stay app-only).
+        faBolusAppTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - faBolusAppTests
     profile:
       config: Release
     analyze:

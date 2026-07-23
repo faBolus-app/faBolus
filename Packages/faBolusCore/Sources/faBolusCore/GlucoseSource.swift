@@ -1,19 +1,31 @@
 import Foundation
+import os
 
 /// Freshness policy shared by **every** glucose feed — the pump-relayed reading and any independent
 /// `GlucoseSource`. One definition of "stale" so the primary and its failover agree. Adjustable at
 /// runtime (e.g. from Settings); default 6 minutes. Old readings are worse than none, so anything
 /// past this threshold is never presented as the current value.
 public enum GlucoseFreshness {
+    // Thread-safe backing (audit A-09): these are set at launch (e.g. from Settings) and read from many
+    // isolation domains. An `OSAllocatedUnfairLock` gives a genuinely-safe shared store instead of a
+    // `nonisolated(unsafe) static var` (which only silences the checker).
+    private static let _staleAfter = OSAllocatedUnfairLock<TimeInterval>(initialState: 6 * 60)
+    private static let _hideAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+
     /// Readings older than this are **stale**: shown de-emphasized ("grey") and — critically — no
     /// longer used to auto-fill a bolus carb→unit correction. Default 6 minutes; open for adjustment.
-    /// Set at launch (e.g. from Settings) before feeds start; reads are benign, hence `nonisolated(unsafe)`.
-    public nonisolated(unsafe) static var staleAfter: TimeInterval = 6 * 60
+    public static var staleAfter: TimeInterval {
+        get { _staleAfter.withLock { $0 } }
+        set { _staleAfter.withLock { $0 = newValue } }
+    }
 
     /// Age past which a reading is **hidden** ("--") instead of shown grey. `nil` = never hide (always
     /// show the grey value once stale). Set equal to `staleAfter` to skip the grey stage entirely
     /// (go straight from fresh to "--"). Effective value is clamped to ≥ `staleAfter`.
-    public nonisolated(unsafe) static var hideAfter: TimeInterval? = nil
+    public static var hideAfter: TimeInterval? {
+        get { _hideAfter.withLock { $0 } }
+        set { _hideAfter.withLock { $0 = newValue } }
+    }
 
     /// Age of a reading taken at `date` (never negative).
     public static func age(of date: Date, now: Date = Date()) -> TimeInterval {

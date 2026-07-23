@@ -102,16 +102,18 @@ public final class MockBackend: PumpBackend {
         onChange?()
     }
 
-    /// Simple mock calculator: carbs/10 (carb ratio) + correction toward 110 / 40 (ISF),
-    /// minus IOB. Real source uses the pump's bolus calculator.
+    /// Mock calculator: the same oracle-backed `BolusMath` as the real backend, with a fixed mock
+    /// profile (carb ratio 10 g/U, ISF 40, target 110). Keeps the simulator in lockstep with the
+    /// production dosing semantics (audit C-01).
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams
         rec.bgMgdl = bgMgdl
         rec.iobUnits = snapshot.iobUnits
-        let carbUnits = carbsGrams / 10.0
-        let correction = bgMgdl.map { max(0, Double($0 - 110) / 40.0) } ?? 0
-        rec.recommendedUnits = max(0, (carbUnits + correction - snapshot.iobUnits))
+        let profile = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
+                                        targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
+        rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbsGrams > 0 ? carbsGrams : nil,
+                                                          bgMgdl: bgMgdl, profile: profile)
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // round to 0.05u
         return rec
     }

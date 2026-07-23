@@ -268,6 +268,10 @@ struct CgmSettingsView: View {
     let model: AppModel
     @Bindable var settings: AppSettings
     @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
+    @State private var showExperimentalCgmWarning = false
+    /// Failover sources whose direct-BLE path is an unverified best guess (docs/UNVERIFIED-GUESSES.md #5):
+    /// selecting one raises a blocking warning that it will likely not connect.
+    private static let experimentalCgmSourceIds: Set<String> = ["dexcom-g6-ble"]
     var body: some View {
         Form {
             Section {
@@ -275,10 +279,18 @@ struct CgmSettingsView: View {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
                 }
-                .onChange(of: selectedGlucoseSource) { _, id in GlucoseSourceRegistry.select(id.isEmpty ? nil : id) }
+                .onChange(of: selectedGlucoseSource) { _, id in
+                    GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
+                    if Self.experimentalCgmSourceIds.contains(id) { showExperimentalCgmWarning = true }
+                }
                 NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
             } header: { Text("Glucose failover") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
+            }
+            .alert("Untested source", isPresented: $showExperimentalCgmWarning) {
+                Button("OK") {}
+            } message: {
+                Text("⚠️ The direct-BLE Dexcom source is experimental and has NOT been verified — a passive read likely will NOT connect (the sensor needs an authenticated session). Prefer Dexcom Share or the xDrip App Group. See docs/operate/cgm-failover.md.")
             }
             Section {
                 Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)

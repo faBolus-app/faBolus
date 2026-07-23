@@ -38,7 +38,7 @@ public final class RemoteLink: NSObject, WCSessionDelegate, RemoteTransport, @un
     private func transfer(_ data: Data) { session?.transferUserInfo(["cmd": data]) }
 
     private func dispatch(_ data: Data) {
-        guard let cmd = try? RemoteCommand.decode(data) else { return }
+        guard let cmd = try? RemoteCommand.decodeValidated(data) else { return }   // audit A-07
         Task { @MainActor in self.onReceive?(cmd) }
     }
 

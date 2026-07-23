@@ -68,7 +68,15 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
     // MARK: Receive
 
     private func receive(_ cmd: RemoteCommand) {
-        if Self.isAuth(cmd.kind) { deliver(cmd); return }
+        if Self.isAuth(cmd.kind) {
+            // Audit A-01: once a session is live, auth frames must never arrive in cleartext. A real
+            // re-handshake only begins after the link tears down (`endSession` clears the key), so an
+            // in-session cleartext `authHello`/`authProof` can only be an injection trying to force a
+            // re-pair / downgrade — drop it.
+            lock.lock(); let live = key != nil; lock.unlock()
+            if live { return }
+            deliver(cmd); return
+        }
         // Any non-auth command MUST arrive sealed once we're encrypting.
         guard cmd.kind == .sealed, let payload = cmd.sealedPayload else { return }
         lock.lock(); let k = key; lock.unlock()
@@ -105,7 +113,7 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
         let counter = ctrData.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
         guard let box = try? AES.GCM.SealedBox(combined: boxData),
               let opened = try? AES.GCM.open(box, using: key, authenticating: ctrData),
-              let cmd = try? RemoteCommand.decode(opened) else { return nil }
+              let cmd = try? RemoteCommand.decodeValidated(opened) else { return nil }   // audit A-07
         return (cmd, counter)
     }
 

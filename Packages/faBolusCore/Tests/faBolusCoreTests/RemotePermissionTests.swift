@@ -8,8 +8,8 @@ final class RemotePermissionTests: XCTestCase {
         XCTAssertEqual(p.approvalMode, .auto)
     }
 
-    func testLegacyFullGrantsEverything() {
-        let p = RemotePeerPolicy.legacyFull
+    func testFullControlGrantsEverything() {
+        let p = RemotePeerPolicy.fullControl
         for perm in RemotePermission.allCases { XCTAssertTrue(p.allows(perm)) }
     }
 

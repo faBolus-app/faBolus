@@ -32,6 +32,10 @@ public final class PeerRemoteHost {
     private var secret: Data?          // code-derived (first pairing) or the stored token (reconnect)
     private var firstPairing = false
     private var pairingCode: String?   // the code in use, needed to seal the token on first pairing
+    /// Rate-limit a peer's forced CGM reads (audit C-05): a view-only peer can't spam pump reads.
+    /// Only throttles the on-screen-open freshness poll — the pre-delivery refresh is never throttled.
+    private var lastForcedGlucose: Date?
+    private static let forcedGlucoseMinInterval: TimeInterval = 5
 
     public init(model: AppModel) {
         self.model = model
@@ -59,11 +63,22 @@ public final class PeerRemoteHost {
     }
 
     private func resetAuth() {
+        clearSession()
+        pairing.setConnected(false, name: nil)
+    }
+
+    /// Tear down ALL per-connection trust: authenticated flag, the sealed channel key/counters, the
+    /// bound identity/handshake nonces/secret, and any pending host-approval bolus tied to the peer.
+    /// Audit A-01 — a new `authHello` or a failed proof must not inherit any prior connection's trust,
+    /// so both begin by calling this. (Distinct from `resetAuth`, which also flips the pairing UI to
+    /// disconnected — not wanted mid-handshake.)
+    private func clearSession() {
+        let oldPeer = peerClientId
         authenticated = false
         peerClientId = nil; peerName = nil; macNonce = nil; phoneNonce = nil
         secret = nil; firstPairing = false; pairingCode = nil
         link.endSession()   // next connection must re-handshake before any real command flows
-        pairing.setConnected(false, name: nil)
+        if let oldPeer { model?.clearPendingRemoteBolus(forPeer: oldPeer) }
     }
 
     /// Stop advertising and drop any connection (called when the user turns remote Bluetooth off).
@@ -89,6 +104,11 @@ public final class PeerRemoteHost {
     private func handleAuth(_ cmd: RemoteCommand) {
         switch cmd.kind {
         case .authHello:
+            // Audit A-01: a fresh hello starts a brand-new handshake — invalidate any existing sealed
+            // session + bound identity + pending bolus FIRST, so a mid-session re-hello can't ride on
+            // the previous peer's trust. (In-session cleartext auth is already dropped by
+            // SealedTransport; this covers a reconnect where the link didn't cleanly signal drop.)
+            clearSession()
             guard let clientId = cmd.authClientId,
                   let mNonceB64 = cmd.authNonce, let mNonce = Data(base64Encoded: mNonceB64) else { return }
             let name = cmd.message ?? "remote"
@@ -121,15 +141,21 @@ public final class PeerRemoteHost {
             guard MacPairing.verify(proof, secret: secret, label: "mac",
                                     phoneNonce: pNonce, macNonce: mNonce, clientId: clientId) else {
                 link.send(.auth(.authResult, ok: false, message: "Incorrect code. Try again."))
-                // Keep the code window open so the user can retry, but drop this attempt's state.
-                peerClientId = nil; macNonce = nil; phoneNonce = nil; self.secret = nil
+                // Audit A-01: a failed proof drops ALL attempt state (identity, nonces, secret, pairing
+                // mode, sealed key, pending bolus) — never leave a half-authorized session behind. The
+                // one-time code window stays open (in MacPairingCoordinator) so the user can retry.
+                clearSession()
                 return
             }
             // Verified. On first pairing, mint + persist a long-term token and seal it for the Mac.
             var sealed: String?
             if firstPairing, let code = pairingCode {
                 let token = MacPairing.newToken()
+                // Capture the pairing entropy BEFORE authorize() (which clears the window state): only a
+                // QR (128-bit) pairing may later be granted control (audit A-11).
+                let viaQR = pairing.activeIsQR
                 pairing.authorize(clientId: clientId, name: peerName ?? "Mac", token: token)
+                RemotePeerPolicyStore.setPairedViaQR(clientId, viaQR)
                 RemotePeerPolicyStore.ensureDefault(for: clientId)   // new peer starts view-only
                 sealed = MacPairing.sealToken(token, code: code)
             }
@@ -184,13 +210,15 @@ public final class PeerRemoteHost {
                     await model.deliverExtendedBolus(totalUnits: units, nowUnits: cmd.extendedNowUnits ?? 0,
                                                      durationMinutes: cmd.extendedMinutes ?? 0, enforceChildLock: false)
                 } else if policy.approvalMode == .hostApproval {
-                    model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
+                    await model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
+                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                             peerId: self.peerClientId ?? "peer")
                 } else {
                     await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                               carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false)
+                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                              peerId: self.peerClientId ?? "peer")
                 }
             }
         case .cancelBolus:
@@ -202,12 +230,18 @@ public final class PeerRemoteHost {
                 Task { await model.dismissAlert(id: id, kind: k, enforceChildLock: false); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .bolusApprovalResponse:
-            // The remote answered a reverse-approval request for a bolus the host started. Any
-            // authenticated remote may approve (it's the parent's oversight role); no extra permission.
+            // The remote answered a reverse-approval request for a bolus the host started. Only a peer
+            // explicitly granted the approver role may do so (audit A-06); the requestId is a single-use
+            // nonce bound to the host's pending request (60 s expiry) and the dose comes from the host's
+            // own pending state, never from this response.
+            guard policy.allows(.approveBolus) else { deny(cmd.requestId); return }
             model.resolveRemoteApproval(requestId: cmd.requestId, approved: cmd.approved ?? false,
                                         reason: (cmd.approved ?? false) ? nil : "Denied on the remote")
         case .statusRead:
-            if cmd.forceGlucose == true {
+            let now = Date()
+            let throttled = lastForcedGlucose.map { now.timeIntervalSince($0) < Self.forcedGlucoseMinInterval } ?? false
+            if cmd.forceGlucose == true && !throttled {
+                lastForcedGlucose = now
                 Task { await model.refreshGlucoseNow(); self.link.send(model.statusCommand(includeHistory: true)) }
             } else {
                 link.send(model.statusCommand(includeHistory: true))   // viewing is always allowed

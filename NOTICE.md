@@ -26,6 +26,22 @@ files originate in xDripG5 / CGMBLEKit, © 2015–2016 Nathan Racklyeft), used u
 LoopKit-specific coupling has been removed and the decoders are passive/read-only. The reproduced
 license and copyright are in `Packages/G7SensorKit/LICENSE`. The independent CGM seam that consumes
 them is modeled on LoopKit's `CGMManager` design.
+
+## DexcomG6Kit (Dexcom G5 / G6 / ONE decoding)
+
+The Dexcom G5 / G6 / ONE passive BLE message decoders in `Packages/DexcomG6Kit` are vendored from
+**[LoopKit/CGMBLEKit](https://github.com/LoopKit/CGMBLEKit)** (© 2017 LoopKit Authors; portions
+© 2015–2016 Nathan Racklyeft), used under the MIT License. LoopKit-specific coupling has been removed
+and the decoders are passive/read-only. The reproduced license is in `Packages/DexcomG6Kit/LICENSE`.
+
+## ShareClient (Dexcom Share follower)
+
+The Dexcom Share follower core in `Packages/ShareClient` is vendored from
+**[LoopKit/dexcom-share-client-swift](https://github.com/LoopKit/dexcom-share-client-swift)** (MIT).
+The reproduced license is in `Packages/ShareClient/LICENSE`.
+
+See `docs/SBOM.md` for the full machine-checked component inventory (audit L-01).
+
 ## Loop / LoopDocs (design + documentation)
 
 faBolus's visual design draws inspiration from the **[Loop](https://github.com/LoopKit/Loop)** app,

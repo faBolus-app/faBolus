@@ -67,12 +67,36 @@ enum ChildModeStore {
 
     static var hasPIN: Bool { load() != nil }
 
-    /// Constant-ish check that `pin` matches the stored hash.
+    // Persisted brute-force lockout (audit A-10). A short PIN with unlimited tries is trivially
+    // guessable; after a few misses we lock out with exponential backoff that survives relaunch.
+    private static let kFails = "childPinFailedAttempts"
+    private static let kLockUntil = "childPinLockedUntil"    // absolute epoch seconds
+    static let maxAttemptsBeforeLockout = 5
+
+    /// Seconds remaining on a lockout, or 0 if entry is currently allowed.
+    static var lockoutRemaining: TimeInterval {
+        max(0, UserDefaults.standard.double(forKey: kLockUntil) - Date().timeIntervalSince1970)
+    }
+
+    /// Check `pin` against the stored hash, enforcing the lockout. A correct PIN clears the counter.
     static func verify(_ pin: String) -> Bool {
+        guard lockoutRemaining <= 0 else { return false }   // locked out — don't even hash
         guard let stored = load() else { return false }
         let parts = stored.split(separator: ":")
         guard parts.count == 2, let salt = bytes(String(parts[0])) else { return false }
-        return hash(pin: pin, salt: salt) == String(parts[1])
+        let d = UserDefaults.standard
+        if hash(pin: pin, salt: salt) == String(parts[1]) {
+            d.removeObject(forKey: kFails); d.removeObject(forKey: kLockUntil)
+            return true
+        }
+        let fails = d.integer(forKey: kFails) + 1
+        d.set(fails, forKey: kFails)
+        if fails >= maxAttemptsBeforeLockout {
+            // 30 s after the threshold, doubling each further miss, capped at 1 h.
+            let backoff = min(3600.0, 30.0 * pow(2.0, Double(fails - maxAttemptsBeforeLockout)))
+            d.set(Date().timeIntervalSince1970 + backoff, forKey: kLockUntil)
+        }
+        return false
     }
 
     private static func load() -> String? {
