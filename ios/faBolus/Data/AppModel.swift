@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+import HistoryStore
 import Observation
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
@@ -11,6 +12,13 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+
+    // Persistent history (SwiftData) — write-through target for long-term glucose/bolus history; powers
+    // time-in-range / future plotting and feeds the advisory tools. Optional so a store-init failure
+    // never breaks the app. See MIGRATION.md (Phase 2).
+    private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    private var lastGlucoseIngest = Date.distantPast
+    private var lastBolusIngest = Date.distantPast
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -327,6 +335,37 @@ public final class AppModel {
     /// the bolus-entry sheet.
     public var openBolusRequested = false
 
+    /// Write only NEW readings/boluses into the persistent store (never re-insert the rolling buffer).
+    private func persistNewHistory(provenance: GlucoseProvenance) {
+        guard let history else { return }
+        let sourceID: String
+        let priority: Int
+        switch provenance {
+        case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
+        default:                    sourceID = "pump"; priority = 50    // pump-relayed
+        }
+        let newGlucose = glucoseHistory.filter { $0.date > lastGlucoseIngest }
+        if !newGlucose.isEmpty {
+            history.ingestGlucose(newGlucose, sourceID: sourceID, priority: priority)
+            lastGlucoseIngest = newGlucose.map(\.date).max() ?? lastGlucoseIngest
+        }
+        let newBoluses = bolusMarkers.filter { $0.date > lastBolusIngest }
+        if !newBoluses.isEmpty {
+            history.ingestBoluses(newBoluses, sourceID: "pump")
+            lastBolusIngest = newBoluses.map(\.date).max() ?? lastBolusIngest
+        }
+    }
+
+    /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
+    public func storedStatistics(days: Int = 90) -> GlucoseStatistics? {
+        guard let history else { return nil }
+        let end = Date(); let start = end.addingTimeInterval(-Double(days) * 86400)
+        return history.statistics(in: start...end)
+    }
+
+    /// Wipe all persisted history (Settings → data-minimization / "Clear history").
+    public func clearStoredHistory() { history?.clear() }
+
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
@@ -347,6 +386,7 @@ public final class AppModel {
         alertDebug = source.alertDebug
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
+        persistNewHistory(provenance: provenance)
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
