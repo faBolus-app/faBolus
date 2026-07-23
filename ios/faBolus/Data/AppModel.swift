@@ -37,7 +37,17 @@ public final class AppModel {
     @ObservationIgnored public var latestAccelProb: Double?
     @ObservationIgnored private var lastAccelWindowAt = Date.distantPast
     @ObservationIgnored private let accelPipeline = EatingAccelPipeline()
+    /// Set by the Garmin/watch bridge — the phone calls this to start/stop wrist sensing on demand
+    /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
+    @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
+    @ObservationIgnored private var lastWantAccel = false
     private(set) var eatingNudge: EatingAlert?
+
+    private func setWantAccelSensing(_ on: Bool) {
+        guard on != lastWantAccel else { return }
+        lastWantAccel = on
+        onWantAccelSensing?(on)
+    }
 
     /// Feed a raw IMU window from the Garmin watch (imu_window message) → phone-side p(eating).
     public func ingestGarminIMUWindow(rawWindow raw: [Float]) {
@@ -538,7 +548,7 @@ public final class AppModel {
     /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
     /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
     private func updateEatingNudge() {
-        guard AppSettings.shared.eatingNudgesEnabled else { eatingNudge = nil; return }
+        guard AppSettings.shared.eatingNudgesEnabled else { eatingNudge = nil; setWantAccelSensing(false); return }
         let cfg = AppSettings.shared.eatingTriggerConfig
         if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
         guard let history else { return }
@@ -552,6 +562,11 @@ public final class AppModel {
                 announcedCarbs: history.carbs(in: range),
                 carbRatio: snapshot.carbRatio, isf: Double(snapshot.isf))
         }
+        // Battery: for cgmThenAccel, only spin up the wrist sensor once the CGM hints a possible meal;
+        // other accel modes keep it on while enabled.
+        let wantAccel = cfg.mode.usesAccel && (cfg.mode == .cgmThenAccel ? (meal?.score ?? 0) >= 0.3 : true)
+        setWantAccelSensing(wantAccel)
+
         let minsSinceBolus = bolusMarkers.map(\.date).max()
             .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
         // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
