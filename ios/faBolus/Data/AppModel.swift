@@ -55,6 +55,14 @@ public final class AppModel {
         latestAccelProb = p
         lastAccelWindowAt = Date()
     }
+
+    /// Apple Watch on-device path: the watch already ran the model and relays a p(eating). Feed it
+    /// straight into the same accel signal the Garmin window path produces, then re-fuse the nudge.
+    public func ingestWatchEatingEvent(prob: Double, at: Date = Date()) {
+        latestAccelProb = prob
+        lastAccelWindowAt = at
+        updateEatingNudge()
+    }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -129,7 +137,7 @@ public final class AppModel {
         let recent = includeHistory ? Array(glucoseHistory.suffix(288)) : []
         let history = includeHistory ? recent.map { $0.mgdl } : nil
         let historyEpochs = includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
-        return RemoteCommand(kind: .statusRead, units: s.iobUnits,
+        var cmd = RemoteCommand(kind: .statusRead, units: s.iobUnits,
                              bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
                              trend: GlucoseTrend.token(from: s.trend),
                              carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
@@ -155,6 +163,10 @@ public final class AppModel {
                              watchChartRanges: AppSettings.shared.watchChartRanges,
                              garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
                              remotesReadOnly: AppSettings.shared.remotesReadOnly)
+        // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
+        // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
+        cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
+        return cmd
     }
 
     /// Clear a pump alert by id + kind (used by remotes' dismiss commands).

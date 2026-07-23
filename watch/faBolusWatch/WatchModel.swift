@@ -11,11 +11,35 @@ final class WatchModel: RemoteClientModel {
     /// Direct sources reuse the shared implementations; started only while unreachable, to save power.
     private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
 
+    #if FABOLUS_ONWATCH_EATING
+    /// On-device eating detector (flag-gated; needs the paid HealthKit entitlement). Relays p(eating)
+    /// to the phone, which owns the fusion + nudge. See WatchEatingSensor.swift.
+    private var eatingSensor: WatchEatingSensor?
+    #endif
+
     init() {
         super.init(link: RemoteLink())
         for s in directSources { s.onChange = { [weak self] in self?.applyDirect() } }
         if !reachable { startDirect() }
+        #if FABOLUS_ONWATCH_EATING
+        eatingSensor = WatchEatingSensor { [weak self] prob in
+            guard let self else { return }
+            var c = RemoteCommand(kind: .eatingEvent); c.eatingProb = prob
+            self.link.send(c)
+        }
+        #endif
     }
+
+    #if FABOLUS_ONWATCH_EATING
+    /// The phone drives when the watch senses (battery): the routine status push carries
+    /// `eatingSensingOn`. Start/stop the on-device detector accordingly.
+    override func handle(_ cmd: RemoteCommand) {
+        super.handle(cmd)
+        if cmd.kind == .statusRead, let on = cmd.eatingSensingOn {
+            if on { eatingSensor?.start() } else { eatingSensor?.stop() }
+        }
+    }
+    #endif
 
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)
