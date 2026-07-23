@@ -40,7 +40,27 @@ the guess, where it lives, and how to verify.
   it shows the number + arrow and colors by range. If blank/0, switch to the string mode; if the unit
   arrow is missing, try `:units`.
 
-## 4. Passive Dexcom G6 direct BLE source (pre-existing, still experimental)
+## 4. Carb-bolus pump metadata (FOOD1 / foodVolume / bolusIOB / isAutopopBg) — audit C-07
+- **Now correct + oracle-locked:** a carb bolus sends `bolusTypeBitmask = FOOD1 (1)` (not FOOD2) with
+  `foodVolume == totalVolume`, matching the reverse-engineered reference captures
+  (`InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
+  are bounded to [0, 1000] g and BG to [0, 600] mg/dL before conversion. Delivered dose is driven by
+  `totalVolume` and is unchanged by these metadata fields.
+- **Still unverified (guesses, bench-gate before trusting the pump graph / Control-IQ carb awareness):**
+  - `bolusIOB` is sent as **0** from faBolus (the reference populates it — see the ID10653 vector). Wiring
+    the calculator's IOB through `deliverBolus`→`perform` is pending; harmless to delivery, but the pump's
+    IOB-on-record will read 0.
+  - `RemoteBgEntryRequest.isAutopopBg` is hard-coded **false** even for a CGM-sourced BG (provenance isn't
+    threaded through the backend yet).
+  - **Extended + carbs**: `foodVolume` is left 0 for the extended path (no oracle vector for a combo bolus
+    with carbs); the FOOD1|EXTENDED bit selection is applied but the component-volume split is a guess.
+  - The `RemoteCarbEntry/BgEntry` inserts are best-effort `try?` (a rejected entry never aborts the
+    bolus) with no ack/rollback.
+- **Verify (saline):** deliver a carb bolus; confirm the carb amount shows on the pump / t:connect and
+  Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery. Then wire bolusIOB +
+  isAutopopBg and remove those bullets.
+
+## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental)
 - Marked experimental in the CGM source picker; a passive G6 read may never connect (G6 needs an
   authenticated session). Prefer Dexcom Share or the xDrip App Group. See `docs/operate/cgm-failover.md`.
 

@@ -126,8 +126,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Latest bolus-calculator settings (carb ratio / ISF / target) for recommendBolus.
     private var calcSnapshot: BolusCalcDataSnapshotResponse?
 
-    private static let food2 = 8   // manual units-only bolus type
-    private static let food2Extended = 12   // FOOD2(8) | EXTENDED(4) — combo/extended bolus (oracle-verified)
+    // Oracle bolus-type bits (audit C-07, BolusDeliveryHistoryLog.BolusType): FOOD1 is used when there
+    // ARE carbs, FOOD2 when there are none. `perform` selects between them by carb presence and OR-s in
+    // EXTENDED for a combo bolus — it no longer hard-codes FOOD2 with carbs populated (which was
+    // internally inconsistent with the reverse-engineered reference).
+    private static let food1 = 1    // carbs present
+    private static let food2 = 8    // units-only (no carbs)
+    private static let extendedBit = 4
+    private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion (audit C-07)
     /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
@@ -346,20 +352,19 @@ public final class TandemBackend: NSObject, PumpBackend {
         for w in waiters { w.resume() }
     }
 
-    /// Delivers a units-only (FOOD2) bolus via the validated signed path. Raises the write
-    /// policy to `.allowDelivery` only for this call.
+    /// Delivers a standard bolus via the validated signed path. Raises the write policy to
+    /// `.allowDelivery` only for this call. `perform` picks FOOD1/FOOD2 by carb presence (audit C-07).
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
         return try await perform(totalMu: mu, extendedMu: 0, extendedSeconds: 0,
-                                 bitmask: Self.food2, displayUnits: units,
-                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Delivers an **extended (combo)** bolus: `nowUnits` up front and the remainder over
-    /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the FOOD2|EXTENDED bitmask (12),
-    /// matching the pump's extended-bolus byte format (oracle-verified). Total must be ≥ 0.40 U.
+    /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the EXTENDED bit set (oracle-
+    /// verified byte format); `perform` OR-s FOOD1/FOOD2 by carb presence. Total must be ≥ 0.40 U.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try validateDeliver(total: totalUnits)
@@ -374,8 +379,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         let clampedMinutes = max(1, min(durationMinutes, 24 * 60))
         let seconds = UInt32(clampedMinutes * 60)
         return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
-                                 bitmask: Self.food2Extended, displayUnits: totalUnits,
-                                 carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
 
     /// Shared pre-flight validation for any delivery (standard or extended).
@@ -394,7 +398,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// it sends the full-form InitiateBolusRequest (now-portion `totalMu`, later-portion `extendedMu`
     /// over `extendedSeconds`); otherwise a standard units-only bolus.
     private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
-                         bitmask: Int, displayUnits units: Double,
+                         displayUnits units: Double,
                          carbsGrams: Double? = nil, bgMgdl: Int? = nil) async throws -> Double {
         // Audit A-03: reject a second bolus while one is mid-flight (set synchronously so a double-tap
         // can't slip past before the flag is raised). Then serialize behind any other signed transaction.
@@ -442,8 +446,18 @@ public final class TandemBackend: NSObject, PumpBackend {
         // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT
         // change the delivered dose). Best-effort: a failed entry must NEVER abort the bolus, so the
         // InitiateBolus below still fires. Also mirrored inline in InitiateBolusRequest.bolusCarbs/BG.
-        let carbsInt = carbsGrams.map { Int($0.rounded()) } ?? 0
-        let bgInt = bgMgdl ?? 0
+        // Bound carbs before the Int/UInt16 conversion so a garbage value can't overflow or land as an
+        // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
+        let carbsInt = max(0, min(Self.maxCarbGrams, carbsGrams.map { Int($0.rounded()) } ?? 0))
+        let bgInt = max(0, min(600, bgMgdl ?? 0))
+        // Oracle bolus-type selection (audit C-07): carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
+        let extended = extendedMu > 0
+        let foodBit = carbsInt > 0 ? Self.food1 : Self.food2
+        let bitmask = extended ? (foodBit | Self.extendedBit) : foodBit
+        // For a standard carb bolus the reference puts the whole dose in `foodVolume` (correction 0);
+        // units-only and the extended path keep foodVolume 0 (extended+carbs foodVolume is unverified —
+        // see docs/UNVERIFIED-GUESSES.md).
+        let foodVolume: UInt32 = (carbsInt > 0 && !extended) ? totalMu : 0
         if carbsInt > 0 {
             try? client.send(RemoteCarbEntryRequest(carbs: carbsInt, unknown: 1,
                                                     pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
@@ -462,12 +476,13 @@ public final class TandemBackend: NSObject, PumpBackend {
                 self.initiateCont = nil; c.resume(throwing: BolusError.pumpRejected("no initiate response (timeout)"))
             }
             do {
-                let request: InitiateBolusRequest = extendedMu > 0
+                let request: InitiateBolusRequest = extended
                     ? InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: 0, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
                                            extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
                     : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           bolusCarbs: carbsInt, bolusBG: bgInt)
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                                           extendedVolume: 0, extendedSeconds: 0, extended3: 0)
                 try client.send(request, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
             } catch { initiateCont = nil; cont.resume(throwing: error) }
