@@ -14,8 +14,9 @@ theme:
   font:
     text: Inter
     code: JetBrains Mono
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   icon:
-    logo: material/water
     repo: fontawesome/brands/github
   palette:
     - media: "(prefers-color-scheme: light)"
