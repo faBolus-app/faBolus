@@ -60,23 +60,15 @@ struct SettingsView: View {
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
+                        #if FABOLUS_NUDGE
+                        NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
+                            Label(settings.smartAssistEnabled || settings.hypoAlertsEnabled || settings.eatingNudgesEnabled
+                                  ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
+                        }
+                        #endif
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
-                    // Smart Assist is powered by the faBolusNudge SDK; when the app is built without it
-                    // (repo unavailable — see scripts/generate-project.sh), the section is hidden.
-                    #if FABOLUS_NUDGE
-                    Section {
-                        Toggle("Bolus guardrail", isOn: $settings.smartAssistEnabled)
-                        Toggle("Predictive-low alerts", isOn: $settings.hypoAlertsEnabled)
-                        NavigationLink { EatingNudgeSettingsView() } label: {
-                            Label(settings.eatingNudgesEnabled ? "Eating nudges (on)" : "Eating nudges",
-                                  systemImage: "fork.knife")
-                        }
-                    } header: { Text("Smart Assist") } footer: {
-                        Text("**Advisory only** — never blocks or changes a dose. The bolus guardrail warns when a dose looks likely to cause a low or is stacking on active insulin. Predictive-low alerts warn in-app when a sustained low looks likely soon. Both off by default. Retrospective insights are under Data & History.")
-                    }
-                    #endif
                     Section {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")
@@ -362,14 +354,14 @@ struct PumpSettingsView: View {
                 }
             }
             Section {
-                Toggle("Auto Exercise mode on workout", isOn: $settings.autoExerciseMode)
-                Toggle("Auto Sleep mode on Sleep Focus", isOn: $settings.autoSleepMode)
+                Toggle("Allow auto Exercise mode", isOn: $settings.autoExerciseMode)
+                Toggle("Allow auto Sleep mode", isOn: $settings.autoSleepMode)
                 Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
                 NavigationLink { ModeAutomationHelpView() } label: {
-                    Label("How to set up the automations", systemImage: "wand.and.stars")
+                    Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
                 }
             } header: { Text("Activity & sleep automation") } footer: {
-                Text("Switch the pump into **Exercise** mode when a workout starts and **Sleep** mode when your iPhone enters Sleep Focus, via Apple Shortcuts automations you set up once. **Auto-switching is Mobi-only** (needs Advanced control on); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default.")
+                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default.")
             }
             if BackendRegistry.enabled.count > 1 {
                 Section {

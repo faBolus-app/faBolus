@@ -11,12 +11,11 @@ feature is untested and "will likely not work" before they run — not just the 
 (`ios/faBolus/Views/UnverifiedFeatureGate.swift`, wired in `PumpWizardViews.swift` / `SettingsView.swift`).
 
 ## 1. CGM alert type (high vs low)
-- **Guess (still open):** faBolus sends `alertType: 1` = High, `alertType: 0` = Low in
-  `CgmHighLowAlertRequest`. The jwoglom reference documents the OPPOSITE with named constants
-  (`ALERT_TYPE_HIGH = 0`, `ALERT_TYPE_LOW = 1`) — so faBolus is **likely reversed**. But the oracle's
-  `CgmHighLowAlertRequestTest` has **no captured BLE payload** (`// TODO: add tests…`), so there is no
-  ground truth, and flipping which threshold a safety alert sets is not something to change on a doc
-  alone. Left as-is and **gated by the blocking untested-feature modal** pending a pump/capture check.
+- **Now matches the reference (still gated):** faBolus now sends `alertType: 0` = High, `alertType: 1` =
+  Low, matching the jwoglom reference's named constants (`ALERT_TYPE_HIGH = 0`, `ALERT_TYPE_LOW = 1`).
+  (It was previously the reverse.) The oracle's `CgmHighLowAlertRequestTest` still has **no captured BLE
+  payload**, so this is reference-documented, not capture-verified — it remains **gated by the blocking
+  untested-feature modal** and warned in the footer pending a pump/capture confirmation.
 - **Where:** `ios/faBolus/Views/PumpWizardViews.swift` → `RemindersAlertsView` (CGM high/low section);
   backend `TandemBackend.setCgmHighLowAlert`. Rise/fall (`CgmRiseFallAlertRequest`) is not surfaced.
 - **Risk:** low (only sets which threshold changes; non-insulin). Worst case: sets the wrong one.

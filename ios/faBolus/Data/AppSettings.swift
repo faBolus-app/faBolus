@@ -256,11 +256,13 @@ public final class AppSettings {
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
-    public static let garminScreens: [String] = ["glance", "glucose", "alerts", "history", "details"]
+    public static let garminScreens: [String] = ["glance", "glucose", "clock", "bolusonly", "alerts", "history", "details"]
     public static func garminScreenLabel(_ id: String) -> String {
         switch id {
         case "glance": return "Glance (glucose + bolus)"
         case "glucose": return "Glucose only (no bolus button)"
+        case "clock": return "Clock + glucose (analog/digital, no bolus)"
+        case "bolusonly": return "Bolus button only"
         case "alerts": return "Alerts"
         case "history": return "History plot"
         case "details": return "Details"

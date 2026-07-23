@@ -391,14 +391,17 @@ struct RemindersAlertsView: View {
                 setButton { await model.setAlertSnooze(enabled: snoozeOn, durationMinutes: Int(snoozeMin)) }
             }
             Section {
+                // alertType 0 = HIGH, 1 = LOW — matches the jwoglom reference's named constants
+                // (CgmHighLowAlertRequest.ALERT_TYPE_HIGH=0 / ALERT_TYPE_LOW=1). Still gated + warned
+                // because the reference has no captured BLE payload for this message (docs #1).
                 Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text("High alert at \(Int(cgmHigh)) mg/dL") }
-                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
+                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
                 Stepper(value: $cgmLow, in: 60...120, step: 5) { Text("Low alert at \(Int(cgmLow)) mg/dL") }
-                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
+                unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
             } header: {
                 Text("CGM high / low alerts")
             } footer: {
-                Text("⚠️ Experimental: the high vs low alert-type mapping is an **unverified best guess** — after setting, check on the pump that the intended threshold actually changed. See docs/UNVERIFIED-GUESSES.md.")
+                Text("⚠️ The high/low alert-type mapping now matches the jwoglom reference (0 = high, 1 = low), but it is **not yet confirmed against a captured pump payload** — after setting, check on the pump that the intended threshold actually changed. See docs/UNVERIFIED-GUESSES.md.")
             }
             Section("CGM out-of-range alert") {
                 Toggle("Enabled", isOn: $cgmOorOn)
