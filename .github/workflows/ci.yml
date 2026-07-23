@@ -16,6 +16,10 @@ jobs:
       - name: Contract drift check
         run: ./scripts/check-schema-drift.sh
 
+      # Provenance chain (audit L-01): every vendored/local package must carry a LICENSE + an SBOM row.
+      - name: SBOM / license provenance check
+        run: ./scripts/check-sbom.sh
+
       # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
