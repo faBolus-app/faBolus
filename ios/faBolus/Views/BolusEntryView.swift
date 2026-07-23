@@ -223,6 +223,7 @@ struct BolusEntryView: View {
     private func deliver() async {
         delivering = true
         await model.deliverBolus(units: units)
+        if carbs > 0 { model.recordCarbs(grams: carbs) }   // persist carbs for insights/sensitivity
         delivering = false
         finishDelivery()
     }

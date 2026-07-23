@@ -68,4 +68,12 @@ final class HistoryStoreTests: XCTestCase {
         store.ingestBoluses([BolusMarker(date: t0, units: 4.5)], sourceID: "pump")
         XCTAssertEqual(store.boluses(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(60)).first?.units, 4.5)
     }
+
+    func testCarbsPersist() throws {
+        let store = try makeStore()
+        store.ingestCarbs([(date: t0, grams: 45)], sourceID: "fabolus")
+        let c = store.carbs(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(60))
+        XCTAssertEqual(c.count, 1)
+        XCTAssertEqual(c.first?.grams, 45)
+    }
 }

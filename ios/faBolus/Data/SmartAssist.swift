@@ -61,9 +61,39 @@ enum SmartAssist {
 
     // MARK: Retrospective insights (TherapyInsightsKit)
 
-    static func insights(cgm: [GlucoseReading]) -> [PatternInsights.Insight] {
-        PatternInsights().insights(cgm: cgm.map {
-            TherapyInsightsKit.CGMPoint(mgdl: Double($0.mgdl), date: $0.date)
-        })
+    static func insights(cgm: [GlucoseReading], carbs: [(date: Date, grams: Double)] = []) -> [PatternInsights.Insight] {
+        PatternInsights().insights(
+            cgm: cgm.map { TherapyInsightsKit.CGMPoint(mgdl: Double($0.mgdl), date: $0.date) },
+            carbs: carbs.map { TherapyInsightsKit.Carbs(grams: $0.grams, date: $0.date) })
+    }
+
+    private static func profile(isf: Int, carbRatio: Double, targetBg: Int) -> TherapyProfile {
+        // basalByHour is a placeholder (0s): we don't persist the pump's basal schedule yet, so basal
+        // suggestions are suppressed in the UI. ISF/CR/sensitivity only use isf/carbRatio.
+        TherapyProfile(basalByHour: Array(repeating: 0, count: 24),
+                       isf: Double(isf), carbRatio: carbRatio, targetMgdl: Double(targetBg))
+    }
+    private static func cgmPoints(_ r: [GlucoseReading]) -> [TherapyInsightsKit.CGMPoint] {
+        r.map { TherapyInsightsKit.CGMPoint(mgdl: Double($0.mgdl), date: $0.date) }
+    }
+    private static func insulin(_ b: [BolusMarker]) -> [TherapyInsightsKit.Insulin] {
+        b.map { TherapyInsightsKit.Insulin(units: $0.units, date: $0.date, isBolus: true) }
+    }
+    private static func carbEntries(_ c: [(date: Date, grams: Double)]) -> [TherapyInsightsKit.Carbs] {
+        c.map { TherapyInsightsKit.Carbs(grams: $0.grams, date: $0.date) }
+    }
+
+    static func sensitivity(cgm: [GlucoseReading], insulin ins: [BolusMarker],
+                            carbs: [(date: Date, grams: Double)], isf: Int, carbRatio: Double,
+                            targetBg: Int) -> SensitivityMonitor.State {
+        SensitivityMonitor().assess(cgm: cgmPoints(cgm), insulin: insulin(ins), carbs: carbEntries(carbs),
+                                    profile: profile(isf: isf, carbRatio: carbRatio, targetBg: targetBg))
+    }
+
+    static func settingsAdvice(cgm: [GlucoseReading], insulin ins: [BolusMarker],
+                               carbs: [(date: Date, grams: Double)], isf: Int, carbRatio: Double,
+                               targetBg: Int) -> TherapyAdvice {
+        TherapySettingsAdvisor().advise(cgm: cgmPoints(cgm), insulin: insulin(ins), carbs: carbEntries(carbs),
+                                        profile: profile(isf: isf, carbRatio: carbRatio, targetBg: targetBg))
     }
 }

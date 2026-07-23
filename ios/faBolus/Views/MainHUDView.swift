@@ -19,11 +19,17 @@ struct DashboardView: View {
                     StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
                     if let hypo = model.hypoWarning {
-                        Label(hypo.message, systemImage: "arrow.down.circle.fill")
-                            .font(.subheadline).foregroundStyle(.orange)
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
+                        HStack {
+                            Label(hypo.message, systemImage: "arrow.down.circle.fill")
+                                .font(.subheadline).foregroundStyle(.orange)
+                            Spacer()
+                            Button { model.dismissHypoWarning() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
                     }
 
                     AlertsBannerView(model: model)

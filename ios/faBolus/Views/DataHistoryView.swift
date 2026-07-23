@@ -11,6 +11,8 @@ struct DataHistoryView: View {
     @State private var confirmClear = false
     @State private var stats: GlucoseStatistics?
     @State private var insights: [PatternInsights.Insight] = []
+    @State private var sensitivity: SensitivityMonitor.State?
+    @State private var advice: TherapyAdvice?
 
     private let retentionOptions: [(label: String, days: Int)] = [
         ("Keep everything", 0), ("90 days", 90), ("1 year", 365),
@@ -38,6 +40,23 @@ struct DataHistoryView: View {
                             Text(insights[i].detail).font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                }
+            }
+
+            if hasSuggestions {
+                Section {
+                    if let s = sensitivity, s.level != .unknown {
+                        LabeledContent("Insulin sensitivity", value: s.level.rawValue.capitalized)
+                        if !s.note.isEmpty { Text(s.note).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    if let isf = advice?.isf {
+                        LabeledContent("Suggested ISF", value: "\(Int(isf)) mg/dL/U")
+                    }
+                    if let cr = advice?.carbRatio {
+                        LabeledContent("Suggested carb ratio", value: "\(Int(cr)) g/U")
+                    }
+                } header: { Text("Settings suggestions (advisory)") } footer: {
+                    Text("Derived from your own data — **advisory only, discuss with your clinician** before changing pump settings. Basal suggestions are omitted until the pump's basal schedule is available.")
                 }
             }
 
@@ -77,8 +96,14 @@ struct DataHistoryView: View {
         return mb < 1 ? String(format: "~%.0f KB", mb * 1000) : String(format: "~%.1f MB", mb)
     }
 
+    private var hasSuggestions: Bool {
+        (sensitivity != nil && sensitivity?.level != .unknown) || advice?.isf != nil || advice?.carbRatio != nil
+    }
+
     private func reload() {
         stats = model.storedStatistics(days: 90)
         insights = model.therapyInsights()
+        sensitivity = model.sensitivityState()
+        advice = model.settingsAdvice()
     }
 }
