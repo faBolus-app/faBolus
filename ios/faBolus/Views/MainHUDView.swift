@@ -32,6 +32,20 @@ struct DashboardView: View {
                         .padding(.horizontal)
                     }
 
+                    if let eating = model.eatingNudge {
+                        HStack {
+                            Label(eating.message, systemImage: "fork.knife")
+                                .font(.subheadline).foregroundStyle(.orange)
+                            Spacer()
+                            Button { model.dismissEatingNudge() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                    }
+
                     AlertsBannerView(model: model)
 
                     if let pending = model.pendingApproval {

@@ -4,6 +4,17 @@ import DosingSafetyKit
 import GlucoseIntelligenceKit
 import TherapyInsightsKit
 
+/// An advisory eating-nudge shown in the UI (from the multi-signal EatingTriggerEngine).
+struct EatingAlert: Sendable, Equatable {
+    let estimatedCarbs: Double     // 0 if only the accel signal fired (no carb estimate)
+    let at: Date
+    var message: String {
+        estimatedCarbs > 0
+            ? "Looks like you're eating (~\(Int(estimatedCarbs))g). Bolus?"
+            : "Looks like you might be eating. Bolus?"
+    }
+}
+
 /// A Sendable, faBolus-local view of a predictive-low warning (so it can cross actor isolation and drive
 /// the UI without coupling stored state to the SDK's type).
 struct HypoAlert: Sendable, Equatable {

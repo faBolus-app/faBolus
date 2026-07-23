@@ -28,6 +28,14 @@ public final class AppModel {
     private let hypoEngine = SmartAssist.makeHypoEngine()
     private var lastHypoIngest = Date.distantPast
     private(set) var hypoWarning: HypoAlert?
+
+    // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
+    @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
+    @ObservationIgnored private var lastEatingConfig: Data?
+    @ObservationIgnored private let mealDetector = MealDetector()
+    /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
+    @ObservationIgnored public var latestAccelProb: Double?
+    private(set) var eatingNudge: EatingAlert?
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     public private(set) var alertDebug: String = ""
@@ -518,6 +526,39 @@ public final class AppModel {
         alertIntel.record("predicted_low", .dismissed); saveAlertIntel(); hypoWarning = nil
     }
 
+    /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
+    /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
+    private func updateEatingNudge() {
+        guard AppSettings.shared.eatingNudgesEnabled else { eatingNudge = nil; return }
+        let cfg = AppSettings.shared.eatingTriggerConfig
+        if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
+        guard let history else { return }
+
+        let range = Date().addingTimeInterval(-2 * 3600)...Date()
+        var meal: MealDetector.Result?
+        if cfg.mode.usesCGM, snapshot.isf > 0, snapshot.carbRatio > 0 {
+            meal = mealDetector.detect(
+                glucose: history.glucose(in: range).map { (date: $0.date, mgdl: Double($0.mgdl)) },
+                doses: history.boluses(in: range).map { (date: $0.date, units: $0.units) },
+                announcedCarbs: history.carbs(in: range),
+                carbRatio: snapshot.carbRatio, isf: Double(snapshot.isf))
+        }
+        let minsSinceBolus = bolusMarkers.map(\.date).max()
+            .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
+        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? latestAccelProb : nil,
+                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus)
+
+        if case .fire = eatingEngine.evaluate(signals) {
+            if case .suppress = alertIntel.decide(AlertIntelligenceKit.Alert(kind: "eating", severity: 1)) { return }
+            eatingNudge = EatingAlert(estimatedCarbs: meal?.estimatedCarbs ?? 0, at: Date())
+        }
+    }
+
+    /// User dismissed the eating nudge → teach the eating fatigue layer + clear it.
+    public func dismissEatingNudge() {
+        alertIntel.record("eating", .dismissed); saveAlertIntel(); eatingNudge = nil
+    }
+
     private func refresh() {
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
@@ -541,6 +582,7 @@ public final class AppModel {
         persistNewHistory(provenance: provenance)
         updateHypoWarning()
         maybeBackfillNightscout()
+        updateEatingNudge()
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
