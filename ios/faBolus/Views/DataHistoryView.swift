@@ -1,6 +1,5 @@
 import SwiftUI
 import faBolusCore
-import TherapyInsightsKit
 
 /// Data & History settings — time-in-range from the persisted store, storage size, an optional
 /// retention (auto-delete) control, and a clear-history action. Storage is ~1 MB/month, so the default
@@ -10,9 +9,9 @@ struct DataHistoryView: View {
     @State private var settings = AppSettings.shared
     @State private var confirmClear = false
     @State private var stats: GlucoseStatistics?
-    @State private var insights: [PatternInsights.Insight] = []
-    @State private var sensitivity: SensitivityMonitor.State?
-    @State private var advice: TherapyAdvice?
+    @State private var insights: [TherapyInsightItem] = []
+    @State private var sensitivity: SensitivitySummary?
+    @State private var advice: SettingsAdvice?
     @State private var autotune: [String] = []
 
     private let retentionOptions: [(label: String, days: Int)] = [
@@ -46,8 +45,8 @@ struct DataHistoryView: View {
 
             if hasSuggestions {
                 Section {
-                    if let s = sensitivity, s.level != .unknown {
-                        LabeledContent("Insulin sensitivity", value: s.level.rawValue.capitalized)
+                    if let s = sensitivity, s.level != "unknown" {
+                        LabeledContent("Insulin sensitivity", value: s.level.capitalized)
                         if !s.note.isEmpty { Text(s.note).font(.caption).foregroundStyle(.secondary) }
                     }
                     if let isf = advice?.isf {
@@ -114,7 +113,7 @@ struct DataHistoryView: View {
     }
 
     private var hasSuggestions: Bool {
-        (sensitivity != nil && sensitivity?.level != .unknown) || advice?.isf != nil || advice?.carbRatio != nil
+        (sensitivity != nil && sensitivity?.level != "unknown") || advice?.isf != nil || advice?.carbRatio != nil
             || (advice?.basalByHour.contains { $0 != nil } ?? false) || !autotune.isEmpty
     }
 

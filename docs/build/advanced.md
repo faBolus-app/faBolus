@@ -67,7 +67,7 @@ xcrun devicectl device install app --device <UDID> \
 
 ### Choosing what's included (env flags)
 
-`./scripts/generate-project.sh` reads two environment variables to decide what to bake into the
+`./scripts/generate-project.sh` reads a few environment variables to decide what to bake into the
 generated `.xcodeproj`. When either optional component is dropped, its package/dependency and its
 compile flag are stripped from a derived spec (`project.generated.yml`), and the app shows a note in
 its **Remotes & devices** settings section explaining what was left out and how to add it back
@@ -77,10 +77,12 @@ its **Remotes & devices** settings section explaining what was left out and how 
 | --- | --- | --- |
 | `FABOLUS_WATCH` | `1` (included) | `FABOLUS_WATCH=0` builds the phone app **without** embedding the Apple Watch app (drops the embed dependency + `WATCH_EMBEDDED` flag). |
 | `FABOLUS_GARMIN` | auto-detected | Unset: Garmin is included only if the Connect IQ SDK is present at the vendored path. `FABOLUS_GARMIN=1` / `=0` forces Garmin on/off, overriding auto-detection (`=1` requires the SDK; `=0` drops the ConnectIQ package + `GARMIN` flag). |
+| `FABOLUS_NUDGE` | auto-detected | Unset: the [faBolusNudge](https://github.com/faBolus-app/faBolusNudge) advisory SDK is included only if its repo is reachable (`git ls-remote`). If you don't have access, it's dropped automatically — the **Smart Assist** features (bolus guardrail, predictive-low, insights, autotune, eating detection) compile out and the app still builds. `FABOLUS_NUDGE=1` / `=0` forces it on/off (`=1` requires repo access; `=0` drops the package, its 7 products, and the `FABOLUS_NUDGE` flag). Forcing it off also forces on-watch eating off. |
+| `FABOLUS_ONWATCH_EATING` | `0` (off) | `=1` compiles the Apple-Watch **on-device** eating detector in (needs the paid HealthKit entitlement + the nudge SDK). Off by default so the app builds/installs on a free account. |
 
 ```sh
-# phone app only — no watch, no Garmin
-FABOLUS_WATCH=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+# phone app only — no watch, no Garmin, no Smart Assist SDK
+FABOLUS_WATCH=0 FABOLUS_GARMIN=0 FABOLUS_NUDGE=0 ./scripts/generate-project.sh
 ```
 
 !!! note "Plain `xcodegen generate` includes everything"

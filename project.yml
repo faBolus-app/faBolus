@@ -29,11 +29,13 @@ packages:
     # Dexcom Share follower core, vendored from LoopKit/dexcom-share-client-swift (MIT) — the
     # validated client Loop uses. Powers DexcomShareSource. See Phase 6 in MIGRATION.md.
     path: Packages/ShareClient
+  # >>> NUDGE (scripts/generate-project.sh strips this block when the faBolusNudge repo is unavailable)
   faBolusNudge:
     # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
     # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
     url: https://github.com/faBolus-app/faBolusNudge.git
     revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
+  # <<< NUDGE
   PumpX2Kit:
     # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
     path: ../PumpX2Kit
@@ -67,6 +69,7 @@ targets:
         product: HistoryStore
       - package: ShareClient
         product: ShareClient
+      # >>> NUDGE (stripped by scripts/generate-project.sh when the faBolusNudge repo is unavailable)
       - package: faBolusNudge
         product: DosingSafetyKit
       - package: faBolusNudge
@@ -81,6 +84,7 @@ targets:
         product: EatingDetectionKit
       - package: faBolusNudge
         product: ModelCatalogKit
+      # <<< NUDGE
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
@@ -143,6 +147,9 @@ targets:
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
         # Scan a host phone's pairing QR code when using this phone as a remote.
         NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
+        # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
+        # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
+        NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
@@ -177,9 +184,9 @@ targets:
       # above) when the Garmin SDK is absent or FABOLUS_WATCH=0, so the app compiles without them.
       configs:
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # (The glucose complication extension is temporarily NOT embedded: it needs the App Group

@@ -1,3 +1,4 @@
+#if FABOLUS_NUDGE
 import Foundation
 import faBolusCore
 import AutotuneKit
@@ -109,3 +110,4 @@ enum AutotuneAdapter {
         return out.isEmpty ? nil : out
     }
 }
+#endif // FABOLUS_NUDGE

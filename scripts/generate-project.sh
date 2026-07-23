@@ -32,10 +32,22 @@ else
   GARMIN=1; [ -d "$SDK_DIR" ] || GARMIN=0
 fi
 WATCH="${FABOLUS_WATCH:-1}"
+# faBolusNudge advisory SDK (Smart Assist: bolus guardrail, predictive-low, insights, autotune, eating
+# detection). Auto-detected: if the (private) repo isn't reachable, the package + its 7 products + the
+# FABOLUS_NUDGE compile flag are stripped and the Smart Assist features compile out — the app still
+# builds. Override with FABOLUS_NUDGE=0/1.
+if [ -n "${FABOLUS_NUDGE:-}" ]; then
+  NUDGE="$FABOLUS_NUDGE"
+else
+  NUDGE=1
+  git ls-remote https://github.com/faBolus-app/faBolusNudge.git HEAD >/dev/null 2>&1 || NUDGE=0
+fi
 # On-watch eating detection defaults OFF (paid HealthKit entitlement required). Auto-excluded unless
-# the user opts in on a paid account. Also force-off if the watch app itself is excluded.
+# the user opts in on a paid account. Also force-off if the watch app itself is excluded, or if the
+# nudge SDK (which provides the eating model kit) is unavailable.
 ONWATCH="${FABOLUS_ONWATCH_EATING:-0}"
 [ "$WATCH" = 0 ] && ONWATCH=0
+[ "$NUDGE" = 0 ] && ONWATCH=0
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -62,8 +74,13 @@ if [ "$ONWATCH" = 0 ]; then
   # configs block (incl. the FABOLUS_ONWATCH_EATING flag) lives inside these markers too.
   strip_block ONWATCH_EATING
 fi
+if [ "$NUDGE" = 0 ]; then
+  strip_block NUDGE                        # the faBolusNudge package + its 7 product dependencies
+  sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
+fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE"
+[ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
 [ "$ONWATCH" = 0 ] && echo "  → building WITHOUT on-watch eating detection (needs paid HealthKit; set FABOLUS_ONWATCH_EATING=1 to enable)"

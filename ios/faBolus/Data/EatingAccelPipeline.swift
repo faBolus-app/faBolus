@@ -1,3 +1,4 @@
+#if FABOLUS_NUDGE
 import Foundation
 import EatingDetectionKit
 import ModelCatalogKit
@@ -74,3 +75,4 @@ private struct URLEatingModel: EatingModel {
     }
 }
 #endif
+#endif // FABOLUS_NUDGE

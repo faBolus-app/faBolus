@@ -1,8 +1,10 @@
 import Foundation
 import faBolusCore
+#if FABOLUS_NUDGE
 import DosingSafetyKit
 import GlucoseIntelligenceKit
 import TherapyInsightsKit
+#endif
 
 /// An advisory eating-nudge shown in the UI (from the multi-signal EatingTriggerEngine).
 struct EatingAlert: Sendable, Equatable {
@@ -31,6 +33,13 @@ struct HypoAlert: Sendable, Equatable {
     }
 }
 
+// App-local, kit-free mirrors of the therapy-advice results so views (DataHistoryView) never reference
+// faBolusNudge types — the Smart Assist features can then compile out when the SDK is unavailable.
+public struct TherapyInsightItem: Identifiable, Equatable { public let id = UUID(); public let title: String; public let detail: String }
+public struct SensitivitySummary: Equatable { public let level: String; public let note: String }   // level: "unknown"/"low"/…
+public struct SettingsAdvice: Equatable { public let isf: Double?; public let carbRatio: Double?; public let basalByHour: [Double?] }
+
+#if FABOLUS_NUDGE
 /// Bridges faBolus data to the DosingSafetyKit guardrail (advisory only). Given the bolus the user is
 /// about to give + recent history + the pump's ISF/CR, it returns warnings (predicted low, insulin
 /// stacking, oversized correction, …). Empty = looks fine. It NEVER blocks a dose — the app decides how
@@ -106,3 +115,4 @@ enum SmartAssist {
             profile: profile(basalByHour: basalByHour, isf: isf, carbRatio: carbRatio, targetBg: targetBg))
     }
 }
+#endif

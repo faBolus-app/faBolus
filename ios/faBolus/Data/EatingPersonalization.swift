@@ -1,3 +1,4 @@
+#if FABOLUS_NUDGE
 import Foundation
 import EatingDetectionKit
 
@@ -95,3 +96,4 @@ private struct TrainerBox: @unchecked Sendable {
     init(_ t: OnDeviceTrainer) { trainer = t }
 }
 #endif
+#endif // FABOLUS_NUDGE
