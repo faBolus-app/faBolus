@@ -1,28 +1,41 @@
 import Foundation
 
-/// Configurable, multi-signal eating-nudge trigger. The user picks which signals must agree (accelerometer
-/// eating prediction, CGM unannounced-meal prediction, optional location), how they combine, a
-/// no-recent-bolus gate, and a **confirmation delay** (patience). Advisory only — it decides *whether to
-/// prompt*, never doses. Pure/testable; lives in faBolusCore so the app + tests share it.
+/// Configurable, multi-signal eating-nudge trigger. The user picks a **mode** (how the accelerometer and
+/// CGM-meal signals combine), thresholds, a no-recent-bolus gate, an optional location gate, and a
+/// **confirmation delay**. Advisory only — it decides *whether to prompt*, never doses. Pure/testable;
+/// lives in faBolusCore so the app + tests share it.
 public struct EatingTriggerConfig: Codable, Equatable, Sendable {
-    public enum Combine: String, Codable, CaseIterable, Sendable {
-        case all          // every enabled signal must be positive (fewest false alerts)
-        case any          // any one enabled signal (most sensitive)
-        case atLeastTwo   // ≥2 enabled signals agree
+    public enum Mode: String, Codable, CaseIterable, Sendable {
+        /// DEFAULT, battery-smart: the CGM (already streaming, no extra battery) flags a likely meal, then
+        /// the wrist sensor spins up to CONFIRM. Fewest false alerts + lowest battery, but a *later* nudge
+        /// (CGM lags ~20 min) — a "you ate & haven't bolused" catch rather than an early pre-bolus prompt.
+        case cgmThenAccel
+        /// Accel + CGM both sensed continuously; both must agree. Early + precise, but highest battery.
+        case bothAlways
+        /// Either signal fires. Earliest + most sensitive, most false alerts.
+        case either
+        /// Accelerometer only (early; needs the wrist sensor running).
+        case accelOnly
+        /// CGM only (no wrist sensor; later; noisier — CGM rises aren't always meals).
+        case cgmOnly
+
+        public var usesAccel: Bool { self != .cgmOnly }
+        public var usesCGM: Bool { self != .accelOnly }
+        /// Keep the wrist sensor OFF until the CGM flags a likely meal (the battery win).
+        public var escalatesAccelFromCGM: Bool { self == .cgmThenAccel }
     }
+
+    public var mode: Mode = .cgmThenAccel
     /// Accelerometer p(eating) ≥ this counts as positive. Higher = fewer false alerts, lower recall.
-    public var accelEnabled = true
     public var accelThreshold = 0.85
     /// CGM unannounced-meal score (0…1) ≥ this counts as positive. Higher = stricter.
-    public var cgmMealEnabled = true
     public var cgmMealThreshold = 0.5
     /// Only nudge at a learned "meal place" (optional/advanced; off by default for privacy).
     public var locationEnabled = false
-    public var combine: Combine = .all
     /// Suppress if a bolus was given within this many minutes (you already covered it).
     public var minMinutesSinceBolus = 20
     /// The fused condition must hold this long before firing. Longer = more confident / fewer false
-    /// alerts, but a later (clinically weaker) nudge. Maps to the detector's sustained-window debounce.
+    /// alerts, but a later (clinically weaker) nudge.
     public var confirmationDelaySeconds = 60
 
     public init() {}
@@ -68,26 +81,18 @@ public final class EatingTriggerEngine {
             return .suppress(reason: "not at a meal location")
         }
 
-        var required = 0, positives = 0
-        if config.accelEnabled {
-            required += 1
-            if let p = s.accelProb, p >= config.accelThreshold { positives += 1 }
-        }
-        if config.cgmMealEnabled {
-            required += 1
-            if let m = s.cgmMealScore, m >= config.cgmMealThreshold { positives += 1 }
-        }
-        // Location, when enabled, is a gate (handled above), not a counted signal.
-
+        let accelPos = (s.accelProb ?? -1) >= config.accelThreshold
+        let cgmPos = (s.cgmMealScore ?? -1) >= config.cgmMealThreshold
         let met: Bool
-        switch config.combine {
-        case .all:        met = required > 0 && positives == required
-        case .any:        met = positives >= 1
-        case .atLeastTwo: met = positives >= 2
-        }
+        switch config.mode {
+        case .accelOnly:                 met = accelPos
+        case .cgmOnly:                   met = cgmPos
+        case .either:                    met = accelPos || cgmPos
+        case .bothAlways, .cgmThenAccel: met = accelPos && cgmPos   // cgmThenAccel differs only in *when*
+        }                                                            // accel is sensed (wiring/battery)
         guard met else {
             conditionSince = nil
-            return .hold(reason: "signals not met (\(positives)/\(required))")
+            return .hold(reason: "signals not met")
         }
 
         if conditionSince == nil { conditionSince = now }
@@ -101,73 +106,58 @@ public final class EatingTriggerEngine {
 }
 
 /// Rough, clearly-approximate guidance shown next to each setting so the user can tune the trade-off.
-/// Direction is what matters: stricter thresholds / more signals (`.all`) / longer delay ⇒ fewer false
-/// alerts and a later nudge; `.any` / lower thresholds ⇒ earlier + more sensitive but noisier. The
-/// on-device personalizer + AlertIntelligence refine actual rates per user over time.
+/// Direction is what matters: stricter thresholds / `.cgmThenAccel` / `.bothAlways` / longer delay ⇒ fewer
+/// false alerts (and, for `cgmThenAccel`, lower battery + a later nudge); `.either` / lower thresholds ⇒
+/// earlier + more sensitive but noisier. The on-device personalizer + AlertIntelligence refine actual
+/// rates per user over time.
 public struct EatingTriggerEstimate: Equatable, Sendable {
+    public enum Battery: String, Sendable { case none, low, medium, high }
     public let falseAlertsPerDay: Double
     public let recallPercent: Int          // ~% of meals caught
     public let typicalTimeToAlertSeconds: Int
+    public let battery: Battery
 }
 
 public enum EatingTriggerEstimator {
-    // Baselines at a "default" operating point, from the eating-model + CGM-meal literature (approx).
-    private static let accelBaseFA = 4.0     // FA/day for accel alone at threshold ~0.85
-    private static let cgmBaseFA = 1.5       // FA/day for CGM unannounced-meal alone
+    private static let accelBaseFA = 4.0
+    private static let cgmBaseFA = 1.5
     private static let accelBaseRecall = 0.60
     private static let cgmBaseRecall = 0.55
-    private static let cgmDetectionLagSec = 20 * 60   // CGM meal shows ~20 min after eating starts
-    private static let accelDetectionLagSec = 60      // wrist motion is near-immediate
+    private static let cgmDetectionLagSec = 20 * 60
+    private static let accelDetectionLagSec = 60
 
     public static func estimate(_ c: EatingTriggerConfig) -> EatingTriggerEstimate {
-        // Per-signal FA/day and recall scaled by how strict the threshold is (higher threshold ⇒ fewer FA,
-        // lower recall). Threshold 0.85/0.5 = baseline.
-        func scaled(baseFA: Double, baseRecall: Double, threshold: Double, ref: Double)
-            -> (fa: Double, recall: Double) {
-            let strictness = max(0.1, threshold / ref)          // >1 = stricter than baseline
+        func scaled(baseFA: Double, baseRecall: Double, threshold: Double, ref: Double) -> (fa: Double, recall: Double) {
+            let strictness = max(0.1, threshold / ref)
             return (baseFA / (strictness * strictness), min(0.95, baseRecall / strictness))
         }
+        let a = scaled(baseFA: accelBaseFA, baseRecall: accelBaseRecall, threshold: c.accelThreshold, ref: 0.85)
+        let g = scaled(baseFA: cgmBaseFA, baseRecall: cgmBaseRecall, threshold: c.cgmMealThreshold, ref: 0.5)
 
-        var faList: [Double] = [], recallList: [Double] = []
-        var lags: [Int] = []
-        if c.accelEnabled {
-            let a = scaled(baseFA: accelBaseFA, baseRecall: accelBaseRecall, threshold: c.accelThreshold, ref: 0.85)
-            faList.append(a.fa); recallList.append(a.recall); lags.append(accelDetectionLagSec)
-        }
-        if c.cgmMealEnabled {
-            let g = scaled(baseFA: cgmBaseFA, baseRecall: cgmBaseRecall, threshold: c.cgmMealThreshold, ref: 0.5)
-            faList.append(g.fa); recallList.append(g.recall); lags.append(cgmDetectionLagSec)
-        }
-        guard !faList.isEmpty else {
-            return EatingTriggerEstimate(falseAlertsPerDay: 0, recallPercent: 0, typicalTimeToAlertSeconds: 0)
-        }
-
-        var fa: Double, recall: Double, lag: Int
-        switch c.combine {
-        case .all:
-            // AND: false alerts must coincide → roughly the product (scaled to /day); recall is the min;
-            // you wait for the slowest signal.
-            fa = faList.reduce(1, *) / pow(24, Double(faList.count - 1))   // coincidence within ~1h windows
-            recall = recallList.min() ?? 0
-            lag = lags.max() ?? 0
-        case .any:
-            // OR: false alerts add up; recall combines; you fire on the fastest signal.
-            fa = faList.reduce(0, +)
-            recall = 1 - recallList.reduce(1) { $0 * (1 - $1) }
-            lag = lags.min() ?? 0
-        case .atLeastTwo:
-            fa = (faList.reduce(1, *) / pow(24, Double(max(1, faList.count - 1)))) * 1.5
-            recall = recallList.min() ?? 0
-            lag = lags.max() ?? 0
+        var fa = 0.0, recall = 0.0, lag = 0, battery: EatingTriggerEstimate.Battery = .low
+        // AND coincidence within ~1 h windows ⇒ product / 24.
+        let andFA = (a.fa * g.fa) / 24.0
+        switch c.mode {
+        case .accelOnly:
+            fa = a.fa; recall = a.recall; lag = accelDetectionLagSec; battery = .medium
+        case .cgmOnly:
+            fa = g.fa; recall = g.recall; lag = cgmDetectionLagSec; battery = .none
+        case .either:
+            fa = a.fa + g.fa; recall = 1 - (1 - a.recall) * (1 - g.recall)
+            lag = min(accelDetectionLagSec, cgmDetectionLagSec); battery = .high
+        case .bothAlways:
+            fa = andFA; recall = min(a.recall, g.recall); lag = max(accelDetectionLagSec, cgmDetectionLagSec); battery = .high
+        case .cgmThenAccel:
+            // CGM flags first, wrist confirms during a burst → same precision as bothAlways, but accel only
+            // runs on demand (low battery) and the nudge waits for the CGM lag + a short confirm.
+            fa = andFA; recall = min(a.recall, g.recall); lag = cgmDetectionLagSec + accelDetectionLagSec; battery = .low
         }
 
-        // Confirmation delay: fewer transient false alerts (decays with delay), later alert (adds delay).
         let delay = Double(c.confirmationDelaySeconds)
-        fa *= exp(-delay / 180)                        // ~3-min time-constant for transient FAs
+        fa *= exp(-delay / 180)
         lag += c.confirmationDelaySeconds
-
         return EatingTriggerEstimate(falseAlertsPerDay: (fa * 10).rounded() / 10,
                                      recallPercent: Int((recall * 100).rounded()),
-                                     typicalTimeToAlertSeconds: lag)
+                                     typicalTimeToAlertSeconds: lag, battery: battery)
     }
 }
