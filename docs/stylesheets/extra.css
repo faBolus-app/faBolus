@@ -67,6 +67,26 @@
 [data-md-color-scheme="slate"]   .md-header { background-color: #0b1220; }
 .md-header__title { font-weight: 700; letter-spacing: -.01em; }
 
+/* =========================================================================
+   Persistent safety banner — stays pinned at the very top while scrolling.
+   The banner (overrides/main.html → block announce) is normally in the flow and
+   scrolls away; make it sticky and push the (also-sticky) header below it. The
+   banner wraps on narrow screens, so its real height is synced into
+   --fab-banner-h by docs/javascripts/banner.js (the value below is the fallback).
+   ========================================================================= */
+:root { --fab-banner-h: 2.6rem; }
+.md-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1001;                         /* above the sticky header */
+  background-color: #7a1220;             /* deep red so it clearly reads as a warning */
+  color: #fff;
+}
+.md-banner a { color: #fff; text-decoration: underline; }
+.md-header { top: var(--fab-banner-h, 0); }   /* sit directly below the pinned banner */
+/* Keep anchor-link jumps from landing under the pinned banner + header. */
+html { scroll-padding-top: calc(var(--fab-banner-h, 2.6rem) + 3rem); }
+
 /* Search box */
 [data-md-color-scheme="default"] .md-search__form {
   background: var(--cx2-bg-soft);

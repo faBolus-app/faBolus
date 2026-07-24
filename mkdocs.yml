@@ -49,6 +49,9 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - javascripts/banner.js   # keeps the sticky safety banner sized so the header stacks below it
+
 markdown_extensions:
   - abbr
   - admonition
