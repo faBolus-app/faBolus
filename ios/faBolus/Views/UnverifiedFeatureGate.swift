@@ -31,7 +31,13 @@ final class UnverifiedFeatureGate {
         self.isPresented = true
     }
 
-    func proceed() { let p = pending; pending = nil; p?() }
+    func proceed() {
+        // FB-06: the acknowledgment is enforced centrally at the AppModel write boundary, so record it
+        // here (right before the gated action runs) — that's what lets `createProfile`, segment CRUD,
+        // the CGM high/low alert, and backup-restore reconfigure pass their fail-closed policy check.
+        AppModel.shared?.acknowledgeUnverifiedTherapy()
+        let p = pending; pending = nil; p?()
+    }
     func cancel() { pending = nil }
 }
 

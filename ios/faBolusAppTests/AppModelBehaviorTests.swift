@@ -315,4 +315,64 @@ struct AppModelBehaviorTests {
             #expect(abs(backend2.snapshot.iobUnits - iob0) < tol)      // backend2 untouched
         }
     }
+
+    // MARK: - FB-06: central unverified-therapy gate (a new caller must fail closed unless acknowledged)
+
+    /// An IDP write with NO prior acknowledgment is refused at the AppModel boundary: the backend is
+    /// never touched and `lastError` explains why. This is the policy a *new* caller must satisfy — the
+    /// gate no longer lives only on the individual UI buttons.
+    @Test func unverifiedIdpWriteWithoutAckFailsClosed() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            #expect(!model.hasRecentUnverifiedAck)
+            await model.createProfile(name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 0)                        // backend never hit
+            #expect(model.lastError != nil)                            // fail-closed reason surfaced
+            #expect(model.snapshot.profiles.isEmpty)                   // and no profile appeared
+        }
+    }
+
+    /// The same write proceeds after `acknowledgeUnverifiedTherapy()` (what `UnverifiedFeatureGate` /
+    /// the restore confirmation call), and the one-shot ack is consumed so a *second* write fails closed.
+    @Test func unverifiedIdpWriteWithAckProceedsThenReArms() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            model.acknowledgeUnverifiedTherapy()
+            #expect(model.hasRecentUnverifiedAck)
+            await model.createProfile(name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 1)                        // reached the backend once
+            #expect(model.lastError == nil)
+            #expect(model.snapshot.profiles.count == 1)
+
+            // One-shot: the ack was consumed, so the next write is refused again (no accidental repeat).
+            #expect(!model.hasRecentUnverifiedAck)
+            await model.createProfile(name: "Test2", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 1)                        // still only the first write
+            #expect(model.lastError != nil)
+        }
+    }
+
+    /// Segment delete (the swipe action that previously bypassed the UI gate) and the CGM high/low alert
+    /// are gated too — proving the boundary covers every consequential unverified-therapy write.
+    @Test func segmentDeleteAndCgmAlertAreGated() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            await model.deleteProfileSegment(idpId: 1, segmentIndex: 0)
+            #expect(backend.idpWriteCount == 0)
+            #expect(model.lastError != nil)
+
+            await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true)
+            #expect(backend.idpWriteCount == 0)
+            #expect(model.lastError != nil)
+
+            // With an ack, the CGM alert write goes through.
+            model.acknowledgeUnverifiedTherapy()
+            await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true)
+            #expect(backend.idpWriteCount == 1)
+            #expect(model.lastError == nil)
+        }
+    }
 }

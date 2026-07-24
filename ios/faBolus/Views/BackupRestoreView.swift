@@ -238,7 +238,12 @@ private struct PumpReconfigureView: View {
         .navigationTitle("Pump settings")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Write these settings to the pump?", isPresented: $confirming, titleVisibility: .visible) {
-            Button("Apply to pump", role: .destructive) { Task { await apply() } }
+            Button("Apply to pump", role: .destructive) {
+                // FB-06: this confirmation IS the untested-feature acknowledgment for the whole batch
+                // reconfigure; record it so `applyPumpSettings`' central gate lets the writes through.
+                model.acknowledgeUnverifiedTherapy()
+                Task { await apply() }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Creates the profiles above and sets Control-IQ + max bolus on the connected Mobi. Experimental — verify against your prescription.")

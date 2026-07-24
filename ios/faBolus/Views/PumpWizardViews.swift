@@ -491,6 +491,7 @@ struct ProfileSegmentsView: View {
     @State private var editing: PumpProfileSegment?    // non-nil = edit sheet
     @State private var adding = false
     @State private var busy = false
+    @State private var unverified = UnverifiedFeatureGate()
 
     private func hhmm(_ min: Int) -> String { String(format: "%02d:%02d", min / 60, min % 60) }
 
@@ -506,8 +507,13 @@ struct ProfileSegmentsView: View {
                         }
                     }
                     .swipeActions {
-                        Button(role: .destructive) { run { await model.deleteProfileSegment(idpId: idpId, segmentIndex: s.segmentIndex) } }
-                            label: { Label("Delete", systemImage: "trash") }
+                        Button(role: .destructive) {
+                            // Basal-schedule write — same untested-feature acknowledgment as add/edit
+                            // (FB-06: the swipe-delete previously bypassed the gate entirely).
+                            unverified.request("Deleting a profile time-segment (the basal schedule)") {
+                                run { await model.deleteProfileSegment(idpId: idpId, segmentIndex: s.segmentIndex) }
+                            }
+                        } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
                 if model.snapshot.viewedProfileSegments.isEmpty { Text("Loading segments…").foregroundStyle(.secondary) }
@@ -532,6 +538,7 @@ struct ProfileSegmentsView: View {
                                                     basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
             }
         }
+        .unverifiedFeatureGate(unverified)
     }
 
     private func run(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }

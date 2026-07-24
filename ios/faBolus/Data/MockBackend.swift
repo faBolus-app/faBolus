@@ -221,8 +221,12 @@ public final class MockBackend: PumpBackend {
         snapshot.profiles = snapshot.profiles.map { $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0 }; onChange?()
     }
     public func deleteProfile(idpId: Int) async throws { snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
+    /// FB-06 test hook: counts IDP / CGM-alert writes that actually reached the backend, so a test can
+    /// prove the central unverified-therapy gate fails **closed** (count stays 0 without an ack).
+    public private(set) var idpWriteCount = 0
     public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
                               isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws {
+        idpWriteCount += 1
         let newId = (snapshot.profiles.map { $0.idpId }.max() ?? 0) + 1
         snapshot.profiles.append(PumpProfileInfo(idpId: newId, name: name, active: false)); onChange?()
     }
@@ -235,6 +239,7 @@ public final class MockBackend: PumpBackend {
     }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
                                   carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        idpWriteCount += 1
         let idx = (snapshot.viewedProfileSegments.map { $0.segmentIndex }.max() ?? -1) + 1
         snapshot.viewedProfileSegments.append(PumpProfileSegment(idpId: idpId, segmentIndex: idx, startTimeMinutes: startTimeMinutes,
                                                                  basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg))
@@ -242,19 +247,21 @@ public final class MockBackend: PumpBackend {
     }
     public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
                                      carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws {
+        idpWriteCount += 1
         snapshot.viewedProfileSegments = snapshot.viewedProfileSegments.map {
             $0.segmentIndex == segmentIndex ? PumpProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes,
                                                                  basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) : $0 }
         onChange?()
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws {
+        idpWriteCount += 1
         snapshot.viewedProfileSegments.removeAll { $0.segmentIndex == segmentIndex }; onChange?()
     }
     public func setLowInsulinAlert(thresholdUnits: Int) async throws {}
     public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {}
     public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {}
     public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws {}
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {}
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws { idpWriteCount += 1 }
     public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws {}
     public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {}
 }

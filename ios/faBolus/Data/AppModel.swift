@@ -914,6 +914,45 @@ public final class AppModel {
         // to the remotes immediately rather than waiting on the 15 s throttle.
         forceStatusPush()
     }
+
+    // MARK: Unverified-therapy central gate (FB-06)
+
+    /// Timestamp of the most recent user acknowledgment of the "untested feature" warning
+    /// (`UnverifiedFeatureGate`). Therapy-defining writes for unverified, hardware-unvalidated features
+    /// — IDP profile/segment CRUD, pump reconfigure, and the CGM high/low alert — are refused at *this*
+    /// AppModel boundary unless a recent ack exists, so a **new caller can't bypass the on-screen
+    /// warning** by invoking the AppModel method directly (the earlier design only gated the individual
+    /// UI buttons, which `applyPumpSettings` and a fresh caller could sidestep). `@ObservationIgnored`:
+    /// pure policy state, never rendered.
+    @ObservationIgnored private var unverifiedTherapyAckAt: Date?
+    /// How long an acknowledgment authorizes gated writes — also the window a single ack covers a whole
+    /// batch reconfigure (many sub-writes) after one confirmation.
+    static let unverifiedAckMaxAge: TimeInterval = 120
+
+    /// Record that the user acknowledged the untested-feature warning. Called by `UnverifiedFeatureGate`
+    /// (and the backup-restore confirmation) immediately before the gated action runs.
+    public func acknowledgeUnverifiedTherapy() { unverifiedTherapyAckAt = Date() }
+
+    /// Whether a recent (< `unverifiedAckMaxAge`) untested-feature acknowledgment is on record.
+    public var hasRecentUnverifiedAck: Bool {
+        guard let at = unverifiedTherapyAckAt else { return false }
+        return Date().timeIntervalSince(at) <= Self.unverifiedAckMaxAge
+    }
+
+    /// Run an unverified therapy-defining write only if the user recently acknowledged the untested
+    /// warning; otherwise **fail closed** (surface `lastError`, never touch the backend). One-shot: the
+    /// ack is consumed so each acknowledgment authorizes exactly one gated action. `op` performs the
+    /// write (a `runControl { … }` call), keeping the child-mode / read-only interlocks in force too.
+    private func runGatedTherapy(_ feature: String, _ op: () async -> Void) async {
+        guard hasRecentUnverifiedAck else {
+            lastError = "\(feature) needs the untested-feature warning acknowledged first."
+            refresh()
+            return
+        }
+        unverifiedTherapyAckAt = nil   // consume — one ack authorizes one action
+        await op()
+    }
+
     public func suspendDelivery() async { await runControl { try await source.suspendDelivery() } }
     public func resumeDelivery() async { await runControl { try await source.resumeDelivery() } }
     public func setTempBasal(percent: Int, durationMinutes: Int) async {
@@ -999,16 +1038,35 @@ public final class AppModel {
     public func renameProfile(idpId: Int, name: String) async { await runControl { try await source.renameProfile(idpId: idpId, name: name) } }
     public func deleteProfile(idpId: Int) async { await runControl { try await source.deleteProfile(idpId: idpId) } }
     public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
+        await runGatedTherapy("Creating a pump profile") {
+            await self.createProfileRaw(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
+        }
+    }
+    /// Ungated create — used by the gated wrapper above and by the (separately gated) batch reconfigure
+    /// in `applyPumpSettings`, so one acknowledgment authorizes the whole batch rather than one profile.
+    private func createProfileRaw(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
         await runControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
     }
     public func refreshProfileSegments(idpId: Int) async { await source.refreshProfileSegments(idpId: idpId); refresh() }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
+        await runGatedTherapy("Adding a profile segment") {
+            await self.addProfileSegmentRaw(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+        }
+    }
+    /// Ungated add — used by the gated wrapper above and by the batch reconfigure (see `createProfileRaw`).
+    private func addProfileSegmentRaw(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
         await runControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
     }
     public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
-        await runControl { try await source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
+        await runGatedTherapy("Editing a profile segment") {
+            await self.runControl { try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
+        }
     }
-    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async { await runControl { try await source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex) } }
+    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
+        await runGatedTherapy("Deleting a profile segment") {
+            await self.runControl { try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex) }
+        }
+    }
     // MARK: Backup / reconfigure
 
     /// Read the pump's therapy settings for a backup. Works on **t:slim X2 and Mobi** (all reads are
@@ -1050,20 +1108,28 @@ public final class AppModel {
             lastError = "Reconfiguring the pump needs a Tandem Mobi with Advanced control enabled."
             return false
         }
+        // FB-06: the whole batch is one gated therapy action. Require a recent ack (the caller shows the
+        // untested-feature warning before this), consume it once, then drive the raw (already-authorized)
+        // create/add helpers so the single confirmation isn't spent on the first profile alone.
+        guard hasRecentUnverifiedAck else {
+            lastError = "Reconfiguring the pump needs the untested-feature warning acknowledged first."
+            return false
+        }
+        unverifiedTherapyAckAt = nil
         for prof in p.profiles {
             guard let first = prof.segments.first else { continue }
             let before = Set(snapshot.profiles.map(\.idpId))
-            await createProfile(name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
-                                carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
-                                targetBg: first.targetBg,
-                                insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
+            await createProfileRaw(name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
+                                   carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
+                                   targetBg: first.targetBg,
+                                   insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
             if lastError != nil { return false }
             await refreshProfiles()
             guard let newId = snapshot.profiles.map(\.idpId).first(where: { !before.contains($0) }) else { continue }
             for seg in prof.segments.dropFirst() {
-                await addProfileSegment(idpId: newId, startTimeMinutes: seg.startTimeMinutes,
-                                        basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
-                                        carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
+                await addProfileSegmentRaw(idpId: newId, startTimeMinutes: seg.startTimeMinutes,
+                                           basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
+                                           carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
                 if lastError != nil { return false }
             }
         }
@@ -1081,7 +1147,11 @@ public final class AppModel {
     public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
     public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }
     public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes) } }
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async { await runControl { try await source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled) } }
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
+        await runGatedTherapy("Setting the CGM high/low alert") {
+            await self.runControl { try await self.source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled) }
+        }
+    }
     public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async { await runControl { try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes) } }
     public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async { await runControl { try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin) } }
 
