@@ -57,7 +57,12 @@ final class WidgetBolusReceiver {
                 // glucose. A carb bolus must NOT deliver in place — stage a host-owned review that
                 // freezes the real units (fresh CGM, fail-closed) and needs an in-app confirm.
                 // `presentRemoteBolus` resolves + freezes; the widget tells the user to finish in-app.
-                let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.snapshot.glucose).recommendedUnits
+                // FB-09: resolve the estimate off the SAME fresh, staleness-gated BG the host uses in
+                // resolveRemoteDose (refresh first, then `freshCorrectionBG`) — otherwise the estimate
+                // (previously off raw, possibly-stale `snapshot.glucose`) and the authoritative dose
+                // diverge and the guard rejects with a confusing "dose changed" and no review to act on.
+                await model.refreshGlucoseNow()
+                let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.freshCorrectionBG).recommendedUnits
                 await model.presentRemoteBolus(requestId: r.requestId, units: 0, carbsGrams: r.amount,
                                                bgMgdl: nil, remoteEstimate: est, enforceChildLock: true, peerId: "widget")
                 WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,

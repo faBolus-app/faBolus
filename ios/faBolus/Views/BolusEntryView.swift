@@ -406,7 +406,11 @@ struct BolusEntryView: View {
                     cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
                     return   // wait for the user's choice in the CGM-updated dialog
                 }
-                await deliverFrozen(freeze(units: priorUnits, bg: g, extended: extended))
+                // FB-10: within tolerance we deliver exactly the on-screen dose (`priorUnits`, what the
+                // Deliver button showed), so bind it to the BG it was actually computed from — NOT the
+                // just-pulled `g`. Recording the fresh `g` against the old units would attach a glucose
+                // value the dose wasn't derived from (a false pump/t:connect metadata pairing).
+                await deliverFrozen(freeze(units: priorUnits, bg: Int(bg), extended: extended))
                 return
             }
             // Fail closed: CGM stale/missing — never correct off the stale on-screen value. Deliver the

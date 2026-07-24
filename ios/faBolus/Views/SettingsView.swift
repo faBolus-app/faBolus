@@ -261,6 +261,12 @@ struct CgmSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
     @State private var showExperimentalCgmWarning = false
+    /// FB-07: an experimental source is NOT committed to the registry until the user accepts the warning.
+    /// `pendingExperimentalId` holds the not-yet-committed choice; `lastCommittedSource` is what we roll
+    /// the picker back to on Cancel; `isReverting` suppresses the re-entrant onChange from that rollback.
+    @State private var pendingExperimentalId: String?
+    @State private var lastCommittedSource = GlucoseSourceRegistry.selectedId() ?? ""
+    @State private var isReverting = false
     /// Failover sources whose direct-BLE path is an unverified best guess (docs/UNVERIFIED-GUESSES.md #5):
     /// selecting one raises a blocking warning that it will likely not connect.
     private static let experimentalCgmSourceIds: Set<String> = ["dexcom-g6-ble"]
@@ -272,15 +278,34 @@ struct CgmSettingsView: View {
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
                 }
                 .onChange(of: selectedGlucoseSource) { _, id in
-                    GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
-                    if Self.experimentalCgmSourceIds.contains(id) { showExperimentalCgmWarning = true }
+                    if isReverting { isReverting = false; return }   // programmatic rollback, don't re-handle
+                    if Self.experimentalCgmSourceIds.contains(id) {
+                        // FB-07: defer the commit until the warning is accepted; roll back on Cancel.
+                        pendingExperimentalId = id
+                        showExperimentalCgmWarning = true
+                    } else {
+                        GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
+                        lastCommittedSource = id
+                    }
                 }
                 NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
             } header: { Text("Glucose failover") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
             }
             .alert("Untested source", isPresented: $showExperimentalCgmWarning) {
-                Button("OK") {}
+                Button("Use it anyway", role: .destructive) {
+                    if let id = pendingExperimentalId {
+                        GlucoseSourceRegistry.select(id)   // commit only now
+                        lastCommittedSource = id
+                    }
+                    pendingExperimentalId = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    // Nothing was committed; roll the picker back to the last accepted source.
+                    pendingExperimentalId = nil
+                    isReverting = true
+                    selectedGlucoseSource = lastCommittedSource
+                }
             } message: {
                 Text("⚠️ The direct-BLE Dexcom source is experimental and has NOT been verified — a passive read likely will NOT connect (the sensor needs an authenticated session). Prefer Dexcom Share or the xDrip App Group. See docs/operate/cgm-failover.md.")
             }

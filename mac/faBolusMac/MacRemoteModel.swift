@@ -127,7 +127,13 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
         let cmd: RemoteCommand
         if r.mode == "carbs" {
             let bg: Double? = isGlucoseStale ? nil : glucose.map(Double.init)
-            cmd = RemoteCommand(kind: .bolusRequest, requestId: r.requestId, carbsGrams: r.amount, bgMgdl: bg)
+            var c = RemoteCommand(kind: .bolusRequest, requestId: r.requestId, carbsGrams: r.amount, bgMgdl: bg)
+            // FB-08: the host's carb path REQUIRES the remote's own estimate for the divergence guard —
+            // without it resolveRemoteDose fails closed ("Missing dose estimate"), so the Mac widget
+            // carb bolus never delivered. Mirror the interactive Mac entry / the shared client, which
+            // both send estimatedUnits(forCarbs:).
+            c.remoteEstimateUnits = estimatedUnits(forCarbs: r.amount)
+            cmd = c
         } else {
             cmd = RemoteCommand(kind: .bolusRequest, requestId: r.requestId, units: r.amount)
         }

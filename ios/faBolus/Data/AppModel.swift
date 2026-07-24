@@ -805,6 +805,12 @@ public final class AppModel {
     /// on open and again right before delivery so a correction is off the freshest value).
     public func refreshGlucoseNow() async { await source.refreshGlucoseNow(); refresh() }
 
+    /// The correction BG a remote/host carb dose is computed from: the freshest CGM if it's non-stale,
+    /// else `nil` (carbs-only). Call `refreshGlucoseNow()` first. FB-09: exposed so a remote's *estimate*
+    /// and the host's *authoritative* resolve bind to the SAME staleness-gated basis and don't diverge
+    /// spuriously (which would reject with a confusing "dose changed" and no actionable review).
+    public var freshCorrectionBG: Int? { (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil }
+
     /// Conservative safety limit for the wrist/Mac-vs-host dose comparison. If a remote's own carb→unit
     /// estimate and the host's authoritative recompute differ by more than this, the bolus is rejected
     /// (the remote acted on stale settings/IOB/glucose). 0.10 U = two 0.05 U increments — tight enough to
@@ -1163,6 +1169,15 @@ public final class AppModel {
         // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
         // stack a second confirmation prompt for the same (peer, requestId).
         if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
+        // FB-11: there is a single approval slot. If a *different* approval is already pending, do NOT
+        // silently overwrite it (the phone user may be mid-decision, and the first remote would wait
+        // forever for a verdict that never comes). Reject the newcomer with an explicit terminal status
+        // so its remote knows it wasn't queued and can resend once the slot frees.
+        if pendingRemoteBolus != nil {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: "Another bolus approval is pending on the phone — confirm or dismiss it, then resend."))
+            return
+        }
         if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
         if enforceChildLock, childBlocked(.bolus) {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
@@ -1273,7 +1288,7 @@ public final class AppModel {
             return nil
         }
         await refreshGlucoseNow()
-        let freshBg: Int? = (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
+        let freshBg = freshCorrectionBG
         let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
         // FB-01: a remote/automatic surface must NEVER auto-deliver a dose computed from unverified
         // (assumed) pump settings — the verified profile hasn't arrived, so we can't stand behind the

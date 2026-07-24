@@ -94,9 +94,16 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     public func send(_ command: RemoteCommand) {
         guard let data = try? command.encoded() else { return }
-        var len = UInt32(data.count).bigEndian
-        var frame = Data(bytes: &len, count: 4)
-        frame.append(data)
+        // P3: build the length-prefixed frame, then capture it as an IMMUTABLE `let` in the concurrent
+        // send closure. Capturing the previous `var frame` tripped a Swift 6 Sendable warning (a mutable
+        // binding crossing into a `@Sendable` closure); a `let` snapshot is an unambiguous value hand-off.
+        // Ordering is preserved because `queue` is serial — frames enqueue and pump in FIFO order.
+        let frame: Data = {
+            var len = UInt32(data.count).bigEndian
+            var f = Data(bytes: &len, count: 4)
+            f.append(data)
+            return f
+        }()
         queue.async { [weak self] in
             guard let self else { return }
             self.txChunks.append(contentsOf: self.split(frame))
