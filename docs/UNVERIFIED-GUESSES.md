@@ -5,6 +5,10 @@ verified against a real pump or the Connect IQ simulator** in the environment th
 They are surfaced with an ⚠️ note in the app. If a feature misbehaves, start here. Each item lists
 the guess, where it lives, and how to verify.
 
+> The full on-hardware validation matrix (bolus delivery on saline, carb metadata on the pump, IDP CRUD,
+> Garmin runtime, signed archives) is in **[RELEASE-GATES.md](RELEASE-GATES.md)** — the gates that must
+> pass before any feature here is relied on for real use.
+
 **Accidental use is gated.** The consequential unverified actions (CGM high/low alert-type, IDP profile
 create, IDP segment edit, experimental direct-BLE CGM source) now require a **blocking modal** that the
 feature is untested and "will likely not work" before they run — not just the passive ⚠️ footers below
