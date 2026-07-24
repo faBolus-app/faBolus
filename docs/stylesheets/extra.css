@@ -75,10 +75,16 @@
    --fab-banner-h by docs/javascripts/banner.js (the value below is the fallback).
    ========================================================================= */
 :root { --fab-banner-h: 2.6rem; }
-.md-banner {
+/* Stick the ANNOUNCE WRAPPER, not the inner .md-banner. The wrapper
+   (`[data-md-component="announce"]`) is the direct body child and a sibling of the header, so it
+   sticks relative to the page like the header does. Making only `.md-banner` sticky pins it within
+   this short wrapper — which itself scrolls away, so the banner appeared non-sticky. */
+[data-md-component="announce"] {
   position: sticky;
   top: 0;
   z-index: 1001;                         /* above the sticky header */
+}
+.md-banner {
   background-color: #7a1220;             /* deep red so it clearly reads as a warning */
   color: #fff;
 }

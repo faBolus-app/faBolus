@@ -2,7 +2,8 @@
 // sits directly below it (the banner wraps to 2+ lines on narrow screens). See extra.css.
 (function () {
   function sync() {
-    var b = document.querySelector('.md-banner');
+    // Measure the sticky announce wrapper (its height == the banner's) so the header stacks below it.
+    var b = document.querySelector('[data-md-component="announce"]') || document.querySelector('.md-banner');
     if (b) {
       document.documentElement.style.setProperty('--fab-banner-h', b.offsetHeight + 'px');
     }
