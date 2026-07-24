@@ -52,8 +52,8 @@
     },
     "status": {
       "type": "string",
-      "enum": ["pending", "awaitingConfirm", "delivering", "delivered", "cancelled", "failed", "outOfRange"],
-      "description": "Delivery/connection status echoed back to the remote (bolusStatus)."
+      "enum": ["pending", "awaitingConfirm", "delivering", "delivered", "cancelled", "failed", "outOfRange", "unknown"],
+      "description": "Delivery/connection status echoed back to the remote (bolusStatus). 'unknown' (FB-02) = the pump outcome is genuinely indeterminate (initiate written but no confirmation) — the remote must NOT claim delivered/failed; it points the user to pump/t:connect history."
     },
     "deliveredUnits": {
       "type": "number",
@@ -150,12 +150,12 @@
     },
     "screenOrder": {
       "type": "array",
-      "description": "Garmin remote swipe order (statusRead reply).",
-      "items": { "type": "string", "enum": ["glance", "alerts", "history", "details"] }
+      "description": "Garmin remote swipe order (statusRead reply). Ids match AppState.ALL_SCREENS.",
+      "items": { "type": "string", "enum": ["glance", "glucose", "clock", "bolusonly", "alerts", "history", "details"] }
     },
     "defaultScreen": {
       "type": "string",
-      "enum": ["glance", "alerts", "history", "details"],
+      "enum": ["glance", "glucose", "clock", "bolusonly", "alerts", "history", "details"],
       "description": "Garmin remote screen shown first (statusRead reply)."
     },
     "glucoseStaleMinutes": {

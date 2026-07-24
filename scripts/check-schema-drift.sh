@@ -22,3 +22,7 @@ if [ "$missing" -ne 0 ]; then
   exit 1
 fi
 echo "✅ RemoteCommand.swift matches $SCHEMA ($(python3 -c "import json;print(len(json.load(open('$SCHEMA'))['properties']))") properties)."
+
+# GA-07: names-only drift-checking let enum values drift silently. Validate representative emitted
+# payloads (type + enum + required + additionalProperties) against the schema too.
+python3 scripts/validate-schema-payloads.py
