@@ -403,4 +403,153 @@ struct AppModelBehaviorTests {
             #expect(model.lastError == nil)
         }
     }
+
+    // MARK: - P0: durable GLOBAL unresolved-delivery block + bolus-id reconciliation
+
+    /// After an indeterminate outcome, EVERY delivery surface (a brand-new remote request AND a local
+    /// bolus) is globally blocked — within the session AND across a simulated relaunch — until the prior
+    /// bolus is reconciled against the pump. This is the P0 duplicate-insulin fix.
+    @Test func indeterminateGloballyBlocksAllSurfacesAcrossRestart() async {
+        try? await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-block-\(UUID().uuidString).json")
+            let backend1 = MockBackend(); await backend1.connect()
+            let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
+            let rec1 = EchoRecorder(); rec1.attach(to: model1)
+            backend1.forceIndeterminateNextDelivery = true
+            await model1.remoteDeliver(requestId: "p0a", units: 2.0, peerId: "watch")
+            #expect(rec1.last?.status == .unknown)
+            #expect(model1.deliveryGloballyBlocked)                     // same-session block is up
+            let assignedId = backend1.lastAssignedBolusId
+            #expect(assignedId != nil)                                  // id was persisted before initiate
+
+            // A DIFFERENT remote request is now refused (not just the same id).
+            let iob1 = backend1.snapshot.iobUnits
+            await model1.remoteDeliver(requestId: "p0b", units: 1.0, peerId: "watch")
+            #expect(rec1.count(.delivered) == 0)
+            #expect(abs(backend1.snapshot.iobUnits - iob1) < tol)       // nothing delivered
+
+            // "Relaunch": a fresh model loads the durable ledger. The id-bearing record can't reconcile
+            // (pump has no matching result), so the GLOBAL block must persist across the restart.
+            let backend2 = MockBackend(); await backend2.connect()
+            let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
+            let rec2 = EchoRecorder(); rec2.attach(to: model2)
+            await model2.reconcileUnresolvedDeliveries()               // deterministic (init also schedules it)
+            #expect(model2.deliveryGloballyBlocked)                     // relaunch cannot erase the block
+
+            // Local delivery after relaunch is blocked too.
+            let iob2 = backend2.snapshot.iobUnits
+            await model2.deliverBolus(units: 1.0)
+            #expect(abs(backend2.snapshot.iobUnits - iob2) < tol)
+            #expect(model2.lastError?.lowercased().contains("unconfirmed") == true)
+        }
+    }
+
+    /// On reconnect, an authoritative pump match by bolus id settles the entry and releases the global
+    /// block — after which delivery resumes normally.
+    @Test func reconciliationByBolusIdReleasesBlock() async {
+        try? await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-recon-\(UUID().uuidString).json")
+            let backend1 = MockBackend(); await backend1.connect()
+            let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
+            backend1.forceIndeterminateNextDelivery = true
+            await model1.remoteDeliver(requestId: "p0c", units: 2.0, peerId: "watch")
+            let id = backend1.lastAssignedBolusId!
+            #expect(model1.deliveryGloballyBlocked)
+
+            // Relaunch + the pump now reports that exact bolus id as delivered.
+            let backend2 = MockBackend(); await backend2.connect()
+            backend2.reconcileResultsById[id] = .resolved(deliveredUnits: 2.0, cancelled: false)
+            let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
+            let rec2 = EchoRecorder(); rec2.attach(to: model2)
+            await model2.reconcileUnresolvedDeliveries()
+            #expect(!model2.deliveryGloballyBlocked)                    // authoritative match released it
+
+            // Delivery works again.
+            await model2.remoteDeliver(requestId: "p0d", units: 1.0, peerId: "watch")
+            #expect(rec2.last?.status == .delivered)
+        }
+    }
+
+    /// A `delivering` record with NO pump bolus id means the pump never granted permission (nothing was
+    /// delivered), so reconciliation safely auto-clears it rather than blocking delivery forever.
+    @Test func noBolusIdEntryAutoClearsOnReconcile() async throws {
+        try await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-noid-\(UUID().uuidString).json")
+            // Hand-craft a persisted ledger with an interrupted (no-id) delivering entry.
+            var ledger = RemoteBolusLedger()
+            _ = ledger.begin(peerId: "local", requestId: "crashed1", doseKey: "u:1")
+            ledger.markDelivering(peerId: "local", requestId: "crashed1")   // no bolus id
+            try RemoteBolusLedgerStore(url: sharedURL).save(ledger)
+
+            let backend = MockBackend(); await backend.connect()
+            let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
+            #expect(model.deliveryGloballyBlocked)                      // blocked on load (fail safe)
+            await model.reconcileUnresolvedDeliveries()
+            #expect(!model.deliveryGloballyBlocked)                     // no-id ⇒ never sent ⇒ cleared
+        }
+    }
+
+    /// A `delivering` record WITH a bolus id stays blocked until the pump confirms it; an unavailable
+    /// reconcile keeps the block (verify on the pump).
+    @Test func idBearingDeliveringEntryStaysBlockedWhenUnavailable() async throws {
+        try await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-idblock-\(UUID().uuidString).json")
+            var ledger = RemoteBolusLedger()
+            _ = ledger.begin(peerId: "watch", requestId: "sent1", doseKey: "u:2")
+            ledger.markDelivering(peerId: "watch", requestId: "sent1", bolusId: 7777)
+            try RemoteBolusLedgerStore(url: sharedURL).save(ledger)
+
+            let backend = MockBackend(); await backend.connect()   // no reconcileResultsById[7777] ⇒ unavailable
+            let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
+            await model.reconcileUnresolvedDeliveries()
+            #expect(model.deliveryGloballyBlocked)                      // stays blocked; outcome unknown
+        }
+    }
+
+    /// A corrupt/unreadable durable ledger fails CLOSED: delivery is blocked until the user verifies and
+    /// explicitly clears the lock.
+    @Test func corruptLedgerFailsClosedThenManualClearRecovers() async {
+        try? await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-corrupt-\(UUID().uuidString).json")
+            try? Data("{ this is not valid ledger json".utf8).write(to: sharedURL)
+
+            let backend = MockBackend(); await backend.connect()
+            let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
+            #expect(model.deliveryGloballyBlocked)                      // fail closed on corruption
+
+            let iob0 = backend.snapshot.iobUnits
+            await model.deliverBolus(units: 1.0)
+            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)        // no delivery while locked
+
+            model.clearDeliveryBlockAfterVerification()
+            #expect(!model.deliveryGloballyBlocked)
+            await model.deliverBolus(units: 1.0)
+            #expect(backend.snapshot.iobUnits > iob0)                   // delivery resumes after clear
+        }
+    }
+
+    /// Exactly ONE initiate across a restart: an indeterminate first attempt + a blocked relaunch attempt
+    /// must reach the backend's delivery entry exactly once.
+    @Test func exactlyOneInitiateAcrossRestart() async {
+        try? await withCleanSettings {
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("p0-once-\(UUID().uuidString).json")
+            let backend1 = MockBackend(); await backend1.connect()
+            let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
+            backend1.forceIndeterminateNextDelivery = true
+            await model1.remoteDeliver(requestId: "once1", units: 2.0, peerId: "watch")
+            #expect(backend1.lastAssignedBolusId != nil)               // one initiate attempt on backend1
+
+            let backend2 = MockBackend(); await backend2.connect()
+            let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
+            await model2.reconcileUnresolvedDeliveries()
+            await model2.remoteDeliver(requestId: "once2", units: 2.0, peerId: "watch")
+            #expect(backend2.lastAssignedBolusId == nil)               // blocked ⇒ backend2 never initiated
+        }
+    }
 }

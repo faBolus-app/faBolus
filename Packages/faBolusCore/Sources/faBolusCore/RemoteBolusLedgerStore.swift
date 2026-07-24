@@ -31,13 +31,34 @@ public final class RemoteBolusLedgerStore {
         return dir?.appendingPathComponent("remote-bolus-ledger.json")
     }
 
-    /// Load the persisted ledger, or a fresh empty one if absent/corrupt.
-    public func load() -> RemoteBolusLedger {
+    /// Load the persisted ledger, or a fresh empty one if absent/corrupt (legacy convenience; prefer
+    /// `loadOutcome()` which distinguishes a never-initialized store from a corrupt one so callers can
+    /// fail closed on corruption — P0).
+    public func load() -> RemoteBolusLedger { loadOutcome().ledger }
+
+    /// The result of a load that separates "no store yet" (safe empty) from "store existed but is
+    /// unreadable/corrupt" (must fail closed — an unreadable ledger may be hiding an unresolved delivery,
+    /// so the host must block all delivery until the user verifies on the pump). P0 invariant #9.
+    public struct LoadOutcome: Sendable {
+        public let ledger: RemoteBolusLedger
+        /// True when a persisted file exists but could not be read/decoded. The returned `ledger` is empty
+        /// (so idempotency still functions) but the host MUST treat this as a global delivery block.
+        public let failedClosed: Bool
+    }
+
+    /// Load the ledger, reporting whether a corrupt/unreadable existing store forced a fail-closed empty.
+    public func loadOutcome() -> LoadOutcome {
+        // No file yet ⇒ genuinely fresh install / first run ⇒ safe empty ledger, delivery allowed.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return LoadOutcome(ledger: RemoteBolusLedger(cap: cap), failedClosed: false)
+        }
+        // File exists but won't read/decode ⇒ it may be masking an unresolved delivery ⇒ FAIL CLOSED.
+        // Do NOT silently convert corruption into an empty, delivery-enabled ledger.
         guard let data = try? Data(contentsOf: url),
               let ledger = try? JSONDecoder().decode(RemoteBolusLedger.self, from: data) else {
-            return RemoteBolusLedger(cap: cap)
+            return LoadOutcome(ledger: RemoteBolusLedger(cap: cap), failedClosed: true)
         }
-        return ledger
+        return LoadOutcome(ledger: ledger, failedClosed: false)
     }
 
     /// Atomically persist the ledger. Throwing is surfaced so the caller can decide (a delivery MUST NOT

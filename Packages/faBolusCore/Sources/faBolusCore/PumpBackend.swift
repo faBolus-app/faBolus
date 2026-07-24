@@ -61,6 +61,18 @@ public protocol PumpBackend: AnyObject {
     /// Called by the view model to observe changes.
     var onChange: (@MainActor () -> Void)? { get set }
 
+    // MARK: - Durable unknown-outcome recovery (P0)
+
+    /// Called by the backend the instant the pump grants a bolus permission and assigns a bolus id —
+    /// **before** the initiate is written, so the host can persist the id durably and later reconcile an
+    /// outcome that was lost to a timeout/disconnect/crash. This is the explicit, deterministically-testable
+    /// ownership link the host uses instead of an unobserved broadcast.
+    var onBolusIdAssigned: (@MainActor (Int) -> Void)? { get set }
+    /// Reconcile a previously-sent bolus whose outcome was lost, against the pump's **authoritative** bolus
+    /// history, by its pump-assigned id. Returns `.resolved` only on an authoritative id match; otherwise
+    /// `.unavailable` so the host keeps the delivery blocked and asks the user to verify on the pump.
+    func reconcile(bolusId: Int) async -> BolusReconciliation
+
     /// Decoded history-log events for the Logbook (B2), newest first. Backends that don't decode
     /// history return `[]` (see the default). Populated from the pump's history backfill.
     var historyEvents: [HistoryEvent] { get }
@@ -158,9 +170,22 @@ public enum ControlError: Error, LocalizedError {
     public var errorDescription: String? { "This pump doesn't support that action." }
 }
 
+/// The outcome of reconciling a lost-outcome bolus against the pump's authoritative history (P0).
+public enum BolusReconciliation: Sendable, Equatable {
+    /// The pump's record for this bolus id was found: `deliveredUnits` actually went in (possibly a partial
+    /// amount). `cancelled` is true when the pump reports it ended by cancellation.
+    case resolved(deliveredUnits: Double, cancelled: Bool)
+    /// The outcome can't be determined right now (offline, history not caught up, or the pump's last-bolus
+    /// id doesn't match) — keep the delivery blocked and surface "verify on the pump".
+    case unavailable
+}
+
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
     func refreshGlucoseNow() async {}
+    /// Default: a backend that can't query its bolus history can never auto-reconcile, so a lost outcome
+    /// stays blocked until manual verification (fail closed).
+    func reconcile(bolusId: Int) async -> BolusReconciliation { .unavailable }
 
     /// Units-only convenience — forwards with no carb/BG/IOB metadata. Keeps existing call sites terse.
     func deliverBolus(units: Double) async throws -> Double {

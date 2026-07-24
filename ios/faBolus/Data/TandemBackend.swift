@@ -36,6 +36,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
     public var onChange: (@MainActor () -> Void)?
+    /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
+    /// so the host can persist the id durably for later reconciliation.
+    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
@@ -444,6 +447,24 @@ public final class TandemBackend: NSObject, PumpBackend {
         return last.deliveredUnits
     }
 
+    /// P0: reconcile a specific pump bolus id against the pump's authoritative last-bolus record. Returns
+    /// `.resolved` only when the pump's last bolus id matches (so we KNOW what actually went in — possibly
+    /// a partial amount after a cancel); otherwise `.unavailable` so the host keeps the delivery blocked.
+    /// Also clears the in-memory unknown-outcome flag when it was this id (the durable ledger is the
+    /// cross-restart source of truth; this keeps the same-session backend state consistent).
+    public func reconcile(bolusId: Int) async -> BolusReconciliation {
+        guard snapshot.connection == .connected else { return .unavailable }
+        guard let last = try? await lastBolusStatus(), last.bolusId == bolusId else { return .unavailable }
+        if deliveryOutcomeUnknown && unknownOutcomeBolusId == bolusId {
+            deliveryOutcomeUnknown = false
+            unknownOutcomeBolusId = 0
+            onChange?()
+        }
+        // The pump's last-bolus record reports the delivered amount authoritatively. It doesn't expose a
+        // distinct "cancelled" flag, so a partial amount simply reports fewer delivered units.
+        return .resolved(deliveredUnits: last.deliveredUnits, cancelled: false)
+    }
+
     /// The validated signed delivery flow, shared by standard + extended boluses. When `extendedMu > 0`
     /// it sends the full-form InitiateBolusRequest (now-portion `totalMu`, later-portion `extendedMu`
     /// over `extendedSeconds`); otherwise a standard units-only bolus.
@@ -492,6 +513,9 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
         }
         currentBolusId = perm.bolusId
+        // P0: the pump has assigned this bolus id and no initiate has been written yet — persist it now so
+        // a lost outcome (timeout/disconnect/crash) after the initiate can be reconciled by id on relaunch.
+        onBolusIdAssigned?(perm.bolusId)
 
         // Record carbs/BG on the pump BEFORE initiating — this is what populates the carb amount on
         // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT

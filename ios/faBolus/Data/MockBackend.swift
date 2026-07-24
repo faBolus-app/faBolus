@@ -30,6 +30,19 @@ public final class MockBackend: PumpBackend {
     public func forgetPairing() {}
     public var onChange: (@MainActor () -> Void)?
 
+    // MARK: - Durable unknown-outcome recovery (P0)
+    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
+    /// The next simulated pump-assigned bolus id (mimics `BolusPermissionResponse.bolusId`).
+    private var nextBolusId = 1000
+    /// The id assigned to the most recent delivery attempt (so a test can drive `reconcile`).
+    public private(set) var lastAssignedBolusId: Int?
+    /// Test knob: what `reconcile(bolusId:)` returns per pump bolus id. Absent ⇒ `.unavailable`
+    /// (outcome still unknown ⇒ stays blocked), matching a pump whose history hasn't caught up.
+    public var reconcileResultsById: [Int: BolusReconciliation] = [:]
+    public func reconcile(bolusId: Int) async -> BolusReconciliation {
+        reconcileResultsById[bolusId] ?? .unavailable
+    }
+
     private var timer: Timer?
 
     public init(isMobi: Bool = true) { self.mobi = isMobi; seedHistory() }
@@ -136,6 +149,13 @@ public final class MockBackend: PumpBackend {
                                      carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
+        let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
+        onBolusIdAssigned?(bolusId)
+        if forceIndeterminateNextDelivery {
+            forceIndeterminateNextDelivery = false
+            throw BolusError.indeterminate("mock: initiate response lost after write")
+        }
         snapshot.connection = .bolusing; onChange?()
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         snapshot.connection = .connected
@@ -150,6 +170,10 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
+        // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
+        let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
+        onBolusIdAssigned?(bolusId)
         if forceIndeterminateNextDelivery {
             forceIndeterminateNextDelivery = false
             throw BolusError.indeterminate("mock: initiate response lost after write")

@@ -257,11 +257,64 @@ public final class AppModel {
     /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
     /// FB-03: durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
     @ObservationIgnored private let remoteBolusLedgerStore: RemoteBolusLedgerStore
-    @ObservationIgnored private lazy var remoteBolusLedger: RemoteBolusLedger = remoteBolusLedgerStore.load()
+    @ObservationIgnored private lazy var remoteBolusLedger: RemoteBolusLedger = {
+        let outcome = remoteBolusLedgerStore.loadOutcome()
+        if outcome.failedClosed { ledgerFailedClosed = true }
+        return outcome.ledger
+    }()
+    /// P0: true when the durable ledger existed but couldn't be read (corrupt/unreadable). An unreadable
+    /// ledger may be hiding an unresolved delivery, so while this is set ALL delivery is blocked (fail
+    /// closed) until the user verifies on the pump and clears it.
+    @ObservationIgnored private var ledgerFailedClosed = false
+    /// P0: the ledger entry (peer, requestId) whose delivery is currently in flight, so the pump's
+    /// `onBolusIdAssigned` callback lands the assigned bolus id on the right entry. Deliveries are
+    /// serialized (one at a time), so a single slot suffices.
+    @ObservationIgnored private var inFlightDeliveryKey: (peerId: String, requestId: String)?
     /// Persist the ledger. Throwing is surfaced so a delivery can refuse to proceed if it can't record
     /// its intent (FB-03). Best-effort for terminal/echo writes where losing the record only risks a
     /// redundant reconcile, not a double dose.
     private func persistLedger() { remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger) }
+
+    /// P0 — the single global delivery-block gate every delivery surface consults. Non-nil ⇒ NO new
+    /// insulin delivery may start (local standard/extended, widget, Watch, Garmin, Mac, peer). Derived
+    /// from the DURABLE ledger, so it survives a process restart: any `delivering`/`indeterminate` record
+    /// blocks everything until reconciled against the pump; a corrupt ledger also blocks (fail closed).
+    /// Stored + observed so SwiftUI updates; kept in sync by `refreshDeliveryBlock()` after every ledger
+    /// mutation. Enforcement paths use `computeDeliveryBlockReason()` (authoritative at the instant).
+    public private(set) var deliveryBlockedReason: String?
+    /// True when delivery is globally blocked by an unresolved/unreadable transaction (P0). UI convenience.
+    public var deliveryGloballyBlocked: Bool { deliveryBlockedReason != nil }
+
+    private func computeDeliveryBlockReason() -> String? {
+        // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
+        let unresolved = remoteBolusLedger.unreconciled()
+        if ledgerFailedClosed {
+            return "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
+                + "unconfirmed bolus, then clear the lock in Settings."
+        }
+        if !unresolved.isEmpty {
+            return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
+        }
+        return nil
+    }
+    private func refreshDeliveryBlock() { deliveryBlockedReason = computeDeliveryBlockReason() }
+
+    /// P0 escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
+    /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,
+    /// writing a fresh clean ledger, so delivery can resume. Never called automatically.
+    public func clearDeliveryBlockAfterVerification() {
+        for entry in remoteBolusLedger.unreconciled() {
+            remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
+                                     status: RemoteCommand.Status.delivered.rawValue,
+                                     message: "Cleared after manual verification on the pump.")
+        }
+        if ledgerFailedClosed {
+            // The corrupt file is being replaced by a clean, readable one written from the in-memory ledger.
+            ledgerFailedClosed = false
+        }
+        persistLedger()
+        refreshDeliveryBlock()
+    }
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
     public struct PendingRemoteControl: Equatable, Sendable {
@@ -420,6 +473,13 @@ public final class AppModel {
                 ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger.json"))
         Self.shared = self
         source.onChange = { [weak self] in self?.refresh() }
+        // P0: persist the pump-assigned bolus id onto the in-flight ledger entry the instant permission is
+        // granted (before the initiate write), so a lost outcome can be reconciled by id after a restart.
+        source.onBolusIdAssigned = { [weak self] bolusId in
+            guard let self, let key = self.inFlightDeliveryKey else { return }
+            self.remoteBolusLedger.setBolusId(peerId: key.peerId, requestId: key.requestId, bolusId: bolusId)
+            self.persistLedger()
+        }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
         for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -453,7 +513,15 @@ public final class AppModel {
             }
         }
         setupEatingPersonalization()
+        // P0: surface any restored global block immediately, then reconcile at launch. Entries with no
+        // pump bolus id (interrupted before permission) clear now; id-bearing entries stay blocked until a
+        // reconnect can reconcile them against the pump.
+        refreshDeliveryBlock()
+        Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
     }
+
+    /// Tracks the last-seen connection state so `refresh()` can fire reconciliation on a fresh connect (P0).
+    @ObservationIgnored private var previousConnection: PumpConnectionState?
 
     static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
     /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
@@ -769,6 +837,12 @@ public final class AppModel {
                                                             pumpHistory: source.glucoseHistory,
                                                             source: glucoseSource)
         snapshot = snap
+        // P0: on a fresh connect, reconcile any unresolved delivery against the pump so the global block
+        // can release once the outcome is authoritatively known.
+        if previousConnection != .connected, snap.connection == .connected, deliveryBlockedReason != nil {
+            Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
+        }
+        previousConnection = snap.connection
         glucoseHistory = hist
         glucoseProvenance = provenance
         iobHistory = source.iobHistory
@@ -830,12 +904,25 @@ public final class AppModel {
 
     private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
         if readOnlyBlocked("Bolus") { return }
-        do {
-            _ = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
+        // P0: local boluses go through the SAME durable ledger as remotes, so an indeterminate local
+        // outcome records a reconcilable entry (and blocks every surface) across a restart, and a global
+        // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
+        let requestId = "local:" + UUID().uuidString
+        let doseKey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        let outcome = await runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
+            try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
+        }
+        switch outcome {
+        case .delivered:
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
             lastError = nil
+        case .indeterminate:
+            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+        case .blocked(let msg), .failed(let msg):
+            lastError = msg
+        case .duplicateInFlight, .replay:
+            break   // a fresh UUID means these don't occur for the local path
         }
-        catch { lastError = error.localizedDescription }
         refresh()
     }
 
@@ -881,14 +968,26 @@ public final class AppModel {
                                      iobUnits: Double? = nil, enforceChildLock: Bool = true) async {
         if enforceChildLock, childBlocked(.bolus) { return }
         if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
-        do {
-            _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
-                                                      durationMinutes: durationMinutes,
-                                                      carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
+        // P0: route extended boluses through the durable ledger too, so the global unresolved-delivery
+        // block covers them and an indeterminate extended outcome is reconcilable across a restart.
+        let requestId = "local-ext:" + UUID().uuidString
+        let doseKey = RemoteBolusLedger.doseKey(units: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        let outcome = await runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
+            try await self.source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
+                                                       durationMinutes: durationMinutes,
+                                                       carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
+        }
+        switch outcome {
+        case .delivered:
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             lastError = nil
+        case .indeterminate:
+            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+        case .blocked(let msg), .failed(let msg):
+            lastError = msg
+        case .duplicateInFlight, .replay:
+            break
         }
-        catch { lastError = error.localizedDescription }
         refresh()
     }
 
@@ -1315,73 +1414,146 @@ public final class AppModel {
                              bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true)
     }
 
-    /// Deliver a frozen `ResolvedBolus` through the idempotency ledger + validated signed path, echoing
-    /// status to the remote. `doseKey` is derived from the ORIGINAL request params so a retry idempotently
-    /// replays (audit A-02); the delivered dose/carbs/BG are the frozen resolved values.
+    // MARK: - Durable delivery ledger (P0)
+
+    /// The outcome of a delivery routed through the durable ledger + global unresolved-delivery block.
+    private enum DeliveryOutcome {
+        case delivered(units: Double, cancelled: Bool)
+        case indeterminate
+        case failed(String)
+        /// Nothing was sent to the pump — a global block, an idempotency conflict, or an intent-record fail.
+        case blocked(String)
+        case duplicateInFlight
+        case replay(status: String, message: String?, deliveredUnits: Double?)
+    }
+
+    /// Route EVERY delivery surface (local standard/extended, widget, Watch, Garmin, Mac, peer) through
+    /// this one method so exactly-once idempotency AND the global unresolved-delivery block are enforced in
+    /// a single place (P0). It (1) refuses to start while any prior sent transaction is unresolved or the
+    /// ledger is unreadable, (2) records intent DURABLY before the first pump write, (3) tags the in-flight
+    /// entry so the pump's assigned bolus id is persisted before initiate, and (4) settles /
+    /// marks-indeterminate on outcome. `onStarted` fires only after intent is durably recorded.
+    private func runLedgeredDelivery(peerId: String, requestId: String, doseKey: String,
+                                     onStarted: (() -> Void)? = nil,
+                                     deliver: () async throws -> Double) async -> DeliveryOutcome {
+        // Global block: survives restart via the durable ledger; corrupt ledger fails closed.
+        if let reason = computeDeliveryBlockReason() { return .blocked(reason) }
+
+        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey) {
+        case .proceed: break
+        case .duplicateInFlight: return .duplicateInFlight
+        case .replay(let s, let m, let u): return .replay(status: s, message: m, deliveredUnits: u)
+        case .conflict: return .blocked("Duplicate request id with different dose — rejected.")
+        }
+        defer { refreshDeliveryBlock() }
+        // Durable point (FB-03): mark delivering + persist atomically BEFORE the first pump write. If the
+        // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose).
+        remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
+        do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
+        catch {
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
+                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
+            persistLedger()
+            return .failed("Could not record delivery intent — not delivered.")
+        }
+        // Tag this entry so `onBolusIdAssigned` (fired at pump permission, before initiate) persists the
+        // pump bolus id here for later reconciliation.
+        inFlightDeliveryKey = (peerId, requestId)
+        defer { inFlightDeliveryKey = nil }
+        onStarted?()
+        do {
+            let delivered = try await deliver()
+            let cancelled = source.lastBolusCancelled
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
+                                     status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
+                                     deliveredUnits: delivered)
+            persistLedger()
+            return .delivered(units: delivered, cancelled: cancelled)
+        } catch let e as BolusError where e.isIndeterminate {
+            // FB-02: sent but outcome unknown → leave the entry unreconciled (keeps the GLOBAL block on)
+            // and tell the surface to verify. Reconciliation by bolus id clears it later.
+            _ = e
+            remoteBolusLedger.markIndeterminate(peerId: peerId, requestId: requestId)
+            persistLedger()
+            return .indeterminate
+        } catch {
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
+                                     status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
+            persistLedger()
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// P0 — reconcile every unresolved delivery in the durable ledger against the pump, releasing the
+    /// global block only for entries settled from an AUTHORITATIVE pump result. Call at launch and on
+    /// every reconnect. An entry with NO pump bolus id was interrupted before the pump granted permission
+    /// (so nothing could have been delivered) → safe to settle as not-delivered. An entry WITH an id is
+    /// reconciled by that id; a mismatch/`.unavailable` keeps it blocked (verify on the pump).
+    public func reconcileUnresolvedDeliveries() async {
+        let unresolved = remoteBolusLedger.unreconciled()
+        guard !unresolved.isEmpty else { refreshDeliveryBlock(); return }
+        var changed = false
+        for entry in unresolved {
+            guard let bolusId = entry.bolusId else {
+                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
+                                         status: RemoteCommand.Status.failed.rawValue,
+                                         message: "Interrupted before the pump accepted it — not delivered.",
+                                         deliveredUnits: 0)
+                changed = true
+                continue
+            }
+            switch await source.reconcile(bolusId: bolusId) {
+            case .resolved(let delivered, let cancelled):
+                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
+                                         status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
+                                         message: "Reconciled from pump history.", deliveredUnits: delivered)
+                changed = true
+            case .unavailable:
+                break   // stay blocked; retry on next reconnect / manual verification
+            }
+        }
+        if changed { persistLedger() }
+        refreshDeliveryBlock()
+        refresh()
+    }
+
+    /// Deliver a frozen `ResolvedBolus` through the durable ledger + validated signed path, echoing status
+    /// to the remote. `doseKey` is derived from the ORIGINAL request params so a retry idempotently replays
+    /// (audit A-02); the delivered dose/carbs/BG are the frozen resolved values.
     private func executeResolved(_ r: ResolvedBolus, requestId: String, peerId: String, doseKey: String) async {
         guard r.units > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
-        // Idempotency gate (audit A-02). `begin` is synchronous, so it marks this request in-flight
-        // before the first `await` below — a concurrent or retried duplicate cannot double-deliver.
-        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey) {
-        case .proceed:
-            break
+        let outcome = await runLedgeredDelivery(peerId: peerId, requestId: requestId, doseKey: doseKey,
+            onStarted: { [weak self] in
+                self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
+            }) {
+            try await self.source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams,
+                                               bgMgdl: r.recordedBg, iobUnits: r.iobUnits)   // FB-04 frozen IOB
+        }
+        switch outcome {
         case .duplicateInFlight:
-            return   // already delivering this exact request; do nothing
+            return
         case .replay(let status, let message, let deliveredUnits):
-            // Terminal outcome already recorded — re-echo it without touching the pump.
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
                                status: RemoteCommand.Status(rawValue: status) ?? .failed,
                                deliveredUnits: deliveredUnits, message: message))
             return
-        case .conflict:
-            let msg = "Duplicate request id with different dose — rejected."
+        case .blocked(let msg):
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            return
-        }
-        // FB-03: mark delivering and PERSIST the ledger atomically BEFORE the first pump write. If the
-        // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose
-        // on relaunch). This is the durable point that makes exactly-once survive a restart.
-        remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
-        do {
-            try remoteBolusLedgerStore.save(remoteBolusLedger)
-        } catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
-            persistLedger()
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
-                               message: "Could not record delivery intent — not delivered."))
-            return
-        }
-        echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
-        do {
-            let delivered = try await source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams,
-                                                          bgMgdl: r.recordedBg, iobUnits: r.iobUnits)   // FB-04 frozen IOB
+            lastError = msg; notifyRemoteBolusRejected(msg)
+        case .delivered(let units, _):
             if let c = r.carbsGrams, c > 0 { recordCarbs(grams: c) }
-            let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: (outcome.status ?? .delivered).rawValue,
-                                     message: outcome.message, deliveredUnits: delivered)
-            persistLedger()
-            echo(outcome)
+            echo(bolusOutcome(requestId: requestId, delivered: units))
             lastError = nil
-        } catch let e as BolusError where e.isIndeterminate {
-            // FB-02: the bolus was SENT but its outcome is unknown. Do NOT settle as failed (that would
-            // let a retry re-dose) — mark indeterminate (retry stays blocked) and tell the remote to verify.
-            remoteBolusLedger.markIndeterminate(peerId: peerId, requestId: requestId)
-            persistLedger()
-            lastError = e.errorDescription
+        case .indeterminate:
+            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
                                message: "Bolus sent but outcome is unknown — verify on the pump before retrying."))
-        } catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId, status: RemoteCommand.Status.failed.rawValue,
-                                     message: error.localizedDescription)
-            persistLedger()
-            lastError = error.localizedDescription
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
-                               status: .failed, message: error.localizedDescription))
+        case .failed(let msg):
+            lastError = msg
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
         }
         refresh()
     }
@@ -1411,60 +1583,37 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "faBolus is read-only"))
             return (0, false, "faBolus is read-only")
         }
-        // Idempotency gate (audit A-02): a re-fired widget request can't deliver twice.
+        // P0 + FB-03: durable ledger + global unresolved-delivery block, same as every other surface.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        switch remoteBolusLedger.begin(peerId: "widget", requestId: requestId, doseKey: dkey) {
-        case .proceed:
-            break
+        let outcome = await runLedgeredDelivery(peerId: "widget", requestId: requestId, doseKey: dkey,
+            onStarted: { [weak self] in
+                self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
+            }) {
+            try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        }
+        defer { refresh() }
+        switch outcome {
         case .duplicateInFlight:
             return (0, false, nil)   // already delivering; don't deliver again
         case .replay(let status, _, let deliveredUnits):
             return (deliveredUnits ?? 0, status == RemoteCommand.Status.cancelled.rawValue, nil)
-        case .conflict:
-            let msg = "Duplicate request id with different dose — rejected."
+        case .blocked(let msg):
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
             return (0, false, msg)
-        }
-        // FB-03: record delivery intent durably before the pump write (see executeResolved).
-        remoteBolusLedger.markDelivering(peerId: "widget", requestId: requestId)
-        do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
-        catch {
-            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
-            persistLedger()
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Could not record delivery intent"))
-            return (0, false, "Could not record delivery intent")
-        }
-        echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
-        do {
-            let delivered = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
-            let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
-            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
-                                     status: (outcome.status ?? .delivered).rawValue,
-                                     message: outcome.message, deliveredUnits: delivered)
-            persistLedger()
-            echo(outcome)
+            echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
-            refresh()
-            return (delivered, source.lastBolusCancelled, nil)
-        } catch let e as BolusError where e.isIndeterminate {
-            // FB-02: sent but outcome unknown — block retry, tell the user to verify (not a failure).
-            remoteBolusLedger.markIndeterminate(peerId: "widget", requestId: requestId)
-            persistLedger()
-            lastError = e.errorDescription
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
-                               message: "Bolus sent but outcome is unknown — verify on the pump."))
-            refresh()
-            return (0, false, e.errorDescription)
-        } catch {
-            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
-            persistLedger()
-            lastError = error.localizedDescription
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: error.localizedDescription))
-            refresh()
-            return (0, false, error.localizedDescription)
+            return (delivered, cancelled, nil)
+        case .indeterminate:
+            let msg = "Bolus sent but outcome is unknown — verify on the pump."
+            lastError = msg
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: msg))
+            return (0, false, msg)
+        case .failed(let msg):
+            lastError = msg
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            return (0, false, msg)
         }
     }
 

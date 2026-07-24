@@ -21,6 +21,7 @@ final class PumpBackendConformanceTests: XCTestCase {
         var hasStoredPairing = false
         private(set) var lastBolusCancelled = false
         var onChange: (@MainActor () -> Void)?
+        var onBolusIdAssigned: (@MainActor (Int) -> Void)?
 
         init(capabilities: PumpCapabilities = .full) { self.capabilities = capabilities }
         func dismissNotification(_ alert: PumpAlert) async {
