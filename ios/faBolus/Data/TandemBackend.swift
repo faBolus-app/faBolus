@@ -171,12 +171,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var cancelRequested = false
     public private(set) var lastBolusCancelled = false
 
-    // Continuations bridging the delegate callbacks to async/await for the signed flow.
-    private var timeCont: CheckedContinuation<TimeSinceResetResponse, Error>?
-    private var permissionCont: CheckedContinuation<BolusPermissionResponse, Error>?
-    private var initiateCont: CheckedContinuation<InitiateBolusResponse, Error>?
-    private var bolusStatusCont: CheckedContinuation<CurrentBolusStatusResponse, Error>?
-    private var lastBolusCont: CheckedContinuation<LastBolusStatusV2Response, Error>?
+    // PX-08: the signed request/response flow (time, permission, initiate, current/last bolus status) is
+    // now owned by the PumpX2Kit transaction coordinator via `client.sendAwaitingResponse` (see
+    // `awaitResponse`), not hand-rolled continuation slots. The coordinator correlates by
+    // (characteristic, opcode), bounds each with a deadline, and is failed-closed by the client on every
+    // disconnect / transport error — so a lost reply can neither hang a bolus nor leave the write policy
+    // elevated (audit A-03 / FB-02).
     // Single-flight glucose refresh (audit C-05). Concurrent callers coalesce onto ONE in-flight pump
     // read and are all resumed exactly once when the CGM reading arrives, on timeout, or on disconnect —
     // fixing the old single-slot design where a second caller orphaned the first (permanent hang) and a
@@ -191,30 +191,45 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
 
-    /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile). Both carry a
-    /// bounded timeout (audit A-03) so a single lost status reply can't freeze the poll loop past its
-    /// deadline; the timeout is gated on `pumpTxGeneration` so it can't misfire onto a later transaction.
-    private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
-        let gen = pumpTxGeneration
-        return try await withCheckedThrowingContinuation { cont in
-            bolusStatusCont = cont
-            scheduleResponseTimeout(seconds: 4) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.bolusStatusCont else { return }
-                self.bolusStatusCont = nil; c.resume(throwing: BolusError.pumpRejected("no bolus-status response (timeout)"))
-            }
-            do { try client.send(CurrentBolusStatusRequest()) } catch { bolusStatusCont = nil; cont.resume(throwing: error) }
+    /// PX-08: send a request and await its correlated, typed response via the transaction coordinator.
+    /// A synchronous send/build failure propagates as-is (a clean *pre-write* failure); a post-write
+    /// timeout/disconnect surfaces as `PumpTransactionCoordinator.TxError` (which a delivery caller maps to
+    /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
+    private func awaitResponse<T: Message>(_ message: Message, as _: T.Type, deadline: TimeInterval,
+                                           signed: Bool = false, allowInsulinDelivery: Bool = false) async throws -> T {
+        let frame = try await client.sendAwaitingResponse(
+            message,
+            authenticationKey: signed ? authenticationKey : [],
+            pumpTimeSinceReset: signed ? signingTimestamp : 0,
+            allowInsulinDelivery: allowInsulinDelivery,
+            deadline: deadline)
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic),
+              let typed = parsed.message as? T else {
+            throw BolusError.pumpRejected("could not parse \(T.self) response")
         }
+        return typed
+    }
+
+    /// Apply the side-effects the old `didReceiveFrame` case did for a time response (the pump↔phone clock
+    /// anchor + one-shot history backfill), now that the awaited response is consumed by the coordinator.
+    private func applyTimeResponse(_ m: TimeSinceResetResponse) {
+        pumpTimeAnchor = (m.currentTime, Date())
+        if !didBackfill { didBackfill = true; try? client.send(HistoryLogStatusRequest()) }
+    }
+
+    /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile). Bounded via
+    /// the coordinator deadline so a single lost status reply can't freeze the poll loop (audit A-03).
+    private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
+        try await awaitResponse(CurrentBolusStatusRequest(), as: CurrentBolusStatusResponse.self, deadline: 4)
     }
     private func lastBolusStatus() async throws -> LastBolusStatusV2Response {
-        let gen = pumpTxGeneration
-        return try await withCheckedThrowingContinuation { cont in
-            lastBolusCont = cont
-            scheduleResponseTimeout(seconds: 4) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.lastBolusCont else { return }
-                self.lastBolusCont = nil; c.resume(throwing: BolusError.pumpRejected("no last-bolus response (timeout)"))
-            }
-            do { try client.send(LastBolusStatusV2Request()) } catch { lastBolusCont = nil; cont.resume(throwing: error) }
+        let m = try await awaitResponse(LastBolusStatusV2Request(), as: LastBolusStatusV2Response.self, deadline: 4)
+        // Preserve the snapshot side-effects the old didReceiveFrame case applied.
+        snapshot.lastBolusUnits = m.deliveredUnits
+        if let a = pumpTimeAnchor {
+            snapshot.lastBolusDate = a.phone.addingTimeInterval(Double(Int64(m.timestamp) - Int64(a.pump)))
         }
+        return m
     }
 
     public var writePolicy: PumpBLEClient.WritePolicy {
@@ -229,9 +244,6 @@ public final class TandemBackend: NSObject, PumpBackend {
     // exclusion between awaits; the lock adds it across them.
     private var pumpTxBusy = false
     private var pumpTxWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Bumped on each acquire so a stale per-request timeout from a prior transaction can't fire on a
-    /// later one that happens to reuse the same continuation slot.
-    private var pumpTxGeneration = 0
     /// True while a bolus (standard/extended) is mid-flight — a second delivery is rejected, not queued
     /// (queuing manual double-taps would double-dose). Set synchronously right after the guard.
     private var deliveryInProgress = false
@@ -252,7 +264,6 @@ public final class TandemBackend: NSObject, PumpBackend {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in pumpTxWaiters.append(c) }
         }
         pumpTxBusy = true
-        pumpTxGeneration &+= 1
     }
     private func releasePumpTx() {
         pumpTxBusy = false
@@ -267,37 +278,14 @@ public final class TandemBackend: NSObject, PumpBackend {
         return try await body()
     }
 
-    /// Fire `fire` after `seconds` on the main actor — used as a per-request response watchdog so a lost
-    /// pump reply can't suspend a signed transaction forever (which would also skip the `defer` that
-    /// restores `writePolicy`). The closure is a no-op if its transaction generation is stale or the
-    /// continuation slot has already been cleared by the real response.
-    private func scheduleResponseTimeout(seconds: TimeInterval, _ fire: @escaping @MainActor () -> Void) {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            fire()
-        }
-    }
-
-    /// Resume EVERY outstanding signed-flow continuation with an error (audit A-03). Called on disconnect
-    /// and on a transport/parse error so a lost pump response can't leave a signed transaction suspended
-    /// forever. Idempotent: each slot is nil-checked and cleared.
+    /// Resume any non-coordinator waiter on a transport/parse error (audit A-03). The signed request/
+    /// response flow is now owned by `client.transactions`, which the client itself fails-closed
+    /// (`failAll(.connectionLost)`) on every disconnect / read / notify-state error — so here we only
+    /// resume the remaining hand-owned waiter (the best-effort CGM-hardware read) and belt-and-suspenders
+    /// reset the write policy. FB-02: a lost reply *after* the initiate write surfaces to the delivery
+    /// caller as `TxError` from `sendAwaitingResponse` and is mapped to `.indeterminate` in `perform`.
     private func failPumpWaiters(_ error: Error) {
-        timeCont?.resume(throwing: error); timeCont = nil
-        permissionCont?.resume(throwing: error); permissionCont = nil
-        // FB-02: if the initiate had already been WRITTEN when the link dropped, its outcome is UNKNOWN,
-        // not failed — the pump may be mid-bolus. Surface `.indeterminate` so the caller blocks retry +
-        // reconciles, instead of settling a possibly-delivered bolus as failed.
-        if let c = initiateCont {
-            initiateCont = nil
-            if initiateWritten {
-                deliveryOutcomeUnknown = true
-                c.resume(throwing: BolusError.indeterminate("connection lost after the bolus was sent"))
-            } else {
-                c.resume(throwing: error)
-            }
-        }
-        bolusStatusCont?.resume(throwing: error); bolusStatusCont = nil
-        lastBolusCont?.resume(throwing: error); lastBolusCont = nil
+        _ = error
         cgmHwCont?.resume(returning: nil); cgmHwCont = nil
         // Belt-and-suspenders: a terminated transaction must never leave delivery writes enabled on the
         // persistent client into the next connection.
@@ -478,18 +466,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         defer { deliveryInProgress = false }
         await acquirePumpTx()
         defer { releasePumpTx() }
-        let gen = pumpTxGeneration
         initiateWritten = false   // FB-02: reset per transaction; set true once the initiate is on the wire
 
-        // Fresh signing timestamp (the pump validates the HMAC against its clock).
-        let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
-            timeCont = cont
-            scheduleResponseTimeout(seconds: 5) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
-                self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
-            }
-            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
-        }
+        // Fresh signing timestamp (the pump validates the HMAC against its clock). PX-08: awaited via the
+        // transaction coordinator — a timeout/disconnect here is a clean *pre-initiate* failure (nothing
+        // was delivered), so it propagates as-is (not indeterminate).
+        let time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
+        applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
         let previousPolicy = client.writePolicy
@@ -497,17 +480,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         defer { client.writePolicy = previousPolicy }
         snapshot.connection = .bolusing; onChange?()
 
-        let perm: BolusPermissionResponse = try await withCheckedThrowingContinuation { cont in
-            permissionCont = cont
-            scheduleResponseTimeout(seconds: 8) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.permissionCont else { return }
-                self.permissionCont = nil; c.resume(throwing: BolusError.pumpRejected("no permission response (timeout)"))
-            }
-            do {
-                try client.send(BolusPermissionRequest(), authenticationKey: authenticationKey,
-                                pumpTimeSinceReset: signingTimestamp)
-            } catch { permissionCont = nil; cont.resume(throwing: error) }
-        }
+        let perm = try await awaitResponse(BolusPermissionRequest(), as: BolusPermissionResponse.self,
+                                           deadline: 8, signed: true)
         guard perm.granted else {
             snapshot.connection = .connected; onChange?()
             throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
@@ -560,37 +534,29 @@ public final class TandemBackend: NSObject, PumpBackend {
                              authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
         }
 
-        let ini: InitiateBolusResponse = try await withCheckedThrowingContinuation { cont in
-            initiateCont = cont
-            scheduleResponseTimeout(seconds: 8) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.initiateCont else { return }
-                self.initiateCont = nil
-                // FB-02: the write went out (we're waiting on the RESPONSE), so a timeout means the
-                // bolus MAY have started — the outcome is indeterminate, not a clean failure.
-                self.deliveryOutcomeUnknown = true
-                self.unknownOutcomeBolusId = perm.bolusId
-                c.resume(throwing: BolusError.indeterminate("no initiate response (timeout) after the bolus was sent"))
-            }
-            do {
-                // FB-04: send the frozen calculator IOB (`bolusIobMu`) — no longer 0. PX-07: build via the
-                // throwing `validating:` constructor so out-of-range/incoherent cargo is rejected here
-                // (a synchronous pre-send failure) rather than silently truncating or trapping on the wire.
-                let request: InitiateBolusRequest = try extended
-                    ? InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
-                                           extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
-                    : InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
-                                           extendedVolume: 0, extendedSeconds: 0, extended3: 0)
-                try client.send(request, authenticationKey: authenticationKey,
-                                pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
-                // The command is now on the wire: a lost response from here on is INDETERMINATE (FB-02).
-                self.initiateWritten = true
-                self.unknownOutcomeBolusId = perm.bolusId
-            } catch {
-                // Synchronous failure → the write never happened → a clean pre-send failure (retryable).
-                initiateCont = nil; cont.resume(throwing: error)
-            }
+        // FB-04: send the frozen calculator IOB (`bolusIobMu`) — no longer 0. PX-07: build via the throwing
+        // `validating:` constructor so out-of-range/incoherent cargo is rejected HERE (a synchronous
+        // pre-send failure) rather than silently truncating or trapping on the wire.
+        let request: InitiateBolusRequest = try extended
+            ? InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                   foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
+                                   extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
+            : InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                   foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
+                                   extendedVolume: 0, extendedSeconds: 0, extended3: 0)
+        // PX-08 + FB-02: `sendAwaitingResponse` writes the initiate (inside the coordinator's `write`
+        // thunk) BEFORE suspending. So a *synchronous* send/build failure means nothing was written (clean,
+        // retryable), while a `TxError` (timeout/disconnect) means the write WENT OUT and the outcome is
+        // INDETERMINATE — the pump may be mid-bolus. We map only the latter to `.indeterminate`.
+        let ini: InitiateBolusResponse
+        do {
+            ini = try await awaitResponse(request, as: InitiateBolusResponse.self, deadline: 8,
+                                          signed: true, allowInsulinDelivery: true)
+        } catch let e as PumpTransactionCoordinator.TxError {
+            initiateWritten = true
+            deliveryOutcomeUnknown = true
+            unknownOutcomeBolusId = perm.bolusId
+            throw BolusError.indeterminate("no initiate response after the bolus was sent (\(e))")
         }
         guard ini.accepted else {
             snapshot.connection = .connected; onChange?()
@@ -676,18 +642,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Fresh signing timestamp for the HMAC. Serialized behind any other signed transaction and
         // timed-out so a lost time-sync reply can't hang / clobber another transaction (audit A-03).
         await acquirePumpTx()
-        let gen = pumpTxGeneration
         let time: TimeSinceResetResponse
         do {
-            time = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<TimeSinceResetResponse, Error>) in
-                timeCont = cont
-                scheduleResponseTimeout(seconds: 5) { [weak self] in
-                    guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
-                    self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
-                }
-                do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
-            }
+            time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
         } catch { releasePumpTx(); return }
+        applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
         let previous = client.writePolicy
@@ -730,21 +689,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     // advanced-control + Mobi gate; the WritePolicy + pump-side checks are the enforcement backstop.
 
     private func refreshSigningTimestamp() async throws {
-        let gen = pumpTxGeneration
-        let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
-            timeCont = cont
-            scheduleResponseTimeout(seconds: 5) { [weak self] in
-                guard let self, self.pumpTxGeneration == gen, let c = self.timeCont else { return }
-                self.timeCont = nil; c.resume(throwing: BolusError.pumpRejected("no time-sync response (timeout)"))
-            }
-            do { try client.send(TimeSinceResetRequest()) } catch { timeCont = nil; cont.resume(throwing: error) }
-        }
+        let time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
+        applyTimeResponse(time)
         signingTimestamp = time.currentTime
     }
 
     /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
     /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
-    /// Serialized behind any other signed transaction (audit A-03) so its `timeCont` can't be clobbered.
+    /// Serialized behind any other signed transaction (audit A-03) so its awaited time-sync can't overlap.
     private func sendControl(_ message: Message, delivery: Bool) async throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
             throw BolusError.notConnected
@@ -1403,14 +1355,12 @@ extension TandemBackend: PumpBLEClientDelegate {
             // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived.
             if glucoseReadInFlight { completeGlucoseRead() }
         case let m as LastBolusStatusV2Response:
-            if let cont = lastBolusCont { cont.resume(returning: m); lastBolusCont = nil }
+            // PX-08: normally consumed by the coordinator (awaited via `lastBolusStatus()`); this delegate
+            // path only fires for an UNSOLICITED last-bolus frame, for which we still refresh the snapshot.
             snapshot.lastBolusUnits = m.deliveredUnits
-            // Convert the pump timestamp using the pump↔phone clock anchor (timezone-agnostic).
             if let a = pumpTimeAnchor {
                 snapshot.lastBolusDate = a.phone.addingTimeInterval(Double(Int64(m.timestamp) - Int64(a.pump)))
             }
-        case let m as CurrentBolusStatusResponse:
-            bolusStatusCont?.resume(returning: m); bolusStatusCont = nil
         case let m as DismissNotificationResponse:
             lastDismissAck = "ack \(m.status)\(m.status == 0 ? " (accepted)" : " (rejected)")"
             renderDebug()
@@ -1421,9 +1371,9 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.isf = m.isf
             snapshot.targetBg = m.targetBg
         case let m as TimeSinceResetResponse:
+            // PX-08: awaited time responses are consumed by the coordinator (side-effects applied in
+            // `applyTimeResponse`); this handles any unsolicited time frame.
             pumpTimeAnchor = (m.currentTime, Date())
-            timeCont?.resume(returning: m); timeCont = nil
-            // Kick off the CGM history backfill once per connect (after we can talk to the pump).
             if !didBackfill { didBackfill = true; try? client.send(HistoryLogStatusRequest()) }
         case let m as HistoryLogStatusResponse:
             guard !backfillActive, m.numEntries > 0 else { break }
@@ -1447,8 +1397,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as CGMAlertStatusResponse: cgmAlertList = m.notifications; noteAlert("c", m.bitmap); mergeNotifications()
         case let m as ReminderStatusResponse: reminderList = m.notifications; noteAlert("r", m.bitmap); mergeNotifications()
         case let m as MalfunctionBitmaskStatusResponse: malfunctionList = m.notifications; noteAlert("m", m.bitmap); mergeNotifications()
-        case let m as BolusPermissionResponse: permissionCont?.resume(returning: m); permissionCont = nil
-        case let m as InitiateBolusResponse: initiateCont?.resume(returning: m); initiateCont = nil
+        // PX-08: BolusPermission / InitiateBolus / CurrentBolusStatus responses are consumed by the
+        // transaction coordinator (awaited in `perform`), so they no longer need a delegate case here.
         // Workstream B: pump model + basal + Control-IQ status.
         case let m as ApiVersionResponse:
             snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
