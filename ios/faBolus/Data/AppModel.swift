@@ -255,7 +255,13 @@ public final class AppModel {
 
     /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
     /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
-    private var remoteBolusLedger = RemoteBolusLedger()
+    /// FB-03: durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
+    @ObservationIgnored private let remoteBolusLedgerStore: RemoteBolusLedgerStore
+    @ObservationIgnored private lazy var remoteBolusLedger: RemoteBolusLedger = remoteBolusLedgerStore.load()
+    /// Persist the ledger. Throwing is surfaced so a delivery can refuse to proceed if it can't record
+    /// its intent (FB-03). Best-effort for terminal/echo writes where losing the record only risks a
+    /// redundant reconcile, not a double dose.
+    private func persistLedger() { remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger) }
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
     public struct PendingRemoteControl: Equatable, Sendable {
@@ -402,10 +408,16 @@ public final class AppModel {
     /// falls back to a queued request + reminder (see `ModeAutomation`).
     public static weak var shared: AppModel?
 
-    public init(source: PumpBackend) {
+    /// - Parameter ledgerStoreURL: overrides the durable idempotency-ledger file (FB-03). Tests inject a
+    ///   unique temp URL so instances don't share the App Group ledger; production uses the default.
+    public init(source: PumpBackend, ledgerStoreURL: URL? = nil) {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
+        self.remoteBolusLedgerStore = RemoteBolusLedgerStore(
+            url: ledgerStoreURL
+                ?? RemoteBolusLedgerStore.defaultURL(appGroupID: WidgetStore.appGroup)
+                ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger.json"))
         Self.shared = self
         source.onChange = { [weak self] in self?.refresh() }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
@@ -1168,6 +1180,7 @@ public final class AppModel {
         let recordedBg: Int?         // the glucose the dose was computed from (→ pump metadata)
         let bgDate: Date?            // provenance/age of that glucose
         let iobUnits: Double?        // IOB the calc used
+        var inputsVerified: Bool = true   // FB-01: frozen verification state (remotes never resolve unverified)
     }
 
     /// Resolve + FREEZE the authoritative dose for a remote/widget request (audit C-02/C-04/C-06). For a
@@ -1192,6 +1205,15 @@ public final class AppModel {
         await refreshGlucoseNow()
         let freshBg: Int? = (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
         let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
+        // FB-01: a remote/automatic surface must NEVER auto-deliver a dose computed from unverified
+        // (assumed) pump settings — the verified profile hasn't arrived, so we can't stand behind the
+        // number. Fail closed and tell the user to confirm on the phone (where the assumptions are shown).
+        guard rec.inputsVerified else {
+            let msg = "Pump settings not verified yet — open faBolus on the phone to confirm this dose."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return nil
+        }
         let dose = rec.recommendedUnits
         // Wrist/Mac-vs-host divergence guard (advisory defense-in-depth, not authentication).
         if abs(dose - est) > Self.remoteDivergenceLimitUnits {
@@ -1201,7 +1223,7 @@ public final class AppModel {
             return nil
         }
         return ResolvedBolus(units: dose, carbsGrams: carbs, recordedBg: freshBg,
-                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits)
+                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true)
     }
 
     /// Deliver a frozen `ResolvedBolus` through the idempotency ledger + validated signed path, echoing
@@ -1230,6 +1252,20 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
             return
         }
+        // FB-03: mark delivering and PERSIST the ledger atomically BEFORE the first pump write. If the
+        // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose
+        // on relaunch). This is the durable point that makes exactly-once survive a restart.
+        remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
+        do {
+            try remoteBolusLedgerStore.save(remoteBolusLedger)
+        } catch {
+            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
+                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
+            persistLedger()
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: "Could not record delivery intent — not delivered."))
+            return
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams, bgMgdl: r.recordedBg)
@@ -1238,11 +1274,21 @@ public final class AppModel {
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
                                      status: (outcome.status ?? .delivered).rawValue,
                                      message: outcome.message, deliveredUnits: delivered)
+            persistLedger()
             echo(outcome)
             lastError = nil
+        } catch let e as BolusError where e.isIndeterminate {
+            // FB-02: the bolus was SENT but its outcome is unknown. Do NOT settle as failed (that would
+            // let a retry re-dose) — mark indeterminate (retry stays blocked) and tell the remote to verify.
+            remoteBolusLedger.markIndeterminate(peerId: peerId, requestId: requestId)
+            persistLedger()
+            lastError = e.errorDescription
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
+                               message: "Bolus sent but outcome is unknown — verify on the pump before retrying."))
         } catch {
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId, status: RemoteCommand.Status.failed.rawValue,
                                      message: error.localizedDescription)
+            persistLedger()
             lastError = error.localizedDescription
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
                                status: .failed, message: error.localizedDescription))
@@ -1289,6 +1335,16 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
             return (0, false, msg)
         }
+        // FB-03: record delivery intent durably before the pump write (see executeResolved).
+        remoteBolusLedger.markDelivering(peerId: "widget", requestId: requestId)
+        do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
+        catch {
+            remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
+                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
+            persistLedger()
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Could not record delivery intent"))
+            return (0, false, "Could not record delivery intent")
+        }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
             let delivered = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
@@ -1297,13 +1353,24 @@ public final class AppModel {
             remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
                                      status: (outcome.status ?? .delivered).rawValue,
                                      message: outcome.message, deliveredUnits: delivered)
+            persistLedger()
             echo(outcome)
             lastError = nil
             refresh()
             return (delivered, source.lastBolusCancelled, nil)
+        } catch let e as BolusError where e.isIndeterminate {
+            // FB-02: sent but outcome unknown — block retry, tell the user to verify (not a failure).
+            remoteBolusLedger.markIndeterminate(peerId: "widget", requestId: requestId)
+            persistLedger()
+            lastError = e.errorDescription
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
+                               message: "Bolus sent but outcome is unknown — verify on the pump."))
+            refresh()
+            return (0, false, e.errorDescription)
         } catch {
             remoteBolusLedger.settle(peerId: "widget", requestId: requestId,
                                      status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
+            persistLedger()
             lastError = error.localizedDescription
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: error.localizedDescription))
             refresh()

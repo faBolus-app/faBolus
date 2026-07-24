@@ -105,6 +105,13 @@ public final class MockBackend: PumpBackend {
     /// Mock calculator: the same oracle-backed `BolusMath` as the real backend, with a fixed mock
     /// profile (carb ratio 10 g/U, ISF 40, target 110). Keeps the simulator in lockstep with the
     /// production dosing semantics (audit C-01).
+    /// Test knob (FB-01): when true, `recommendBolus` reports the dose as computed from ASSUMED
+    /// (unverified) settings, so callers must fail closed / require the assumptions ack.
+    public var forceUnverifiedInputs = false
+    /// Test knob (FB-02): when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
+    /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
+    public var forceIndeterminateNextDelivery = false
+
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams
@@ -115,6 +122,7 @@ public final class MockBackend: PumpBackend {
         rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbsGrams > 0 ? carbsGrams : nil,
                                                           bgMgdl: bgMgdl, profile: profile)
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // round to 0.05u
+        if forceUnverifiedInputs { rec.inputsVerified = false; rec.assumedProfile = profile }
         return rec
     }
 
@@ -136,6 +144,10 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        if forceIndeterminateNextDelivery {
+            forceIndeterminateNextDelivery = false
+            throw BolusError.indeterminate("mock: initiate response lost after write")
+        }
         snapshot.connection = .bolusing; onChange?()
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         snapshot.connection = .connected

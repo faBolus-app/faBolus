@@ -43,6 +43,11 @@ struct BolusEntryView: View {
     private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double; let extended: Bool }
     /// Supersedes out-of-order async recommendation results (audit C-04).
     @State private var calcSeq = 0
+    /// FB-01: when the recommendation was computed from ASSUMED (unverified) pump settings, delivery
+    /// requires a distinct blocking acknowledgement of those assumed CR/ISF/target values first. Reset on
+    /// every recompute so each new dose re-requires the ack.
+    @State private var pendingAssumed: (extended: Bool, profile: BolusMath.Profile)?
+    @State private var assumedAcknowledged = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -334,6 +339,24 @@ struct BolusEntryView: View {
             let now = units * Double(extendedNowPercent) / 100
             Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
         }
+        // FB-01: assumed-settings acknowledgement — the pump's verified profile hasn't arrived, so the
+        // dose used ASSUMED values. Force the user to see and accept them before anything is delivered.
+        .confirmationDialog("Pump settings not verified",
+                            isPresented: Binding(get: { pendingAssumed != nil },
+                                                 set: { if !$0 { pendingAssumed = nil } }),
+                            titleVisibility: .visible) {
+            if let p = pendingAssumed {
+                Button("Use assumed settings & deliver \(String(format: "%.2f U", units))", role: .destructive) {
+                    let ext = p.extended; pendingAssumed = nil; assumedAcknowledged = true
+                    Task { await attemptDeliver(extended: ext) }
+                }
+                Button("Cancel", role: .cancel) { pendingAssumed = nil }
+            }
+        } message: {
+            if let p = pendingAssumed {
+                Text("faBolus hasn't read this pump's bolus settings yet, so this dose assumes carb ratio \(String(format: "%.0f", p.profile.carbRatioGramsPerUnit)) g/U, ISF \(p.profile.isfMgdlPerUnit), target \(p.profile.targetBgMgdl) mg/dL and ignores BG correction. Only continue if those match your pump.")
+            }
+        }
     }
 
     private func durationLabel(_ min: Int) -> String {
@@ -347,6 +370,7 @@ struct BolusEntryView: View {
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
         let seq = calcSeq
+        assumedAcknowledged = false   // FB-01: a changed dose must re-acknowledge assumed settings
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
@@ -363,6 +387,12 @@ struct BolusEntryView: View {
     /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
     /// stale on-screen value.
     private func attemptDeliver(extended: Bool) async {
+        // FB-01: never deliver a dose computed from ASSUMED pump settings without an explicit, distinct
+        // acknowledgement of the assumed CR/ISF/target — separate from the generic dose confirm.
+        if let rec = recommendation, !rec.inputsVerified, let ap = rec.assumedProfile, !assumedAcknowledged {
+            pendingAssumed = (extended, ap)
+            return
+        }
         preparingDeliver = true
         defer { preparingDeliver = false }
         if mode == .carbs, bgSource == .cgm, carbs > 0 {

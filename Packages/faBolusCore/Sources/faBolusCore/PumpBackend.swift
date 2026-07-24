@@ -219,14 +219,24 @@ public extension PumpBackend {
 
 public enum BolusError: Error, LocalizedError {
     case notConnected, exceedsMax(Double), cancelled, pumpRejected(String)
+    /// FB-02: the initiate command WAS written to the pump but its outcome is unknown (the response
+    /// was lost to a timeout/disconnect). The bolus may or may not have started — the caller must NOT
+    /// treat this as a plain failure/retry; it must reconcile against the pump's bolus history first.
+    case indeterminate(String)
+    /// FB-01: the dose was computed from unverified/assumed pump settings and cannot be auto-delivered.
+    case unverifiedInputs(String)
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to a pump."
         case .exceedsMax(let m): return "Exceeds max bolus of \(m) u."
         case .cancelled: return "Bolus cancelled."
         case .pumpRejected(let r): return "Pump rejected the bolus: \(r)."
+        case .indeterminate(let r): return "Bolus outcome unknown — verify on the pump: \(r)."
+        case .unverifiedInputs(let r): return "Pump settings not verified: \(r)."
         }
     }
+    /// True for an outcome that must block new deliveries until reconciled (FB-02).
+    public var isIndeterminate: Bool { if case .indeterminate = self { return true } else { return false } }
 }
 
 /// Absolute defense-in-depth ceiling. The real cap is the pump's configured max bolus

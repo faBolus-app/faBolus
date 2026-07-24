@@ -233,6 +233,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// (queuing manual double-taps would double-dose). Set synchronously right after the guard.
     private var deliveryInProgress = false
 
+    // FB-02: distinguish a pre-send failure from a post-send UNKNOWN outcome.
+    /// Set true the instant the `InitiateBolusRequest` write is issued, so a subsequent lost response
+    /// (timeout/disconnect) is classified `.indeterminate` (the bolus may have started) rather than a
+    /// plain failure. Cleared when a bolus transaction begins.
+    private var initiateWritten = false
+    /// True after an indeterminate initiate: a bolus was sent but its outcome is unknown. Blocks any NEW
+    /// delivery (`validateDeliver`) until reconciled against the pump's bolus history by id.
+    public private(set) var deliveryOutcomeUnknown = false
+    /// The pump bolus id whose outcome is unknown, for reconciliation.
+    private var unknownOutcomeBolusId: Int = 0
+
     private func acquirePumpTx() async {
         while pumpTxBusy {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in pumpTxWaiters.append(c) }
@@ -270,7 +281,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func failPumpWaiters(_ error: Error) {
         timeCont?.resume(throwing: error); timeCont = nil
         permissionCont?.resume(throwing: error); permissionCont = nil
-        initiateCont?.resume(throwing: error); initiateCont = nil
+        // FB-02: if the initiate had already been WRITTEN when the link dropped, its outcome is UNKNOWN,
+        // not failed — the pump may be mid-bolus. Surface `.indeterminate` so the caller blocks retry +
+        // reconciles, instead of settling a possibly-delivered bolus as failed.
+        if let c = initiateCont {
+            initiateCont = nil
+            if initiateWritten {
+                deliveryOutcomeUnknown = true
+                c.resume(throwing: BolusError.indeterminate("connection lost after the bolus was sent"))
+            } else {
+                c.resume(throwing: error)
+            }
+        }
         bolusStatusCont?.resume(throwing: error); bolusStatusCont = nil
         lastBolusCont?.resume(throwing: error); lastBolusCont = nil
         cgmHwCont?.resume(returning: nil); cgmHwCont = nil
@@ -386,6 +408,11 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Shared pre-flight validation for any delivery (standard or extended).
     private func validateDeliver(total: Double) throws {
+        // FB-02: a prior bolus with an UNKNOWN outcome blocks any new delivery until it's reconciled
+        // against the pump (a duplicate here could be a real double-dose).
+        guard !deliveryOutcomeUnknown else {
+            throw BolusError.indeterminate("a previous bolus outcome is unknown — verify on the pump first")
+        }
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
         // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap
@@ -394,6 +421,27 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
             throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
         }
+    }
+
+    /// FB-02 reconciliation: resolve an unknown-outcome bolus against the pump's actual bolus history.
+    /// Reads the pump's last bolus; if it matches the id we were waiting on, we now KNOW the outcome, so
+    /// clear the block and return the delivered amount. Returns nil if it can't be resolved yet (stay
+    /// blocked). Safe to call on reconnect and from a manual "verify" affordance.
+    @discardableResult
+    public func reconcileIndeterminateDelivery() async -> Double? {
+        guard deliveryOutcomeUnknown else { return nil }
+        guard snapshot.connection == .connected else { return nil }   // need the link to ask the pump
+        guard let last = try? await lastBolusStatus(), last.bolusId == unknownOutcomeBolusId else {
+            return nil   // pump hasn't caught up / different id — stay blocked, try again later
+        }
+        // Outcome known now: unblock and report what actually went in.
+        deliveryOutcomeUnknown = false
+        let bolusId = unknownOutcomeBolusId
+        unknownOutcomeBolusId = 0
+        onChange?()
+        NotificationCenter.default.post(name: .faBolusIndeterminateResolved, object: nil,
+                                        userInfo: ["bolusId": bolusId, "delivered": last.deliveredUnits])
+        return last.deliveredUnits
     }
 
     /// The validated signed delivery flow, shared by standard + extended boluses. When `extendedMu > 0`
@@ -410,6 +458,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         await acquirePumpTx()
         defer { releasePumpTx() }
         let gen = pumpTxGeneration
+        initiateWritten = false   // FB-02: reset per transaction; set true once the initiate is on the wire
 
         // Fresh signing timestamp (the pump validates the HMAC against its clock).
         let time: TimeSinceResetResponse = try await withCheckedThrowingContinuation { cont in
@@ -489,7 +538,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             initiateCont = cont
             scheduleResponseTimeout(seconds: 8) { [weak self] in
                 guard let self, self.pumpTxGeneration == gen, let c = self.initiateCont else { return }
-                self.initiateCont = nil; c.resume(throwing: BolusError.pumpRejected("no initiate response (timeout)"))
+                self.initiateCont = nil
+                // FB-02: the write went out (we're waiting on the RESPONSE), so a timeout means the
+                // bolus MAY have started — the outcome is indeterminate, not a clean failure.
+                self.deliveryOutcomeUnknown = true
+                self.unknownOutcomeBolusId = perm.bolusId
+                c.resume(throwing: BolusError.indeterminate("no initiate response (timeout) after the bolus was sent"))
             }
             do {
                 let request: InitiateBolusRequest = extended
@@ -501,7 +555,13 @@ public final class TandemBackend: NSObject, PumpBackend {
                                            extendedVolume: 0, extendedSeconds: 0, extended3: 0)
                 try client.send(request, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)
-            } catch { initiateCont = nil; cont.resume(throwing: error) }
+                // The command is now on the wire: a lost response from here on is INDETERMINATE (FB-02).
+                self.initiateWritten = true
+                self.unknownOutcomeBolusId = perm.bolusId
+            } catch {
+                // Synchronous failure → the write never happened → a clean pre-send failure (retryable).
+                initiateCont = nil; cont.resume(throwing: error)
+            }
         }
         guard ini.accepted else {
             snapshot.connection = .connected; onChange?()
@@ -1226,6 +1286,9 @@ extension TandemBackend: PumpBLEClientDelegate {
                 self?.pairingCode = ""                    // subsequent connects resume
             }
             self?.startPolling()
+            // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
+            // drop), reconcile it against the pump now so new deliveries can unblock.
+            Task { [weak self] in await self?.reconcileIndeterminateDelivery() }
         }
         coordinator = coord
         coord.start()
@@ -1394,4 +1457,10 @@ extension TandemBackend: PumpBLEClientDelegate {
         failPumpWaiters(error)
         onChange?()
     }
+}
+
+extension Notification.Name {
+    /// Posted when an indeterminate bolus outcome (FB-02) is reconciled against the pump. userInfo:
+    /// `bolusId` (Int) and `delivered` (Double, units actually delivered).
+    static let faBolusIndeterminateResolved = Notification.Name("faBolusIndeterminateResolved")
 }

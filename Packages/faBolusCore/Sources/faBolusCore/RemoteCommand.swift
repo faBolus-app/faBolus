@@ -42,6 +42,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     }
     public enum Status: String, Codable, Sendable {
         case pending, awaitingConfirm, delivering, delivered, cancelled, failed, outOfRange
+        /// FB-02: the bolus was sent but its outcome is UNKNOWN (lost response). NOT a failure — the
+        /// remote must show "verify on the pump", and a retry of the same request is blocked, not redosed.
+        case unknown
     }
 
     public var version: Int

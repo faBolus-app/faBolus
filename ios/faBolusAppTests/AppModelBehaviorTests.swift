@@ -45,7 +45,11 @@ struct AppModelBehaviorTests {
     /// (rejections/gate blocks short-circuit before touching the backend).
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
-        let model = AppModel(source: backend)
+        // FB-03: give each model its own durable-ledger file so the persisted ledger can't leak between
+        // serialized tests (production shares one App Group file; tests must not).
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("appmodel-ledger-\(UUID().uuidString).json")
+        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
         let rec = EchoRecorder(); rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)
@@ -251,6 +255,64 @@ struct AppModelBehaviorTests {
             await model.remoteDeliver(requestId: "i2", units: 2.0, peerId: "watch")   // same id, different dose
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("different dose") == true)
+        }
+    }
+
+    // MARK: - FB-01: unverified pump settings fail closed on a remote
+
+    @Test func remoteCarbWithUnverifiedInputsFailsClosed() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            backend.forceUnverifiedInputs = true
+            let iob0 = backend.snapshot.iobUnits
+            // Provide a matching estimate so ONLY the verification gate can reject it (not divergence).
+            let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
+            await model.remoteDeliver(requestId: "u1", carbsGrams: 30, remoteEstimate: dose, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("not verified") == true)
+            #expect(rec.count(.delivering) == 0)                       // never reached the backend
+            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)       // nothing delivered
+        }
+    }
+
+    // MARK: - FB-02: indeterminate outcome is not a failure and blocks a retry
+
+    @Test func indeterminateOutcomeReportsUnknownAndBlocksRetry() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            backend.forceIndeterminateNextDelivery = true
+            await model.remoteDeliver(requestId: "x1", units: 2.0, peerId: "watch")
+            #expect(rec.last?.status == .unknown)                      // NOT .failed
+            #expect(rec.count(.delivered) == 0)
+            let deliveringAfterFirst = rec.count(.delivering)
+            // A retry of the SAME request must not re-deliver (ledger is indeterminate, not terminal).
+            await model.remoteDeliver(requestId: "x1", units: 2.0, peerId: "watch")
+            #expect(rec.count(.delivering) == deliveringAfterFirst)    // no new delivery attempt
+            #expect(rec.count(.delivered) == 0)                        // still never delivered
+        }
+    }
+
+    // MARK: - FB-03: the durable ledger blocks a duplicate across a simulated relaunch
+
+    @Test func durableLedgerBlocksDuplicateAcrossRelaunch() async {
+        try? await withCleanSettings {
+            // Two AppModels sharing ONE ledger file = the same install across a relaunch.
+            let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("shared-ledger-\(UUID().uuidString).json")
+            let backend1 = MockBackend(); await backend1.connect()
+            let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
+            let rec1 = EchoRecorder(); rec1.attach(to: model1)
+            await model1.remoteDeliver(requestId: "dur1", units: 1.5, peerId: "watch")
+            #expect(rec1.last?.status == .delivered)
+
+            // "Relaunch": a fresh model loads the persisted ledger and must NOT re-deliver dur1.
+            let backend2 = MockBackend(); await backend2.connect()
+            let iob0 = backend2.snapshot.iobUnits
+            let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
+            let rec2 = EchoRecorder(); rec2.attach(to: model2)
+            await model2.remoteDeliver(requestId: "dur1", units: 1.5, peerId: "watch")
+            #expect(rec2.count(.delivering) == 0)                      // no second delivery after relaunch
+            #expect(abs(backend2.snapshot.iobUnits - iob0) < tol)      // backend2 untouched
         }
     }
 }
