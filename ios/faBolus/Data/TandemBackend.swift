@@ -475,9 +475,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
-        let previousPolicy = client.writePolicy
+        // PX-03/04: elevate only for this bolus, and ALWAYS restore .readOnly when perform exits (success,
+        // throw, or cancellation) — never a prior, possibly-elevated value. The elevation spans the
+        // permission→initiate→poll window so an in-flight cancel (a signed op) still authorizes.
         client.writePolicy = .allowDelivery
-        defer { client.writePolicy = previousPolicy }
+        defer { client.writePolicy = .readOnly }
         snapshot.connection = .bolusing; onChange?()
 
         let perm = try await awaitResponse(BolusPermissionRequest(), as: BolusPermissionResponse.self,
@@ -649,11 +651,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
-        let previous = client.writePolicy
         // Dismissing an alert is a BENIGN signed op (audit P-01) — it needs only the benign tier, not the
-        // therapy-config-capable `.allowNonDelivery`.
+        // therapy-config-capable `.allowNonDelivery`. PX-03/04: always restore .readOnly (not a prior,
+        // possibly-elevated value) when this scope ends.
         client.writePolicy = .allowBenignControl
-        defer { client.writePolicy = previous; releasePumpTx() }
+        defer { client.writePolicy = .readOnly; releasePumpTx() }
         lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
         alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
         // Surface a send failure directly (the request otherwise fails silently) so a non-arriving
@@ -703,13 +705,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         try await withPumpTx {
             try await refreshSigningTimestamp()
-            let previous = client.writePolicy
-            client.writePolicy = delivery ? .allowDelivery : .allowNonDelivery
-            defer { client.writePolicy = previous }
-            _ = try client.send(message, authenticationKey: authenticationKey,
-                                pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
-            // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            // PX-03/04: scoped one-operation elevation — always restored to .readOnly (even on throw).
+            try await client.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
+                _ = try client.send(message, authenticationKey: authenticationKey,
+                                    pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
+                // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         }
     }
 
