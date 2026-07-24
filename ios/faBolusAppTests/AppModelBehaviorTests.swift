@@ -440,6 +440,38 @@ struct AppModelBehaviorTests {
         }
     }
 
+    // MARK: - FB-04: the FROZEN calculator IOB is delivered, never a later live snapshot
+
+    /// A carb dose freezes the IOB it was computed against at approval time; if the live IOB then moves
+    /// before the user confirms, the delivery must still send the FROZEN value (the approved inputs), not
+    /// the live one. Verified by spying the exact metadata the backend received.
+    @Test func frozenIobIsDeliveredNotLiveIob() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            backend.setLiveIob(2.0)                          // IOB at approval time
+            // Glucose is stale in the mock → carbs-only dose 30/10 = 3.0 U (IOB doesn't move a carbs-only
+            // dose), so the estimate 3.0 clears the divergence guard regardless of IOB.
+            await model.presentRemoteBolus(requestId: "fb04", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
+            #expect(model.pendingRemoteBolus != nil)         // frozen + awaiting confirmation
+            backend.setLiveIob(0.1)                          // live IOB drops AFTER the freeze
+            await model.confirmRemoteBolus()
+            #expect(backend.lastDeliver?.iob == 2.0)         // delivered the FROZEN IOB, not live 0.1
+            #expect(backend.lastDeliver?.carbs == 30)
+        }
+    }
+
+    /// A zero frozen IOB is delivered as 0 (not a later nonzero live value).
+    @Test func zeroFrozenIobIsDeliveredAsZero() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            backend.setLiveIob(0.0)
+            await model.presentRemoteBolus(requestId: "fb04z", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
+            backend.setLiveIob(5.0)
+            await model.confirmRemoteBolus()
+            #expect(backend.lastDeliver?.iob == 0.0)
+        }
+    }
+
     // MARK: - P0: durable GLOBAL unresolved-delivery block + bolus-id reconciliation
 
     /// After an indeterminate outcome, EVERY delivery surface (a brand-new remote request AND a local

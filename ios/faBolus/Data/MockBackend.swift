@@ -130,6 +130,11 @@ public final class MockBackend: PumpBackend {
     public func seedFreshGlucose(_ mgdl: Int, at date: Date = Date()) {
         snapshot.glucose = mgdl; snapshot.glucoseDate = date; onChange?()
     }
+    /// Test knob (FB-04): set the LIVE IOB, so a test can prove a delivery sends the FROZEN calc IOB, not
+    /// the live snapshot value.
+    public func setLiveIob(_ u: Double) { snapshot.iobUnits = u; onChange?() }
+    /// Spy (FB-04): the exact metadata the most recent delivery passed to the backend.
+    public private(set) var lastDeliver: (units: Double, carbs: Double?, bg: Int?, iob: Double?)?
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
@@ -170,6 +175,7 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        lastDeliver = (units, carbsGrams, bgMgdl, iobUnits)   // FB-04 spy: exactly what the caller passed
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
