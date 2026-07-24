@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import faBolusCore
 
 /// Byte-for-byte parity of `BolusMath` against the vendored Tandem oracle `BolusCalculator.parse()`.
@@ -38,9 +39,26 @@ final class BolusMathParityTests: XCTestCase {
         }
     }
 
+    /// The fixture grid is byte-locked: exact row count + SHA-256 of the captured JSONL. If either
+    /// changes, the parity guarantee no longer covers the same grid — regenerate deliberately and update
+    /// both constants. (DOC-04: the doc-comment count and this assertion must agree.)
+    private static let expectedFixtureCount = 563
+    private static let expectedFixtureSHA256 =
+        "1b0a65f34239d6a572e01a0379f6803e1509f1b560a8001932d823d5e8ac04bd"
+
+    func testFixtureGridIsByteLocked() throws {
+        guard let url = Bundle.module.url(forResource: "bolus_oracle_fixtures", withExtension: "jsonl") else {
+            XCTFail("bolus_oracle_fixtures.jsonl missing from test bundle resources"); return
+        }
+        let data = try Data(contentsOf: url)
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hash, Self.expectedFixtureSHA256, "oracle fixture file changed — parity grid drifted")
+        XCTAssertEqual(try loadFixtures().count, Self.expectedFixtureCount, "exact oracle vector count")
+    }
+
     func testParityAgainstRealOracle() throws {
         let fixtures = try loadFixtures()
-        XCTAssertGreaterThan(fixtures.count, 400, "expected the full oracle fixture grid")
+        XCTAssertEqual(fixtures.count, Self.expectedFixtureCount, "expected the full oracle fixture grid")
         var mismatches: [String] = []
         for f in fixtures {
             let profile = BolusMath.Profile(carbRatioGramsPerUnit: f.cr, isfMgdlPerUnit: f.isf,

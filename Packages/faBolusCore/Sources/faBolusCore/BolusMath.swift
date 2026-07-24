@@ -15,7 +15,7 @@ import Foundation
 /// remote-iPhone) must route through this; the Garmin watch carries a hand-port of the same branch
 /// logic in `AppState.mc` (Monkey C can't call Swift) that is kept in lockstep.
 ///
-/// Verified against the real oracle: `BolusMathParityTests` runs ~2.8k input vectors through the actual
+/// Verified against the real oracle: `BolusMathParityTests` runs **563** input vectors through the actual
 /// `BolusCalculator.java` (fixtures captured from the JVM) and asserts this port matches its `getTotal()`.
 public enum BolusMath {
 

@@ -2,8 +2,10 @@
 
 Machine-checkable provenance for every third-party / vendored component the faBolus Apple app ships or
 builds against (audit L-01). `scripts/check-sbom.sh` fails CI if a local/vendored package is missing a
-`LICENSE` file or a row here. The **faBolusNudge** advisory SDK maintains its own SBOM (model weights +
-datasets); it is referenced here as an external pinned dependency only.
+`LICENSE` file or a row here. The **faBolusNudge** advisory SDK is referenced here as an external pinned
+dependency only. **NU-01:** faBolusNudge does **not** yet publish its own SBOM (it ships `LICENSE` +
+`NOTICE` but no BOM). Its code-dependency inventory + license rows and its model/dataset inventory are
+tracked in the separate Nudge remediation session, not maintained here.
 
 Format per row: component · version/revision · SPDX license · source · how faBolus uses it.
 
@@ -40,7 +42,7 @@ PumpX2Kit in turn vendors (see its own `NOTICE`):
 | Component | Version | License (SPDX) | Notes |
 |---|---|---|---|
 | Garmin Connect IQ Mobile SDK | 1.8.0 | LicenseRef-Garmin-Proprietary | Binary xcframework; only when the Garmin companion is built |
-| faBolusNudge | rev `c3d1e228` | MIT (code) | Advisory SDK; **owns its own SBOM** (model weights/datasets). Pinned pre-eating-detection. |
+| faBolusNudge | rev `c3d1e228` | MIT (code) | Advisory SDK; **no SBOM published yet** (NU-01 — code + model/dataset inventory tracked in the Nudge session). Pinned pre-eating-detection. |
 
 ## Trademarks
 

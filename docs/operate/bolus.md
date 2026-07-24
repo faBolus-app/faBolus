@@ -49,14 +49,19 @@ While a bolus is delivering, a prominent **Cancel** button is available on the H
 sheet. Tapping it sends a cancel to the pump, and the app reports the **actual amount delivered**
 before the stop — so a cancelled bolus tells you exactly how much went through.
 
-## From a remote (double confirmation)
+## From a remote
 
-An Apple Watch or Garmin can *request* a bolus, but the phone stays in control:
+An Apple Watch or Garmin can *request* a bolus, but the phone stays in control — it is the single
+calculator and the only device that talks to the pump:
 
-- **Apple Watch:** the request appears on the phone as a confirm dialog; delivery only happens
-  after you confirm on the iPhone.
-- **Garmin:** you complete the confirmation on the watch — tap 1-2-3 on a touchscreen, or the
-  two-button hold on a button device — and the phone carries it out.
+- **Apple Watch / Garmin:** you complete a hold-to-deliver confirmation **on the wrist** (tap 1-2-3 on
+  a touchscreen, or the two-button hold on a button device). The phone then **recomputes the dose from
+  the carbs**, checks it against the estimate the wrist showed (a divergence beyond a small tolerance is
+  rejected, not delivered), and carries it out. There is *not* a second confirm tap on the iPhone for a
+  watch/Garmin request.
+- **Parent remote (another iPhone):** a bolus a parent requests for a child's pump *does* raise an
+  explicit **approval dialog on the child's phone** showing the frozen dose, carbs, BG, and IOB before
+  anything is delivered.
 - If the phone is unreachable, the remote shows a clean failure and **nothing is delivered**.
 
 See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).

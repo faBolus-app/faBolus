@@ -474,7 +474,7 @@ struct ProfileCreateView: View {
                     }
                 }.disabled(busy || name.isEmpty)
             } footer: {
-                Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. ⚠️ Experimental: some profile parameters use **unverified default values** (idpStatusId, bitmasks) — verify the created profile on the pump. Insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
+                Text("Creates a new profile with one time-segment starting at midnight. Add more segments after. ⚠️ Experimental: the field masks (idpStatusId, bitmasks) now match the captured reference vectors, but the **end-to-end pump write is unproven** — verify every value on the pump. Insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
@@ -512,7 +512,7 @@ struct ProfileSegmentsView: View {
                 }
                 if model.snapshot.viewedProfileSegments.isEmpty { Text("Loading segments…").foregroundStyle(.secondary) }
             } header: { Text("Time segments") } footer: {
-                Text("Each segment sets basal, carb ratio, ISF, and target from its start time until the next. ⚠️ Experimental: segment writes use an unverified idpStatusId (0) — verify the result on the pump. Editing the basal schedule is insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
+                Text("Each segment sets basal, carb ratio, ISF, and target from its start time until the next. ⚠️ Experimental: segment writes send the capture-aligned changed-fields mask (idpStatusId 31 for create/modify, 0 for delete), but the **end-to-end pump write is unproven** — verify the result on the pump. Editing the basal schedule is insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md.")
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
@@ -552,7 +552,7 @@ struct SegmentEditSheet: View {
                 SegmentFieldsEditor(f: $f, showStart: true)
                 Section {
                     HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
-                        // Basal-schedule write with an unverified idpStatusId (docs/UNVERIFIED-GUESSES.md #2).
+                        // Basal-schedule write; capture-aligned masks, end-to-end pump write bench-gated (docs/UNVERIFIED-GUESSES.md #2).
                         unverified.request("Editing a profile time-segment (the basal schedule)") {
                             onSave(f); dismiss()
                         }

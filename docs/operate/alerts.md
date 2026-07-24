@@ -22,8 +22,9 @@ The app polls the pump's notification bitmaps frequently and groups them by seve
 
 ## On the phone and watch
 
-Notifications appear most-serious first, each with a **Clear** button (a signed dismiss sent to
-the pump). On the Apple Watch and Garmin, the **Alerts** screen shows the same list — tap a row to
+Notifications appear most-serious first, each with a **Clear** button. On **Mobi** a Clear is a signed
+dismiss sent to the pump; on **t:slim X2** it snoozes locally on the phone (see *How clearing works*
+below). On the Apple Watch and Garmin, the **Alerts** screen shows the same list — tap a row to
 clear it, and the watch relays the request to the phone. (The raw pump bitmaps and poll count are no
 longer shown on the Alerts screen — they now live only in the hidden debug panel.)
 
@@ -38,16 +39,22 @@ until the pump condition clears). The Alerts screen says so when a CGM alert is 
 dismiss acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack N (rejected)` vs
 `no ack`).
 
-## How clearing works
+## How clearing works — depends on your pump
 
-Clearing sends a **signed `DismissNotificationRequest`** with the notification's id and kind. It's
-signed like a bolus but does **not** modify insulin delivery, so it runs under a restricted
-**benign-control** write policy (it can acknowledge alerts but physically can't dispense insulin). The
-pump's dismiss acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack N (rejected)`).
+Whether a **Clear** reaches the pump depends on the pump model:
 
-Acknowledgeable pump alerts and alarms clear on the pump this way. **Condition-based CGM alerts** (see
-above) are the exception: the pump keeps re-raising them while glucose is out of range, so faBolus
-snoozes those on your phone instead of dismissing on the pump.
+- **Mobi** supports remote dismiss. Clearing sends a **signed `DismissNotificationRequest`** with the
+  notification's id and kind. It's signed like a bolus but does **not** modify insulin delivery, so it
+  runs under a restricted **benign-control** write policy (it can acknowledge alerts but physically can't
+  dispense insulin). Acknowledgeable pump alerts and alarms clear on the pump this way. The pump's dismiss
+  acknowledgement shows in the diagnostic line (`ack 0 (accepted)` vs `ack N (rejected)`).
+- **t:slim X2** does **not** accept a remote dismiss in faBolus. Tapping **Clear** on a t:slim X2
+  **only snoozes the alert on your phone** — it does not send anything to the pump
+  (`TandemBackend.dismissNotification` skips the send when `supportsRemoteAlertDismiss` is false, which is
+  the case for t:slim X2; the diagnostic line shows `local-snoozed …`). Clear it on the pump itself.
+
+**Condition-based CGM alerts** (see above) are snoozed on your phone on **both** pumps: the pump keeps
+re-raising them while glucose is out of range, so faBolus never tries to dismiss them remotely.
 
 ## Conditional auto-rules
 

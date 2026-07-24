@@ -1,9 +1,12 @@
 import Foundation
 import faBolusCore
 
-/// iPhone-side receiver for remote (watch/Garmin) commands. Implements the phone half of the
-/// double-confirmation: a remote `bolusRequest` becomes a `pendingRemoteBolus` the iOS UI must
-/// explicitly confirm before `AppModel` delivers. Status is echoed back to the remote.
+/// iPhone-side receiver for remote (watch/Garmin) commands. The remote confirms on-device (a
+/// hold-to-deliver gesture); this host does **not** show a separate phone confirm dialog for a
+/// watch/Garmin `bolusRequest`. Instead the phone is the single calculator — `remoteDeliver`
+/// recomputes carbs→units, runs the divergence guard against the remote's own estimate, records
+/// carbs on the pump, and delivers. Status is echoed back to the remote. (The explicit phone-side
+/// approval dialog is the *peer*/parent-remote path in `PeerRemoteHost`, not this one.)
 @MainActor
 public final class PhoneRemoteHost {
     private let link = RemoteLink()

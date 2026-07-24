@@ -66,11 +66,13 @@ feature is untested and "will likely not work" before they run — not just the 
   (`InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
   are bounded to [0, 1000] g and BG to [0, 600] mg/dL before conversion. Delivered dose is driven by
   `totalVolume` and is unchanged by these metadata fields.
-- **`bolusIOB` now wired + oracle-locked (no bench needed):** `perform()` sends the pump's Control-IQ IOB
-  (`snapshot.iobUnits`) in milliunits, exactly matching the reference app's captured request — byte-locked
-  by `InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle` (vector ID10653: `bolusIOB 130` ==
-  0.13 U). Verifiable purely against the oracle, so this is no longer a guess. Metadata only — never
-  changes the delivered dose.
+- **`bolusIOB` — computed but NOT wired (FB-04, open):** `perform()` computes a bounded milliunit IOB
+  (`bolusIobMu`, `TandemBackend.swift:462`) but the `InitiateBolusRequest` constructors still pass
+  **`bolusIOB: 0`** (`:497`/`:500`) — the computed value is not sent. The oracle byte-lock
+  (`InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653: `bolusIOB 130`) proves
+  the *encoding* but the app does not populate it. FB-04 (frozen-IOB wiring) will thread the **frozen
+  calculator IOB** — not the live snapshot — through the delivery API before this can be re-claimed as
+  sent. Metadata only — never changes the delivered dose.
 - **BG entry now matches captured ground truth (no longer a guess):** the six captured real-app
   `RemoteBgEntryRequest` vectors all send `entryType = MANUAL (0)` + `source = REMOTE (1)`. faBolus now
   sends exactly that (was `source = PUMP (0)` via the old `isAutopopBg:false` convenience — which
