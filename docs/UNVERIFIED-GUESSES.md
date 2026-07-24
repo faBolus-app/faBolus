@@ -66,13 +66,16 @@ feature is untested and "will likely not work" before they run — not just the 
   (`InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
   are bounded to [0, 1000] g and BG to [0, 600] mg/dL before conversion. Delivered dose is driven by
   `totalVolume` and is unchanged by these metadata fields.
-- **`bolusIOB` — computed but NOT wired (FB-04, open):** `perform()` computes a bounded milliunit IOB
-  (`bolusIobMu`, `TandemBackend.swift:462`) but the `InitiateBolusRequest` constructors still pass
-  **`bolusIOB: 0`** (`:497`/`:500`) — the computed value is not sent. The oracle byte-lock
-  (`InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653: `bolusIOB 130`) proves
-  the *encoding* but the app does not populate it. FB-04 (frozen-IOB wiring) will thread the **frozen
-  calculator IOB** — not the live snapshot — through the delivery API before this can be re-claimed as
-  sent. Metadata only — never changes the delivered dose.
+- **`bolusIOB` — now wired (FB-04, done):** `perform()` sends the **frozen calculator IOB** — the active
+  insulin the dose was computed against, captured at freeze time and threaded through the delivery API as
+  `iobUnits` — converted to milliunits (`bolusIobMu`, `TandemBackend.swift:511-513`) and passed to both
+  `InitiateBolusRequest` constructors as `bolusIOB: bolusIobMu` (`:556`/`:559`). It is the FROZEN value,
+  not the live snapshot (a live IOB may have moved since approval, which wouldn't preserve the approved
+  inputs); when no frozen IOB is supplied it sends `0` rather than substituting a live read. The oracle
+  byte-lock (`InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653:
+  `bolusIOB 130` == 0.13 U) proves the encoding. Metadata only — never changes the delivered dose.
+  (Still bench-gate the end-to-end pump graph / Control-IQ effect — the *value sent* is verified, its
+  on-pump interpretation is not.)
 - **BG entry now matches captured ground truth (no longer a guess):** the six captured real-app
   `RemoteBgEntryRequest` vectors all send `entryType = MANUAL (0)` + `source = REMOTE (1)`. faBolus now
   sends exactly that (was `source = PUMP (0)` via the old `isAutopopBg:false` convenience — which
