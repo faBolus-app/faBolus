@@ -78,6 +78,25 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 - Apple Watch full parity (history plot, details screen) if wanted.
 - The signed dismiss path and all delivery paths remain **experimental / in development.**
 
+### Configurable max bolus (default = pump max, fallback, custom cap) — roadmap, NOT started
+Today the app caps entry/delivery at the pump's configured max (`PumpSnapshot.maxBolusUnits`, read from
+the calculator snapshot; defaults to 25 U until the pump reports), and the backend additionally clamps to
+`Interlocks.absoluteMaxUnits` (25 U). Requested future work, **not implemented** (intentionally left as-is
+for now):
+1. **Explicit pump-max default + fallback.** Treat "pump hasn't reported a max yet" as a distinct state
+   (e.g. `maxBolusUnits == 0`) and fall back to a conservative **10 U** cap in that window instead of the
+   current 25 U default, so a dose is never sized against a missing/assumed max. Route every reader
+   (bolus entry, delivery validation, status push to watches, widgets, displays) through one
+   `effectiveMaxBolusUnits` helper.
+2. **User-set custom max (app + watches).** A Settings field to set a max bolus **below** the pump max for
+   the phone, Apple Watch, Garmin, Mac, and widget surfaces (never above the pump max). Persist in
+   `AppSettings`, include in the settings backup, and push it in the remote status payload so remotes cap
+   at the same value; enforce it in the AppModel delivery paths (defense-in-depth on top of the backend's
+   pump-max clamp).
+- Design notes: a single `effectiveMaxBolusUnits = min(pumpMaxOrFallback, customCap ?? ∞)` chokepoint; the
+  backend keeps enforcing the pump max + absolute ceiling; add deterministic tests (fallback engages when
+  unavailable; custom cap only lowers; remotes receive the effective value).
+
 ### Chained remotes (parent's own Watch/Mac → parent phone → child host) — designed, NOT enabled
 The iPhone-to-iPhone remote ships; driving the child host from the parent's *own* Apple Watch or Mac
 (relayed through the parent phone) is deferred because it can't be done safely without on-device
