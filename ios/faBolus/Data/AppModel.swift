@@ -1276,7 +1276,11 @@ public final class AppModel {
     /// metadata can never disagree with the dose input.
     private func resolveRemoteDose(requestId: String, units: Double?, carbsGrams: Double?,
                                    bgMgdl: Int?, remoteEstimate: Double?) async -> ResolvedBolus? {
-        guard let carbs = carbsGrams, carbs > 0 else {
+        // GA-05: a carbs-MODE request is signalled by `carbsGrams` being present at all — INCLUDING 0, a
+        // correction-only dose (high BG, no food) the wrist can legitimately compute. The old `carbs > 0`
+        // guard routed a zero-carb correction to the units path (units 0 → "no insulin needed"), silently
+        // dropping a real dose. Only a TRUE units request (no carbsGrams) uses the passed units directly.
+        guard let carbs = carbsGrams else {
             return ResolvedBolus(units: units ?? 0, carbsGrams: nil, recordedBg: bgMgdl, bgDate: nil, iobUnits: nil)
         }
         // The remote's own estimate is REQUIRED for a carb request: without it the divergence guard

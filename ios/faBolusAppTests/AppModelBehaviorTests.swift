@@ -110,6 +110,34 @@ struct AppModelBehaviorTests {
         }
     }
 
+    // MARK: - GA-05: zero-carb (correction-only) carbs-mode requests aren't silently dropped
+
+    /// A zero-carb carbs-mode request (a wrist BG correction) must route through the carb-recompute path,
+    /// not the units path. With the phone's glucose stale it can't verify the correction, so it EXPLICITLY
+    /// rejects (divergence) rather than mislabeling it "No insulin needed" — and the watch never hangs.
+    @Test func zeroCarbCorrectionRoutesThroughCarbPathAndRejectsWhenStale() async {
+        try? await withCleanSettings {
+            let (model, _, rec) = await makeModel(connected: true)   // mock glucose is stale (no date)
+            await model.remoteDeliver(requestId: "z1", carbsGrams: 0, remoteEstimate: 1.5, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("Dose changed") == true)   // carb path, NOT "No insulin needed"
+            #expect(rec.count(.delivering) == 0)
+        }
+    }
+
+    /// With a FRESH high BG the same correction-only request succeeds end-to-end (the wrist estimate
+    /// matches the host recompute), proving the fix isn't just "always reject".
+    @Test func zeroCarbCorrectionDeliversWithFreshBG() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            backend.seedFreshGlucose(260)   // fresh, high → a real correction
+            let dose = await model.recommendBolus(carbsGrams: 0, bgMgdl: 260).recommendedUnits
+            #expect(dose > 0)                                          // sanity: a real correction
+            await model.remoteDeliver(requestId: "z2", carbsGrams: 0, remoteEstimate: dose, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+        }
+    }
+
     // MARK: - Freeze before approve (C-02)
 
     @Test func presentFreezesRealUnitsNotZero() async {

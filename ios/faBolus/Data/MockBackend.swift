@@ -112,6 +112,12 @@ public final class MockBackend: PumpBackend {
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
 
+    /// Test knob (GA-05): seed a FRESH glucose reading (default staleness leaves `glucoseDate` nil →
+    /// always stale). Lets a test exercise the non-stale correction path.
+    public func seedFreshGlucose(_ mgdl: Int, at date: Date = Date()) {
+        snapshot.glucose = mgdl; snapshot.glucoseDate = date; onChange?()
+    }
+
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams
