@@ -404,6 +404,42 @@ struct AppModelBehaviorTests {
         }
     }
 
+    // MARK: - FB-06 (completed): table-driven — EVERY therapy-write entry point is centrally gated
+
+    /// Each consequential unverified-therapy write, invoked directly on `AppModel`, must: fail closed with
+    /// no ack (backend untouched + error surfaced), run exactly once WITH an ack, and fail closed again on
+    /// a second call (the one-shot ack was consumed). This is the complete IDP-CRUD + CGM-alert matrix the
+    /// round-2 audit required — set-active/rename/delete-profile are included (they were bypassing the gate).
+    @Test func everyTherapyWriteEntryPointIsCentrallyGated() async {
+        let entries: [(String, @MainActor (AppModel) async -> Void)] = [
+            ("createProfile",       { await $0.createProfile(name: "P", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110, insulinDurationMinutes: 300) }),
+            ("setActiveProfile",    { await $0.setActiveProfile(idpId: 1) }),
+            ("renameProfile",       { await $0.renameProfile(idpId: 1, name: "New") }),
+            ("deleteProfile",       { await $0.deleteProfile(idpId: 1) }),
+            ("addProfileSegment",   { await $0.addProfileSegment(idpId: 1, startTimeMinutes: 60, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }),
+            ("modifyProfileSegment",{ await $0.modifyProfileSegment(idpId: 1, segmentIndex: 0, startTimeMinutes: 0, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }),
+            ("deleteProfileSegment",{ await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }),
+            ("setCgmHighLowAlert",  { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }),
+        ]
+        for (name, invoke) in entries {
+            try? await withCleanSettings {
+                let (model, backend, _) = await makeModel(connected: true)
+                // (a) no ack → fail closed
+                await invoke(model)
+                #expect(backend.idpWriteCount == 0, "\(name) reached the backend without an ack")
+                #expect(model.lastError != nil, "\(name) did not surface a fail-closed error")
+                // (b) with ack → exactly one write, ack consumed
+                model.acknowledgeUnverifiedTherapy()
+                await invoke(model)
+                #expect(backend.idpWriteCount == 1, "\(name) did not run once with an ack")
+                #expect(!model.hasRecentUnverifiedAck, "\(name) left the one-shot ack un-consumed")
+                // (c) second call without a fresh ack → fail closed again
+                await invoke(model)
+                #expect(backend.idpWriteCount == 1, "\(name) ran a second time without a fresh ack")
+            }
+        }
+    }
+
     // MARK: - P0: durable GLOBAL unresolved-delivery block + bolus-id reconciliation
 
     /// After an indeterminate outcome, EVERY delivery surface (a brand-new remote request AND a local

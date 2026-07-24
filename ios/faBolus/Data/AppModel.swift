@@ -1139,9 +1139,23 @@ public final class AppModel {
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
-    public func setActiveProfile(idpId: Int) async { await runControl { try await source.setActiveProfile(idpId: idpId) } }
-    public func renameProfile(idpId: Int, name: String) async { await runControl { try await source.renameProfile(idpId: idpId, name: name) } }
-    public func deleteProfile(idpId: Int) async { await runControl { try await source.deleteProfile(idpId: idpId) } }
+    // FB-06: switching the active profile, renaming, and deleting a profile are therapy-defining (they
+    // change the active basal / carb-ratio / ISF the pump doses from), so they route through the SAME
+    // central unverified-therapy acknowledgement boundary as the rest of IDP CRUD — a new caller can't
+    // bypass the on-screen warning by invoking the AppModel method directly. Raw helpers keep the
+    // child-mode / read-only interlocks (via runControl) underneath the ack.
+    public func setActiveProfile(idpId: Int) async {
+        await runGatedTherapy("Switching the active profile") { await self.setActiveProfileRaw(idpId: idpId) }
+    }
+    private func setActiveProfileRaw(idpId: Int) async { await runControl { try await source.setActiveProfile(idpId: idpId) } }
+    public func renameProfile(idpId: Int, name: String) async {
+        await runGatedTherapy("Renaming a pump profile") { await self.renameProfileRaw(idpId: idpId, name: name) }
+    }
+    private func renameProfileRaw(idpId: Int, name: String) async { await runControl { try await source.renameProfile(idpId: idpId, name: name) } }
+    public func deleteProfile(idpId: Int) async {
+        await runGatedTherapy("Deleting a pump profile") { await self.deleteProfileRaw(idpId: idpId) }
+    }
+    private func deleteProfileRaw(idpId: Int) async { await runControl { try await source.deleteProfile(idpId: idpId) } }
     public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
         await runGatedTherapy("Creating a pump profile") {
             await self.createProfileRaw(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)

@@ -245,12 +245,14 @@ public final class MockBackend: PumpBackend {
         }
     }
     public func setActiveProfile(idpId: Int) async throws {
+        idpWriteCount += 1
         snapshot.profiles = snapshot.profiles.map { PumpProfileInfo(idpId: $0.idpId, name: $0.name, active: $0.idpId == idpId) }; onChange?()
     }
     public func renameProfile(idpId: Int, name: String) async throws {
+        idpWriteCount += 1
         snapshot.profiles = snapshot.profiles.map { $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0 }; onChange?()
     }
-    public func deleteProfile(idpId: Int) async throws { snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
+    public func deleteProfile(idpId: Int) async throws { idpWriteCount += 1; snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
     /// FB-06 test hook: counts IDP / CGM-alert writes that actually reached the backend, so a test can
     /// prove the central unverified-therapy gate fails **closed** (count stays 0 without an ack).
     public private(set) var idpWriteCount = 0
