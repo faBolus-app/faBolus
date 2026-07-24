@@ -32,7 +32,7 @@ final class PumpBackendConformanceTests: XCTestCase {
         func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
             var r = BolusRecommendation(); r.carbsGrams = carbsGrams; r.recommendedUnits = carbsGrams / 10; return r
         }
-        func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+        func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
             guard snapshot.connection == .connected else { throw BolusError.notConnected }
             guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
             return units

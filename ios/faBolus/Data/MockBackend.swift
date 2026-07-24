@@ -127,7 +127,7 @@ public final class MockBackend: PumpBackend {
     }
 
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                                     carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+                                     carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
         snapshot.connection = .bolusing; onChange?()
@@ -141,7 +141,7 @@ public final class MockBackend: PumpBackend {
         return totalUnits
     }
 
-    public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+    public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
         if forceIndeterminateNextDelivery {

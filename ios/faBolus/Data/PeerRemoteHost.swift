@@ -201,6 +201,14 @@ public final class PeerRemoteHost {
             // through `remoteDeliver`, which is the single calculator + carb-record + divergence guard.
             Task {
                 if isExtended {
+                    // FB-05: a carb-driven extended bolus would drop to CLIENT units here — skipping the
+                    // host recompute, the divergence guard, and the pump carb record. That is unsafe, so
+                    // disallow carb-plus-extended over a remote (units-only extended is still allowed).
+                    if let c = cmd.carbsGrams, c > 0 {
+                        self.link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .failed,
+                            message: "Carb + extended bolus isn't supported from a remote — enter it on the phone."))
+                        return
+                    }
                     let units = cmd.units ?? 0
                     guard units > 0 else {
                         self.link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,

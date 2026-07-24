@@ -220,6 +220,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         case nonFinite(String)
         case outOfRange(String)
         case tooManyElements(String)
+        case crossField(String)
         public var description: String {
             switch self {
             case .tooLarge(let n):        return "command too large (\(n) bytes)"
@@ -229,6 +230,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             case .nonFinite(let f):       return "non-finite number: \(f)"
             case .outOfRange(let f):      return "value out of range: \(f)"
             case .tooManyElements(let f): return "too many elements: \(f)"
+            case .crossField(let f):      return "invalid field combination: \(f)"
             }
         }
     }
@@ -305,6 +307,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         ]
         for (name, c) in arrays where c != nil {
             guard c! <= Self.maxArrayCount else { throw ValidationError.tooManyElements(name) }
+        }
+
+        // Kind-specific cross-field rules (P3): field-level bounds above aren't enough — a bolusRequest
+        // can be internally contradictory in ways that must fail closed before it reaches the host.
+        if kind == .bolusRequest {
+            if let m = extendedMinutes {   // an extended (combo) bolus
+                guard m > 0 else { throw ValidationError.crossField("extended bolus with zero duration") }
+                if let now = extendedNowUnits, let u = units, now > u + 0.0001 {
+                    throw ValidationError.crossField("extendedNowUnits (\(now)) exceeds total units (\(u))")
+                }
+            }
+            // Units mode sends `units`; carbs mode sends `carbsGrams` (+ remoteEstimateUnits). Both set as
+            // positive dose-defining values is ambiguous — the host can't know which the user intended.
+            if let u = units, u > 0, let c = carbsGrams, c > 0 {
+                throw ValidationError.crossField("ambiguous bolus: both units and carbsGrams set")
+            }
         }
     }
 

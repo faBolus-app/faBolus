@@ -378,19 +378,19 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Delivers a standard bolus via the validated signed path. Raises the write policy to
     /// `.allowDelivery` only for this call. `perform` picks FOOD1/FOOD2 by carb presence (audit C-07).
-    public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+    public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
         guard mu >= 50 else { throw BolusError.pumpRejected("below 0.05 u") }
         return try await perform(totalMu: mu, extendedMu: 0, extendedSeconds: 0,
-                                 displayUnits: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
     /// Delivers an **extended (combo)** bolus: `nowUnits` up front and the remainder over
     /// `durationMinutes`. Uses the full-form InitiateBolusRequest with the EXTENDED bit set (oracle-
     /// verified byte format); `perform` OR-s FOOD1/FOOD2 by carb presence. Total must be ≥ 0.40 U.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                                     carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+                                     carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         try validateDeliver(total: totalUnits)
         let safeNow = nowUnits.isFinite ? nowUnits : 0          // audit A-07: no NaN into UInt32(...)
         let now = max(0, min(safeNow, totalUnits))
@@ -403,7 +403,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         let clampedMinutes = max(1, min(durationMinutes, 24 * 60))
         let seconds = UInt32(clampedMinutes * 60)
         return try await perform(totalMu: nowMu, extendedMu: laterMu, extendedSeconds: seconds,
-                                 displayUnits: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                 displayUnits: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
     /// Shared pre-flight validation for any delivery (standard or extended).
@@ -449,7 +449,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// over `extendedSeconds`); otherwise a standard units-only bolus.
     private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
                          displayUnits units: Double,
-                         carbsGrams: Double? = nil, bgMgdl: Int? = nil) async throws -> Double {
+                         carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async throws -> Double {
         // Audit A-03: reject a second bolus while one is mid-flight (set synchronously so a double-tap
         // can't slip past before the flag is raised). Then serialize behind any other signed transaction.
         guard !deliveryInProgress else { throw BolusError.pumpRejected("a bolus is already in progress") }
@@ -501,13 +501,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
         let carbsInt = max(0, min(Self.maxCarbGrams, carbsGrams.map { Int($0.rounded()) } ?? 0))
         let bgInt = max(0, min(600, bgMgdl ?? 0))
-        // bolusIOB metadata (audit C-07): send the IOB the calculator used — the pump's Control-IQ IOB
-        // (`snapshot.iobUnits`, from ControlIQIOBResponse) — in **milliunits**, matching the reference
-        // app's captured request. Byte-locked against oracle vector ID10653
-        // (InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle: bolusIOB 130 == 0.13 U), so this
-        // is verifiable WITHOUT a bench. Metadata only — it never changes the delivered dose. Guarded so a
-        // non-finite/absurd IOB can't trap the UInt32 conversion; 0 when IOB is unknown (unchanged behavior).
-        let iobU = snapshot.iobUnits.isFinite ? max(0.0, snapshot.iobUnits) : 0.0
+        // bolusIOB metadata (audit C-07 / FB-04): send the **frozen calculator IOB** — the active insulin
+        // the dose was computed against, captured at freeze time and threaded through the delivery API —
+        // in **milliunits**, matching the reference app's captured request (byte-locked against oracle
+        // vector ID10653: bolusIOB 130 == 0.13 U). FB-04: use the FROZEN value, NOT the live snapshot
+        // (the live IOB may have moved since the dose was approved, which wouldn't preserve the approved
+        // inputs). If no frozen IOB was provided, send 0 rather than substituting a live value. Metadata
+        // only — never changes the delivered dose; guarded so a non-finite value can't trap the conversion.
+        let frozenIob = iobUnits ?? 0.0
+        let iobU = frozenIob.isFinite ? max(0.0, frozenIob) : 0.0
         let bolusIobMu = UInt32(min((iobU * 1000).rounded(), 1_000_000))
         // Oracle bolus-type selection (audit C-07): carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
         let extended = extendedMu > 0
@@ -546,12 +548,15 @@ public final class TandemBackend: NSObject, PumpBackend {
                 c.resume(throwing: BolusError.indeterminate("no initiate response (timeout) after the bolus was sent"))
             }
             do {
-                let request: InitiateBolusRequest = extended
-                    ? InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                // FB-04: send the frozen calculator IOB (`bolusIobMu`) — no longer 0. PX-07: build via the
+                // throwing `validating:` constructor so out-of-range/incoherent cargo is rejected here
+                // (a synchronous pre-send failure) rather than silently truncating or trapping on the wire.
+                let request: InitiateBolusRequest = try extended
+                    ? InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
                                            extendedVolume: extendedMu, extendedSeconds: extendedSeconds, extended3: 0)
-                    : InitiateBolusRequest(totalVolume: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
-                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: 0,
+                    : InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
+                                           foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
                                            extendedVolume: 0, extendedSeconds: 0, extended3: 0)
                 try client.send(request, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true)

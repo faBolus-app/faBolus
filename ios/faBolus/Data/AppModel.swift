@@ -811,7 +811,7 @@ public final class AppModel {
     /// catch real drift, loose enough to ignore pure rounding.
     static let remoteDivergenceLimitUnits = 0.10
 
-    public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async {
+    public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
         if childBlocked(.bolus) { return }
         // Reverse approval (child-mode-only): when child mode is on and set to require a paired
         // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
@@ -819,13 +819,13 @@ public final class AppModel {
             requestRemoteApproval(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
             return
         }
-        await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
-    private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async {
+    private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
         if readOnlyBlocked("Bolus") { return }
         do {
-            _ = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            _ = try await source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
             lastError = nil
         }
@@ -872,13 +872,13 @@ public final class AppModel {
     /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double? = nil, bgMgdl: Int? = nil,
-                                     enforceChildLock: Bool = true) async {
+                                     iobUnits: Double? = nil, enforceChildLock: Bool = true) async {
         if enforceChildLock, childBlocked(.bolus) { return }
         if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
         do {
             _ = try await source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
                                                       durationMinutes: durationMinutes,
-                                                      carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+                                                      carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             lastError = nil
         }
@@ -1268,7 +1268,8 @@ public final class AppModel {
         }
         echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
         do {
-            let delivered = try await source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams, bgMgdl: r.recordedBg)
+            let delivered = try await source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams,
+                                                          bgMgdl: r.recordedBg, iobUnits: r.iobUnits)   // FB-04 frozen IOB
             if let c = r.carbsGrams, c > 0 { recordCarbs(grams: c) }
             let outcome = bolusOutcome(requestId: requestId, delivered: delivered)
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId,

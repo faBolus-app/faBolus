@@ -379,7 +379,7 @@ struct BolusEntryView: View {
 
     /// Immutable, confirmed bolus (audit C-04): captured once at confirm time; delivery uses exactly
     /// these values and never re-reads live `@State` that could change under it.
-    private struct FrozenBolus { let units: Double; let carbsGrams: Double?; let bgMgdl: Int?; let extendedNow: Double? ; let extendedDurationMin: Int? }
+    private struct FrozenBolus { let units: Double; let carbsGrams: Double?; let bgMgdl: Int?; let iobUnits: Double?; let extendedNow: Double? ; let extendedDurationMin: Int? }
 
     /// Validate a correction against a FRESH CGM read, then freeze + deliver. Shared by the standard and
     /// extended paths (audit C-04 "same path"). For a CGM-based correction it pulls a fresh reading and:
@@ -421,7 +421,10 @@ struct BolusEntryView: View {
 
     /// Build the immutable proposal from confirmed values.
     private func freeze(units u: Double, bg bgVal: Int?, extended: Bool) -> FrozenBolus {
+        // FB-04: freeze the calculator IOB the recommendation used, so it's the value recorded on the
+        // pump as bolusIOB metadata — not a live snapshot read at delivery time.
         FrozenBolus(units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
+                    iobUnits: recommendation?.iobUnits,
                     extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
                     extendedDurationMin: extended ? extendedDurationMin : nil)
     }
@@ -431,11 +434,11 @@ struct BolusEntryView: View {
         delivering = true
         if let now = f.extendedNow, let dur = f.extendedDurationMin {
             await model.deliverExtendedBolus(totalUnits: f.units, nowUnits: now, durationMinutes: dur,
-                                             carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl)
+                                             carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         } else {
             // Carbs/BG go to the pump as recorded metadata (graph / t:connect / Control-IQ) and are logged
             // locally for the smart features — carb recording is centralized in the model.
-            await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl)
+            await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         }
         delivering = false
         finishDelivery()

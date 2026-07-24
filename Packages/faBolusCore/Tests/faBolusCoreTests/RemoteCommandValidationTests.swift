@@ -71,6 +71,35 @@ final class RemoteCommandValidationTests: XCTestCase {
         }
     }
 
+    // MARK: - P3: kind-specific cross-field rules
+
+    func testZeroDurationExtendedRejected() {
+        let json = #"{"version":1,"kind":"bolusRequest","requestId":"r1","units":2,"extendedMinutes":0,"extendedNowUnits":1}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .crossField("extended bolus with zero duration"))
+        }
+    }
+
+    func testExtendedNowExceedingTotalRejected() {
+        let json = #"{"version":1,"kind":"bolusRequest","requestId":"r1","units":2,"extendedMinutes":120,"extendedNowUnits":3}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            if case .crossField = ($0 as? RemoteCommand.ValidationError) {} else { XCTFail("expected crossField") }
+        }
+    }
+
+    func testAmbiguousUnitsAndCarbsRejected() {
+        let json = #"{"version":1,"kind":"bolusRequest","requestId":"r1","units":2,"carbsGrams":30}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            if case .crossField = ($0 as? RemoteCommand.ValidationError) {} else { XCTFail("expected crossField") }
+        }
+    }
+
+    func testWellFormedExtendedPasses() throws {
+        let json = #"{"version":1,"kind":"bolusRequest","requestId":"r1","units":3,"extendedMinutes":120,"extendedNowUnits":1.5}"#
+        let back = try RemoteCommand.decodeValidated(data(json))
+        XCTAssertEqual(back.extendedMinutes, 120)
+    }
+
     func testValidStatusReplyWithHistoryPasses() throws {
         var cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
         cmd.history = Array(repeating: 100, count: 288)     // a day of 5-min points

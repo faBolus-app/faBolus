@@ -45,13 +45,16 @@ public protocol PumpBackend: AnyObject {
     /// Control-IQ carb awareness) — they do NOT change the delivered dose (the pump can't compute from
     /// carbs; the caller always sizes the units). Use the `deliverBolus(units:)` convenience for
     /// units-only.
-    func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double
+    /// `iobUnits` is the **frozen calculator IOB** (the active insulin the dose was computed against),
+    /// recorded on the pump as `bolusIOB` metadata (FB-04). It is the value the calculator used at
+    /// freeze time — NOT the live snapshot — so it preserves the approved inputs. Metadata only.
+    func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double
     /// Deliver an **extended (combo)** bolus: `nowUnits` up front and the remainder over
     /// `durationMinutes`. Total must be ≥ 0.40 U. Returns the actual delivered-so-far units. Optional
-    /// — backends that don't support it use the throwing default. `carbsGrams`/`bgMgdl` are recorded
-    /// metadata (see `deliverBolus`).
+    /// — backends that don't support it use the throwing default. `carbsGrams`/`bgMgdl`/`iobUnits` are
+    /// recorded metadata (see `deliverBolus`).
     func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                              carbsGrams: Double?, bgMgdl: Int?) async throws -> Double
+                              carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double
     func cancelBolus() async
     /// True if the most recent `deliverBolus` was cancelled before completing.
     var lastBolusCancelled: Bool { get }
@@ -159,18 +162,28 @@ public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
     func refreshGlucoseNow() async {}
 
-    /// Units-only convenience — forwards with no carb/BG metadata. Keeps existing call sites terse.
+    /// Units-only convenience — forwards with no carb/BG/IOB metadata. Keeps existing call sites terse.
     func deliverBolus(units: Double) async throws -> Double {
-        try await deliverBolus(units: units, carbsGrams: nil, bgMgdl: nil)
+        try await deliverBolus(units: units, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
     }
-    /// Extended convenience without carb/BG metadata.
+    /// Metadata-carrying convenience with a default `iobUnits: nil`, so callers that don't have a frozen
+    /// IOB (e.g. the widget path) needn't pass it, while the frozen-proposal paths do (FB-04).
+    func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+        try await deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: nil)
+    }
+    /// Extended convenience without carb/BG/IOB metadata.
     func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double {
         try await deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
-                                       durationMinutes: durationMinutes, carbsGrams: nil, bgMgdl: nil)
+                                       durationMinutes: durationMinutes, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+    }
+    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+                              carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
+        try await deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
+                                       durationMinutes: durationMinutes, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: nil)
     }
     /// Default: backends that don't support extended boluses throw.
     func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                              carbsGrams: Double?, bgMgdl: Int?) async throws -> Double { throw ControlError.notSupported }
+                              carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double { throw ControlError.notSupported }
     func suspendDelivery() async throws { throw ControlError.notSupported }
     func resumeDelivery() async throws { throw ControlError.notSupported }
     func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
