@@ -60,7 +60,29 @@ class RemoteClientModel {
         self.link = link
         link.onReachabilityChange = { [weak self] r in self?.reachabilityDidChange(r) }
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
+        link.onUndeliverable = { [weak self] cmd in self?.sendDidFail(cmd) }
         reachable = link.isReachable
+    }
+
+    /// A pump-mutating command never reached the host. These are deliberately not queued (a bolus that
+    /// lands minutes late is a double-dose hazard), so the only safe thing is to tell the user it was
+    /// **not sent** — never to leave the screen on "Delivering…" waiting for an echo that cannot come.
+    /// Nothing was sent, so there is nothing to reconcile: this is a true `.failed`, not `.unknown`.
+    private func sendDidFail(_ cmd: RemoteCommand) {
+        switch cmd.kind {
+        case .bolusRequest:
+            guard cmd.requestId == pendingRequestId else { return }
+            pendingRequestId = nil
+            sawPhoneBolusing = false
+            lastStatus = .failed
+            statusMessage = "Not sent — the phone wasn't reachable. Nothing was delivered."
+        case .cancelBolus:
+            statusMessage = "Cancel not sent — the phone wasn't reachable. Check the pump."
+        case .dismissAlert, .suspendPump, .resumePump:
+            statusMessage = "Not sent — the phone wasn't reachable."
+        default:
+            break
+        }
     }
 
     /// True when the host reports the pump actively connected (or mid-delivery) — the gate for any

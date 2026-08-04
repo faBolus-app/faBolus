@@ -7,6 +7,7 @@ import CryptoKit
 private final class Loopback: RemoteTransport, @unchecked Sendable {
     var onReceive: (@MainActor (RemoteCommand) -> Void)?
     var onReachabilityChange: (@MainActor (Bool) -> Void)?
+    var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
     var isReachable: Bool = true
     weak var peer: Loopback?
     private(set) var sent: [RemoteCommand] = []

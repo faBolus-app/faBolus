@@ -19,6 +19,7 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     public var onReceive: (@MainActor (RemoteCommand) -> Void)?
     public var onReachabilityChange: (@MainActor (Bool) -> Void)?
+    public var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
     public var onPeersChanged: (@MainActor ([String]) -> Void)?
 
     // Fixed GATT identifiers shared by both ends. CBUUID is immutable; safe to share.
@@ -94,6 +95,14 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     public func send(_ command: RemoteCommand) {
         guard let data = try? command.encoded() else { return }
+        // A pump-mutating command is never parked waiting for a link. `txChunks` is only cleared on an
+        // explicit disconnect, so chunks enqueued before a connect would flush the moment one lands —
+        // delivering a bolus/cancel/resume the user issued at some earlier, unbounded point in time.
+        // Send live or say so; see `RemoteCommand.Kind.mutatesPumpState`.
+        if command.kind.mutatesPumpState, !isReachable {
+            Task { @MainActor in self.onUndeliverable?(command) }
+            return
+        }
         // P3: build the length-prefixed frame, then capture it as an IMMUTABLE `let` in the concurrent
         // send closure. Capturing the previous `var frame` tripped a Swift 6 Sendable warning (a mutable
         // binding crossing into a `@Sendable` closure); a `let` snapshot is an unambiguous value hand-off.
