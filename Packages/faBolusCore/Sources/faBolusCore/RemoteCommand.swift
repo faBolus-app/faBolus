@@ -323,8 +323,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // An absolute source timestamp must be a plausible Unix second. A zero or negative value would
         // compute an age of decades (harmless — reads as stale), but a *future* one computes a NEGATIVE
         // age, which would read as permanently fresh. Reject rather than let a receiver derive
-        // freshness from a nonsense stamp. Upper bound is 2100-01-01.
-        if let e = glucoseEpochSec, e <= 0 || e > 4_102_444_800 {
+        // freshness from a nonsense stamp.
+        //
+        // The ceiling is Int32.max, not a calendar date of our choosing, because that is the widest
+        // value every consumer can actually represent: `Int` is 32 bits on watchOS (arm64_32) and Monkey
+        // C's `Lang.Number` is a signed 32-bit integer. The original 2100-01-01 bound (4_102_444_800)
+        // did not COMPILE for the watch — it overflows a 32-bit `Int` — and could not have survived the
+        // Garmin wire either, so it stated a contract two of the three consumers could not keep.
+        //
+        // KNOWN LIMIT: this field therefore stops accepting stamps after 2038-01-19. Widening it means
+        // moving to Int64 here, `Lang.Long` on Garmin, and the schema maximum — all three together.
+        if let e = glucoseEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("glucoseEpochSec")
         }
 

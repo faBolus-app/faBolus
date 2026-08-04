@@ -21,7 +21,13 @@ struct WatchRootView: View {
             WatchChartView(model: model)
             WatchDetailsView(model: model)
             WatchAlertsView(model: model)
+            // C9 ("one owner, N remotes"): the direct-to-pump page is a SECOND pump-connection
+            // holder that bypasses the PumpBackend seam, and pairing it EVICTS the phone. It is
+            // excluded from shipping builds — see watch/faBolusWatch/direct-pump/STATUS.md.
+            // Enable with FABOLUS_WATCH_DIRECT_PUMP=1 ./scripts/generate-project.sh (bench only).
+            #if FABOLUS_WATCH_DIRECT_PUMP
             WatchDirectView()
+            #endif
         }
         .tabViewStyle(.page)
         // The load-bearing block: the bolus sheet can never present in read-only mode, however showBolus is set.
