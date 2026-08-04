@@ -70,7 +70,7 @@ branch operation or restructuring).
 
 | # | Item | Disp. | Note |
 |---|---|---|---|
-| 30 | `watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch (own `PumpBLEClient`, own JPAKE pairing, own Keychain store), reachable from `WatchApp.swift:24` | **F** | **This is a second pump-connection holder and a direct conflict with v3 C9** ("the iOS app is the sole holder of the pump connection"). It also bypasses the `PumpBackend` seam entirely. It ships, user-visible, and `ROADMAP.md:118` calls it untested. Needs an explicit owner decision: hide behind a flag, remove, or amend C9. |
+| 30 | ~~`watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch, reachable from `WatchApp.swift:24`~~ **RESOLVED 2026-08-04** | **F** | Was: a second pump-connection holder bypassing the `PumpBackend` seam, shipping and user-visible, in direct conflict with v3 C9. Owner decision: **hide behind a default-off build flag**, matching `faBolusGarmin/direct-pump/`. Done — the five files moved to `watch/faBolusWatch/direct-pump/` (see its `STATUS.md`), excluded from the target unless `FABOLUS_WATCH_DIRECT_PUMP=1`, with the `PumpX2Messages`/`Auth`/`BLE` deps dropped alongside. `WatchPumpClient.swift` was the only watch file importing those, so a shipping watch build now **links no pump BLE stack at all** — verified in the generated project, and both flag states compile. |
 | 31 | `watch/README.md:13-14` standalone phone-less watch build "designed but not built … paused" | **R** | Same decision as 30. |
 | 32 | `ICloudSync.swift:41-46` — the live implementation in every build is an empty stub | **F** | Duplicate of 23; listed here because the code, not just the flag, is the artifact. |
 

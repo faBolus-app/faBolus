@@ -43,8 +43,29 @@ final class GlucoseProvenanceTests: XCTestCase {
 
     func testFutureEpochIsRejected() {
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
-        cmd.glucoseEpochSec = 4_102_444_801            // just past the 2100-01-01 bound
+        cmd.glucoseEpochSec = Int(Int32.max)           // the last accepted second (2038-01-19)
+        XCTAssertNoThrow(try cmd.validate())
+        cmd.glucoseEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2   // one past it, 32-bit-safe
         XCTAssertThrowsError(try cmd.validate())
+    }
+
+    /// The bound must be expressible on every platform that carries this field, not just the 64-bit
+    /// host that runs these tests. The first version used 4_102_444_800 (2100-01-01), which does not
+    /// COMPILE for watchOS — `Int` is 32 bits on arm64_32 — so the watch app was broken by the very
+    /// commit that added the field, and nothing noticed because CI runs on pushes to `main` and this
+    /// work sat on a branch. Monkey C's `Lang.Number` is signed 32-bit too, so the Garmin wire could
+    /// not have carried the old bound either.
+    func testTheEpochBoundFitsInThirtyTwoBits() {
+        XCTAssertLessThanOrEqual(Int(Int32.max), Int(Int32.max),
+                                 "the ceiling must be representable in a signed 32-bit integer")
+        // A value inside the old bound but outside Int32 must be rejected, not silently accepted:
+        // it can never have come from a consumer that can represent it.
+        var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
+        if Int.bitWidth > 32 {
+            cmd.glucoseEpochSec = 4_102_444_800        // the old 2100-01-01 ceiling
+            XCTAssertThrowsError(try cmd.validate(),
+                                 "a stamp no 32-bit consumer can hold must not validate")
+        }
     }
 
     func testZeroAndNegativeEpochsAreRejected() {

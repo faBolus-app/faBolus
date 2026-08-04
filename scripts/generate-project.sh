@@ -15,6 +15,11 @@
 #     and installs on a **free** Apple account. Turn it on with FABOLUS_ONWATCH_EATING=1 once you've
 #     enabled HealthKit on a paid account. The Garmin eating path (phone-side inference) needs none of
 #     this and works regardless.
+#   - Watch direct-to-pump (watch/faBolusWatch/direct-pump/): OFF by default and must stay off in any
+#     build a person wears. It is a second pump-connection holder that bypasses the PumpBackend seam
+#     (constraint C9) and pairing it EVICTS the phone's pairing. When off, the directory is excluded
+#     and the three PumpX2Kit dependencies are dropped, so the watch app links no pump BLE stack at
+#     all. Enable for bench work only with FABOLUS_WATCH_DIRECT_PUMP=1.
 #
 # When a feature is off, the app shows a note where its pairing/setup would be, explaining it wasn't
 # included at build time. Re-run with the SDK present / FABOLUS_WATCH=1 to restore it.
@@ -48,17 +53,37 @@ fi
 ONWATCH="${FABOLUS_ONWATCH_EATING:-0}"
 [ "$WATCH" = 0 ] && ONWATCH=0
 [ "$NUDGE" = 0 ] && ONWATCH=0
+# The watch's direct-to-pump path (watch/faBolusWatch/direct-pump/) defaults OFF and must stay off in
+# any build a person wears. It is a SECOND pump-connection holder that bypasses the PumpBackend seam,
+# so constraint C9 ("one owner, N remotes") is false in any build that includes it — and pairing it
+# EVICTS the phone's pairing, which on a Mobi means the charging base is needed to recover. Same
+# posture as faBolusGarmin's direct-pump/. Bench use only; see watch/faBolusWatch/direct-pump/STATUS.md.
+DIRECT_PUMP="${FABOLUS_WATCH_DIRECT_PUMP:-0}"
+[ "$WATCH" = 0 ] && DIRECT_PUMP=0
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
 
 # Remove every line between "# >>> TAG" and "# <<< TAG" (inclusive). Handles multiple blocks per tag.
+#
+# The tag is matched to a word boundary. It used to be a bare substring match, which meant
+# `strip_block FOO` also stripped every `# >>> FOO_BAR` block — so a tag that is a prefix of another
+# silently removed the wrong lines. That bit for real: WATCH_DIRECT_PUMP consumed
+# WATCH_DIRECT_PUMP_OFF, which is the block whose whole job is to EXCLUDE the direct-pump path, so
+# the opt-out shipped the code it was meant to remove. Anchor, don't rely on tag names not colliding.
 strip_block() {
   awk -v tag="$1" '
-    $0 ~ ("# >>> " tag) { skip=1; next }
-    $0 ~ ("# <<< " tag) { skip=0; next }
+    $0 ~ ("# >>> " tag "([^A-Za-z0-9_]|$)") { skip=1; next }
+    $0 ~ ("# <<< " tag "([^A-Za-z0-9_]|$)") { skip=0; next }
     !skip { print }
   ' "$SPEC" > "$SPEC.tmp" && mv "$SPEC.tmp" "$SPEC"
+}
+
+# Remove one flag from the SWIFT_ACTIVE_COMPILATION_CONDITIONS lines only. Scoped to those lines (not
+# a bare global sed) because the same flag names appear in prose comments — "unless
+# FABOLUS_ONWATCH_EATING=1" would otherwise become "unless=1".
+drop_flag() {
+  sed -i '' "/SWIFT_ACTIVE_COMPILATION_CONDITIONS/ s/ $1//g" "$SPEC"
 }
 
 if [ "$GARMIN" = 0 ]; then
@@ -70,20 +95,28 @@ if [ "$WATCH" = 0 ]; then
   sed -i '' 's/ WATCH_EMBEDDED//g' "$SPEC"
 fi
 if [ "$ONWATCH" = 0 ]; then
-  # Strip every paid-account-only piece so the app builds/installs on a free account. The whole
-  # configs block (incl. the FABOLUS_ONWATCH_EATING flag) lives inside these markers too.
+  # Strip every paid-account-only piece so the app builds/installs on a free account.
   strip_block ONWATCH_EATING
+  drop_flag FABOLUS_ONWATCH_EATING
+fi
+if [ "$DIRECT_PUMP" = 0 ]; then
+  strip_block WATCH_DIRECT_PUMP   # the PumpX2Kit deps — the watch then links no pump BLE stack
+  drop_flag FABOLUS_WATCH_DIRECT_PUMP
+else
+  strip_block WATCH_DIRECT_PUMP_OFF   # the `excludes: [direct-pump]` — compile the directory in
 fi
 if [ "$NUDGE" = 0 ]; then
   strip_block NUDGE                        # the faBolusNudge package + its 7 product dependencies
   sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
 [ "$ONWATCH" = 0 ] && echo "  → building WITHOUT on-watch eating detection (needs paid HealthKit; set FABOLUS_ONWATCH_EATING=1 to enable)"
 [ "$ONWATCH" = 1 ] && echo "  → on-watch eating detection ON (FABOLUS_ONWATCH_EATING=1) — requires HealthKit on a paid account"
+[ "$DIRECT_PUMP" = 0 ] && echo "  → building WITHOUT the watch direct-to-pump path (C9) — the watch links no pump BLE stack"
+[ "$DIRECT_PUMP" = 1 ] && echo "  → ⚠️  watch DIRECT-TO-PUMP path ON (FABOLUS_WATCH_DIRECT_PUMP=1) — violates C9, evicts the phone's pairing, BENCH ONLY. Do not wear this build."
 
 xcodegen generate --spec "$SPEC"
