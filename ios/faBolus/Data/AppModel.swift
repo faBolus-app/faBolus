@@ -196,6 +196,10 @@ public final class AppModel {
                              lastBolusUnits: s.lastBolusUnits,
                              basalRate: s.basalRateUnitsPerHour,
                              glucoseAgeSec: age,
+                             // Group A: send the pump's own reading time, not just an age computed
+                             // here — an age is already wrong by however long this message is in
+                             // flight, and a receiver cannot tell it apart from "absent".
+                             glucoseEpochSec: s.glucoseDate.map { Int($0.timeIntervalSince1970) },
                              history: (history?.isEmpty ?? true) ? nil : history,
                              historyEpochs: (historyEpochs?.isEmpty ?? true) ? nil : historyEpochs,
                              alerts: alertList,

@@ -58,7 +58,8 @@ final class WatchModel: RemoteClientModel {
         guard !reachable || fresher else { return }
         glucose = s.mgdl
         glucoseDate = s.date
-        trend = s.trend.rawValue
+        // C8: a direct source that reports no trend yields NO arrow — never a flat one.
+        trend = s.trend?.rawValue ?? ""
         publishSnapshot()
     }
 

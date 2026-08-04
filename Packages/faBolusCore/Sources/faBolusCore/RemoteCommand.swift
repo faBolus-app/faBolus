@@ -96,7 +96,20 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var basalRate: Double?
     /// Seconds since the current CGM reading was taken (so a remote can show "Nm ago" and hide
     /// readings older than 6 minutes).
+    ///
+    /// **Prefer `glucoseEpochSec`.** An age is computed at *compose* time, so it silently becomes
+    /// wrong by however long the message spends in flight, and it cannot be distinguished from
+    /// "absent" by a receiver that then invents its own. See `glucoseEpochSec`. Kept for
+    /// compatibility with remotes that only understand an age.
     public var glucoseAgeSec: Double?
+    /// **Immutable source timestamp** of the current CGM reading (Unix seconds), set once at origin
+    /// from the pump's own reading time and propagated unchanged through every hop (v3 handoff group A).
+    ///
+    /// A receiver computes age as `now − glucoseEpochSec` at the moment of display. When this is
+    /// absent the reading's age is **unknown**, and an unknown age must render as stale/no-data — never
+    /// as fresh. Stamping an unknown-age reading with the receive time is defect A1: it produced a
+    /// value labelled "1 minute old" that was hours stale, and then let it feed correction dosing.
+    public var glucoseEpochSec: Int?
     /// Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot.
     public var history: [Int]?
     /// Unix-second timestamp for each `history` point (same length/order). Lets an iPhone/Mac remote
@@ -187,7 +200,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
                 basalRate: Double? = nil,
-                glucoseAgeSec: Double? = nil, history: [Int]? = nil, historyEpochs: [Int]? = nil,
+                glucoseAgeSec: Double? = nil, glucoseEpochSec: Int? = nil,
+                history: [Int]? = nil, historyEpochs: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
@@ -203,7 +217,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.maxBolusUnits = maxBolusUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.basalRate = basalRate
-        self.glucoseAgeSec = glucoseAgeSec; self.history = history; self.historyEpochs = historyEpochs
+        self.glucoseAgeSec = glucoseAgeSec; self.glucoseEpochSec = glucoseEpochSec
+        self.history = history; self.historyEpochs = historyEpochs
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
@@ -305,6 +320,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try range("extendedNowUnits", extendedNowUnits, 0, 100)
         try range("eatingProb", eatingProb, 0, 1)
         if let m = extendedMinutes, m < 0 || m > 24 * 60 { throw ValidationError.outOfRange("extendedMinutes") }
+        // An absolute source timestamp must be a plausible Unix second. A zero or negative value would
+        // compute an age of decades (harmless — reads as stale), but a *future* one computes a NEGATIVE
+        // age, which would read as permanently fresh. Reject rather than let a receiver derive
+        // freshness from a nonsense stamp. Upper bound is 2100-01-01.
+        if let e = glucoseEpochSec, e <= 0 || e > 4_102_444_800 {
+            throw ValidationError.outOfRange("glucoseEpochSec")
+        }
 
         // String length caps.
         let strings: [(String, String?)] = [

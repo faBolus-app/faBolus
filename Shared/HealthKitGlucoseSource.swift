@@ -98,7 +98,9 @@ final class HealthKitGlucoseSource: GlucoseSource {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
         if let newest = history.last {
-            latest = GlucoseSample(mgdl: newest.mgdl, date: newest.date, trend: .flat, sourceID: id)
+            // C8: HealthKit hands us values with no trend, so we report none. This said `.flat`, which
+            // rendered a steady arrow the source never claimed.
+            latest = GlucoseSample(mgdl: newest.mgdl, date: newest.date, sourceID: id)
             status = latest?.isStale == true ? .stale : .connected
         }
         onChange?()

@@ -107,7 +107,13 @@
     "glucoseAgeSec": {
       "type": "number",
       "minimum": 0,
-      "description": "Seconds since the current CGM reading was taken (so a remote can show age and hide readings older than 6 minutes)."
+      "description": "Seconds since the current CGM reading was taken, computed at compose time. Legacy — prefer glucoseEpochSec, which does not go stale in flight and cannot be confused with 'absent'."
+    },
+    "glucoseEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4102444800,
+      "description": "Immutable source timestamp of the current CGM reading (Unix seconds), set once at origin from the pump's own reading time and propagated unchanged through every hop. A receiver computes age as now - glucoseEpochSec at display time. When absent, the reading's age is UNKNOWN and must render as stale/no-data, never as fresh."
     },
     "history": {
       "type": "array",

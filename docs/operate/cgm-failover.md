@@ -119,6 +119,19 @@ Old readings are worse than no reading, so faBolus is strict about age:
   greyed out with its age called out** — never presented as the current value.
 - The same threshold governs the pump feed and every failover feed, so "stale" means one thing
   everywhere.
+- Age is computed from the reading's **own timestamp**, set once where the reading originates and
+  carried unchanged to every screen — phone, Apple Watch, Garmin, Mac, widgets. No screen re-stamps a
+  reading with the time it happened to arrive.
+- **A reading whose age can't be established is treated as stale**, not as current. That is
+  deliberate: a value that *looks* fresh and isn't is the one failure that can cause a dosing error.
+
+## Trend arrows
+
+faBolus does not calculate trend arrows. It shows the arrow **the pump is showing on its own screen**,
+so the two can't disagree — and when the pump shows no arrow, faBolus shows no arrow. A failover CGM
+source that reports its own trend has that trend shown; one that doesn't (Apple Health, for instance)
+gets **no arrow** rather than a flat one, because a flat arrow is a claim about your glucose that
+nobody made.
 
 ## Keeping it working
 

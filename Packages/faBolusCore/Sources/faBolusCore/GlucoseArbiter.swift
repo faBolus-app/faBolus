@@ -36,7 +36,8 @@ public enum GlucoseArbiter {
         var s = snap
         s.glucose = sample.mgdl
         s.glucoseDate = sample.date
-        s.trend = sample.trend.rawValue
+        // C8: a source that reports no trend yields NO arrow ("") — not a flat one.
+        s.trend = sample.trend?.rawValue ?? ""
         s.cgmActive = true
         let reason: GlucoseProvenance.Reason = (snap.glucose == nil) ? .pumpMissing : .pumpStale
         return (s, mergeHistory(pump: pumpHistory, source: source.history),
