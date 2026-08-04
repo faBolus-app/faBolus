@@ -115,12 +115,19 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// the host should persist the ledger right after this returns, so a crash mid-write still finds a
     /// `delivering` entry on relaunch and blocks a duplicate until reconciled.
     public mutating func markDelivering(peerId: String, requestId: String, bolusId: Int? = nil) {
-        mutate(peerId, requestId) { $0.state = .delivering; if let bolusId { $0.bolusId = bolusId } }
+        // A bolus id exists only because the PUMP assigned one, which means the pump was written to.
+        // An id therefore implies `sentToPump`, and the two must never disagree: reconciliation keys on
+        // the phase, so an id-bearing record left at `sentToPump == false` would read as "never sent"
+        // and auto-clear the delivery block on a dose that may well have landed.
+        mutate(peerId, requestId) {
+            $0.state = .delivering
+            if let bolusId { $0.bolusId = bolusId; $0.sentToPump = true }
+        }
     }
 
     /// Record the pump-assigned bolus id (for later reconciliation) without changing state.
     public mutating func setBolusId(peerId: String, requestId: String, bolusId: Int) {
-        mutate(peerId, requestId) { $0.bolusId = bolusId }
+        mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
     }
 
     /// Round-3 §5: the pump granted permission and assigned `bolusId` — record it AND flip the explicit
@@ -173,10 +180,20 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// reconciles these at launch (look up each `bolusId` in pump history) before allowing new deliveries.
     public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] {
         order.compactMap { k in
-            guard let e = entries[k], e.state == .delivering || e.state == .indeterminate else { return nil }
+            guard let e = entries[k] else { return nil }
+            // An id always means the pump was written to (only the pump mints one), and `sentToPump`
+            // decodes to `false` for a ledger written before that field existed — so treat either as sent.
+            let sent = e.sentToPump || e.bolusId != nil
+            // `awaiting` + sent is ALSO mid-flight: `markSent` records the pump-assigned id durably
+            // while the state is still `awaiting`, immediately before the initiate write. A crash in
+            // that window leaves a record that must be reconciled against pump history — skipping it
+            // (as "not yet written") would clear the block on a bolus that may have been issued.
+            let midFlight = e.state == .delivering || e.state == .indeterminate
+                || (e.state == .awaiting && sent)
+            guard midFlight else { return nil }
             let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
             guard parts.count == 2 else { return nil }
-            return (String(parts[0]), String(parts[1]), e.bolusId, e.sentToPump)
+            return (String(parts[0]), String(parts[1]), e.bolusId, sent)
         }
     }
 

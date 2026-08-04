@@ -979,8 +979,11 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery.
     private func fastRead() {
+        // HomeScreenMirrorRequest belongs in the fast tier: it carries the pump's own CGM trend icon
+        // (C8 — the authoritative arrow), so it has to stay as fresh as the glucose value it annotates.
         for r: Message in [ControlIQIOBRequest(), CurrentEgvGuiDataV2Request(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request()] {
+                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+                           HomeScreenMirrorRequest()] {
             try? client.send(r)
         }
     }
@@ -1384,9 +1387,18 @@ extension TandemBackend: PumpBLEClientDelegate {
                 carbRatioGramsPerUnit: Double(m.profileCarbRatio) / 1000.0,
                 isf: m.profileISF, targetBg: m.profileTargetBG))
             snapshot.viewedProfileSegments.sort { $0.segmentIndex < $1.segmentIndex }
+        case let m as HomeScreenMirrorResponse:
+            // C8 / defect E8: the trend comes from the PUMP, not from us. This is the icon the pump is
+            // showing on its own home screen, so it cannot disagree with the pump — including its
+            // explicit "no arrow" state, which a client-side derivation from `trendRate` cannot express.
+            snapshot.trend = m.cgmTrendArrow
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
-            snapshot.trend = m.trendArrow
+            // Fallback only, and only until the first HomeScreenMirror reply lands: never overwrite the
+            // pump's own arrow with a derived one, and never invent one when the rate is unknown (an
+            // INVALID/UNAVAILABLE frame carries a sentinel rate — that was E8's mechanism, made worse by
+            // assigning the arrow OUTSIDE this validity check).
+            if snapshot.trend.isEmpty, let derived = m.trendArrow { snapshot.trend = derived }
             if m.hasValidReading {
                 // Age must reflect the pump's OWN reading time, not when the phone happened to poll
                 // it (which understated age and lagged the pump). Convert `bgReadingTimestampSeconds`
