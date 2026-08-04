@@ -31,7 +31,7 @@ public final class MockBackend: PumpBackend {
     public var onChange: (@MainActor () -> Void)?
 
     // MARK: - Durable unknown-outcome recovery (P0)
-    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
+    public var commitBolusId: (@MainActor (Int) async -> Bool)?
     /// The next simulated pump-assigned bolus id (mimics `BolusPermissionResponse.bolusId`).
     private var nextBolusId = 1000
     /// The id assigned to the most recent delivery attempt (so a test can drive `reconcile`).
@@ -156,7 +156,10 @@ public final class MockBackend: PumpBackend {
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
-        onBolusIdAssigned?(bolusId)
+        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        if let commit = commitBolusId, await commit(bolusId) == false {
+            throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
+        }
         if forceIndeterminateNextDelivery {
             forceIndeterminateNextDelivery = false
             throw BolusError.indeterminate("mock: initiate response lost after write")
@@ -179,7 +182,10 @@ public final class MockBackend: PumpBackend {
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
-        onBolusIdAssigned?(bolusId)
+        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        if let commit = commitBolusId, await commit(bolusId) == false {
+            throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
+        }
         if forceIndeterminateNextDelivery {
             forceIndeterminateNextDelivery = false
             throw BolusError.indeterminate("mock: initiate response lost after write")

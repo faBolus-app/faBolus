@@ -44,6 +44,25 @@ public struct RemoteBolusLedger: Codable, Sendable {
         var deliveredUnits: Double?
         /// The pump-assigned bolus id, once known — used to reconcile an indeterminate outcome.
         var bolusId: Int?
+        /// Round-3 §5: an EXPLICIT phase flag — true once the pump has granted permission and the id was
+        /// durably recorded, i.e. the initiate write is imminent/issued. Reconciliation must NOT infer
+        /// "not sent" merely from a missing bolus id; a nonterminal record with `sentToPump == true` stays
+        /// globally blocked (reconcile by id), while `false` proves pre-initiate (safe to auto-clear).
+        var sentToPump: Bool = false
+
+        init(doseKey: String, state: State) { self.doseKey = doseKey; self.state = state }
+        // Tolerant decode so a ledger persisted before `sentToPump` existed still loads (defaults false).
+        private enum K: String, CodingKey { case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: K.self)
+            doseKey = try c.decode(String.self, forKey: .doseKey)
+            state = try c.decode(State.self, forKey: .state)
+            terminalStatus = try c.decodeIfPresent(String.self, forKey: .terminalStatus)
+            terminalMessage = try c.decodeIfPresent(String.self, forKey: .terminalMessage)
+            deliveredUnits = try c.decodeIfPresent(Double.self, forKey: .deliveredUnits)
+            bolusId = try c.decodeIfPresent(Int.self, forKey: .bolusId)
+            sentToPump = try c.decodeIfPresent(Bool.self, forKey: .sentToPump) ?? false
+        }
     }
 
     private var entries: [String: Entry] = [:]
@@ -104,6 +123,18 @@ public struct RemoteBolusLedger: Codable, Sendable {
         mutate(peerId, requestId) { $0.bolusId = bolusId }
     }
 
+    /// Round-3 §5: the pump granted permission and assigned `bolusId` — record it AND flip the explicit
+    /// `sentToPump` phase, together, so a durable save of this transition proves the initiate is
+    /// imminent/issued. The host persists (throwing) right after and only proceeds to initiate on success.
+    public mutating func markSent(peerId: String, requestId: String, bolusId: Int) {
+        mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
+    }
+
+    /// Whether this request's initiate is imminent/issued (permission granted + id durably recorded).
+    public func wasSentToPump(peerId: String, requestId: String) -> Bool {
+        entries[key(peerId, requestId)]?.sentToPump ?? false
+    }
+
     /// Mark the outcome UNKNOWN (FB-02): a timeout/disconnect after the initiate write. The request is
     /// neither retryable nor confirmed until reconciled against the pump's bolus history by `bolusId`.
     public mutating func markIndeterminate(peerId: String, requestId: String) {
@@ -140,12 +171,12 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Requests that were mid-flight when the process stopped: `delivering` or `indeterminate`. The host
     /// reconciles these at launch (look up each `bolusId` in pump history) before allowing new deliveries.
-    public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?)] {
+    public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] {
         order.compactMap { k in
             guard let e = entries[k], e.state == .delivering || e.state == .indeterminate else { return nil }
             let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
             guard parts.count == 2 else { return nil }
-            return (String(parts[0]), String(parts[1]), e.bolusId)
+            return (String(parts[0]), String(parts[1]), e.bolusId, e.sentToPump)
         }
     }
 

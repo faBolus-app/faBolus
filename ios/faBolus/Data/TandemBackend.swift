@@ -38,7 +38,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public var onChange: (@MainActor () -> Void)?
     /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
-    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
+    public var commitBolusId: (@MainActor (Int) async -> Bool)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
@@ -523,9 +523,17 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
         }
         currentBolusId = perm.bolusId
-        // P0: the pump has assigned this bolus id and no initiate has been written yet — persist it now so
-        // a lost outcome (timeout/disconnect/crash) after the initiate can be reconciled by id on relaunch.
-        onBolusIdAssigned?(perm.bolusId)
+        // Round-3 §5: the pump assigned this id and NO initiate has been written yet. Durably record it
+        // (acknowledged) BEFORE any metadata/initiate write. If the host can't persist it, ABORT here — a
+        // clean pre-initiate failure (nothing was delivered) rather than writing an initiate whose id
+        // isn't durably recorded (which a relaunch could mistake for "not sent").
+        if let commit = commitBolusId {
+            let saved = await commit(perm.bolusId)
+            guard saved else {
+                snapshot.connection = .connected; onChange?()
+                throw BolusError.pumpRejected("could not record the bolus id durably — not initiated")
+            }
+        }
 
         // Record carbs/BG on the pump BEFORE initiating — this is what populates the carb amount on
         // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT
