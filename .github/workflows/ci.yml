@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual re-validation. Required, not a convenience: this repo's CI fires only on ITS OWN pushes and
+  # PRs, but PumpX2Kit is a local package dependency — so when a sibling repo merges, nothing here
+  # re-runs and `main` can be broken by a commit that is not in this repo. v3 §1.2's cross-repo
+  # reconciliation step depends on being able to re-run a repo after a sibling moves.
+  workflow_dispatch:
 
 jobs:
   core:
-    name: faBolusCore tests + contract drift
+    name: Package tests + contract drift
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +28,19 @@ jobs:
       # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
+
+      # Three suites that EXISTED but were never invoked by CI: HistoryStore (the persistence layer
+      # the settings-change log and bolus history sit on) and the two vendored CGM decoders. All three
+      # are pure-logic packages with no pump or UI dependency, so there was no reason for them to be
+      # unrun — they were simply missed. ShareClient has no test target; nothing to add there.
+      - name: HistoryStore unit tests
+        run: swift test --package-path Packages/HistoryStore
+
+      - name: G7SensorKit unit tests
+        run: swift test --package-path Packages/G7SensorKit
+
+      - name: DexcomG6Kit unit tests
+        run: swift test --package-path Packages/DexcomG6Kit
 
   ios-build:
     name: iOS app build (TandemBackend / AppModel / widgets)
@@ -64,15 +82,14 @@ jobs:
       # freeze-before-approve (C-02), child/read-only action gates (A-05), idempotency wiring
       # (A-02) — running the real AppModel against MockBackend on a booted Simulator. A concrete
       # destination (not `generic/…`) is required to actually run the tests.
+      # Call the script rather than reimplementing it. The inlined copy this replaces picked its
+      # simulator with `grep -Eo 'iPhone [0-9]+'`, which cannot match "iPhone 17 Pro" — the device
+      # family current Xcodes actually install — so it silently fell back to a hardcoded "iPhone 16"
+      # that may not exist on the runner. scripts/test-ios.sh already solved this; two copies of a
+      # destination-selection rule is one copy too many.
       - name: Run app behavioral tests (Simulator)
         working-directory: repos/faBolus
-        run: |
-          set -o pipefail
-          DEST=$(xcrun simctl list devices available | grep -Eo 'iPhone [0-9]+' | head -1)
-          echo "Testing on: ${DEST:-iPhone 16}"
-          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
-            -destination "platform=iOS Simulator,name=${DEST:-iPhone 16}" \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO test
+        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh
 
   watch-build:
     name: watchOS app + complication build
