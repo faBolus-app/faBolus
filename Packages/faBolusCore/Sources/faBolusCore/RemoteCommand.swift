@@ -31,6 +31,27 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// engine. The phone signals whether the watch should be sensing via `eatingSensingOn` on the
         /// routine status push (battery). Advisory only — never doses; not safety-critical.
         case eatingEvent
+
+        /// True for commands that cause — or authorize — a **write to the pump**.
+        ///
+        /// These must never be queued for later opportunistic delivery. A queued bolus that lands
+        /// after the user has given up and dosed another way is a double dose; a queued `cancelBolus`
+        /// can cancel a *later* bolus than the one the user meant; a queued `resumePump` can resume
+        /// delivery long after the user chose to suspend it. A transport must therefore send these
+        /// live or report them undeliverable (`RemoteTransport.onUndeliverable`) — never defer them.
+        ///
+        /// `sealed` is included because its inner command is opaque until decrypted, so the
+        /// conservative assumption is that it may be a delivery command.
+        public var mutatesPumpState: Bool {
+            switch self {
+            case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
+                 .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                return true
+            case .bolusStatus, .statusRead, .eatingEvent,
+                 .authHello, .authChallenge, .authProof, .authResult:
+                return false
+            }
+        }
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
