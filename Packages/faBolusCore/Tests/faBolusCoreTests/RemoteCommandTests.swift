@@ -9,6 +9,20 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(RemoteCommand(kind: .statusRead).version, RemoteCommand.schemaVersion)
     }
 
+    /// S8: the pure new-alert diff a remote uses to actively surface a newly-arrived alert.
+    func testNewAlertIdentitiesDetectsFreshAndReplacement() {
+        let a = RemoteCommand.RemoteAlert(id: 27, kind: 3, title: "Failed connection")
+        let b = RemoteCommand.RemoteAlert(id: 2, kind: 2, title: "Occlusion")
+        // First arrival (nothing previous) → new.
+        XCTAssertEqual(RemoteCommand.newAlertIdentities(previous: [], current: [a]), ["3-27"])
+        // Already seen → nothing new.
+        XCTAssertTrue(RemoteCommand.newAlertIdentities(previous: ["3-27"], current: [a]).isEmpty)
+        // Equal-count REPLACEMENT (a clears, b arrives — same size) → b registers as new.
+        XCTAssertEqual(RemoteCommand.newAlertIdentities(previous: ["3-27"], current: [b]), ["2-2"])
+        // Identity is (kind, id): same id + different kind is distinct.
+        XCTAssertEqual(RemoteCommand.RemoteAlert(id: 2, kind: 1, title: "x").identity, "1-2")
+    }
+
     func testStatusReadRoundTripData() throws {
         let cmd = RemoteCommand(kind: .statusRead, units: 1.25,
                                 bgMgdl: 142, message: "Connected", trend: "up45",

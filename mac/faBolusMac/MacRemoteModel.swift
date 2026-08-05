@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import WidgetKit
+import AppKit
 
 /// macOS remote state. A thin subclass of the shared `AuthenticatingRemoteClientModel`: it supplies
 /// the Mac's token store + display name and wires the pairing UI (`MacConnection`), publishes a
@@ -117,6 +118,12 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
             reloadQuickBolus()
             if phase != .delivering { widgetRequestId = nil }
         }
+    }
+
+    /// S8: a new pump alert arrived — the Mac agent has no Dock icon, so play a sound rather than let it
+    /// sit silently in the alerts list.
+    override func didSurfaceNewAlerts(_ newAlerts: [RemoteCommand.RemoteAlert]) {
+        NSSound.beep()
     }
 
     // MARK: - Widget quick-bolus
