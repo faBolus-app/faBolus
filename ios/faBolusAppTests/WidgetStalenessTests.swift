@@ -1,0 +1,44 @@
+import Testing
+import Foundation
+import faBolusCore
+@testable import faBolus
+
+/// P10 (defect group A) — the iOS widgets must age glucose off the reading's OWN sample timestamp,
+/// under the phone's published freshness policy, exactly like the Mac widget (the reference impl).
+/// Pins two halves of the iOS staleness defect:
+///  1. the pure fresh → stale → hidden transitions the crossing-timeline entries and the views key off
+///     (evaluated at the entry's date, since a widget renders ahead of time), and
+///  2. that the iOS publisher now actually PUBLISHES the policy — the defect was that it left
+///     `staleAfterSec`/`hideAfterSec` nil, so every iOS widget silently fell back to the 6-min hardcode
+///     regardless of the user's Settings value.
+@MainActor
+@Suite(.serialized) struct WidgetStalenessTests {
+    private func mins(_ m: Double, after base: Date) -> Date { base.addingTimeInterval(m * 60) }
+
+    @Test func snapshotAgesFreshThenStaleThenHiddenAtTheEntryDate() {
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        // Grey (stale) at 5 min; hide ("--") at 10 min.
+        let snap = WidgetSnapshot(glucose: 120, glucoseDate: taken,
+                                  staleAfterSec: 5 * 60, hideAfterSec: 10 * 60)
+        // Fresh: shown normally.
+        #expect(!snap.isStale(asOf: mins(4, after: taken)))
+        #expect(!snap.isHidden(asOf: mins(4, after: taken)))
+        // Stale: greyed but still shown (not yet hidden).
+        #expect(snap.isStale(asOf: mins(6, after: taken)))
+        #expect(!snap.isHidden(asOf: mins(6, after: taken)))
+        // Past the hide delay: not shown ("--").
+        #expect(snap.isHidden(asOf: mins(11, after: taken)))
+    }
+
+    @Test func iOSPublisherCarriesThePhoneFreshnessPolicyOntoTheSnapshot() {
+        // The defect: the iOS publisher built the snapshot WITHOUT the policy, so `staleAfterSec` /
+        // `hideAfterSec` were nil and every widget silently used the 6-min hardcode. `makeSnapshot` is
+        // the pure builder `publish` uses; test it directly (deterministic — no shared App-Group store,
+        // so no racing sibling `refresh()`→`publish()` can overwrite it).
+        let snap = WidgetPublisher.makeSnapshot(MockBackend().snapshot, history: [], alerts: [],
+                                                staleAfterSec: 7 * 60, hideAfterSec: 20 * 60)
+        // Explicit Double literals — `7 * 60` alone binds as Int against the `TimeInterval?` field.
+        #expect(snap.staleAfterSec == 420.0)   // was nil before P10 (silent 6-min fallback)
+        #expect(snap.hideAfterSec == 1200.0)
+    }
+}

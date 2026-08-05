@@ -6,7 +6,7 @@ import SwiftUI
 struct StatusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusStatus", provider: FaBolusProvider()) { entry in
-            StatusWidgetView(snap: entry.snap)
+            StatusWidgetView(snap: entry.snap, now: entry.date)
                 .widgetURL(FaBolusDeepLink.open)
         }
         .configurationDisplayName("Pump Overview")
@@ -17,18 +17,27 @@ struct StatusWidget: Widget {
 
 struct StatusWidgetView: View {
     let snap: WidgetSnapshot
-    private var color: Color { WidgetUI.glucoseColor(snap.rangeCategory) }
+    /// Entry display date — staleness is evaluated against this, not wall-clock (see `GlucoseWidgetView`).
+    var now: Date = Date()
+    private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
 
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(WidgetUI.glucoseText(snap))
+                    Text(WidgetUI.glucoseText(snap, now: now))
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
-                    Text(snap.isGlucoseStale ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
+                    Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
                 }
-                Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                // The SAMPLE age (orange once stale), replacing a static "mg/dL" label — so a stale relay
+                // is visible on the overview, not silently shown as current (group A / C7).
+                if let d = snap.glucoseDate {
+                    Text(d, style: .relative).font(.caption2)
+                        .foregroundStyle(WidgetUI.isStale(snap, now: now) ? .orange : .secondary)
+                } else {
+                    Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                }
                 Sparkline(points: snap.recentPoints).frame(height: 34).padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
