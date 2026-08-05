@@ -1,6 +1,5 @@
 import Foundation
 import faBolusCore
-import UserNotifications
 import HistoryStore
 #if FABOLUS_NUDGE
 import DosingSafetyKit
@@ -145,9 +144,22 @@ public final class AppModel {
     /// The active backend's capabilities, so the UI can hide unsupported features.
     public var capabilities: PumpCapabilities { source.capabilities }
 
-    /// Fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
-    /// notifications the user can act on.
-    public var onNotificationsChange: (@MainActor ([PumpAlert]) -> Void)?
+    /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
+    /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
+    /// the old single-assignment closure allowed exactly one observer.
+    private var notificationsSubscribers: [@MainActor ([PumpAlert]) -> Void] = []
+    public func addNotificationsSubscriber(_ cb: @escaping @MainActor ([PumpAlert]) -> Void) {
+        notificationsSubscribers.append(cb)
+        cb(activeNotifications)   // prime with the current set so a late subscriber isn't blind
+    }
+
+    /// The one channel through which non-pump-alert notifications reach the broker-owned poster
+    /// (`NotificationCoordinator`): a governed `Message`, plus optional `userInfo` / category id. When no
+    /// coordinator is installed (unit tests, an out-of-process intent), the caller falls back on its own.
+    public var notificationSink: ((NotificationBroker.Message, [AnyHashable: Any], String) -> Void)?
+    /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
+    /// identifier meant a second rejection silently replaced the first.
+    private var rejectionSeq = 0
 
     // MARK: Child (locked) mode gate
     //
@@ -966,7 +978,7 @@ public final class AppModel {
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
         pushStatusIfNeeded()
         if alertsChanged {
-            onNotificationsChange?(activeNotifications)
+            for cb in notificationsSubscribers { cb(activeNotifications) }
             forceStatusPush()   // get alert changes to the watch immediately (bypass throttle)
         }
     }
@@ -1724,12 +1736,14 @@ public final class AppModel {
     /// Post a local notification when a remote carb bolus is rejected by the divergence guard, so the
     /// phone user sees why (the remote also shows the `.failed` message). Best-effort.
     private func notifyRemoteBolusRejected(_ message: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "Remote bolus not delivered"
-        content.body = message
-        content.sound = .default
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: "remoteBolusRejected", content: content, trigger: nil))
+        // Distinct id per rejection (the old fixed id let a second rejection replace the first), routed
+        // through the broker-owned poster so it is governed like every other notification.
+        rejectionSeq += 1
+        let msg = NotificationBroker.Message(
+            category: .remoteBolusRejected, severity: .warning,
+            title: "Remote bolus not delivered", body: message,
+            dedupeKey: "remoteBolusRejected-\(rejectionSeq)")
+        notificationSink?(msg, [:], "")
     }
 
     /// Deliver a bolus confirmed on the Quick-Bolus widget (its 1-2-3 tap is the confirmation).
