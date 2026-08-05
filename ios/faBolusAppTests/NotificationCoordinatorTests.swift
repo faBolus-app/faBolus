@@ -74,6 +74,20 @@ import faBolusCore
         #expect(NotificationPoster.post(msg(.pumpAlert, key: "ep"), runtime: rt, now: at(9, 10)) { _ in }.deliver)
     }
 
+    @Test func snoozeSuppressesAGovernedCategoryAcrossARuntimeRestartButNeverSafety() {
+        let store = isolatedStore(#function)
+        let rt1 = NotificationRuntime(store: store)
+        rt1.snooze(.pumpAlert, until: at(10, 0))
+        #expect(NotificationPoster.post(msg(.pumpAlert), runtime: rt1, now: at(9, 0)) { _ in }.reason == .snoozed)
+        // A fresh runtime on the same App-Group store still honors the snooze (persisted, cross-process).
+        let rt2 = NotificationRuntime(store: store)
+        #expect(NotificationPoster.post(msg(.pumpAlert), runtime: rt2, now: at(9, 0)) { _ in }.reason == .snoozed)
+        #expect(NotificationPoster.post(msg(.pumpAlert), runtime: rt2, now: at(10, 1)) { _ in }.deliver)
+        // A safety category can never be snoozed, even when asked.
+        rt2.snooze(.pumpDisconnect, until: at(10, 0))
+        #expect(NotificationPoster.post(msg(.pumpDisconnect), runtime: rt2, now: at(9, 0)) { _ in }.deliver)
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []

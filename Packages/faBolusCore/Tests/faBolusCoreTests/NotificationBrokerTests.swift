@@ -140,9 +140,24 @@ import Foundation
         #expect(B.AlertSafetyClass.allCases.filter { $0.isForceProtected }.count == 3)
     }
 
+    @Test func snoozeSuppressesGovernedUntilTheDeadlineButNeverSafety() {
+        // Snooze pumpAlert until 10:00: suppressed before, delivers after.
+        let s = B.snooze(B.State(), category: .pumpAlert, until: at(10, 0))
+        #expect(B.decide(msg(.pumpAlert), settings: enabled(.pumpAlert), state: s, now: at(9, 0), calendar: cal).reason == .snoozed)
+        #expect(B.decide(msg(.pumpAlert), settings: enabled(.pumpAlert), state: s, now: at(10, 1), calendar: cal).deliver)
+        // The write side refuses to record a snooze for a safety category…
+        #expect(B.snooze(B.State(), category: .cgmDataLoss, until: at(10, 0)).snoozedUntil?["cgmDataLoss"] == nil)
+        // …and even a hand-forged snooze map can't silence one (the read side bypasses it above the check).
+        let forged = B.State(snoozedUntil: ["pumpDisconnect": at(10, 0), "cgmDataLoss": at(10, 0), "bolusReconciliation": at(10, 0)])
+        for c in C.allCases where c.neverSuppressible {
+            #expect(B.decide(msg(c), settings: [:], state: forged, now: at(9, 0), calendar: cal).deliver)
+        }
+    }
+
     @Test func stateAndSettingsRoundTripCodable() throws {
         let state = B.State(lastDeliveredAt: ["pumpAlert": at(9, 0)], dayKey: "2026-1-1",
-                            deliveredToday: 3, mealDeliveredToday: 1, notifiedEpisodes: ["ep1"])
+                            deliveredToday: 3, mealDeliveredToday: 1, notifiedEpisodes: ["ep1"],
+                            snoozedUntil: ["pumpAlert": at(9, 0)])
         let s2 = try JSONDecoder().decode(B.State.self, from: JSONEncoder().encode(state))
         #expect(s2 == state)
         let cfg = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420, minIntervalSeconds: 300)
