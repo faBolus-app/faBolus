@@ -66,6 +66,15 @@ jobs:
       # build the full iOS app for the Simulator. This is the audit-T-01 gap: the iOS app — TandemBackend
       # (signed bolus flow, transaction serialization), AppModel.remoteDeliver, the widget receiver, and
       # the pairing hosts — was never compiled in CI before, only faBolusCore + the watch.
+      # NOTE — GarminRemoteBridge.swift is NOT compiled here, and that is a recorded decision, not an
+      # oversight. It sits behind `#if GARMIN` and imports Garmin's ConnectIQ binary xcframework, which
+      # is license-gated and uncommitted, so `FABOLUS_GARMIN=0` (required in CI) strips it. This is the
+      # same license wall as the shipping Garmin jungles in faBolusGarmin. A hand-written ConnectIQ stub
+      # would compile in CI but would drift from the real SDK and give false confidence — worse than an
+      # honest gap. The bridge's build gate is therefore LOCAL: `./scripts/build-sim.sh` auto-detects the
+      # SDK and compiles it (verified 2026-08-04 with FABOLUS_GARMIN=1 — BUILD SUCCEEDED). Extracting the
+      # pure message→RemoteCommand mapping into an SDK-free, CI-testable unit is the right long-term fix;
+      # it is deferred because it touches the Garmin safety path that master-plan P11/P12 rewrite.
       - name: Generate the Xcode project (no private SDK, no Garmin)
         working-directory: repos/faBolus
         run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
@@ -128,4 +137,40 @@ jobs:
           set -o pipefail
           xcodebuild -project faBolus.xcodeproj -scheme WatchCI \
             -destination 'generic/platform=watchOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
+  mac-build:
+    name: macOS remote app + widgets build
+    runs-on: macos-15
+    steps:
+      # Same two-level checkout as the iOS/watch jobs so relative package paths resolve.
+      - name: Checkout faBolus
+        uses: actions/checkout@v4
+        with:
+          path: repos/faBolus
+
+      - name: Checkout PumpX2Kit (local package dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: faBolus-app/PumpX2Kit
+          submodules: recursive
+          path: repos/PumpX2Kit
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project (no private SDK, no Garmin)
+        working-directory: repos/faBolus
+        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+
+      # §1.5 asks whether macOS is `main`-ready. It could not be answered while the macOS remote app
+      # and its widgets were built by no CI job at all. The faBolusMac scheme embeds faBolusMacWidgets,
+      # so this one build covers both. The Mac app is a BLE remote for the phone host — it never links
+      # PumpX2Kit or ConnectIQ, so the same no-SDK generation path works.
+      - name: Build macOS remote app + widgets
+        working-directory: repos/faBolus
+        run: |
+          set -o pipefail
+          xcodebuild -project faBolus.xcodeproj -scheme faBolusMac \
+            -destination 'generic/platform=macOS' \
             -configuration Debug CODE_SIGNING_ALLOWED=NO build
