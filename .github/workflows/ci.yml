@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, experimental]
   pull_request:
   # Manual re-validation. Required, not a convenience: this repo's CI fires only on ITS OWN pushes and
   # PRs, but PumpX2Kit is a local package dependency — so when a sibling repo merges, nothing here
@@ -11,6 +11,36 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Branch-aware cross-repo resolution (v3 §1.2). PumpX2Kit is a local package dependency, so the three
+  # build jobs below must check it out at the branch that MATCHES the faBolus branch under test —
+  # `experimental` faBolus builds against `experimental` PumpX2Kit — falling back to `main` when no
+  # same-named counterpart exists. `actions/checkout` has no fallback of its own, and the dangerous
+  # failure is a silent one: a build that looks green only because the checkout quietly took `main`
+  # when a match was intended. So the decision is made ONCE here, logged with the resolved ref AND its
+  # SHA, and consumed by the build jobs via an output — one auditable line instead of three copies that
+  # could drift.
+  resolve-refs:
+    name: Resolve cross-repo refs
+    runs-on: ubuntu-latest
+    outputs:
+      pumpx2kit_ref: ${{ steps.resolve.outputs.pumpx2kit_ref }}
+    steps:
+      - name: Resolve PumpX2Kit ref (match faBolus branch, else main)
+        id: resolve
+        run: |
+          set -euo pipefail
+          WANT="${{ github.head_ref || github.ref_name }}"
+          REPO="https://github.com/faBolus-app/PumpX2Kit.git"
+          if [ -n "$WANT" ] && git ls-remote --exit-code --heads "$REPO" "$WANT" >/dev/null 2>&1; then
+            REF="$WANT"; HOW="matched the faBolus branch '$WANT'"
+          else
+            REF="main"; HOW="fell back to main (no PumpX2Kit branch named '${WANT:-<none>}')"
+          fi
+          SHA="$(git ls-remote "$REPO" "refs/heads/$REF" | cut -f1)"
+          echo "pumpx2kit_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "PumpX2Kit → $REF @ $SHA  ($HOW)"
+          echo "::notice title=PumpX2Kit checkout::$REF @ ${SHA:0:12} — $HOW"
+
   core:
     name: Package tests + contract drift
     runs-on: macos-15
@@ -45,6 +75,7 @@ jobs:
   ios-build:
     name: iOS app build (TandemBackend / AppModel / widgets)
     runs-on: macos-15
+    needs: resolve-refs
     steps:
       # Two-level checkout so the project's relative package paths resolve (see watch-build).
       - name: Checkout faBolus
@@ -52,10 +83,11 @@ jobs:
         with:
           path: repos/faBolus
 
-      - name: Checkout PumpX2Kit (local package dependency)
+      - name: Checkout PumpX2Kit (local package dependency, branch-aware — see resolve-refs)
         uses: actions/checkout@v4
         with:
           repository: faBolus-app/PumpX2Kit
+          ref: ${{ needs.resolve-refs.outputs.pumpx2kit_ref }}
           submodules: recursive
           path: repos/PumpX2Kit
 
@@ -103,6 +135,7 @@ jobs:
   watch-build:
     name: watchOS app + complication build
     runs-on: macos-15
+    needs: resolve-refs
     steps:
       # Two-level checkout so the project's relative package paths resolve:
       #   repos/faBolus/../PumpX2Kit  and  repos/faBolus/../../vendor/<ConnectIQ>
@@ -111,10 +144,11 @@ jobs:
         with:
           path: repos/faBolus
 
-      - name: Checkout PumpX2Kit (local package dependency)
+      - name: Checkout PumpX2Kit (local package dependency, branch-aware — see resolve-refs)
         uses: actions/checkout@v4
         with:
           repository: faBolus-app/PumpX2Kit
+          ref: ${{ needs.resolve-refs.outputs.pumpx2kit_ref }}
           submodules: recursive
           path: repos/PumpX2Kit
 
@@ -142,6 +176,7 @@ jobs:
   mac-build:
     name: macOS remote app + widgets build
     runs-on: macos-15
+    needs: resolve-refs
     steps:
       # Same two-level checkout as the iOS/watch jobs so relative package paths resolve.
       - name: Checkout faBolus
@@ -149,10 +184,11 @@ jobs:
         with:
           path: repos/faBolus
 
-      - name: Checkout PumpX2Kit (local package dependency)
+      - name: Checkout PumpX2Kit (local package dependency, branch-aware — see resolve-refs)
         uses: actions/checkout@v4
         with:
           repository: faBolus-app/PumpX2Kit
+          ref: ${{ needs.resolve-refs.outputs.pumpx2kit_ref }}
           submodules: recursive
           path: repos/PumpX2Kit
 

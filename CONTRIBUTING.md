@@ -4,6 +4,12 @@ faBolus is designed so new pumps and new host apps are added **in-tree, behind s
 — not by forking. Read `ARCHITECTURE.md` first for the two seams. All contributions are
 for **experimental use only** (in development, not FDA-cleared).
 
+**Which branch does your change target?** Read `BRANCHES.md` before opening a PR. In short: `main` is
+the CI-green baseline; `experimental` holds anything that fires on a threshold, automates a decision, or
+produces output you can't check against the pump (§1.2). Anything touching dosing guidance, thresholds,
+or automation copy is behind a **clinical-review gate** and must not reach anyone but the developer
+until that review lands. The delivery disposition is **NO-GO for real insulin delivery** — keep it so.
+
 ## Ground rules
 - Keep the app pump- and host-agnostic: no `import` of a specific pump library outside its backend
   module.
