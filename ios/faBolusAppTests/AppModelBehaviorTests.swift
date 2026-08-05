@@ -70,8 +70,9 @@ struct AppModelBehaviorTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
-        let rro = s.remotesReadOnly
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true; s.remotesReadOnly = false
+        let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
+        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
         // P8: the evaluator's peer gate (Gate 4) reads `RemotePeerPolicyStore` (UserDefaults). Snapshot +
         // clear it so a peer grant set by one test can't leak into the next (the suite is serialized).
         let d = UserDefaults.standard
@@ -79,7 +80,7 @@ struct AppModelBehaviorTests {
         d.removeObject(forKey: "remotePeerPolicies"); d.removeObject(forKey: "remotePeerHighEntropy")
         defer {
             s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed
-            s.advancedControlEnabled = adv; s.remotesReadOnly = rro
+            s.advancedControlEnabled = adv; s.remotesReadOnly = rro; s.readOnlyAllowAlertClear = clr
             d.set(peerPolicies, forKey: "remotePeerPolicies"); d.set(peerQR, forKey: "remotePeerHighEntropy")
         }
         try await body()
@@ -354,6 +355,64 @@ struct AppModelBehaviorTests {
             AppSettings.shared.remotesReadOnly = false
             await model.remoteDeliver(requestId: "ro2", units: 1.0, from: .macPeer, peerId: "mac")
             #expect(rec.last?.status == .delivered)
+        }
+    }
+
+    // P8 approved-behavior pins (added after the pre-merge adversarial review flagged these three
+    // intended changes as having no direct test — each one is exactly the kind of subtle gate most
+    // likely to regress silently later).
+
+    /// Behavior change (3): the phone-local `readOnlyAllowAlertClear` sub-option governs the phone's OWN
+    /// alert-dismiss under read-only, but must NOT gate a remote (watch/Garmin) dismiss — dismiss is
+    /// `.childOnly`, so on a remote it is child-gated only, not subject to this local-phone setting.
+    @Test func readOnlyAllowAlertClearGovernsLocalDismissOnly() async {
+        let block = "Clearing alerts is disabled in read-only mode."
+        // (a) local phone, read-only, opt-in OFF → blocked by the setting.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            await m.dismissAlert(id: 1, kind: 1, from: .phoneUI)
+            #expect(m.lastError == block)
+        }
+        // (b) local phone, read-only, opt-in ON → not blocked by the setting.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            AppSettings.shared.readOnlyAllowAlertClear = true
+            await m.dismissAlert(id: 1, kind: 1, from: .phoneUI)
+            #expect(m.lastError != block)
+        }
+        // (c) remote (watch), read-only, opt-in OFF → the local-only setting does NOT apply.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            await m.dismissAlert(id: 1, kind: 1, from: .appleWatch, peerId: "watch")
+            #expect(m.lastError != block)
+        }
+    }
+
+    /// Behavior change (1): the pump-capability + advanced-control-opt-in gate is enforced AT THE FUNNEL
+    /// (not only the UI). A control write is refused with `.capabilityUnavailable` when the opt-in is off
+    /// — even on a Mobi with the capability — and allowed once it is on.
+    @Test func controlWriteBlockedAtFunnelWhenAdvancedControlOptInOff() async {
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)   // MockBackend: Mobi + .mobiAdvanced
+            AppSettings.shared.advancedControlEnabled = false
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
+            AppSettings.shared.advancedControlEnabled = true
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).allowed)
+        }
+    }
+
+    /// Behavior change (4): `syncTimeToNow` is capability-gated (supportsTimeSync) but NOT opt-in-gated —
+    /// reachable on a Mobi from Settings with advanced control OFF. Pinned AT THE FUNNEL (not just the
+    /// enum flag): with the opt-in off it is allowed, while a genuine advanced control write is refused.
+    @Test func syncTimeToNowIsNotOptInGatedAtFunnel() async {
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.advancedControlEnabled = false
+            #expect(m.accessDecision(.syncTimeToNow, from: .phoneUI).allowed)
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
         }
     }
 
