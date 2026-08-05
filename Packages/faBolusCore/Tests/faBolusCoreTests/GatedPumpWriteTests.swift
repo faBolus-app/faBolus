@@ -31,4 +31,26 @@ import Testing
             + names(.childOnly).count + names(.controlInterlock).count
         #expect(total == GatedPumpWrite.allCases.count)
     }
+
+    /// P8 funnel gate: `requiresAdvancedControl` must match, exactly, the set of actions the app reaches
+    /// ONLY behind `advancedControlAllowed` (the opt-in + Mobi gate) — verified against the live UI
+    /// 2026-08-05 — so routing it through the funnel changes no shipped t:slim behavior. The one trap this
+    /// pins: `syncTimeToNow` is reachable on Mobi from Settings WITHOUT the opt-in, so it must be EXCLUDED,
+    /// or the funnel would regress Mobi time-sync.
+    @Test func requiresAdvancedControlMatchesTheOptInGatedSet() {
+        // Never advanced: delivery + the child-only pair.
+        for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
+            #expect(!a.requiresAdvancedControl, "\(a.rawValue) must not require advanced control")
+        }
+        // The deliberate exclusion — Settings → Pump clock reaches this on Mobi without the opt-in.
+        #expect(!GatedPumpWrite.syncTimeToNow.requiresAdvancedControl,
+                "syncTimeToNow is capability-gated (supportsTimeSync), NOT opt-in-gated — must be excluded")
+        // Every other control / unverified-ack write DOES require it (opt-in-gated in the UI).
+        let advanced = Set(GatedPumpWrite.allCases.filter { $0.requiresAdvancedControl }.map(\.rawValue))
+        let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
+        #expect(advanced == expected)
+        #expect(!advanced.contains("syncTimeToNow"))
+        // Sanity on the count: 25 controlInterlock + 8 unverifiedAck − 1 (syncTimeToNow) = 32.
+        #expect(advanced.count == 32)
+    }
 }

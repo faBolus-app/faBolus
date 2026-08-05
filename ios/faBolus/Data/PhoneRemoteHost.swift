@@ -38,15 +38,15 @@ public final class PhoneRemoteHost {
             Task {
                 await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                           carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                          remoteEstimate: cmd.remoteEstimateUnits, peerId: "watch")
+                                          remoteEstimate: cmd.remoteEstimateUnits, from: .appleWatch, peerId: "watch")
             }
         case .cancelBolus:
             // The in-flight delivery loop echoes the single final status; no echo here (else the
             // watch would flip cancelled → delivered when the bolus finishes first).
-            Task { await model.cancelBolus() }
+            Task { await model.cancelBolus(from: .appleWatch, peerId: "watch") }
         case .dismissAlert:
             if let id = cmd.alertId, let k = cmd.alertKind {
-                Task { await model.dismissAlert(id: id, kind: k); self.link.send(model.statusCommand(includeHistory: true)) }
+                Task { await model.dismissAlert(id: id, kind: k, from: .appleWatch, peerId: "watch"); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
             if cmd.forceGlucose == true {

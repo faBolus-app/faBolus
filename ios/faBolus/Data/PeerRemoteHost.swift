@@ -196,9 +196,12 @@ public final class PeerRemoteHost {
         case .bolusRequest:
             let isExtended = cmd.extendedMinutes != nil
             guard policy.allows(isExtended ? .extendedBolus : .bolus) else { deny(cmd.requestId); return }
-            // An authorized peer overrides child lock (enforceChildLock: false). Extended boluses
-            // resolve to units client-side (units-based, no carb record/guard); standard boluses go
-            // through `remoteDeliver`, which is the single calculator + carb-record + divergence guard.
+            // P8: an authorized peer drives delivery from the `.macPeer` surface — the single evaluator
+            // bypasses child mode (this peer already passed its per-peer policy), enforces `remotesReadOnly`
+            // (owner decision 2026-08-05), and re-checks the `.bolus`/`.extendedBolus` peer permission
+            // (defense-in-depth on top of the `policy.allows` guard above). Extended boluses resolve to
+            // units client-side (units-based, no carb record/guard); standard boluses go through
+            // `remoteDeliver`, the single calculator + carb-record + divergence guard.
             Task {
                 if isExtended {
                     // FB-05: a carb-driven extended bolus would drop to CLIENT units here — skipping the
@@ -216,26 +219,27 @@ public final class PeerRemoteHost {
                         return
                     }
                     await model.deliverExtendedBolus(totalUnits: units, nowUnits: cmd.extendedNowUnits ?? 0,
-                                                     durationMinutes: cmd.extendedMinutes ?? 0, enforceChildLock: false)
+                                                     durationMinutes: cmd.extendedMinutes ?? 0,
+                                                     from: .macPeer, peerId: self.peerClientId ?? "peer")
                 } else if policy.approvalMode == .hostApproval {
                     await model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                             remoteEstimate: cmd.remoteEstimateUnits, from: .macPeer,
                                              peerId: self.peerClientId ?? "peer")
                 } else {
                     await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                               carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                              remoteEstimate: cmd.remoteEstimateUnits, enforceChildLock: false,
+                                              remoteEstimate: cmd.remoteEstimateUnits, from: .macPeer,
                                               peerId: self.peerClientId ?? "peer")
                 }
             }
         case .cancelBolus:
             guard policy.allows(.cancelBolus) else { deny(cmd.requestId); return }
-            Task { await model.cancelBolus(enforceChildLock: false) }
+            Task { await model.cancelBolus(from: .macPeer, peerId: self.peerClientId ?? "peer") }
         case .dismissAlert:
             guard policy.allows(.dismissAlerts) else { deny(cmd.requestId); return }
             if let id = cmd.alertId, let k = cmd.alertKind {
-                Task { await model.dismissAlert(id: id, kind: k, enforceChildLock: false); self.link.send(model.statusCommand(includeHistory: true)) }
+                Task { await model.dismissAlert(id: id, kind: k, from: .macPeer, peerId: self.peerClientId ?? "peer"); self.link.send(model.statusCommand(includeHistory: true)) }
             }
         case .bolusApprovalResponse:
             // The remote answered a reverse-approval request for a bolus the host started. Only a peer

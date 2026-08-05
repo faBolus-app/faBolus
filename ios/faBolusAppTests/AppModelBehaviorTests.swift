@@ -60,12 +60,37 @@ struct AppModelBehaviorTests {
 
     /// Run `body` with the global `AppSettings` gates in a known-clean state, restoring them after so
     /// the serialized suite never leaks child/read-only state between tests.
+    ///
+    /// P8: `advancedControlEnabled` is set ON here as the baseline. Every advanced / IDP-CRUD write is
+    /// reachable in the app ONLY behind `advancedControlAllowed` (opt-in + Mobi), and the funnel now
+    /// enforces that pump-capability + opt-in gate too (owner decision 2026-08-05, defense-in-depth). The
+    /// `MockBackend` is already a Mobi with `.mobiAdvanced` capabilities, so ON here reflects exactly the
+    /// context the UI guarantees for these writes; without it the funnel would (correctly) refuse them
+    /// with `.capabilityUnavailable`. A test that wants to prove the capability gate itself sets it false.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed }
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
+        let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
+        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
+        // P8: the evaluator's peer gate (Gate 4) reads `RemotePeerPolicyStore` (UserDefaults). Snapshot +
+        // clear it so a peer grant set by one test can't leak into the next (the suite is serialized).
+        let d = UserDefaults.standard
+        let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
+        d.removeObject(forKey: "remotePeerPolicies"); d.removeObject(forKey: "remotePeerHighEntropy")
+        defer {
+            s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed
+            s.advancedControlEnabled = adv; s.remotesReadOnly = rro; s.readOnlyAllowAlertClear = clr
+            d.set(peerPolicies, forKey: "remotePeerPolicies"); d.set(peerQR, forKey: "remotePeerHighEntropy")
+        }
         try await body()
+    }
+
+    /// Grant a peer a QR-paired full-control policy (what a real Mac/caregiver has once paired via QR and
+    /// granted control) so the evaluator's Gate 4 permits its writes. Cleared by `withCleanSettings`.
+    private func grantFullControlPeer(_ clientId: String) {
+        RemotePeerPolicyStore.setPairedViaQR(clientId, true)   // audit A-11: only QR peers may hold control
+        RemotePeerPolicyStore.setPolicy(.fullControl, for: clientId)
     }
 
     private let tol = 0.0001
@@ -217,7 +242,7 @@ struct AppModelBehaviorTests {
             let (model, _, rec) = await makeModel()
             AppSettings.shared.childModeEnabled = true
             AppSettings.shared.childAllowed = []   // .bolus not permitted
-            await model.remoteDeliver(requestId: "g1", units: 1.0, enforceChildLock: true, peerId: "watch")
+            await model.remoteDeliver(requestId: "g1", units: 1.0, from: .appleWatch, peerId: "watch")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("child mode") == true)
             #expect(rec.count(.delivering) == 0)
@@ -238,13 +263,16 @@ struct AppModelBehaviorTests {
     @Test func readOnlyBlocksWidgetButNotRemotePeer() async {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
             AppSettings.shared.phoneReadOnly = true
             // Local Quick-Bolus widget must honor phone read-only (A-05).
             let w = await model.deliverWidgetBolus(requestId: "g3", units: 1.0)
             #expect(w.delivered == 0)
             #expect(w.error?.lowercased().contains("read-only") == true)
-            // A remote peer is a separate device — read-only on THIS phone must not block it (A-05, by design).
-            await model.remoteDeliver(requestId: "g4", units: 1.0, enforceChildLock: false, peerId: "mac")
+            // A remote peer is a separate device — the PHONE's read-only (phoneReadOnly) must not block it.
+            // (P8: peers are governed by `remotesReadOnly`, which is OFF here — see the matrix test for the
+            // owner-decision case where remotesReadOnly=ON does block the peer.)
+            await model.remoteDeliver(requestId: "g4", units: 1.0, from: .macPeer, peerId: "mac")
             #expect(rec.last?.status == .delivered)
         }
     }
@@ -252,11 +280,139 @@ struct AppModelBehaviorTests {
     @Test func parentRemoteBypassesChildLock() async {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
             AppSettings.shared.childModeEnabled = true
             AppSettings.shared.childAllowed = []
-            // An authorized parent remote sends enforceChildLock: false → the child lock is bypassed.
-            await model.remoteDeliver(requestId: "g5", units: 1.0, enforceChildLock: false, peerId: "mac")
+            // An authorized parent remote delivers from the `.macPeer` surface → child mode is bypassed
+            // (the authenticated peer already passed its per-peer policy).
+            await model.remoteDeliver(requestId: "g5", units: 1.0, from: .macPeer, peerId: "mac")
             #expect(rec.last?.status == .delivered)
+        }
+    }
+
+    // MARK: - P8: the (surface × action) gate matrix routes through the single evaluator
+
+    /// The whole point of P8: `AppModel.accessDecision` builds the context from live app/pump/peer state
+    /// and every gated entry point defers to the one `AccessPolicy` evaluator. This drives that real
+    /// context-builder over the full surface × action grid and pins the two owner decisions + the
+    /// fail-closed invariant. (The pure evaluator's own truth table is exhausted in faBolusCore's
+    /// `AccessPolicyTests`; this proves the AppModel wiring feeds it correctly.)
+    @Test func surfaceActionMatrixRoutesThroughTheEvaluator() async {
+        try? await withCleanSettings {
+            let (model, _, _) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
+            typealias A = GatedPumpWrite
+            typealias S = AccessPolicy.Surface
+            let remotes: [S] = [.appleWatch, .garmin, .macPeer, .caregiverPhonePeer]
+
+            // Owner decision 2026-08-05 — `remotesReadOnly` governs ALL remotes INCLUDING the Mac/
+            // caregiver peer path (the hole this closes: the peer path never consulted it before). A
+            // delivery is refused on every remote surface; the phone (local) is untouched.
+            AppSettings.shared.remotesReadOnly = true
+            for s in remotes {
+                #expect(model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .remotesReadOnly,
+                        "deliverBolus on \(s.rawValue) must be remotesReadOnly-blocked (owner decision)")
+            }
+            #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed,
+                    "the phone's own bolus is governed by phoneReadOnly, not remotesReadOnly")
+            // …but cancel + dismiss are `.childOnly` — a safety STOP / low-risk clear survives read-only
+            // on every remote surface (never read-only-blocked).
+            for s in remotes {
+                #expect(model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
+                        "cancel (safety STOP) must survive remotesReadOnly on \(s.rawValue)")
+                #expect(model.accessDecision(.dismissNotification, from: s, peerId: "mac").allowed,
+                        "dismiss must survive remotesReadOnly on \(s.rawValue)")
+            }
+
+            // Fail-closed: fully locked (child on with nothing allowed, both read-only flags on, advanced
+            // off, the peer revoked) denies EVERY action on EVERY surface — no cell escapes.
+            AppSettings.shared.childModeEnabled = true; AppSettings.shared.childAllowed = []
+            AppSettings.shared.phoneReadOnly = true; AppSettings.shared.remotesReadOnly = true
+            AppSettings.shared.advancedControlEnabled = false
+            RemotePeerPolicyStore.remove("mac")
+            for a in A.allCases {
+                for s in S.allCases {
+                    #expect(!model.accessDecision(a, from: s, peerId: "mac").allowed,
+                            "\(a.rawValue) on \(s.rawValue) must be denied when fully locked")
+                }
+            }
+        }
+    }
+
+    /// End-to-end proof of the owner-decision fix at the delivery funnel (not just the decision): a peer
+    /// `remoteDeliver` is refused host-side under `remotesReadOnly`, and delivers once it is off. On the
+    /// pre-P8 code the peer path ignored `remotesReadOnly` entirely, so the first half fails there.
+    @Test func remotesReadOnlyBlocksPeerBolusEndToEnd() async {
+        try? await withCleanSettings {
+            let (model, _, rec) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
+            AppSettings.shared.remotesReadOnly = true
+            await model.remoteDeliver(requestId: "ro1", units: 1.0, from: .macPeer, peerId: "mac")
+            // `.failed` (not `.delivering`/`.delivered`) proves the guard fired before any pump write.
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("read-only") == true)
+            #expect(rec.count(.delivering) == 0, "the peer bolus must not start delivering under remotesReadOnly")
+            AppSettings.shared.remotesReadOnly = false
+            await model.remoteDeliver(requestId: "ro2", units: 1.0, from: .macPeer, peerId: "mac")
+            #expect(rec.last?.status == .delivered)
+        }
+    }
+
+    // P8 approved-behavior pins (added after the pre-merge adversarial review flagged these three
+    // intended changes as having no direct test — each one is exactly the kind of subtle gate most
+    // likely to regress silently later).
+
+    /// Behavior change (3): the phone-local `readOnlyAllowAlertClear` sub-option governs the phone's OWN
+    /// alert-dismiss under read-only, but must NOT gate a remote (watch/Garmin) dismiss — dismiss is
+    /// `.childOnly`, so on a remote it is child-gated only, not subject to this local-phone setting.
+    @Test func readOnlyAllowAlertClearGovernsLocalDismissOnly() async {
+        let block = "Clearing alerts is disabled in read-only mode."
+        // (a) local phone, read-only, opt-in OFF → blocked by the setting.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            await m.dismissAlert(id: 1, kind: 1, from: .phoneUI)
+            #expect(m.lastError == block)
+        }
+        // (b) local phone, read-only, opt-in ON → not blocked by the setting.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            AppSettings.shared.readOnlyAllowAlertClear = true
+            await m.dismissAlert(id: 1, kind: 1, from: .phoneUI)
+            #expect(m.lastError != block)
+        }
+        // (c) remote (watch), read-only, opt-in OFF → the local-only setting does NOT apply.
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.phoneReadOnly = true
+            await m.dismissAlert(id: 1, kind: 1, from: .appleWatch, peerId: "watch")
+            #expect(m.lastError != block)
+        }
+    }
+
+    /// Behavior change (1): the pump-capability + advanced-control-opt-in gate is enforced AT THE FUNNEL
+    /// (not only the UI). A control write is refused with `.capabilityUnavailable` when the opt-in is off
+    /// — even on a Mobi with the capability — and allowed once it is on.
+    @Test func controlWriteBlockedAtFunnelWhenAdvancedControlOptInOff() async {
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)   // MockBackend: Mobi + .mobiAdvanced
+            AppSettings.shared.advancedControlEnabled = false
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
+            AppSettings.shared.advancedControlEnabled = true
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).allowed)
+        }
+    }
+
+    /// Behavior change (4): `syncTimeToNow` is capability-gated (supportsTimeSync) but NOT opt-in-gated —
+    /// reachable on a Mobi from Settings with advanced control OFF. Pinned AT THE FUNNEL (not just the
+    /// enum flag): with the opt-in off it is allowed, while a genuine advanced control write is refused.
+    @Test func syncTimeToNowIsNotOptInGatedAtFunnel() async {
+        try? await withCleanSettings {
+            let (m, _, _) = await makeModel(connected: true)
+            AppSettings.shared.advancedControlEnabled = false
+            #expect(m.accessDecision(.syncTimeToNow, from: .phoneUI).allowed)
+            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
         }
     }
 

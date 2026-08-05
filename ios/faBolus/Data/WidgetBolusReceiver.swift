@@ -34,7 +34,7 @@ final class WidgetBolusReceiver {
         NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let model = self?.model else { return }
-                Task { await model.cancelBolus() }
+                Task { await model.cancelBolus(from: .quickBolusWidget, peerId: "widget") }
             }
         }
     }
@@ -64,7 +64,7 @@ final class WidgetBolusReceiver {
                 await model.refreshGlucoseNow()
                 let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.freshCorrectionBG).recommendedUnits
                 await model.presentRemoteBolus(requestId: r.requestId, units: 0, carbsGrams: r.amount,
-                                               bgMgdl: nil, remoteEstimate: est, enforceChildLock: true, peerId: "widget")
+                                               bgMgdl: nil, remoteEstimate: est, from: .quickBolusWidget, peerId: "widget")
                 WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
                                                              message: "Open faBolus to confirm the dose"))
                 reload(); return

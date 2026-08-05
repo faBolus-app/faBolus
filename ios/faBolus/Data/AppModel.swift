@@ -150,26 +150,56 @@ public final class AppModel {
     public var onNotificationsChange: (@MainActor ([PumpAlert]) -> Void)?
 
     // MARK: Child (locked) mode gate
+    //
+    // P8: the old per-call `childBlocked(_:)` / `readOnlyBlocked(_:)` helpers were removed — child mode
+    // and phone/remote read-only are now decided (with the other three gates) in the single
+    // `AccessPolicy` evaluator, reached via `allow(_:from:peerId:)` / `accessDecision(_:from:peerId:)`
+    // below. The pure enforcement rules live in faBolusCore; this file only builds the context.
 
-    /// Whether `feature` is permitted right now. In child mode, blocked actions no-op with a message.
-    /// This is the single enforcement point for the phone, the widget, **and** every remote (they all
-    /// route through the gated methods below), so a locked device can't be driven from a watch/Garmin.
-    private func childAllows(_ feature: ChildFeature) -> Bool { AppSettings.shared.childAllows(feature) }
-    private func childBlocked(_ feature: ChildFeature) -> Bool {
-        guard !childAllows(feature) else { return false }
-        lastError = "Locked (child mode): \(feature.label.lowercased()) is disabled."
-        return true
-    }
-    /// True when read-only mode is on (this phone is a safe viewer): blocks bolusing + pump control.
-    private func readOnlyBlocked(_ what: String = "This action") -> Bool {
-        guard AppSettings.shared.phoneReadOnly else { return false }
-        lastError = "\(what) is disabled — the app is in read-only mode."
-        return true
+    // MARK: - P8 — single access-policy evaluator (the one decision point for every gate)
+
+    /// Build the pure `AccessContext` from live app / pump / peer state and defer to
+    /// `AccessPolicy.evaluate`. This is the ONLY place the five gates (unverified-ack, child mode,
+    /// phone/remote read-only, per-peer permission, pump-capability + advanced-control opt-in) are read
+    /// together, so a surface can't be gated on one layer and open on another. Pure inputs — the evaluator
+    /// itself lives in faBolusCore and touches no globals. For an authenticated-peer surface it supplies
+    /// that peer's stored policy (Gate 4); for every other surface `peerPolicy` is nil (and Gate 4 is
+    /// skipped). `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`) — the evaluator
+    /// composes it with `isMobi` + capabilities, exactly as the UI's `advancedControlAllowed` does.
+    func accessDecision(_ action: GatedPumpWrite,
+                        from surface: AccessPolicy.Surface,
+                        peerId: String? = nil) -> AccessPolicy.AccessDecision {
+        let peerPolicy: RemotePeerPolicy? = surface.isAuthenticatedPeer
+            ? RemotePeerPolicyStore.effectivePolicy(for: peerId ?? "")
+            : nil
+        let ctx = AccessPolicy.AccessContext(
+            childModeEnabled: AppSettings.shared.childModeEnabled,
+            childAllowed: AppSettings.shared.childAllowed,
+            phoneReadOnly: AppSettings.shared.phoneReadOnly,
+            remotesReadOnly: AppSettings.shared.remotesReadOnly,
+            advancedControlOptIn: AppSettings.shared.advancedControlEnabled,
+            isMobi: snapshot.isMobi,
+            capabilities: capabilities,
+            hasRecentUnverifiedAck: hasRecentUnverifiedAck,
+            peerPolicy: peerPolicy)
+        return AccessPolicy.evaluate(action, surface: surface, context: ctx)
     }
 
-    /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
-    public func dismissNotification(_ n: PumpAlert, enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.dismissAlerts) { return }
+    /// Evaluate `action` from `surface`; on denial surface the reason in `lastError` and return false.
+    /// The single funnel guard every gated entry point uses.
+    @discardableResult
+    func allow(_ action: GatedPumpWrite, from surface: AccessPolicy.Surface, peerId: String? = nil) -> Bool {
+        let d = accessDecision(action, from: surface, peerId: peerId)
+        if !d.allowed, let r = d.reason { lastError = r.userMessage }
+        return d.allowed
+    }
+
+    /// Clear a pump alert/alarm from the app (signed dismiss on the pump). P8: gated through the single
+    /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
+    /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
+    public func dismissNotification(_ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
+                                    peerId: String = "local") async {
+        guard allow(.dismissNotification, from: surface, peerId: peerId) else { return }
         await source.dismissNotification(n); refresh()
     }
 
@@ -220,16 +250,20 @@ public final class AppModel {
         return cmd
     }
 
-    /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
-    public func dismissAlert(id: Int, kind: Int, enforceChildLock: Bool = true) async {
-        // In read-only mode the phone's own alert-clearing is off unless the sub-option allows it.
-        // (`enforceChildLock` marks the phone's own path; remote dismisses pass false.)
-        if enforceChildLock, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
+    /// Clear a pump alert by id + kind (used by the phone UI and remotes' dismiss commands).
+    public func dismissAlert(id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
+                             peerId: String = "local") async {
+        // P8 deliberate deviation: dismiss is a `.childOnly` action, so the evaluator never read-only-
+        // blocks it (clearing an alert is low-risk and a viewer may need to). But the phone keeps its
+        // shipped `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off
+        // unless the user opted in. The pure evaluator can't know that per-user setting, so it is applied
+        // here for local surfaces only (remote dismisses were never subject to it). See [[p8-routing]].
+        if surface.isLocal, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
             lastError = "Clearing alerts is disabled in read-only mode."
             return
         }
         guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
-        await dismissNotification(n, enforceChildLock: enforceChildLock)
+        await dismissNotification(n, from: surface, peerId: peerId)
     }
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
@@ -247,8 +281,6 @@ public final class AppModel {
         public var remoteEstimate: Double? = nil
         public var requestedUnits: Double? = nil // original request units, for the idempotency doseKey
         public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
-        /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
-        public var enforceChildLock: Bool = true
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
     }
@@ -964,7 +996,9 @@ public final class AppModel {
     static let remoteDivergenceLimitUnits = 0.10
 
     public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
-        if childBlocked(.bolus) { return }
+        // P8: the phone's own standard bolus, gated through the single evaluator (child mode + phone
+        // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
+        guard allow(.deliverBolus, from: .phoneUI) else { return }
         // Reverse approval (child-mode-only): when child mode is on and set to require a paired
         // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
         if AppSettings.shared.childModeEnabled, AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
@@ -975,7 +1009,10 @@ public final class AppModel {
     }
 
     private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
-        if readOnlyBlocked("Bolus") { return }
+        // Re-checked here (not just in `deliverBolus`) so the reverse-approval-approved path
+        // (`resolveRemoteApproval`) is gated too. `.deliverBolus` is `.ledgeredDelivery` — the evaluator
+        // applies child + phone read-only; delivery never requires advanced control.
+        guard allow(.deliverBolus, from: .phoneUI) else { return }
         // P0: local boluses go through the SAME durable ledger as remotes, so an indeterminate local
         // outcome records a reconcilable entry (and blocks every surface) across a restart, and a global
         // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
@@ -1034,12 +1071,17 @@ public final class AppModel {
     /// Cancel a bolus that's waiting for remote approval (user backed out).
     public func cancelPendingApproval() { pendingApproval = nil }
 
-    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
+    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. P8: gated
+    /// through the single evaluator by `surface` — `.phoneUI` (child + phone read-only) for the phone's
+    /// own combo bolus; an authenticated peer passes `.macPeer` + its `peerId` so the evaluator enforces
+    /// the `.extendedBolus` peer permission and `remotesReadOnly` (owner decision 2026-08-05) while
+    /// bypassing child mode. The idempotency ledger keeps its own `local-ext:` keying, independent of the
+    /// gating `peerId`.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double? = nil, bgMgdl: Int? = nil,
-                                     iobUnits: Double? = nil, enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.bolus) { return }
-        if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
+                                     iobUnits: Double? = nil,
+                                     from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        guard allow(.deliverExtendedBolus, from: surface, peerId: peerId) else { return }
         // P0: route extended boluses through the durable ledger too, so the global unresolved-delivery
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
         let requestId = "local-ext:" + UUID().uuidString
@@ -1063,8 +1105,11 @@ public final class AppModel {
         refresh()
     }
 
-    public func cancelBolus(enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.cancelBolus) { return }
+    /// Stop a running bolus. P8: `.childOnly` — the evaluator applies child mode (local/watch/Garmin) and
+    /// the authenticated-peer `.cancelBolus` permission, but NEVER read-only-blocks it: cancelling is a
+    /// safety STOP that must stay available to a read-only viewer on every surface.
+    public func cancelBolus(from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        guard allow(.cancelBolus, from: surface, peerId: peerId) else { return }
         await source.cancelBolus(); refresh()
     }
 
@@ -1082,14 +1127,26 @@ public final class AppModel {
     /// screen uses so nothing that requires the pump is tappable when it isn't there.
     public var pumpReady: Bool { snapshot.connection == .connected }
 
-    private func runControl(_ op: () async throws -> Void) async {
-        if childBlocked(.advancedControl) { refresh(); return }
-        if readOnlyBlocked("Pump control") { refresh(); return }
+    /// The standard side-effects of a pump control op with NO gating (the caller has already gated via
+    /// the P8 evaluator): surface a thrown error, refresh, and push the new state to remotes promptly.
+    /// Control actions (suspend/resume, temp basal, modes…) are time-sensitive, so we don't wait on the
+    /// 15 s throttle. Shared tail for `runControl` / `runGatedTherapy` / the batch reconfigure.
+    private func performControl(_ op: () async throws -> Void) async {
         do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
         refresh()
-        // Control actions (suspend/resume, temp basal, modes…) are time-sensitive: push the new state
-        // to the remotes immediately rather than waiting on the 15 s throttle.
         forceStatusPush()
+    }
+
+    /// P8: run a control write only if the single `AccessPolicy` evaluator permits it from `surface`.
+    /// Replaces the old inline `childBlocked(.advancedControl)` + `readOnlyBlocked` pair with the one
+    /// decision point, and ADDS the pump-capability + advanced-control-opt-in gate at the funnel
+    /// (defense-in-depth, owner decision 2026-08-05) — matching what the UI's `advancedControlAllowed`
+    /// already composes, so no shipped t:slim/Mobi behavior changes for reachable actions. `surface`
+    /// defaults to `.phoneUI` (the phone's own control screens); remotes pass their own surface.
+    private func runControl(_ action: GatedPumpWrite, from surface: AccessPolicy.Surface = .phoneUI,
+                            peerId: String? = nil, _ op: () async throws -> Void) async {
+        guard allow(action, from: surface, peerId: peerId) else { refresh(); return }
+        await performControl(op)
     }
 
     // MARK: Unverified-therapy central gate (FB-06)
@@ -1116,27 +1173,26 @@ public final class AppModel {
         return Date().timeIntervalSince(at) <= Self.unverifiedAckMaxAge
     }
 
-    /// Run an unverified therapy-defining write only if the user recently acknowledged the untested
-    /// warning; otherwise **fail closed** (surface `lastError`, never touch the backend). One-shot: the
-    /// ack is consumed so each acknowledgment authorizes exactly one gated action. `op` performs the
-    /// write (a `runControl { … }` call), keeping the child-mode / read-only interlocks in force too.
-    private func runGatedTherapy(_ feature: String, _ op: () async -> Void) async {
-        guard hasRecentUnverifiedAck else {
-            lastError = "\(feature) needs the untested-feature warning acknowledged first."
-            refresh()
-            return
-        }
-        unverifiedTherapyAckAt = nil   // consume — one ack authorizes one action
-        await op()
+    /// Run an unverified therapy-defining write through the single P8 evaluator, which folds the
+    /// unverified-feature ack (Gate 1) in with child-mode, phone read-only, and the capability +
+    /// advanced-control gate — so a new caller can't reach the backend without the on-screen warning AND
+    /// the other interlocks. Fails closed (surfaces `lastError`, never touches the backend). One-shot:
+    /// the ack is consumed so each acknowledgment authorizes exactly one gated gesture. `op` is the RAW
+    /// backend write — gating is entirely in the evaluator, so it must NOT re-enter `runControl` (that
+    /// would re-check the just-consumed ack and deny).
+    private func runGatedTherapy(_ action: GatedPumpWrite, _ op: () async throws -> Void) async {
+        guard allow(action, from: .phoneUI) else { refresh(); return }
+        unverifiedTherapyAckAt = nil   // consume — one ack authorizes one gated gesture
+        await performControl(op)
     }
 
-    public func suspendDelivery() async { await runControl { try await source.suspendDelivery() } }
-    public func resumeDelivery() async { await runControl { try await source.resumeDelivery() } }
+    public func suspendDelivery() async { await runControl(.suspendDelivery) { try await source.suspendDelivery() } }
+    public func resumeDelivery() async { await runControl(.resumeDelivery) { try await source.resumeDelivery() } }
     public func setTempBasal(percent: Int, durationMinutes: Int) async {
-        await runControl { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
+        await runControl(.setTempBasal) { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
     }
-    public func stopTempBasal() async { await runControl { try await source.stopTempBasal() } }
-    public func setMode(bitmap: Int) async { await runControl { try await source.setMode(bitmap: bitmap) } }
+    public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
+    public func setMode(bitmap: Int) async { await runControl(.setMode) { try await source.setMode(bitmap: bitmap) } }
     /// Pump user-mode toggles. The **command** bitmap (wire contract, see PumpX2
     /// `SetModesRequest.ModeCommand`) is `sleepOn=1, sleepOff=2, exerciseOn=3, exerciseOff=4` —
     /// distinct from the *reported* state `snapshot.controlIQMode` (0=normal, 1=sleep, 2=exercise).
@@ -1160,27 +1216,27 @@ public final class AppModel {
         case .sleep: await setSleepMode(on)
         }
     }
-    public func playFindMyPump() async { await runControl { try await source.playFindMyPump() } }
+    public func playFindMyPump() async { await runControl(.playFindMyPump) { try await source.playFindMyPump() } }
     /// Read the G6 transmitter ID from the pump (CGM-failover auto-fill). nil if unavailable.
     public func readG6TransmitterId() async -> String? { await source.readG6TransmitterId() }
 
     // MARK: Mobi workflows (A4)
     public func startG6Session(transmitterId: String, sensorCode: Int) async {
-        await runControl { try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode) }
+        await runControl(.startG6Session) { try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode) }
     }
-    public func startG7Session(pairingCode: Int) async { await runControl { try await source.startG7Session(pairingCode: pairingCode) } }
-    public func setSensorType(_ typeId: Int) async { await runControl { try await source.setSensorType(typeId) } }
-    public func stopCgmSession() async { await runControl { try await source.stopCgmSession() } }
+    public func startG7Session(pairingCode: Int) async { await runControl(.startG7Session) { try await source.startG7Session(pairingCode: pairingCode) } }
+    public func setSensorType(_ typeId: Int) async { await runControl(.setSensorType) { try await source.setSensorType(typeId) } }
+    public func stopCgmSession() async { await runControl(.stopCgmSession) { try await source.stopCgmSession() } }
     public func refreshCgmSession() async { await source.refreshCgmSession(); refresh() }
-    public func enterChangeCartridgeMode() async { await runControl { try await source.enterChangeCartridgeMode() } }
-    public func exitChangeCartridgeMode() async { await runControl { try await source.exitChangeCartridgeMode() } }
-    public func enterFillTubingMode() async { await runControl { try await source.enterFillTubingMode() } }
-    public func exitFillTubingMode() async { await runControl { try await source.exitFillTubingMode() } }
-    public func fillCannula(milliunits: Int) async { await runControl { try await source.fillCannula(milliunits: milliunits) } }
+    public func enterChangeCartridgeMode() async { await runControl(.enterChangeCartridgeMode) { try await source.enterChangeCartridgeMode() } }
+    public func exitChangeCartridgeMode() async { await runControl(.exitChangeCartridgeMode) { try await source.exitChangeCartridgeMode() } }
+    public func enterFillTubingMode() async { await runControl(.enterFillTubingMode) { try await source.enterFillTubingMode() } }
+    public func exitFillTubingMode() async { await runControl(.exitFillTubingMode) { try await source.exitFillTubingMode() } }
+    public func fillCannula(milliunits: Int) async { await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) } }
     public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
-    public func setMaxBolus(units: Double) async { await runControl { try await source.setMaxBolus(units: units) } }
-    public func setMaxBasal(unitsPerHour: Double) async { await runControl { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
-    public func syncTimeToNow() async { await runControl { try await source.syncTimeToNow() } }
+    public func setMaxBolus(units: Double) async { await runControl(.setMaxBolus) { try await source.setMaxBolus(units: units) } }
+    public func setMaxBasal(unitsPerHour: Double) async { await runControl(.setMaxBasal) { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
+    public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 
     private var timeSyncInFlight = false
     private static let lastTimeSyncKey = "lastPumpTimeSyncEpoch"
@@ -1197,7 +1253,7 @@ public final class AppModel {
         timeSyncInFlight = true
         Task { @MainActor in
             defer { timeSyncInFlight = false }
-            await runControl { try await source.syncTimeToNow() }
+            await runControl(.syncTimeToNow) { try await source.syncTimeToNow() }
             if lastError == nil { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastTimeSyncKey) }
         }
     }
@@ -1207,55 +1263,54 @@ public final class AppModel {
 
     // MARK: Config wizards (A4 continued)
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
-        await runControl { try await source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
+        await runControl(.setControlIQ) { try await source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
-    // FB-06: switching the active profile, renaming, and deleting a profile are therapy-defining (they
-    // change the active basal / carb-ratio / ISF the pump doses from), so they route through the SAME
-    // central unverified-therapy acknowledgement boundary as the rest of IDP CRUD — a new caller can't
-    // bypass the on-screen warning by invoking the AppModel method directly. Raw helpers keep the
-    // child-mode / read-only interlocks (via runControl) underneath the ack.
+    // FB-06 / P8: switching the active profile, renaming, and deleting a profile are therapy-defining
+    // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the
+    // SAME single evaluator as the rest of IDP CRUD — `runGatedTherapy(action)` folds the unverified
+    // ack in with child-mode, read-only, and the capability + advanced-control gate, then runs the RAW
+    // backend write. The op must be the raw `source` call (NOT a nested `runControl`, which would
+    // re-check the just-consumed ack and deny).
     public func setActiveProfile(idpId: Int) async {
-        await runGatedTherapy("Switching the active profile") { await self.setActiveProfileRaw(idpId: idpId) }
+        await runGatedTherapy(.setActiveProfile) { try await self.source.setActiveProfile(idpId: idpId) }
     }
-    private func setActiveProfileRaw(idpId: Int) async { await runControl { try await source.setActiveProfile(idpId: idpId) } }
     public func renameProfile(idpId: Int, name: String) async {
-        await runGatedTherapy("Renaming a pump profile") { await self.renameProfileRaw(idpId: idpId, name: name) }
+        await runGatedTherapy(.renameProfile) { try await self.source.renameProfile(idpId: idpId, name: name) }
     }
-    private func renameProfileRaw(idpId: Int, name: String) async { await runControl { try await source.renameProfile(idpId: idpId, name: name) } }
     public func deleteProfile(idpId: Int) async {
-        await runGatedTherapy("Deleting a pump profile") { await self.deleteProfileRaw(idpId: idpId) }
+        await runGatedTherapy(.deleteProfile) { try await self.source.deleteProfile(idpId: idpId) }
     }
-    private func deleteProfileRaw(idpId: Int) async { await runControl { try await source.deleteProfile(idpId: idpId) } }
     public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
-        await runGatedTherapy("Creating a pump profile") {
-            await self.createProfileRaw(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
+        await runGatedTherapy(.createProfile) {
+            try await self.source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
         }
     }
-    /// Ungated create — used by the gated wrapper above and by the (separately gated) batch reconfigure
-    /// in `applyPumpSettings`, so one acknowledgment authorizes the whole batch rather than one profile.
+    /// Ungated create — used ONLY by the batch reconfigure in `applyPumpSettings`, which gates the whole
+    /// batch once (one ack + one capability/child/read-only check) then drives these raw helpers, so a
+    /// single confirmation authorizes the entire reconfigure rather than one profile.
     private func createProfileRaw(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
-        await runControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
+        await performControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
     }
     public func refreshProfileSegments(idpId: Int) async { await source.refreshProfileSegments(idpId: idpId); refresh() }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
-        await runGatedTherapy("Adding a profile segment") {
-            await self.addProfileSegmentRaw(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+        await runGatedTherapy(.addProfileSegment) {
+            try await self.source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
     }
-    /// Ungated add — used by the gated wrapper above and by the batch reconfigure (see `createProfileRaw`).
+    /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
     private func addProfileSegmentRaw(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
-        await runControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
+        await performControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
     }
     public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
-        await runGatedTherapy("Editing a profile segment") {
-            await self.runControl { try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
+        await runGatedTherapy(.modifyProfileSegment) {
+            try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
-        await runGatedTherapy("Deleting a profile segment") {
-            await self.runControl { try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex) }
+        await runGatedTherapy(.deleteProfileSegment) {
+            try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex)
         }
     }
     // MARK: Backup / reconfigure
@@ -1295,15 +1350,23 @@ public final class AppModel {
     /// bolus. Experimental/unvalidated; therapy-defining, so it's fully gated + confirmed upstream.
     /// Returns false (and sets `lastError`) on the first failure.
     func applyPumpSettings(_ p: PumpSettingsBackup) async -> Bool {
-        guard advancedControlAllowed else {
-            lastError = "Reconfiguring the pump needs a Tandem Mobi with Advanced control enabled."
-            return false
-        }
-        // FB-06: the whole batch is one gated therapy action. Require a recent ack (the caller shows the
-        // untested-feature warning before this), consume it once, then drive the raw (already-authorized)
-        // create/add helpers so the single confirmation isn't spent on the first profile alone.
-        guard hasRecentUnverifiedAck else {
-            lastError = "Reconfiguring the pump needs the untested-feature warning acknowledged first."
+        // FB-06 / P8: the whole batch is ONE gated therapy gesture. Gate it once through the single
+        // evaluator (using `.createProfile` as the representative unverified-ack write): this folds the
+        // ack in with child-mode, phone read-only, and the capability + advanced-control gate — the same
+        // interlocks the per-sub-write `runControl` used to apply, now checked once at the gesture (they
+        // can't change mid-batch). Consume the ack once, then drive the raw (already-authorized) helpers
+        // so a single confirmation authorizes the whole reconfigure, not just the first profile. Bespoke
+        // messages are preserved for the two reconfigure-specific reasons.
+        let decision = accessDecision(.createProfile, from: .phoneUI)
+        guard decision.allowed else {
+            switch decision.reason {
+            case .capabilityUnavailable:
+                lastError = "Reconfiguring the pump needs a Tandem Mobi with Advanced control enabled."
+            case .unverifiedAckRequired:
+                lastError = "Reconfiguring the pump needs the untested-feature warning acknowledged first."
+            default:
+                lastError = decision.reason?.userMessage ?? "Reconfiguring the pump is not allowed right now."
+            }
             return false
         }
         unverifiedTherapyAckAt = nil
@@ -1334,23 +1397,23 @@ public final class AppModel {
         return true
     }
 
-    public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
-    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
-    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }
-    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async { await runControl { try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes) } }
+    public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
+    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl(.setAutoOffAlert) { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
+    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl(.setSiteChangeReminder) { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }
+    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async { await runControl(.setAlertSnooze) { try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes) } }
     public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
-        await runGatedTherapy("Setting the CGM high/low alert") {
-            await self.runControl { try await self.source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled) }
+        await runGatedTherapy(.setCgmHighLowAlert) {
+            try await self.source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled)
         }
     }
-    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async { await runControl { try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes) } }
-    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async { await runControl { try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin) } }
+    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async { await runControl(.setCgmOutOfRangeAlert) { try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes) } }
+    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async { await runControl(.setCgmRiseFallAlert) { try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin) } }
 
     // MARK: Remote (watch/Garmin) double-confirmation
 
     public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
                                    bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                                   enforceChildLock: Bool = true, peerId: String = "local") async {
+                                   from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
         // stack a second confirmation prompt for the same (peer, requestId).
         if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
@@ -1364,8 +1427,12 @@ public final class AppModel {
             return
         }
         if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
-        if enforceChildLock, childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+        // P8: gate the request through the single evaluator (child mode for local/watch/Garmin; the
+        // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
+        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
+        guard decision.allowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
         // Freeze the authoritative dose BEFORE presenting (audit C-02): the approver must see the real
@@ -1381,7 +1448,7 @@ public final class AppModel {
                                                 carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
                                                 bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
                                                 remoteEstimate: remoteEstimate, requestedUnits: units,
-                                                createdAt: Date(), enforceChildLock: enforceChildLock, peerId: peerId)
+                                                createdAt: Date(), peerId: peerId)
     }
 
     /// Drop a pending host-approval bolus bound to `peerId` (audit A-01). When a peer re-handshakes or
@@ -1430,9 +1497,13 @@ public final class AppModel {
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
                               bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                              enforceChildLock: Bool = true, peerId: String = "local") async {
-        if enforceChildLock, childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+                              from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        // P8: gate through the single evaluator (child mode for local/watch/Garmin; the `.bolus` peer
+        // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
+        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
+        guard decision.allowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
         guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
@@ -1665,15 +1736,13 @@ public final class AppModel {
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
     public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async -> (delivered: Double, cancelled: Bool, error: String?) {
-        if childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
-            return (0, false, "Locked (child mode)")
-        }
-        // The Quick-Bolus widget is a LOCAL surface, so it must honor phone read-only (audit A-05) — the
-        // remote-peer paths intentionally bypass it, but the widget must not.
-        if readOnlyBlocked("Bolus") {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "faBolus is read-only"))
-            return (0, false, "faBolus is read-only")
+        // P8: the Quick-Bolus widget is a LOCAL surface, so the single evaluator applies child mode AND
+        // phone read-only (audit A-05 — the widget must honor read-only; the remote-peer paths bypass it).
+        let decision = accessDecision(.deliverBolus, from: .quickBolusWidget)
+        guard decision.allowed else {
+            let msg = decision.reason?.userMessage ?? "Not allowed"
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            return (0, false, msg)
         }
         // P0 + FB-03: durable ledger + global unresolved-delivery block, same as every other surface.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
