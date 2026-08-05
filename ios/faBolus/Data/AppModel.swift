@@ -194,6 +194,29 @@ public final class AppModel {
         return d.allowed
     }
 
+    /// A-05: the Quick-Bolus widget's lock state, taken from the SAME evaluator delivery routes through
+    /// (`accessDecision(.deliverBolus, from: .quickBolusWidget)`), plus a short display reason. The widget
+    /// can't compute this itself (faBolusCore has no app globals, and re-deriving the gate is what A-05
+    /// warns against), so the app publishes it. Reason mapping is presentation only — a shortened form of
+    /// the evaluator's own `DenialReason`, not a re-derivation of the gate.
+    var widgetBolusLock: (locked: Bool, reason: String) {
+        let d = accessDecision(.deliverBolus, from: .quickBolusWidget)
+        guard !d.allowed else { return (false, "") }
+        switch d.reason {
+        case .phoneReadOnly?: return (true, "Read-only mode")
+        case .childLocked?:   return (true, "Child mode")
+        default:              return (true, "Unavailable")
+        }
+    }
+
+    /// A-05: publish the widget lock state to the App Group + reload the Quick-Bolus widget so its pad
+    /// greys/disables immediately when a gate toggles (read-only / child mode), not only at the next pump
+    /// update. `refresh()` publishes the same flag inline through `WidgetPublisher.publish`.
+    func publishWidgetLockState() {
+        let lock = widgetBolusLock
+        WidgetPublisher.publishBolusLock(locked: lock.locked, reason: lock.reason)
+    }
+
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump). P8: gated through the single
     /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
     /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
@@ -955,7 +978,9 @@ public final class AppModel {
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
-        WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title })
+        let widgetLock = widgetBolusLock   // A-05: same evaluator delivery routes through
+        WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title },
+                                bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason)
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         updateHypoWarning()
