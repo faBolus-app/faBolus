@@ -62,4 +62,42 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             return .controlInterlock
         }
     }
+
+    // MARK: - P8 evaluator maps (single AccessPolicy). Defaults are the most-restrictive/fail-safe choice,
+    // so a newly-added case is never accidentally *less* gated than intended.
+
+    /// The child-mode feature this action requires (matches the `childBlocked(...)` argument each
+    /// AppModel entry point passes today). New control/ack cases default to `.advancedControl` (the
+    /// strictest child gate) — fail-safe.
+    public var requiredChildFeature: ChildFeature {
+        switch self {
+        case .deliverBolus, .deliverExtendedBolus: return .bolus
+        case .cancelBolus: return .cancelBolus
+        case .dismissNotification: return .dismissAlerts
+        default: return .advancedControl   // every .controlInterlock / .unverifiedAck write
+        }
+    }
+
+    /// The peer permission an authenticated remote needs to drive this action (matches
+    /// `PeerRemoteHost`'s current switch). `nil` = there is no remote verb for it, so a peer surface
+    /// fails closed — fail-safe.
+    public var requiredPeerPermission: RemotePermission? {
+        switch self {
+        case .deliverBolus: return .bolus
+        case .deliverExtendedBolus: return .extendedBolus
+        case .cancelBolus: return .cancelBolus
+        case .dismissNotification: return .dismissAlerts
+        case .suspendDelivery, .resumeDelivery: return .suspendResume
+        default: return nil
+        }
+    }
+
+    /// Whether this action requires the advanced-control capability + opt-in (pump-capability gate).
+    /// True for every control / unverified-ack write; false for delivery and the child-only pair.
+    public var requiresAdvancedControl: Bool {
+        switch gate {
+        case .controlInterlock, .unverifiedAck: return true
+        case .ledgeredDelivery, .childOnly: return false
+        }
+    }
 }
