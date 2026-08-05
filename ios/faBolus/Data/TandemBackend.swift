@@ -201,14 +201,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// timeout/disconnect surfaces as `PumpTransactionCoordinator.TxError` (which a delivery caller maps to
     /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
     private func awaitResponse<T: Message>(_ message: Message, as _: T.Type, deadline: TimeInterval,
-                                           signed: Bool = false, allowInsulinDelivery: Bool = false) async throws -> T {
+                                           signed: Bool = false, allowInsulinDelivery: Bool = false,
+                                           serialized: Bool = false) async throws -> T {
         let frame = try await tx.sendAwaitingResponse(
             message,
             authenticationKey: signed ? authenticationKey : [],
             pumpTimeSinceReset: signed ? signingTimestamp : 0,
             allowInsulinDelivery: allowInsulinDelivery,
             responseOpCode: nil,
-            deadline: deadline)
+            deadline: deadline,
+            serialized: serialized)
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic),
               let typed = parsed.message as? T else {
             throw BolusError.pumpRejected("could not parse \(T.self) response")
@@ -516,8 +518,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         defer { tx.writePolicy = .readOnly }
         snapshot.connection = .bolusing; onChange?()
 
+        // R3-D: the bolus permission→initiate pair is delivery-class — `serialized` so the coordinator
+        // rejects (fail-closed) any second delivery command that tries to interleave, and two identical
+        // in-flight delivery opcodes can never cross-resolve. Defense in depth behind AppModel's mutex.
         let perm = try await awaitResponse(BolusPermissionRequest(), as: BolusPermissionResponse.self,
-                                           deadline: 8, signed: true)
+                                           deadline: 8, signed: true, serialized: true)
         guard perm.granted else {
             snapshot.connection = .connected; onChange?()
             throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
@@ -599,7 +604,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         do {
             iniFrame = try await tx.sendAwaitingResponse(request, authenticationKey: authenticationKey,
                                                          pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true,
-                                                         responseOpCode: nil, deadline: 8)
+                                                         responseOpCode: nil, deadline: 8, serialized: true)
         } catch let e as PumpTransactionCoordinator.TxError {
             throw indeterminate(perm.bolusId, "no initiate response after the bolus was sent (\(e))")
         }
