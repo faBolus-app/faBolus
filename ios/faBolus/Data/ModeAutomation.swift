@@ -1,6 +1,5 @@
 import Foundation
 import faBolusCore
-import UserNotifications
 
 /// Activity / Sleep mode automation (F1/F2).
 ///
@@ -90,11 +89,15 @@ enum ModeAutomation {
 
     private static func remind(title: String, body: String) {
         guard AppSettings.shared.modeReminders else { return }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: "modeReminder-\(title)", content: content, trigger: nil))
+        // Routed through the broker like every other notification. This can run out-of-process (an App
+        // Intent while the app isn't live), so it posts via the App-Group-backed runtime directly rather
+        // than a live `AppModel`. Stable `dedupeKey` (iOS collapses a rapid repeat) but a unique
+        // `episodeKey` per fire, so the broker's one-per-episode never permanently silences a recurring
+        // reminder.
+        let msg = NotificationBroker.Message(
+            category: .modeReminder, severity: .info, title: title, body: body,
+            dedupeKey: "modeReminder-\(title)",
+            episodeKey: "modeReminder-\(title)-\(Date().timeIntervalSince1970)")
+        NotificationPoster.post(msg, runtime: NotificationRuntime())
     }
 }
