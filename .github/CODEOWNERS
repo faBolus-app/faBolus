@@ -1,0 +1,28 @@
+# Code ownership → review routing. GitHub requests review from the owner automatically on any PR that
+# touches a matching path. This is a small, single-maintainer project, so the default owner is the
+# maintainer; the point of the specific rules below is to make the SAFETY-CRITICAL and CONTRACT paths
+# impossible to change without that being visible in the review, not to distribute ownership.
+
+# Default owner for everything.
+*                                   @zgranowitz
+
+# The cross-app contract. A change here ripples to the watch, Garmin, Mac, and widgets, and to the
+# faBolusGarmin repo's Monkey C mirror — the schema-drift checks enforce the mirror, but the semantics
+# are a human-review concern.
+/schema/                            @zgranowitz
+
+# Safety-critical core: the idempotency ledger, remote-command classification/validation, the send
+# dispositions, and the transport gating. Dosing changes get extra review (CONTRIBUTING.md).
+/Packages/faBolusCore/Sources/faBolusCore/RemoteBolusLedger.swift   @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/RemoteCommand.swift       @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/RemoteLink.swift          @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/RemoteTransport.swift     @zgranowitz
+
+# The pump-facing backend + the central therapy gate.
+/ios/faBolus/Data/TandemBackend.swift   @zgranowitz
+/ios/faBolus/Data/AppModel.swift        @zgranowitz
+
+# CI, the branch model, and governance — changes to how the project proves itself.
+/.github/                           @zgranowitz
+/BRANCHES.md                        @zgranowitz
+/CONTRIBUTING.md                    @zgranowitz
