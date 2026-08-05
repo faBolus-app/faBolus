@@ -120,6 +120,11 @@
       "items": { "type": "integer" },
       "description": "Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot."
     },
+    "historyEpochs": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "description": "Per-point source timestamps (Unix seconds) aligned 1:1 with `history` (same length, oldest→newest), so a remote plots each reading at its REAL time — a data gap renders as a gap, not evenly-spaced points. Absent ⇒ the remote falls back to assumed ~5-min spacing. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec: watchOS `Int` and Monkey C `Lang.Number` are signed 32-bit. (Was already emitted by the host + consumed by the Watch/Mac clients since the real-epochs fix, but undocumented here — additionalProperties is false, so document before any surface relies on it over the wire.)"
+    },
     "alerts": {
       "type": "array",
       "description": "Active pump alerts/alarms (statusRead reply) for a remote to view.",
