@@ -158,15 +158,15 @@ final class GarminRemoteBridge: NSObject {
             guard cmd.units != nil || (cmd.carbsGrams ?? 0) > 0 else { return }
             Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, peerId: "garmin") }
+                                             remoteEstimate: cmd.remoteEstimateUnits, from: .garmin, peerId: "garmin") }
         case .cancelBolus:
             // Just request the cancel; the in-flight delivery loop echoes the single final
             // status (cancelled · partial, or delivered if it finished first). No echo here, or
             // the watch would flip cancelled → delivered.
-            Task { await model.cancelBolus() }
+            Task { await model.cancelBolus(from: .garmin, peerId: "garmin") }
         case .dismissAlert:
             if let id = cmd.alertId, let k = cmd.alertKind {
-                Task { await model.dismissAlert(id: id, kind: k); send(model.statusCommand(includeHistory: true)) }
+                Task { await model.dismissAlert(id: id, kind: k, from: .garmin, peerId: "garmin"); send(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
             if cmd.forceGlucose == true {
