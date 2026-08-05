@@ -150,22 +150,11 @@ public final class AppModel {
     public var onNotificationsChange: (@MainActor ([PumpAlert]) -> Void)?
 
     // MARK: Child (locked) mode gate
-
-    /// Whether `feature` is permitted right now. In child mode, blocked actions no-op with a message.
-    /// This is the single enforcement point for the phone, the widget, **and** every remote (they all
-    /// route through the gated methods below), so a locked device can't be driven from a watch/Garmin.
-    private func childAllows(_ feature: ChildFeature) -> Bool { AppSettings.shared.childAllows(feature) }
-    private func childBlocked(_ feature: ChildFeature) -> Bool {
-        guard !childAllows(feature) else { return false }
-        lastError = "Locked (child mode): \(feature.label.lowercased()) is disabled."
-        return true
-    }
-    /// True when read-only mode is on (this phone is a safe viewer): blocks bolusing + pump control.
-    private func readOnlyBlocked(_ what: String = "This action") -> Bool {
-        guard AppSettings.shared.phoneReadOnly else { return false }
-        lastError = "\(what) is disabled — the app is in read-only mode."
-        return true
-    }
+    //
+    // P8: the old per-call `childBlocked(_:)` / `readOnlyBlocked(_:)` helpers were removed — child mode
+    // and phone/remote read-only are now decided (with the other three gates) in the single
+    // `AccessPolicy` evaluator, reached via `allow(_:from:peerId:)` / `accessDecision(_:from:peerId:)`
+    // below. The pure enforcement rules live in faBolusCore; this file only builds the context.
 
     // MARK: - P8 — single access-policy evaluator (the one decision point for every gate)
 
@@ -205,9 +194,12 @@ public final class AppModel {
         return d.allowed
     }
 
-    /// Clear a pump alert/alarm from the app (signed dismiss on the pump).
-    public func dismissNotification(_ n: PumpAlert, enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.dismissAlerts) { return }
+    /// Clear a pump alert/alarm from the app (signed dismiss on the pump). P8: gated through the single
+    /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
+    /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
+    public func dismissNotification(_ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
+                                    peerId: String = "local") async {
+        guard allow(.dismissNotification, from: surface, peerId: peerId) else { return }
         await source.dismissNotification(n); refresh()
     }
 
@@ -258,16 +250,20 @@ public final class AppModel {
         return cmd
     }
 
-    /// Clear a pump alert by id + kind (used by remotes' dismiss commands).
-    public func dismissAlert(id: Int, kind: Int, enforceChildLock: Bool = true) async {
-        // In read-only mode the phone's own alert-clearing is off unless the sub-option allows it.
-        // (`enforceChildLock` marks the phone's own path; remote dismisses pass false.)
-        if enforceChildLock, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
+    /// Clear a pump alert by id + kind (used by the phone UI and remotes' dismiss commands).
+    public func dismissAlert(id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
+                             peerId: String = "local") async {
+        // P8 deliberate deviation: dismiss is a `.childOnly` action, so the evaluator never read-only-
+        // blocks it (clearing an alert is low-risk and a viewer may need to). But the phone keeps its
+        // shipped `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off
+        // unless the user opted in. The pure evaluator can't know that per-user setting, so it is applied
+        // here for local surfaces only (remote dismisses were never subject to it). See [[p8-routing]].
+        if surface.isLocal, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
             lastError = "Clearing alerts is disabled in read-only mode."
             return
         }
         guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
-        await dismissNotification(n, enforceChildLock: enforceChildLock)
+        await dismissNotification(n, from: surface, peerId: peerId)
     }
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.
@@ -285,8 +281,6 @@ public final class AppModel {
         public var remoteEstimate: Double? = nil
         public var requestedUnits: Double? = nil // original request units, for the idempotency doseKey
         public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
-        /// False when an authorized peer (parent remote) originated it — child lock is bypassed for them.
-        public var enforceChildLock: Bool = true
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
     }
@@ -1002,7 +996,9 @@ public final class AppModel {
     static let remoteDivergenceLimitUnits = 0.10
 
     public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
-        if childBlocked(.bolus) { return }
+        // P8: the phone's own standard bolus, gated through the single evaluator (child mode + phone
+        // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
+        guard allow(.deliverBolus, from: .phoneUI) else { return }
         // Reverse approval (child-mode-only): when child mode is on and set to require a paired
         // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
         if AppSettings.shared.childModeEnabled, AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
@@ -1013,7 +1009,10 @@ public final class AppModel {
     }
 
     private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
-        if readOnlyBlocked("Bolus") { return }
+        // Re-checked here (not just in `deliverBolus`) so the reverse-approval-approved path
+        // (`resolveRemoteApproval`) is gated too. `.deliverBolus` is `.ledgeredDelivery` — the evaluator
+        // applies child + phone read-only; delivery never requires advanced control.
+        guard allow(.deliverBolus, from: .phoneUI) else { return }
         // P0: local boluses go through the SAME durable ledger as remotes, so an indeterminate local
         // outcome records a reconcilable entry (and blocks every surface) across a restart, and a global
         // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
@@ -1072,12 +1071,17 @@ public final class AppModel {
     /// Cancel a bolus that's waiting for remote approval (user backed out).
     public func cancelPendingApproval() { pendingApproval = nil }
 
-    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`.
+    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. P8: gated
+    /// through the single evaluator by `surface` — `.phoneUI` (child + phone read-only) for the phone's
+    /// own combo bolus; an authenticated peer passes `.macPeer` + its `peerId` so the evaluator enforces
+    /// the `.extendedBolus` peer permission and `remotesReadOnly` (owner decision 2026-08-05) while
+    /// bypassing child mode. The idempotency ledger keeps its own `local-ext:` keying, independent of the
+    /// gating `peerId`.
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double? = nil, bgMgdl: Int? = nil,
-                                     iobUnits: Double? = nil, enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.bolus) { return }
-        if enforceChildLock, readOnlyBlocked("Bolus") { return }   // phone's own bolus only; peers unaffected
+                                     iobUnits: Double? = nil,
+                                     from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        guard allow(.deliverExtendedBolus, from: surface, peerId: peerId) else { return }
         // P0: route extended boluses through the durable ledger too, so the global unresolved-delivery
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
         let requestId = "local-ext:" + UUID().uuidString
@@ -1101,8 +1105,11 @@ public final class AppModel {
         refresh()
     }
 
-    public func cancelBolus(enforceChildLock: Bool = true) async {
-        if enforceChildLock, childBlocked(.cancelBolus) { return }
+    /// Stop a running bolus. P8: `.childOnly` — the evaluator applies child mode (local/watch/Garmin) and
+    /// the authenticated-peer `.cancelBolus` permission, but NEVER read-only-blocks it: cancelling is a
+    /// safety STOP that must stay available to a read-only viewer on every surface.
+    public func cancelBolus(from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        guard allow(.cancelBolus, from: surface, peerId: peerId) else { return }
         await source.cancelBolus(); refresh()
     }
 
@@ -1406,7 +1413,7 @@ public final class AppModel {
 
     public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
                                    bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                                   enforceChildLock: Bool = true, peerId: String = "local") async {
+                                   from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
         // stack a second confirmation prompt for the same (peer, requestId).
         if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
@@ -1420,8 +1427,12 @@ public final class AppModel {
             return
         }
         if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
-        if enforceChildLock, childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+        // P8: gate the request through the single evaluator (child mode for local/watch/Garmin; the
+        // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
+        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
+        guard decision.allowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
         // Freeze the authoritative dose BEFORE presenting (audit C-02): the approver must see the real
@@ -1437,7 +1448,7 @@ public final class AppModel {
                                                 carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
                                                 bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
                                                 remoteEstimate: remoteEstimate, requestedUnits: units,
-                                                createdAt: Date(), enforceChildLock: enforceChildLock, peerId: peerId)
+                                                createdAt: Date(), peerId: peerId)
     }
 
     /// Drop a pending host-approval bolus bound to `peerId` (audit A-01). When a peer re-handshakes or
@@ -1486,9 +1497,13 @@ public final class AppModel {
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
                               bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                              enforceChildLock: Bool = true, peerId: String = "local") async {
-        if enforceChildLock, childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
+                              from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        // P8: gate through the single evaluator (child mode for local/watch/Garmin; the `.bolus` peer
+        // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
+        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
+        guard decision.allowed else {
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
+                               message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
         guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
@@ -1721,15 +1736,13 @@ public final class AppModel {
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
     public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async -> (delivered: Double, cancelled: Bool, error: String?) {
-        if childBlocked(.bolus) {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "Locked (child mode)"))
-            return (0, false, "Locked (child mode)")
-        }
-        // The Quick-Bolus widget is a LOCAL surface, so it must honor phone read-only (audit A-05) — the
-        // remote-peer paths intentionally bypass it, but the widget must not.
-        if readOnlyBlocked("Bolus") {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "faBolus is read-only"))
-            return (0, false, "faBolus is read-only")
+        // P8: the Quick-Bolus widget is a LOCAL surface, so the single evaluator applies child mode AND
+        // phone read-only (audit A-05 — the widget must honor read-only; the remote-peer paths bypass it).
+        let decision = accessDecision(.deliverBolus, from: .quickBolusWidget)
+        guard decision.allowed else {
+            let msg = decision.reason?.userMessage ?? "Not allowed"
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            return (0, false, msg)
         }
         // P0 + FB-03: durable ledger + global unresolved-delivery block, same as every other surface.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
