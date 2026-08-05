@@ -60,11 +60,18 @@ struct AppModelBehaviorTests {
 
     /// Run `body` with the global `AppSettings` gates in a known-clean state, restoring them after so
     /// the serialized suite never leaks child/read-only state between tests.
+    ///
+    /// P8: `advancedControlEnabled` is set ON here as the baseline. Every advanced / IDP-CRUD write is
+    /// reachable in the app ONLY behind `advancedControlAllowed` (opt-in + Mobi), and the funnel now
+    /// enforces that pump-capability + opt-in gate too (owner decision 2026-08-05, defense-in-depth). The
+    /// `MockBackend` is already a Mobi with `.mobiAdvanced` capabilities, so ON here reflects exactly the
+    /// context the UI guarantees for these writes; without it the funnel would (correctly) refuse them
+    /// with `.capabilityUnavailable`. A test that wants to prove the capability gate itself sets it false.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed }
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
+        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed; s.advancedControlEnabled = adv }
         try await body()
     }
 
