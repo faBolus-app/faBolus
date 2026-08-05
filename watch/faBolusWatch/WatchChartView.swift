@@ -14,9 +14,23 @@ struct WatchChartView: View {
         let ranges = model.chartRanges.isEmpty ? [6] : model.chartRanges
         return ranges[rangeIndex % ranges.count]
     }
-    /// ~5-min spacing → 12 points/hour; take the most recent window.
-    private var points: [(i: Int, mgdl: Int)] {
-        Array(model.history.suffix(windowHours * 12).enumerated()).map { ($0.offset, $0.element) }
+    /// Recent readings for the selected window, plotted against REAL time when the host sent per-point
+    /// timestamps (`historyDates`, same length as `history`) — so a data gap renders as a gap rather than
+    /// evenly-spaced dots (E5: the plot had no time axis, only uniform index spacing). Falls back to a
+    /// synthesized ~5-min spacing back from now when timestamps aren't available.
+    private var points: [(date: Date, mgdl: Int)] {
+        let h = model.history
+        guard !h.isEmpty else { return [] }
+        let dates = model.historyDates
+        if dates.count == h.count {
+            let cutoff = Date().addingTimeInterval(-Double(windowHours) * 3600)
+            return zip(dates, h).filter { $0.0 >= cutoff }.map { (date: $0.0, mgdl: $0.1) }
+        }
+        let recent = Array(h.suffix(windowHours * 12))   // ~5-min spacing → 12 points/hour
+        let now = Date()
+        return recent.enumerated().map { i, mgdl in
+            (date: now.addingTimeInterval(Double(i - recent.count) * 300), mgdl: mgdl)
+        }
     }
 
     private func cycleRange() {
@@ -40,15 +54,15 @@ struct WatchChartView: View {
                 Chart {
                     RectangleMark(yStart: .value("Low", 70), yEnd: .value("High", 180))
                         .foregroundStyle(.green.opacity(0.12))
-                    ForEach(points, id: \.i) { p in
-                        PointMark(x: .value("t", p.i), y: .value("bg", p.mgdl))
-                            .foregroundStyle(watchGlucoseColor(p.mgdl, stale: false))
+                    ForEach(points.indices, id: \.self) { idx in
+                        PointMark(x: .value("t", points[idx].date), y: .value("bg", points[idx].mgdl))
+                            .foregroundStyle(watchGlucoseColor(points[idx].mgdl, stale: false))
                             .symbolSize(10)
                     }
                 }
                 .chartYScale(domain: 40...300)
                 .chartYAxis { AxisMarks(values: [70, 180, 250]) }
-                .chartXAxis(.hidden)
+                .chartXAxis(.hidden)   // time is the X *value* (proportional spacing); labels stay off on the small face
             }
         }
         .padding(6)

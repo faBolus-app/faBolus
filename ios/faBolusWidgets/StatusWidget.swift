@@ -79,6 +79,17 @@ struct Sparkline: View {
     private var lo: Int { min(points.map { $0.mgdl }.min() ?? 70, 70) }
     private var hi: Int { max(points.map { $0.mgdl }.max() ?? 180, 180) }
 
+    // E5: plot x PROPORTIONAL to each point's own timestamp, not the array index — so a gap in the data
+    // (a dropped relay, a sensor gap) shows as a horizontal gap instead of being compressed into evenly
+    // spaced dots that misread as continuous.
+    private var t0: TimeInterval { (points.first?.t ?? Date()).timeIntervalSinceReferenceDate }
+    private var tSpan: TimeInterval {
+        max(1, ((points.last?.t ?? points.first?.t ?? Date()).timeIntervalSinceReferenceDate) - t0)
+    }
+    private func x(_ pt: WidgetSnapshot.Point, _ width: CGFloat) -> CGFloat {
+        width * CGFloat((pt.t.timeIntervalSinceReferenceDate - t0) / tSpan)
+    }
+
     private func y(_ v: Int, _ height: CGFloat) -> CGFloat {
         let span = max(hi - lo, 1)
         return height * (1 - CGFloat(v - lo) / CGFloat(span))
@@ -87,7 +98,6 @@ struct Sparkline: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let step = points.count > 1 ? size.width / CGFloat(points.count - 1) : 0
             ZStack {
                 // In-range band (70–180).
                 Rectangle().fill(.green.opacity(0.12))
@@ -97,7 +107,7 @@ struct Sparkline: View {
                 if points.count > 1 {
                     Path { p in
                         for (i, pt) in points.enumerated() {
-                            let point = CGPoint(x: CGFloat(i) * step, y: y(pt.mgdl, size.height))
+                            let point = CGPoint(x: x(pt, size.width), y: y(pt.mgdl, size.height))
                             if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
                         }
                     }
