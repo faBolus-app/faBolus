@@ -7,7 +7,7 @@ import SwiftUI
 struct BolusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusBolus", provider: FaBolusProvider()) { entry in
-            BolusWidgetView(snap: entry.snap)
+            BolusWidgetView(snap: entry.snap, now: entry.date)
                 .widgetURL(FaBolusDeepLink.bolus)
         }
         .configurationDisplayName("Bolus")
@@ -19,6 +19,7 @@ struct BolusWidget: Widget {
 struct BolusWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let snap: WidgetSnapshot
+    var now: Date = Date()
 
     var body: some View {
         switch family {
@@ -36,7 +37,7 @@ struct BolusWidgetView: View {
             VStack(spacing: 6) {
                 Image(systemName: "drop.fill").font(.system(size: 30)).foregroundStyle(.white)
                 Text("Bolus").font(.title3.weight(.bold)).foregroundStyle(.white)
-                if let g = snap.glucose, !snap.isGlucoseStale {
+                if let g = snap.glucose, !WidgetUI.isStale(snap, now: now) {
                     Text("\(g) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
                 }
             }
