@@ -163,6 +163,9 @@ public final class AppModel {
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
+    /// Same, for the failed/blocked-delivery notifications (§6 lastError Tier-2) — a fixed id would let a
+    /// second failure silently replace the first.
+    private var deliveryFailedSeq = 0
 
     /// Stable ids for the two condition-tracking safety notifications (§6, never-suppressible), so a
     /// re-raise replaces rather than stacks and recovery can withdraw the exact banner.
@@ -1106,6 +1109,7 @@ public final class AppModel {
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
         case .blocked(let msg), .failed(let msg):
             lastError = msg
+            notifyDeliveryFailed(msg)
         case .duplicateInFlight, .replay:
             break   // a fresh UUID means these don't occur for the local path
         }
@@ -1183,6 +1187,7 @@ public final class AppModel {
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
         case .blocked(let msg), .failed(let msg):
             lastError = msg
+            notifyDeliveryFailed(msg)
         case .duplicateInFlight, .replay:
             break
         }
@@ -1811,6 +1816,7 @@ public final class AppModel {
         case .failed(let msg):
             lastError = msg
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            notifyDeliveryFailed(msg)
         }
         refresh()
     }
@@ -1825,6 +1831,26 @@ public final class AppModel {
             category: .remoteBolusRejected, severity: .warning,
             title: "Remote bolus not delivered", body: message,
             dedupeKey: "remoteBolusRejected-\(rejectionSeq)")
+        notificationSink?(msg, [:], "")
+    }
+
+    /// Post a local notification when a bolus was ATTEMPTED-but-failed or was BLOCKED by the global
+    /// unresolved-delivery guard, so a user who isn't looking at the result learns the dose did NOT happen
+    /// (P9 §6 `lastError` Tier-2). `lastError` stays the synchronous op-result channel; this is the
+    /// additive notification/persistent-message role, exactly like `notifyRemoteBolusRejected`.
+    ///
+    /// Distinct from `.remoteBolusRejected` (a dose REFUSED before delivery by a policy/divergence/stale-
+    /// approval check — it never reached the pump) and, deliberately, NOT posted for an INDETERMINATE
+    /// outcome: "outcome unknown" may in fact have delivered, so it stays op-result only and its
+    /// authoritative resolution is owned by the never-suppressible `.bolusReconciliation` poster
+    /// (`reconcileUnresolvedDeliveries`). Posting "failed" for an indeterminate outcome would be a lie.
+    /// Best-effort — a no-op when no broker sink is installed (an out-of-process intent / a unit test).
+    private func notifyDeliveryFailed(_ message: String) {
+        deliveryFailedSeq += 1
+        let msg = NotificationBroker.Message(
+            category: .bolusDeliveryFailed, severity: .error,
+            title: "Bolus not delivered", body: message,
+            dedupeKey: "bolusDeliveryFailed-\(deliveryFailedSeq)")
         notificationSink?(msg, [:], "")
     }
 
@@ -1856,6 +1882,7 @@ public final class AppModel {
             return (deliveredUnits ?? 0, status == RemoteCommand.Status.cancelled.rawValue, nil)
         case .blocked(let msg):
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            notifyDeliveryFailed(msg)
             return (0, false, msg)
         case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
@@ -1870,6 +1897,7 @@ public final class AppModel {
         case .failed(let msg):
             lastError = msg
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            notifyDeliveryFailed(msg)
             return (0, false, msg)
         }
     }

@@ -260,6 +260,36 @@ struct AppModelBehaviorTests {
         }
     }
 
+    /// §6 `lastError` Tier-2 — a FAILED / BLOCKED delivery posts exactly one `.bolusDeliveryFailed`, so a
+    /// user who isn't watching the screen learns the dose did NOT happen; an INDETERMINATE outcome ("sent,
+    /// outcome unknown") posts NONE — it may in fact have delivered, so a "failed" banner would be a lie,
+    /// and its authoritative resolution belongs to the never-suppressible `.bolusReconciliation` poster.
+    /// Driven through the widget path (a public delivery entry with no reverse-approval branch) that shares
+    /// the one ledgered-delivery outcome mapping with every surface.
+    @Test func failedDeliveryNotifiesButIndeterminateDoesNot() async {
+        try? await withCleanSettings {
+            // FAILED: not connected → a determinate `.notConnected` throw → outcome `.failed`.
+            let (m1, _, _) = await makeModel(connected: false)
+            var posted1: [NotificationBroker.Message] = []
+            m1.notificationSink = { msg, _, _ in posted1.append(msg) }
+            let r1 = await m1.deliverWidgetBolus(requestId: "df-fail", units: 1.0)
+            #expect(r1.error != nil)
+            let failed = posted1.filter { $0.category == .bolusDeliveryFailed }
+            #expect(failed.count == 1)
+            #expect(failed.first?.title == "Bolus not delivered")
+
+            // INDETERMINATE: sent but outcome unknown → NO delivery-FAILED notification (op-result only).
+            let (m2, backend2, _) = await makeModel(connected: true)
+            backend2.forceIndeterminateNextDelivery = true
+            var posted2: [NotificationBroker.Message] = []
+            m2.notificationSink = { msg, _, _ in posted2.append(msg) }
+            let r2 = await m2.deliverWidgetBolus(requestId: "df-indet", units: 1.0)
+            #expect(r2.error != nil)   // "verify on the pump"
+            #expect(posted2.allSatisfy { $0.category != .bolusDeliveryFailed },
+                    "an indeterminate outcome must never post a delivery-FAILED notification")
+        }
+    }
+
     @Test func readOnlyBlocksWidgetButNotRemotePeer() async {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel(connected: true)
