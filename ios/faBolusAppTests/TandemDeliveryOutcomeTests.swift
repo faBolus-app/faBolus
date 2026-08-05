@@ -142,4 +142,28 @@ struct TandemDeliveryOutcomeTests {
         let e = await capture { try await deliver(b) }
         #expect(indeterminate(e))
     }
+
+    // MARK: R3-H — frozen metadata via the seam
+
+    /// The InitiateBolus cargo actually WRITTEN to the wire encodes exactly the approved inputs — dose,
+    /// carbs, BG, and the **frozen** calculator IOB — byte-for-byte. This proves reconciliation compares
+    /// against what was truly sent, not a later recompute, and that the frozen IOB (not a live snapshot) is
+    /// what reaches the pump. The transport seam (`FakePumpTransport.sent`) is the source of the sent bytes.
+    @Test func sentInitiateCargoFreezesTheApprovedInputs() async throws {
+        let (b, fake) = make()
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
+        let delivered = try await b.deliverBolus(units: 2.0, carbsGrams: 45, bgMgdl: 180, iobUnits: 0.5)
+        #expect(delivered == 2.0)
+
+        // The bytes that went out must equal what the approved inputs canonically encode to: whole 2.0 U in
+        // foodVolume, FOOD1 (carbs present), frozen IOB 0.5 U → 500 mu, carbs 45, BG 180.
+        let sent = try #require(fake.lastSent(InitiateBolusRequest.props.opCode))
+        #expect(sent.allowDelivery)   // the initiate is the one delivery-authorized write
+        let expected = try InitiateBolusRequest(
+            validating: 2000, bolusID: bolusId, bolusTypeBitmask: InitiateBolusRequest.bitFood1,
+            foodVolume: 2000, correctionVolume: 0, bolusCarbs: 45, bolusBG: 180, bolusIOB: 500)
+        #expect(sent.cargo == expected.cargo)
+    }
 }

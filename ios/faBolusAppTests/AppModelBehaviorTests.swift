@@ -424,6 +424,10 @@ struct AppModelBehaviorTests {
             ("deleteProfileSegment",{ await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }),
             ("setCgmHighLowAlert",  { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }),
         ]
+        // R3-F: these entries must equal the declared ack-gated set EXACTLY — a new `.unverifiedAck` case
+        // added to `GatedPumpWrite` (or one removed here) fails this, so the test and the authoritative
+        // declared set that seeds P8 cannot silently drift apart.
+        #expect(Set(entries.map(\.0)) == Set(GatedPumpWrite.allCases.filter { $0.gate == .unverifiedAck }.map(\.rawValue)))
         for (name, invoke) in entries {
             try? await withCleanSettings {
                 let (model, backend, _) = await makeModel(connected: true)
