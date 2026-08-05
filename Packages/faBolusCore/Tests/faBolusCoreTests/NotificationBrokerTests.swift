@@ -110,6 +110,36 @@ import Foundation
         #expect(d.nextState.deliveredToday == 1)
     }
 
+    @Test func forceProtectedSafetyClassesAreNeverAutoSuppressed() {
+        let rule = AlertRule(name: "snooze all", kinds: [], startMinuteOfDay: 0, endMinuteOfDay: 0, action: .autoSnooze)
+        let now = at(12, 0)
+        // A CGM-loss alert (kind cgmAlert): the rule WOULD match — AlertRuleEngine returns .autoSnooze…
+        let cgm = PumpAlert(id: 27, kind: .cgmAlert, title: "Failed connection")
+        #expect(AlertRuleEngine.action(for: cgm, rules: [rule], now: now, calendar: cal, glucose: nil) == .autoSnooze)
+        // …but force-protection overrides it to nil (the closed hole).
+        #expect(B.autoSuppression(for: cgm, safetyClass: .cgmDataLoss, rules: [rule], now: now, calendar: cal, glucose: nil) == nil)
+        // Low-insulin (kind .alert) and occlusion are force-protected too.
+        let low = PumpAlert(id: 0, kind: .alert, title: "Low insulin")
+        #expect(B.autoSuppression(for: low, safetyClass: .lowInsulin, rules: [rule], now: now, calendar: cal, glucose: nil) == nil)
+        let occ = PumpAlert(id: 2, kind: .alarm, title: "Occlusion")
+        #expect(B.autoSuppression(for: occ, safetyClass: .occlusion, rules: [rule], now: now, calendar: cal, glucose: nil) == nil)
+        // A generic .other alert with the SAME rule still auto-snoozes (protection is by class, not blanket).
+        let other = PumpAlert(id: 99, kind: .alert, title: "Some reminder")
+        #expect(B.autoSuppression(for: other, safetyClass: .other, rules: [rule], now: now, calendar: cal, glucose: nil) == .autoSnooze)
+    }
+
+    @Test func semanticClassNotPumpKindDrivesProtection() {
+        // Two kind-.alert alerts + the same matching rule: the low-insulin one is protected, the plain one
+        // is not — proving the SEMANTIC class (from the backend), not the pump kind, drives force-protection.
+        let rule = AlertRule(action: .autoSnooze)   // default: full-day, any eligible kind
+        let now = at(9, 0)
+        let low = PumpAlert(id: 0, kind: .alert, title: "Low insulin")
+        let plain = PumpAlert(id: 99, kind: .alert, title: "Other")
+        #expect(B.autoSuppression(for: low, safetyClass: .lowInsulin, rules: [rule], now: now, calendar: cal, glucose: nil) == nil)
+        #expect(B.autoSuppression(for: plain, safetyClass: .other, rules: [rule], now: now, calendar: cal, glucose: nil) == .autoSnooze)
+        #expect(B.AlertSafetyClass.allCases.filter { $0.isForceProtected }.count == 3)
+    }
+
     @Test func stateAndSettingsRoundTripCodable() throws {
         let state = B.State(lastDeliveredAt: ["pumpAlert": at(9, 0)], dayKey: "2026-1-1",
                             deliveredToday: 3, mealDeliveredToday: 1, notifiedEpisodes: ["ep1"])
