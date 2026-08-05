@@ -60,7 +60,7 @@ final class FakePumpTransport: PumpTransport {
 
     func sendAwaitingResponse(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
                               allowInsulinDelivery: Bool, responseOpCode: UInt8?,
-                              deadline: TimeInterval) async throws -> [UInt8] {
+                              deadline: TimeInterval, serialized: Bool = false) async throws -> [UInt8] {
         // A pre-write failure throws before the write is recorded (clean pre-write failure).
         if let e = preWriteError[message.opCode] { throw e }
         // The write goes out first (matches the real client), THEN we await the reply.
