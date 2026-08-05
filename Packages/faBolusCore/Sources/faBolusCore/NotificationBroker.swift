@@ -225,4 +225,32 @@ public enum NotificationBroker {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
     }
+
+    // MARK: - Force-protection (§6: safety alerts a user auto-rule must never suppress)
+
+    /// Safety classification of a pump alert, for force-protection against user auto-rules. Computed by the
+    /// backend from the pump's OWN alert identity — the PumpX2 notification-bit → semantics mapping lives at
+    /// the decode boundary (`TandemBackend`), NOT here, so faBolusCore never hard-codes PumpX2 bit values.
+    /// `.other` alerts follow the user's `AlertRule`s normally; every protected class is NEVER auto-snoozed
+    /// or auto-dismissed by a rule.
+    public enum AlertSafetyClass: String, Sendable, Codable, CaseIterable {
+        case occlusion        // occlusion / pump malfunction (already an alarm, protected here independently)
+        case cgmDataLoss      // CGM unavailable / sensor failed / out-of-range / failed connection
+        case lowInsulin       // low insulin / empty reservoir
+        case other
+        public var isForceProtected: Bool { self != .other }
+    }
+
+    /// The auto-rule action for `alert`, with safety force-protection applied ON TOP of `AlertRuleEngine`.
+    /// Returns `nil` (never auto-act) for any force-protected class REGARDLESS of a matching user rule —
+    /// closing the shipped hole (verified 2026-08-05) where only alarms were protected, so a user rule
+    /// could auto-snooze/dismiss a CGM-loss or low-insulin alert (kinds 1/3). For `.other`, delegates to
+    /// the pure, tested `AlertRuleEngine.action`. The backend calls THIS instead of `AlertRuleEngine`
+    /// directly at its notification-merge chokepoint.
+    public static func autoSuppression(for alert: PumpAlert, safetyClass: AlertSafetyClass,
+                                       rules: [AlertRule], now: Date, calendar: Calendar = .current,
+                                       glucose: Int?) -> AlertAction? {
+        if safetyClass.isForceProtected { return nil }
+        return AlertRuleEngine.action(for: alert, rules: rules, now: now, calendar: calendar, glucose: glucose)
+    }
 }
