@@ -30,6 +30,25 @@ import Foundation
         #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"])
     }
 
+    @Test func bolusDeliveryFailedIsGovernedNotASafetyCategory() {
+        // §6 `lastError` Tier-2: a FAILED / BLOCKED delivery notification. The owner decided it is
+        // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON, can be disabled, and can be
+        // snoozed. (The INDETERMINATE outcome it is deliberately NOT posted for stays a
+        // `bolusReconciliation` concern, and that category IS never-suppressible.)
+        #expect(!C.bolusDeliveryFailed.neverSuppressible)
+        #expect(C.bolusDeliveryFailed.defaultEnabled)
+        // Disabled → suppressed.
+        let off = B.decide(msg(.bolusDeliveryFailed),
+                           settings: [.bolusDeliveryFailed: B.CategorySettings(enabled: false)],
+                           state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(!off.deliver && off.reason == .categoryDisabled)
+        // Snoozed → suppressed until the deadline (a governed category honors snooze; a safety one can't).
+        let snoozed = B.snooze(B.State(), category: .bolusDeliveryFailed, until: at(10, 0))
+        let d = B.decide(msg(.bolusDeliveryFailed), settings: enabled(.bolusDeliveryFailed),
+                         state: snoozed, now: at(9, 0), calendar: cal)
+        #expect(!d.deliver && d.reason == .snoozed)
+    }
+
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
         // Maximally hostile config for EVERY category: disabled, all-day quiet, huge rate-limit.
         let settings = Dictionary(uniqueKeysWithValues: C.allCases.map {
