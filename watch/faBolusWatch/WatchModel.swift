@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+import WatchKit
 
 /// Watch-side remote state. A thin subclass of the shared `RemoteClientModel` (which owns the
 /// phone↔remote command handling over `RemoteLink`) that adds the watch's direct-CGM failover:
@@ -44,6 +45,11 @@ final class WatchModel: RemoteClientModel {
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)
         if r { stopDirect() } else { startDirect() }
+    }
+
+    /// S8: a new pump alert arrived — buzz the wrist so it isn't a silent list entry.
+    override func didSurfaceNewAlerts(_ newAlerts: [RemoteCommand.RemoteAlert]) {
+        WKInterfaceDevice.current().play(.notification)
     }
 
     private func startDirect() { for s in directSources { Task { await s.start() } } }

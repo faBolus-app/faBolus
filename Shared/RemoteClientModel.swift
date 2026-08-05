@@ -43,6 +43,9 @@ class RemoteClientModel {
     var readOnly: Bool = false
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
+    /// Identities (kind+id) of the previous alert set, to detect a newly-arrived alert. `nil` until the
+    /// first status push arrives, so the priming load doesn't fire the interrupt (S8).
+    private var lastAlertIdentities: Set<String>?
     var reachable: Bool = false
     var lastStatus: RemoteCommand.Status?
     var statusMessage: String?
@@ -93,6 +96,11 @@ class RemoteClientModel {
     /// Called when the link's reachability changes. Base updates `reachable`; subclasses override to
     /// add behavior (e.g. start/stop a direct-CGM failover) and must call `super`.
     func reachabilityDidChange(_ r: Bool) { reachable = r }
+
+    /// Called when a status push carries an alert identity (kind+id) not present in the previous push — a
+    /// newly-arrived pump alert. Base is a no-op; platform subclasses override to actively surface it
+    /// (watch haptic, Mac sound), since these surfaces otherwise render alerts as a silent list (S8).
+    func didSurfaceNewAlerts(_ newAlerts: [RemoteCommand.RemoteAlert]) {}
 
     // MARK: Derived display
 
@@ -187,7 +195,17 @@ class RemoteClientModel {
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let b = cmd.basalRate { basalRate = b }
             if let ro = cmd.remotesReadOnly { readOnly = ro }
-            if let a = cmd.alerts { alerts = a }
+            if let a = cmd.alerts {
+                // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
+                // identity (so an equal-count replacement still counts) and actively surface it — but not
+                // on the priming first push (lastAlertIdentities == nil).
+                let fresh = RemoteCommand.newAlertIdentities(previous: lastAlertIdentities ?? [], current: a)
+                if lastAlertIdentities != nil, !fresh.isEmpty {
+                    didSurfaceNewAlerts(a.filter { fresh.contains($0.identity) })
+                }
+                lastAlertIdentities = Set(a.map(\.identity))
+                alerts = a
+            }
             // Mirror the phone's staleness policy so the remote marks/hides + stops using stale
             // readings for carb→unit exactly like the phone.
             if let s = cmd.glucoseStaleMinutes { GlucoseFreshness.staleAfter = TimeInterval(s) * 60 }
