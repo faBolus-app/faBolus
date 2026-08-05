@@ -46,6 +46,30 @@ public final class TandemBackend: NSObject, PumpBackend {
                   title: n.title, detail: n.detail ?? "", isDismissable: n.dismissable)
     }
 
+    /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity
+    /// (the PumpX2 kind + bit id, per `AlertStatusResponse`/`AlarmStatusResponse`/`CGMAlertStatusResponse`
+    /// name tables). This bit→semantics mapping is deliberately here at the decode boundary — faBolusCore
+    /// never hard-codes PumpX2 bit values — and feeds `autoSuppression` so a user auto-rule can never
+    /// snooze the loss-of-coverage set. Glucose-LEVEL CGM alerts (high / low / rising) stay `.other`, so
+    /// the user's conditional rules still apply to them.
+    static func safetyClass(kind: NotificationKind, id: Int) -> NotificationBroker.AlertSafetyClass {
+        switch kind {
+        case .alarm:
+            return (id == 2 || id == 26) ? .occlusion : .other        // Occlusion (delivery stopped)
+        case .alert:
+            if id == 0 || id == 17 { return .lowInsulin }              // Low insulin in the cartridge
+            if id == 40 || id == 48 { return .cgmDataLoss }            // CGM error / CGM unavailable
+            return .other
+        case .cgmAlert:
+            switch id {
+            case 11, 13, 14, 27, 39: return .cgmDataLoss              // sensor failed/expired, out of range, failed connection, transmitter expired
+            default: return .other                                    // high/low/rising/calibration → user-ruleable
+            }
+        case .reminder:
+            return .other
+        }
+    }
+
     // Active notifications by kind (merged into `activeNotifications`, most serious first).
     private var alarmList: [PumpNotification] = []
     private var malfunctionList: [PumpNotification] = []
@@ -85,8 +109,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             let key = noteKey(n)
             if acknowledged[key] != nil || protectedKeys.contains(key) { continue }
             let alert = Self.toAlert(n)
-            guard let action = AlertRuleEngine.action(for: alert, rules: rules, now: now,
-                                                      glucose: snapshot.glucose) else { continue }
+            // §6 force-protection: `autoSuppression` returns nil (never auto-acted) for the loss-of-coverage
+            // safety set — occlusion / CGM-data-loss / low-insulin — regardless of a matching rule, and
+            // delegates `.other` to `AlertRuleEngine` exactly as before. This closes the hole where a
+            // user auto-rule could snooze a CGM-loss (kind 3) or low-insulin (kind 1) alert.
+            let klass = Self.safetyClass(kind: n.kind, id: n.id)
+            guard let action = NotificationBroker.autoSuppression(for: alert, safetyClass: klass, rules: rules,
+                                                                  now: now, glucose: snapshot.glucose) else { continue }
             acknowledged[key] = now   // hide locally + stop re-notifying (both actions)
             if action == .autoDismiss, capabilities.supportsRemoteAlertDismiss {
                 Task { [weak self] in await self?.dismissNotification(alert) }

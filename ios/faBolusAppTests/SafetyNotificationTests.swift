@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import faBolusCore
+import PumpX2Messages
 @testable import faBolus
 
 /// P9 step 4 — the three never-suppressible §6 safety notifications synthesized from their detection
@@ -32,6 +33,32 @@ import faBolusCore
         #expect(SafetyEdge.freshness(wasFresh: true, isFresh: false) == .raise)   // had readings, lost them
         #expect(SafetyEdge.freshness(wasFresh: false, isFresh: true) == .clear)   // resumed
         #expect(SafetyEdge.freshness(wasFresh: true, isFresh: true) == .none)     // steady
+    }
+
+    // MARK: Pump-identity → safety class (increment 5 — the reroute through autoSuppression)
+
+    @Test func safetyClassMapsPumpIdentitiesToTheForceProtectedSet() {
+        typealias K = NotificationKind
+        // Occlusion (delivery stopped) — the two occlusion alarm bits.
+        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 2) == .occlusion)
+        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 26) == .occlusion)
+        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 8) == .other)        // "Empty cartridge" ≠ occlusion class
+        // Low insulin in the cartridge.
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 0) == .lowInsulin)
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 17) == .lowInsulin)
+        // CGM loss reported on the ALERT bitmap.
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss) // CGM unavailable
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss) // CGM error
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)        // Max basal rate
+        // CGM loss on the CGM bitmap (sensor failed/expired, out of range, failed connection, transmitter expired).
+        for id in [11, 13, 14, 27, 39] {
+            #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: id) == .cgmDataLoss)
+        }
+        // Glucose-LEVEL CGM alerts stay user-ruleable (.other) — force-protection is loss-of-coverage only.
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 2) == .other)     // High glucose
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)     // Low glucose
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)    // Sensor expiring (data still flows)
+        #expect(TandemBackend.safetyClass(kind: K.reminder, id: 0) == .other)
     }
 
     // MARK: Reconciliation notification (integration)
