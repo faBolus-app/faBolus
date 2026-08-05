@@ -20,17 +20,32 @@ struct GlucoseProvider: TimelineProvider {
         completion(GlucoseEntry(date: Date(), snap: WidgetStore.load() ?? .placeholder))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<GlucoseEntry>) -> Void) {
-        let entry = GlucoseEntry(date: Date(), snap: WidgetStore.load() ?? .placeholder)
-        // Re-render every 5 min so the reading ages out to "--" even if the app doesn't push.
-        let next = Calendar.current.date(byAdding: .minute, value: 5, to: Date()) ?? Date().addingTimeInterval(300)
-        completion(Timeline(entries: [entry], policy: .after(next)))
+        let snap = WidgetStore.load() ?? .placeholder
+        let now = Date()
+        // P10 (group A) — entries at the stale/hide crossings so the complication greys/hides at the
+        // right moment; a complication renders ahead of time, so the view keys off each ENTRY's date,
+        // not wall-clock. Mirrors the iOS + Mac providers. The 5-min fallback still ages it out if the
+        // app never pushes.
+        var dates: [Date] = [now]
+        if let d = snap.glucoseDate {
+            let stale = d.addingTimeInterval(snap.staleAfterSec ?? 6 * 60)
+            if stale > now { dates.append(stale) }
+            if let hide = snap.hideAfterSec {
+                let hideAt = d.addingTimeInterval(max(hide, snap.staleAfterSec ?? 6 * 60))
+                if hideAt > now { dates.append(hideAt) }
+            }
+        }
+        let fallback = now.addingTimeInterval(5 * 60)
+        dates.append(fallback)
+        let entries = Set(dates).sorted().map { GlucoseEntry(date: $0, snap: snap) }
+        completion(Timeline(entries: entries, policy: .after(fallback)))
     }
 }
 
 struct GlucoseComplication: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusGlucose", provider: GlucoseProvider()) { entry in
-            GlucoseComplicationView(snap: entry.snap)
+            GlucoseComplicationView(snap: entry.snap, now: entry.date)
                 .containerBackground(.clear, for: .widget)
         }
         .configurationDisplayName("Glucose")
@@ -49,17 +64,25 @@ struct GlucoseComplication: Widget {
     }
 }
 
-private func color(_ snap: WidgetSnapshot) -> Color {
-    guard let g = snap.glucose, !snap.isGlucoseStale else { return .gray }
+private func color(_ snap: WidgetSnapshot, now: Date) -> Color {
+    guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
     switch g { case ..<70: return .red; case 70..<180: return .green; case 180..<250: return .yellow; default: return .orange }
 }
 
 struct GlucoseComplicationView: View {
     @Environment(\.widgetFamily) private var family
     let snap: WidgetSnapshot
+    /// Entry display date — staleness is evaluated against this, not wall-clock (see the iOS widgets).
+    var now: Date = Date()
 
-    private var value: String { snap.displayGlucose }
-    private var arrow: String { snap.isGlucoseStale ? "" : snap.trendArrow }
+    // P10 (group A): honor the published freshness policy at the entry date (grey once stale, "--" once
+    // hidden), consistent with the iOS + Mac widgets — instead of the old 6-min wall-clock hardcode.
+    private var value: String {
+        if snap.isHidden(asOf: now) { return "--" }
+        guard let g = snap.glucose, g > 0 else { return "--" }
+        return "\(g)"
+    }
+    private var arrow: String { snap.isStale(asOf: now) ? "" : snap.trendArrow }
 
     var body: some View {
         switch family {
@@ -68,20 +91,27 @@ struct GlucoseComplicationView: View {
         #if os(watchOS)
         case .accessoryCorner:
             Text(value).font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(color(snap))
+                .foregroundStyle(color(snap, now: now))
                 .widgetLabel { Text("Glucose \(value) \(arrow)") }
         #endif
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(color(snap))
+                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
                 VStack(alignment: .leading) {
                     Text(arrow.isEmpty ? "—" : arrow)
-                    Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                    // Sample age (orange once stale), replacing a static "mg/dL" — so a stale relay is
+                    // visible on the wrist, matching the iOS + Mac widgets (group A / C7).
+                    if let d = snap.glucoseDate {
+                        Text(d, style: .relative).font(.caption2)
+                            .foregroundStyle(snap.isStale(asOf: now) ? .orange : .secondary)
+                    } else {
+                        Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
             }
         default: // accessoryCircular
             VStack(spacing: 0) {
-                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(color(snap))
+                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
                 if !arrow.isEmpty { Text(arrow).font(.caption2) }
             }
         }
