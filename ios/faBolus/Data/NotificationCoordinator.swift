@@ -168,18 +168,23 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     // MARK: Categories
 
-    /// Register our categories **without** clobbering any the system already knows (the old code called
-    /// `setNotificationCategories` destructively, which would drop a category added elsewhere).
+    /// Register the app's notification categories. The coordinator is now the **sole** category
+    /// registrar (it folded in `PumpAlertNotifier`, the only one), so setting our complete owned set is
+    /// non-destructive by construction — there is no category "added elsewhere" to preserve.
+    ///
+    /// Done **synchronously on the main actor**, exactly as the previously-green `PumpAlertNotifier` did.
+    /// The earlier attempt used `getNotificationCategories`, whose completion runs on a background queue;
+    /// capturing `self` (a `@MainActor` class) there made the closure `@MainActor`-inferred, and CI's
+    /// Xcode 16.4 runtime traps when it runs off-main (a SIGTRAP at launch — the 26.6 runtime relaxes
+    /// this, so it didn't reproduce locally). If a second registrar is ever added, revisit with a
+    /// main-actor-hopping merge rather than reintroducing a `self`-capturing background completion.
     private func registerCategories() {
         let clear = UNNotificationAction(identifier: "CLEAR", title: "Clear",
                                          options: [.authenticationRequired])
-        let ours = UNNotificationCategory(identifier: Self.pumpAlertCategory, actions: [clear],
-                                          intentIdentifiers: [], options: [])
-        center.getNotificationCategories { existing in
-            var merged = existing.filter { $0.identifier != Self.pumpAlertCategory }
-            merged.insert(ours)
-            self.center.setNotificationCategories(merged)
-        }
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.pumpAlertCategory, actions: [clear],
+                                   intentIdentifiers: [], options: [])
+        ])
     }
 
     // MARK: Delegate
