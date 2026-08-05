@@ -45,6 +45,7 @@ struct FaBolusApp: App {
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     ICloudSettingsSync.shared.start()   // optional; no-op unless built with ICLOUD_SYNC
                     AppSettings.shared.syncWidgetConfig()
+                    model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
                     if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
@@ -58,6 +59,12 @@ struct FaBolusApp: App {
                     }
                 }
                 .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }
+                // A-05: republish the Quick-Bolus widget's lock the instant a gate that governs it toggles
+                // (local read-only, or child mode / its allowed set), so the pad greys without waiting for
+                // the next pump update. Only the gates that affect `.deliverBolus` from a local surface.
+                .onChange(of: settings.phoneReadOnly) { _, _ in model.publishWidgetLockState() }
+                .onChange(of: settings.childModeEnabled) { _, _ in model.publishWidgetLockState() }
+                .onChange(of: settings.childAllowed) { _, _ in model.publishWidgetLockState() }
                 .onOpenURL { url in
                     if url.scheme == FaBolusDeepLink.scheme {
                         // Widget tap-to-bolus / open (fabolus://bolus). Opens the confirm flow.

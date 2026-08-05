@@ -24,6 +24,11 @@ struct QuickBolusView: View {
     private var draft: Double { WidgetBolusStore.draft }
     private var progress: Int { WidgetBolusStore.progress() }
     private var status: WidgetBolusStatus { WidgetBolusStore.status() }
+    /// A-05: whether bolusing is locked (phone read-only, or child mode with .bolus disallowed). Computed
+    /// app-side by the single AccessPolicy evaluator and mirrored to the App Group — the widget only reads
+    /// it, never re-deriving the gate. When set, the entry + confirm pad is replaced by a locked notice.
+    private var bolusLocked: Bool { WidgetBolusStore.bolusLocked }
+    private var lockReason: String { WidgetBolusStore.bolusLockReason }
     /// The amount as text with its unit ("1.50 U" or "30 g").
     private var amountLabel: String {
         mode == "carbs" ? "\(Int(draft)) g" : String(format: "%.2f U", draft)
@@ -40,7 +45,12 @@ struct QuickBolusView: View {
             case .failed:     doneBody(icon: "exclamationmark.triangle.fill",
                                        text: status.message.isEmpty ? "Bolus failed" : status.message)
             case .idle:
-                if !snap.connected { notConnectedBody }
+                // A-05: a locked gate replaces the interactive pad entirely (takes precedence over the
+                // not-connected notice — "locked" is the definitive reason bolusing is unavailable). The
+                // in-flight cases above are untouched: a bolus already delivering keeps its Cancel, which
+                // the evaluator never read-only-blocks.
+                if bolusLocked { lockedBody }
+                else if !snap.connected { notConnectedBody }
                 else if stage == "confirm" { confirmBody }
                 else { amountBody }
             }
@@ -125,6 +135,27 @@ struct QuickBolusView: View {
                 Text("Pump not connected — open app")
                     .font(.caption2).multilineTextAlignment(.center)
             }.foregroundStyle(.white.opacity(0.9)).frame(maxWidth: .infinity)
+        }
+        Spacer(minLength: 0)
+    }
+
+    // A-05: bolusing is locked host-side (read-only / child mode). No entry or confirm affordances — just
+    // a dimmed lock notice that opens the app (where the setting lives). None of the bolus App Intents are
+    // reachable from here, so a tap can't start a dose the host would refuse.
+    @ViewBuilder private var lockedBody: some View {
+        Spacer(minLength: 0)
+        Link(destination: FaBolusDeepLink.open) {
+            VStack(spacing: 3) {
+                Image(systemName: "lock.fill").font(.title3)
+                Text("Bolus locked").font(.caption.weight(.semibold))
+                if !lockReason.isEmpty {
+                    Text(lockReason).font(.caption2).opacity(0.85)
+                }
+                Text("Open faBolus").font(.caption2).opacity(0.7)
+            }
+            .foregroundStyle(.white.opacity(0.85))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
         }
         Spacer(minLength: 0)
     }
