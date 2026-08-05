@@ -144,19 +144,23 @@ public enum NotificationBroker {
         public var deliveredToday: Int
         public var mealDeliveredToday: Int
         public var notifiedEpisodes: Set<String>
+        /// User "snooze this category until T", keyed by `Category.rawValue`. **Optional on purpose** so an
+        /// already-persisted v1 blob (written before this field existed) still decodes — a missing key →
+        /// `nil` → treated as no snooze, rather than failing the whole decode and dropping the day counters.
+        public var snoozedUntil: [String: Date]?
         public init(lastDeliveredAt: [String: Date] = [:], dayKey: String = "",
                     deliveredToday: Int = 0, mealDeliveredToday: Int = 0,
-                    notifiedEpisodes: Set<String> = []) {
+                    notifiedEpisodes: Set<String> = [], snoozedUntil: [String: Date]? = nil) {
             self.lastDeliveredAt = lastDeliveredAt; self.dayKey = dayKey
             self.deliveredToday = deliveredToday; self.mealDeliveredToday = mealDeliveredToday
-            self.notifiedEpisodes = notifiedEpisodes
+            self.notifiedEpisodes = notifiedEpisodes; self.snoozedUntil = snoozedUntil
         }
     }
 
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached, episodeAlreadyNotified
+        case categoryDisabled, snoozed, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached, episodeAlreadyNotified
     }
 
     public struct Decision: Sendable, Equatable {
@@ -201,6 +205,10 @@ public enum NotificationBroker {
         let cfg = settings[message.category] ?? .defaults(for: message.category)
         if !cfg.enabled { return suppress(.categoryDisabled) }
 
+        // User snooze: suppress this category until its deadline. Placed BELOW the `neverSuppressible`
+        // return above, so a snooze can never silence pumpDisconnect / bolusReconciliation / cgmDataLoss.
+        if let until = s.snoozedUntil?[message.category.rawValue], now < until { return suppress(.snoozed) }
+
         // One-notification-per-episode: a governed repeat of an already-notified episode is dropped.
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
@@ -224,6 +232,18 @@ public enum NotificationBroker {
     public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+
+    /// Record a "snooze this category until `until`" into `state`, returning the next state. **Refuses a
+    /// `neverSuppressible` category** — the write side guards the safety invariant in addition to `decide`
+    /// bypassing it on the read side, so no code path (or corrupt input) can ever snooze a safety alert.
+    public static func snooze(_ state: State, category: Category, until: Date) -> State {
+        guard !category.neverSuppressible else { return state }
+        var out = state
+        var m = out.snoozedUntil ?? [:]
+        m[category.rawValue] = until
+        out.snoozedUntil = m
+        return out
     }
 
     // MARK: - Force-protection (§6: safety alerts a user auto-rule must never suppress)
