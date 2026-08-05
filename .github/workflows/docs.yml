@@ -3,7 +3,13 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: [docs/**, mkdocs.yml, .github/workflows/docs.yml]
+    paths: [docs/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
+  # Build (never deploy) on PRs that touch docs, so a broken nav entry or a dead link is caught in
+  # review. Without this, `mkdocs build --strict` ran for the first time on `main` — the branch that
+  # publishes fabolus.org through the github-pages environment — where a failure is a live problem
+  # rather than a red check on a PR.
+  pull_request:
+    paths: [docs/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
   workflow_dispatch:
 
 permissions:
@@ -23,13 +29,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install mkdocs-material
+      # Pinned. `pip install mkdocs-material` unpinned meant an upstream release could turn `main`
+      # red with zero commits from us — on the branch that publishes the site — and the failure would
+      # look like our regression. Bump this file deliberately, in a PR, where the PR trigger above
+      # builds it first.
+      - run: pip install -r requirements-docs.txt
       - run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
+    # Deploy only from `main`. A PR build must prove the docs compile without touching the live site.
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

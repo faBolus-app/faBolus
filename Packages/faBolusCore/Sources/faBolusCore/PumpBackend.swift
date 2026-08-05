@@ -64,10 +64,12 @@ public protocol PumpBackend: AnyObject {
     // MARK: - Durable unknown-outcome recovery (P0)
 
     /// Called by the backend the instant the pump grants a bolus permission and assigns a bolus id —
-    /// **before** the initiate is written, so the host can persist the id durably and later reconcile an
-    /// outcome that was lost to a timeout/disconnect/crash. This is the explicit, deterministically-testable
-    /// ownership link the host uses instead of an unobserved broadcast.
-    var onBolusIdAssigned: (@MainActor (Int) -> Void)? { get set }
+    /// **before** any metadata/initiate is written. The host must DURABLY record the id (and its
+    /// "initiate imminent" phase) and return `true` only if that save succeeded. If it returns `false`,
+    /// the backend MUST abort before writing metadata/initiate (round-3 §5) — nothing is delivered and the
+    /// durable ledger stays blocked/clean, so a save failure can never leave an id-less record that a
+    /// relaunch mistakes for "not sent." An acknowledged, awaited handshake — not a fire-and-forget post.
+    var commitBolusId: (@MainActor (Int) async -> Bool)? { get set }
     /// Reconcile a previously-sent bolus whose outcome was lost, against the pump's **authoritative** bolus
     /// history, by its pump-assigned id. Returns `.resolved` only on an authoritative id match; otherwise
     /// `.unavailable` so the host keeps the delivery blocked and asks the user to verify on the pump.

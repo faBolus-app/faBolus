@@ -30,6 +30,16 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
     private var sendCounter: UInt64 = 0
     private var expectedRecvCounter: UInt64 = 0
 
+    /// Fired with the **original** command (not the opaque `.sealed` envelope) when a pump-mutating
+    /// command cannot reach the peer, so the caller can still correlate it by `requestId`. Deliberately
+    /// not forwarded from `inner`: the inner transport only ever sees `.sealed`, which the caller
+    /// cannot correlate. The pre-checks in `send` cover the same cases.
+    public var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
+
+    private func reportUndeliverable(_ command: RemoteCommand) {
+        Task { @MainActor in self.onUndeliverable?(command) }
+    }
+
     public init(inner: any RemoteTransport) {
         self.inner = inner
         inner.onReceive = { [weak self] cmd in self?.receive(cmd) }
@@ -57,11 +67,22 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
 
     public func send(_ command: RemoteCommand) {
         if Self.isAuth(command.kind) { inner.send(command); return }   // handshake frames: cleartext, no secrets
+        // Check reachability here, before sealing, so the caller is handed back the command it sent.
+        if command.kind.mutatesPumpState, !inner.isReachable { reportUndeliverable(command); return }
         lock.lock()
-        guard let key else { lock.unlock(); return }   // no session yet → never emit a real command in clear
+        guard let key else {
+            lock.unlock()   // no session yet → never emit a real command in clear
+            if command.kind.mutatesPumpState { reportUndeliverable(command) }
+            return
+        }
         let ctr = sendCounter; sendCounter &+= 1
         lock.unlock()
-        guard let payload = Self.seal(command, key: key, counter: ctr) else { return }
+        guard let payload = Self.seal(command, key: key, counter: ctr) else {
+            if command.kind.mutatesPumpState { reportUndeliverable(command) }
+            return
+        }
+        // The envelope inherits the inner command's mutating class: `.sealed` is itself pump-mutating
+        // (its contents are opaque), so the inner transport will not queue it either.
         inner.send(.sealed(payload))
     }
 

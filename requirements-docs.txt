@@ -1,0 +1,13 @@
+# Pinned documentation toolchain for .github/workflows/docs.yml.
+#
+# Pinned because docs.yml publishes fabolus.org from `main` through the github-pages environment, and
+# `mkdocs build --strict` fails on things upstream can change between releases (nav resolution, link
+# checking, deprecated config keys). Unpinned, an upstream release could turn `main` red with no commit
+# from us, and the failure would read as our regression.
+#
+# Bump deliberately, in a PR: the PR trigger in docs.yml builds this file's changes with --strict
+# before they can reach the publishing branch.
+#
+# Note for whoever bumps this: mkdocs.yml has a fully explicit `nav`, and docs/CNAME ships only because
+# it sits under docs/. Any docs reorganisation must update both or --strict fails.
+mkdocs-material==9.7.7

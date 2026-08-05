@@ -60,7 +60,29 @@ class RemoteClientModel {
         self.link = link
         link.onReachabilityChange = { [weak self] r in self?.reachabilityDidChange(r) }
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
+        link.onUndeliverable = { [weak self] cmd in self?.sendDidFail(cmd) }
         reachable = link.isReachable
+    }
+
+    /// A pump-mutating command never reached the host. These are deliberately not queued (a bolus that
+    /// lands minutes late is a double-dose hazard), so the only safe thing is to tell the user it was
+    /// **not sent** — never to leave the screen on "Delivering…" waiting for an echo that cannot come.
+    /// Nothing was sent, so there is nothing to reconcile: this is a true `.failed`, not `.unknown`.
+    private func sendDidFail(_ cmd: RemoteCommand) {
+        switch cmd.kind {
+        case .bolusRequest:
+            guard cmd.requestId == pendingRequestId else { return }
+            pendingRequestId = nil
+            sawPhoneBolusing = false
+            lastStatus = .failed
+            statusMessage = "Not sent — the phone wasn't reachable. Nothing was delivered."
+        case .cancelBolus:
+            statusMessage = "Cancel not sent — the phone wasn't reachable. Check the pump."
+        case .dismissAlert, .suspendPump, .resumePump:
+            statusMessage = "Not sent — the phone wasn't reachable."
+        default:
+            break
+        }
     }
 
     /// True when the host reports the pump actively connected (or mid-delivery) — the gate for any
@@ -119,7 +141,16 @@ class RemoteClientModel {
             // Treat a non-positive relayed value as "no reading" (nil) so the UI shows "—" instead of
             // a literal 0; a missing bgMgdl leaves the current value untouched.
             if let g = cmd.bgMgdl { glucose = g > 0 ? Int(g) : nil }
-            if let age = cmd.glucoseAgeSec { glucoseDate = Date().addingTimeInterval(-age) }
+            // Group A: prefer the immutable source timestamp. Deriving the date from an age means
+            // re-stamping relative to *our* clock at receive time, which silently discounts the time
+            // the message spent in flight. Fall back to the age only for a host that doesn't send an
+            // epoch yet. If neither is present the age stays unknown — `isGlucoseStale` then treats
+            // the reading as stale rather than letting it read as fresh.
+            if let e = cmd.glucoseEpochSec {
+                glucoseDate = Date(timeIntervalSince1970: TimeInterval(e))
+            } else if let age = cmd.glucoseAgeSec {
+                glucoseDate = Date().addingTimeInterval(-age)
+            }
             if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }

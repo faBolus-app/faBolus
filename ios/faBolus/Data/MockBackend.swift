@@ -31,7 +31,7 @@ public final class MockBackend: PumpBackend {
     public var onChange: (@MainActor () -> Void)?
 
     // MARK: - Durable unknown-outcome recovery (P0)
-    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
+    public var commitBolusId: (@MainActor (Int) async -> Bool)?
     /// The next simulated pump-assigned bolus id (mimics `BolusPermissionResponse.bolusId`).
     private var nextBolusId = 1000
     /// The id assigned to the most recent delivery attempt (so a test can drive `reconcile`).
@@ -49,11 +49,17 @@ public final class MockBackend: PumpBackend {
 
     private func seedHistory() {
         let now = Date()
+        // The seeded history ends deliberately in the PAST (older than the 6-minute stale threshold),
+        // because a just-launched simulator has not yet received a live reading — so the seed reads as
+        // stale, exactly like a real backend before its first poll lands. `tick()` then produces fresh
+        // readings. Tests depend on this: a stale seed keeps a carb dose resolving off carbs-only, which
+        // is deterministic. Use `seedFreshGlucose` to exercise the fresh path.
+        let newest = now.addingTimeInterval(-600)
         var value = 120.0
         var readings: [GlucoseReading] = []
         // 3 hours of 5-minute CGM samples, gently oscillating.
         for i in stride(from: 36, through: 0, by: -1) {
-            let t = now.addingTimeInterval(TimeInterval(-i * 300))
+            let t = newest.addingTimeInterval(TimeInterval(-i * 300))
             value += Double.random(in: -8...8)
             value = min(max(value, 70), 220)
             readings.append(GlucoseReading(date: t, mgdl: Int(value)))
@@ -69,6 +75,11 @@ public final class MockBackend: PumpBackend {
             BolusMarker(date: now.addingTimeInterval(-1500), units: 1.0),
         ]
         snapshot.glucose = readings.last?.mgdl
+        // Group A: a backend MUST publish the reading's timestamp alongside its value. Leaving this nil
+        // was the live reproducer for defect A1 — the phone correctly read "unknown age ⇒ stale" and
+        // showed no recent CGM, while the Garmin watch stamped the same reading "now" and let it dose.
+        // Any new backend has the same obligation; see `PumpSnapshot.isGlucoseStale`.
+        snapshot.glucoseDate = readings.last?.date
         snapshot.iobUnits = 1.4
         snapshot.reservoirUnits = 142
         snapshot.batteryPercent = 78
@@ -108,9 +119,11 @@ public final class MockBackend: PumpBackend {
     private func tick() {
         guard var last = glucoseHistory.last?.mgdl else { return }
         last = min(max(last + Int.random(in: -6...6), 60), 240)
-        glucoseHistory.append(GlucoseReading(date: Date(), mgdl: last))
+        let at = Date()
+        glucoseHistory.append(GlucoseReading(date: at, mgdl: last))
         if glucoseHistory.count > 72 { glucoseHistory.removeFirst() }
         snapshot.glucose = last
+        snapshot.glucoseDate = at          // group A: value and timestamp move together, always
         snapshot.iobUnits = max(0, snapshot.iobUnits - 0.02)
         onChange?()
     }
@@ -125,8 +138,10 @@ public final class MockBackend: PumpBackend {
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
 
-    /// Test knob (GA-05): seed a FRESH glucose reading (default staleness leaves `glucoseDate` nil →
-    /// always stale). Lets a test exercise the non-stale correction path.
+    /// Test knob (GA-05): seed a FRESH glucose reading. The seeded history is deliberately 10 minutes
+    /// old, so the default state is stale-with-a-known-age. Lets a test exercise the non-stale
+    /// correction path. (It used to be stale because `glucoseDate` was nil — an unknown age. That was
+    /// the group-A reproducer, since remotes could then invent a timestamp for it.)
     public func seedFreshGlucose(_ mgdl: Int, at date: Date = Date()) {
         snapshot.glucose = mgdl; snapshot.glucoseDate = date; onChange?()
     }
@@ -156,7 +171,10 @@ public final class MockBackend: PumpBackend {
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
-        onBolusIdAssigned?(bolusId)
+        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        if let commit = commitBolusId, await commit(bolusId) == false {
+            throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
+        }
         if forceIndeterminateNextDelivery {
             forceIndeterminateNextDelivery = false
             throw BolusError.indeterminate("mock: initiate response lost after write")
@@ -179,7 +197,10 @@ public final class MockBackend: PumpBackend {
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
-        onBolusIdAssigned?(bolusId)
+        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        if let commit = commitBolusId, await commit(bolusId) == false {
+            throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
+        }
         if forceIndeterminateNextDelivery {
             forceIndeterminateNextDelivery = false
             throw BolusError.indeterminate("mock: initiate response lost after write")
