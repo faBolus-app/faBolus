@@ -44,6 +44,21 @@ struct WatchBolusView: View {
                     modeButton(.units, "Units")
                 }
 
+                // §11 (group A / C7): the current glucose + its AGE, right on the bolus screen — so a
+                // stale reading (which the carb estimate rides on) is visible before you confirm, rather
+                // than an old value passing for current. Value greyed + age orange once stale.
+                if let g = model.glucose, !model.glucoseHidden {
+                    HStack(spacing: 4) {
+                        Text("\(g)").fontWeight(.semibold)
+                        if !model.isGlucoseStale { Text(model.trend) }
+                        if let age = model.ageLabel {
+                            Text("· \(age)").foregroundStyle(model.isGlucoseStale ? .orange : .secondary)
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(model.isGlucoseStale ? .secondary : .primary)
+                }
+
                 Text(amountLabel)
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(.indigo)
