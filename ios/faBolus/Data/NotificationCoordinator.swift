@@ -27,7 +27,14 @@ import UserNotifications
 final class NotificationRuntime {
     private let store: UserDefaults
     private let stateKey = "notificationBroker.state.v1"
+    private let telemetryKey = "notificationBroker.telemetry.v1"
+    /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
+    /// out-of-process mode-reminder intent honors the same choice the main app made.
+    static let telemetryEnabledKey = "notificationBroker.telemetryEnabled"
     private(set) var state: NotificationBroker.State
+    /// Per-category delivered/dismissed/acted-upon counts (§6 #7). A separate blob from `state` so it never
+    /// affects the decision round-trip; cumulative + local-only; accrued only when opted in.
+    private(set) var telemetry: [String: NotificationBroker.CategoryTelemetry]
     var settings: [NotificationBroker.Category: NotificationBroker.CategorySettings]
     var budget: NotificationBroker.Budget
 
@@ -46,6 +53,40 @@ final class NotificationRuntime {
         } else {
             self.state = .init()
         }
+        self.telemetry = Self.loadTelemetry(store, telemetryKey)
+    }
+
+    /// True when the user has opted into local notification telemetry (default false).
+    var telemetryEnabled: Bool { store.bool(forKey: Self.telemetryEnabledKey) }
+
+    /// Record a delivered notification for `category` (opt-in only). Called from the poster's deliver path.
+    func recordDelivered(_ category: NotificationBroker.Category) {
+        bumpTelemetry(category.rawValue) { $0.delivered += 1 }
+    }
+
+    /// Record the user's response to a notification (opt-in only): a system dismiss (swipe) → `dismissed`;
+    /// opening it or tapping an action (CLEAR / SNOOZE / default) → `actedUpon`.
+    func recordResponse(categoryRawValue raw: String, actionIdentifier: String) {
+        bumpTelemetry(raw) {
+            if actionIdentifier == UNNotificationDismissActionIdentifier { $0.dismissed += 1 }
+            else { $0.actedUpon += 1 }
+        }
+    }
+
+    private func bumpTelemetry(_ key: String, _ mutate: (inout NotificationBroker.CategoryTelemetry) -> Void) {
+        guard telemetryEnabled else { return }
+        telemetry = Self.loadTelemetry(store, telemetryKey)   // read-modify-write (sibling processes)
+        var t = telemetry[key] ?? .init()
+        mutate(&t)
+        telemetry[key] = t
+        if let data = try? JSONEncoder().encode(telemetry) { store.set(data, forKey: telemetryKey) }
+    }
+
+    private static func loadTelemetry(_ store: UserDefaults, _ key: String) -> [String: NotificationBroker.CategoryTelemetry] {
+        guard let data = store.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategoryTelemetry].self, from: data)
+        else { return [:] }
+        return decoded
     }
 
     /// Run the broker on `message` at `now`, persist the advanced state, and return the decision.
@@ -104,6 +145,7 @@ enum NotificationPoster {
     ) -> NotificationBroker.Decision {
         let decision = runtime.evaluate(message, now: now)
         guard decision.deliver else { return decision }
+        runtime.recordDelivered(message.category)   // telemetry (opt-in; no-op otherwise)
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
@@ -246,11 +288,17 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler h: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
-        if response.actionIdentifier == "CLEAR", let id = info["id"] as? Int, let kind = info["kind"] as? Int {
+        let action = response.actionIdentifier
+        if action == "CLEAR", let id = info["id"] as? Int, let kind = info["kind"] as? Int {
             Task { @MainActor in await self.model?.dismissAlert(id: id, kind: kind) }
-        } else if response.actionIdentifier == "SNOOZE", let raw = info["brokerCategory"] as? String,
+        } else if action == "SNOOZE", let raw = info["brokerCategory"] as? String,
                   let cat = NotificationBroker.Category(rawValue: raw) {
             Task { @MainActor in self.runtime.snooze(cat, until: Date().addingTimeInterval(Self.snoozeSeconds)) }
+        }
+        // Telemetry (opt-in): attribute the user's response to its category — dismiss (swipe) vs acted-upon
+        // (opened / CLEAR / SNOOZE). Uses the brokerCategory the poster stamps on every notification.
+        if let raw = info["brokerCategory"] as? String {
+            Task { @MainActor in self.runtime.recordResponse(categoryRawValue: raw, actionIdentifier: action) }
         }
         h()
     }

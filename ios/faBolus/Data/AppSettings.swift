@@ -141,6 +141,15 @@ public final class AppSettings {
     /// follower source uses (plus an optional API secret). See [[NightscoutUploader]].
     public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
 
+    /// Opt-in (default OFF, N21) for local notification telemetry — per-category delivered/dismissed/
+    /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
+    /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
+    /// uploaded. No settings toggle is wired yet; this is the opt-in the broker gates accrual on.
+    public var notificationTelemetryEnabled: Bool {
+        get { UserDefaults(suiteName: WidgetStore.appGroup)?.bool(forKey: NotificationRuntime.telemetryEnabledKey) ?? false }
+        set { UserDefaults(suiteName: WidgetStore.appGroup)?.set(newValue, forKey: NotificationRuntime.telemetryEnabledKey) }
+    }
+
     /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
     /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
     /// default. The PIN hash lives in the Keychain ([[ChildMode]]), not here.
