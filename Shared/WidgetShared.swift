@@ -198,6 +198,23 @@ public enum WidgetBolusStore {
         set { d?.set(newValue, forKey: "wbDefaultMode") }
     }
 
+    // --- Bolus lock (A-05) — mirrored from the app's single AccessPolicy evaluator ---
+    /// Whether bolusing from the Quick-Bolus widget is currently refused (phone read-only, or child mode
+    /// with `.bolus` disallowed). The app computes this from `AppModel.accessDecision(.deliverBolus,
+    /// from: .quickBolusWidget)` — the evaluator is the single source of truth — and publishes it here so
+    /// the widget can grey/disable its entry + confirm pad instead of showing controls that then fail
+    /// host-side. The widget MUST only read this flag; it must not re-derive the gate.
+    public static var bolusLocked: Bool {
+        get { d?.bool(forKey: "wbBolusLocked") ?? false }
+        set { d?.set(newValue, forKey: "wbBolusLocked") }
+    }
+    /// Short, widget-sized reason for the lock (e.g. "Read-only mode"), or "" when unlocked. Presentation
+    /// only — a shortened form of the evaluator's `DenialReason`, mapped app-side (see WidgetPublisher).
+    public static var bolusLockReason: String {
+        get { d?.string(forKey: "wbBolusLockReason") ?? "" }
+        set { d?.set(newValue, forKey: "wbBolusLockReason") }
+    }
+
     // --- Entry state: two stages (choose amount → 1-2-3 confirm), like the Garmin flow ---
     /// "amount" (adjust the dose) or "confirm" (the 1-2-3 pad). Defaults to "amount".
     public static var stage: String {
