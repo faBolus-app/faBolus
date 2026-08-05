@@ -60,6 +60,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         public var kind: Int      // NotificationKind rawValue (alert=1, alarm=2, cgmAlert=3)
         public var title: String
         public init(id: Int, kind: Int, title: String) { self.id = id; self.kind = kind; self.title = title }
+        /// Stable identity of a pump alert for new-alert detection on a remote — `(kind, id)`.
+        public var identity: String { "\(kind)-\(id)" }
+    }
+
+    /// The alert identities in `current` that are NOT in `previous` — a newly-arrived pump alert a remote
+    /// (watch / Mac / Garmin) should actively surface (S8), rather than let sit in a silent list. Keys on
+    /// `(kind, id)` so an equal-count REPLACEMENT (alert B arriving as A clears, same count) still registers
+    /// B as new. Empty when nothing is newly present.
+    public static func newAlertIdentities(previous: Set<String>, current: [RemoteAlert]) -> Set<String> {
+        Set(current.map(\.identity)).subtracting(previous)
     }
     public enum Status: String, Codable, Sendable {
         case pending, awaitingConfirm, delivering, delivered, cancelled, failed, outOfRange
