@@ -1116,7 +1116,14 @@ public final class AppModel {
         if approved {
             Task { await performLocalBolus(units: p.units, carbsGrams: p.carbsGrams, bgMgdl: p.bgMgdl) }
         } else {
-            lastError = "Bolus not approved" + (reason.map { " — \($0)" } ?? "")
+            // A staged bolus was refused and never dosed → the definition of `.remoteBolusRejected`.
+            // Keep `lastError` (the synchronous op-result / inline display) AND post through the broker,
+            // the same dual pattern the 5 other rejection sites use — so the user sees the decline even
+            // when the app is backgrounded or on another screen, not only inline on this view. (P9 §6:
+            // the broker owns notifications + persistent user messages; `lastError` stays op-result.)
+            let msg = "Bolus not approved" + (reason.map { " — \($0)" } ?? "")
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
         }
     }
 
