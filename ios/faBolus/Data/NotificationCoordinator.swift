@@ -125,7 +125,17 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
         }
+        model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
+    }
+
+    /// Remove delivered + pending notifications for these dedupe keys — used when a safety condition
+    /// resolves (the pump reconnects, the CGM feed resumes), so a stale "disconnected"/"data lost" banner
+    /// doesn't linger.
+    func withdraw(_ dedupeKeys: [String]) {
+        guard !dedupeKeys.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: dedupeKeys)
+        center.removePendingNotificationRequests(withIdentifiers: dedupeKeys)
     }
 
     // MARK: Posting
@@ -201,5 +211,33 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             Task { @MainActor in await self.model?.dismissAlert(id: id, kind: kind) }
         }
         h()
+    }
+}
+
+// MARK: - Safety-notification edge detection
+
+/// Pure transition logic for the two §6 safety notifications that track a *condition* rather than a
+/// one-shot event — pump-link loss and CGM-data loss. Keeping it here (not inline in `AppModel.refresh`)
+/// makes the semantics — **notify once on the edge, withdraw on recovery, never fire at startup** —
+/// unit-testable without driving a full refresh cycle. `.raise` → post; `.clear` → withdraw; `.none`.
+enum SafetyEdge: Equatable {
+    case none, raise, clear
+
+    /// Pump link: raise when a *live* link (connected / bolusing) drops to disconnected / error; clear
+    /// when it returns to connected. A `nil` previous state (the first observation) never raises, so a
+    /// cold launch that starts disconnected isn't reported as a "drop".
+    static func connection(prev: PumpConnectionState?, now: PumpConnectionState) -> SafetyEdge {
+        let wasLive = prev == .connected || prev == .bolusing
+        if wasLive && (now == .disconnected || now == .error) { return .raise }
+        if let prev, prev != .connected, now == .connected { return .clear }
+        return .none
+    }
+
+    /// CGM feed: raise on fresh → not-fresh (we had readings and lost them); clear on not-fresh → fresh.
+    /// Startup (not-fresh → not-fresh) never raises, so "no data yet" isn't reported as "data lost".
+    static func freshness(wasFresh: Bool, isFresh: Bool) -> SafetyEdge {
+        if wasFresh && !isFresh { return .raise }
+        if !wasFresh && isFresh { return .clear }
+        return .none
     }
 }
