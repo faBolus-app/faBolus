@@ -34,6 +34,28 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
         pairing = MacConnection(peer: ble)   // reads the remembered phone and starts connecting
         widgetBolus = MacWidgetBolusReceiver(model: self)
         // No requestStatus() here — we ask only after we authenticate.
+        observeWake()
+    }
+
+    /// System-sleep/wake handling (§5.5 / P10 group A). macOS CoreBluetooth has no background state
+    /// restoration, and there was no wake hook — so after the Mac slept, the popover/menu-bar could show
+    /// pre-sleep IOB, reservoir, battery and the pump-connection string as if current (only glucose
+    /// wall-clock-decays on its own). On wake we re-assert the BLE link (it may have dropped while
+    /// asleep) and pull a fresh status so every field refreshes instead of reading stale-as-current.
+    private var wakeObserver: NSObjectProtocol?
+    private func observeWake() {
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Hop explicitly to the main actor (don't assume the notification block's isolation) — the
+            // P9 CI lesson: a @MainActor call from a non-isolated closure can trap under a stricter runtime.
+            Task { @MainActor in self?.onWake() }
+        }
+    }
+
+    func onWake() {
+        if let paired = pairing?.pairedPhone { ble.setPreferredPeer(paired) }   // reconnect if the link slept
+        if ble.isReachable { requestStatus(forceGlucose: true) }                // refresh stale fields now
     }
 
     // MARK: - Shared-base hooks (wire the handshake to MacConnection's observable UI state)
