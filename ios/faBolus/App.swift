@@ -9,7 +9,7 @@ struct FaBolusApp: App {
     @State private var remoteHost: PhoneRemoteHost?
     @State private var peerHost: PeerRemoteHost?
     @State private var garmin: GarminRemoteBridge?
-    @State private var notifier: PumpAlertNotifier?
+    @State private var notifier: NotificationCoordinator?
     @State private var widgetBolus: WidgetBolusReceiver?
     @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -41,7 +41,7 @@ struct FaBolusApp: App {
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     syncPeerHost()   // BLE peripheral only when the user has opted in (default off)
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
-                    if notifier == nil { notifier = PumpAlertNotifier(model: model) }           // actionable alert notifications
+                    if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     ICloudSettingsSync.shared.start()   // optional; no-op unless built with ICLOUD_SYNC
                     AppSettings.shared.syncWidgetConfig()
