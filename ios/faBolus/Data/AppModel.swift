@@ -157,9 +157,29 @@ public final class AppModel {
     /// (`NotificationCoordinator`): a governed `Message`, plus optional `userInfo` / category id. When no
     /// coordinator is installed (unit tests, an out-of-process intent), the caller falls back on its own.
     public var notificationSink: ((NotificationBroker.Message, [AnyHashable: Any], String) -> Void)?
+    /// Withdraw delivered notifications by dedupe key — used when a safety condition resolves (pump
+    /// reconnects, CGM feed resumes) so a stale banner doesn't linger.
+    public var notificationWithdrawSink: (([String]) -> Void)?
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
+
+    /// Stable ids for the two condition-tracking safety notifications (§6, never-suppressible), so a
+    /// re-raise replaces rather than stacks and recovery can withdraw the exact banner.
+    private static let pumpDisconnectKey = "safety.pumpDisconnect"
+    private static let cgmDataLossKey = "safety.cgmDataLoss"
+    /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
+    @ObservationIgnored private var previousGlucoseFresh = false
+
+    /// Post a §6 safety notification through the broker-owned poster. These categories are
+    /// `neverSuppressible`, so the broker always delivers them; routing through the sink keeps them in the
+    /// one governed path (dedupe / withdrawal / the single `UNNotificationRequest` builder).
+    private func postSafety(_ category: NotificationBroker.Category, severity: NotificationBroker.Severity,
+                            title: String, body: String, dedupeKey: String) {
+        notificationSink?(NotificationBroker.Message(category: category, severity: severity,
+                                                     title: title, body: body, dedupeKey: dedupeKey), [:], "")
+    }
+    private func withdrawNotifications(_ dedupeKeys: [String]) { notificationWithdrawSink?(dedupeKeys) }
 
     // MARK: Child (locked) mode gate
     //
@@ -958,7 +978,27 @@ public final class AppModel {
         if previousConnection != .connected, snap.connection == .connected, deliveryBlockedReason != nil {
             Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
         }
+        // §6 safety (never-suppressible): pump-link drop, fired once on the edge; withdrawn on reconnect.
+        switch SafetyEdge.connection(prev: previousConnection, now: snap.connection) {
+        case .raise:
+            postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
+                       body: "faBolus lost the connection to your pump. Use the pump directly until it reconnects.",
+                       dedupeKey: Self.pumpDisconnectKey)
+        case .clear: withdrawNotifications([Self.pumpDisconnectKey])
+        case .none: break
+        }
         previousConnection = snap.connection
+        // §6 safety: CGM data loss — raised when a previously-fresh feed goes stale/absent; cleared on resume.
+        let cgmFresh = snapshot.glucose != nil && !snapshot.isGlucoseStale
+        switch SafetyEdge.freshness(wasFresh: previousGlucoseFresh, isFresh: cgmFresh) {
+        case .raise:
+            postSafety(.cgmDataLoss, severity: .warning, title: "CGM data lost",
+                       body: "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
+                       dedupeKey: Self.cgmDataLossKey)
+        case .clear: withdrawNotifications([Self.cgmDataLossKey])
+        case .none: break
+        }
+        previousGlucoseFresh = cgmFresh
         glucoseHistory = hist
         glucoseProvenance = provenance
         iobHistory = source.iobHistory
@@ -1672,6 +1712,9 @@ public final class AppModel {
                                          status: RemoteCommand.Status.failed.rawValue,
                                          message: "Interrupted before the pump accepted it — not delivered.",
                                          deliveredUnits: 0)
+                postSafety(.bolusReconciliation, severity: .warning, title: "Bolus not delivered",
+                           body: "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
+                           dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
                 changed = true
                 continue
             }
@@ -1681,6 +1724,13 @@ public final class AppModel {
                 remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
                                          status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
                                          message: "Reconciled from pump history.", deliveredUnits: delivered)
+                let f = formatUnits(delivered)
+                postSafety(.bolusReconciliation, severity: .info,
+                           title: cancelled ? "Bolus cancelled" : "Bolus delivered",
+                           body: cancelled
+                               ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
+                               : "Reconciled from the pump: \(f) U delivered.",
+                           dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
                 changed = true
             case .unavailable:
                 break   // stay blocked; retry on next reconnect / manual verification
