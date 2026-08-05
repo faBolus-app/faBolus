@@ -69,6 +69,19 @@ final class NotificationRuntime {
         if state.notifiedEpisodes.remove(episodeKey) != nil { persist() }
     }
 
+    /// Snooze a category until `until`, persisted (App-Group) so the next `evaluate` in any process honors
+    /// it. Re-reads first (like `evaluate`) so a concurrent counter advance isn't clobbered; `snooze(_:)`
+    /// refuses `neverSuppressible` categories, so a safety alert can never be silenced.
+    func snooze(_ category: NotificationBroker.Category, until: Date) {
+        guard !category.neverSuppressible else { return }
+        if let data = store.data(forKey: stateKey),
+           let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
+            state = decoded
+        }
+        state = NotificationBroker.snooze(state, category: category, until: until)
+        persist()
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(state) { store.set(data, forKey: stateKey) }
     }
@@ -96,7 +109,11 @@ enum NotificationPoster {
         content.body = message.body
         content.sound = .default
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
-        if !userInfo.isEmpty { content.userInfo = userInfo }
+        // Stamp the broker category so the delegate can route a SNOOZE action (and attribute telemetry)
+        // back to the right category, for every category — not just pump alerts.
+        var info = userInfo
+        info["brokerCategory"] = message.category.rawValue
+        content.userInfo = info
         add(UNNotificationRequest(identifier: message.dedupeKey, content: content, trigger: nil))
         return decision
     }
@@ -113,6 +130,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// every refresh and can withdraw the ones that clear.
     private var postedPumpAlerts: Set<String> = []
     static let pumpAlertCategory = "PUMP_ALERT"
+    /// How long a "Snooze" action suppresses a category. A fixed default (no per-category setting UI yet).
+    static let snoozeSeconds: TimeInterval = 2 * 60 * 60
 
     init(model: AppModel, runtime: NotificationRuntime = NotificationRuntime()) {
         self.model = model
@@ -143,9 +162,20 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     @discardableResult
     func post(_ message: NotificationBroker.Message,
               userInfo: [AnyHashable: Any] = [:], categoryId: String = "") -> NotificationBroker.Decision {
-        NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
-                                categoryId: categoryId,
-                                add: { [center] in center.add($0) })
+        // Default a governed category to its registered id (which carries the SNOOZE action) unless the
+        // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
+        let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
+        return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
+                                       categoryId: cat,
+                                       add: { [center] in center.add($0) })
+    }
+
+    /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
+    /// + SNOOZE), the raw value for other governed categories (SNOOZE), and "" for the never-suppressible
+    /// safety categories (no snooze action — they must never be snoozeable).
+    static func categoryIdentifier(for c: NotificationBroker.Category) -> String {
+        if c == .pumpAlert { return pumpAlertCategory }
+        return c.neverSuppressible ? "" : c.rawValue
     }
 
     // MARK: Pump-alert fan-in
@@ -191,10 +221,19 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     private func registerCategories() {
         let clear = UNNotificationAction(identifier: "CLEAR", title: "Clear",
                                          options: [.authenticationRequired])
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: Self.pumpAlertCategory, actions: [clear],
+        let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 2h", options: [])
+        // Pump alerts: dismiss-on-pump (CLEAR) + snooze the category. Every OTHER governed (suppressible)
+        // category gets a snooze action, keyed by its raw value. Safety categories are never registered
+        // with a snooze action, so they cannot be snoozed from a notification.
+        var cats: Set<UNNotificationCategory> = [
+            UNNotificationCategory(identifier: Self.pumpAlertCategory, actions: [clear, snooze],
                                    intentIdentifiers: [], options: [])
-        ])
+        ]
+        for c in NotificationBroker.Category.allCases where !c.neverSuppressible && c != .pumpAlert {
+            cats.insert(UNNotificationCategory(identifier: c.rawValue, actions: [snooze],
+                                               intentIdentifiers: [], options: []))
+        }
+        center.setNotificationCategories(cats)
     }
 
     // MARK: Delegate
@@ -209,6 +248,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         let info = response.notification.request.content.userInfo
         if response.actionIdentifier == "CLEAR", let id = info["id"] as? Int, let kind = info["kind"] as? Int {
             Task { @MainActor in await self.model?.dismissAlert(id: id, kind: kind) }
+        } else if response.actionIdentifier == "SNOOZE", let raw = info["brokerCategory"] as? String,
+                  let cat = NotificationBroker.Category(rawValue: raw) {
+            Task { @MainActor in self.runtime.snooze(cat, until: Date().addingTimeInterval(Self.snoozeSeconds)) }
         }
         h()
     }
