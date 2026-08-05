@@ -38,7 +38,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public var onChange: (@MainActor () -> Void)?
     /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
-    public var onBolusIdAssigned: (@MainActor (Int) -> Void)?
+    public var commitBolusId: (@MainActor (Int) async -> Bool)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
@@ -116,6 +116,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
     // BLE events (with `bluetooth-central` background mode) and hands the connection back.
     private let client = PumpBLEClient(restoreIdentifier: "com.fabolus.app.pump")
+    /// Round-3 §6.1 seam: the signed/delivery flow goes through `tx` (the real `client` in production, or
+    /// an injected fake in tests) so `perform` can be driven with no CoreBluetooth. Connection, scanning,
+    /// pairing, and the delegate stay on `client`.
+    private let injectedTransport: PumpTransport?
+    private var tx: PumpTransport { injectedTransport ?? client }
     private var coordinator: PairingCoordinator?
     private var pollTimer: Timer?
 
@@ -197,11 +202,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
     private func awaitResponse<T: Message>(_ message: Message, as _: T.Type, deadline: TimeInterval,
                                            signed: Bool = false, allowInsulinDelivery: Bool = false) async throws -> T {
-        let frame = try await client.sendAwaitingResponse(
+        let frame = try await tx.sendAwaitingResponse(
             message,
             authenticationKey: signed ? authenticationKey : [],
             pumpTimeSinceReset: signed ? signingTimestamp : 0,
             allowInsulinDelivery: allowInsulinDelivery,
+            responseOpCode: nil,
             deadline: deadline)
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic),
               let typed = parsed.message as? T else {
@@ -258,6 +264,20 @@ public final class TandemBackend: NSObject, PumpBackend {
     public private(set) var deliveryOutcomeUnknown = false
     /// The pump bolus id whose outcome is unknown, for reconciliation.
     private var unknownOutcomeBolusId: Int = 0
+    /// Test-only override for the post-accept poll window so a "status never resolves → indeterminate at
+    /// deadline" case doesn't wait the full production minimum. Nil ⇒ the production computed deadline.
+    var deliveryPollTimeoutOverride: TimeInterval?
+
+    /// Round-3 §4: mark the current initiate INDETERMINATE (write issued, outcome unknown) and throw so
+    /// the caller leaves the durable ledger unresolved + globally blocked. Never fabricates a result.
+    private func indeterminate(_ bolusId: Int, _ reason: String) -> BolusError {
+        initiateWritten = true
+        deliveryOutcomeUnknown = true
+        unknownOutcomeBolusId = bolusId
+        if snapshot.connection == .bolusing { snapshot.connection = .connected }
+        onChange?()
+        return BolusError.indeterminate(reason)
+    }
 
     private func acquirePumpTx() async {
         while pumpTxBusy {
@@ -293,10 +313,24 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public override init() {
+        self.injectedTransport = nil
         super.init()
         client.writePolicy = .readOnly
         client.delegate = self
     }
+
+    #if DEBUG
+    /// Test-only (round-3 §6.1): drive the signed/delivery flow through a fake transport with a
+    /// pre-established connected + paired state, so `perform` can be exercised without CoreBluetooth.
+    init(testTransport: PumpTransport, authKey: [UInt8] = [0x01]) {
+        self.injectedTransport = testTransport
+        super.init()
+        self.authenticationKey = authKey
+        self.snapshot.connection = .connected
+    }
+    /// Test-only: flip the connection state to simulate a mid-delivery link drop.
+    func setConnectionForTesting(_ c: PumpConnectionState) { snapshot.connection = c }
+    #endif
 
     // MARK: - PumpDataSource
 
@@ -478,8 +512,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         // PX-03/04: elevate only for this bolus, and ALWAYS restore .readOnly when perform exits (success,
         // throw, or cancellation) — never a prior, possibly-elevated value. The elevation spans the
         // permission→initiate→poll window so an in-flight cancel (a signed op) still authorizes.
-        client.writePolicy = .allowDelivery
-        defer { client.writePolicy = .readOnly }
+        tx.writePolicy = .allowDelivery
+        defer { tx.writePolicy = .readOnly }
         snapshot.connection = .bolusing; onChange?()
 
         let perm = try await awaitResponse(BolusPermissionRequest(), as: BolusPermissionResponse.self,
@@ -489,9 +523,17 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
         }
         currentBolusId = perm.bolusId
-        // P0: the pump has assigned this bolus id and no initiate has been written yet — persist it now so
-        // a lost outcome (timeout/disconnect/crash) after the initiate can be reconciled by id on relaunch.
-        onBolusIdAssigned?(perm.bolusId)
+        // Round-3 §5: the pump assigned this id and NO initiate has been written yet. Durably record it
+        // (acknowledged) BEFORE any metadata/initiate write. If the host can't persist it, ABORT here — a
+        // clean pre-initiate failure (nothing was delivered) rather than writing an initiate whose id
+        // isn't durably recorded (which a relaunch could mistake for "not sent").
+        if let commit = commitBolusId {
+            let saved = await commit(perm.bolusId)
+            guard saved else {
+                snapshot.connection = .connected; onChange?()
+                throw BolusError.pumpRejected("could not record the bolus id durably — not initiated")
+            }
+        }
 
         // Record carbs/BG on the pump BEFORE initiating — this is what populates the carb amount on
         // the pump graph / t:connect and feeds Control-IQ's carb awareness. Metadata only (does NOT
@@ -520,9 +562,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         // see docs/UNVERIFIED-GUESSES.md).
         let foodVolume: UInt32 = (carbsInt > 0 && !extended) ? totalMu : 0
         if carbsInt > 0 {
-            try? client.send(RemoteCarbEntryRequest(carbs: carbsInt, unknown: 1,
-                                                    pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
-                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+            try? tx.send(RemoteCarbEntryRequest(carbs: carbsInt, unknown: 1,
+                                                pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
+                         authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp,
+                         allowInsulinDelivery: false)
         }
         if bgInt > 0 {
             // Match the reference app's captured RemoteBgEntryRequest exactly (audit C-07): all six
@@ -531,9 +574,10 @@ public final class TandemBackend: NSObject, PumpBackend {
             // "entered remotely via BLE" — for a bolus-window BG. faBolus previously sent source = PUMP
             // (0) via the isAutopopBg=false convenience, contradicting every capture; ground truth is
             // MANUAL/REMOTE. entryTypeId 0 = MANUAL, sourceId 1 = REMOTE (BloodGlucoseReadingType/Source).
-            try? client.send(RemoteBgEntryRequest(bg: bgInt, useForCgmCalibration: false, entryTypeId: 0, sourceId: 1,
-                                                  pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
-                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+            try? tx.send(RemoteBgEntryRequest(bg: bgInt, useForCgmCalibration: false, entryTypeId: 0, sourceId: 1,
+                                              pumpTimeSecondsSinceBoot: signingTimestamp, bolusId: perm.bolusId),
+                         authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp,
+                         allowInsulinDelivery: false)
         }
 
         // FB-04: send the frozen calculator IOB (`bolusIobMu`) — no longer 0. PX-07: build via the throwing
@@ -546,60 +590,75 @@ public final class TandemBackend: NSObject, PumpBackend {
             : InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
                                    foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
                                    extendedVolume: 0, extendedSeconds: 0, extended3: 0)
-        // PX-08 + FB-02: `sendAwaitingResponse` writes the initiate (inside the coordinator's `write`
-        // thunk) BEFORE suspending. So a *synchronous* send/build failure means nothing was written (clean,
-        // retryable), while a `TxError` (timeout/disconnect) means the write WENT OUT and the outcome is
-        // INDETERMINATE — the pump may be mid-bolus. We map only the latter to `.indeterminate`.
-        let ini: InitiateBolusResponse
+        // Round-3 §4: `sendAwaitingResponse` writes the initiate BEFORE it suspends, so once we call it
+        // EVERY non-authoritative exit is INDETERMINATE (the pump may be mid-bolus): a lost/garbage/
+        // mismatched reply, a disconnect, or a poll that never confirms completion. A *synchronous* build/
+        // send failure throws BEFORE the write → a clean, retryable failure. Only a parsed, matching,
+        // explicit NACK settles as failed; a parsed ACCEPT is NOT a terminal delivery result.
+        let iniFrame: [UInt8]
         do {
-            ini = try await awaitResponse(request, as: InitiateBolusResponse.self, deadline: 8,
-                                          signed: true, allowInsulinDelivery: true)
+            iniFrame = try await tx.sendAwaitingResponse(request, authenticationKey: authenticationKey,
+                                                         pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: true,
+                                                         responseOpCode: nil, deadline: 8)
         } catch let e as PumpTransactionCoordinator.TxError {
-            initiateWritten = true
-            deliveryOutcomeUnknown = true
-            unknownOutcomeBolusId = perm.bolusId
-            throw BolusError.indeterminate("no initiate response after the bolus was sent (\(e))")
+            throw indeterminate(perm.bolusId, "no initiate response after the bolus was sent (\(e))")
+        }
+        // The write went out and a frame returned; a parse/type failure is now POST-write → indeterminate.
+        guard let iniParsed = try? ResponseParser.parse(frame: iniFrame,
+                                                        characteristic: InitiateBolusRequest.props.characteristic),
+              let ini = iniParsed.message as? InitiateBolusResponse else {
+            throw indeterminate(perm.bolusId, "unparseable initiate response")
+        }
+        guard ini.bolusId == perm.bolusId else {
+            throw indeterminate(perm.bolusId, "initiate response bolus id mismatch")
         }
         guard ini.accepted else {
+            // Authoritative, matching NACK → clean failure (nothing is delivering).
             snapshot.connection = .connected; onChange?()
             throw BolusError.pumpRejected("initiate not accepted (status \(ini.status))")
         }
 
-        // Delivery has started on the pump. Keep the UI in `.bolusing` and poll the pump until
-        // the bolus finishes or is cancelled — this gives the user a real cancel window and lets
-        // us report the ACTUAL delivered amount (important for partial delivery after a cancel).
+        // Accepted ≠ delivered. Poll for an AUTHORITATIVE terminal — the pump reporting THIS bolus id is
+        // no longer active. A disconnect, an id mismatch, or the deadline without confirmation is
+        // indeterminate; we never assume the requested amount went in. A cancel request does not settle
+        // the outcome here — we keep polling for the authoritative terminal the pump reports.
         cancelRequested = false
         lastBolusCancelled = false
         snapshot.lastBolusDate = Date()
         onChange?()
-        pollTimer?.invalidate()   // pause routine polling so its LastBolus reads don't interfere
+        pollTimer?.invalidate()   // pause routine polling so its reads don't interfere
+        defer { startPolling() }  // resume routine polling on any exit (success or indeterminate throw)
 
-        let deadline = Date().addingTimeInterval(min(600.0, max(60.0, units * 90.0)))   // upper bound
-        while Date() < deadline && !cancelRequested {
-            // Poll ~2×/s so a small/finished bolus is detected quickly and the completion (and the
-            // remote "delivered/cancelled" echo) fires promptly, instead of lingering ~1.2 s+.
+        let timeout = deliveryPollTimeoutOverride ?? min(600.0, max(60.0, units * 90.0))
+        let deadline = Date().addingTimeInterval(timeout)
+        var confirmedComplete = false
+        while Date() < deadline {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            if cancelRequested { break }
-            // Stop polling (and release the transaction lock) promptly if the link dropped — otherwise
-            // a disconnect mid-bolus would spin here until the deadline holding the lock (audit A-03).
-            guard snapshot.connection == .bolusing else { break }
-            if let st = try? await currentBolusStatus(), st.bolusId != currentBolusId || !st.isActive {
-                break   // pump reports the bolus is no longer active
+            guard snapshot.connection == .bolusing else {
+                throw indeterminate(perm.bolusId, "connection lost during delivery")
             }
+            guard let st = try? await currentBolusStatus() else { continue }   // a single dropped poll isn't fatal
+            guard st.bolusId == currentBolusId else {
+                throw indeterminate(perm.bolusId, "bolus status id mismatch during delivery")
+            }
+            if !st.isActive { confirmedComplete = true; break }
+        }
+        guard confirmedComplete else {
+            throw indeterminate(perm.bolusId, "no authoritative completion before the deadline")
         }
 
-        // Read the actual delivered amount for this bolus.
-        var delivered = units
-        if let last = try? await lastBolusStatus(), last.bolusId == currentBolusId {
-            delivered = last.deliveredUnits
-        } else if cancelRequested {
-            delivered = 0   // couldn't confirm; assume unknown-partial reported by caller
+        // Authoritative completion: settle from the MATCHING last-bolus record only — no fallback to the
+        // requested units. An unavailable/mismatched final status is indeterminate. We do NOT invent a
+        // cancellation flag (no verified pump cancellation semantics): a partial simply reports fewer
+        // units (round-3 §4.7/§4.8).
+        guard let last = try? await lastBolusStatus(), last.bolusId == currentBolusId else {
+            throw indeterminate(perm.bolusId, "final bolus status unavailable or mismatched")
         }
-
-        lastBolusCancelled = cancelRequested
+        let delivered = last.deliveredUnits
+        lastBolusCancelled = false
         cancelRequested = false
         currentBolusId = 0
-        // Don't stomp a disconnect that happened mid-bolus back to `.connected` (audit A-03).
+        deliveryOutcomeUnknown = false
         if snapshot.connection == .bolusing { snapshot.connection = .connected }
         snapshot.lastBolusUnits = delivered
         snapshot.iobUnits += delivered
@@ -608,20 +667,20 @@ public final class TandemBackend: NSObject, PumpBackend {
             if bolusMarkers.count > 60 { bolusMarkers.removeFirst() }
         }
         onChange?()
-        startPolling()            // resume routine polling
         return delivered
     }
 
-    /// Request a bolus cancel. The in-flight `deliverBolus` loop detects this, stops, and reports
-    /// the partial delivered amount. Safe to call from the phone HUD or a remote.
+    /// Request a bolus cancel. This is only a *request*: the in-flight `perform` loop keeps polling for the
+    /// pump's AUTHORITATIVE terminal (round-3 §4) — a failed/unconfirmed cancel never fabricates a
+    /// cancelled outcome or a guessed delivered amount. Safe to call from the phone HUD or a remote.
     public func cancelBolus() async {
         guard currentBolusId != 0 else { return }
         cancelRequested = true
-        let previous = client.writePolicy
-        client.writePolicy = .allowDelivery
-        _ = try? client.send(CancelBolusRequest(bolusId: currentBolusId),
-                             authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
-        client.writePolicy = previous
+        try? await tx.withWritePolicy(.allowDelivery) {
+            _ = try tx.send(CancelBolusRequest(bolusId: currentBolusId),
+                            authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp,
+                            allowInsulinDelivery: true)
+        }
     }
 
     /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
@@ -706,9 +765,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await withPumpTx {
             try await refreshSigningTimestamp()
             // PX-03/04: scoped one-operation elevation — always restored to .readOnly (even on throw).
-            try await client.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
-                _ = try client.send(message, authenticationKey: authenticationKey,
-                                    pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
+            try await tx.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
+                _ = try tx.send(message, authenticationKey: authenticationKey,
+                                pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
                 // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
@@ -920,8 +979,11 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery.
     private func fastRead() {
+        // HomeScreenMirrorRequest belongs in the fast tier: it carries the pump's own CGM trend icon
+        // (C8 — the authoritative arrow), so it has to stay as fresh as the glucose value it annotates.
         for r: Message in [ControlIQIOBRequest(), CurrentEgvGuiDataV2Request(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request()] {
+                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+                           HomeScreenMirrorRequest()] {
             try? client.send(r)
         }
     }
@@ -1325,9 +1387,18 @@ extension TandemBackend: PumpBLEClientDelegate {
                 carbRatioGramsPerUnit: Double(m.profileCarbRatio) / 1000.0,
                 isf: m.profileISF, targetBg: m.profileTargetBG))
             snapshot.viewedProfileSegments.sort { $0.segmentIndex < $1.segmentIndex }
+        case let m as HomeScreenMirrorResponse:
+            // C8 / defect E8: the trend comes from the PUMP, not from us. This is the icon the pump is
+            // showing on its own home screen, so it cannot disagree with the pump — including its
+            // explicit "no arrow" state, which a client-side derivation from `trendRate` cannot express.
+            snapshot.trend = m.cgmTrendArrow
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
-            snapshot.trend = m.trendArrow
+            // Fallback only, and only until the first HomeScreenMirror reply lands: never overwrite the
+            // pump's own arrow with a derived one, and never invent one when the rate is unknown (an
+            // INVALID/UNAVAILABLE frame carries a sentinel rate — that was E8's mechanism, made worse by
+            // assigning the arrow OUTSIDE this validity check).
+            if snapshot.trend.isEmpty, let derived = m.trendArrow { snapshot.trend = derived }
             if m.hasValidReading {
                 // Age must reflect the pump's OWN reading time, not when the phone happened to poll
                 // it (which understated age and lagged the pump). Convert `bgReadingTimestampSeconds`

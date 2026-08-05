@@ -197,7 +197,16 @@ targets:
     platform: watchOS
     deploymentTarget: "10.0"
     sources:
-      - watch/faBolusWatch
+      - path: watch/faBolusWatch
+        # >>> WATCH_DIRECT_PUMP_OFF (this block is stripped when FABOLUS_WATCH_DIRECT_PUMP=1)
+        # C9 ("one owner, N remotes"): direct-pump/ holds a SECOND pump-connection holder that
+        # bypasses the PumpBackend seam, and pairing it evicts the phone's pairing. Excluded from
+        # shipping builds — the same posture as faBolusGarmin's direct-pump/. See its STATUS.md.
+        # Excluding the directory also removes the watch's ONLY link to the pump BLE stack (the
+        # PumpX2Kit deps below), so a shipping watch build cannot hold a pump connection at all.
+        excludes:
+          - direct-pump
+        # <<< WATCH_DIRECT_PUMP_OFF
       # WidgetBolusIntents belongs to the widget extensions only.
       - path: Shared
         excludes:
@@ -215,13 +224,17 @@ targets:
       # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
       - package: G7SensorKit
         product: G7SensorKit
+      # >>> WATCH_DIRECT_PUMP (stripped unless FABOLUS_WATCH_DIRECT_PUMP=1 — C9, bench only)
       # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
+      # ONLY direct-pump/WatchPumpClient.swift imports these, so with the flag off the watch app
+      # does not link the pump BLE stack at all.
       - package: PumpX2Kit
         product: PumpX2Messages
       - package: PumpX2Kit
         product: PumpX2Auth
       - package: PumpX2Kit
         product: PumpX2BLE
+      # <<< WATCH_DIRECT_PUMP
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # On-device eating detector (EatingDetectionKit) + its model catalog. Needs HealthKit (below).
       - package: faBolusNudge
@@ -273,14 +286,16 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "4"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon   # watchOS won't install without an app icon
-      # >>> ONWATCH_EATING (whole block stripped unless FABOLUS_ONWATCH_EATING=1, so the default
-      # watch build is byte-identical to today — no flag, no HealthKit, free-account-safe)
+      # Two independent opt-in flags live here. generate-project.sh's drop_flag removes each flag NAME
+      # from these two lines when its feature is off, so the block itself is unconditional and the two
+      # flags cannot switch each other off:
+      #   FABOLUS_ONWATCH_EATING   — on-device eating sensing; needs the PAID HealthKit entitlement.
+      #   FABOLUS_WATCH_DIRECT_PUMP — the C9 direct-to-pump path; bench only, never shipped.
       configs:
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG FABOLUS_ONWATCH_EATING
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG FABOLUS_ONWATCH_EATING FABOLUS_WATCH_DIRECT_PUMP
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_ONWATCH_EATING
-      # <<< ONWATCH_EATING
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_ONWATCH_EATING FABOLUS_WATCH_DIRECT_PUMP
 
   # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
   # app publishes to the shared App Group; never touches Bluetooth.

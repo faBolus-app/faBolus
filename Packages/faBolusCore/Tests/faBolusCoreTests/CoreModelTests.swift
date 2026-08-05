@@ -30,7 +30,12 @@ final class CoreModelTests: XCTestCase {
         // token(from:) maps a raw unicode arrow → the stable ASCII token remotes use.
         XCTAssertEqual(GlucoseTrend.token(from: "↑"), "up")
         XCTAssertEqual(GlucoseTrend.token(from: "→"), "flat")
-        XCTAssertEqual(GlucoseTrend.token(from: "garbage"), "flat")   // unknown → flat
+        // C8: unknown or absent means UNKNOWN, and must stay unknown all the way to the remote. This
+        // assertion previously pinned the opposite ("unknown → flat"), which turned a pump reporting
+        // *no arrow* into a flat arrow on the watch and on Garmin — an inferred trend shown as a
+        // reported one. When choosing between showing less and showing something inferred, show less.
+        XCTAssertNil(GlucoseTrend.token(from: "garbage"))
+        XCTAssertNil(GlucoseTrend.token(from: ""))
     }
 
     /// The neutral PumpAlertKind raw values MUST match the remote-protocol alert kinds

@@ -17,9 +17,12 @@ import faBolusCore
 ///   • **Idempotency wiring** (A-02): a duplicate (peer, requestId) hits the backend once; a same-id
 ///     request with a different dose fails closed.
 ///
-/// The `MockBackend` seeds a glucose value with **no timestamp**, so `isGlucoseStale` is true and a
-/// carb dose resolves off carbs-only (`bgMgdl: nil`) — deterministic, given the seeded IOB. That is
-/// why these assertions can compare against a probed `recommendBolus` value without flakiness.
+/// The `MockBackend` seeds a glucose value timestamped **10 minutes ago** — older than the 6-minute
+/// stale threshold — so `isGlucoseStale` is true and a carb dose resolves off carbs-only
+/// (`bgMgdl: nil`), deterministic given the seeded IOB. That is why these assertions can compare
+/// against a probed `recommendBolus` value without flakiness. (It used to be stale because the mock
+/// published no timestamp at all; that unknown-age state was the defect A1 reproducer, since a remote
+/// could then stamp the reading with its own receive time and render it as fresh.)
 ///
 /// Not covered here (they need a fake CoreBluetooth transport for `TandemBackend`, not `AppModel`):
 /// pump-transaction drop/timeout (A-03) and the glucose single-flight race (C-05) — still bench/mock

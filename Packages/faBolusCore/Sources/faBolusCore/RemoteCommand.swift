@@ -31,6 +31,27 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// engine. The phone signals whether the watch should be sensing via `eatingSensingOn` on the
         /// routine status push (battery). Advisory only — never doses; not safety-critical.
         case eatingEvent
+
+        /// True for commands that cause — or authorize — a **write to the pump**.
+        ///
+        /// These must never be queued for later opportunistic delivery. A queued bolus that lands
+        /// after the user has given up and dosed another way is a double dose; a queued `cancelBolus`
+        /// can cancel a *later* bolus than the one the user meant; a queued `resumePump` can resume
+        /// delivery long after the user chose to suspend it. A transport must therefore send these
+        /// live or report them undeliverable (`RemoteTransport.onUndeliverable`) — never defer them.
+        ///
+        /// `sealed` is included because its inner command is opaque until decrypted, so the
+        /// conservative assumption is that it may be a delivery command.
+        public var mutatesPumpState: Bool {
+            switch self {
+            case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
+                 .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                return true
+            case .bolusStatus, .statusRead, .eatingEvent,
+                 .authHello, .authChallenge, .authProof, .authResult:
+                return false
+            }
+        }
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -75,7 +96,20 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var basalRate: Double?
     /// Seconds since the current CGM reading was taken (so a remote can show "Nm ago" and hide
     /// readings older than 6 minutes).
+    ///
+    /// **Prefer `glucoseEpochSec`.** An age is computed at *compose* time, so it silently becomes
+    /// wrong by however long the message spends in flight, and it cannot be distinguished from
+    /// "absent" by a receiver that then invents its own. See `glucoseEpochSec`. Kept for
+    /// compatibility with remotes that only understand an age.
     public var glucoseAgeSec: Double?
+    /// **Immutable source timestamp** of the current CGM reading (Unix seconds), set once at origin
+    /// from the pump's own reading time and propagated unchanged through every hop (v3 handoff group A).
+    ///
+    /// A receiver computes age as `now − glucoseEpochSec` at the moment of display. When this is
+    /// absent the reading's age is **unknown**, and an unknown age must render as stale/no-data — never
+    /// as fresh. Stamping an unknown-age reading with the receive time is defect A1: it produced a
+    /// value labelled "1 minute old" that was hours stale, and then let it feed correction dosing.
+    public var glucoseEpochSec: Int?
     /// Recent glucose values (mg/dL), oldest→newest, ~5-min spacing, for a remote history plot.
     public var history: [Int]?
     /// Unix-second timestamp for each `history` point (same length/order). Lets an iPhone/Mac remote
@@ -166,7 +200,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
                 batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
                 basalRate: Double? = nil,
-                glucoseAgeSec: Double? = nil, history: [Int]? = nil, historyEpochs: [Int]? = nil,
+                glucoseAgeSec: Double? = nil, glucoseEpochSec: Int? = nil,
+                history: [Int]? = nil, historyEpochs: [Int]? = nil,
                 alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
                 bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
                 screenOrder: [String]? = nil, defaultScreen: String? = nil,
@@ -182,7 +217,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.maxBolusUnits = maxBolusUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.basalRate = basalRate
-        self.glucoseAgeSec = glucoseAgeSec; self.history = history; self.historyEpochs = historyEpochs
+        self.glucoseAgeSec = glucoseAgeSec; self.glucoseEpochSec = glucoseEpochSec
+        self.history = history; self.historyEpochs = historyEpochs
         self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
         self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
         self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
@@ -284,6 +320,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try range("extendedNowUnits", extendedNowUnits, 0, 100)
         try range("eatingProb", eatingProb, 0, 1)
         if let m = extendedMinutes, m < 0 || m > 24 * 60 { throw ValidationError.outOfRange("extendedMinutes") }
+        // An absolute source timestamp must be a plausible Unix second. A zero or negative value would
+        // compute an age of decades (harmless — reads as stale), but a *future* one computes a NEGATIVE
+        // age, which would read as permanently fresh. Reject rather than let a receiver derive
+        // freshness from a nonsense stamp.
+        //
+        // The ceiling is Int32.max, not a calendar date of our choosing, because that is the widest
+        // value every consumer can actually represent: `Int` is 32 bits on watchOS (arm64_32) and Monkey
+        // C's `Lang.Number` is a signed 32-bit integer. The original 2100-01-01 bound (4_102_444_800)
+        // did not COMPILE for the watch — it overflows a 32-bit `Int` — and could not have survived the
+        // Garmin wire either, so it stated a contract two of the three consumers could not keep.
+        //
+        // KNOWN LIMIT: this field therefore stops accepting stamps after 2038-01-19. Widening it means
+        // moving to Int64 here, `Lang.Long` on Garmin, and the schema maximum — all three together.
+        if let e = glucoseEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("glucoseEpochSec")
+        }
 
         // String length caps.
         let strings: [(String, String?)] = [

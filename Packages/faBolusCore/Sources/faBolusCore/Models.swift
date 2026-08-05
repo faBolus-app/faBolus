@@ -45,9 +45,14 @@ public enum GlucoseTrend: String, Sendable {
         }
     }
 
-    /// Map a raw trend string (may be a Unicode arrow) to its direction token.
-    public static func token(from raw: String) -> String {
-        (GlucoseTrend(rawValue: raw) ?? .flat).token
+    /// Map a raw trend string (may be a Unicode arrow) to its direction token, or `nil` when there is
+    /// no trend to report.
+    ///
+    /// C8: an empty or unrecognized arrow means *unknown*, and must stay unknown all the way to the
+    /// remote. This used to fall back to `.flat`, so a pump reporting "no arrow" became a flat arrow on
+    /// the watch and on Garmin — an inferred trend presented as a reported one.
+    public static func token(from raw: String) -> String? {
+        GlucoseTrend(rawValue: raw)?.token
     }
 }
 

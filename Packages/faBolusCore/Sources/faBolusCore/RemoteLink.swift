@@ -10,6 +10,7 @@ import WatchConnectivity
 public final class RemoteLink: NSObject, WCSessionDelegate, RemoteTransport, @unchecked Sendable {
     public var onReceive: (@MainActor (RemoteCommand) -> Void)?
     public var onReachabilityChange: (@MainActor (Bool) -> Void)?
+    public var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
 
     private let session: WCSession?
 
@@ -22,20 +23,44 @@ public final class RemoteLink: NSObject, WCSessionDelegate, RemoteTransport, @un
 
     public var isReachable: Bool { session?.isReachable ?? false }
 
-    /// Sends a command. Uses live messaging when reachable, else queues via transferUserInfo so
-    /// nothing is silently dropped (phone-out-of-range = deferred, not lost).
+    /// Sends a command.
+    ///
+    /// **A pump-mutating command is never queued.** `transferUserInfo` is a guaranteed, FIFO,
+    /// opportunistic-latency queue: iOS will deliver it eventually, which for a bolus means it can
+    /// land minutes after the user gave up and dosed another way. That is a double-dose hazard, and a
+    /// late `cancelBolus`/`resumePump` is the same class of problem. So for those kinds we use live
+    /// messaging only and report failure through `onUndeliverable`; the caller surfaces "not sent"
+    /// rather than sitting on "Delivering…" waiting for an echo that will never arrive.
+    ///
+    /// Non-mutating traffic (status reads, outcome echoes, advisory eating events) still queues, so a
+    /// watch that was out of range catches up instead of silently losing state.
     public func send(_ command: RemoteCommand) {
-        guard let session, let data = try? command.encoded() else { return }
-        if session.isReachable {
+        guard let data = try? command.encoded() else { return }
+        guard let session else { reportUndeliverable(command); return }
+        switch RemoteSendDisposition.decide(kind: command.kind, isReachable: session.isReachable) {
+        case .sendLive:
             session.sendMessageData(data, replyHandler: nil, errorHandler: { [weak self] _ in
-                self?.transfer(data)
+                guard let self else { return }
+                // A live send that errored: same rule, now with `liveSendFailed`.
+                switch RemoteSendDisposition.decide(kind: command.kind, isReachable: false,
+                                                   liveSendFailed: true) {
+                case .queue: self.transfer(data)
+                case .reportUndeliverable: self.reportUndeliverable(command)
+                case .sendLive: break   // unreachable by construction
+                }
             })
-        } else {
+        case .queue:
             transfer(data)
+        case .reportUndeliverable:
+            reportUndeliverable(command)
         }
     }
 
     private func transfer(_ data: Data) { session?.transferUserInfo(["cmd": data]) }
+
+    private func reportUndeliverable(_ command: RemoteCommand) {
+        Task { @MainActor in self.onUndeliverable?(command) }
+    }
 
     private func dispatch(_ data: Data) {
         guard let cmd = try? RemoteCommand.decodeValidated(data) else { return }   // audit A-07

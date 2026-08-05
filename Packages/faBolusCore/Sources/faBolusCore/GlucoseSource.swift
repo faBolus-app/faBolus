@@ -69,10 +69,15 @@ public enum GlucosePresentation: Sendable, Equatable {
 public struct GlucoseSample: Sendable, Equatable {
     public let mgdl: Int
     public let date: Date
-    public let trend: GlucoseTrend
+    /// The trend **as reported by the source**, or `nil` when the source does not report one.
+    ///
+    /// C8: faBolus never calculates a trend arrow, and "no trend available" must render as *no arrow*
+    /// rather than a flat one. This defaulted to `.flat`, so every source without a trend — HealthKit
+    /// among them — silently published "steady", an inferred clinical signal dressed as a reported one.
+    public let trend: GlucoseTrend?
     /// Stable id of the source that produced it (matches its `GlucoseSourceDescriptor.id`).
     public let sourceID: String
-    public init(mgdl: Int, date: Date, trend: GlucoseTrend = .flat, sourceID: String) {
+    public init(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
         self.mgdl = mgdl; self.date = date; self.trend = trend; self.sourceID = sourceID
     }
     public var reading: GlucoseReading { GlucoseReading(date: date, mgdl: mgdl) }

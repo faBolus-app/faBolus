@@ -212,7 +212,7 @@ struct CgmCredentialsView: View {
                     let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
                     let stale = GlucoseFreshness.isStale(s.date) ? " · STALE" : ""
                     result = SourceResult(id: id, name: name, status: .ok,
-                                          detail: "\(s.mgdl) mg/dL \(s.trend.rawValue) · \(ageStr)\(stale)")
+                                          detail: "\(s.mgdl) mg/dL \(s.trend?.rawValue ?? "") · \(ageStr)\(stale)")
                     break
                 }
                 // Surface a real connection error instead of a generic "no reading" warning.
