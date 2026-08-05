@@ -47,13 +47,20 @@ struct MacQRScanner: NSViewControllerRepresentable {
         override func viewWillAppear() {
             super.viewWillAppear()
             guard configured, !session.isRunning else { return }
+            // `startRunning()` blocks, so Apple recommends calling it off the main thread. `session` is a
+            // main-actor-isolated property of this NSViewController, and `AVCaptureSession` is a
+            // thread-safe reference type that is not formally `Sendable` — so capture it explicitly for
+            // the background closure rather than reaching through `self`. Without this, Swift 6 strict
+            // concurrency rejects the cross-actor reference; CI's Xcode 16.4 enforces it even though the
+            // newer local toolchain did not, which is how this reached `main`.
+            nonisolated(unsafe) let session = self.session
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self else { return }
-                self.session.startRunning()
+                session.startRunning()
                 // `availableMetadataObjectTypes` is only populated once the session is running with an
                 // active connection (macOS differs from iOS). Setting `.qr` before that throws
                 // NSInvalidArgumentException and hard-crashes — so set it here, guarded.
                 DispatchQueue.main.async {
+                    guard let self else { return }
                     if self.metadataOutput.availableMetadataObjectTypes.contains(.qr) {
                         self.metadataOutput.metadataObjectTypes = [.qr]
                     }
