@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import faBolusCore
+import UserNotifications
 @testable import faBolus
 
 /// P9 step 3 — the app-side broker owner. Pins that the coordinator's runtime + the single poster:
@@ -86,6 +87,24 @@ import faBolusCore
         // A safety category can never be snoozed, even when asked.
         rt2.snooze(.pumpDisconnect, until: at(10, 0))
         #expect(NotificationPoster.post(msg(.pumpDisconnect), runtime: rt2, now: at(9, 0)) { _ in }.deliver)
+    }
+
+    @Test func telemetryAccruesOnlyWhenOptedInAndAttributesResponses() {
+        let store = isolatedStore(#function)
+        let rt = NotificationRuntime(store: store)
+        // Opt-OUT (default): a delivered post records nothing.
+        NotificationPoster.post(msg(.pumpAlert, key: "a"), runtime: rt, now: at(9, 0)) { _ in }
+        #expect(rt.telemetry.isEmpty)
+        // Opt IN. Use a DISTINCT dedupeKey so this post isn't episode-suppressed by the first.
+        store.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
+        let d = NotificationPoster.post(msg(.pumpAlert, key: "b"), runtime: rt, now: at(9, 1)) { _ in }
+        #expect(d.deliver)
+        rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: UNNotificationDismissActionIdentifier)  // dismissed
+        rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: "SNOOZE")                                // acted-upon
+        #expect(rt.telemetry["pumpAlert"] == NotificationBroker.CategoryTelemetry(delivered: 1, dismissed: 1, actedUpon: 1))
+        // Persists across a runtime restart on the same App-Group store.
+        let rt2 = NotificationRuntime(store: store)
+        #expect(rt2.telemetry["pumpAlert"]?.delivered == 1)
     }
 
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {

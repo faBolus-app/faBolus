@@ -157,6 +157,21 @@ public enum NotificationBroker {
         }
     }
 
+    // MARK: - Telemetry (§6 responsibility #7)
+
+    /// Per-category counts used to tune notification defaults: how many were delivered, how many the user
+    /// dismissed (swiped away), and how many they acted on (opened / tapped an action). **Kept separate
+    /// from `State`** so it never perturbs the decision/equality semantics `decide` round-trips; it is
+    /// write-only accounting. Cumulative (lifetime), local-only, and gathered only when the user opts in.
+    public struct CategoryTelemetry: Sendable, Equatable, Codable {
+        public var delivered: Int
+        public var dismissed: Int
+        public var actedUpon: Int
+        public init(delivered: Int = 0, dismissed: Int = 0, actedUpon: Int = 0) {
+            self.delivered = delivered; self.dismissed = dismissed; self.actedUpon = actedUpon
+        }
+    }
+
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
