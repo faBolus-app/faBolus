@@ -1,5 +1,15 @@
 import Foundation
 
+/// The durable-persistence seam the host depends on, so the round-3 §5 fault matrix can inject a store
+/// that fails on demand (save throws at a specific transition, load reports corrupt, etc.) without
+/// touching the filesystem. Production uses `RemoteBolusLedgerStore`; tests use a scripted fake.
+/// Kept deliberately small — the three operations the host actually calls.
+public protocol RemoteBolusLedgerPersisting: AnyObject {
+    func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome
+    func save(_ ledger: RemoteBolusLedger) throws
+    func saveBestEffort(_ ledger: RemoteBolusLedger)
+}
+
 /// File-backed persistence for `RemoteBolusLedger` (FB-03). The host loads once at launch and saves after
 /// every state transition — crucially, right after `markDelivering` and BEFORE the first pump write — so
 /// exactly-once survives a crash or relaunch mid-delivery.
@@ -8,7 +18,7 @@ import Foundation
 /// A missing or corrupt file loads as an empty ledger (fail-safe: an unreadable ledger must not crash the
 /// app nor silently permit a retry of a request it can't see — callers still gate on the pump before any
 /// new delivery). Backing it in the App Group container lets widgets/extensions share one ledger.
-public final class RemoteBolusLedgerStore {
+public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
     private let url: URL
     private let cap: Int
 
@@ -44,6 +54,12 @@ public final class RemoteBolusLedgerStore {
         /// True when a persisted file exists but could not be read/decoded. The returned `ledger` is empty
         /// (so idempotency still functions) but the host MUST treat this as a global delivery block.
         public let failedClosed: Bool
+        /// Public so a test double conforming to `RemoteBolusLedgerPersisting` can construct outcomes
+        /// (the §5 fault matrix). Production builds these inside `loadOutcome()` above.
+        public init(ledger: RemoteBolusLedger, failedClosed: Bool) {
+            self.ledger = ledger
+            self.failedClosed = failedClosed
+        }
     }
 
     /// Load the ledger, reporting whether a corrupt/unreadable existing store forced a fail-closed empty.

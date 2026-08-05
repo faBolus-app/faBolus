@@ -260,7 +260,7 @@ public final class AppModel {
     /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
     /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
     /// FB-03: durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
-    @ObservationIgnored private let remoteBolusLedgerStore: RemoteBolusLedgerStore
+    @ObservationIgnored private let remoteBolusLedgerStore: any RemoteBolusLedgerPersisting
     @ObservationIgnored private lazy var remoteBolusLedger: RemoteBolusLedger = {
         let outcome = remoteBolusLedgerStore.loadOutcome()
         if outcome.failedClosed { ledgerFailedClosed = true }
@@ -523,7 +523,13 @@ public final class AppModel {
 
     /// - Parameter ledgerStoreURL: overrides the durable idempotency-ledger file (FB-03). Tests inject a
     ///   unique temp URL so instances don't share the App Group ledger; production uses the default.
-    public init(source: PumpBackend, ledgerStoreURL: URL? = nil) {
+    /// - Parameter ledgerStore: injects the durable store directly (round-3 §5 fault-injection matrix —
+    ///   a store that throws on a chosen save, or reports a corrupt load). Takes precedence over
+    ///   `ledgerStoreURL`. Production leaves it nil. `forceNoDurableStore` exercises the §5.8
+    ///   no-storage-location block, which the filesystem path can't reproduce on a normal test host.
+    public init(source: PumpBackend, ledgerStoreURL: URL? = nil,
+                ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
+                forceNoDurableStore: Bool = false) {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
@@ -531,10 +537,15 @@ public final class AppModel {
         // back to a volatile /tmp file — create a placeholder store but keep delivery disabled via
         // `noDurableStore` (surfaced as a recoverable block), so a bolus is never tracked in a store that
         // can vanish.
-        let durableURL = ledgerStoreURL ?? RemoteBolusLedgerStore.defaultURL(appGroupID: WidgetStore.appGroup)
-        if durableURL == nil { self.noDurableStore = true }
-        self.remoteBolusLedgerStore = RemoteBolusLedgerStore(
-            url: durableURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger-unavailable.json"))
+        if let ledgerStore {
+            self.remoteBolusLedgerStore = ledgerStore
+            self.noDurableStore = forceNoDurableStore
+        } else {
+            let durableURL = ledgerStoreURL ?? RemoteBolusLedgerStore.defaultURL(appGroupID: WidgetStore.appGroup)
+            if durableURL == nil || forceNoDurableStore { self.noDurableStore = true }
+            self.remoteBolusLedgerStore = RemoteBolusLedgerStore(
+                url: durableURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger-unavailable.json"))
+        }
         Self.shared = self
         source.onChange = { [weak self] in self?.refresh() }
         // Round-3 §5: acknowledged bolus-id handshake — durably record the pump id (+ its "sent" phase)
