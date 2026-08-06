@@ -52,7 +52,7 @@ struct WatchChartView: View {
                 Spacer()
             } else {
                 Chart {
-                    RectangleMark(yStart: .value("Low", 70), yEnd: .value("High", 180))
+                    RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
                         .foregroundStyle(.green.opacity(0.12))
                     ForEach(points.indices, id: \.self) { idx in
                         PointMark(x: .value("t", points[idx].date), y: .value("bg", points[idx].mgdl))
@@ -61,7 +61,7 @@ struct WatchChartView: View {
                     }
                 }
                 .chartYScale(domain: 40...300)
-                .chartYAxis { AxisMarks(values: [70, 180, 250]) }
+                .chartYAxis { AxisMarks(values: [GlucoseThresholds.low, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) }
                 .chartXAxis(.hidden)   // time is the X *value* (proportional spacing); labels stay off on the small face
             }
         }

@@ -1,5 +1,17 @@
 import Foundation
 
+/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. The widget/complication extension
+/// targets deliberately do **not** link faBolusCore (they compile `WidgetShared.swift` directly for a
+/// lightweight binary), so the canonical constants aren't reachable there — this mirror carries the
+/// same values. `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH) asserts these equal
+/// the canonical `GlucoseThresholds`, so the two can't drift silently. See `GlucoseThresholds` for the
+/// clinical source (Battelino 2019 international TIR consensus, §13).
+public enum WidgetGlucoseThresholds {
+    public static let low = 70        // == GlucoseThresholds.low
+    public static let high = 180      // == GlucoseThresholds.high
+    public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
+}
+
 /// Data shared from the app to its WidgetKit extension via an App Group. The app writes a
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
@@ -52,13 +64,17 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
+    /// Uses the same **closed clinical convention** as `faBolusCore.GlucoseRange` (70…180 in-range,
+    /// 181…250 high, > 250 urgent); the boundaries come from `WidgetGlucoseThresholds` (the widget
+    /// island's mirror of the canonical constants). Kept in lockstep with the core classifier by
+    /// `WidgetGlucoseThresholdsMirrorTests`.
     public static func rangeCategory(_ mgdl: Int?) -> Int {
         guard let g = mgdl else { return -1 }
         switch g {
-        case ..<70: return 0
-        case 70..<180: return 1
-        case 180..<250: return 2
-        default: return 3
+        case ..<WidgetGlucoseThresholds.low: return 0                                      // < 70
+        case WidgetGlucoseThresholds.low...WidgetGlucoseThresholds.high: return 1          // 70…180
+        case (WidgetGlucoseThresholds.high + 1)...WidgetGlucoseThresholds.veryHigh: return 2  // 181…250
+        default: return 3                                                                  // > 250
         }
     }
     public var rangeCategory: Int { Self.rangeCategory(glucose) }

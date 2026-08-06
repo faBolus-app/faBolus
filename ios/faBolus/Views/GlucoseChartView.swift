@@ -37,7 +37,7 @@ struct GlucoseChartView: View {
     var body: some View {
         Chart {
             if showGlucose {
-                RectangleMark(yStart: .value("Low", 70), yEnd: .value("High", 180))
+                RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
                     .foregroundStyle(AppTheme.inRange.opacity(0.12))
                 ForEach(visible) { r in
                     PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
@@ -63,7 +63,7 @@ struct GlucoseChartView: View {
         .chartYScale(domain: gLo...gHi)
         .chartYAxis {
             if showGlucose {
-                AxisMarks(position: .leading, values: [70, 120, 180, 250]) { value in
+                AxisMarks(position: .leading, values: [GlucoseThresholds.low, 120, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) { value in
                     AxisGridLine()
                     AxisValueLabel { if let v = value.as(Int.self) { Text("\(v)") } }
                 }
