@@ -211,6 +211,14 @@ struct BolusEntryView: View {
                         Label("Bolus is disabled by child mode", systemImage: "lock.fill")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    // Group D: the shared gate surfaces pump-link / in-flight reasons the button used to
+                    // grey silently (a disconnected or mid-delivery pump). overMax + child mode keep their
+                    // dedicated labels above; bounds are self-evident from the entry field.
+                    if let r = model.bolusGate(amount: units, minimum: 0.05).reason,
+                       r == .pumpNotLinked || r == .bolusInFlight {
+                        Label(r.userMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     // Smart Assist (advisory) — never blocks; the deliver button stays enabled.
                     ForEach(smartWarnings, id: \.self) { warning in
                         Label(warning, systemImage: "exclamationmark.triangle.fill")
@@ -225,7 +233,7 @@ struct BolusEntryView: View {
                         HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
                     .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
-                    .disabled(units < 0.05 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus) || preparingDeliver)
+                    .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
                 }
             }
 
@@ -241,7 +249,7 @@ struct BolusEntryView: View {
                         HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
                     .buttonStyle(.bordered).tint(AppTheme.insulin)
-                    .disabled(units < 0.4 || overMax || model.snapshot.connection != .connected || !settings.childAllows(.bolus) || preparingDeliver)
+                    .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
                 }
             }
         }
