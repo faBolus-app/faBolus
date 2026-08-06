@@ -237,8 +237,9 @@ struct BolusEntryView: View {
                 }
             }
 
-            // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple).
-            if settings.extendedBolusEnabled && !delivering {
+            // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple) AND the
+            // pump supports it (P13c-5 capability gate: don't offer a combo bolus a pump can't deliver).
+            if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
                 Section("Extended (combo) bolus") {
                     Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
                     Stepper("Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)

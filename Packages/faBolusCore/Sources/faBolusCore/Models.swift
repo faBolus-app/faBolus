@@ -241,6 +241,12 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsHistoryBackfill: Bool
     /// The backend needs an interactive pairing flow (e.g. a 6-digit code).
     public var supportsPairing: Bool
+    /// The pump supports an **extended (combo) bolus** — part now, the rest over a duration. A *bolus*
+    /// capability (not an advanced-control one), so it is offered independent of the advanced-control
+    /// opt-in; it is still gated by the user's `extendedBolusEnabled` preference. Defaults true (both
+    /// current Tandem models support it); a backend that can't (e.g. a future pod) sets it false, and the
+    /// extended-bolus affordance disappears instead of failing at the pump.
+    public var supportsExtendedBolus: Bool
 
     // Advanced pump control (Workstream B / controlX2 parity) — write commands beyond bolus, mostly
     // Mobi-only on real hardware. The UI must gate each on BOTH the flag here AND
@@ -261,7 +267,7 @@ public struct PumpCapabilities: Sendable, Equatable {
     public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
                 supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
                 supportsHistoryBackfill: Bool = true,
-                supportsPairing: Bool = true,
+                supportsPairing: Bool = true, supportsExtendedBolus: Bool = true,
                 supportsSuspendResume: Bool = false, supportsTempBasal: Bool = false,
                 supportsModes: Bool = false, supportsProfiles: Bool = false,
                 supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
@@ -273,7 +279,7 @@ public struct PumpCapabilities: Sendable, Equatable {
         self.supportsAlertClear = supportsAlertClear
         self.supportsRemoteAlertDismiss = supportsRemoteAlertDismiss
         self.supportsHistoryBackfill = supportsHistoryBackfill
-        self.supportsPairing = supportsPairing
+        self.supportsPairing = supportsPairing; self.supportsExtendedBolus = supportsExtendedBolus
         self.supportsSuspendResume = supportsSuspendResume; self.supportsTempBasal = supportsTempBasal
         self.supportsModes = supportsModes; self.supportsProfiles = supportsProfiles
         self.supportsControlIQSettings = supportsControlIQSettings; self.supportsCgmSession = supportsCgmSession
