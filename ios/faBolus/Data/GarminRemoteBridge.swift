@@ -48,6 +48,19 @@ final class GarminRemoteBridge: NSObject {
     private var sendInFlight = false
     private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
     private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
+    // A2 send-watchdog: ConnectIQ's `sendMessage` completion has NO timeout, so a lost/never-fired
+    // completion (watch app died, out of range, Garmin Connect dropped it) would leave `sendInFlight`
+    // true forever — the `guard !sendInFlight` below then makes every later status push AND every
+    // bolus-outcome echo a permanent no-op with no recovery short of an app relaunch. Arm a timer with
+    // each send; if the completion doesn't arrive within `sendTimeout`, recover — re-attempt the exact
+    // in-flight payload (bounded), else drop + log. `sendGeneration` makes a completion that races the
+    // watchdog a no-op so it can't double-drain. Mirrors PumpBLEClient's reconnect watchdog
+    // (Timer + invalidate + `MainActor.assumeIsolated`).
+    private var sendWatchdog: Timer?
+    private var sendGeneration = 0
+    private var inFlight: (payload: [String: Any], isEcho: Bool, attempts: Int)?
+    private static let sendTimeout: TimeInterval = 8
+    private static let maxSendAttempts = 3
 
     init(model: AppModel) {
         self.model = model
@@ -125,22 +138,55 @@ final class GarminRemoteBridge: NSObject {
 
     private func pump() {
         guard let app, !sendInFlight else { return }
-        let next: [String: Any]
-        if !echoQueue.isEmpty {
-            next = echoQueue.removeFirst()
+        let next: [String: Any]; let isEcho: Bool; let attempts: Int
+        if let f = inFlight {                       // re-attempt of a payload whose completion was lost
+            next = f.payload; isEcho = f.isEcho; attempts = f.attempts
+        } else if !echoQueue.isEmpty {
+            next = echoQueue.removeFirst(); isEcho = true; attempts = 0
         } else if let status = pendingStatus {
-            next = status; pendingStatus = nil
+            next = status; pendingStatus = nil; isEcho = false; attempts = 0
         } else {
             return
         }
+        inFlight = (next, isEcho, attempts)
         sendInFlight = true
+        sendGeneration &+= 1
+        let gen = sendGeneration
+        armSendWatchdog(generation: gen)
         ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, gen == self.sendGeneration else { return }   // watchdog already superseded this send
+                self.sendWatchdog?.invalidate(); self.sendWatchdog = nil
+                self.inFlight = nil
                 self.sendInFlight = false
                 self.pump()   // drain the next queued message (echo first, else the latest status)
             }
         }
+    }
+
+    /// Arm (replacing any prior) the send-watchdog for the current in-flight send.
+    private func armSendWatchdog(generation gen: Int) {
+        sendWatchdog?.invalidate()
+        sendWatchdog = Timer.scheduledTimer(withTimeInterval: Self.sendTimeout, repeats: false) { [weak self] _ in
+            // Fires on the main run loop (scheduled from the @MainActor pump()), so we're really on the
+            // main actor — hop in explicitly, matching PumpBLEClient's watchdog.
+            MainActor.assumeIsolated { self?.sendWatchdogFired(generation: gen) }
+        }
+    }
+
+    /// The ConnectIQ completion never arrived within `sendTimeout`. Recover instead of wedging the queue:
+    /// re-attempt the same payload (bounded), else drop it and move on. Bumping `sendGeneration` makes any
+    /// late completion for this send a no-op, so it can't double-drain.
+    private func sendWatchdogFired(generation gen: Int) {
+        guard gen == sendGeneration else { return }   // a completion already advanced us; stale timer
+        sendGeneration &+= 1
+        sendWatchdog = nil
+        sendInFlight = false
+        if var f = inFlight {
+            f.attempts += 1
+            inFlight = f.attempts < Self.maxSendAttempts ? f : nil   // bounded re-attempt; else drop
+        }
+        pump()
     }
 
     private func handle(_ cmd: RemoteCommand) {
