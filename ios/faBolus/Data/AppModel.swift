@@ -199,8 +199,9 @@ public final class AppModel {
     /// together, so a surface can't be gated on one layer and open on another. Pure inputs — the evaluator
     /// itself lives in faBolusCore and touches no globals. For an authenticated-peer surface it supplies
     /// that peer's stored policy (Gate 4); for every other surface `peerPolicy` is nil (and Gate 4 is
-    /// skipped). `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`) — the evaluator
-    /// composes it with `isMobi` + capabilities, exactly as the UI's `advancedControlAllowed` does.
+    /// skipped). `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`); the evaluator
+    /// composes it with the pump-derived `capabilities` (P13 retired the raw `isMobi` gate), matching
+    /// the UI's `advancedControlAllowed`.
     func accessDecision(_ action: GatedPumpWrite,
                         from surface: AccessPolicy.Surface,
                         peerId: String? = nil) -> AccessPolicy.AccessDecision {
@@ -213,7 +214,6 @@ public final class AppModel {
             phoneReadOnly: AppSettings.shared.phoneReadOnly,
             remotesReadOnly: AppSettings.shared.remotesReadOnly,
             advancedControlOptIn: AppSettings.shared.advancedControlEnabled,
-            isMobi: snapshot.isMobi,
             capabilities: capabilities,
             hasRecentUnverifiedAck: hasRecentUnverifiedAck,
             peerPolicy: peerPolicy)
@@ -643,6 +643,9 @@ public final class AppModel {
             guard !snapshot.pumpModelName.isEmpty else { return }
             let code = enteredPairCode!
             enteredPairCode = nil
+            // P13: a Mobi pairing-mechanism fact (only Mobi has a savable fixed PIN), not an advanced-
+            // control capability gate — so it stays a model read here; the controller descriptor (13c)
+            // will own pump-identity facts like this.
             if snapshot.isMobi, code != PairingStore.loadPin() { savePinPrompt = code }
         case .disconnected, .error:
             enteredPairCode = nil   // pairing didn't complete — drop the pending offer
@@ -1263,11 +1266,10 @@ public final class AppModel {
 
     // MARK: Advanced control (B3) — gated in the UI by `advancedControlAllowed`.
 
-    /// The single gate the control UI uses: opt-in ON, pump is a Mobi, and the backend advertises
-    /// at least one advanced-control capability.
+    /// The single gate the control UI uses: opt-in ON and the pump advertises at least one
+    /// advanced-control capability (P13: pump-derived capabilities, not the raw `isMobi` model check).
     public var advancedControlAllowed: Bool {
-        AppSettings.shared.advancedControlAllowed(isMobi: snapshot.isMobi)
-            && capabilities.supportsAnyAdvancedControl
+        AppSettings.shared.advancedControlAllowed(capabilities: capabilities)
             && !AppSettings.shared.phoneReadOnly   // read-only hides the Pump Control entry entirely
     }
 

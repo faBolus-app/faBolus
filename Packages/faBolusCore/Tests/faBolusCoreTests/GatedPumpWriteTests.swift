@@ -32,25 +32,41 @@ import Testing
         #expect(total == GatedPumpWrite.allCases.count)
     }
 
-    /// P8 funnel gate: `requiresAdvancedControl` must match, exactly, the set of actions the app reaches
-    /// ONLY behind `advancedControlAllowed` (the opt-in + Mobi gate) — verified against the live UI
-    /// 2026-08-05 — so routing it through the funnel changes no shipped t:slim behavior. The one trap this
-    /// pins: `syncTimeToNow` is reachable on Mobi from Settings WITHOUT the opt-in, so it must be EXCLUDED,
-    /// or the funnel would regress Mobi time-sync.
-    @Test func requiresAdvancedControlMatchesTheOptInGatedSet() {
-        // Never advanced: delivery + the child-only pair.
+    /// P13 opt-in axis: `requiresAdvancedControlOptIn` must match, exactly, the set of actions the app
+    /// reaches ONLY behind `advancedControlAllowed` — verified against the live UI 2026-08-05 — so
+    /// routing it through the funnel changes no shipped t:slim behavior. The one trap this pins:
+    /// `syncTimeToNow` is reachable on Mobi from Settings WITHOUT the opt-in, so it must be EXCLUDED, or
+    /// the funnel would regress Mobi time-sync.
+    @Test func requiresAdvancedControlOptInMatchesTheOptInGatedSet() {
+        // Never opt-in-gated: delivery + the child-only pair.
         for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
-            #expect(!a.requiresAdvancedControl, "\(a.rawValue) must not require advanced control")
+            #expect(!a.requiresAdvancedControlOptIn, "\(a.rawValue) must not require the advanced opt-in")
         }
         // The deliberate exclusion — Settings → Pump clock reaches this on Mobi without the opt-in.
-        #expect(!GatedPumpWrite.syncTimeToNow.requiresAdvancedControl,
+        #expect(!GatedPumpWrite.syncTimeToNow.requiresAdvancedControlOptIn,
                 "syncTimeToNow is capability-gated (supportsTimeSync), NOT opt-in-gated — must be excluded")
         // Every other control / unverified-ack write DOES require it (opt-in-gated in the UI).
-        let advanced = Set(GatedPumpWrite.allCases.filter { $0.requiresAdvancedControl }.map(\.rawValue))
+        let advanced = Set(GatedPumpWrite.allCases.filter { $0.requiresAdvancedControlOptIn }.map(\.rawValue))
         let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
         #expect(advanced == expected)
         #expect(!advanced.contains("syncTimeToNow"))
         // Sanity on the count: 25 controlInterlock + 8 unverifiedAck − 1 (syncTimeToNow) = 32.
         #expect(advanced.count == 32)
+    }
+
+    /// P13 capability axis: `hasRequiredCapability` is the split-out counterpart. syncTimeToNow declares
+    /// `supportsTimeSync` (removing the old special-case); the advanced writes require any advanced
+    /// capability; delivery + the child-only pair require none (so Gate 5 never blocks a bolus).
+    @Test func hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet() {
+        #expect(GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .mobiAdvanced))
+        #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))   // t:slim: no timeSync
+        for a in [GatedPumpWrite.setTempBasal, .suspendDelivery, .setMode, .setControlIQ] {
+            #expect(a.hasRequiredCapability(in: .mobiAdvanced))
+            #expect(!a.hasRequiredCapability(in: .full), "\(a.rawValue) needs an advanced capability")
+        }
+        // Never capability-gated — delivery must never be blocked by Gate 5 (no advanced capability).
+        for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
+            #expect(a.hasRequiredCapability(in: .full), "\(a.rawValue) must never require a capability")
+        }
     }
 }

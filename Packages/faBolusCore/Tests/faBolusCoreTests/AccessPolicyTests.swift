@@ -14,14 +14,14 @@ import Testing
     private var locked: P.AccessContext {
         P.AccessContext(childModeEnabled: true, childAllowed: [],
                         phoneReadOnly: true, remotesReadOnly: true,
-                        advancedControlOptIn: false, isMobi: false, capabilities: PumpCapabilities(),
+                        advancedControlOptIn: false, capabilities: PumpCapabilities(),
                         hasRecentUnverifiedAck: false, peerPolicy: .viewOnly)
     }
     /// Fully permissive: child off, no read-only, advanced control available, ack present, full peer policy.
     private func openCtx(peer: RemotePeerPolicy? = .fullControl) -> P.AccessContext {
         P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                         phoneReadOnly: false, remotesReadOnly: false,
-                        advancedControlOptIn: true, isMobi: true, capabilities: .mobiAdvanced,
+                        advancedControlOptIn: true, capabilities: .mobiAdvanced,
                         hasRecentUnverifiedAck: true, peerPolicy: peer)
     }
 
@@ -79,13 +79,24 @@ import Testing
     }
 
     @Test func advancedControlRequiresCapabilityAndOptIn() {
+        // Opt-in axis: opt-in off ⇒ an advanced write is denied even on a fully-capable pump.
         var noOptIn = openCtx(); noOptIn.advancedControlOptIn = false
         #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: noOptIn).reason == .capabilityUnavailable)
-        var notMobi = openCtx(); notMobi.isMobi = false
-        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: notMobi).reason == .capabilityUnavailable)
-        // Delivery + the childOnly pair never require advanced control.
+        // Capability axis: a pump with no advanced capability (e.g. a t:slim, `.full`) denies advanced
+        // writes regardless of opt-in — P13 keys this on capabilities, not the retired `isMobi`.
+        var noCap = openCtx(); noCap.capabilities = .full
+        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
+        // Delivery + the childOnly pair never require advanced control (Gate 5 is a no-op for them).
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: noOptIn).allowed)
         #expect(P.evaluate(.cancelBolus, surface: .phoneUI, context: noOptIn).allowed)
+    }
+
+    @Test func syncTimeToNowNeedsCapabilityNotOptIn() {
+        // P13 split, the motivating case: syncTimeToNow requires `supportsTimeSync` but NOT the opt-in.
+        var noOptIn = openCtx(); noOptIn.advancedControlOptIn = false   // caps = .mobiAdvanced (has timeSync)
+        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noOptIn).allowed)
+        var noTimeSync = openCtx(); noTimeSync.capabilities = .full     // t:slim: no supportsTimeSync
+        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noTimeSync).reason == .capabilityUnavailable)
     }
 
     @Test func unverifiedAckGatesExactlyTheAckSet() {

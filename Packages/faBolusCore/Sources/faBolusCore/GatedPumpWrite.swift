@@ -92,26 +92,38 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// Whether this action requires the advanced-control **opt-in** at the funnel (the pump-capability
-    /// gate, enforced there as defense-in-depth per owner decision 2026-08-05). It matches exactly what
-    /// the app's `advancedControlAllowed` gate composes today (`advancedControlEnabled` opt-in + `isMobi`
-    /// + `supportsAnyAdvancedControl`), so routing changes no shipped t:slim behavior — verified
-    /// 2026-08-05 that every one of these is reachable in the UI ONLY behind `advancedControlAllowed`,
-    /// hence unreachable on a t:slim X2 (`isMobi == false`).
-    ///
-    /// Three exclusions, each deliberate:
-    ///  - delivery (`.ledgeredDelivery`) and the child-only pair (`.childOnly`) are never advanced.
-    ///  - **`syncTimeToNow`** — verified 2026-08-05 to be reachable on a Mobi from Settings → "Pump clock"
-    ///    WITHOUT the advanced-control opt-in; it is gated only by its own `supportsTimeSync` capability
-    ///    (false on t:slim, so hidden there; true on Mobi). Requiring the opt-in here would tighten shipped
-    ///    Mobi behavior, so it is excluded. It has no remote verb and no non-UI caller, and a t:slim pump
-    ///    rejects the write anyway, so leaving it un-gated at the funnel is not a hole. Per-action
-    ///    capability gating (the proper fix for this coarseness) is P13.
-    public var requiresAdvancedControl: Bool {
+    /// The **opt-in axis** (P13 split): whether this action needs the user's advanced-control opt-in
+    /// (`advancedControlEnabled`) at the funnel. This is the former `requiresAdvancedControl`, unchanged
+    /// — the set of writes the app reaches ONLY behind `advancedControlAllowed` (verified against the
+    /// live UI 2026-08-05). Delivery (`.ledgeredDelivery`) and the child-only pair (`.childOnly`) never
+    /// need the opt-in; neither does `syncTimeToNow` — it is reachable on a Mobi from Settings → "Pump
+    /// clock" WITHOUT the opt-in, gated only by its own `supportsTimeSync` capability (see
+    /// `hasRequiredCapability`). Requiring the opt-in for it would tighten shipped Mobi behavior.
+    public var requiresAdvancedControlOptIn: Bool {
         if self == .syncTimeToNow { return false }
         switch gate {
         case .controlInterlock, .unverifiedAck: return true
         case .ledgeredDelivery, .childOnly: return false
+        }
+    }
+
+    /// The **capability axis** (P13 split): whether the connected pump's capability set permits this
+    /// action, independent of the opt-in. Splitting this out of `requiresAdvancedControl` removes the
+    /// old hand-carved `if self == .syncTimeToNow` special-case — a Mobi-only-BY-CAPABILITY action can
+    /// now declare its capability (`supportsTimeSync`) cleanly instead of masquerading as "not advanced".
+    /// Capabilities are now pump-derived (P13-1 `PumpCapabilities.derive` reads the pump's own feature
+    /// bitmask), so this axis no longer leans on `isMobi`.
+    ///
+    /// The advanced-control writes require any advanced capability (`supportsAnyAdvancedControl`) —
+    /// preserving today's coarse check exactly. A finer per-action mapping (e.g. `setMode →
+    /// supportsModes`) is a deliberate follow-up, now feasible because P13-1 can produce non-uniform
+    /// capability sets; it is deferred so this increment stays behavior-preserving on every reachable
+    /// path. Delivery and the child-only pair require no capability (Gate 5 stays a no-op for them).
+    public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
+        if self == .syncTimeToNow { return caps.supportsTimeSync }
+        switch gate {
+        case .controlInterlock, .unverifiedAck: return caps.supportsAnyAdvancedControl
+        case .ledgeredDelivery, .childOnly: return true
         }
     }
 }

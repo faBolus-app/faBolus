@@ -358,9 +358,10 @@ struct PumpSettingsView: View {
                     Text("Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST).")
                 }
             }
-            // Advanced control is Mobi-only, so the whole section is hidden unless a Mobi is paired
-            // (or it's already enabled, so it can still be turned off). t:slim users never see it.
-            if model.snapshot.isMobi || settings.advancedControlEnabled {
+            // Advanced control needs a pump that advertises it (Mobi-only in practice), so the whole
+            // section is hidden unless the pump has an advanced capability (or it's already enabled, so
+            // it can still be turned off). P13: keyed on the pump-derived capability set, not `isMobi`.
+            if model.capabilities.supportsAnyAdvancedControl || settings.advancedControlEnabled {
                 Section {
                     Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
                     if settings.advancedControlEnabled {
@@ -369,6 +370,9 @@ struct PumpSettingsView: View {
                                 Label("Pump Control", systemImage: "slider.horizontal.3")
                             }
                         } else {
+                            // P13 deferral: this is user-facing BRAND copy (names the Mobi model), which
+                            // the controller descriptor owns in 13c — not a capability gate — so it keeps
+                            // reading `snapshot.isMobi` until the descriptor supplies the model string.
                             Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
                                  : "Advanced control requires a Tandem Mobi pump.")
                                 .font(.footnote).foregroundStyle(.secondary)

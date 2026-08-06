@@ -51,9 +51,9 @@ public enum AccessPolicy {
         // Gate 3 — read-only
         public var phoneReadOnly: Bool
         public var remotesReadOnly: Bool
-        // Gate 5 — pump capability + advanced-control opt-in
+        // Gate 5 — pump capability + advanced-control opt-in. P13: `isMobi` retired — capabilities are
+        // now pump-derived (from the pump's own feature bitmask) and are the sole capability signal.
         public var advancedControlOptIn: Bool
-        public var isMobi: Bool
         public var capabilities: PumpCapabilities
         // Gate 1 — unverified-feature acknowledgment
         public var hasRecentUnverifiedAck: Bool
@@ -64,7 +64,7 @@ public enum AccessPolicy {
 
         public init(childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
                     phoneReadOnly: Bool, remotesReadOnly: Bool,
-                    advancedControlOptIn: Bool, isMobi: Bool, capabilities: PumpCapabilities,
+                    advancedControlOptIn: Bool, capabilities: PumpCapabilities,
                     hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
                     modeContext: ModeGateContext = .init()) {
             self.childModeEnabled = childModeEnabled
@@ -72,7 +72,6 @@ public enum AccessPolicy {
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.advancedControlOptIn = advancedControlOptIn
-            self.isMobi = isMobi
             self.capabilities = capabilities
             self.hasRecentUnverifiedAck = hasRecentUnverifiedAck
             self.peerPolicy = peerPolicy
@@ -141,11 +140,17 @@ public enum AccessPolicy {
         }
 
         // Gate 5 — pump capability + advanced-control opt-in (enforced at the funnel — owner decision
-        // 2026-08-05), matching what the UI's `advancedControlAllowed` composes today.
-        if action.requiresAdvancedControl {
-            let advancedAvailable = context.advancedControlOptIn && context.isMobi
-                && context.capabilities.supportsAnyAdvancedControl
-            if !advancedAvailable { return .deny(.capabilityUnavailable) }
+        // 2026-08-05). P13: two independent axes. The opt-in axis matches today's `advancedControlAllowed`
+        // exactly; the capability axis is now driver-derived from the pump's own feature bitmask (P13-1),
+        // so `isMobi` is gone. `syncTimeToNow` needs `supportsTimeSync` but NOT the opt-in — the split
+        // removes the old special-case (a defense-in-depth tightening: the funnel now also refuses it on
+        // a pump lacking that capability, which the UI already hides and no remote verb can reach).
+        // Delivery + childOnly require neither axis, so Gate 5 stays a no-op there.
+        if action.requiresAdvancedControlOptIn && !context.advancedControlOptIn {
+            return .deny(.capabilityUnavailable)
+        }
+        if !action.hasRequiredCapability(in: context.capabilities) {
+            return .deny(.capabilityUnavailable)
         }
 
         // Gate 1 — unverified-feature acknowledgment (the ack-gated therapy writes).
