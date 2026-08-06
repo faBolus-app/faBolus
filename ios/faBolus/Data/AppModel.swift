@@ -1483,10 +1483,20 @@ public final class AppModel {
 
     // MARK: Config wizards (A4 continued)
     // P14 S6 (§2.1(1)): Control-IQ config is therapy-defining → route through the ACK funnel (was
-    // `runControl`, no acknowledgment). S11 adds the firmware/CIQ compatibility pre-flight on top.
+    // `runControl`, no acknowledgment).
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
-        // S6 (§2.1(1)): Control-IQ config is therapy-defining → ACK funnel `runGatedTherapy` (was
-        // `runControl`). S8: record `.selfSet` provenance on a successful, value-changing edit.
+        // P14 S11 (§2.1(7)): firmware + Control-IQ-version compatibility pre-flight, FIRST. Refuse a config
+        // write the connected pump can't take remotely (t:slim configures Control-IQ only on the pump; a
+        // non-Control-IQ pump has none) with a plain reason, rather than issuing a write it silently
+        // rejects. Gated on the authoritative remote-config capability, NOT on `controllerVariant` (which
+        // is `.none` until the feature bits are read — see `configBlockReason`).
+        if let reason = ControlIQPrecondition.configBlockReason(
+            supportsControlIQConfig: capabilities.supportsControlIQSettings,
+            controllerVariant: snapshot.controllerVariant) {
+            lastError = reason; return
+        }
+        // S6 (§2.1(1)): therapy-defining → ACK funnel `runGatedTherapy` (was `runControl`). S8: record
+        // `.selfSet` provenance on a successful, value-changing edit.
         let before = snapshot.controlIQEnabled
         await runGatedTherapy(.setControlIQ) { try await self.source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
         recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
