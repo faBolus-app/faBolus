@@ -1309,12 +1309,26 @@ public final class TandemBackend: NSObject, PumpBackend {
 // PumpBLEClientDelegate is @MainActor; PumpBLEClient delivers all callbacks on the main actor.
 extension TandemBackend: PumpBLEClientDelegate {
     public func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
+        applyClientState(state)
+        onChange?()
+    }
+
+    /// Fold a kit BLE state into the snapshot. Factored out of the delegate (which takes a live
+    /// `PumpBLEClient` and is hard to unit-test) so the state→snapshot mapping is directly testable.
+    /// P12 (app-boundary state): the four radio-down states — Bluetooth off / permission denied /
+    /// unsupported / resetting — used to hit `default: break`, silently leaving a STALE `connection`
+    /// (e.g. still "Connected" after the radio powered off). They now fail closed to `.disconnected` —
+    /// running the SAME waiter-failing cleanup as a normal drop — and carry a user-facing reason in
+    /// `connectionDetail`. `didDisconnectPeripheral`/`didError` may not fire on a BT power-off (kit
+    /// comment at PumpBLEClient.centralManagerDidUpdateState), so this is the only place these surface.
+    func applyClientState(_ state: PumpBLEClient.State) {
         switch state {
-        case .scanning: snapshot.connection = .scanning
-        case .connecting, .discovering: snapshot.connection = .connecting
-        case .ready: snapshot.connection = .connected
-        case .disconnected, .idle:
+        case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
+        case .connecting, .discovering: snapshot.connection = .connecting; snapshot.connectionDetail = nil
+        case .ready: snapshot.connection = .connected; snapshot.connectionDetail = nil
+        case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
+            snapshot.connectionDetail = Self.linkDetail(for: state)
             // Resume any glucose-refresh waiters so they don't hang across a disconnect (audit C-05).
             if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
             // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
@@ -1324,9 +1338,25 @@ extension TandemBackend: PumpBLEClientDelegate {
             backfillTimer?.invalidate(); backfillTimer = nil
             backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
             detectedIsMobi = nil   // re-detect the model on the next connect
-        default: break
+        default:
+            // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
+            // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
+            // `.unknown`, so no frozen-enum exhaustiveness warning on this external-module enum.
+            snapshot.connection = .disconnected
+            snapshot.connectionDetail = nil
         }
-        onChange?()
+    }
+
+    /// A short human explanation for a specific down state; nil for the benign/transitional ones where
+    /// the "Disconnected" label already says enough (plain disconnect, idle-but-powered-on).
+    private static func linkDetail(for state: PumpBLEClient.State) -> String? {
+        switch state {
+        case .poweredOff:   return "Bluetooth is off"
+        case .unauthorized: return "Bluetooth permission denied — enable it in Settings"
+        case .unsupported:  return "Bluetooth unavailable on this device"
+        case .resetting:    return "Bluetooth is resetting…"
+        default:            return nil
+        }
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
@@ -1539,12 +1569,21 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didError error: Error) {
+        applyClientError(error)
+        onChange?()
+    }
+
+    /// Factored out of the delegate for testability (see `applyClientState`). P12 (app-boundary state):
+    /// preserve the disconnect REASON for the passive HUD viewer — previously the concrete error reached
+    /// only the in-flight bolus caller (via `failPumpWaiters`), never the snapshot, so a viewer saw a
+    /// bare "Disconnected" with no cause.
+    func applyClientError(_ error: Error) {
         snapshot.connection = .disconnected
+        snapshot.connectionDetail = error.localizedDescription
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
         // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
         if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
         failPumpWaiters(error)
-        onChange?()
     }
 }
 
