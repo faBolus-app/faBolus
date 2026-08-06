@@ -526,6 +526,9 @@ public final class TandemBackend: NSObject, PumpBackend {
                          carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async throws -> Double {
         // Audit A-03: reject a second bolus while one is mid-flight (set synchronously so a double-tap
         // can't slip past before the flag is raised). Then serialize behind any other signed transaction.
+        // This is the INNER, per-backend double-tap guard; the cross-client "one delivery at a time" mutex
+        // that spans every remote lives above the backend in `AppModel.computeDeliveryBlockReason` (S6), so
+        // it holds even for a second PumpBackend that would not share this flag.
         guard !deliveryInProgress else { throw BolusError.pumpRejected("a bolus is already in progress") }
         deliveryInProgress = true
         defer { deliveryInProgress = false }

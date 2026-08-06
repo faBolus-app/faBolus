@@ -137,6 +137,11 @@ public final class MockBackend: PumpBackend {
     /// Test knob (FB-02): when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
+    /// Test hook (P11/S6): when set, `deliverBolus`/`deliverExtendedBolus` awaits this once the delivery
+    /// is IN FLIGHT (bolus id recorded, `.bolusing`, before completion) instead of the fixed sleep — so a
+    /// test can hold one delivery open on the pump and issue a concurrent one to exercise the cross-client
+    /// in-flight mutex. nil in production (like `commitBolusId` / `forceIndeterminateNextDelivery`).
+    public var onDeliverInFlight: (@MainActor () async -> Void)?
 
     /// Test knob (GA-05): seed a FRESH glucose reading. The seeded history is deliberately 10 minutes
     /// old, so the default state is stale-with-a-known-age. Lets a test exercise the non-stale
@@ -180,7 +185,7 @@ public final class MockBackend: PumpBackend {
             throw BolusError.indeterminate("mock: initiate response lost after write")
         }
         snapshot.connection = .bolusing; onChange?()
-        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
         snapshot.iobUnits += totalUnits
         snapshot.lastBolusUnits = totalUnits
@@ -206,7 +211,7 @@ public final class MockBackend: PumpBackend {
             throw BolusError.indeterminate("mock: initiate response lost after write")
         }
         snapshot.connection = .bolusing; onChange?()
-        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
         snapshot.iobUnits += units
         snapshot.lastBolusUnits = units
