@@ -140,6 +140,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var activeProfileName: String = ""
     public var controlIQMode: Int = 0
     public var controlIQEnabled: Bool = false
+    /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
+    /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
+    /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This
+    /// is controller *identity* (the CIQ vs CIQ+ discriminator, O7), distinct from `controlIQEnabled` (the
+    /// runtime on/off toggle) and `controlIQMode` (the active activity preset).
+    public var controllerVariant: ControllerVariant = .none
     /// Active carbohydrates (COB), grams — shown alongside IOB when available.
     public var cobGrams: Double = 0
 
@@ -159,6 +165,19 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// Time-segments of the profile currently being viewed/edited (from IDPSegment reads).
     public var viewedProfileSegments: [PumpProfileSegment] = []
     public init() {}
+
+    /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
+    /// `isMobi ? mobi : (name empty ? unknown : tslim)` logic in one place so brand copy / pairing / backup
+    /// consumers read `pumpModel.*` instead of re-deriving from `isMobi`.
+    public var pumpModel: PumpModel {
+        if isMobi { return .mobi }
+        return pumpModelName.isEmpty ? .unknown : .tslimX2
+    }
+
+    /// The controller descriptor for this pump's controller variant — the single source of truth for what
+    /// its automated controller does (§2.4). `.none`'s descriptor renders no controller-specific lines, so
+    /// a no-controller pump (e.g. Omnipod DASH) is handled by construction.
+    public var controllerDescriptor: ControllerDescriptor { .for(controllerVariant) }
 
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
     /// 6 min). Old readings must never be shown as current — the UI shows the value flagged instead.
@@ -322,6 +341,38 @@ public struct PumpFeatureBits: Sendable, Equatable {
 /// level or a non-Tandem pump), `.controlIQ` (classic Control-IQ), `.controlIQPro` (Control-IQ+).
 public enum ControllerVariant: String, Sendable, Equatable, CaseIterable {
     case none, controlIQ, controlIQPro
+}
+
+/// The pump *model* identity, as typed data instead of a bare `isMobi` boolean threaded through the UI.
+///
+/// P13c: `isMobi` conflated two different things — *capability* (moved to the pump-derived
+/// `PumpCapabilities` in 13b) and *model identity* (brand copy, a savable pairing PIN, a backup
+/// provenance token), which is what remains here. These are display/identity facts, NOT capability gates:
+/// what a pump can *do* comes from `PumpCapabilities.derive` (the pump's own feature bitmask); what it's
+/// *called* and how it *pairs* comes from the model. Keeping them separate is exactly what lets a second
+/// non-Mobi advanced-capable pump work without being locked out by a "is this a Mobi" check.
+public enum PumpModel: String, Sendable, Equatable, CaseIterable {
+    case tslimX2, mobi, unknown
+
+    /// User-facing model brand name. Empty for `.unknown` (no model detected yet — show nothing).
+    public var displayName: String {
+        switch self { case .tslimX2: return "t:slim X2"; case .mobi: return "Mobi"; case .unknown: return "" }
+    }
+
+    /// Manufacturer legal name. Both current models are Tandem; kept as a property (not a literal) so the
+    /// one place that needs the legal name reads it from here, and a future non-Tandem model overrides it.
+    public var manufacturer: String { "Tandem Diabetes Care" }
+
+    /// Stable lowercase token recorded as backup provenance in a settings-backup's metadata (so a restore
+    /// can warn on a model mismatch). Kept stable across UI copy changes.
+    public var backupToken: String {
+        switch self { case .tslimX2: return "tslim"; case .mobi: return "mobi"; case .unknown: return "unknown" }
+    }
+
+    /// Whether this model uses a **savable fixed pairing PIN** (Mobi) rather than a per-session pairing
+    /// code (t:slim X2). Only a fixed PIN is worth offering to save — this is a pairing-mechanism fact of
+    /// the model, not an advanced-control capability.
+    public var hasSavablePairingPin: Bool { self == .mobi }
 }
 
 extension PumpCapabilities {

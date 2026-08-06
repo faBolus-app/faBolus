@@ -101,10 +101,10 @@ struct BackupRestoreView: View {
         busy = true; message = nil
         defer { busy = false }
         let pump = includePump ? await model.readPumpSettingsForBackup() : nil
-        // P13: the backup records the pump MODEL identity (provenance for restore), not a capability
-        // gate — so it stays a model read; the controller descriptor (13c) will own model identity.
-        let meta = SettingsBackup.meta(pumpModel: model.snapshot.isMobi ? "mobi"
-                                       : (model.snapshot.pumpModelName.isEmpty ? "unknown" : "tslim"))
+        // P13c: the backup records the pump MODEL identity (provenance for restore) via the typed
+        // `PumpModel.backupToken` — the single definition of the "mobi"/"tslim"/"unknown" provenance
+        // string, replacing the inline `isMobi ? … : …` derivation.
+        let meta = SettingsBackup.meta(pumpModel: model.snapshot.pumpModel.backupToken)
         let backup = FaBolusBackup(meta: meta,
                                    appSettings: includeApp ? SettingsBackup.appSettingsSnapshot() : nil,
                                    secrets: includeSecrets ? SettingsBackup.secretsSnapshot() : nil,
