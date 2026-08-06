@@ -735,6 +735,11 @@ public final class AppModel {
     /// Tracks the last-seen connection state so `refresh()` can fire reconciliation on a fresh connect (P0).
     @ObservationIgnored private var previousConnection: PumpConnectionState?
 
+    /// §5.2.8 / N21 opt-in connection telemetry (uptime / disconnect reasons / reconciliation outcomes).
+    /// No-op unless the user opted in; shares the P9 App-Group + diagnostics flag. Recorded on the
+    /// connection edges below and in `reconcileUnresolvedDeliveries`.
+    @ObservationIgnored let connectionTelemetry = ConnectionTelemetryStore()
+
     static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
     /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
     /// in Settings to try again.
@@ -1060,7 +1065,11 @@ public final class AppModel {
             postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
                        body: "faBolus lost the connection to your pump. Use the pump directly until it reconnects.",
                        dedupeKey: Self.pumpDisconnectKey)
-        case .clear: withdrawNotifications([Self.pumpDisconnectKey])
+            // §5.2.8: bucket WHY the link dropped (off the app-boundary `connectionDetail`) + accrue uptime.
+            connectionTelemetry.recordDisconnected(reason: ConnectionTelemetryStore.reasonToken(from: snap.connectionDetail))
+        case .clear:
+            withdrawNotifications([Self.pumpDisconnectKey])
+            connectionTelemetry.recordConnected()   // §5.2.8: connect count + start the uptime clock
         case .none: break
         }
         previousConnection = snap.connection
@@ -1802,6 +1811,7 @@ public final class AppModel {
                 postSafety(.bolusReconciliation, severity: .warning, title: "Bolus not delivered",
                            body: "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
                            dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
+                connectionTelemetry.recordReconciliation(.notDelivered)   // §5.2.8
                 changed = true
                 continue
             }
@@ -1818,8 +1828,10 @@ public final class AppModel {
                                ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
                                : "Reconciled from the pump: \(f) U delivered.",
                            dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
+                connectionTelemetry.recordReconciliation(cancelled ? .cancelled : .delivered)   // §5.2.8
                 changed = true
             case .unavailable:
+                connectionTelemetry.recordReconciliation(.unavailable)   // §5.2.8: stayed unresolved
                 break   // stay blocked; retry on next reconnect / manual verification
             }
         }
