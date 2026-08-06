@@ -93,6 +93,12 @@ class RemoteClientModel {
     /// `PumpConnectionState.rawValue` ("Connected" / "Delivering…").
     var pumpConnected: Bool { connection == "Connected" || connection == "Delivering…" }
 
+    /// True when the host reports the pump mid-delivery — a dose is already in flight, so no remote may
+    /// start another (the `BolusGate` in-flight gate, v3 defect group D). This is the relayed twin of the
+    /// phone's `PumpSnapshot.bolusInFlight`: `.bolusing` is still "linked" (`pumpConnected` is true), so a
+    /// caller reads link health and in-flight as separate axes and feeds both to `BolusGate.evaluate`.
+    var bolusInFlight: Bool { connection == PumpConnectionState.bolusing.rawValue }
+
     /// Called when the link's reachability changes. Base updates `reachable`; subclasses override to
     /// add behavior (e.g. start/stop a direct-CGM failover) and must call `super`.
     func reachabilityDidChange(_ r: Bool) { reachable = r }
