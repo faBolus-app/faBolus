@@ -294,13 +294,34 @@ public struct PumpFeatureBits: Sendable, Equatable {
     /// not advertise this cannot be controlled over BLE at all — every control write is rejected — so
     /// this is the master signal for whether any advanced control is even reachable.
     public var blePumpControlSupported: Bool
+    /// The pump firmware supports **Control-IQ+** (the newer controller variant, e.g. on Mobi) — as
+    /// distinct from classic Control-IQ. This is the discriminator O7 needs; nothing else in the app
+    /// distinguishes the two today. It only refines controller *identity* for the descriptor (13c), not
+    /// any capability gate, so `PumpCapabilities.derive` deliberately ignores it.
+    public var controlIQProSupported: Bool
 
     public init(controlIQSupported: Bool = false, basalLimitSupported: Bool = false,
-                blePumpControlSupported: Bool = false) {
+                blePumpControlSupported: Bool = false, controlIQProSupported: Bool = false) {
         self.controlIQSupported = controlIQSupported
         self.basalLimitSupported = basalLimitSupported
         self.blePumpControlSupported = blePumpControlSupported
+        self.controlIQProSupported = controlIQProSupported
     }
+
+    /// The controller variant the pump's bits describe — the Control-IQ vs Control-IQ+ discriminator the
+    /// controller descriptor (13c) keys on. `.controlIQPro` implies Control-IQ (Pro is a superset).
+    public var controllerVariant: ControllerVariant {
+        if !controlIQSupported { return .none }
+        return controlIQProSupported ? .controlIQPro : .controlIQ
+    }
+}
+
+/// Which automated-controller a pump runs — the axis a controller descriptor (13c) selects its content
+/// from. Derived from `PumpFeatureBits` (the pump's own `PumpFeaturesV1` bits), never guessed from the
+/// model name: `.none` (no closed-loop controller, e.g. a pump with Control-IQ off at the firmware
+/// level or a non-Tandem pump), `.controlIQ` (classic Control-IQ), `.controlIQPro` (Control-IQ+).
+public enum ControllerVariant: String, Sendable, Equatable, CaseIterable {
+    case none, controlIQ, controlIQPro
 }
 
 extension PumpCapabilities {
