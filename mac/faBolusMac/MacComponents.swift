@@ -334,7 +334,7 @@ struct MacAlertsView: View {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         Text(alert.title).font(.callout)
                         Spacer()
-                        Button("Dismiss") { model.dismissAlert(alert) }
+                        Button(model.canDismissAlertOnPump ? "Clear" : "Snooze") { model.dismissAlert(alert) }
                             .buttonStyle(.bordered).controlSize(.small)
                     }
                 }

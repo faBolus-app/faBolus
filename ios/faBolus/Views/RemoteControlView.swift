@@ -104,7 +104,7 @@ struct RemoteDashboardView: View {
                             HStack {
                                 Label(a.title, systemImage: "bell.fill").font(.callout)
                                 Spacer()
-                                Button("Clear") { model.dismissAlert(a) }.font(.caption)
+                                Button(model.canDismissAlertOnPump ? "Clear" : "Snooze") { model.dismissAlert(a) }.font(.caption)
                             }
                         }
                     }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
@@ -161,7 +161,7 @@ struct RemoteAlertsView: View {
                         HStack {
                             Label(a.title, systemImage: "bell.fill")
                             Spacer()
-                            Button("Clear") { model.dismissAlert(a) }.font(.caption)
+                            Button(model.canDismissAlertOnPump ? "Clear" : "Snooze") { model.dismissAlert(a) }.font(.caption)
                         }
                     }
                 }
