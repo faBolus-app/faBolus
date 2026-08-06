@@ -203,6 +203,15 @@
     "remotesReadOnly": {
       "type": "boolean",
       "description": "Read-only mode for the Apple Watch + Garmin remotes (statusRead reply): when true they hide the bolus screen/button and won't request a bolus (the host also refuses)."
+    },
+    "canBolus": {
+      "type": "boolean",
+      "description": "statusRead reply — the host's authoritative 'may a remote start a bolus right now?' on the broadcast-safe axes: pump linked AND not mid-delivery AND remotes not read-only. A remote ANDs this with its own reachability + the entered amount's bounds. Lets a surface that can't parse `message` (Garmin, which otherwise substring-matched the localized connection string as load-bearing safety logic) gate on a semantic flag. Per-peer permission / capability / child gates stay host-enforced on the actual deliver. Absent ⇒ the remote falls back to judging from `message` + `remotesReadOnly` locally (additive/non-breaking)."
+    },
+    "bolusBlockReason": {
+      "type": "string",
+      "enum": ["remoteUnreachable", "pumpNotLinked", "bolusInFlight", "belowMinimum", "aboveMax", "accessDenied"],
+      "description": "statusRead reply — the reason `canBolus` is false, as a stable locale-independent token (BolusBlockReason.wireToken), so a remote can show WHY its bolus affordance is disabled. Over the wire the host emits only pumpNotLinked / bolusInFlight / accessDenied (reachability + bounds are judged locally by each remote). Absent when canBolus is true or absent."
     }
   },
   "additionalProperties": false
