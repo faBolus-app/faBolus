@@ -220,6 +220,17 @@ public final class AppModel {
         return AccessPolicy.evaluate(action, surface: surface, context: ctx)
     }
 
+    /// The shared bolus gate for the PHONE (host) surface (group D): folds the pump link/in-flight state
+    /// and the full `AccessPolicy` decision (child / read-only / capability / ack) into one
+    /// `(canBolus, reason)` so the phone button agrees with every other surface and can show WHY it's
+    /// disabled. The view ANDs its own transient `preparingDeliver` (a CGM-fetch spinner, not a pump gate)
+    /// on top. Staleness is intentionally not a factor here (it only nils the correction auto-fill).
+    func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
+        BolusGate.evaluate(reachable: true, linked: snapshot.isLinked, bolusInFlight: snapshot.bolusInFlight,
+                           amount: amount, minimum: minimum, maximum: snapshot.maxBolusUnits,
+                           access: accessDecision(.deliverBolus, from: .phoneUI))
+    }
+
     /// Evaluate `action` from `surface`; on denial surface the reason in `lastError` and return false.
     /// The single funnel guard every gated entry point uses.
     @discardableResult
