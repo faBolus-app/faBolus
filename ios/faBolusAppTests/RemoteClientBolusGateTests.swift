@@ -135,6 +135,31 @@ import faBolusCore
 
     // MARK: asSnapshot maps the RELAYED pump link, not client reachability (clobber fix)
 
+    // MARK: P13 capability channel — supportsRemoteAlertDismiss mirror ("Clear" vs "Snooze")
+
+    @Test func alertDismissCapabilityMirrorsAndDefaultsSafe() {
+        // Safe default before any push: false ⇒ the remote shows "Snooze" (honest — a t:slim dismiss
+        // only snoozes locally, so the label must not promise a pump clear).
+        #expect(!RemoteClientModel(link: FakeLink()).canDismissAlertOnPump)
+
+        // A statusRead carrying the capability sets the mirror (Mobi ⇒ true ⇒ "Clear").
+        let m = RemoteClientModel(link: FakeLink())
+        var on = RemoteCommand(kind: .statusRead); on.supportsRemoteAlertDismiss = true
+        m.handle(on)
+        #expect(m.canDismissAlertOnPump)
+
+        // Absent field keeps the last-known value (keep-current idiom) — a later push that omits it must
+        // not silently flip the label back.
+        var absent = RemoteCommand(kind: .statusRead); absent.message = PumpConnectionState.connected.rawValue
+        m.handle(absent)
+        #expect(m.canDismissAlertOnPump)
+
+        // A push can narrow it to false (a t:slim host), flipping the label to "Snooze".
+        var off = RemoteCommand(kind: .statusRead); off.supportsRemoteAlertDismiss = false
+        m.handle(off)
+        #expect(!m.canDismissAlertOnPump)
+    }
+
     @Test func asSnapshotUsesRelayedConnectionNotReachability() {
         // In range but the pump link dropped → must read as disconnected, not "connected" (the old bug
         // derived connection from reachability, so a real pump-link drop was hidden while in range).

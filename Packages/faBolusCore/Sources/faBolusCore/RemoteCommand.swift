@@ -233,6 +233,12 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// "pumpNotLinked" | "bolusInFlight" | "accessDenied"), so a remote can show WHY its bolus affordance
     /// is disabled. Absent when `canBolus` is true or absent. Swift-only additive field, mirrored.
     public var bolusBlockReason: String? = nil
+    /// P13 capability channel — whether the pump firmware honors a REMOTE alert dismissal
+    /// (`PumpCapabilities.supportsRemoteAlertDismiss`). t:slim X2 silently rejects it (dismiss only
+    /// snoozes locally); Mobi clears it on the pump. Lets a remote label its alert action "Clear" vs
+    /// "Snooze" to match the phone. Absent ⇒ the remote keeps its safe default (Snooze). Additive,
+    /// mirrored in the JSON schema + Monkey C; the host stays the enforcement point on the dismiss.
+    public var supportsRemoteAlertDismiss: Bool? = nil
 
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
