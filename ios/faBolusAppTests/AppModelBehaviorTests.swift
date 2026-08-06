@@ -657,35 +657,43 @@ struct AppModelBehaviorTests {
     /// a second call (the one-shot ack was consumed). This is the complete IDP-CRUD + CGM-alert matrix the
     /// round-2 audit required — set-active/rename/delete-profile are included (they were bypassing the gate).
     @Test func everyTherapyWriteEntryPointIsCentrallyGated() async {
-        let entries: [(String, @MainActor (AppModel) async -> Void)] = [
-            ("createProfile",       { await $0.createProfile(name: "P", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110, insulinDurationMinutes: 300) }),
-            ("setActiveProfile",    { await $0.setActiveProfile(idpId: 1) }),
-            ("renameProfile",       { await $0.renameProfile(idpId: 1, name: "New") }),
-            ("deleteProfile",       { await $0.deleteProfile(idpId: 1) }),
-            ("addProfileSegment",   { await $0.addProfileSegment(idpId: 1, startTimeMinutes: 60, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }),
-            ("modifyProfileSegment",{ await $0.modifyProfileSegment(idpId: 1, segmentIndex: 0, startTimeMinutes: 0, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }),
-            ("deleteProfileSegment",{ await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }),
-            ("setCgmHighLowAlert",  { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }),
+        // Each entry: the invocation + the MockBackend counter that increments when it REACHES the backend.
+        // IDP CRUD uses `idpWriteCount`; the P14 S6 therapy-defining writes (Control-IQ / max bolus / max
+        // basal) use `controlWriteCount`.
+        let idp: @MainActor (MockBackend) -> Int = { $0.idpWriteCount }
+        let ctl: @MainActor (MockBackend) -> Int = { $0.controlWriteCount }
+        let entries: [(String, @MainActor (AppModel) async -> Void, @MainActor (MockBackend) -> Int)] = [
+            ("createProfile",       { await $0.createProfile(name: "P", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110, insulinDurationMinutes: 300) }, idp),
+            ("setActiveProfile",    { await $0.setActiveProfile(idpId: 1) }, idp),
+            ("renameProfile",       { await $0.renameProfile(idpId: 1, name: "New") }, idp),
+            ("deleteProfile",       { await $0.deleteProfile(idpId: 1) }, idp),
+            ("addProfileSegment",   { await $0.addProfileSegment(idpId: 1, startTimeMinutes: 60, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }, idp),
+            ("modifyProfileSegment",{ await $0.modifyProfileSegment(idpId: 1, segmentIndex: 0, startTimeMinutes: 0, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }, idp),
+            ("deleteProfileSegment",{ await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }, idp),
+            ("setCgmHighLowAlert",  { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }, idp),
+            ("setControlIQ",        { await $0.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40) }, ctl),
+            ("setMaxBolus",         { await $0.setMaxBolus(units: 10) }, ctl),
+            ("setMaxBasal",         { await $0.setMaxBasal(unitsPerHour: 3) }, ctl),
         ]
-        // R3-F: these entries must equal the declared ack-gated set EXACTLY — a new `.unverifiedAck` case
-        // added to `GatedPumpWrite` (or one removed here) fails this, so the test and the authoritative
+        // R3-F / P14 S6: these entries must equal the declared ack-gated set EXACTLY — a new `.unverifiedAck`
+        // case added to `GatedPumpWrite` (or one removed here) fails this, so the test and the authoritative
         // declared set that seeds P8 cannot silently drift apart.
         #expect(Set(entries.map(\.0)) == Set(GatedPumpWrite.allCases.filter { $0.gate == .unverifiedAck }.map(\.rawValue)))
-        for (name, invoke) in entries {
+        for (name, invoke, count) in entries {
             try? await withCleanSettings {
                 let (model, backend, _) = await makeModel(connected: true)
                 // (a) no ack → fail closed
                 await invoke(model)
-                #expect(backend.idpWriteCount == 0, "\(name) reached the backend without an ack")
+                #expect(count(backend) == 0, "\(name) reached the backend without an ack")
                 #expect(model.lastError != nil, "\(name) did not surface a fail-closed error")
                 // (b) with ack → exactly one write, ack consumed
                 model.acknowledgeUnverifiedTherapy()
                 await invoke(model)
-                #expect(backend.idpWriteCount == 1, "\(name) did not run once with an ack")
+                #expect(count(backend) == 1, "\(name) did not run once with an ack")
                 #expect(!model.hasRecentUnverifiedAck, "\(name) left the one-shot ack un-consumed")
                 // (c) second call without a fresh ack → fail closed again
                 await invoke(model)
-                #expect(backend.idpWriteCount == 1, "\(name) ran a second time without a fresh ack")
+                #expect(count(backend) == 1, "\(name) ran a second time without a fresh ack")
             }
         }
     }

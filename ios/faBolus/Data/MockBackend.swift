@@ -258,11 +258,15 @@ public final class MockBackend: PumpBackend {
     }
     public func refreshLoadStatus() async {}
 
-    public func setMaxBolus(units: Double) async throws { snapshot.maxBolusUnits = Interlocks.clampMaxBolusLimit(units); onChange?() }   // S9: was unclamped
-    public func setMaxBasal(unitsPerHour: Double) async throws {}
+    /// P14 S6: counts the therapy-defining control writes (max bolus/basal, Control-IQ) that reach the
+    /// backend, so a test can prove they are ack-gated the same way `idpWriteCount` proves it for IDP CRUD.
+    public private(set) var controlWriteCount = 0
+    public func setMaxBolus(units: Double) async throws { controlWriteCount += 1; snapshot.maxBolusUnits = Interlocks.clampMaxBolusLimit(units); onChange?() }   // S9: clamp; S6: counted
+    public func setMaxBasal(unitsPerHour: Double) async throws { controlWriteCount += 1 }
     public func syncTimeToNow() async throws {}
 
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
+        controlWriteCount += 1
         snapshot.controlIQEnabled = enabled; snapshot.controlIQWeightLbs = weightLbs
         snapshot.controlIQTotalDailyInsulin = totalDailyInsulinUnits; onChange?()
     }
