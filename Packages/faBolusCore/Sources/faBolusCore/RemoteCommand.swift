@@ -220,6 +220,20 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// bolus, false = denied.
     public var approved: Bool? = nil
 
+    /// On a `statusRead` reply, the host's authoritative "may a remote start a bolus right now?" — the
+    /// broadcast-safe axes the host knows for ALL remotes: pump linked AND not mid-delivery AND remotes
+    /// not read-only. A remote combines this with its OWN reachability + the entered amount's bounds; it
+    /// lets a surface that can't parse the connection string gate its bolus affordance on a semantic flag
+    /// rather than substring-matching a localized display string (Garmin). Per-peer permission,
+    /// capability, and child gates stay host-enforced on the actual deliver (unchanged). Absent ⇒ the
+    /// remote falls back to judging from `message` + `remotesReadOnly` locally, so this is
+    /// additive/non-breaking. Swift-only additive field, mirrored in the JSON schema + Monkey C.
+    public var canBolus: Bool? = nil
+    /// The reason `canBolus` is false, as a stable locale-independent token (`BolusBlockReason.wireToken`:
+    /// "pumpNotLinked" | "bolusInFlight" | "accessDenied"), so a remote can show WHY its bolus affordance
+    /// is disabled. Absent when `canBolus` is true or absent. Swift-only additive field, mirrored.
+    public var bolusBlockReason: String? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,

@@ -316,6 +316,17 @@ public final class AppModel {
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
+        // Group D: the host's authoritative bolus availability on the broadcast-safe axes (pump link,
+        // in-flight, remotes-read-only), so a remote — especially Garmin, which can't parse the
+        // connection string — gates its bolus affordance on a semantic flag instead of substring-matching
+        // `message`. Reachability + amount bounds stay judged by each remote; per-peer/capability/child
+        // gates stay host-enforced on the actual deliver. A remote with no `canBolus` field falls back to
+        // the string, so this is additive.
+        let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
+                                       amount: 0, minimum: 0, maximum: s.maxBolusUnits > 0 ? s.maxBolusUnits : 25,
+                                       access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
+        cmd.canBolus = avail.canBolus
+        cmd.bolusBlockReason = avail.reason?.wireToken
         return cmd
     }
 
