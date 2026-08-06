@@ -36,10 +36,26 @@ public enum AccessPolicy {
         }
     }
 
-    /// P14 seam. Empty today; when the mode system lands it carries the active mode + per-feature toggles,
-    /// and `evaluate` gains one `.modeDisallowed` check. No surface/funnel change required.
+    /// P14 Slice 2 — the mode axis, folded in as one more input to the one evaluator (NOT a sixth
+    /// mechanism). Carries the active experience mode and the per-feature toggles the user set within it
+    /// (owner decision #4). `evaluate` gains exactly one ordered `.modeDisallowed` / `.featureDisabledInMode`
+    /// check at the reserved slot; no surface or funnel signature changes.
+    ///
+    /// The default is `.advanced` with no toggles — a **no-op**: Advanced sees every action, so an app
+    /// that has not yet wired a real mode source (or a caller that omits `modeContext`) behaves exactly as
+    /// before. S3 supplies the real active mode (the Objectives ModeStore) and flips the app default to
+    /// Simple together with the unlock path, so `main` never has a Simple-with-no-way-out window.
     public struct ModeGateContext: Sendable, Equatable {
-        public init() {}
+        /// The active experience mode. Higher modes see strictly more (see `AppMode`'s ordering).
+        public var activeMode: AppMode
+        /// Features the user has explicitly turned off inside their current mode — finer-grained control
+        /// than the mode alone (owner decision #4). Empty ⇒ no per-feature restriction. Never populated by
+        /// a safety STOP (see `evaluate`'s carve-out).
+        public var disabledFeatures: Set<GatedPumpWrite>
+        public init(activeMode: AppMode = .advanced, disabledFeatures: Set<GatedPumpWrite> = []) {
+            self.activeMode = activeMode
+            self.disabledFeatures = disabledFeatures
+        }
     }
 
     /// Everything the evaluator needs, snapshotted by the app from `AppSettings` / the backend / the peer
@@ -87,6 +103,8 @@ public enum AccessPolicy {
         case remotesReadOnly
         case capabilityUnavailable
         case unverifiedAckRequired
+        case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
+        case featureDisabledInMode               // P14: user turned this feature off within the mode
 
         public var userMessage: String {
             switch self {
@@ -96,6 +114,8 @@ public enum AccessPolicy {
             case .remotesReadOnly:      return "Remote control is turned off — remotes are read-only."
             case .capabilityUnavailable: return "This pump doesn't support that action, or advanced control is off."
             case .unverifiedAckRequired: return "This needs the untested-feature warning acknowledged first."
+            case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
+            case .featureDisabledInMode: return "This feature is turned off in your settings."
             }
         }
     }
@@ -158,7 +178,19 @@ public enum AccessPolicy {
             return .deny(.unverifiedAckRequired)
         }
 
-        // P14 seam: a mode check returning `.modeDisallowed` folds in here.
+        // P14 (Slice 2) — the mode gate: one ordered input, evaluated last so an earlier gate's precedence
+        // and message are unchanged. CARVE-OUT (OQ9): a mode NEVER restricts a safety STOP. `.childOnly`
+        // (cancel bolus / dismiss alert) is skipped here exactly as Gate 3 skips it — otherwise Simple mode
+        // would silently disable a cancel. The default context is `.advanced` with no toggles, so this is a
+        // no-op until S3 supplies a real active mode.
+        if action.gate != .childOnly {
+            if context.modeContext.activeMode < action.requiredMode {
+                return .deny(.modeDisallowed(required: action.requiredMode))
+            }
+            if context.modeContext.disabledFeatures.contains(action) {
+                return .deny(.featureDisabledInMode)
+            }
+        }
 
         return .allow
     }
