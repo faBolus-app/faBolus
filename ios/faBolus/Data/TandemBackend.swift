@@ -830,7 +830,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await sendControl(SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
     }
     public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
-    public func setMode(bitmap: Int) async throws { try await sendControl(SetModesRequest(bitmap: bitmap), delivery: true) }
+    // Neutral `ModeCommand.bitmap` is 1:1 with the wire (and the kit's own `SetModesRequest.ModeCommand`),
+    // so this is a pure pass-through — the typing lives at the seam, the byte stays identical.
+    public func setMode(_ command: ModeCommand) async throws { try await sendControl(SetModesRequest(bitmap: command.bitmap), delivery: true) }
     public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
 
     // MARK: - Mobi workflows (A4)
