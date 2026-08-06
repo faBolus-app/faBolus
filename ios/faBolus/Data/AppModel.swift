@@ -1236,6 +1236,9 @@ public final class AppModel {
                                      carbsGrams: Double? = nil, bgMgdl: Int? = nil,
                                      iobUnits: Double? = nil,
                                      from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        // P13c-5: extended bolus is a pump *capability* — refuse pre-flight on a pump that doesn't support
+        // it (fail closed) rather than let the affordance reach a pump that would reject the combo bolus.
+        guard capabilities.supportsExtendedBolus else { lastError = "This pump doesn't support an extended bolus."; return }
         guard allow(.deliverExtendedBolus, from: surface, peerId: peerId) else { return }
         // P0: route extended boluses through the durable ledger too, so the global unresolved-delivery
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
