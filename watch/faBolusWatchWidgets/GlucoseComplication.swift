@@ -66,7 +66,10 @@ struct GlucoseComplication: Widget {
 
 private func color(_ snap: WidgetSnapshot, now: Date) -> Color {
     guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
-    switch g { case ..<70: return .red; case 70..<180: return .green; case 180..<250: return .yellow; default: return .orange }
+    // Delegate the band split to the single WidgetSnapshot classifier (WidgetGlucoseThresholds bounds).
+    switch WidgetSnapshot.rangeCategory(g) {
+    case 0: return .red; case 1: return .green; case 2: return .yellow; default: return .orange
+    }
 }
 
 struct GlucoseComplicationView: View {

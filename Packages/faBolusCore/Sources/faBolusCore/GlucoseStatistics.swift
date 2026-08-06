@@ -54,12 +54,14 @@ public struct GlucoseStatistics: Equatable, Sendable {
             mean: mean,
             gmi: 3.31 + 0.02392 * mean,                 // ADA GMI (mg/dL) formula
             cv: mean > 0 ? std / mean * 100 : 0,
-            timeInRangePct: pct { $0 >= 70 && $0 <= 180 },
-            veryLowPct: pct { $0 < 54 },
-            lowPct: pct { $0 >= 54 && $0 < 70 },
-            inRangePct: pct { $0 >= 70 && $0 <= 180 },
-            highPct: pct { $0 > 180 && $0 <= 250 },
-            veryHighPct: pct { $0 > 250 },
+            // Closed clinical convention (see GlucoseThresholds): 70 ≤ g ≤ 180 is in-range, g > 250 is
+            // very-high — so the reported Time-in-Range matches the Battelino 2019 consensus definition.
+            timeInRangePct: pct { $0 >= GlucoseThresholds.low && $0 <= GlucoseThresholds.high },
+            veryLowPct: pct { $0 < GlucoseThresholds.veryLow },
+            lowPct: pct { $0 >= GlucoseThresholds.veryLow && $0 < GlucoseThresholds.low },
+            inRangePct: pct { $0 >= GlucoseThresholds.low && $0 <= GlucoseThresholds.high },
+            highPct: pct { $0 > GlucoseThresholds.high && $0 <= GlucoseThresholds.veryHigh },
+            veryHighPct: pct { $0 > GlucoseThresholds.veryHigh },
             spanHours: span
         )
     }

@@ -56,16 +56,26 @@ public enum GlucoseTrend: String, Sendable {
     }
 }
 
-/// modern glucose ranges for coloring.
+/// Modern glucose ranges for coloring. Uses the **closed clinical convention** (matching
+/// `GlucoseStatistics` and the Battelino 2019 TIR definition): 70…180 is in-range, 181…250 is high,
+/// > 250 is urgent-high — so coloring agrees with the reported Time-in-Range at the exact boundaries
+/// (180 colors in-range, 250 colors high). The four bands map to a 0…3 index the remotes/widgets consume.
+/// (The display enum has no very-low band; readings below 70 all color `.low`.)
 public enum GlucoseRange: Sendable {
     case low, inRange, high, urgentHigh
     public static func classify(_ mgdl: Int) -> GlucoseRange {
         switch mgdl {
-        case ..<70: return .low
-        case 70..<180: return .inRange
-        case 180..<250: return .high
-        default: return .urgentHigh
+        case ..<GlucoseThresholds.low: return .low                                    // < 70
+        case GlucoseThresholds.low...GlucoseThresholds.high: return .inRange           // 70…180 (closed)
+        case (GlucoseThresholds.high + 1)...GlucoseThresholds.veryHigh: return .high   // 181…250
+        default: return .urgentHigh                                                    // > 250
         }
+    }
+
+    /// Stable 0…3 band index (`low=0, inRange=1, high=2, urgentHigh=3`) — the single definition the
+    /// remote client and widget snapshot delegate to instead of re-hardcoding the same 70/180/250 switch.
+    public var index: Int {
+        switch self { case .low: return 0; case .inRange: return 1; case .high: return 2; case .urgentHigh: return 3 }
     }
 }
 
