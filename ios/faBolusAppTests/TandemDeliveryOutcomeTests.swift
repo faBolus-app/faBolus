@@ -166,4 +166,79 @@ struct TandemDeliveryOutcomeTests {
             foodVolume: 2000, correctionVolume: 0, bolusCarbs: 45, bolusBG: 180, bolusIOB: 500)
         #expect(sent.cargo == expected.cargo)
     }
+
+    // MARK: racing cancel — the four "required deterministic tests" cancel rows (round-3 handoff)
+
+    /// Issue a cancel the first time the pump status is polled — i.e. while the bolus is genuinely in
+    /// flight, exactly as a user tapping Cancel mid-delivery would. `willAwait` is synchronous, so the
+    /// async `cancelBolus()` rides a Task that runs during the poll's inter-status sleep (the poll runs
+    /// for ~1 s with 0.5 s gaps, so the cancel write lands before the outcome is read).
+    private func cancelOnFirstPoll(_ b: TandemBackend, _ fake: FakePumpTransport) {
+        fake.willAwait = { [weak b] op in
+            if op == self.statusOp { Task { @MainActor in await b?.cancelBolus() } }
+        }
+    }
+    private var cancelOp: UInt8 { CancelBolusRequest.props.opCode }
+
+    /// These pin the deliberate round-3 design: the live path carries NO verified pump-cancellation
+    /// semantics (a booked bench follow-up — `PumpX2Kit/PINNED.md`), so `lastBolusCancelled` is never set
+    /// true. A cancel racing completion must therefore NEVER fabricate a terminal and NEVER invent a
+    /// "cancelled" label: the reported outcome is the pump's AUTHORITATIVE delivered amount, or indeterminate.
+
+    /// Full dose completes despite a mid-delivery cancel → delivered (authoritative full), not cancelled.
+    @Test func cancelRacingFullCompletionReportsDeliveredNotCancelled() async throws {
+        let (b, fake) = make()
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),   // active — cancel fires here
+                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))   // done
+        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
+        cancelOnFirstPoll(b, fake)
+        let delivered = try await deliver(b, 2.0)
+        #expect(delivered == 2.0)                               // authoritative full amount
+        #expect(b.lastBolusCancelled == false)                 // never a fabricated cancellation label
+        #expect(fake.lastSent(cancelOp) != nil)                // the cancel WAS written to the pump
+        #expect(!b.deliveryOutcomeUnknown)
+    }
+
+    /// A partial completion after a cancel reports the AUTHORITATIVE delivered amount (1.0), never the
+    /// requested 2.0, and does not invent a cancellation flag.
+    @Test func cancelThenPartialCompletionReportsAuthoritativeAmount() async throws {
+        let (b, fake) = make()
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
+                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 1000)))  // partial
+        cancelOnFirstPoll(b, fake)
+        let delivered = try await deliver(b, 2.0)
+        #expect(delivered == 1.0)                              // authoritative partial, not the requested 2.0
+        #expect(b.lastBolusCancelled == false)                // no invented cancellation
+        #expect(fake.lastSent(cancelOp) != nil)
+    }
+
+    /// Cancel issued, then the status poll drops until the deadline → indeterminate (never a guessed
+    /// terminal): the outcome stays unresolved and globally blocked, awaiting pump reconciliation.
+    @Test func cancelThenStatusDropsIsIndeterminate() async {
+        let (b, fake) = make()
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))  // one active; then default drops
+        cancelOnFirstPoll(b, fake)
+        let e = await capture { try await deliver(b) }
+        #expect(indeterminate(e))
+        #expect(b.deliveryOutcomeUnknown)
+    }
+
+    /// The cancel WRITE itself fails (swallowed by the fire-and-forget path) → the dose proceeds to its
+    /// authoritative outcome, still never labelled cancelled. A failed cancel does not stop the pump.
+    @Test func cancelWriteFailureLeavesTheDoseToItsAuthoritativeOutcome() async throws {
+        let (b, fake) = make()
+        fake.preWriteError[cancelOp] = BolusError.pumpRejected("cancel write failed")
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
+                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
+        cancelOnFirstPoll(b, fake)
+        let delivered = try await deliver(b, 2.0)
+        #expect(delivered == 2.0)                 // cancel write failed → dose proceeded → authoritative full
+        #expect(b.lastBolusCancelled == false)
+    }
 }
