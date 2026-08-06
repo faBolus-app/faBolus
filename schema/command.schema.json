@@ -21,6 +21,12 @@
       "description": "Client-generated unique id correlating a request → confirm → status across the phone↔watch hop.",
       "minLength": 1
     },
+    "sentAt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "Immutable send-time stamp (Unix seconds), set once by the sender when it composes a pump-mutating command. The host computes now − sentAt at receipt and refuses a DELIVERY-AUTHORIZING command (bolusRequest/bolusConfirm/resumePump/bolusApprovalResponse) that is too old to apply safely — a bolus queued or retransmitted minutes late is a double-dose hazard. Insulin-REDUCING commands (cancelBolus/suspendPump) are never freshness-gated, so refusing a late safety action can't happen. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec: watchOS Int and Monkey C Lang.Number are signed 32-bit. Absent ⇒ a legacy sender predating the field (not rejected)."
+    },
     "units": {
       "type": "number",
       "minimum": 0,

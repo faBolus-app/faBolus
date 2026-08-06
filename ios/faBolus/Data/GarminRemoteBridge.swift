@@ -145,6 +145,15 @@ final class GarminRemoteBridge: NSObject {
 
     private func handle(_ cmd: RemoteCommand) {
         guard let model else { return }
+        // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
+        // a bolus applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds are gated
+        // (RemoteCommandFreshness); a late cancel is still honored. (Effective once the Garmin remote stamps
+        // `sentAt`; until then a Garmin command has no stamp and is not gated — same as today.)
+        if RemoteCommandFreshness.isStale(cmd) {
+            send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                               status: .failed, message: RemoteCommandFreshness.rejectionMessage))
+            return
+        }
         switch cmd.kind {
         case .bolusRequest:
             // The watch already confirmed via hold-to-deliver — deliver directly, no phone
