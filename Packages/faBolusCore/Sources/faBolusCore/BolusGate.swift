@@ -30,6 +30,21 @@ public enum BolusBlockReason: Equatable, Sendable {
         case .accessDenied(let r): return r.userMessage
         }
     }
+
+    /// A stable, locale-independent token for the wire (`RemoteCommand.bolusBlockReason`), so a remote
+    /// can key on WHY its bolus affordance is disabled without parsing the localized `userMessage`. Only
+    /// the host-authoritative, broadcast-safe reasons ever travel over the wire (see
+    /// `AppModel.statusCommand`); reachability and amount bounds are judged locally by each remote.
+    public var wireToken: String {
+        switch self {
+        case .remoteUnreachable: return "remoteUnreachable"
+        case .pumpNotLinked:     return "pumpNotLinked"
+        case .bolusInFlight:     return "bolusInFlight"
+        case .belowMinimum:      return "belowMinimum"
+        case .aboveMax:          return "aboveMax"
+        case .accessDenied:      return "accessDenied"
+        }
+    }
 }
 
 public enum BolusGate {

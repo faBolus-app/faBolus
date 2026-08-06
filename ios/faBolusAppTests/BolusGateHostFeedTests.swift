@@ -17,10 +17,10 @@ struct BolusGateHostFeedTests {
     /// MockBackend needs it for the funnel's capability gate, matching the shipped UI).
     private func withClean(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled
-        s.childModeEnabled = false; s.phoneReadOnly = false; s.advancedControlEnabled = true
+        let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled, rro = s.remotesReadOnly
+        s.childModeEnabled = false; s.phoneReadOnly = false; s.advancedControlEnabled = true; s.remotesReadOnly = false
         await body()
-        s.childModeEnabled = child; s.phoneReadOnly = ro; s.advancedControlEnabled = adv
+        s.childModeEnabled = child; s.phoneReadOnly = ro; s.advancedControlEnabled = adv; s.remotesReadOnly = rro
     }
 
     @Test func connectedInBoundsAllows() async {
@@ -49,6 +49,38 @@ struct BolusGateHostFeedTests {
             let g = model.bolusGate(amount: 999, minimum: 0.05)   // MockBackend max is 25 U
             #expect(!g.canBolus)
             #expect(g.reason == .aboveMax(backend.snapshot.maxBolusUnits))
+        }
+    }
+
+    // MARK: P12 increment 4 — statusCommand emits the semantic bolus availability over the wire
+
+    @Test func statusCommandEmitsCanBolusWhenConnected() async {
+        await withClean {
+            let (model, backend) = makeModel()
+            await backend.connect()
+            let cmd = model.statusCommand(includeHistory: false)
+            #expect(cmd.canBolus == true)
+            #expect(cmd.bolusBlockReason == nil)
+        }
+    }
+
+    @Test func statusCommandEmitsPumpNotLinkedWhenDisconnected() async {
+        await withClean {
+            let (model, _) = makeModel()   // never connected → .disconnected
+            let cmd = model.statusCommand(includeHistory: false)
+            #expect(cmd.canBolus == false)
+            #expect(cmd.bolusBlockReason == "pumpNotLinked")
+        }
+    }
+
+    @Test func statusCommandEmitsAccessDeniedWhenRemotesReadOnly() async {
+        await withClean {
+            let (model, backend) = makeModel()
+            await backend.connect()
+            AppSettings.shared.remotesReadOnly = true
+            let cmd = model.statusCommand(includeHistory: false)
+            #expect(cmd.canBolus == false)
+            #expect(cmd.bolusBlockReason == "accessDenied")
         }
     }
 }
