@@ -1,0 +1,104 @@
+import Testing
+@testable import faBolusCore
+
+/// P13-1: `PumpCapabilities.derive(isMobi:features:)` re-sources capabilities from the pump's own
+/// `PumpFeaturesV1` bitmask instead of inferring everything from one `isMobi` boolean. These pin the
+/// safety contract that makes it shippable without hardware: **absent features ⇒ the exact pre-P13
+/// preset** (pure fallback), and **present features can only NARROW, never widen** the preset.
+struct PumpCapabilitiesDeriveTests {
+
+    // MARK: - Fallback: no features yet ⇒ identical to the model preset
+
+    @Test func absentFeaturesEqualsTheModelPreset() {
+        // Mobi with no PumpFeaturesV1 response yet is byte-identical to `.mobiAdvanced` + the
+        // t:slim-only remote-dismiss quirk (dismiss honored on Mobi).
+        var mobi = PumpCapabilities.mobiAdvanced
+        mobi.supportsRemoteAlertDismiss = true
+        #expect(PumpCapabilities.derive(isMobi: true, features: nil) == mobi)
+
+        var tslim = PumpCapabilities.full
+        tslim.supportsRemoteAlertDismiss = false   // t:slim silently rejects remote dismissal
+        #expect(PumpCapabilities.derive(isMobi: false, features: nil) == tslim)
+    }
+
+    // MARK: - Present features agree with the preset ⇒ no change
+
+    @Test func fullyCapableMobiKeepsAllAdvancedControl() {
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                blePumpControlSupported: true)
+        let caps = PumpCapabilities.derive(isMobi: true, features: f)
+        #expect(caps.supportsAnyAdvancedControl)
+        #expect(caps.supportsControlIQSettings)
+        #expect(caps.supportsLimits)
+        #expect(caps.supportsModes)         // preserved from the .mobiAdvanced floor
+        #expect(caps.supportsRemoteAlertDismiss)
+    }
+
+    // MARK: - Narrowing
+
+    @Test func noBlePumpControlDisablesAllAdvancedControl() {
+        // A pump that can't be BLE-controlled: even a Mobi preset collapses to no advanced control.
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                blePumpControlSupported: false)
+        let caps = PumpCapabilities.derive(isMobi: true, features: f)
+        #expect(!caps.supportsAnyAdvancedControl)
+        #expect(!caps.supportsModes)
+        #expect(!caps.supportsControlIQSettings)
+        #expect(!caps.supportsLimits)
+        // Non-advanced base capabilities are untouched (bolus/status/pairing still work).
+        #expect(caps.supportsCarbEntry)
+        #expect(caps.supportsBolusCancel)
+    }
+
+    @Test func noControlIQNarrowsOnlyControlIQSettings() {
+        let f = PumpFeatureBits(controlIQSupported: false, basalLimitSupported: true,
+                                blePumpControlSupported: true)
+        let caps = PumpCapabilities.derive(isMobi: true, features: f)
+        #expect(!caps.supportsControlIQSettings)   // narrowed off
+        #expect(caps.supportsLimits)               // untouched
+        #expect(caps.supportsModes)                // untouched
+    }
+
+    @Test func noBasalLimitNarrowsOnlyLimits() {
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: false,
+                                blePumpControlSupported: true)
+        let caps = PumpCapabilities.derive(isMobi: true, features: f)
+        #expect(!caps.supportsLimits)              // narrowed off
+        #expect(caps.supportsControlIQSettings)    // untouched
+    }
+
+    // MARK: - Never-widen invariant (the core safety property)
+
+    @Test func featuresCanNeverWidenBeyondTheModelPreset() {
+        // A t:slim (.full floor: all advanced OFF) that reports every feature bit set must STILL have
+        // no advanced control — faBolus offers BLE pump control only on the Mobi surface, so a rich
+        // bitmask can never conjure an affordance the model preset withheld.
+        let allBits = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                      blePumpControlSupported: true)
+        let tslim = PumpCapabilities.derive(isMobi: false, features: allBits)
+        #expect(!tslim.supportsAnyAdvancedControl)
+        #expect(!tslim.supportsControlIQSettings)
+        #expect(!tslim.supportsLimits)
+
+        // General form: for every model + feature combination, each advanced flag of the result is a
+        // subset of the corresponding preset flag (⇒ derive never sets a flag the preset had false).
+        for isMobi in [true, false] {
+            let preset = isMobi ? PumpCapabilities.mobiAdvanced : PumpCapabilities.full
+            for ciq in [true, false] {
+                for lim in [true, false] {
+                    for ble in [true, false] {
+                        let caps = PumpCapabilities.derive(
+                            isMobi: isMobi,
+                            features: PumpFeatureBits(controlIQSupported: ciq, basalLimitSupported: lim,
+                                                      blePumpControlSupported: ble))
+                        #expect(!(caps.supportsControlIQSettings && !preset.supportsControlIQSettings))
+                        #expect(!(caps.supportsLimits && !preset.supportsLimits))
+                        #expect(!(caps.supportsModes && !preset.supportsModes))
+                        #expect(!(caps.supportsTempBasal && !preset.supportsTempBasal))
+                        #expect(!(caps.supportsSuspendResume && !preset.supportsSuspendResume))
+                    }
+                }
+            }
+        }
+    }
+}
