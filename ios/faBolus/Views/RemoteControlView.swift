@@ -115,7 +115,15 @@ struct RemoteDashboardView: View {
                         Label("Bolus", systemImage: "syringe.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent).tint(AppTheme.insulin).padding(.horizontal)
-                    .disabled(!model.reachable)
+                    // Gate the whole affordance through the shared BolusGate — not just reachability, as
+                    // before. Under read-only, a dropped pump link, or a dose already in flight, don't even
+                    // open the entry sheet (previously it opened and the host rejected the send).
+                    .disabled(!model.bolusAvailability.canBolus)
+                    // Say why it's disabled — except unreachable, which the "Reconnecting…" banner above
+                    // already shows.
+                    if let r = model.bolusAvailability.reason, r != .remoteUnreachable {
+                        Text(r.userMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal)
+                    }
                 }
 
                 if let msg = model.statusMessage { Text(msg).font(.caption).foregroundStyle(.secondary) }
@@ -181,6 +189,24 @@ struct RemoteBolusSheet: View {
         return model.estimatedUnits(forCarbs: Double(carbs) ?? 0) ?? 0
     }
 
+    /// The shared bolus gate for the entered dose. Re-evaluated here (not just on the open button) so a
+    /// mid-entry state change — the pump dropping, a dose starting elsewhere, the host flipping the remote
+    /// read-only — disables Deliver rather than sending into a state that will be rejected.
+    private var gate: (canBolus: Bool, reason: BolusBlockReason?) {
+        model.bolusGate(amount: enteredUnits, minimum: extendedOn ? 0.4 : 0.05)
+    }
+    /// The gate reason worth showing above Deliver — the "can't bolus right now" states, not the bounds
+    /// reasons (below-min/above-max just keep Deliver disabled while the user types). Exhaustive so a new
+    /// reason can't be silently dropped.
+    private var blockMessage: String? {
+        switch gate.reason {
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+            return gate.reason?.userMessage
+        case .belowMinimum, .aboveMax, .none:
+            return nil
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -199,13 +225,16 @@ struct RemoteBolusSheet: View {
                         Stepper("Over \(durationMin) min", value: $durationMin, in: 30...480, step: 30)
                     }
                 }
+                if let m = blockMessage {
+                    Text(m).font(.caption).foregroundStyle(.secondary)
+                }
                 Button {
                     confirming = true
                 } label: {
                     HStack { Spacer(); Text("Bolus \(String(format: "%.2f U", enteredUnits))"); Spacer() }
                 }
                 .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
-                .disabled(enteredUnits < (extendedOn ? 0.4 : 0.05))
+                .disabled(!gate.canBolus)
             }
             .navigationTitle("Remote bolus")
             .navigationBarTitleDisplayMode(.inline)
@@ -249,7 +278,12 @@ extension RemoteClientModel {
         s.maxBolusUnits = maxBolusUnits
         s.lastBolusUnits = lastBolusUnits
         s.basalRateUnitsPerHour = basalRate
-        s.connection = reachable ? .connected : .disconnected
+        // The pump link as the HOST relayed it (its `PumpConnectionState.rawValue`) — NOT this client's
+        // own reachability. Deriving it from `reachable` (the old behavior) made an out-of-range phone
+        // render identically to a dropped pump link, and hid a real pump-link drop whenever the phone
+        // was in range (v3 defect group D). Client reachability is surfaced separately (the
+        // "Reconnecting…" banner). Empty (no status yet) falls back to disconnected, as before.
+        s.connection = PumpConnectionState(rawValue: connection) ?? .disconnected
         return s
     }
     /// Dated readings for the host's chart + stats views. Uses the REAL per-point timestamps the host

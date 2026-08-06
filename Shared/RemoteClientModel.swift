@@ -99,6 +99,25 @@ class RemoteClientModel {
     /// caller reads link health and in-flight as separate axes and feeds both to `BolusGate.evaluate`.
     var bolusInFlight: Bool { connection == PumpConnectionState.bolusing.rawValue }
 
+    /// The shared `BolusGate` decision for THIS remote, fed from the relayed pump state so every mirroring
+    /// remote agrees (v3 defect group D): reachability, link health (`pumpConnected`), a dose already in
+    /// flight (`bolusInFlight`), and the phone-pushed read-only flag (→ `.deny(.remotesReadOnly)` — the
+    /// remote judges read-only locally pre-wire; the semantic `canBolus` over the wire is a later
+    /// increment). `amount`/`minimum` are in insulin units; the max is the relayed `maxBolusUnits`.
+    /// (The Mac feeds `BolusGate` inline instead, because its single control spans carbs grams + units.)
+    func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
+        let access: AccessPolicy.AccessDecision = readOnly ? .deny(.remotesReadOnly) : .allow
+        return BolusGate.evaluate(reachable: reachable, linked: pumpConnected, bolusInFlight: bolusInFlight,
+                                  amount: amount, minimum: minimum,
+                                  maximum: maxBolusUnits > 0 ? maxBolusUnits : 25, access: access)
+    }
+
+    /// Whether this remote may start a bolus AT ALL right now — reachability + pump link + not-in-flight +
+    /// not read-only — independent of any entered amount, for gating the "open bolus" affordance. Amount
+    /// bounds are then checked on the entry screen via `bolusGate(amount:minimum:)`. (`amount`/`minimum`
+    /// both 0 so the bounds always pass and only the surface gates decide.)
+    var bolusAvailability: (canBolus: Bool, reason: BolusBlockReason?) { bolusGate(amount: 0, minimum: 0) }
+
     /// Called when the link's reachability changes. Base updates `reachable`; subclasses override to
     /// add behavior (e.g. start/stop a direct-CGM failover) and must call `super`.
     func reachabilityDidChange(_ r: Bool) { reachable = r }

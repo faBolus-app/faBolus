@@ -111,4 +111,40 @@ import faBolusCore
         let g = macGate(model(connection: PumpConnectionState.connected.rawValue), amount: 0)
         #expect(!g.canBolus); #expect(g.reason == .belowMinimum(0.05))
     }
+
+    // MARK: shared bolusGate / bolusAvailability (remote-iPhone open button + sheet; seeds the watch)
+
+    @Test func availabilityReflectsSurfaceGatesNotAmount() {
+        // The "open bolus" affordance's gate — independent of any entered amount.
+        #expect(model(connection: PumpConnectionState.connected.rawValue).bolusAvailability.canBolus)
+        #expect(model(connection: PumpConnectionState.disconnected.rawValue).bolusAvailability.reason == .pumpNotLinked)
+        #expect(model(connection: PumpConnectionState.bolusing.rawValue).bolusAvailability.reason == .bolusInFlight)
+        #expect(model(connection: PumpConnectionState.connected.rawValue, readOnly: true)
+                    .bolusAvailability.reason == .accessDenied(.remotesReadOnly))
+        let unreachable = model(connection: PumpConnectionState.connected.rawValue)
+        unreachable.reachable = false
+        #expect(unreachable.bolusAvailability.reason == .remoteUnreachable)
+    }
+
+    @Test func bolusGateChecksAmountBoundsInUnits() {
+        let m = model(connection: PumpConnectionState.connected.rawValue)   // maxBolusUnits default 25
+        #expect(m.bolusGate(amount: 2.0, minimum: 0.05).canBolus)
+        #expect(m.bolusGate(amount: 0.0, minimum: 0.05).reason == .belowMinimum(0.05))
+        #expect(m.bolusGate(amount: 99, minimum: 0.05).reason == .aboveMax(25))
+    }
+
+    // MARK: asSnapshot maps the RELAYED pump link, not client reachability (clobber fix)
+
+    @Test func asSnapshotUsesRelayedConnectionNotReachability() {
+        // In range but the pump link dropped → must read as disconnected, not "connected" (the old bug
+        // derived connection from reachability, so a real pump-link drop was hidden while in range).
+        let dropped = model(connection: PumpConnectionState.disconnected.rawValue)
+        dropped.reachable = true
+        #expect(dropped.asSnapshot.connection == .disconnected)
+        // Out of range but the last relayed pump state was connected → show the relayed state, not a
+        // fabricated .disconnected (client reachability is surfaced separately by the Reconnecting banner).
+        let outOfRange = model(connection: PumpConnectionState.connected.rawValue)
+        outOfRange.reachable = false
+        #expect(outOfRange.asSnapshot.connection == .connected)
+    }
 }
