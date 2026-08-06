@@ -59,6 +59,14 @@ struct StatusRingView: View {
             }
             Text(snapshot.connection.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
+            // P12 (app-boundary state): when the link is down for a specific reason (Bluetooth off,
+            // permission denied, …) say so, instead of a bare "Disconnected". nil on remotes (asSnapshot
+            // never sets it), so this line only appears on the phone that owns the pump link.
+            if let detail = snapshot.connectionDetail {
+                Text(detail)
+                    .font(.caption2).foregroundStyle(AppTheme.low)
+                    .multilineTextAlignment(.center).lineLimit(2)
+            }
             if let f = failover {
                 // Only shown while a failover source is supplying the live value (pump feed stale/
                 // missing). Kept to one line and bounded well inside the 180pt ring so no source name
