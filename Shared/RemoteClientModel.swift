@@ -343,7 +343,8 @@ class RemoteClientModel {
     }
 
     /// modern band color index for a glucose value (0 low, 1 in-range, 2 high, 3 urgent-high).
+    /// Delegates to the single `GlucoseRange` classifier (`GlucoseThresholds` bounds) — no re-hardcoded switch.
     nonisolated static func band(_ mgdl: Int) -> Int {
-        switch mgdl { case ..<70: return 0; case 70..<180: return 1; case 180..<250: return 2; default: return 3 }
+        GlucoseRange.classify(mgdl).index
     }
 }

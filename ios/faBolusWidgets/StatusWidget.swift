@@ -76,8 +76,8 @@ struct StatusWidgetView: View {
 struct Sparkline: View {
     let points: [WidgetSnapshot.Point]
 
-    private var lo: Int { min(points.map { $0.mgdl }.min() ?? 70, 70) }
-    private var hi: Int { max(points.map { $0.mgdl }.max() ?? 180, 180) }
+    private var lo: Int { min(points.map { $0.mgdl }.min() ?? WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.low) }
+    private var hi: Int { max(points.map { $0.mgdl }.max() ?? WidgetGlucoseThresholds.high, WidgetGlucoseThresholds.high) }
 
     // E5: plot x PROPORTIONAL to each point's own timestamp, not the array index — so a gap in the data
     // (a dropped relay, a sensor gap) shows as a horizontal gap instead of being compressed into evenly
@@ -101,8 +101,8 @@ struct Sparkline: View {
             ZStack {
                 // In-range band (70–180).
                 Rectangle().fill(.green.opacity(0.12))
-                    .frame(height: max(0, y(70, size.height) - y(180, size.height)))
-                    .position(x: size.width / 2, y: (y(70, size.height) + y(180, size.height)) / 2)
+                    .frame(height: max(0, y(WidgetGlucoseThresholds.low, size.height) - y(WidgetGlucoseThresholds.high, size.height)))
+                    .position(x: size.width / 2, y: (y(WidgetGlucoseThresholds.low, size.height) + y(WidgetGlucoseThresholds.high, size.height)) / 2)
 
                 if points.count > 1 {
                     Path { p in

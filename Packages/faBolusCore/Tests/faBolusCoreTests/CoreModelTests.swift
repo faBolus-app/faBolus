@@ -15,12 +15,14 @@ final class CoreModelTests: XCTestCase {
     }
 
     func testGlucoseRangeBoundaries() {
+        // Closed clinical convention (owner 2026-08-06), agreeing with GlucoseStatistics: 180 is
+        // in-range and 250 is high, so coloring matches the reported TIR at the exact boundaries.
         XCTAssertEqual(GlucoseRange.classify(69), .low)
         XCTAssertEqual(GlucoseRange.classify(70), .inRange)
-        XCTAssertEqual(GlucoseRange.classify(179), .inRange)
-        XCTAssertEqual(GlucoseRange.classify(180), .high)
-        XCTAssertEqual(GlucoseRange.classify(249), .high)
-        XCTAssertEqual(GlucoseRange.classify(250), .urgentHigh)
+        XCTAssertEqual(GlucoseRange.classify(180), .inRange)
+        XCTAssertEqual(GlucoseRange.classify(181), .high)
+        XCTAssertEqual(GlucoseRange.classify(250), .high)
+        XCTAssertEqual(GlucoseRange.classify(251), .urgentHigh)
     }
 
     func testTrendTokens() {

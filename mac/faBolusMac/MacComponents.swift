@@ -96,7 +96,7 @@ struct MacChartView: View {
                 Text("No history yet").font(.caption).foregroundStyle(.secondary).frame(height: 90)
             } else {
                 Chart {
-                    RectangleMark(yStart: .value("lo", 70), yEnd: .value("hi", 180))
+                    RectangleMark(yStart: .value("lo", GlucoseThresholds.low), yEnd: .value("hi", GlucoseThresholds.high))
                         .foregroundStyle(.green.opacity(0.12))
                     ForEach(pts.indices, id: \.self) { i in
                         PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
@@ -104,7 +104,7 @@ struct MacChartView: View {
                     }
                 }
                 .chartYScale(domain: 40...300)
-                .chartYAxis { AxisMarks(values: [70, 180, 250]) }
+                .chartYAxis { AxisMarks(values: [GlucoseThresholds.low, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) }
                 .chartXAxis(.hidden)
                 .frame(height: 90)
                 .contentShape(Rectangle())
