@@ -10,6 +10,18 @@ final class GlucoseFreshnessTests: XCTestCase {
         XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(-361), now: now))     // just over 6 min
     }
 
+    func testFutureDatedReadingIsStaleBeyondClockSkew() {
+        let now = Date()
+        // Well beyond the 5 min skew → stale (would previously read fresh forever: negative age
+        // clamped to 0). Both the boolean gate and the on-screen presentation agree.
+        XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(30 * 60), now: now))
+        XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(30 * 60), now: now), .stale)
+        // Just past the skew boundary → stale; just inside it → fresh (ordinary jitter tolerated).
+        XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance + 1), now: now))
+        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance - 1), now: now))
+        XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(5), now: now), .fresh)
+    }
+
     func testThresholdIsConfigurable() {
         let now = Date()
         let original = GlucoseFreshness.staleAfter
