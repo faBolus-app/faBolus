@@ -229,13 +229,13 @@ public final class MockBackend: PumpBackend {
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws { onChange?() }
     public func stopTempBasal() async throws { onChange?() }
-    public func setMode(bitmap: Int) async throws {
-        // Translate the command bitmap (1=sleepOn,2=sleepOff,3=exOn,4=exOff) to the reported
-        // state (0=normal,1=sleep,2=exercise) the UI reads from controlIQMode.
-        switch bitmap {
-        case 1: snapshot.controlIQMode = 1
-        case 3: snapshot.controlIQMode = 2
-        default: snapshot.controlIQMode = 0   // sleepOff / exerciseOff → normal
+    public func setMode(_ command: ModeCommand) async throws {
+        // Translate the typed command to the reported activity STATE the UI reads from controlIQMode
+        // (the collision this typing exists to prevent: command .sleepOn=1 → state .sleep=1).
+        switch command {
+        case .sleepOn:    snapshot.controlIQMode = ControlIQActivity.sleep.rawValue
+        case .exerciseOn: snapshot.controlIQMode = ControlIQActivity.exercise.rawValue
+        case .sleepOff, .exerciseOff: snapshot.controlIQMode = ControlIQActivity.normal.rawValue
         }
         onChange?()
     }

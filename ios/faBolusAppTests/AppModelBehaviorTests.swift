@@ -446,6 +446,28 @@ struct AppModelBehaviorTests {
         }
     }
 
+    /// P13c-4: the two INVERSE Control-IQ preconditions enforced AT THE FUNNEL (pre-flight), not left for
+    /// the pump to silently reject. A mode change is refused while Control-IQ is OFF; a temp rate is
+    /// refused while it's ON. Fails closed: `lastError` carries the plain reason and nothing reaches the
+    /// backend write.
+    @Test func inverseControlIQPreconditionsRefusedAtFunnel() async {
+        try? await withCleanSettings {
+            let (m, backend, _) = await makeModel(connected: true)   // MockBackend defaults Control-IQ ON
+            AppSettings.shared.advancedControlEnabled = true
+
+            // Temp rate while Control-IQ is ON → refused with the temp-rate reason.
+            await m.setTempBasal(percent: 120, durationMinutes: 30)
+            #expect(m.lastError == ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: true))
+
+            // Turn Control-IQ OFF (onChange → the model's cached snapshot updates synchronously).
+            try? await backend.setControlIQ(enabled: false, weightLbs: 0, totalDailyInsulinUnits: 0)
+            // A mode change is now refused with the mode reason, and the reported activity stays normal.
+            await m.setSleepMode(true)
+            #expect(m.lastError == ControlIQPrecondition.modeBlockReason(controlIQEnabled: false))
+            #expect(backend.snapshot.controlIQMode == ControlIQActivity.normal.rawValue)
+        }
+    }
+
     // MARK: - Idempotency wiring (A-02)
 
     @Test func duplicateRequestHitsBackendOnce() async {
