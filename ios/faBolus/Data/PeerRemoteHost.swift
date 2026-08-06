@@ -191,6 +191,14 @@ public final class PeerRemoteHost {
 
     private func handleCommand(_ cmd: RemoteCommand) {
         guard let model else { return }
+        // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed
+        // (a bolus/resume/approval applied minutes late is a double-dose hazard). Only insulin-INCREASING
+        // kinds are gated (RemoteCommandFreshness); a late cancel/suspend is still honored.
+        if RemoteCommandFreshness.isStale(cmd) {
+            link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                                    status: .failed, message: RemoteCommandFreshness.rejectionMessage))
+            return
+        }
         let policy = self.policy
         switch cmd.kind {
         case .bolusRequest:

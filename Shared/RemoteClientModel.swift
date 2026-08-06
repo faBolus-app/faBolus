@@ -223,6 +223,7 @@ class RemoteClientModel {
         guard let a = incomingApproval else { return }
         var cmd = RemoteCommand(kind: .bolusApprovalResponse, requestId: a.requestId)
         cmd.approved = approved
+        cmd.sentAt = Int(Date().timeIntervalSince1970)   // group B (P11): freshness-gated (a late approval could dose)
         link.send(cmd)
         incomingApproval = nil
     }
@@ -276,6 +277,8 @@ class RemoteClientModel {
     /// `requestId`. Internal so a subclass can drive it with a caller-supplied requestId (e.g. the
     /// Mac's widget quick-bolus, which must correlate the phone's echo to the widget request).
     func startPending(_ cmd: RemoteCommand) {
+        var cmd = cmd
+        cmd.sentAt = Int(Date().timeIntervalSince1970)   // group B (P11): stamp send time so the host refuses a stale/late delivery command
         pendingRequestId = cmd.requestId
         lastStatus = .delivering
         statusMessage = "Delivering…"

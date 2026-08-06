@@ -25,6 +25,14 @@ public final class PhoneRemoteHost {
 
     private func handle(_ cmd: RemoteCommand) {
         guard let model else { return }
+        // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
+        // a bolus/resume/approval applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds
+        // are gated (see RemoteCommandFreshness); a late cancel/suspend is still honored (safe direction).
+        if RemoteCommandFreshness.isStale(cmd) {
+            link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                                    status: .failed, message: RemoteCommandFreshness.rejectionMessage))
+            return
+        }
         switch cmd.kind {
         case .bolusRequest:
             guard !AppSettings.shared.remotesReadOnly else {
