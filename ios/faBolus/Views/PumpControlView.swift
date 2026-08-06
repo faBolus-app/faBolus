@@ -53,7 +53,10 @@ struct PumpControlView: View {
                 Section("Temp basal") {
                     VStack(alignment: .leading) {
                         Text("Rate: \(Int(tempPercent))% of basal").font(.subheadline)
-                        Slider(value: $tempPercent, in: 0...250, step: 5)
+                        // P13c-5: bounds sourced from the kit's firmware limits (drift-guarded), not a literal.
+                        Slider(value: $tempPercent,
+                               in: Double(PumpControlBounds.tempRateMinPercent)...Double(PumpControlBounds.tempRateMaxPercent),
+                               step: 5)
                     }
                     Picker("Duration", selection: $tempDurationMin) {
                         ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
