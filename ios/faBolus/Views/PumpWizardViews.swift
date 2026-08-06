@@ -213,6 +213,8 @@ struct PumpLimitsView: View {
     @State private var maxBolus: Double = 10
     @State private var maxBasal: Double = 3
     @State private var busy = false
+    // P14 S10: a TDD-relative confirmation for a large max-bolus limit (warn, never block).
+    @State private var maxBolusConfirm: String?
 
     var body: some View {
         Form {
@@ -220,8 +222,18 @@ struct PumpLimitsView: View {
                 Stepper(value: $maxBolus, in: 0.5...Interlocks.absoluteMaxUnits, step: 0.5) {
                     Text("\(String(format: "%.1f", maxBolus)) U")
                 }
-                Button { set { await model.setMaxBolus(units: maxBolus) } }
-                    label: { Label("Set max bolus", systemImage: "checkmark.circle") }.disabled(busy)
+                // P14 S10 (§2.1(5)): if the chosen limit is large relative to the pump's own total daily
+                // insulin, confirm first (warn-not-block); otherwise set directly. The absolute 25 U cap
+                // (S9) is a separate HARD clamp in `AppModel.setMaxBolus`, enforced either way.
+                Button {
+                    if let msg = TherapyConfirmations.maxBolusLimitConfirm(
+                        proposedUnits: maxBolus,
+                        totalDailyInsulinUnits: model.snapshot.controlIQTotalDailyInsulin) {
+                        maxBolusConfirm = msg
+                    } else {
+                        set { await model.setMaxBolus(units: maxBolus) }
+                    }
+                } label: { Label("Set max bolus", systemImage: "checkmark.circle") }.disabled(busy)
             }
             Section {
                 Stepper(value: $maxBasal, in: 0...15, step: 0.5) { Text("\(String(format: "%.1f", maxBasal)) U/hr") }
@@ -237,6 +249,13 @@ struct PumpLimitsView: View {
         .navigationTitle("Delivery Limits")
         .disabled(!model.pumpReady)
         .onAppear { maxBolus = min(max(0.5, model.snapshot.maxBolusUnits), Interlocks.absoluteMaxUnits) }
+        .alert("Confirm max bolus", isPresented: Binding(
+            get: { maxBolusConfirm != nil }, set: { if !$0 { maxBolusConfirm = nil } })) {
+            Button("Cancel", role: .cancel) { maxBolusConfirm = nil }
+            Button("Set anyway") { maxBolusConfirm = nil; set { await model.setMaxBolus(units: maxBolus) } }
+        } message: {
+            if let m = maxBolusConfirm { Text(m) }
+        }
     }
 
     private func set(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }
