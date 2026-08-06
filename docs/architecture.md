@@ -64,9 +64,29 @@ faBolusGarmin  (separate repo)
 ## Who owns the pump
 
 The iPhone owns the single Bluetooth control connection and runs **PumpX2Kit**. Remotes (Apple
-Watch, Garmin) are thin clients that send commands to the phone; the phone runs the confirm
+Watch, Garmin, and the Mac) are thin clients that send commands to the phone; the phone runs the confirm
 interlock and delivers. A standalone Apple Watch that runs PumpX2Kit on-watch (no phone) is
 designed but not built.
+
+**The pump link always wins (§5.5).** Serving a remote never touches the pump connection: the iPhone's
+CoreBluetooth link to the pump lives in PumpX2Kit's `PumpBLEClient`, while every remote is served through
+a *separate* peer/WatchConnectivity/Garmin path into `AppModel` — so a busy or reconnecting remote can't
+starve, drop, or delay the pump link. This is structural, not a setting.
+
+**The Mac is a viewer, never a therapist.** The macOS app is a remote client only: it links no pump stack
+(`PumpBLEClient`/`TandemBackend` aren't in the Mac target at all) and has no therapy-parameter editor, so
+profile/limit/Control-IQ *edits* are iOS-app-only by construction. The Mac can *request* a bolus, which
+the phone gates and delivers exactly like any other remote.
+
+**Mac connection persistence across sleep and quit.** macOS CoreBluetooth has no background state
+restoration (the iOS `willRestoreState` mechanism doesn't exist there), so the Mac keeps only what it can
+re-establish itself: the paired-phone identity and its auth token persist across quit and sleep (in
+`MacAuthStore`/`MacPairing`), so on relaunch or wake the Mac reconnects to the same phone automatically
+via the stored-token handshake — no re-pairing. On system wake it re-asserts the preferred peer and forces
+a fresh status/glucose read (`MacRemoteModel.observeWake`), so pre-sleep values are never shown as current
+(the same source-timestamp staleness rule as every other surface still applies if the re-read is slow).
+An app *quit* drops the live BLE session (nothing survives it); relaunch re-scans and reconnects by the
+persisted identity.
 
 ## Glucose sources (CGM failover)
 
