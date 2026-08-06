@@ -1,0 +1,46 @@
+import Testing
+import Foundation
+import faBolusCore
+@testable import faBolus
+
+/// P12 (§5.4) — the host must push status to the remotes on every NEW glucose SAMPLE, not only when the
+/// mg/dL VALUE changes. A CGM commonly reports the same number twice in a row; the old value-only
+/// comparison let a fresh reading silently NOT reach the remotes, so their displayed age stalled.
+struct StatusPushCadenceTests {
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    /// The §5.4 fix: same mg/dL but a NEWER source timestamp = a new sample = push.
+    @Test func newSampleAtTheSameValuePushes() {
+        #expect(AppModel.shouldPushStatus(
+            newGlucose: 120, newGlucoseDate: t0.addingTimeInterval(300),
+            lastGlucose: 120, lastGlucoseDate: t0,
+            newConnection: .connected, lastConnection: .connected,
+            secondsSinceLastPush: 1))
+    }
+
+    /// Truly identical sample (same value AND timestamp), connection unchanged, inside the throttle → no push.
+    @Test func identicalSampleWithinThrottleDoesNotPush() {
+        #expect(!AppModel.shouldPushStatus(
+            newGlucose: 120, newGlucoseDate: t0,
+            lastGlucose: 120, lastGlucoseDate: t0,
+            newConnection: .connected, lastConnection: .connected,
+            secondsSinceLastPush: 1))
+    }
+
+    @Test func throttleWindowStillForcesAPush() {
+        #expect(AppModel.shouldPushStatus(
+            newGlucose: 120, newGlucoseDate: t0,
+            lastGlucose: 120, lastGlucoseDate: t0,
+            newConnection: .connected, lastConnection: .connected,
+            secondsSinceLastPush: 16))
+    }
+
+    @Test func connectionChangeOrBolusingAlwaysPushes() {
+        #expect(AppModel.shouldPushStatus(
+            newGlucose: 120, newGlucoseDate: t0, lastGlucose: 120, lastGlucoseDate: t0,
+            newConnection: .disconnected, lastConnection: .connected, secondsSinceLastPush: 1))
+        #expect(AppModel.shouldPushStatus(
+            newGlucose: 120, newGlucoseDate: t0, lastGlucose: 120, lastGlucoseDate: t0,
+            newConnection: .bolusing, lastConnection: .bolusing, secondsSinceLastPush: 1))
+    }
+}

@@ -532,24 +532,39 @@ public final class AppModel {
     private var lastStatusPush = Date.distantPast
     private var lastPushedGlucose: Int?
     private var lastPushedConnection: PumpConnectionState?
+    private var lastPushedGlucoseDate: Date?
     /// Push status to remotes right now, ignoring the throttle (used for alert changes + right after
     /// a control action so the watch reflects it instantly).
     func forceStatusPush() {
         lastStatusPush = Date(); lastPushedGlucose = snapshot.glucose; lastPushedConnection = snapshot.connection
+        lastPushedGlucoseDate = snapshot.glucoseDate
         for h in statusListeners { h(snapshot) }
     }
+
+    /// Whether a status push is due (§5.4). Pushes immediately (bypassing the 15 s throttle) on a NEW
+    /// glucose SAMPLE — identified by its source timestamp, so a fresh reading at an unchanged mg/dL still
+    /// pushes (the old code compared the value only, so a repeated number silently didn't reach the
+    /// remotes) — on any connection-state change (the watch sees the bolus start + the settle instantly),
+    /// and continuously while a bolus is in progress; otherwise at most once per throttle window to spare
+    /// phone + watch battery. Pure + `nonisolated` so the cadence rule is unit-testable.
+    nonisolated static func shouldPushStatus(newGlucose: Int?, newGlucoseDate: Date?,
+                                             lastGlucose: Int?, lastGlucoseDate: Date?,
+                                             newConnection: PumpConnectionState, lastConnection: PumpConnectionState?,
+                                             secondsSinceLastPush: TimeInterval, throttle: TimeInterval = 15) -> Bool {
+        let newSample = newGlucose != lastGlucose || newGlucoseDate != lastGlucoseDate
+        let connChanged = newConnection != lastConnection
+        let bolusing = newConnection == .bolusing
+        return newSample || connChanged || bolusing || secondsSinceLastPush > throttle
+    }
+
     private func pushStatusIfNeeded() {
         guard !statusListeners.isEmpty else { return }
-        // Push immediately (bypassing the 15 s throttle) on a glucose change and — the time-sensitive
-        // cases — whenever the connection state changes (so the watch sees the bolus start and the
-        // "delivered"/back-to-connected transition instantly) and continuously while a bolus is in
-        // progress. Otherwise at most once every 15 s to spare phone + watch battery.
-        let glucoseChanged = snapshot.glucose != lastPushedGlucose
-        let connChanged = snapshot.connection != lastPushedConnection
-        let bolusing = snapshot.connection == .bolusing
-        guard glucoseChanged || connChanged || bolusing
-                || Date().timeIntervalSince(lastStatusPush) > 15 else { return }
+        guard Self.shouldPushStatus(newGlucose: snapshot.glucose, newGlucoseDate: snapshot.glucoseDate,
+                                    lastGlucose: lastPushedGlucose, lastGlucoseDate: lastPushedGlucoseDate,
+                                    newConnection: snapshot.connection, lastConnection: lastPushedConnection,
+                                    secondsSinceLastPush: Date().timeIntervalSince(lastStatusPush)) else { return }
         lastStatusPush = Date(); lastPushedGlucose = snapshot.glucose; lastPushedConnection = snapshot.connection
+        lastPushedGlucoseDate = snapshot.glucoseDate
         for h in statusListeners { h(snapshot) }
     }
 
