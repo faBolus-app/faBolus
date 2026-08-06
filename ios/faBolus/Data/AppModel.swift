@@ -327,6 +327,12 @@ public final class AppModel {
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         cmd.canBolus = avail.canBolus
         cmd.bolusBlockReason = avail.reason?.wireToken
+        // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
+        // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
+        // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a
+        // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
+        // stays the enforcement point on the actual dismiss.
+        cmd.supportsRemoteAlertDismiss = capabilities.supportsRemoteAlertDismiss
         return cmd
     }
 

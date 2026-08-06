@@ -41,6 +41,10 @@ class RemoteClientModel {
     var chartRanges: [Int] = [3, 6, 12, 24]
     /// Read-only mode pushed from the phone (watch/Garmin view-only): hide the bolus affordance.
     var readOnly: Bool = false
+    /// P13 capability channel: whether the pump honors a REMOTE alert dismissal (Mobi yes, t:slim no).
+    /// Drives the alert action label ("Clear" vs "Snooze"). Safe default false ⇒ "Snooze" (honest — a
+    /// t:slim dismiss only snoozes locally); set by the first statusRead that carries any alert anyway.
+    var canDismissAlertOnPump: Bool = false
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     /// Identities (kind+id) of the previous alert set, to detect a newly-arrived alert. `nil` until the
@@ -220,6 +224,7 @@ class RemoteClientModel {
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let b = cmd.basalRate { basalRate = b }
             if let ro = cmd.remotesReadOnly { readOnly = ro }
+            if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }   // P13 capability channel
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

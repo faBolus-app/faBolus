@@ -22,7 +22,7 @@ struct WatchAlertsView: View {
                                 Text(a.title).font(.caption).lineLimit(3)
                                 Spacer()
                             }
-                            Button("Clear") { model.dismissAlert(a) }
+                            Button(model.canDismissAlertOnPump ? "Clear" : "Snooze") { model.dismissAlert(a) }
                                 .font(.caption2).buttonStyle(.bordered).tint(.orange)
                         }
                         .padding(8)

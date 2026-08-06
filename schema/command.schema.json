@@ -212,6 +212,10 @@
       "type": "string",
       "enum": ["remoteUnreachable", "pumpNotLinked", "bolusInFlight", "belowMinimum", "aboveMax", "accessDenied"],
       "description": "statusRead reply — the reason `canBolus` is false, as a stable locale-independent token (BolusBlockReason.wireToken), so a remote can show WHY its bolus affordance is disabled. Over the wire the host emits only pumpNotLinked / bolusInFlight / accessDenied (reachability + bounds are judged locally by each remote). Absent when canBolus is true or absent."
+    },
+    "supportsRemoteAlertDismiss": {
+      "type": "boolean",
+      "description": "statusRead reply — whether the pump firmware actually honors a REMOTE alert dismissal (P13 capability channel). t:slim X2 silently rejects it, so on t:slim a remote's alert action only snoozes the alert locally; Mobi clears it on the pump. A remote uses this to label its alert action 'Clear' (true) vs 'Snooze' (false), matching the phone. Absent ⇒ the remote keeps its safe default (Snooze); the host stays the enforcement point on the actual dismiss."
     }
   },
   "additionalProperties": false
