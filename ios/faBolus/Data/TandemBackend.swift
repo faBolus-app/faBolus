@@ -1584,7 +1584,11 @@ extension TandemBackend: PumpBLEClientDelegate {
             // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
             // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it
             // arrives here with no extra wiring.
-            pumpFeatureBits = Self.featureBits(from: m)
+            let bits = Self.featureBits(from: m)
+            pumpFeatureBits = bits
+            // P13c: surface the controller variant (CIQ vs CIQ+, O7) on the snapshot so the controller
+            // descriptor is reachable from pump state. Identity only — no capability gate reads it.
+            snapshot.controllerVariant = bits.controllerVariant
         case let m as CurrentBasalStatusResponse:
             snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
         case let m as BasalLimitSettingsResponse:

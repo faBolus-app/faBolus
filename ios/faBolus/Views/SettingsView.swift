@@ -370,10 +370,9 @@ struct PumpSettingsView: View {
                                 Label("Pump Control", systemImage: "slider.horizontal.3")
                             }
                         } else {
-                            // P13 deferral: this is user-facing BRAND copy (names the Mobi model), which
-                            // the controller descriptor owns in 13c — not a capability gate — so it keeps
-                            // reading `snapshot.isMobi` until the descriptor supplies the model string.
-                            Text(model.snapshot.isMobi ? "Connect to a Mobi to enable pump control."
+                            // P13c: user-facing BRAND copy, now keyed on the typed `PumpModel` identity
+                            // (not a raw `isMobi` read) — a model-identity fact, not a capability gate.
+                            Text(model.snapshot.pumpModel == .mobi ? "Connect to a Mobi to enable pump control."
                                  : "Advanced control requires a Tandem Mobi pump.")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }

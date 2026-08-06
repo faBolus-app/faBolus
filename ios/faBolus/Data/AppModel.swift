@@ -649,10 +649,9 @@ public final class AppModel {
             guard !snapshot.pumpModelName.isEmpty else { return }
             let code = enteredPairCode!
             enteredPairCode = nil
-            // P13: a Mobi pairing-mechanism fact (only Mobi has a savable fixed PIN), not an advanced-
-            // control capability gate — so it stays a model read here; the controller descriptor (13c)
-            // will own pump-identity facts like this.
-            if snapshot.isMobi, code != PairingStore.loadPin() { savePinPrompt = code }
+            // P13c: a pairing-mechanism fact of the model (only Mobi has a savable fixed PIN), read from
+            // the typed `PumpModel` identity rather than a raw `isMobi` check — not a capability gate.
+            if snapshot.pumpModel.hasSavablePairingPin, code != PairingStore.loadPin() { savePinPrompt = code }
         case .disconnected, .error:
             enteredPairCode = nil   // pairing didn't complete — drop the pending offer
         default:
