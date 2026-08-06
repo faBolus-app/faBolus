@@ -23,12 +23,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// guarantee. On real t:slim X2 hardware the signed time write is **not** honored (the pump doesn't
     /// change its clock, and `sendControl` can't tell — it doesn't inspect the response status), so
     /// time sync stays Mobi-only.
+    /// P13: capabilities are derived from the pump model refined by the pump's OWN `PumpFeaturesV1`
+    /// bitmask (`pumpFeatureBits`, cached from op 79 in `didReceiveFrame`). Before that frame lands —
+    /// or on firmware that never answers — `derive` falls back to the exact model preset, so this is a
+    /// pure superset of the pre-P13 behavior. The feature bits can only *narrow* the preset, never
+    /// widen it (see `PumpCapabilities.derive`), so it can't reveal a control the model didn't allow.
     public var capabilities: PumpCapabilities {
-        var caps = snapshot.isMobi ? PumpCapabilities.mobiAdvanced : PumpCapabilities.full
-        // t:slim X2 firmware silently rejects *remote* notification dismissal (Tandem's own app
-        // disables it there); only Mobi honors it. On t:slim, "Clear" only snoozes locally in faBolus.
-        caps.supportsRemoteAlertDismiss = snapshot.isMobi
-        return caps
+        PumpCapabilities.derive(isMobi: snapshot.isMobi, features: pumpFeatureBits)
     }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
@@ -184,6 +185,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// the reliable, direct model signal — the API version does NOT cleanly separate the two (newer
     /// t:slim X2 firmware reports API >= 3.5). nil = name didn't identify it → fall back to API version.
     private var detectedIsMobi: Bool?
+    /// P13: the pump's own capability bitmask (`PumpFeaturesV1Response`, op 79), projected to the
+    /// neutral `PumpFeatureBits` at the decode boundary and consumed by `capabilities`. nil until the
+    /// once-per-connect `staticRead` reply lands (or on firmware that never answers) → preset fallback.
+    /// Reset on disconnect so a model/firmware change on reconnect re-derives cleanly.
+    private var pumpFeatureBits: PumpFeatureBits?
     private var backfillActive = false
     private var backfillBuffer: [(pumpSec: UInt32, mgdl: Int)] = []
     // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
@@ -1044,10 +1050,22 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Slow/static settings (once per connect + every ~10 min): basal, calculator snapshot
     /// (carb ratio/ISF/target/max), and the pump-clock anchor.
     private func staticRead() {
+        // PumpFeaturesV1Request (op 78→79) is an unsigned empty current-status read — same shape as
+        // ApiVersionRequest — so it rides the fire-and-forget path here, behind auth by construction
+        // (staticRead only runs after pairing, via startPolling). Its reply feeds `capabilities` (P13).
         for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
-                           ApiVersionRequest(), ControlIQInfoV2Request(), BasalLimitSettingsRequest()] {
+                           ApiVersionRequest(), PumpFeaturesV1Request(), ControlIQInfoV2Request(),
+                           BasalLimitSettingsRequest()] {
             try? client.send(r)
         }
+    }
+
+    /// Decode boundary (P13): project the pump's `PumpFeaturesV1` capability bitmask onto the neutral
+    /// `PumpFeatureBits` faBolusCore consumes — keeping the PumpX2 message type out of the core.
+    static func featureBits(from r: PumpFeaturesV1Response) -> PumpFeatureBits {
+        PumpFeatureBits(controlIQSupported: r.controlIQSupported,
+                        basalLimitSupported: r.basalLimitSupported,
+                        blePumpControlSupported: r.blePumpControlSupported)
     }
 
     // MARK: - CGM reading time + predictive polling (Bug 5)
@@ -1345,6 +1363,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             backfillTimer?.invalidate(); backfillTimer = nil
             backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
             detectedIsMobi = nil   // re-detect the model on the next connect
+            pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
         default:
             // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
             // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
@@ -1560,6 +1579,11 @@ extension TandemBackend: PumpBLEClientDelegate {
                 PumpModelStore.set(isMobi: m.isMobi)
             }
             snapshot.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
+        case let m as PumpFeaturesV1Response:
+            // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
+            // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it
+            // arrives here with no extra wiring.
+            pumpFeatureBits = Self.featureBits(from: m)
         case let m as CurrentBasalStatusResponse:
             snapshot.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
         case let m as BasalLimitSettingsResponse:
