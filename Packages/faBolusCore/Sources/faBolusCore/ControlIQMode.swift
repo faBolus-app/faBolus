@@ -1,0 +1,68 @@
+import Foundation
+
+/// P13c-4 — the pump user-mode bitmap collision, typed away.
+///
+/// The Tandem wire protocol overloads small integers in a genuinely dangerous way: the *reported*
+/// Control-IQ activity STATE is `0 = normal, 1 = sleep, 2 = exercise` (`PumpSnapshot.controlIQMode`),
+/// while the *command* that CHANGES it is a different bitmap — `1 = sleep on, 2 = sleep off,
+/// 3 = exercise on, 4 = exercise off`. So the bare integer `1` means "sleep is active" as a state but
+/// "turn sleep ON" as a command, and `2` means "exercise is active" as a state but "turn sleep OFF" as a
+/// command. Passing a raw `Int` through the seam invites exactly the state↔command mix-up that would
+/// send the wrong mode change. These two enums make the seam type-checked instead.
+///
+/// faBolusCore stays pump-neutral (it must not import the PumpX2 message layer), so this mirrors the
+/// kit's own `SetModesRequest.ModeCommand` the way `PumpFeatureBits` mirrors the feature bitmask — the
+/// driver translates the neutral command to the wire request. The raw values are kept identical to the
+/// wire bitmap (1…4) so the driver's translation is a pure pass-through.
+
+/// A pump user-mode COMMAND — what to change. Distinct type from the reported `ControlIQActivity` state.
+public enum ModeCommand: Int, Sendable, Equatable, CaseIterable {
+    case sleepOn = 1
+    case sleepOff = 2
+    case exerciseOn = 3
+    case exerciseOff = 4
+
+    /// The 1-byte wire bitmap the driver sends (identical to the raw value; the kit's `SetModesRequest`
+    /// takes this bitmap and its own `ModeCommand` uses the same numbering — do not renumber).
+    public var bitmap: Int { rawValue }
+}
+
+/// The reported Control-IQ activity STATE (`PumpSnapshot.controlIQMode`). Typed so state `0/1/2` is never
+/// confused with the `ModeCommand` bitmap `1/2/3/4`.
+public enum ControlIQActivity: Int, Sendable, Equatable, CaseIterable {
+    case normal = 0
+    case sleep = 1
+    case exercise = 2
+
+    /// Total (never-failing) decode of the raw `controlIQMode` int — an unknown value reads as `.normal`
+    /// (the safe display default), never a crash.
+    public init(rawMode: Int) { self = ControlIQActivity(rawValue: rawMode) ?? .normal }
+
+    /// The command that clears this activity back to normal, or nil when already normal.
+    public var clearCommand: ModeCommand? {
+        switch self {
+        case .normal:   return nil
+        case .sleep:    return .sleepOff
+        case .exercise: return .exerciseOff
+        }
+    }
+}
+
+/// The two **inverse** Control-IQ preconditions the firmware enforces, expressed as pre-flight checks so
+/// the app refuses (with a plain reason) BEFORE the write instead of letting the pump silently reject it.
+///
+/// - Sleep/Exercise **modes** require Control-IQ to be **ON** (they only shape the controller's targets).
+/// - A **temp rate** requires Control-IQ to be **OFF** (the controller owns basal while it's running).
+///
+/// Pure and pump-neutral: the UI can call these to disable+explain proactively, and the delivery funnel
+/// calls them to fail closed. `nil` = allowed; a non-nil string = the reason it's blocked.
+public enum ControlIQPrecondition {
+    /// Modes need Control-IQ on.
+    public static func modeBlockReason(controlIQEnabled: Bool) -> String? {
+        controlIQEnabled ? nil : "Turn Control-IQ on to use Sleep or Exercise mode."
+    }
+    /// A temp rate needs Control-IQ off.
+    public static func tempRateBlockReason(controlIQEnabled: Bool) -> String? {
+        controlIQEnabled ? "Turn Control-IQ off to set a temporary basal rate." : nil
+    }
+}

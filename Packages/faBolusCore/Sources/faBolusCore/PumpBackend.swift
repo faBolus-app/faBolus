@@ -94,8 +94,10 @@ public protocol PumpBackend: AnyObject {
     func setTempBasal(percent: Int, durationMinutes: Int) async throws
     /// Stop an active temp basal.
     func stopTempBasal() async throws
-    /// Set the pump user-mode bitmap (sleep/exercise). Insulin-affecting (changes CIQ behavior).
-    func setMode(bitmap: Int) async throws
+    /// Set the pump user mode (sleep/exercise on/off). Takes the typed `ModeCommand` rather than a raw
+    /// bitmap so a caller can't confuse the command (1…4) with the reported state (0…2). Insulin-affecting
+    /// (changes Control-IQ behavior). Precondition: Control-IQ must be ON (enforced pre-flight upstream).
+    func setMode(_ command: ModeCommand) async throws
     /// Play the "find my pump" sound. Non-insulin.
     func playFindMyPump() async throws
 
@@ -215,7 +217,7 @@ public extension PumpBackend {
     func resumeDelivery() async throws { throw ControlError.notSupported }
     func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
     func stopTempBasal() async throws { throw ControlError.notSupported }
-    func setMode(bitmap: Int) async throws { throw ControlError.notSupported }
+    func setMode(_ command: ModeCommand) async throws { throw ControlError.notSupported }
     func playFindMyPump() async throws { throw ControlError.notSupported }
     func readG6TransmitterId() async -> String? { nil }
 

@@ -1344,23 +1344,30 @@ public final class AppModel {
     public func suspendDelivery() async { await runControl(.suspendDelivery) { try await source.suspendDelivery() } }
     public func resumeDelivery() async { await runControl(.resumeDelivery) { try await source.resumeDelivery() } }
     public func setTempBasal(percent: Int, durationMinutes: Int) async {
+        // P13c-4 inverse precondition: a temp rate requires Control-IQ OFF (the controller owns basal
+        // while running, so the pump rejects a temp rate). Refuse pre-flight with a plain reason rather
+        // than issue a write the pump will bounce.
+        if let reason = ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
+            lastError = reason; return
+        }
         await runControl(.setTempBasal) { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
     }
     public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
-    public func setMode(bitmap: Int) async { await runControl(.setMode) { try await source.setMode(bitmap: bitmap) } }
-    /// Pump user-mode toggles. The **command** bitmap (wire contract, see PumpX2
-    /// `SetModesRequest.ModeCommand`) is `sleepOn=1, sleepOff=2, exerciseOn=3, exerciseOff=4` —
-    /// distinct from the *reported* state `snapshot.controlIQMode` (0=normal, 1=sleep, 2=exercise).
-    /// Mobi-only + Control-IQ-must-be-on; gated in the UI by `advancedControlAllowed`.
-    public func setSleepMode(_ on: Bool) async { await setMode(bitmap: on ? 1 : 2) }
-    public func setExerciseMode(_ on: Bool) async { await setMode(bitmap: on ? 3 : 4) }
+    /// Set a pump user mode. Takes the typed `ModeCommand` (wire `sleepOn=1…exerciseOff=4`) so a caller
+    /// can't confuse it with the reported state `snapshot.controlIQMode` (0=normal, 1=sleep, 2=exercise).
+    /// P13c-4 inverse precondition: modes require Control-IQ ON — refused pre-flight otherwise. Mobi-only;
+    /// gated in the UI by `advancedControlAllowed`.
+    public func setMode(_ command: ModeCommand) async {
+        if let reason = ControlIQPrecondition.modeBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
+            lastError = reason; return
+        }
+        await runControl(.setMode) { try await source.setMode(command) }
+    }
+    public func setSleepMode(_ on: Bool) async { await setMode(on ? .sleepOn : .sleepOff) }
+    public func setExerciseMode(_ on: Bool) async { await setMode(on ? .exerciseOn : .exerciseOff) }
     /// Return to normal by clearing whichever special mode is currently active.
     public func setNormalMode() async {
-        switch snapshot.controlIQMode {
-        case 1: await setSleepMode(false)
-        case 2: await setExerciseMode(false)
-        default: break
-        }
+        if let clear = ControlIQActivity(rawMode: snapshot.controlIQMode).clearCommand { await setMode(clear) }
     }
     /// Whether pump mode-switching is currently possible (advanced control on, Mobi, connected).
     public var canControlModes: Bool { advancedControlAllowed && capabilities.supportsModes && pumpReady }
