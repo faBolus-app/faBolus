@@ -268,6 +268,68 @@ public struct PumpCapabilities: Sendable, Equatable {
     }
 }
 
+/// The subset of the pump's own `PumpFeaturesV1` capability bitmask that the app consumes, projected
+/// into a backend-neutral value at the driver's decode boundary (so faBolusCore never depends on the
+/// PumpX2 message layer). All-false is the safe interpretation of "the pump told us nothing".
+///
+/// P13: the pump *already answers* these questions on the wire (`PumpFeaturesV1Response`, op 79) — the
+/// bits were parsed by the kit and thrown away, while capabilities were inferred from one `isMobi`
+/// boolean. This is the plumbing that lets `PumpCapabilities.derive` consult the real bits.
+public struct PumpFeatureBits: Sendable, Equatable {
+    /// The pump firmware supports Control-IQ (the closed-loop controller).
+    public var controlIQSupported: Bool
+    /// The pump firmware supports a user-configurable basal (max-basal) limit.
+    public var basalLimitSupported: Bool
+    /// The pump firmware supports BLE pump *control* (writes beyond status reads). A pump that does
+    /// not advertise this cannot be controlled over BLE at all — every control write is rejected — so
+    /// this is the master signal for whether any advanced control is even reachable.
+    public var blePumpControlSupported: Bool
+
+    public init(controlIQSupported: Bool = false, basalLimitSupported: Bool = false,
+                blePumpControlSupported: Bool = false) {
+        self.controlIQSupported = controlIQSupported
+        self.basalLimitSupported = basalLimitSupported
+        self.blePumpControlSupported = blePumpControlSupported
+    }
+}
+
+extension PumpCapabilities {
+    /// Derives the capability set from the pump model (`isMobi`) refined by the pump's own
+    /// `PumpFeaturesV1` bitmask when the app has received it.
+    ///
+    /// **Safety contract — features can only NARROW, never widen.** The model preset
+    /// (`.mobiAdvanced` / `.full`) is the *floor*: the real feature bits may turn a capability OFF
+    /// when the pump reports it unsupported, but never turn one ON that the preset didn't already
+    /// allow. Consequences that make this safe to ship without hardware:
+    ///  - When `features == nil` (no `PumpFeaturesV1Response` yet, or firmware that never answers),
+    ///    the result is byte-identical to the pre-P13 preset — a pure fallback, no behavior change.
+    ///  - A narrowing can only ever *disable* a control the connected pump would have rejected anyway
+    ///    (e.g. a pump that reports `blePumpControlSupported == false` cannot be BLE-controlled), so
+    ///    narrowing prevents a show-then-fail affordance and can never take away working control.
+    ///
+    /// `supportsRemoteAlertDismiss` stays model-derived (t:slim X2 firmware silently rejects a *remote*
+    /// dismissal — a hardware quirk not expressed by the feature bitmask).
+    public static func derive(isMobi: Bool, features: PumpFeatureBits?) -> PumpCapabilities {
+        var caps = isMobi ? mobiAdvanced : full
+        caps.supportsRemoteAlertDismiss = isMobi
+        guard let f = features else { return caps }
+        // Master gate: a pump that doesn't advertise BLE pump control can't be controlled over BLE, so
+        // reflect that by narrowing every advanced capability off (nothing else is reachable).
+        if !f.blePumpControlSupported {
+            caps.supportsSuspendResume = false; caps.supportsTempBasal = false
+            caps.supportsModes = false; caps.supportsProfiles = false
+            caps.supportsControlIQSettings = false; caps.supportsCgmSession = false
+            caps.supportsCartridgeFill = false; caps.supportsLimits = false
+            caps.supportsTimeSync = false; caps.supportsSounds = false; caps.supportsReminders = false
+            return caps
+        }
+        // Narrow the two capabilities the V1 bitmask speaks to directly (AND with the preset floor).
+        caps.supportsControlIQSettings = caps.supportsControlIQSettings && f.controlIQSupported
+        caps.supportsLimits = caps.supportsLimits && f.basalLimitSupported
+        return caps
+    }
+}
+
 /// A pump insulin-delivery profile (IDP) summarized for the profile switcher/list.
 public struct PumpProfileInfo: Sendable, Equatable, Identifiable {
     public var id: Int { idpId }
