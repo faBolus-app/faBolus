@@ -367,7 +367,14 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     public func connect() async {
         snapshot.connection = .scanning; onChange?()
-        client.startScan()
+        // C1 cold-launch fast path: if we know the pump's peripheral id, re-adopt it directly
+        // (retrieve-before-scan) instead of a slow scan; the kit falls back to a scan if it can't be
+        // resolved yet. First-ever pairing has no stored id, so it scans.
+        if let id = PumpPeripheralStore.id() {
+            client.connectKnownPeripheral(identifier: id)
+        } else {
+            client.startScan()
+        }
     }
 
     public func disconnect() {
@@ -1371,6 +1378,9 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
             PumpModelStore.set(isMobi: isMobi)
         }
+        // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
+        // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.
+        PumpPeripheralStore.set(peripheral.identifier)
         c.connect(peripheral)
     }
 
@@ -1407,7 +1417,7 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public var hasStoredPairing: Bool { PairingStore.load() != nil }
-    public func forgetPairing() { PairingStore.clear(); authenticationKey = [] }
+    public func forgetPairing() { PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = [] }
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization { coordinator?.handle(frame: frame); return }
