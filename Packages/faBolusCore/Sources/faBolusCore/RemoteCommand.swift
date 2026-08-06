@@ -52,6 +52,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 return false
             }
         }
+
+        /// Commands whose LATE application could **increase** insulin delivery — these must be refused if
+        /// stale (a bolus / resume / bolus-approval applied minutes late is the hazard `sentAt` guards).
+        /// Insulin-REDUCING commands (`cancelBolus`, `suspendPump`) and neutral ones (`dismissAlert`) are
+        /// deliberately NOT freshness-gated: refusing a late *safety* action would be the unsafe direction.
+        public var isFreshnessSensitive: Bool {
+            switch self {
+            case .bolusRequest, .bolusConfirm, .resumePump, .bolusApprovalResponse: return true
+            default: return false
+            }
+        }
     }
 
     /// A pump alert/alarm summarized for a remote (id + kind + title).
@@ -81,6 +92,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var version: Int
     public var kind: Kind
     public var requestId: String
+    /// Immutable send-time stamp (Unix seconds), set once by the sender when it composes a pump-mutating
+    /// command. The host computes `now − sentAt` at receipt and refuses a delivery-authorizing command that
+    /// is too old to apply safely — a bolus queued or retransmitted minutes late is a double-dose hazard
+    /// (v3 handoff group B). Same Int32.max (2038-01-19) ceiling as `glucoseEpochSec`: watchOS `Int` and
+    /// Monkey C `Lang.Number` are signed 32-bit. Absent ⇒ a legacy/foreign sender that predates the field;
+    /// only a present-and-stale stamp is rejected. See `RemoteCommandFreshness`.
+    public var sentAt: Int?
     public var units: Double?
     public var carbsGrams: Double?
     public var bgMgdl: Double?
@@ -202,7 +220,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// bolus, false = denied.
     public var approved: Bool? = nil
 
-    public init(kind: Kind, requestId: String = UUID().uuidString, units: Double? = nil,
+    public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
                 trend: String? = nil,
@@ -219,7 +237,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil,
                 garminComplicationDisplay: String? = nil, remotesReadOnly: Bool? = nil) {
         self.version = Self.schemaVersion
-        self.kind = kind; self.requestId = requestId; self.units = units
+        self.kind = kind; self.requestId = requestId; self.sentAt = sentAt; self.units = units
         self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
         self.status = status; self.deliveredUnits = deliveredUnits; self.message = message
         self.trend = trend
