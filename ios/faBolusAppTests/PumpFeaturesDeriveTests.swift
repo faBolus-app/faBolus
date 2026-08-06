@@ -17,19 +17,34 @@ struct PumpFeaturesDeriveTests {
     // Named bits from PumpFeaturesV1Response.
     private let controlIQ: UInt64 = 1024          // bit 10
     private let basalLimit: UInt64 = 262144       // bit 18
+    private let controlIQPro: UInt64 = 8388608    // bit 23
     private let blePumpControl: UInt64 = 268435456 // bit 28
 
     @Test func featureBitsMapEachAccessor() {
-        let r = PumpFeaturesV1Response(cargo: cargo(controlIQ | blePumpControl))  // basalLimit NOT set
+        let r = PumpFeaturesV1Response(cargo: cargo(controlIQ | blePumpControl))  // basalLimit + Pro NOT set
         let bits = TandemBackend.featureBits(from: r)
         #expect(bits.controlIQSupported)
         #expect(bits.blePumpControlSupported)
         #expect(!bits.basalLimitSupported)
+        #expect(!bits.controlIQProSupported)
+        #expect(bits.controllerVariant == .controlIQ)   // CIQ present, Pro absent ⇒ classic
+    }
+
+    @Test func controlIQProBitDiscriminatesTheControllerVariant() {
+        // A Mobi-class pump advertising Control-IQ+ (bit 23) ⇒ .controlIQPro (the O7 discriminator).
+        let pro = PumpFeaturesV1Response(cargo: cargo(controlIQ | controlIQPro | blePumpControl))
+        let bits = TandemBackend.featureBits(from: pro)
+        #expect(bits.controlIQProSupported)
+        #expect(bits.controllerVariant == .controlIQPro)
+        // No CIQ bit at all ⇒ no controller, regardless of other bits.
+        #expect(TandemBackend.featureBits(from: PumpFeaturesV1Response(cargo: cargo(blePumpControl)))
+                .controllerVariant == .none)
     }
 
     @Test func emptyCargoIsAllFalse() {
         let bits = TandemBackend.featureBits(from: PumpFeaturesV1Response(cargo: []))
         #expect(!bits.controlIQSupported && !bits.basalLimitSupported && !bits.blePumpControlSupported)
+        #expect(!bits.controlIQProSupported && bits.controllerVariant == .none)
     }
 
     @Test func decodedBitsFlowIntoTheDerivedCapabilities() {

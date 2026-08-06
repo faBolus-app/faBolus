@@ -1065,7 +1065,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     static func featureBits(from r: PumpFeaturesV1Response) -> PumpFeatureBits {
         PumpFeatureBits(controlIQSupported: r.controlIQSupported,
                         basalLimitSupported: r.basalLimitSupported,
-                        blePumpControlSupported: r.blePumpControlSupported)
+                        blePumpControlSupported: r.blePumpControlSupported,
+                        controlIQProSupported: r.controlIQProSupported)
     }
 
     // MARK: - CGM reading time + predictive polling (Bug 5)
