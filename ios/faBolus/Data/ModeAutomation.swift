@@ -39,7 +39,9 @@ enum ModeAutomation {
             return "Auto \(mode == .exercise ? "Exercise" : "Sleep") mode is turned off in faBolus."
         }
         let label = label(mode, enabled)
-        if let model = AppModel.shared, model.snapshot.isMobi,
+        // P13: gated on the pump-derived capability (`supportsModes`, Mobi-only in practice), not the
+        // raw `isMobi` model check.
+        if let model = AppModel.shared,
            model.advancedControlAllowed, model.capabilities.supportsModes {
             if model.pumpReady {
                 await model.applyMode(mode, on: enabled)
@@ -74,7 +76,7 @@ enum ModeAutomation {
     /// Apply any fresh queued requests — called from `AppModel.refresh()` once a mode-capable Mobi is
     /// connected, so a switch requested while offline still lands (within the TTL).
     static func applyPendingIfDue(using model: AppModel) {
-        guard let store, model.snapshot.isMobi, model.canControlModes else { return }
+        guard let store, model.canControlModes else { return }   // P13: canControlModes ⇒ supportsModes (Mobi-only)
         for mode in [Mode.exercise, .sleep] {
             guard store.object(forKey: key(mode)) != nil, settingOn(mode) else { continue }
             let ts = store.double(forKey: tsKey(mode))

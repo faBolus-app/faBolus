@@ -83,9 +83,9 @@ public final class AppSettings {
 
     /// Master opt-in for advanced pump control (suspend/resume, temp basal, modes, profiles,
     /// Control-IQ settings, limits, cartridge/fill, time sync). **Default OFF.** Even when on, each
-    /// action is additionally gated on the pump advertising the capability (Mobi-only in practice)
-    /// via `advancedControlAllowed(_:isMobi:)`. Insulin-affecting actions still go through the
-    /// confirm/hold + max-bolus-clamp + WritePolicy interlocks.
+    /// action is additionally gated on the pump advertising the capability (pump-derived, Mobi-only in
+    /// practice) via `advancedControlAllowed(capabilities:)`. Insulin-affecting actions still go through
+    /// the confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
     /// **Read-only mode (this phone).** Turns the app into a safe viewer: bolusing and all pump control
@@ -169,10 +169,12 @@ public final class AppSettings {
         !childModeEnabled || childAllowed.contains(feature)
     }
 
-    /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump is a
-    /// Mobi (advanced control is rejected by t:slim X2). This is the single gate the control UI uses.
-    public func advancedControlAllowed(isMobi: Bool) -> Bool {
-        advancedControlEnabled && isMobi
+    /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump
+    /// advertises at least one advanced-control capability. P13: capabilities are pump-derived
+    /// (`PumpCapabilities.derive` reads the pump's own feature bitmask), replacing the old raw `isMobi`
+    /// model check. This is the single gate the control UI uses.
+    public func advancedControlAllowed(capabilities: PumpCapabilities) -> Bool {
+        advancedControlEnabled && capabilities.supportsAnyAdvancedControl
     }
 
     /// Garmin remote layout: the swipe order of its screens and which one opens first. Pushed to
