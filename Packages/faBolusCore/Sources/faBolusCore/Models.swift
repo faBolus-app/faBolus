@@ -83,6 +83,14 @@ public enum PumpConnectionState: String, Sendable {
 /// Snapshot of pump state for the HUD.
 public struct PumpSnapshot: Sendable, Equatable {
     public var connection: PumpConnectionState = .disconnected
+    /// The pump LINK is healthy — connected, or actively delivering. The single definition of "link is
+    /// up", replacing hand-rolled `== .connected || == .bolusing` checks (group D). `connection` conflates
+    /// link-health with in-flight because `.bolusing` is a peer of the link states; these two computed
+    /// seams let a consumer ask each question separately without that conflation.
+    public var isLinked: Bool { connection == .connected || connection == .bolusing }
+    /// A bolus is being delivered right now. Kept distinct from `isLinked` so a NEW bolus can be gated on
+    /// "a dose is already running" without treating in-flight as a dropped link.
+    public var bolusInFlight: Bool { connection == .bolusing }
     public var glucose: Int? = nil
     /// When the current glucose reading was taken. Used to hide readings older than 6 minutes.
     public var glucoseDate: Date? = nil
