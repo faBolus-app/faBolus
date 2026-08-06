@@ -121,10 +121,13 @@ targets:
         # com.apple.developer.healthkit: true
         # com.apple.developer.healthkit.access: []
         # Automatic iCloud backup of app settings (Backup & restore) is OPT-IN for the same reason:
-        # iCloud needs the paid Apple Developer Program. To enable auto-sync across your devices,
-        # uncomment the key below AND add ICLOUD_SYNC to SWIFT_ACTIVE_COMPILATION_CONDITIONS. The
-        # default file-based backup/restore works on a free account with no entitlement.
-        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(APP_BUNDLE_ID)
+        # iCloud needs the paid Apple Developer Program. Default OFF: scripts/generate-project.sh strips
+        # the block below AND the FABOLUS_ICLOUD compile flag unless FABOLUS_ICLOUD=1, so an unmodified
+        # clone signs and builds on a free account with the no-op stub. The file-based backup/restore
+        # needs no entitlement and always works. Set FABOLUS_ICLOUD=1 (paid account) to compile it in.
+        # >>> ICLOUD (stripped by scripts/generate-project.sh unless FABOLUS_ICLOUD=1)
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(APP_BUNDLE_ID)
+        # <<< ICLOUD
     info:
       path: ios/faBolus/Info.plist
       properties:
@@ -183,10 +186,12 @@ targets:
       # scripts/generate-project.sh removes the GARMIN / WATCH_EMBEDDED tokens (and the package/embed
       # above) when the Garmin SDK is absent or FABOLUS_WATCH=0, so the app compiles without them.
       configs:
+        # generate-project.sh drops FABOLUS_ICLOUD unless FABOLUS_ICLOUD=1 (default OFF → the no-op iCloud
+        # stub compiles and the app signs on a free account).
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # (The glucose complication extension is temporarily NOT embedded: it needs the App Group
