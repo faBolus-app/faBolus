@@ -83,6 +83,12 @@ public enum PumpConnectionState: String, Sendable {
 /// Snapshot of pump state for the HUD.
 public struct PumpSnapshot: Sendable, Equatable {
     public var connection: PumpConnectionState = .disconnected
+    /// Display-only human explanation when the link is down for a SPECIFIC reason (Bluetooth off,
+    /// permission denied, unsupported, resetting, or a transport error). nil ⇒ nothing extra to show.
+    /// Never gates delivery and never implies a connected/ready link (P12 group D / app-boundary state);
+    /// `isLinked` stays false for every down state. Not on any wire type — surfacing it changes no
+    /// schema and no remote/Garmin behavior.
+    public var connectionDetail: String? = nil
     /// The pump LINK is healthy — connected, or actively delivering. The single definition of "link is
     /// up", replacing hand-rolled `== .connected || == .bolusing` checks (group D). `connection` conflates
     /// link-health with in-flight because `.bolusing` is a peer of the link states; these two computed
