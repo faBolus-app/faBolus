@@ -7,6 +7,10 @@ import faBolusCore
 struct RootContainerView: View {
     @Bindable var model: AppModel
     @State private var router = AppRouter()
+    // P14 S3: the mode state machine (singleton — its init clamps the active mode to the earned ceiling
+    // exactly once; everyone starts at Simple). Injected so Settings → Mode can drive it; it is the sole
+    // writer of `AppSettings.appMode`, which the single access evaluator reads.
+    @State private var modeStore = ModeStore.shared
 
     var body: some View {
         Group {
@@ -22,5 +26,11 @@ struct RootContainerView: View {
             }
         }
         .environment(router)
+        .environment(modeStore)
+        // First-run mode onboarding, shown exactly once (gated on the store). Not interactively
+        // dismissable — the "Start in Simple" tap is the acknowledgment that sets the flag.
+        .fullScreenCover(isPresented: .init(get: { !modeStore.hasCompletedOnboarding }, set: { _ in })) {
+            ModeOnboardingView(modeStore: modeStore)
+        }
     }
 }
