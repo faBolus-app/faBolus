@@ -126,4 +126,27 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         case .ledgeredDelivery, .childOnly: return true
         }
     }
+
+    /// P14 (Slice 2) — the **mode axis**: the minimum `AppMode` at which this action is available. The
+    /// evaluator's mode gate denies when the active mode ranks below this (`.childOnly` STOPs excepted).
+    /// The default is `.advanced` — the strictest, fail-safe choice, so a newly-added case is never
+    /// accidentally reachable in a lower mode than intended. Only the genuinely-Simple/Standard actions are
+    /// classified explicitly:
+    ///   - `.simple`   — bolus is the core function; cancel/dismiss are STOPs (their gate is carved out, so
+    ///                   this value is only a fail-safe should the carve-out ever change).
+    ///   - `.standard` — routine pump control that isn't full "advanced" (suspend/resume, activity modes,
+    ///                   Find-My-Pump).
+    ///   - `.advanced` — everything else: temp basal, IDP/profile CRUD, CGM-session control, cartridge/fill,
+    ///                   max bolus/basal, time sync, Control-IQ settings, alert config, extended (combo) bolus.
+    /// These are the initial conservative mapping; the S3 Objectives taxonomy refines them (owner review).
+    public var requiredMode: AppMode {
+        switch self {
+        case .deliverBolus, .cancelBolus, .dismissNotification:
+            return .simple
+        case .suspendDelivery, .resumeDelivery, .setMode, .playFindMyPump:
+            return .standard
+        default:
+            return .advanced
+        }
+    }
 }

@@ -107,4 +107,56 @@ import Testing
             #expect(P.evaluate(a, surface: .phoneUI, context: withAck).allowed)
         }
     }
+
+    // MARK: - P14 Slice 2 — the mode axis
+
+    @Test func defaultModeContextIsANoOp() {
+        // The default (.advanced, no toggles) must add zero denials: every action passes on phoneUI when
+        // everything else is open, exactly as before the mode gate existed.
+        for a in A.allCases {
+            #expect(P.evaluate(a, surface: .phoneUI, context: openCtx()).allowed,
+                    "\(a.rawValue) must stay allowed at the default (Advanced) mode")
+        }
+    }
+
+    @Test func simpleModeAllowsCoreButDeniesAdvancedWithModeReason() {
+        var ctx = openCtx(); ctx.modeContext = P.ModeGateContext(activeMode: .simple)
+        // Core: a normal bolus is available in Simple.
+        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: ctx).allowed)
+        // Advanced (min .advanced): denied specifically by the mode gate, not another gate.
+        for a in [A.setTempBasal, .setControlIQ, .deliverExtendedBolus, .createProfile] {
+            #expect(P.evaluate(a, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced),
+                    "\(a.rawValue) must be modeDisallowed(.advanced) in Simple")
+        }
+        // Standard-tier control (suspend/resume) reports it needs Standard, not Advanced.
+        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .standard))
+        // Standard mode then permits suspend/resume but still hides the advanced writes.
+        ctx.modeContext = P.ModeGateContext(activeMode: .standard)
+        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).allowed)
+        #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
+    }
+
+    @Test func modeNeverBlocksSafetyStopsOnAnySurface() {
+        // OQ9: the mode gate is carved out for `.childOnly` STOPs exactly as Gate 3 is. Even in the most
+        // restrictive mode (Simple), a cancel / dismiss stays available on every surface.
+        var ctx = openCtx(); ctx.modeContext = P.ModeGateContext(activeMode: .simple)
+        for a in [A.cancelBolus, A.dismissNotification] {
+            for s in S.allCases {
+                #expect(P.evaluate(a, surface: s, context: ctx).allowed,
+                        "\(a.rawValue) (safety STOP) must survive Simple mode on \(s.rawValue)")
+            }
+        }
+    }
+
+    @Test func perFeatureToggleDeniesWithinTheMode() {
+        // Owner decision #4: even in a mode that would permit an action, a per-feature toggle turns it off.
+        var ctx = openCtx()
+        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.setTempBasal])
+        #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: ctx).reason == .featureDisabledInMode)
+        #expect(P.evaluate(.setControlIQ, surface: .phoneUI, context: ctx).allowed)   // a different feature is unaffected
+        // …but a toggle can never disable a safety STOP (carve-out again).
+        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.cancelBolus, .dismissNotification])
+        #expect(P.evaluate(.cancelBolus, surface: .phoneUI, context: ctx).allowed)
+        #expect(P.evaluate(.dismissNotification, surface: .phoneUI, context: ctx).allowed)
+    }
 }

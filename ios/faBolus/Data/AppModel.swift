@@ -216,7 +216,11 @@ public final class AppModel {
             advancedControlOptIn: AppSettings.shared.advancedControlEnabled,
             capabilities: capabilities,
             hasRecentUnverifiedAck: hasRecentUnverifiedAck,
-            peerPolicy: peerPolicy)
+            peerPolicy: peerPolicy,
+            // P14 S2 (the load-bearing wiring — C13's "inert-change trap"): the active mode flows through
+            // the ONE context-builder so modes gate every surface identically, never a sixth mechanism.
+            // Per-feature toggles (`disabledFeatures`) land with the S3 store; empty here.
+            modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode))
         return AccessPolicy.evaluate(action, surface: surface, context: ctx)
     }
 
