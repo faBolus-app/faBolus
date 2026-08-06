@@ -440,6 +440,19 @@ public final class AppModel {
                 + "delivery resumes once the safety ledger is written."
         }
         if !unresolved.isEmpty {
+            // S6 — this global "one delivery at a time" block IS the cross-client mutex: it lives at the
+            // AppModel funnel (not in a PumpBackend, which a second backend would not share) and rejects a
+            // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
+            // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.
+            //
+            // Message: distinguish a LIVE in-flight delivery (this process is delivering right now — a
+            // concurrent request should simply wait) from a genuinely unresolved/indeterminate outcome
+            // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
+            // latter should tell the user to check the pump.
+            if let live = inFlightDeliveryKey,
+               unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId }) {
+                return "A bolus is already being delivered — wait for it to finish before sending another."
+            }
             return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
         }
         return nil
