@@ -23,6 +23,31 @@ struct WatchBolusView: View {
     /// In carbs mode, the units the phone would deliver (like the Garmin/Mac preview).
     private var estUnits: Double? { (isCarbs && amount > 0) ? model.estimatedUnits(forCarbs: amount) : nil }
 
+    /// The shared `BolusGate` for the watch, fed from the relayed pump state — inline (like the Mac)
+    /// because this one control spans carbs grams + insulin units, so the max differs by mode. Adds the
+    /// in-flight gate the watch lacked (it checked only reachability + pump link): a dose already running
+    /// elsewhere now disables Deliver instead of letting the watch start a second, diverging one (v3
+    /// defect group D). Read-only stays enforced by hiding the affordance (`WatchApp` / `WatchHUDView`);
+    /// it's passed here too as defense-in-depth.
+    private var gate: (canBolus: Bool, reason: BolusBlockReason?) {
+        let access: AccessPolicy.AccessDecision = model.readOnly ? .deny(.remotesReadOnly) : .allow
+        return BolusGate.evaluate(reachable: model.reachable, linked: model.pumpConnected,
+                                  bolusInFlight: model.bolusInFlight,
+                                  amount: amount, minimum: isCarbs ? 1 : 0.05, maximum: maxAmount,
+                                  access: access)
+    }
+    /// Why Deliver is disabled, for the reasons worth showing here — not the bounds reasons (the crown
+    /// can't overshoot the max, and 0 just keeps Deliver disabled). Replaces the old pump-not-connected-
+    /// only label, so a dose already in flight is now explained too. Exhaustive by design.
+    private var blockMessage: String? {
+        switch gate.reason {
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+            return gate.reason?.userMessage
+        case .belowMinimum, .aboveMax, .none:
+            return nil
+        }
+    }
+
     var body: some View {
         Group {
             if sent { statusView } else { entryView }
@@ -74,11 +99,11 @@ struct WatchBolusView: View {
                     Label("Bolus \(amountLabel)", systemImage: "drop.fill")
                 }
                 .tint(.indigo)
-                .disabled(amount <= 0 || !model.reachable || !model.pumpConnected)
+                .disabled(!gate.canBolus)
 
-                if model.reachable && !model.pumpConnected {
-                    Label("Pump not connected", systemImage: "wifi.slash")
-                        .font(.caption2).foregroundStyle(.orange)
+                if let m = blockMessage {
+                    Text(m).font(.caption2).foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
                 }
                 Text("Experimental").font(.caption2).foregroundStyle(.secondary)
             }
