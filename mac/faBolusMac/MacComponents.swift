@@ -173,8 +173,33 @@ struct MacBolusEntryView: View {
     private var maxV: Double { isCarbs ? 200 : (model.maxBolusUnits > 0 ? model.maxBolusUnits : 25) }
     private var unitLabel: String { isCarbs ? "g" : "U" }
     private var value: Double { amount ?? 0 }
-    private var canDeliver: Bool {
-        model.reachable && !isDelivering && value >= (isCarbs ? 1 : 0.05) && value <= maxV
+    /// Whether a bolus may be started right now, via the shared `BolusGate` so the Mac agrees with every
+    /// other surface (v3 defect group D) instead of hand-rolling the check. Fed from the relayed pump
+    /// state: link health (`pumpConnected`), whether a dose is already in flight (`bolusInFlight`), and
+    /// the phone-pushed read-only flag — none of which the Mac honored before (it checked only
+    /// reachability + bounds, so under read-only or a dropped pump link it showed a live, tappable Bolus
+    /// button that the host then rejected). The bounds run in the entered unit (carb grams or insulin
+    /// units) exactly as before, so a fresh field still just disables quietly.
+    private var gate: (canBolus: Bool, reason: BolusBlockReason?) {
+        let access: AccessPolicy.AccessDecision = model.readOnly ? .deny(.remotesReadOnly) : .allow
+        return BolusGate.evaluate(
+            reachable: model.reachable,
+            linked: model.pumpConnected,
+            bolusInFlight: model.bolusInFlight || isDelivering,
+            amount: value, minimum: isCarbs ? 1 : 0.05, maximum: maxV,
+            access: access)
+    }
+    private var canDeliver: Bool { gate.canBolus }
+    /// The gate reason worth showing above the entry form — the "you can't bolus right now" states.
+    /// Bounds reasons (below-min/above-max) are just "keep typing" and would nag an empty field, so they
+    /// stay silent (the button simply stays disabled). Exhaustive so a new reason can't be dropped.
+    private var blockMessage: String? {
+        switch gate.reason {
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+            return gate.reason?.userMessage
+        case .belowMinimum, .aboveMax, .none:
+            return nil
+        }
     }
     /// Non-optional binding for the Stepper (treats an empty field as 0).
     private var stepperBinding: Binding<Double> {
@@ -205,6 +230,11 @@ struct MacBolusEntryView: View {
             } else {
                 if showFailure, let m = model.statusMessage {
                     Text(m).font(.caption).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+                } else if let m = blockMessage {
+                    // Why the Bolus button is disabled (pump not linked / a dose in flight / read-only /
+                    // phone unreachable), so the Mac explains itself instead of just greying out.
+                    Text(m).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
                 }
                 Picker("", selection: $mode) {
