@@ -302,6 +302,15 @@ public final class AppSettings {
 
     private let d = UserDefaults.standard
 
+    // P14 S8 (§2.1(2)): the one-time clinician-tier acknowledgment. Persisted (durable), but NOT a
+    // catalog row — never backed up, never iCloud-synced: a per-install first-use disclosure of clinical
+    // ownership. It NEVER gates a write (not a `DenialReason`); it only records that the clinician-tier
+    // disclosure was shown and accepted. nil ⇒ never acknowledged.
+    public var clinicianTierAckAt: Date? { didSet { d.set(clinicianTierAckAt?.timeIntervalSince1970 ?? 0, forKey: "clinicianTierAckAt") } }
+    public var hasAcknowledgedClinicianTier: Bool { clinicianTierAckAt != nil }
+    /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
+    public func acknowledgeClinicianTier() { if clinicianTierAckAt == nil { clinicianTierAckAt = Date() } }
+
     private init() {
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
         // Watch default: fall back to the phone default for existing users who never set it separately.
@@ -337,6 +346,8 @@ public final class AppSettings {
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
         // P14 S2: default Advanced (behavior-preserving no-op); S3 flips the default to Simple + Objectives.
         appMode = AppMode(rawValue: d.string(forKey: "appMode") ?? "") ?? .advanced
+        let ackTs = d.double(forKey: "clinicianTierAckAt")   // P14 S8: 0 (absent) ⇒ never acknowledged
+        clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
