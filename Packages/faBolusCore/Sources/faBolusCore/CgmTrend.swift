@@ -2,47 +2,57 @@ import Foundation
 
 /// Maps each cloud provider's trend encoding to the neutral `GlucoseTrend`, plus a helper for the
 /// .NET `/Date(...)/` timestamps Dexcom Share returns. Lives in faBolusCore so it's unit-testable.
+///
+/// C8: faBolus never *calculates* a trend arrow. A provider's explicit "steady/flat" code is a
+/// *reported* trend and maps to `.flat`; but an absent, unknown, none, not-computable, or
+/// out-of-range code means the source reports **no** trend and maps to `nil` — which renders as no
+/// arrow, never a flat one. (These used to fall back to `.flat`, silently dressing "no trend" as an
+/// inferred "steady" — the same drift `GlucoseTrend.token(from:)` was fixed to eliminate.)
 public enum CgmTrend {
-    /// Nightscout `direction` strings.
-    public static func nightscout(_ s: String?) -> GlucoseTrend {
+    /// Nightscout `direction` strings. `nil`/"NONE"/"NOT COMPUTABLE"/"RATE OUT OF RANGE"/unknown → no trend.
+    public static func nightscout(_ s: String?) -> GlucoseTrend? {
         switch s {
         case "DoubleUp": return .upUp
         case "SingleUp": return .up
         case "FortyFiveUp": return .rising
+        case "Flat": return .flat
         case "FortyFiveDown": return .falling
         case "SingleDown": return .down
         case "DoubleDown": return .downDown
-        default: return .flat
+        default: return nil     // absent / NONE / NOT COMPUTABLE / RATE OUT OF RANGE → no arrow
         }
     }
 
-    /// Dexcom Share numeric trend (1…7).
-    public static func dexcom(_ n: Int) -> GlucoseTrend {
+    /// Dexcom Share numeric trend (1…7). 0 None, 8 NotComputable, 9 RateOutOfRange, other → no trend.
+    public static func dexcom(_ n: Int) -> GlucoseTrend? {
         switch n {
         case 1: return .upUp; case 2: return .up; case 3: return .rising
+        case 4: return .flat
         case 5: return .falling; case 6: return .down; case 7: return .downDown
-        default: return .flat   // 4 Flat, 0/other unknown
+        default: return nil     // 0 None / 8 NotComputable / 9 RateOutOfRange / other → no arrow
         }
     }
 
-    /// Dexcom Share string trend (newer API).
-    public static func dexcom(name: String) -> GlucoseTrend {
+    /// Dexcom Share string trend (newer API). "none"/"notcomputable"/"rateoutofrange"/unknown → no trend.
+    public static func dexcom(name: String) -> GlucoseTrend? {
         switch name.lowercased() {
         case "doubleup": return .upUp
         case "singleup": return .up
         case "fortyfiveup": return .rising
+        case "flat": return .flat
         case "fortyfivedown": return .falling
         case "singledown": return .down
         case "doubledown": return .downDown
-        default: return .flat
+        default: return nil
         }
     }
 
-    /// LibreLinkUp `TrendArrow` (1…5).
-    public static func libre(_ n: Int) -> GlucoseTrend {
+    /// LibreLinkUp `TrendArrow` (1…5). 3 is Flat (steady); absent/unknown → no trend.
+    public static func libre(_ n: Int) -> GlucoseTrend? {
         switch n {
-        case 1: return .down; case 2: return .falling; case 4: return .rising; case 5: return .up
-        default: return .flat   // 3 Flat
+        case 1: return .down; case 2: return .falling; case 3: return .flat
+        case 4: return .rising; case 5: return .up
+        default: return nil     // absent / unknown → no arrow
         }
     }
 
