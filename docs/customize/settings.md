@@ -55,8 +55,10 @@ See [Pairing](../setup/pairing.md).
 
 Under **Settings → Pump → Pump clock**:
 
-- **Keep pump clock synced to phone** (default **on**) — keeps the Mobi's clock matched to the phone.
-  It writes the time **at most once a day**, and **immediately** on a time-zone or clock change.
+- **Keep pump clock synced to phone** (default **off**) — when you turn it on, keeps the Mobi's clock
+  matched to the phone. It writes the time **at most once a day**, and **immediately** on a time-zone or
+  clock change. It is **off by default** so faBolus never writes the pump clock on a first connect without
+  your explicit opt-in.
 - **Sync pump time now** — a button to push the phone's current time to the pump on demand.
 
 ## Activity & sleep automation
