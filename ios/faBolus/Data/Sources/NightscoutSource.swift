@@ -15,14 +15,22 @@ final class NightscoutSource: PollingGlucoseSource {
             throw SourceError.needsSetup("Nightscout")
         }
         let root = base.hasSuffix("/") ? String(base.dropLast()) : base
-        var comps = URLComponents(string: root + "/api/v1/entries.json")!
+        // Validate the user-entered URL instead of force-unwrapping: a malformed `nightscout.url`
+        // (a space, no scheme, junk) makes `URLComponents(string:)!` / `comps.url!` trap. This runs on
+        // every background poll, not only "Save and test", so the guard protects both paths.
+        guard var comps = URLComponents(string: root + "/api/v1/entries.json"),
+              let scheme = comps.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              comps.host?.isEmpty == false else {
+            throw SourceError.invalidConfig("Nightscout URL")
+        }
         var items = [URLQueryItem(name: "count", value: "48")]
         if let token = CredentialStore.get(account: "nightscout.token") {
             items.append(URLQueryItem(name: "token", value: token))
         }
         comps.queryItems = items
 
-        let (data, resp) = try await URLSession.shared.data(from: comps.url!)
+        guard let url = comps.url else { throw SourceError.invalidConfig("Nightscout URL") }
+        let (data, resp) = try await URLSession.shared.data(from: url)
         guard let http = resp as? HTTPURLResponse else { throw SourceError.badResponse }
         guard (200..<300).contains(http.statusCode) else { throw SourceError.http(http.statusCode) }
 
