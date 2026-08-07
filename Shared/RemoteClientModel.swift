@@ -161,6 +161,13 @@ class RemoteClientModel {
     /// says to hide it ("—") rather than show it greyed — mirrors the phone/watch presentation.
     var glucoseHidden: Bool { glucose != nil && GlucoseFreshness.presentation(of: glucoseDate) == .hidden }
     var cgmActive: Bool { glucose != nil && !isGlucoseStale }
+    /// P15 Addendum B: whether a carb bolus should present the three-way stale-CGM choice before it is
+    /// composed — i.e. a stale-but-REAL reading exists (there is something to include or drop). No reading
+    /// at all is simply carbs-only (nothing to include); a fresh reading composes normally. Delegates to
+    /// the shared `StaleBolusPrompt.shouldWarn` so every surface (iPhone/Watch/Mac/Garmin) agrees.
+    var staleCarbWarnNeeded: Bool {
+        StaleBolusPrompt.shouldWarn(glucoseMgdl: glucose, glucoseDate: glucoseDate)
+    }
     var ageMinutes: Int? {
         guard let d = glucoseDate else { return nil }
         return max(0, Int(Date().timeIntervalSince(d) / 60))
@@ -303,24 +310,40 @@ class RemoteClientModel {
         startPending(RemoteCommand(kind: .bolusRequest, units: units))
     }
 
+    /// The correction-term BG (mg/dL) a carb bolus should use, honoring the caller's per-attempt stale
+    /// choice (P15 Addendum B). A FRESH reading is always used; a STALE reading is included only when the
+    /// user has explicitly chosen `includeStale` for THIS attempt (insulin-INCREASING), otherwise dropped
+    /// (today's carbs-only behavior); no reading at all is always `nil`. With `includeStale == false` this
+    /// reduces exactly to the prior rule (`isGlucoseStale ? nil : glucose`).
+    private func bgForBolus(includeStale: Bool) -> Int? {
+        guard let g = glucose else { return nil }
+        if !isGlucoseStale { return g }          // fresh: always used
+        return includeStale ? g : nil            // stale: only on the explicit per-attempt choice
+    }
+
     /// Send a carbs bolus; the host (phone) is the single calculator — it recomputes the authoritative
     /// dose from these carbs and delivers. We also include THIS client's own estimate so the host can
-    /// reject the bolus if the two diverge (a stale-settings guard). A stale CGM value is never sent for
-    /// the correction (matches the phone's rule). Covers Watch + Mac + remote-iPhone (shared base).
-    func deliverCarbs(_ grams: Double) {
-        let bg: Double? = isGlucoseStale ? nil : glucose.map(Double.init)
+    /// reject the bolus if the two diverge (a stale-settings guard). A stale CGM value is normally never
+    /// sent for the correction (matches the phone's rule) — but Addendum B lets the user explicitly
+    /// include a stale-but-real reading for this one attempt (`includeStaleBG`, insulin-INCREASING). The
+    /// estimate is computed from the SAME bg the host will recompute with, so the host's divergence guard
+    /// doesn't reject an included-stale dose. Covers Watch + Mac + remote-iPhone (shared base).
+    func deliverCarbs(_ grams: Double, includeStaleBG: Bool = false) {
+        let bg: Double? = bgForBolus(includeStale: includeStaleBG).map(Double.init)
         var cmd = RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg)
-        cmd.remoteEstimateUnits = estimatedUnits(forCarbs: grams)
+        cmd.remoteEstimateUnits = estimatedUnits(forCarbs: grams, includeStaleBG: includeStaleBG)
         startPending(cmd)
     }
 
     /// Preview of the units the phone would deliver for a carb amount — uses the single oracle-backed
     /// `BolusMath` calculator (audit C-01), so this estimate matches the host's authoritative recompute
     /// and the wrist-vs-host divergence guard rarely trips on identical inputs. Returns nil until the
-    /// carb ratio is known. A stale CGM value isn't used for the correction (matches `deliverCarbs`).
-    func estimatedUnits(forCarbs grams: Double) -> Double? {
+    /// carb ratio is known. A stale CGM value isn't used for the correction (matches `deliverCarbs`)
+    /// unless the caller passes `includeStaleBG` (Addendum B) — then the same stale value the dose will
+    /// be composed with is used here too, so the preview and the host's divergence guard stay consistent.
+    func estimatedUnits(forCarbs grams: Double, includeStaleBG: Bool = false) -> Double? {
         guard carbRatio > 0, grams > 0 else { return carbRatio > 0 ? 0 : nil }
-        let bg: Int? = (!isGlucoseStale) ? glucose : nil
+        let bg: Int? = bgForBolus(includeStale: includeStaleBG)
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: carbRatio, isfMgdlPerUnit: isf,
                                         targetBgMgdl: targetBg, iobUnits: iobUnits)
         let units = BolusMath.recommendedUnits(carbsGrams: grams, bgMgdl: bg, profile: profile)
