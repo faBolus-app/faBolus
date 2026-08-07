@@ -40,7 +40,14 @@ struct BolusEntryView: View {
     /// `newBG == -1` means "no fresh CGM available" — the correction is dropped (carbs-only) rather than
     /// dosed off a stale on-screen value (audit C-04 fail-closed). `extended` routes the choice back to
     /// the matching delivery path so standard + extended share one confirm flow.
-    private struct CGMUpdatePrompt: Identifiable { let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double; let extended: Bool }
+    private struct CGMUpdatePrompt: Identifiable {
+        let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double; let extended: Bool
+        // Addendum B: when the reading is stale (not merely missing), the stale value + the dose it WOULD
+        // produce, so the "CGM unavailable" prompt can offer a third choice — include the stale reading.
+        // nil ⇒ no reading at all (nothing to include; carbs-only / cancel only), per StaleBolusPrompt.
+        var staleBG: Int? = nil
+        var staleUnits: Double? = nil
+    }
     /// Supersedes out-of-order async recommendation results (audit C-04).
     @State private var calcSeq = 0
     /// FB-01: when the recommendation was computed from ASSUMED (unverified) pump settings, delivery
@@ -203,6 +210,17 @@ struct BolusEntryView: View {
                         .onTapGesture { focus = .units }
                         Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
                     }
+                    // §11 + Addendum B awareness: units mode showed NO CGM value/age (the readout lives in
+                    // the carbs Entry section). A user dosing by units off a stale reading they mentally
+                    // treat as current is a real hazard, so surface the same stale-styled readout here —
+                    // ambient awareness, NOT a blocking confirm (nothing is silently dropped in units mode,
+                    // and a modal on every units bolus would be alert fatigue).
+                    if mode == .units, let readout = cgmReadout {
+                        let staleR = model.snapshot.isGlucoseStale
+                        Label(readout, systemImage: staleR ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
+                            .font(.caption)
+                            .foregroundStyle(staleR ? .orange : .secondary)
+                    }
                     if overMax {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.low)
@@ -312,7 +330,15 @@ struct BolusEntryView: View {
                             titleVisibility: .visible) {
             if let u = cgmUpdate {
                 if u.newBG == -1 {
-                    // No fresh CGM — the only safe options are the carbs-only dose or cancel.
+                    // Addendum B three-way: (1) include the stale reading — insulin-INCREASING, recomputed
+                    // WITH it — shown only when a stale reading exists; (2) carbs-only (drop the correction,
+                    // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
+                    if let sbg = u.staleBG, let su = u.staleUnits {
+                        Button("Include \(sbg) mg/dL → \(String(format: "%.2f U", su))") {
+                            let ext = u.extended; cgmUpdate = nil
+                            Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
+                        }
+                    }
                     Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
                         let ext = u.extended; cgmUpdate = nil
                         Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil, extended: ext)) }
@@ -334,7 +360,11 @@ struct BolusEntryView: View {
         } message: {
             if let u = cgmUpdate {
                 if u.newBG == -1 {
-                    Text("No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel.")
+                    if let sbg = u.staleBG {
+                        Text("Your CGM reading (\(sbg) mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (\(String(format: "%.2f U", u.newUnits))), or cancel.")
+                    } else {
+                        Text("No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel.")
+                    }
                 } else {
                     Text("Your CGM changed while this dose was on screen. The new reading (\(u.newBG) mg/dL) suggests \(String(format: "%.2f U", u.newUnits)) instead of \(String(format: "%.2f U", u.oldUnits)).")
                 }
@@ -422,10 +452,20 @@ struct BolusEntryView: View {
                 await deliverFrozen(freeze(units: priorUnits, bg: Int(bg), extended: extended))
                 return
             }
-            // Fail closed: CGM stale/missing — never correct off the stale on-screen value. Deliver the
-            // carbs-only dose after the user confirms (newBG = -1 signals "no fresh CGM" in the dialog).
-            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil)
-            cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
+            // Addendum B: CGM stale/missing — never SILENTLY correct off the stale on-screen value. Offer
+            // the three-way choice (StaleBolusChoice: includeStale / proceedWithout / cancel). `newBG = -1`
+            // selects the carbs-only branch of the dialog; when a stale-but-real reading exists, `staleBG`
+            // adds the "include it" option (insulin-INCREASING, per-attempt, recomputed WITH the stale
+            // value). With no reading at all there is nothing to include → carbs-only / cancel only.
+            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil)
+            if let sg = model.snapshot.glucose {   // we're in the stale branch, so a present reading is stale
+                let withStale = await model.recommendBolus(carbsGrams: carbs, bgMgdl: sg)
+                cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
+                                           extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
+            } else {
+                cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
+                                           extended: extended)
+            }
             return
         }
         // No CGM correction (units mode, manual BG, or no carbs): freeze the on-screen values as-is.
