@@ -72,9 +72,13 @@ enum SettingsCatalog {
         "remotesReadOnly",
         "requireRemoteBolusApproval",
         "childModeEnabled",
+        // §2.3 per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another
+        // device.
+        "garminBolusEnabled",
+        "watchBolusEnabled",
     ]
 
-    /// All 44 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 46 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -111,6 +115,8 @@ enum SettingsCatalog {
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices
         .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("watchBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("remoteBluetoothEnabled", .remotes, from: .advanced, backsUp: true),
         .init("requireRemoteBolusApproval", .remotes, from: .advanced, backsUp: true, syncsToICloud: false),
         .init("childModeEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),

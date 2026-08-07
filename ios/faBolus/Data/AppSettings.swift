@@ -108,6 +108,19 @@ public final class AppSettings {
     /// can't deliver (the host refuses too); viewing stays. Independent of the phone flag. **Default OFF.**
     public var remotesReadOnly: Bool { didSet { d.set(remotesReadOnly, forKey: "remotesReadOnly") } }
 
+    /// **Garmin bolusing allowed (§2.3).** An explicit per-surface enable for delivering a bolus *from the
+    /// Garmin watch*, **default OFF** so bolusing is off until the user opts in with the one-time warning.
+    /// Independent of — and ANDed with — `remotesReadOnly` (read-only still wins). This replaces the old
+    /// posture where the only control was the inverted `remotesReadOnly` and Garmin bolusing shipped ON.
+    /// Command-adjacent: backed up (a restore is an explicit user action) but **never** iCloud-synced (C5) —
+    /// an auto-synced value must not silently arm bolusing on another device.
+    public var garminBolusEnabled: Bool { didSet { d.set(garminBolusEnabled, forKey: "garminBolusEnabled") } }
+    /// **Apple Watch bolusing allowed (§2.3).** As `garminBolusEnabled`, for the Apple Watch. **Default OFF.**
+    /// The one-time warning copy acknowledges that wrist detection makes an accidental tap less likely on the
+    /// Watch than on Garmin, but the enable is still explicit and off by default. Command-adjacent (backs up,
+    /// never iCloud-synced).
+    public var watchBolusEnabled: Bool { didSet { d.set(watchBolusEnabled, forKey: "watchBolusEnabled") } }
+
     /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
     /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON.** Only
     /// active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
@@ -351,6 +364,10 @@ public final class AppSettings {
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
+        // §2.3: both default OFF so a fresh install (and any device with no stored value) cannot bolus from a
+        // remote until the user explicitly opts in.
+        garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
+        watchBolusEnabled = (d.object(forKey: "watchBolusEnabled") as? Bool) ?? false
         autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
@@ -418,6 +435,8 @@ public final class AppSettings {
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
+            "garminBolusEnabled": .bool(garminBolusEnabled),
+            "watchBolusEnabled": .bool(watchBolusEnabled),
             "remoteBluetoothEnabled": .bool(remoteBluetoothEnabled),
             "requireRemoteBolusApproval": .bool(requireRemoteBolusApproval),
             "garminScreenOrder": .stringArray(garminScreenOrder),
@@ -473,6 +492,8 @@ public final class AppSettings {
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
         if let v = b("remotesReadOnly") { remotesReadOnly = v }
+        if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
+        if let v = b("watchBolusEnabled") { watchBolusEnabled = v }
         if let v = b("remoteBluetoothEnabled") { remoteBluetoothEnabled = v }
         if let v = b("requireRemoteBolusApproval") { requireRemoteBolusApproval = v }
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
