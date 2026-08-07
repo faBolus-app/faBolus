@@ -49,10 +49,14 @@ From the pump-settings review you can push the settings onto the connected pump 
 ## Automatic iCloud sync (optional, advanced)
 
 By default backup/restore is **file-based** — it works on a free Apple account and needs no special
-setup. If you build faBolus on the **paid** Apple Developer Program, you can also enable transparent
-**iCloud sync of your app settings** across your devices: uncomment the
-`com.apple.developer.ubiquity-kvstore-identifier` entitlement in `project.yml` and add `ICLOUD_SYNC` to
-the build's Swift compilation conditions. (Pump settings and secrets are never auto-synced — file only.)
+setup. If you build faBolus on the **paid** Apple Developer Program, you can also compile in transparent
+**iCloud sync of your app settings** across your devices: build with `FABOLUS_ICLOUD=1`
+(`FABOLUS_ICLOUD=1 ./scripts/generate-project.sh`), which keeps the
+`com.apple.developer.ubiquity-kvstore-identifier` entitlement and adds the `FABOLUS_ICLOUD` compilation
+condition. There is no in-app toggle: when compiled in, sync is automatic whenever you're signed in to
+iCloud, and falls back to local-only (silently) when you're signed out. Only non-sensitive display/entry
+preferences sync — the safety flags (read-only, child mode, advanced-control opt-in, remote-approval),
+pump settings, and secrets are **never** auto-synced (file only).
 
 > faBolus has no servers. A backup lives only where you put it; automatic sync uses **your** private
 > iCloud.
