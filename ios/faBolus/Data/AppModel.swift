@@ -337,6 +337,10 @@ public final class AppModel {
         // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
         // stays the enforcement point on the actual dismiss.
         cmd.supportsRemoteAlertDismiss = capabilities.supportsRemoteAlertDismiss
+        // P14 S4: publish the phone's active mode so a remote HIDES (rather than shows-then-fails) an
+        // affordance this mode would deny. The host still enforces the mode on every surface via
+        // `AccessPolicy`; this only drives the remote UI. Unconditional ⇒ "absent" means a legacy host.
+        cmd.activeMode = AppSettings.shared.appMode.rawValue
         return cmd
     }
 

@@ -52,6 +52,33 @@ import faBolusCore
 
     // MARK: seams
 
+    /// P14 S4: the remote adopts the phone's active mode from a statusRead, so it can HIDE a mode-gated
+    /// affordance (the extended/combo bolus needs Advanced) rather than showing-then-failing. An ABSENT
+    /// mode ⇒ a legacy host that never mode-gates ⇒ the remote stays permissive (`.advanced`), never
+    /// over-hiding. A garbage value falls back to the same permissive default, never a crash.
+    @Test func remoteAdoptsPhoneActiveModeWithPermissiveLegacyDefault() {
+        func modelWithMode(_ raw: String?) -> RemoteClientModel {
+            let m = RemoteClientModel(link: FakeLink())
+            var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.activeMode = raw
+            m.handle(cmd); return m
+        }
+        let extendedNeeds = GatedPumpWrite.deliverExtendedBolus.requiredMode   // .advanced
+
+        // Absent ⇒ legacy host ⇒ permissive default; the extended affordance stays available.
+        let legacy = modelWithMode(nil)
+        #expect(legacy.activeMode == .advanced)
+        #expect(legacy.activeMode >= extendedNeeds)
+
+        // Simple ⇒ the host would deny an extended (Advanced-tier) bolus, so the remote hides it.
+        let simple = modelWithMode("simple")
+        #expect(simple.activeMode == .simple)
+        #expect(simple.activeMode < extendedNeeds)
+
+        // Advanced ⇒ shown; garbage ⇒ permissive fallback, no crash.
+        #expect(modelWithMode("advanced").activeMode == .advanced)
+        #expect(modelWithMode("bogus").activeMode == .advanced)
+    }
+
     @Test func linkAndInFlightSeamsMapEveryConnectionString() {
         // Before any push, nothing is linked and nothing is in flight.
         let fresh = RemoteClientModel(link: FakeLink())
