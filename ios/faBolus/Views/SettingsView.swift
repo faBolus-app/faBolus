@@ -24,6 +24,8 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
     @State private var query = ""
+    // P14 S3: injected by RootContainerView (same idiom as AppRouter). Drives Settings → Mode.
+    @Environment(ModeStore.self) private var modeStore
 
     var body: some View {
         NavigationStack {
@@ -41,6 +43,14 @@ struct SettingsView: View {
                                 Label(cat.title, systemImage: cat.icon)
                             }
                         }
+                    }
+                    // P14 S3: mode selector. Shows the current mode; opens the unlock/opt-out controls.
+                    Section {
+                        NavigationLink { ModeSettingsView() } label: {
+                            Label("Mode: \(modeStore.activeMode.title)", systemImage: "dial.medium")
+                        }
+                    } footer: {
+                        Text("How much of faBolus is shown — Simple, Standard, or Advanced. Start simple; unlock more as you go.")
                     }
                     Section {
                         Toggle("Read-only mode", isOn: $settings.phoneReadOnly)
