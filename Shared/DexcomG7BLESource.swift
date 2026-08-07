@@ -98,13 +98,17 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
     }
 
-    private static func trend(_ d: G7TrendDirection?) -> GlucoseTrend {
+    // C8: `.flat` is a *reported* steady slope (|rate| < 1 mg/dL/min) and keeps its arrow; `nil` means
+    // the sensor gave no trend rate at all (`G7TrendDirection(rate: nil)`), so we report no arrow —
+    // never a synthesized flat.
+    private static func trend(_ d: G7TrendDirection?) -> GlucoseTrend? {
         switch d {
         case .downDownDown, .downDown: return .downDown
         case .down: return .down
-        case .flat, nil: return .flat
+        case .flat: return .flat
         case .up: return .up
         case .upUp, .upUpUp: return .upUp
+        case nil: return nil
         }
     }
 }

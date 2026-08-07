@@ -77,10 +77,13 @@ final class XDripAppGroupSource: GlucoseSource {
         guard let value = (d["Value"] as? NSNumber)?.doubleValue, value > 0,
               let dateStr = (d["DT"] as? String) ?? (d["ST"] as? String),
               let date = CgmTrend.dotNetDate(dateStr) else { return nil }
-        let trend: GlucoseTrend
+        // C8: a reading with neither a `Trend` ordinal nor a `direction` reports no trend — pass
+        // `nil` (renders as no arrow), never a synthesized flat "steady". The mappers likewise return
+        // `nil` for a present-but-unknown ordinal/direction (e.g. Dexcom 0 None, "NOT COMPUTABLE").
+        let trend: GlucoseTrend?
         if let ordinal = (d["Trend"] as? NSNumber)?.intValue { trend = CgmTrend.dexcom(ordinal) }
         else if let dir = d["direction"] as? String { trend = CgmTrend.nightscout(dir) }
-        else { trend = .flat }
+        else { trend = nil }
         return GlucoseSample(mgdl: Int(value.rounded()), date: date, trend: trend, sourceID: id)
     }
 }

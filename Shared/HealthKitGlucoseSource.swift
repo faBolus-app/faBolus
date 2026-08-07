@@ -9,7 +9,8 @@ import faBolusCore
 /// official Dexcom app writes on a ~3-hour delay and US LibreLink doesn't write at all, so those are
 /// served by the BLE/cloud sources instead.) Observer + anchored query with background delivery, so
 /// samples arrive as the writer flushes them. Cross-platform: compiles for iOS and watchOS (the watch
-/// reads Health synced from the phone). Read-only; Health carries no trend, so trend shows flat.
+/// reads Health synced from the phone). Read-only; Health carries no trend, so it reports none (C8:
+/// no arrow, not a flat one).
 /// Carries a non-Sendable completion handler across an isolation hop (its only use: run it once).
 private struct SendableBox: @unchecked Sendable {
     private let closure: () -> Void
