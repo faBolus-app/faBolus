@@ -4,21 +4,21 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 46 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 47 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
 
-    /// The three backup keys `backupSnapshot()` emits only when their value is present (an optional int and
-    /// two JSON blobs). Everything else is unconditional. Declared here so the drift guard can tolerate
-    /// their absence on a fresh `AppSettings` without weakening it.
-    private let conditionalBackupKeys: Set<String> = ["glucoseHideDelayMinutes", "alertRules", "childAllowed"]
+    /// The four backup keys `backupSnapshot()` emits only when their value is present (two optionals — an
+    /// int and the §2.3 remote-bolus ceiling double — and two JSON blobs). Everything else is unconditional.
+    /// Declared here so the drift guard can tolerate their absence on a fresh `AppSettings` without weakening it.
+    private let conditionalBackupKeys: Set<String> = ["glucoseHideDelayMinutes", "remoteBolusCeiling", "alertRules", "childAllowed"]
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly46UniqueKeys() {
-        #expect(SettingsCatalog.descriptors.count == 46)
-        #expect(SettingsCatalog.byKey.count == 46)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+    @Test func descriptorsCoverExactly47UniqueKeys() {
+        #expect(SettingsCatalog.descriptors.count == 47)
+        #expect(SettingsCatalog.byKey.count == 47)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -33,7 +33,7 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 38)                      // 35 unconditional + 3 conditional
+        #expect(SettingsCatalog.backedUpKeys.count == 39)                      // 35 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -103,7 +103,7 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 46 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 47 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
