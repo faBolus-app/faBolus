@@ -10,6 +10,12 @@ import Security
 enum PairingStore {
     private static let service = "com.fabolus.app.pairing"
     private static let account = "jpakeDerivedSecret"
+    /// Legacy V1 (16-char) pumps have NO quick-pair resume, so there is no derived secret to save;
+    /// instead we persist the pairing CODE itself and re-run the full challenge silently on every
+    /// reconnect. It is long-term pairing material (equivalent to the JPAKE secret / being a paired
+    /// device), so it lives in the Keychain in its own account. A pump is one scheme or the other, so
+    /// at most one of {derived secret, V1 code} is ever present; `clear()` wipes both.
+    private static let v1CodeAccount = "legacyV1PairingCode"
 
     static func save(_ secret: [UInt8]) {
         let data = Data(secret)
@@ -40,12 +46,50 @@ enum PairingStore {
     }
 
     static func clear() {
-        SecItemDelete([
+        // Wipe whichever scheme is stored — JPAKE derived secret AND/OR legacy V1 code.
+        for acct in [account, v1CodeAccount] {
+            SecItemDelete([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: acct,
+            ] as CFDictionary)
+        }
+    }
+
+    // MARK: - Legacy V1 (16-char) pairing code
+
+    /// Persist the canonical 16-char V1 pairing code so a legacy pump reconnects without re-entry
+    /// (V1 has no resume — the code drives a silent full re-challenge each connect).
+    static func saveV1Code(_ code: String) {
+        let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ] as CFDictionary)
+            kSecAttrAccount as String: v1CodeAccount,
+        ]
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = Data(code.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
     }
+
+    static func loadV1Code() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: v1CodeAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+        else { return nil }
+        return s
+    }
+
+    /// True when any pump pairing is stored (either scheme).
+    static var hasAnyPairing: Bool { load() != nil || loadV1Code() != nil }
 
     // MARK: - Saved pump PIN (Tandem Mobi)
     // The Mobi's 6-digit PIN is fixed (printed behind the cartridge), so it can be saved to skip

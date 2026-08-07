@@ -169,8 +169,15 @@ struct PairingSheet: View {
         NavigationStack {
             Form {
                 Section("Pump pairing code") {
-                    TextField("6 digits", text: $code)
-                        .keyboardType(.numberPad).font(.title2.monospacedDigit())
+                    // Accepts a 6-digit code (modern pumps) OR a 16-character letters+numbers code
+                    // (older pumps, pre-v7.7). The app detects which and pairs accordingly — no toggle.
+                    // asciiCapable (not numberPad) so the legacy alphanumeric code can be entered; no
+                    // autocapitalization/autocorrect because the code is case-sensitive.
+                    TextField("6-digit or 16-character code", text: $code)
+                        .keyboardType(.asciiCapable)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.title2.monospaced())
                     if hadSavedPin {
                         Button("Clear saved PIN", role: .destructive) {
                             model.clearSavedPin(); code = ""; hadSavedPin = false
@@ -183,9 +190,9 @@ struct PairingSheet: View {
                         onDone()
                     } label: { HStack { Spacer(); Text("Connect"); Spacer() } }
                     .buttonStyle(.borderedProminent)
-                    .disabled(code.count != 6)
+                    .disabled(!PumpPairingCode.isValid(code))
                 } footer: {
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device (Mobi: on the charging pad, press the pump button twice; its PIN is behind the cartridge). Unpair the official t:connect app first — only one connection at a time.\n\nOn a Tandem Mobi the PIN never changes, so after connecting faBolus offers to save it and skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device (Mobi: on the charging pad, press the pump button twice; its PIN is behind the cartridge). Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nOn a Tandem Mobi the PIN never changes, so after connecting faBolus offers to save it and skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
                 }
             }
             .navigationTitle("Connect to pump")
