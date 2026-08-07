@@ -14,6 +14,8 @@ struct WatchBolusView: View {
     @State private var modeInit = false
     @State private var amount = 0.0        // units or grams, per mode
     @State private var confirming = false
+    /// P15 Addendum B: the stale-CGM three-way is showing (include the stale reading / carbs only / cancel).
+    @State private var stalePrompt = false
     @State private var sent = false
 
     private var isCarbs: Bool { mode == .carbs }
@@ -123,6 +125,43 @@ struct WatchBolusView: View {
                 Text("faBolus is experimental and not FDA-cleared.")
             }
         }
+        // P15 Addendum B: a carb bolus while the CGM reading is stale must not SILENTLY drop the
+        // correction. Present the shared three-way choice — include the stale reading (insulin-INCREASING,
+        // per-attempt), bolus for carbs only (drop the correction — today's behavior), or cancel (send
+        // NOTHING). Warned iff stale at confirm; a fresh reading (or units mode / no reading) bypasses it.
+        .confirmationDialog("CGM reading is stale", isPresented: $stalePrompt, titleVisibility: .visible) {
+            if let g = model.glucose {
+                Button(includeStaleLabel(g)) { model.deliverCarbs(amount, includeStaleBG: true); sent = true }
+            }
+            Button(carbsOnlyLabel, role: .destructive) { model.deliverCarbs(amount); sent = true }
+            Button("Cancel", role: .cancel) {}   // sends NOTHING
+        } message: {
+            Text(staleMessage)
+        }
+    }
+
+    /// The include-stale button label: the stale value and the dose it WOULD produce (the correction is
+    /// added back, so this is insulin-increasing vs carbs-only).
+    private func includeStaleLabel(_ g: Int) -> String {
+        if let u = model.estimatedUnits(forCarbs: amount, includeStaleBG: true) {
+            return "Include \(g) → " + String(format: "%.2f U", u)
+        }
+        return "Include \(g) mg/dL"
+    }
+    /// The carbs-only button label: the correction dropped (today's silent behavior, now acknowledged).
+    private var carbsOnlyLabel: String {
+        if let u = model.estimatedUnits(forCarbs: amount) {
+            return "Carbs only → " + String(format: "%.2f U", u)
+        }
+        return "Carbs only"
+    }
+    /// Shared warning lead (identical wording across surfaces) when the age is known; a compact fallback
+    /// when the reading has no source timestamp (still stale, but no age to name).
+    private var staleMessage: String {
+        if let g = model.glucose, let d = model.glucoseDate {
+            return StaleBolusPrompt.warningMessage(glucoseMgdl: g, glucoseDate: d)
+        }
+        return "Your CGM reading is stale and was left out of this dose. Include it, bolus for carbs only, or cancel."
     }
 
     private var statusView: some View {
@@ -158,6 +197,13 @@ struct WatchBolusView: View {
     }
 
     private func deliver() {
+        // P15 Addendum B: a carb bolus while the CGM reading is stale routes to the three-way choice
+        // (include the stale reading / carbs only / cancel) instead of delivering directly. Fresh
+        // readings, units mode, and no-reading all bypass it and deliver as before.
+        if isCarbs && amount > 0 && model.staleCarbWarnNeeded {
+            stalePrompt = true
+            return
+        }
         if isCarbs { model.deliverCarbs(amount) } else { model.deliverUnits(amount) }
         sent = true
     }
