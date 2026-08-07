@@ -79,24 +79,43 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
     public var rangeCategory: Int { Self.rangeCategory(glucose) }
 
-    /// True when the reading is older than 6 minutes (don't show the number).
+    /// Clock-skew tolerance for **future-dated** readings — mirrors `faBolusCore.GlucoseFreshness.
+    /// futureSkewTolerance` (5 min). The widget/complication extensions deliberately don't link
+    /// faBolusCore (see the note on `WidgetGlucoseThresholds`), so the value is carried here; the app
+    /// test target links both and pins this equal to the canonical one so they can't drift silently. A
+    /// reading dated more than this far in the FUTURE came from a source with a fast clock — its true
+    /// age is unknowable, so it is treated as stale and never shown as the live value (loop-comms audit
+    /// fix #1). Without the guard a future-dated reading has negative elapsed time and reads "fresh"
+    /// forever, so the widget/complication would render it as the current value.
+    public static let futureSkewTolerance: TimeInterval = 5 * 60
+
+    /// True when the reading is stale — older than 6 minutes, or dated more than `futureSkewTolerance`
+    /// in the future (a fast source clock) — so the number must not be shown as the live value.
     public var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }
-        return Date().timeIntervalSince(d) > 6 * 60
+        let elapsed = Date().timeIntervalSince(d)
+        if elapsed < -Self.futureSkewTolerance { return true }   // future-dated beyond skew → stale
+        return elapsed > 6 * 60
     }
 
     // Time-parameterized freshness honoring the publisher's policy — evaluated against the widget
     // entry's date (not wall-clock `Date()`, which in a widget is prep time, not the display time).
     private var staleLimit: TimeInterval { staleAfterSec ?? 6 * 60 }
-    /// Stale (show greyed) at `now`, per the published stale threshold.
+    /// Stale (show greyed) at `now`, per the published stale threshold — or future-dated beyond the
+    /// clock-skew tolerance, which is likewise never presented as the live value.
     public func isStale(asOf now: Date) -> Bool {
         guard let d = glucoseDate else { return glucose != nil }
-        return now.timeIntervalSince(d) > staleLimit
+        let elapsed = now.timeIntervalSince(d)
+        if elapsed < -Self.futureSkewTolerance { return true }   // future-dated beyond skew → stale
+        return elapsed > staleLimit
     }
-    /// Hidden ("--") at `now`: past the published hide delay (nil delay = never hide).
+    /// Hidden ("--") at `now`: past the published hide delay (nil delay = never hide). A future-dated
+    /// reading is stale (shown greyed with its age), not hidden — matching the shared policy's `.stale`.
     public func isHidden(asOf now: Date) -> Bool {
         guard glucose != nil, let d = glucoseDate, let hide = hideAfterSec else { return false }
-        return now.timeIntervalSince(d) >= Swift.max(hide, staleLimit)
+        let elapsed = now.timeIntervalSince(d)
+        if elapsed < -Self.futureSkewTolerance { return false }  // future-dated → stale, not hidden
+        return elapsed >= Swift.max(hide, staleLimit)
     }
     /// Glucose string, or "--" when missing/stale. A non-positive value is treated as "no reading"
     /// (defends the complication against ever rendering a literal "0").
