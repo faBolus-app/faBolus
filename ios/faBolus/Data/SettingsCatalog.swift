@@ -3,7 +3,7 @@ import faBolusCore
 
 /// P14 Slice 1 — the single source of truth for every persisted `AppSettings` key.
 ///
-/// Today the 44 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
+/// Today the 46 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
 /// `backupSnapshot()`, `applyBackup()`, and `SettingsView.SettingsIndex.entries`) that drift
 /// independently, and the mode system would have added a fifth (per-mode membership). This catalog folds
 /// the metadata for all of them into one table: which keys exist, their editability `tier`, the `modes`
@@ -26,7 +26,7 @@ struct SettingDescriptor: Identifiable {
     let key: String
     /// Which Settings screen category owns the control (reuses `SettingsCategory`).
     let category: SettingsCategory
-    /// Editability tier. All 44 current keys are `.user` app preferences; `.clinician`/`.fixed` are
+    /// Editability tier. All 46 current keys are `.user` app preferences; `.clinician`/`.fixed` are
     /// reserved for the pump-therapy descriptors S6–S8 add.
     let tier: SettingTier
     /// The modes in which this setting is shown. `.advanced` sees everything, so it is always a member.
@@ -108,17 +108,21 @@ enum SettingsCatalog {
         // MARK: Pump & control
         .init("advancedControlEnabled", .pump, from: .advanced, backsUp: true, syncsToICloud: false),
         .init("autoSyncPumpTime", .pump, from: .advanced, backsUp: true),
-        .init("autoExerciseMode", .pump, from: .advanced, backsUp: true),
-        .init("autoSleepMode", .pump, from: .advanced, backsUp: true),
-        .init("modeReminders", .pump, from: .advanced, backsUp: true),
+        // §8 L3 = Standard. Auto exercise/sleep + reminders are a SHIPPED Standard feature; leaving them at
+        // .advanced would silently drop them out of Standard once Simple-default (P14 S3) lands (E6 G1).
+        .init("autoExerciseMode", .pump, from: .standard, backsUp: true),
+        .init("autoSleepMode", .pump, from: .standard, backsUp: true),
+        .init("modeReminders", .pump, from: .standard, backsUp: true),
         .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices
         .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("watchBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("remoteBluetoothEnabled", .remotes, from: .advanced, backsUp: true),
-        .init("requireRemoteBolusApproval", .remotes, from: .advanced, backsUp: true, syncsToICloud: false),
+        // §8 N7 = Standard. Caregiver remote over BT + reverse-approval are a SHIPPED Standard feature;
+        // leaving them at .advanced would silently drop them out of Standard once Simple-default lands (E6 G2).
+        .init("remoteBluetoothEnabled", .remotes, from: .standard, backsUp: true),
+        .init("requireRemoteBolusApproval", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("childModeEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("childAllowed", .remotes, from: .standard, backsUp: true),
         .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),
