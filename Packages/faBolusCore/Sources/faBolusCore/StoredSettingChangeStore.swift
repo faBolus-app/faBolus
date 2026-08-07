@@ -50,6 +50,17 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
 
     public func load() -> SettingChangeLog { loadOutcome().log }
 
+    /// P14 S8/§2.1(2)(3)(4): the edit-path write — load the current log, record `change` (replace the
+    /// key's `latest`, append to the cap-bounded audit trail), and persist best-effort. Never throws and
+    /// never blocks: provenance is disclosure, so a failed persist must not affect the therapy write it
+    /// annotates. A corrupt store yields an empty log from `loadOutcome`, so a record after a corruption
+    /// starts a fresh honest trail rather than mutating an unreadable one.
+    public func record(_ change: StoredSettingChange) {
+        var log = loadOutcome().log
+        log.record(change, cap: cap)
+        saveBestEffort(log)
+    }
+
     public func loadOutcome() -> LoadOutcome {
         // No file yet ⇒ fresh install ⇒ empty log, not a failure.
         guard FileManager.default.fileExists(atPath: url.path) else {

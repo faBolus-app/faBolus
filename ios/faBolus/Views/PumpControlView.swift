@@ -11,6 +11,7 @@ struct PumpControlView: View {
     @State private var tempPercent: Double = 100
     @State private var tempDurationMin: Int = 60
     @State private var busy = false
+    @State private var showClinicianTierAck = false
 
     private struct PendingAction: Identifiable {
         let id = UUID()
@@ -21,6 +22,10 @@ struct PumpControlView: View {
     }
 
     private var caps: PumpCapabilities { model.capabilities }
+    /// P14 S8: does this pump expose any clinician-tier section here? Gates the one-time disclosure.
+    private var hasClinicianTierSection: Bool {
+        caps.supportsLimits || caps.supportsControlIQSettings || caps.supportsProfiles
+    }
 
     var body: some View {
         Form {
@@ -101,11 +106,11 @@ struct PumpControlView: View {
             }
 
             if caps.supportsLimits {
-                Section("Limits") {
+                Section {
                     NavigationLink { PumpLimitsView(model: model) } label: {
                         Label("Delivery limits", systemImage: "slider.horizontal.3")
                     }
-                }
+                } header: { Text("Limits") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
             }
 
             if caps.supportsTimeSync {
@@ -116,19 +121,19 @@ struct PumpControlView: View {
             }
 
             if caps.supportsControlIQSettings {
-                Section("Control-IQ") {
+                Section {
                     NavigationLink { ControlIQSettingsView(model: model) } label: {
                         Label("Control-IQ settings", systemImage: "brain.head.profile")
                     }
-                }
+                } header: { Text("Control-IQ") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
             }
 
             if caps.supportsProfiles {
-                Section("Profiles") {
+                Section {
                     NavigationLink { ProfilesView(model: model) } label: {
                         Label("Insulin profiles", systemImage: "person.crop.circle")
                     }
-                }
+                } header: { Text("Profiles") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
             }
 
             if caps.supportsReminders {
@@ -149,6 +154,19 @@ struct PumpControlView: View {
             }
         }
         .navigationTitle("Pump Control")
+        // P14 S8 (§2.1(2)): first-use clinician-tier disclosure — shown once ever (persisted), and only
+        // when a clinician-tier section is present. Non-blocking: the settings stay usable regardless;
+        // this only records that clinical ownership was disclosed (it is NOT a gate / DenialReason).
+        .onAppear {
+            if !AppSettings.shared.hasAcknowledgedClinicianTier && hasClinicianTierSection {
+                showClinicianTierAck = true
+            }
+        }
+        .alert("Clinician-tier settings", isPresented: $showClinicianTierAck) {
+            Button("I understand") { AppSettings.shared.acknowledgeClinicianTier() }
+        } message: {
+            Text(ClinicianTierAck.disclosure)
+        }
         // Gate every action (and the NavigationLinks into the wizards) on a live pump connection.
         .disabled(busy || !model.pumpReady)
         .alert(item: $confirm) { action in
