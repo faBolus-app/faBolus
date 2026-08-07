@@ -99,6 +99,34 @@ import faBolusCore
         #expect(GlucoseFreshness.presentation(of: nil) == .stale)
     }
 
+    /// Audit fix #1 (loop-comms study): a reading whose source timestamp is in the FUTURE must never
+    /// read as fresh. A source with a fast clock stamps readings ahead of `now`; the raw elapsed time
+    /// then goes negative and — before the fix — `age(of:)` clamped it to 0, so the reading presented
+    /// as "fresh" indefinitely. A phantom-fresh future reading could suppress the stale-CGM bolus
+    /// warning and mislead a manual dose, so beyond a small clock skew
+    /// (`GlucoseFreshness.futureSkewTolerance`, 5 min) it is stale on every surface that shares the
+    /// policy. Within the skew, ordinary jitter is tolerated and the reading is unaffected.
+    @Test func futureDatedSampleRendersStaleBeyondClockSkew() {
+        let now = Date()
+
+        // 30 min in the future — far beyond the 5 min skew: stale, never fresh, on the shared policy.
+        let future = now.addingTimeInterval(30 * 60)
+        #expect(GlucoseFreshness.isStale(future, now: now))
+        #expect(GlucoseFreshness.presentation(of: future, now: now) == .stale)
+
+        // RemoteClientModel (Apple Watch / Mac / remote-iPhone shared base) delegates to the policy,
+        // so the future-dated reading reads stale there too. (`isGlucoseStale` evaluates against the
+        // real wall clock, ≈ `now`; a 30-min-ahead stamp is stale with wide margin.)
+        let model = RemoteClientModel(link: FakeLink())
+        model.handle(statusRead(bgMgdl: 120, sourceEpoch: Int(future.timeIntervalSince1970)))
+        #expect(model.isGlucoseStale)
+
+        // A few seconds ahead (within skew) is unaffected — still fresh, exactly like a fresh sample.
+        let slightlyAhead = now.addingTimeInterval(5)
+        #expect(!GlucoseFreshness.isStale(slightlyAhead, now: now))
+        #expect(GlucoseFreshness.presentation(of: slightlyAhead, now: now) == .fresh)
+    }
+
     /// Positive control so the stale checks above are not vacuously true: a 30-second-old sample reads
     /// fresh on every surface.
     @Test func freshSampleReadsFreshOnEverySurface() {
