@@ -174,6 +174,8 @@ enum SettingsIndex {
         .init(title: "Statistics card", keywords: "time in range tir gmi average cv stats a1c", category: .display),
         .init(title: "Watch details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
         .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
+        .init(title: "Allow bolusing from Watch & Garmin", keywords: "allow enable remote bolus watch garmin deliver read only view only", category: .remotes),
+        .init(title: "Remote bolus size limit", keywords: "ceiling cap max units remote bolus limit dose watch garmin", category: .remotes),
         .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
@@ -463,16 +465,61 @@ struct RemotesSettingsView: View {
     @Bindable var model: AppModel
     @Bindable var settings: AppSettings
     @Environment(AppRouter.self) private var router
+    // §2.3 (G5): the one-time warning shown the FIRST time each surface's bolusing is enabled.
+    @State private var showWatchBolusWarning = false
+    @State private var showGarminBolusWarning = false
     static let siriPhrases = [
         "What's my glucose in faBolus", "Insulin on board in faBolus", "Pump status in faBolus",
         "Any alerts in faBolus", "Last bolus in faBolus",
     ]
+
+    /// §2.3: turning an enable ON routes through the one-time warning on first use (Confirm arms it +
+    /// records the ack; Cancel leaves it off — the binding's `get` reads the real, still-false flag so the
+    /// switch snaps back). A subsequent turn-on (already acknowledged, or after turning it off) arms
+    /// directly. Turning OFF is always immediate.
+    private var watchBolusBinding: Binding<Bool> {
+        Binding(get: { settings.watchBolusEnabled }, set: { on in
+            if on {
+                if settings.hasAcknowledgedWatchBolusWarning { settings.watchBolusEnabled = true }
+                else { showWatchBolusWarning = true }
+            } else { settings.watchBolusEnabled = false }
+        })
+    }
+    private var garminBolusBinding: Binding<Bool> {
+        Binding(get: { settings.garminBolusEnabled }, set: { on in
+            if on {
+                if settings.hasAcknowledgedGarminBolusWarning { settings.garminBolusEnabled = true }
+                else { showGarminBolusWarning = true }
+            } else { settings.garminBolusEnabled = false }
+        })
+    }
+    /// §2.3: the optional remote-only dose ceiling. The toggle arms it at the default cap; the picker edits
+    /// the value. `nil` (off) ⇒ the pump's max alone governs remote boluses.
+    private var remoteCeilingOn: Binding<Bool> {
+        Binding(get: { settings.remoteBolusCeiling != nil },
+                set: { on in settings.remoteBolusCeiling = on ? (settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling) : nil })
+    }
+    private var remoteCeilingValue: Binding<Double> {
+        Binding(get: { settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling },
+                set: { settings.remoteBolusCeiling = $0 })
+    }
+
     var body: some View {
         Form {
             Section {
-                Toggle("Read-only (Apple Watch & Garmin)", isOn: $settings.remotesReadOnly)
-            } header: { Text("Watch & Garmin access") } footer: {
-                Text("Hides the bolus button/screen on the Apple Watch and Garmin so they only show pump + CGM data (they can't deliver). The phone is unaffected — this is separate from the phone's own read-only mode.")
+                Toggle("Allow bolusing from Apple Watch", isOn: watchBolusBinding)
+                Toggle("Allow bolusing from Garmin", isOn: garminBolusBinding)
+                if settings.watchBolusEnabled || settings.garminBolusEnabled {
+                    Toggle("Limit remote bolus size", isOn: remoteCeilingOn)
+                    if settings.remoteBolusCeiling != nil {
+                        Picker("Max per remote bolus", selection: remoteCeilingValue) {
+                            ForEach(AppSettings.remoteBolusCeilingOptions, id: \.self) { Text(fmtU($0)).tag($0) }
+                        }
+                    }
+                }
+                Toggle("Read-only (view only)", isOn: $settings.remotesReadOnly)
+            } header: { Text("Watch & Garmin bolusing") } footer: {
+                Text("**Bolusing from the Apple Watch and Garmin is off by default.** Turn on a switch above to let that device deliver a bolus — you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Watch/Garmin bolus can be, on top of your pump's max bolus; the iPhone is never affected. **Read-only** overrides everything: while on, the Watch and Garmin show pump + CGM data only and can't deliver, whatever the switches above say. The iPhone is always unaffected — this is separate from the phone's own read-only mode.")
             }
             #if GARMIN
             Section {
@@ -566,6 +613,21 @@ struct RemotesSettingsView: View {
             ControllingSection()
         }
         .navigationTitle("Remotes & devices")
+        // §2.3: one-time warnings. Confirm arms the enable + records the ack; Cancel leaves it off. The
+        // Apple Watch copy notes that wrist detection makes an accidental tap materially less likely than
+        // on Garmin, but the enable is still explicit and off by default.
+        .alert("Allow bolusing from Apple Watch?", isPresented: $showWatchBolusWarning) {
+            Button("Allow bolusing") { settings.acknowledgeWatchBolusWarning(); settings.watchBolusEnabled = true }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This lets you deliver real insulin from your Apple Watch, right from your wrist. The Watch's wrist detection makes an accidental tap materially less likely than on Garmin, but you're still turning on insulin delivery — it stays off until you allow it here, and every bolus still needs your confirmation on the Watch. You can turn this off any time.")
+        }
+        .alert("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning) {
+            Button("Allow bolusing") { settings.acknowledgeGarminBolusWarning(); settings.garminBolusEnabled = true }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This lets you deliver real insulin from your Garmin watch. A Garmin has no wrist detection, so take extra care that a bolus is never started by an accidental button press — it stays off until you allow it here, and every bolus still needs your confirmation on the watch. You can turn this off any time.")
+        }
     }
 }
 

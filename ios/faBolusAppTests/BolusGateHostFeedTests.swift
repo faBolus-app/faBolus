@@ -83,4 +83,46 @@ struct BolusGateHostFeedTests {
             #expect(cmd.bolusBlockReason == "accessDenied")
         }
     }
+
+    // MARK: P15 G5 (§2.3) — the optional remote-only dose ceiling clamps the REMOTE `BolusGate` maximum only
+
+    private final class FakeLink: RemoteTransport {
+        var onReceive: (@MainActor (RemoteCommand) -> Void)?
+        var onReachabilityChange: (@MainActor (Bool) -> Void)?
+        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
+        var isReachable: Bool = true
+        func send(_ command: RemoteCommand) {}
+    }
+
+    @Test func remoteCeilingClampsRemoteBolusGateMaxButNotThePhone() async {
+        await withClean {
+            let (model, backend) = makeModel()
+            await backend.connect()                                   // MockBackend max bolus is 25 U
+            let saved = AppSettings.shared.remoteBolusCeiling
+            defer { AppSettings.shared.remoteBolusCeiling = saved }
+
+            // No ceiling ⇒ the published remote max is the pump's own max (behavior-preserving passthrough).
+            AppSettings.shared.remoteBolusCeiling = nil
+            #expect(model.statusCommand(includeHistory: false).maxBolusUnits == backend.snapshot.maxBolusUnits)
+
+            // Ceiling of 5 U ⇒ the remotes gate on 5, not the pump's 25.
+            AppSettings.shared.remoteBolusCeiling = 5
+            let cmd = model.statusCommand(includeHistory: false)
+            #expect(cmd.maxBolusUnits == 5.0)
+
+            // Fed into a real remote client, its `BolusGate` now refuses a 10 U dose (over the 5 U ceiling,
+            // under the pump's 25 U max) — the clamp reaches the remote surface's own gate.
+            let remote = RemoteClientModel(link: FakeLink())
+            remote.handle(cmd)
+            let rg = remote.bolusGate(amount: 10, minimum: 0.05)
+            #expect(!rg.canBolus)
+            #expect(rg.reason == .aboveMax(5.0))
+
+            // The PHONE's own gate is unaffected: a 10 U dose (over the 5 U remote ceiling, under the 25 U
+            // pump max) is still allowed on the phone surface.
+            let phone = model.bolusGate(amount: 10, minimum: 0.05)
+            #expect(phone.canBolus)
+            #expect(phone.reason == nil)
+        }
+    }
 }

@@ -121,6 +121,23 @@ public final class AppSettings {
     /// never iCloud-synced).
     public var watchBolusEnabled: Bool { didSet { d.set(watchBolusEnabled, forKey: "watchBolusEnabled") } }
 
+    /// **Optional remote-only per-bolus ceiling (§2.3).** When set (a positive units value), a bolus started
+    /// from a REMOTE surface (Apple Watch / Garmin) is capped at this many units *in addition to* the pump's
+    /// own max bolus. `nil` = **off (default)** — the pump's max alone governs. The iPhone's own bolus never
+    /// consults this (it is applied only at the remote `BolusGate` `maximum` seam — see
+    /// `AppModel.remoteBolusMaximum`). Command-adjacent: backed up (a restore is an explicit user action) but
+    /// **never** iCloud-synced (C5) — an auto-synced value must not silently relax the cap on another device.
+    public var remoteBolusCeiling: Double? {
+        didSet {
+            if let v = remoteBolusCeiling, v > 0 { d.set(v, forKey: "remoteBolusCeiling") }
+            else { d.removeObject(forKey: "remoteBolusCeiling") }
+        }
+    }
+    /// The selectable remote-ceiling caps (units), and the value first applied when the user turns the limit
+    /// on. Every option is well under the pump/backend hard max (25 U), so the ceiling can only ever lower it.
+    public static let remoteBolusCeilingOptions: [Double] = [1, 2, 3, 5, 8, 10, 15, 20]
+    public static let defaultRemoteBolusCeiling: Double = 5
+
     /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
     /// immediately when the phone's clock or time zone changes (travel / DST). **Default OFF (P15 E2 exit
     /// criterion)** so a first connect never silently writes the pump clock without an explicit opt-in.
@@ -328,6 +345,17 @@ public final class AppSettings {
     /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
     public func acknowledgeClinicianTier() { if clinicianTierAckAt == nil { clinicianTierAckAt = Date() } }
 
+    // §2.3 (G5): the one-time "you're turning on real insulin delivery from this remote" acknowledgment,
+    // shown the FIRST time each surface's enable is switched on. Same idiom as `clinicianTierAckAt`:
+    // durable per-install markers, NOT catalog rows — never backed up, never iCloud-synced (a synced ack
+    // must not silently pre-suppress the warning on another device). nil ⇒ never acknowledged.
+    public var watchBolusWarningAckAt: Date? { didSet { d.set(watchBolusWarningAckAt?.timeIntervalSince1970 ?? 0, forKey: "watchBolusWarningAckAt") } }
+    public var hasAcknowledgedWatchBolusWarning: Bool { watchBolusWarningAckAt != nil }
+    public func acknowledgeWatchBolusWarning() { if watchBolusWarningAckAt == nil { watchBolusWarningAckAt = Date() } }
+    public var garminBolusWarningAckAt: Date? { didSet { d.set(garminBolusWarningAckAt?.timeIntervalSince1970 ?? 0, forKey: "garminBolusWarningAckAt") } }
+    public var hasAcknowledgedGarminBolusWarning: Bool { garminBolusWarningAckAt != nil }
+    public func acknowledgeGarminBolusWarning() { if garminBolusWarningAckAt == nil { garminBolusWarningAckAt = Date() } }
+
     /// `.shared` uses `.standard`; the P15 E2 first-launch defaults test injects a fresh empty suite. Not
     /// `private` (was) so `@testable` tests can construct an instance over an injected store — the app
     /// still funnels everything through `.shared`.
@@ -369,6 +397,10 @@ public final class AppSettings {
         appMode = AppMode(rawValue: d.string(forKey: "appMode") ?? "") ?? .advanced
         let ackTs = d.double(forKey: "clinicianTierAckAt")   // P14 S8: 0 (absent) ⇒ never acknowledged
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
+        let wAck = d.double(forKey: "watchBolusWarningAckAt")   // §2.3: 0 (absent) ⇒ never acknowledged
+        watchBolusWarningAckAt = wAck > 0 ? Date(timeIntervalSince1970: wAck) : nil
+        let gAck = d.double(forKey: "garminBolusWarningAckAt")
+        garminBolusWarningAckAt = gAck > 0 ? Date(timeIntervalSince1970: gAck) : nil
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
@@ -376,6 +408,9 @@ public final class AppSettings {
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
         watchBolusEnabled = (d.object(forKey: "watchBolusEnabled") as? Bool) ?? false
+        // §2.3: nil (absent, or a stored non-positive) ⇒ the ceiling is OFF; only a positive value arms it.
+        let rbc = d.object(forKey: "remoteBolusCeiling") as? Double
+        remoteBolusCeiling = (rbc.map { $0.isFinite && $0 > 0 } ?? false) ? rbc : nil
         // P15 E2 exit criterion: default OFF so a first connect never silently writes the pump clock
         // without an explicit opt-in. NOT re-coupled to advancedControlEnabled.
         autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? false
@@ -457,6 +492,8 @@ public final class AppSettings {
             "childModeEnabled": .bool(childModeEnabled),
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
+        // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
+        if let ceiling = remoteBolusCeiling { m["remoteBolusCeiling"] = .double(ceiling) }
         if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
         // Emit a canonical (sorted) encoding of the in-memory set rather than the raw persisted bytes, so the
         // snapshot for a given set of features is byte-identical regardless of process hash-seed or persist
@@ -504,6 +541,7 @@ public final class AppSettings {
         if let v = b("remotesReadOnly") { remotesReadOnly = v }
         if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
         if let v = b("watchBolusEnabled") { watchBolusEnabled = v }
+        if let v = dbl("remoteBolusCeiling"), v > 0 { remoteBolusCeiling = v }   // §2.3: only a positive cap arms it
         if let v = b("remoteBluetoothEnabled") { remoteBluetoothEnabled = v }
         if let v = b("requireRemoteBolusApproval") { requireRemoteBolusApproval = v }
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
