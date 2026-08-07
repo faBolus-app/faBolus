@@ -9,6 +9,9 @@ import Security
 enum WatchPairingStore {
     private static let service = "com.fabolus.app.watch.pairing"
     private static let account = "jpakeDerivedSecret"
+    /// Legacy V1 (16-char) pumps have no resume — persist the pairing code instead (see the phone's
+    /// `PairingStore`). At most one of {derived secret, V1 code} is present; `clear()` wipes both.
+    private static let v1CodeAccount = "legacyV1PairingCode"
 
     static func save(_ secret: [UInt8]) {
         let base: [String: Any] = [
@@ -38,12 +41,47 @@ enum WatchPairingStore {
     }
 
     static func clear() {
-        SecItemDelete([
+        for acct in [account, v1CodeAccount] {   // wipe whichever scheme is stored
+            SecItemDelete([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: acct,
+            ] as CFDictionary)
+        }
+    }
+
+    // MARK: - Legacy V1 (16-char) pairing code
+
+    static func saveV1Code(_ code: String) {
+        let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ] as CFDictionary)
+            kSecAttrAccount as String: v1CodeAccount,
+        ]
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = Data(code.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(add as CFDictionary, nil)
     }
+
+    static func loadV1Code() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: v1CodeAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+        else { return nil }
+        return s
+    }
+
+    /// True when any pump pairing is stored (either scheme).
+    static var hasAnyPairing: Bool { load() != nil || loadV1Code() != nil }
 
     // MARK: - Saved pump PIN (Tandem Mobi)
     // The Mobi's 6-digit PIN is fixed (behind the cartridge), so the watch can save it to skip
