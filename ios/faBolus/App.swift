@@ -43,7 +43,7 @@ struct FaBolusApp: App {
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
-                    ICloudSettingsSync.shared.start()   // optional; no-op unless built with ICLOUD_SYNC
+                    ICloudSettingsSync.shared.start()   // optional; no-op unless built with FABOLUS_ICLOUD
                     AppSettings.shared.syncWidgetConfig()
                     model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
@@ -55,7 +55,7 @@ struct FaBolusApp: App {
                         widgetBolus?.handlePending()
                         if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                     } else if phase == .background {
-                        ICloudSettingsSync.shared.push()   // optional; no-op unless built with ICLOUD_SYNC
+                        ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD
                     }
                 }
                 .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }

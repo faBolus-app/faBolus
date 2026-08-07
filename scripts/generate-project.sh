@@ -60,6 +60,11 @@ ONWATCH="${FABOLUS_ONWATCH_EATING:-0}"
 # posture as faBolusGarmin's direct-pump/. Bench use only; see watch/faBolusWatch/direct-pump/STATUS.md.
 DIRECT_PUMP="${FABOLUS_WATCH_DIRECT_PUMP:-0}"
 [ "$WATCH" = 0 ] && DIRECT_PUMP=0
+# Automatic iCloud settings sync (NSUbiquitousKeyValueStore) defaults OFF: it needs a paid Apple
+# Developer account + the iCloud capability, which would break the free-account build. When off, the
+# entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
+# unmodified clone signs on a free account. Enable on a paid account with FABOLUS_ICLOUD=1.
+ICLOUD="${FABOLUS_ICLOUD:-0}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -109,8 +114,12 @@ if [ "$NUDGE" = 0 ]; then
   strip_block NUDGE                        # the faBolusNudge package + its 7 product dependencies
   sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
 fi
+if [ "$ICLOUD" = 0 ]; then
+  strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
+  drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
+fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
@@ -118,5 +127,7 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$ONWATCH" = 1 ] && echo "  → on-watch eating detection ON (FABOLUS_ONWATCH_EATING=1) — requires HealthKit on a paid account"
 [ "$DIRECT_PUMP" = 0 ] && echo "  → building WITHOUT the watch direct-to-pump path (C9) — the watch links no pump BLE stack"
 [ "$DIRECT_PUMP" = 1 ] && echo "  → ⚠️  watch DIRECT-TO-PUMP path ON (FABOLUS_WATCH_DIRECT_PUMP=1) — violates C9, evicts the phone's pairing, BENCH ONLY. Do not wear this build."
+[ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
+[ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
 
 xcodegen generate --spec "$SPEC"
