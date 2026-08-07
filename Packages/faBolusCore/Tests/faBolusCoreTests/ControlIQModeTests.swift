@@ -45,4 +45,26 @@ struct ControlIQModeTests {
         #expect(ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: false) == nil)
         #expect(ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: true) != nil)
     }
+
+    /// P14 S11 (§2.1(7)): the Control-IQ CONFIG compatibility pre-flight. Gates on the authoritative
+    /// remote-config capability; uses `controllerVariant` only to make the refusal message specific, and
+    /// crucially NEVER blocks a configurable pump just because its variant is still `.none` (bits unread).
+    @Test func configPreflightGatesOnRemoteConfigSupportNotVariant() {
+        // Configurable (Mobi) ⇒ allowed for EVERY variant, including `.none` (the safety-critical case:
+        // feature bits not yet read must not block a legitimate Mobi config write).
+        for v in ControllerVariant.allCases {
+            #expect(ControlIQPrecondition.configBlockReason(supportsControlIQConfig: true, controllerVariant: v) == nil,
+                    "a remotely-configurable pump must never be blocked (variant \(v))")
+        }
+        // Not remotely configurable, but the pump HAS a Control-IQ controller (t:slim X2) ⇒ the specific
+        // "change it on the pump" message.
+        let tslim = ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .controlIQ)
+        #expect(tslim == "Control-IQ can only be changed on the pump itself for this model.")
+        #expect(ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .controlIQPro) == tslim)
+        // Not configurable AND no controller present ⇒ the plain "no Control-IQ" message (a DIFFERENT,
+        // more accurate string than the t:slim case).
+        let noCtrl = ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .none)
+        #expect(noCtrl == "This pump doesn't support Control-IQ.")
+        #expect(noCtrl != tslim)
+    }
 }

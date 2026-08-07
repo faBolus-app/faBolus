@@ -65,4 +65,30 @@ public enum ControlIQPrecondition {
     public static func tempRateBlockReason(controlIQEnabled: Bool) -> String? {
         controlIQEnabled ? "Turn Control-IQ off to set a temporary basal rate." : nil
     }
+
+    /// P14 S11 (§2.1(7)): the firmware + Control-IQ-version compatibility pre-flight for the
+    /// `setControlIQ` **configuration** write. Refuses (with a plain reason) BEFORE the write when the
+    /// connected pump can't take a remote Control-IQ configuration, rather than letting the pump silently
+    /// reject it — mirroring the two inverse preconditions above.
+    ///
+    /// The authoritative signal is `supportsControlIQConfig` — whether the pump exposes *remote*
+    /// Control-IQ configuration at all. It is `false` on t:slim X2 (which runs Control-IQ but Tandem only
+    /// lets you configure it on the pump itself) and on any pump whose P13b feature bitmask / model
+    /// doesn't advertise it; `true` on Mobi. `controllerVariant` is used ONLY to make the refusal message
+    /// specific — it is **not** a gate, because `.none` is the normal state whenever the pump's feature
+    /// bits haven't been read yet (the fallback / pre-`staticRead` path, and the simulator), so blocking
+    /// a configurable pump on `.none` would wrongly refuse a legitimate Mobi write. Per P13's
+    /// "absent capability ⇒ don't fail-block" rule, a configurable pump proceeds regardless of variant.
+    ///
+    /// `nil` = the write is compatible; a non-nil string = the reason it's blocked. Applies symmetrically
+    /// to enabling and disabling: if the pump can't take the config write remotely, neither direction can.
+    public static func configBlockReason(supportsControlIQConfig: Bool,
+                                         controllerVariant: ControllerVariant) -> String? {
+        guard !supportsControlIQConfig else { return nil }
+        // Not remotely configurable. If the pump nonetheless HAS a Control-IQ controller (t:slim X2), say
+        // so specifically; otherwise it has no Control-IQ controller at all.
+        return controllerVariant == .none
+            ? "This pump doesn't support Control-IQ."
+            : "Control-IQ can only be changed on the pump itself for this model."
+    }
 }

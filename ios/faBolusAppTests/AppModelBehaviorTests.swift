@@ -503,6 +503,39 @@ struct AppModelBehaviorTests {
         }
     }
 
+    /// P14 S11 (§2.1(7)): the Control-IQ CONFIG compatibility pre-flight, AT THE FUNNEL.
+    /// - A Mobi (remotely configurable) is NOT blocked — even though its `controllerVariant` is still
+    ///   `.none` here (the MockBackend reads no feature bits, exactly like a real Mobi before `staticRead`
+    ///   completes). This is the safety-critical "don't fail-block on an unread variant" case, proven
+    ///   end-to-end: the write reaches the pump.
+    /// - A t:slim (NOT remotely configurable) is refused pre-flight with the plain reason, and nothing
+    ///   reaches the pump — even with an acknowledgment present, the compat check runs first.
+    @Test func controlIQConfigCompatibilityRefusedAtFunnel() async {
+        try? await withCleanSettings {
+            let (m, backend, _) = await makeModel(connected: true)   // Mobi, .mobiAdvanced caps
+            #expect(backend.snapshot.controllerVariant == .none)     // bits unread — must NOT block
+            m.acknowledgeUnverifiedTherapy()
+            await m.setControlIQ(enabled: false, weightLbs: 150, totalDailyInsulinUnits: 40)
+            #expect(m.lastError == nil)
+            #expect(backend.controlWriteCount == 1)                  // reached the pump
+            #expect(backend.snapshot.controlIQEnabled == false)      // and applied
+
+            // t:slim: not remotely configurable → refused before the funnel, nothing reaches the pump.
+            let tslim = MockBackend(isMobi: false)
+            let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("s11-\(UUID().uuidString).json")
+            let mt = AppModel(source: tslim, ledgerStoreURL: url)
+            await tslim.connect()
+            mt.acknowledgeUnverifiedTherapy()   // present on purpose: the compat pre-flight still wins
+            await mt.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40)
+            #expect(mt.lastError == ControlIQPrecondition.configBlockReason(
+                supportsControlIQConfig: tslim.capabilities.supportsControlIQSettings,
+                controllerVariant: tslim.snapshot.controllerVariant))
+            #expect(tslim.controlWriteCount == 0)                    // never reached the pump
+            #expect(mt.hasRecentUnverifiedAck)                       // ack NOT consumed (blocked before the funnel)
+        }
+    }
+
     // MARK: - Idempotency wiring (A-02)
 
     @Test func duplicateRequestHitsBackendOnce() async {

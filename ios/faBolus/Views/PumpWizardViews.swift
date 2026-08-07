@@ -267,7 +267,11 @@ struct ControlIQSettingsView: View {
             }
             Section {
                 Button { save() } label: { Label(busy ? "Saving…" : "Save Control-IQ settings", systemImage: "checkmark.circle") }
-                    .disabled(busy)
+                    .disabled(busy || configBlockReason != nil)
+            } footer: {
+                // P14 S11: if this pump can't take a remote Control-IQ config, say so up front and disable
+                // Save, rather than letting the write fail at the pump.
+                if let r = configBlockReason { Text(r).foregroundStyle(.secondary) }
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
@@ -282,6 +286,14 @@ struct ControlIQSettingsView: View {
                 loaded = true
             }
         }
+    }
+
+    /// P14 S11: the pump-derived reason Control-IQ can't be configured here, or nil when it can. Same
+    /// pure check the funnel enforces (`AppModel.setControlIQ`), so the button state matches the outcome.
+    private var configBlockReason: String? {
+        ControlIQPrecondition.configBlockReason(
+            supportsControlIQConfig: model.capabilities.supportsControlIQSettings,
+            controllerVariant: model.snapshot.controllerVariant)
     }
 
     private func save() {
