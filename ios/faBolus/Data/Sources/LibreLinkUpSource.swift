@@ -22,8 +22,8 @@ final class LibreLinkUpSource: PollingGlucoseSource {
               let pass = CredentialStore.get(account: "librelinkup.password") else {
             throw SourceError.needsSetup("LibreLinkUp")
         }
-        if let region = GlucoseSourceConfig.string("librelinkup.region") {
-            host = "https://api-\(region).libreview.io"
+        if let region = GlucoseSourceConfig.string("librelinkup.region"), let h = Self.regionHost(region) {
+            host = h
         }
         if token == nil { try await login(user: user, pass: pass) }
         do { return try await readGraph() }
@@ -47,9 +47,10 @@ final class LibreLinkUpSource: PollingGlucoseSource {
     private func login(user: String, pass: String) async throws {
         let resp: LoginResp = try await postJSON("/llu/auth/login",
                                                  ["email": user, "password": pass], auth: false)
-        // Region redirect: re-login against the account's regional host.
-        if resp.data?.redirect == true, let region = resp.data?.region {
-            host = "https://api-\(region).libreview.io"
+        // Region redirect: re-login against the account's regional host. Only honor a region that has
+        // the expected token shape (never interpolate arbitrary text into the host — see `regionHost`).
+        if resp.data?.redirect == true, let region = resp.data?.region, let h = Self.regionHost(region) {
+            host = h
             GlucoseSourceConfig.set(region, "librelinkup.region")
             let retry: LoginResp = try await postJSON("/llu/auth/login",
                                                       ["email": user, "password": pass], auth: false)
@@ -123,8 +124,17 @@ final class LibreLinkUpSource: PollingGlucoseSource {
         return h
     }
 
+    /// `api-<region>.libreview.io` regional hosts take a short token region (`us`, `eu`, `de`, `ap`, …).
+    /// Only accept a value of that shape so a free-text settings field (which can hold spaces/junk) — or
+    /// a garbled server redirect — can never build a host string that traps `URL(string:)!`.
+    static func regionHost(_ region: String) -> String? {
+        guard region.range(of: "^[a-z0-9]{2,8}$", options: .regularExpression) != nil else { return nil }
+        return "https://api-\(region).libreview.io"
+    }
+
     private func postJSON<T: Decodable>(_ path: String, _ body: [String: String], auth: Bool) async throws -> T {
-        var req = URLRequest(url: URL(string: host + path)!)
+        guard let url = URL(string: host + path) else { throw SourceError.invalidConfig("LibreLinkUp region") }
+        var req = URLRequest(url: url)
         req.httpMethod = "POST"
         headers(auth: auth).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -132,7 +142,8 @@ final class LibreLinkUpSource: PollingGlucoseSource {
     }
 
     private func getJSON<T: Decodable>(_ path: String) async throws -> T {
-        var req = URLRequest(url: URL(string: host + path)!)
+        guard let url = URL(string: host + path) else { throw SourceError.invalidConfig("LibreLinkUp region") }
+        var req = URLRequest(url: url)
         headers(auth: true).forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         return try await send(req)
     }
