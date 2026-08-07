@@ -251,6 +251,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// schema.
     public var activeMode: String? = nil
 
+    /// P15 G3 (§2.3) — per-surface remote bolus authorization, pushed on every `statusRead` reply so a
+    /// remote HIDES its bolus affordance when the phone hasn't enabled bolusing for that surface (instead of
+    /// showing-then-failing). Both **default OFF** on the phone, so a remote that has never received a push
+    /// (cold launch / glance) also fails closed: the remote's mirror defaults to disabled and only a push
+    /// carrying `true` arms it. The host stays the enforcement point — `AccessPolicy` refuses a
+    /// `.deliverBolus` from a disabled surface regardless of the remote UI. Absent ⇒ a legacy host that
+    /// predates §2.3; the remote keeps its safe default (disabled). Additive; mirrored in the JSON schema
+    /// + Monkey C.
+    public var garminBolusEnabled: Bool? = nil
+    public var watchBolusEnabled: Bool? = nil
+    /// P15 G3 (§2.3) — whether a 4-digit passcode is required to confirm a remote bolus (the phone holds
+    /// the hash; `BolusPasscodeStore.isRequired`). When true, the remote's confirm step is the passcode
+    /// entry (which REPLACES the tap-sequence / two-button-hold), and the host validates the entered code.
+    /// Absent/false ⇒ the surface's normal confirm. Additive; mirrored.
+    public var bolusPasscodeRequired: Bool? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,

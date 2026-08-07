@@ -221,6 +221,18 @@
       "type": "string",
       "enum": ["simple", "standard", "advanced"],
       "description": "statusRead reply — the phone's active app MODE (P14). A remote uses it to HIDE an affordance the phone's mode would deny (e.g. an extended/combo bolus needs 'advanced') instead of showing-then-failing. Absent ⇒ a legacy host that predates modes (and never mode-gates), so the remote treats it as the most-permissive 'advanced' and hides nothing. The host stays the enforcement point on every actual write via AccessPolicy — this only shapes the remote UI."
+    },
+    "garminBolusEnabled": {
+      "type": "boolean",
+      "description": "statusRead reply (P15 §2.3) — whether bolusing from the GARMIN watch is enabled on the phone. Default OFF; a Garmin remote hides its bolus affordance unless this is true, and a cold launch with no push yet stays disabled (fail-closed). The host also refuses a Garmin deliver when false (AccessPolicy). Absent ⇒ a legacy host predating §2.3; the remote keeps its safe default (disabled)."
+    },
+    "watchBolusEnabled": {
+      "type": "boolean",
+      "description": "statusRead reply (P15 §2.3) — whether bolusing from the APPLE WATCH is enabled on the phone. Default OFF; the watch hides its bolus affordance unless this is true, fail-closed on a cold launch. The host also refuses a watch deliver when false (AccessPolicy). Absent ⇒ legacy host; safe default disabled."
+    },
+    "bolusPasscodeRequired": {
+      "type": "boolean",
+      "description": "statusRead reply (P15 §2.3) — whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the hash). When true the remote's confirm step is the passcode entry, which REPLACES the tap-sequence / two-button-hold; the host validates it. Absent/false ⇒ the surface's normal confirm."
     }
   },
   "additionalProperties": false

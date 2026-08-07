@@ -220,7 +220,11 @@ public final class AppModel {
             // P14 S2 (the load-bearing wiring — C13's "inert-change trap"): the active mode flows through
             // the ONE context-builder so modes gate every surface identically, never a sixth mechanism.
             // Per-feature toggles (`disabledFeatures`) land with the S3 store; empty here.
-            modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode))
+            modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode),
+            // P15 §2.3: per-surface remote bolus enables (default OFF on the phone) so the evaluator
+            // refuses a Garmin/Watch deliver the user hasn't opted into — not a seventh mechanism.
+            garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
+            watchBolusEnabled: AppSettings.shared.watchBolusEnabled)
         return AccessPolicy.evaluate(action, surface: surface, context: ctx)
     }
 
@@ -337,6 +341,13 @@ public final class AppModel {
         // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
         // stays the enforcement point on the actual dismiss.
         cmd.supportsRemoteAlertDismiss = capabilities.supportsRemoteAlertDismiss
+        // P15 §2.3: publish the per-surface bolus enables + whether a passcode is required, so each remote
+        // hides its bolus affordance until the phone opts it in (fail-closed on a cold launch — the remote
+        // mirror defaults to disabled). Emitted unconditionally so "absent" can only mean a legacy host.
+        // The host stays the enforcement point (AccessPolicy refuses a deliver from a disabled surface).
+        cmd.garminBolusEnabled = AppSettings.shared.garminBolusEnabled
+        cmd.watchBolusEnabled = AppSettings.shared.watchBolusEnabled
+        cmd.bolusPasscodeRequired = BolusPasscodeStore.isRequired
         // P14 S4: publish the phone's active mode so a remote HIDES (rather than shows-then-fails) an
         // affordance this mode would deny. The host still enforces the mode on every surface via
         // `AccessPolicy`; this only drives the remote UI. Unconditional ⇒ "absent" means a legacy host.

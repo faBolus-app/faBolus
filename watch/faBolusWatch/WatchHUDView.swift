@@ -56,7 +56,7 @@ struct WatchGlanceView: View {
                         .font(.caption2).foregroundStyle(.orange)
                 }
 
-                if !model.readOnly {
+                if model.watchBolusAllowed {   // §2.3: not read-only AND watch bolusing enabled on the phone
                     Button { showBolus = true } label: { Label("Bolus", systemImage: "drop.fill") }
                         .tint(.indigo)
                         // Needs both the phone link AND the pump actually connected.

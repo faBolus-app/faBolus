@@ -77,12 +77,18 @@ public enum AccessPolicy {
         public var peerPolicy: RemotePeerPolicy?
         // P14 seam
         public var modeContext: ModeGateContext
+        // P15 §2.3 — per-surface remote bolus authorization (default true so no OTHER surface/action is
+        // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
+        // from `.garmin` / `.appleWatch`.
+        public var garminBolusEnabled: Bool
+        public var watchBolusEnabled: Bool
 
         public init(childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
                     phoneReadOnly: Bool, remotesReadOnly: Bool,
                     advancedControlOptIn: Bool, capabilities: PumpCapabilities,
                     hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
-                    modeContext: ModeGateContext = .init()) {
+                    modeContext: ModeGateContext = .init(),
+                    garminBolusEnabled: Bool = true, watchBolusEnabled: Bool = true) {
             self.childModeEnabled = childModeEnabled
             self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
@@ -92,6 +98,8 @@ public enum AccessPolicy {
             self.hasRecentUnverifiedAck = hasRecentUnverifiedAck
             self.peerPolicy = peerPolicy
             self.modeContext = modeContext
+            self.garminBolusEnabled = garminBolusEnabled
+            self.watchBolusEnabled = watchBolusEnabled
         }
     }
 
@@ -105,6 +113,7 @@ public enum AccessPolicy {
         case unverifiedAckRequired
         case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
         case featureDisabledInMode               // P14: user turned this feature off within the mode
+        case remoteBolusDisabled                 // P15 §2.3: bolusing from this remote is turned off
 
         public var userMessage: String {
             switch self {
@@ -116,6 +125,7 @@ public enum AccessPolicy {
             case .unverifiedAckRequired: return "This needs the untested-feature warning acknowledged first."
             case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
             case .featureDisabledInMode: return "This feature is turned off in your settings."
+            case .remoteBolusDisabled:  return "Bolusing from this device is turned off — enable it in faBolus on the phone."
             }
         }
     }
@@ -157,6 +167,16 @@ public enum AccessPolicy {
         if action.gate != .childOnly {
             if surface.isLocal && context.phoneReadOnly { return .deny(.phoneReadOnly) }
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
+        }
+
+        // P15 §2.3 — per-surface remote bolus authorization. Bolusing from Garmin / Apple Watch is an
+        // explicit, default-OFF opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied
+        // above if set). Only the actual deliver from those two paired remotes is gated — every other
+        // surface/action, and the authenticated-peer paths, are unaffected. Fail-closed: a phone that never
+        // enabled the surface denies here regardless of what the remote UI showed.
+        if action == .deliverBolus {
+            if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
+            if surface == .appleWatch && !context.watchBolusEnabled { return .deny(.remoteBolusDisabled) }
         }
 
         // Gate 5 — pump capability + advanced-control opt-in (enforced at the funnel — owner decision

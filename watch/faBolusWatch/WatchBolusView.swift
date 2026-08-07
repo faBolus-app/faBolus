@@ -30,7 +30,11 @@ struct WatchBolusView: View {
     /// defect group D). Read-only stays enforced by hiding the affordance (`WatchApp` / `WatchHUDView`);
     /// it's passed here too as defense-in-depth.
     private var gate: (canBolus: Bool, reason: BolusBlockReason?) {
-        let access: AccessPolicy.AccessDecision = model.readOnly ? .deny(.remotesReadOnly) : .allow
+        // §2.3 + read-only, defense-in-depth (the affordance is already hidden upstream). Distinguish the
+        // two so the reason shown is accurate: read-only vs "watch bolusing turned off on the phone".
+        let access: AccessPolicy.AccessDecision = model.watchBolusAllowed
+            ? .allow
+            : .deny(model.readOnly ? .remotesReadOnly : .remoteBolusDisabled)
         return BolusGate.evaluate(reachable: model.reachable, linked: model.pumpConnected,
                                   bolusInFlight: model.bolusInFlight,
                                   amount: amount, minimum: isCarbs ? 1 : 0.05, maximum: maxAmount,

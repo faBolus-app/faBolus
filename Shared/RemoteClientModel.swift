@@ -50,6 +50,18 @@ class RemoteClientModel {
     /// `.advanced` (most-permissive): an absent field means a LEGACY host that never mode-gates, so the
     /// remote must not over-hide. The host remains the enforcement point on every actual write.
     var activeMode: AppMode = .advanced
+    /// P15 §2.3: whether the phone has enabled bolusing from the Apple Watch (`watchBolusEnabled`) — the
+    /// watch consumes this. `garminBolusEnabled` is carried for completeness (the Garmin app parses its own
+    /// copy). **Default false ⇒ fail-closed**: a cold launch / glance with no push yet keeps bolus hidden
+    /// until a push arms it. The host also refuses a deliver from a disabled surface (AccessPolicy).
+    var watchBolusEnabled: Bool = false
+    var garminBolusEnabled: Bool = false
+    /// P15 §2.3: whether the phone requires a 4-digit passcode to confirm a remote bolus.
+    var bolusPasscodeRequired: Bool = false
+    /// P15 §2.3 (watch): the watch may show/permit its bolus affordance only when remotes aren't read-only
+    /// AND the phone has enabled watch bolusing. Fail-closed by default (`watchBolusEnabled` starts false).
+    /// The Mac has its own gating and does not use this.
+    var watchBolusAllowed: Bool { !readOnly && watchBolusEnabled }
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     /// Identities (kind+id) of the previous alert set, to detect a newly-arrived alert. `nil` until the
@@ -232,6 +244,11 @@ class RemoteClientModel {
             if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }   // P13 capability channel
             // P14 S4: adopt the phone's active mode (absent ⇒ legacy host ⇒ stays the permissive default).
             if let m = cmd.activeMode { activeMode = AppMode(rawValue: m) ?? .advanced }
+            // P15 §2.3: adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
+            // stays the safe default (false = bolus hidden), so an old host can never leave a remote armed.
+            if let w = cmd.watchBolusEnabled { watchBolusEnabled = w }
+            if let g = cmd.garminBolusEnabled { garminBolusEnabled = g }
+            if let p = cmd.bolusPasscodeRequired { bolusPasscodeRequired = p }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not
