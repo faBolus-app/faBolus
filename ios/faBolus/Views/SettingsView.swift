@@ -346,13 +346,19 @@ struct PumpSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
+    // P14 S12 (§2.2.3): pending unpair awaiting confirmation. `repairAfter` re-opens pairing on confirm
+    // (the "Re-pair with new code" path). One confirm funnel for both unpair entry points.
+    @State private var pendingUnpair: PendingUnpair?
+    private struct PendingUnpair: Identifiable { let id = UUID(); let repairAfter: Bool }
     var body: some View {
         Form {
             Section("Pump") {
                 LabeledContent("Status", value: model.snapshot.connection.rawValue)
                 connectionControls
                 if model.hasStoredPairing && model.capabilities.supportsPairing {
-                    Button("Forget pairing", role: .destructive) { model.forgetPairing() }
+                    // P14 S12 (§2.2.3): confirm before an unpair; a Mobi gets the unconditional
+                    // charging-base warning (re-pairing needs the base). See UnpairAdvisory.
+                    Button("Forget pairing", role: .destructive) { pendingUnpair = PendingUnpair(repairAfter: false) }
                 }
             }
             // Pump clock sync isn't advanced control, so it's its own section — no need to enable
@@ -412,6 +418,18 @@ struct PumpSettingsView: View {
         }
         .navigationTitle("Pump & control")
         .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
+        // P14 S12 (§2.2.3): the unpair interlock — a single confirm for both entry points, carrying the
+        // model-appropriate warning (Mobi ⇒ charging-base caveat). No forced settings backup: an unpair
+        // loses only the pairing bond, which a settings backup can't restore anyway (see UnpairAdvisory).
+        .alert(item: $pendingUnpair) { intent in
+            Alert(title: Text("Forget pairing?"),
+                  message: Text(model.unpairConfirmation),
+                  primaryButton: .destructive(Text("Forget pairing")) {
+                      model.forgetPairing()
+                      if intent.repairAfter { showPairing = true }
+                  },
+                  secondaryButton: .cancel())
+        }
     }
 
     @ViewBuilder private var connectionControls: some View {
@@ -421,7 +439,7 @@ struct PumpSettingsView: View {
                 Button("Connect") { Task { await model.connect() } }
             } else if model.hasStoredPairing {
                 Button("Connect (saved pairing)") { Task { await model.connect() } }
-                Button("Re-pair with new code") { model.forgetPairing(); showPairing = true }
+                Button("Re-pair with new code") { pendingUnpair = PendingUnpair(repairAfter: true) }
             } else {
                 Button("Connect") { showPairing = true }
             }
