@@ -37,7 +37,7 @@ VALID = [
         "defaultScreen": "clock",
         "glucoseStaleMinutes": 6, "glucoseHideDelayMinutes": 0,
         "detailsOrder": ["iob", "reservoir", "cgm"], "watchChartRanges": [3, 6, 12, 24],
-        "garminComplicationDisplay": "stringTrend", "remotesReadOnly": False,
+        "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
         "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
         "garminBolusEnabled": False, "watchBolusEnabled": False, "bolusPasscodeRequired": False,
     },
