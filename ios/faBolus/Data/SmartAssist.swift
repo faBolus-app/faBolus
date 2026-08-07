@@ -72,13 +72,6 @@ enum SmartAssist {
         GlucoseIntelligence(predictor: HeuristicHypoPredictor(lowThreshold: 70, horizonSteps: 6))
     }
 
-    /// Sensor-trust (compression-low / noise) assessment over recent CGM.
-    static func sensorTrust(recent: [GlucoseReading]) -> GlucoseIntelligenceKit.SensorTrust {
-        SensorTrustAssessor().assess(recent: recent.map {
-            GlucoseIntelligenceKit.CGMReading(mgdl: Double($0.mgdl), date: $0.date)
-        })
-    }
-
     // MARK: Retrospective insights (TherapyInsightsKit)
 
     static func insights(cgm: [GlucoseReading], carbs: [(date: Date, grams: Double)] = []) -> [PatternInsights.Insight] {
