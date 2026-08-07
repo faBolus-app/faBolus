@@ -22,15 +22,18 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // low-risk. Phase P12's `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
     case cancelBolus, dismissNotification
 
-    // Unverified-therapy acknowledgment (`runGatedTherapy`) — the 8 IDP-CRUD + CGM-high/low writes.
+    // Unverified-therapy acknowledgment (`runGatedTherapy`) — IDP-CRUD + CGM-high/low, plus (P14 S6) the
+    // therapy-defining Control-IQ / max-bolus / max-basal writes that previously bypassed the ack.
     case createProfile, setActiveProfile, renameProfile, deleteProfile
     case addProfileSegment, modifyProfileSegment, deleteProfileSegment, setCgmHighLowAlert
+    case setControlIQ, setMaxBolus, setMaxBasal
 
-    // Child-mode + phone read-only interlock (`runControl`) — every other insulin-affecting / therapy write.
+    // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting / operational
+    // writes (suspend/resume, temp basal, modes, cartridge/fill, CGM session, clock, alert reminders).
     case suspendDelivery, resumeDelivery, setTempBasal, stopTempBasal, setMode, playFindMyPump
     case startG6Session, startG7Session, setSensorType, stopCgmSession
     case enterChangeCartridgeMode, exitChangeCartridgeMode, enterFillTubingMode, exitFillTubingMode, fillCannula
-    case setMaxBolus, setMaxBasal, syncTimeToNow, setControlIQ
+    case syncTimeToNow
     case setLowInsulinAlert, setAutoOffAlert, setSiteChangeReminder, setAlertSnooze
     case setCgmOutOfRangeAlert, setCgmRiseFallAlert
 
@@ -51,12 +54,20 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         case .cancelBolus, .dismissNotification:
             return .childOnly
         case .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
-             .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert:
+             .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
+             // P14 S6 (§2.1(1)): the therapy-DEFINING writes that used to bypass the acknowledgment gate.
+             // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
+             // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
+             // S8's refinement; here they gain the same coverage the IDP writes have.)
+             .setControlIQ, .setMaxBolus, .setMaxBasal:
             return .unverifiedAck
         case .suspendDelivery, .resumeDelivery, .setTempBasal, .stopTempBasal, .setMode, .playFindMyPump,
              .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
              .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode, .fillCannula,
-             .setMaxBolus, .setMaxBasal, .syncTimeToNow, .setControlIQ,
+             .syncTimeToNow,
+             // Operational alert reminders are self-tier (no therapy-edit ack): they configure WHEN the
+             // pump warns, not how it doses. `setCgmHighLowAlert` is the exception — a glucose threshold —
+             // and stays ack-gated above. `syncTimeToNow` is a clock sync (its auto-path can't prompt).
              .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
              .setCgmOutOfRangeAlert, .setCgmRiseFallAlert:
             return .controlInterlock

@@ -24,8 +24,10 @@ import Testing
         #expect(names(.unverifiedAck) == [
             "createProfile", "setActiveProfile", "renameProfile", "deleteProfile",
             "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment", "setCgmHighLowAlert",
+            // P14 S6: the therapy-defining writes that previously bypassed the ack.
+            "setControlIQ", "setMaxBolus", "setMaxBasal",
         ])
-        #expect(names(.controlInterlock).count == 25)
+        #expect(names(.controlInterlock).count == 22)   // P14 S6: was 25, three moved to .unverifiedAck
         // The partition is total and disjoint.
         let total = names(.ledgeredDelivery).count + names(.unverifiedAck).count
             + names(.childOnly).count + names(.controlInterlock).count
@@ -50,7 +52,8 @@ import Testing
         let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
         #expect(advanced == expected)
         #expect(!advanced.contains("syncTimeToNow"))
-        // Sanity on the count: 25 controlInterlock + 8 unverifiedAck − 1 (syncTimeToNow) = 32.
+        // Sanity on the count: 22 controlInterlock + 11 unverifiedAck − 1 (syncTimeToNow) = 32. (P14 S6
+        // moved 3 writes between the two gates; the opt-in-gated UNION is unchanged, so the total holds.)
         #expect(advanced.count == 32)
     }
 

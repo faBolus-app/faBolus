@@ -39,8 +39,12 @@ struct ClinicianTierAckTests {
 
         #expect(!s.hasAcknowledgedClinicianTier)
         #expect(GatedPumpWrite.setMaxBolus.requiredTier == .clinician)   // it IS a clinician-tier write
+        // S6 routes setMaxBolus through the untested-feature ack funnel (runGatedTherapy); ack THAT so we
+        // isolate the CLINICIAN-tier axis (S8). The clinician ack stays absent below.
+        model.acknowledgeUnverifiedTherapy()
         await model.setMaxBolus(units: 10)
-        // …and it still reaches the pump with no acknowledgment present — the ack is a disclosure, not a lock.
+        // …and it still reaches the pump with the CLINICIAN acknowledgment absent — that ack is a
+        // disclosure, not a lock (distinct from the untested-feature ack, which S6 does enforce).
         #expect(backend.snapshot.maxBolusUnits == 10)
     }
 
@@ -62,7 +66,9 @@ struct ClinicianTierAckTests {
         await backend.connect()
 
         // Successful edit → one `.selfSet` record with the exact before/after (the revert target).
+        // Satisfy S6's untested-feature ack (runGatedTherapy) so the write proceeds; provenance is S8's.
         let before = backend.snapshot.maxBolusUnits
+        model.acknowledgeUnverifiedTherapy()
         await model.setMaxBolus(units: 10)
         #expect(model.lastError == nil)
         let rec = store.load().current(.global("maxBolus"))

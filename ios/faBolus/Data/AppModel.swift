@@ -1420,17 +1420,19 @@ public final class AppModel {
     public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
     /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap (P14 §2.1(5), owner-locked):
     /// clamp at the funnel so the invariant holds regardless of backend (the backends clamp too, as
-    /// defense-in-depth). Never a confirmation — a request above 25 U is capped, not offered. The
-    /// `.selfSet` provenance records the value ACTUALLY applied (clamped), not the raw request (§2.1(2)).
+    /// defense-in-depth). Never a confirmation — a request above 25 U is capped, not offered. Routes
+    /// through the §2.1(1) ACK funnel `runGatedTherapy` (S6; was `runControl`, which had NO ack), and on
+    /// a successful, value-changing edit records `.selfSet` provenance (S8) with the value ACTUALLY
+    /// applied (clamped), not the raw request (§2.1(2)). The 25 U absolute clamp (S9) still applies first.
     public func setMaxBolus(units: Double) async {
         let clamped = Interlocks.clampMaxBolusLimit(units)
         let before = snapshot.maxBolusUnits
-        await runControl(.setMaxBolus) { try await source.setMaxBolus(units: clamped) }
+        await runGatedTherapy(.setMaxBolus) { try await self.source.setMaxBolus(units: clamped) }
         recordClinicianEditIfChanged(.global("maxBolus"), before: .double(before), afterOnSuccess: .double(clamped))
     }
     public func setMaxBasal(unitsPerHour: Double) async {
         let before = snapshot.maxBasalUnitsPerHour
-        await runControl(.setMaxBasal) { try await source.setMaxBasal(unitsPerHour: unitsPerHour) }
+        await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: unitsPerHour) }
         recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before), afterOnSuccess: .double(unitsPerHour))
     }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
@@ -1480,9 +1482,13 @@ public final class AppModel {
     }
 
     // MARK: Config wizards (A4 continued)
+    // P14 S6 (§2.1(1)): Control-IQ config is therapy-defining → route through the ACK funnel (was
+    // `runControl`, no acknowledgment). S11 adds the firmware/CIQ compatibility pre-flight on top.
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
+        // S6 (§2.1(1)): Control-IQ config is therapy-defining → ACK funnel `runGatedTherapy` (was
+        // `runControl`). S8: record `.selfSet` provenance on a successful, value-changing edit.
         let before = snapshot.controlIQEnabled
-        await runControl(.setControlIQ) { try await source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
+        await runGatedTherapy(.setControlIQ) { try await self.source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
         recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
