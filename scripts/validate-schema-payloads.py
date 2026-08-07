@@ -39,6 +39,7 @@ VALID = [
         "detailsOrder": ["iob", "reservoir", "cgm"], "watchChartRanges": [3, 6, 12, 24],
         "garminComplicationDisplay": "stringTrend", "remotesReadOnly": False,
         "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
+        "garminBolusEnabled": False, "watchBolusEnabled": False, "bolusPasscodeRequired": False,
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     {"version": 1, "kind": "bolusRequest", "requestId": "r3", "carbsGrams": 30, "bgMgdl": 120, "remoteEstimateUnits": 3.0},

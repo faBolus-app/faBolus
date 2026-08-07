@@ -25,6 +25,28 @@ import Testing
                         hasRecentUnverifiedAck: true, peerPolicy: peer)
     }
 
+    /// P15 §2.3: an otherwise-permissive host still refuses a Garmin/Watch `deliverBolus` when that
+    /// surface's bolus enable is OFF (the app default) — and ONLY that surface + that action. The phone and
+    /// authenticated peers bolus regardless of the per-surface remote flags, and a non-deliver action from
+    /// the same remote is never denied by this gate.
+    @Test func perSurfaceBolusEnableGatesGarminAndWatchDeliverOnly() {
+        let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
+                                  phoneReadOnly: false, remotesReadOnly: false,
+                                  advancedControlOptIn: true, capabilities: .mobiAdvanced,
+                                  hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
+                                  garminBolusEnabled: false, watchBolusEnabled: false)
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
+        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: off).reason == .remoteBolusDisabled)
+        // Not this surface — the phone and authenticated peers are unaffected by the per-surface remote flags.
+        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: off).allowed)
+        #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: off).allowed)
+        // Not this action — a safety STOP (cancel) from the same remote is never blocked by this gate.
+        #expect(P.evaluate(.cancelBolus, surface: .garmin, context: off).reason != .remoteBolusDisabled)
+        // Enabled ⇒ the deliver is allowed on both remotes (openCtx defaults the two flags to true).
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: openCtx()).allowed)
+        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: openCtx()).allowed)
+    }
+
     @Test func fullyLockedDeniesEveryActionOnEverySurface() {
         for a in A.allCases {
             for s in S.allCases {

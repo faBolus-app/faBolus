@@ -30,8 +30,9 @@ struct WatchRootView: View {
             #endif
         }
         .tabViewStyle(.page)
-        // The load-bearing block: the bolus sheet can never present in read-only mode, however showBolus is set.
-        .sheet(isPresented: Binding(get: { showBolus && !model.readOnly }, set: { showBolus = $0 })) {
+        // The load-bearing block: the bolus sheet can never present unless remotes aren't read-only AND the
+        // phone has enabled watch bolusing (§2.3), however showBolus is set.
+        .sheet(isPresented: Binding(get: { showBolus && model.watchBolusAllowed }, set: { showBolus = $0 })) {
             WatchBolusView(model: model)
         }
         .onAppear { model.requestStatus() }
