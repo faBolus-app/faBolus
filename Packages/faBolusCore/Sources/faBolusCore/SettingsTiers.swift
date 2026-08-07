@@ -43,7 +43,7 @@ public enum AppMode: String, Codable, Sendable, CaseIterable, Comparable {
 /// mode) and §13's rule that clinician-tier settings stay accessible without a clinician, behind a
 /// one-time acknowledgment (S8) rather than a hard lock.
 ///
-/// - `.user`     — an app preference the user owns outright (no friction). All 44 current `AppSettings`
+/// - `.user`     — an app preference the user owns outright (no friction). All 46 current `AppSettings`
 ///                 keys are `.user`: they are app/display/remote preferences, not therapy parameters.
 /// - `.clinician`— a therapy parameter conventionally set with clinical guidance. Editable behind the
 ///                 §2.1 one-time acknowledgment; **never a hard lock, never a `DenialReason`** (S8).
