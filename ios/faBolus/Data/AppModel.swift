@@ -280,6 +280,17 @@ public final class AppModel {
         await source.dismissNotification(n); refresh()
     }
 
+    /// §2.3 — the effective per-bolus maximum for REMOTE surfaces (Apple Watch / Garmin): the pump's own
+    /// max bolus, further clamped to the optional user-set remote-only ceiling (`remoteBolusCeiling`,
+    /// default off). The PHONE surface never calls this (its `bolusGate` uses `snapshot.maxBolusUnits`
+    /// directly), so a remote cap can never shrink the iPhone's own bolus. When the ceiling is off this is
+    /// an identity passthrough (behavior-preserving). When the pump max is unknown (0) the remotes fall back
+    /// to 25 U, so the ceiling is clamped against that fallback to still bind on a not-yet-known max.
+    func remoteBolusMaximum(pumpMax: Double) -> Double {
+        guard let ceiling = AppSettings.shared.remoteBolusCeiling, ceiling > 0 else { return pumpMax }
+        return min(pumpMax > 0 ? pumpMax : 25, ceiling)
+    }
+
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
     public func statusCommand(includeHistory: Bool) -> RemoteCommand {
@@ -297,7 +308,9 @@ public final class AppModel {
                              carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
                              isf: s.isf > 0 ? Double(s.isf) : nil,
                              targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                             maxBolusUnits: s.maxBolusUnits,
+                             // §2.3: the max the remotes gate on (their entry cap + their own `BolusGate`)
+                             // is the pump max clamped to the optional remote-only ceiling. Off ⇒ pump max.
+                             maxBolusUnits: remoteBolusMaximum(pumpMax: s.maxBolusUnits),
                              reservoirUnits: s.reservoirUnits,
                              batteryPercent: Double(s.batteryPercent),
                              lastBolusUnits: s.lastBolusUnits,
@@ -330,8 +343,9 @@ public final class AppModel {
         // `message`. Reachability + amount bounds stay judged by each remote; per-peer/capability/child
         // gates stay host-enforced on the actual deliver. A remote with no `canBolus` field falls back to
         // the string, so this is additive.
+        let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
-                                       amount: 0, minimum: 0, maximum: s.maxBolusUnits > 0 ? s.maxBolusUnits : 25,
+                                       amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         cmd.canBolus = avail.canBolus
         cmd.bolusBlockReason = avail.reason?.wireToken

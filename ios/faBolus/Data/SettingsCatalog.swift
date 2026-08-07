@@ -3,7 +3,7 @@ import faBolusCore
 
 /// P14 Slice 1 — the single source of truth for every persisted `AppSettings` key.
 ///
-/// Today the 46 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
+/// Today the 47 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
 /// `backupSnapshot()`, `applyBackup()`, and `SettingsView.SettingsIndex.entries`) that drift
 /// independently, and the mode system would have added a fifth (per-mode membership). This catalog folds
 /// the metadata for all of them into one table: which keys exist, their editability `tier`, the `modes`
@@ -26,7 +26,7 @@ struct SettingDescriptor: Identifiable {
     let key: String
     /// Which Settings screen category owns the control (reuses `SettingsCategory`).
     let category: SettingsCategory
-    /// Editability tier. All 46 current keys are `.user` app preferences; `.clinician`/`.fixed` are
+    /// Editability tier. All 47 current keys are `.user` app preferences; `.clinician`/`.fixed` are
     /// reserved for the pump-therapy descriptors S6–S8 add.
     let tier: SettingTier
     /// The modes in which this setting is shown. `.advanced` sees everything, so it is always a member.
@@ -76,9 +76,12 @@ enum SettingsCatalog {
         // device.
         "garminBolusEnabled",
         "watchBolusEnabled",
+        // §2.3 remote-only dose ceiling — a synced value must never silently RELAX the cap on another device
+        // (the same C5 hazard as the enables; not a boolean, but the same never-iCloud-sync rule applies).
+        "remoteBolusCeiling",
     ]
 
-    /// All 46 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 47 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -119,6 +122,8 @@ enum SettingsCatalog {
         .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("watchBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        // §2.3 optional remote-only per-bolus ceiling. Command-adjacent (never iCloud-synced); backs up.
+        .init("remoteBolusCeiling", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         // §8 N7 = Standard. Caregiver remote over BT + reverse-approval are a SHIPPED Standard feature;
         // leaving them at .advanced would silently drop them out of Standard once Simple-default lands (E6 G2).
         .init("remoteBluetoothEnabled", .remotes, from: .standard, backsUp: true),
