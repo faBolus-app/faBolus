@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 44 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 46 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
@@ -103,7 +103,7 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 44 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 46 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
