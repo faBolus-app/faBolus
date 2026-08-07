@@ -1,0 +1,75 @@
+import Foundation
+
+/// P14 Slice 7 — durable persistence for the setting provenance / change-log sidecar (§2.1(3)(4)).
+/// Modeled 1:1 on `RemoteBolusLedgerStore`: an injectable persisting protocol (so a test can script a
+/// corrupt/failing store without the filesystem), atomic writes, an App-Group-backed default URL, and a
+/// `LoadOutcome` that distinguishes a fresh install from a corrupt store.
+///
+/// **Fail-closed semantics differ from the delivery ledger.** For the ledger, a corrupt file must BLOCK
+/// delivery. Here it must NOT block anything (provenance is disclosure, not a gate) — but it must not be
+/// silently swallowed either: a corrupt store returns an EMPTY log with `failedClosed == true` so the UI
+/// can surface "settings history unavailable" rather than misrepresenting every value as an unchanged
+/// consensus-default. The distinction is the point of separating the two outcomes.
+public protocol StoredSettingChangePersisting: AnyObject {
+    func loadOutcome() -> StoredSettingChangeStore.LoadOutcome
+    func save(_ log: SettingChangeLog) throws
+    func saveBestEffort(_ log: SettingChangeLog)
+}
+
+public final class StoredSettingChangeStore: StoredSettingChangePersisting {
+    private let url: URL
+    private let cap: Int
+
+    public init(url: URL, cap: Int = 512) {
+        self.url = url
+        self.cap = cap
+    }
+
+    /// A change-log file inside an App Group container (shared with extensions), else Application Support.
+    public static func defaultURL(appGroupID: String?) -> URL? {
+        let fm = FileManager.default
+        let dir: URL?
+        if let appGroupID, let g = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            dir = g
+        } else {
+            dir = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                              appropriateFor: nil, create: true)
+        }
+        return dir?.appendingPathComponent("setting-change-log.json")
+    }
+
+    public struct LoadOutcome: Sendable {
+        public let log: SettingChangeLog
+        /// True when a persisted file exists but could not be read/decoded. The returned `log` is empty;
+        /// the UI should show "settings history unavailable" rather than treat everything as unchanged.
+        public let failedClosed: Bool
+        public init(log: SettingChangeLog, failedClosed: Bool) {
+            self.log = log; self.failedClosed = failedClosed
+        }
+    }
+
+    public func load() -> SettingChangeLog { loadOutcome().log }
+
+    public func loadOutcome() -> LoadOutcome {
+        // No file yet ⇒ fresh install ⇒ empty log, not a failure.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return LoadOutcome(log: SettingChangeLog(), failedClosed: false)
+        }
+        // File exists but won't read/decode, OR is a newer schema than we understand ⇒ empty + flag,
+        // never a mis-decode (a newer version could re-key or re-shape records).
+        guard let data = try? Data(contentsOf: url),
+              let log = try? JSONDecoder().decode(SettingChangeLog.self, from: data),
+              log.version <= SettingChangeLog.currentVersion else {
+            return LoadOutcome(log: SettingChangeLog(), failedClosed: true)
+        }
+        return LoadOutcome(log: log, failedClosed: false)
+    }
+
+    /// Atomically persist the log (a crash mid-save can't leave a truncated file).
+    public func save(_ log: SettingChangeLog) throws {
+        let data = try JSONEncoder().encode(log)
+        try data.write(to: url, options: .atomic)
+    }
+
+    public func saveBestEffort(_ log: SettingChangeLog) { try? save(log) }
+}

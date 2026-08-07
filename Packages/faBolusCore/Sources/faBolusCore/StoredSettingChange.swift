@@ -1,0 +1,96 @@
+import Foundation
+
+/// P14 Slice 7 — provenance + change-log record model for therapy settings (§2.1(3)(4)).
+///
+/// This is the DATA the §2.1 provenance/change-log/revert features read. Off-pump by necessity (C11):
+/// a `PumpProfileSegment` is wiped and rebuilt from the pump on every refresh, so provenance can't live
+/// on it. It also can't be a `HistoryStore` `@Model` (SwiftData) — that clashes with the atomic-JSON /
+/// fail-closed persistence this needs — so it's a standalone sidecar (`StoredSettingChangeStore`,
+/// modeled on `RemoteBolusLedgerStore`). Pure record + query; no wiring to the therapy-edit path yet
+/// (that lands with S6/S8).
+
+/// §13 provenance vocabulary (chosen over §2.1's "unchanged": a consensus default IS a provenance; the
+/// absence of a record is what "unchanged" means).
+public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
+    case consensusDefault   // a published/guideline default the user never changed
+    case clinicianSet       // set with clinical guidance (the §2.1 clinician tier)
+    case selfSet            // the user set it themselves
+}
+
+/// Stable identity for a tracked therapy setting.
+///
+/// OQ6 resolution: keyed on the segment's **start time** (minutes past midnight), NOT its array index.
+/// The pump renumbers segment indices when one is deleted (`TandemBackend` rebuilds the array), so an
+/// index key would silently re-point a record at the wrong segment after a delete. A segment's start
+/// time is its natural identity and is unique within a profile, so it survives renumbering — no
+/// post-refresh index-remap reconcile is needed. Profile-level and global settings (max bolus/basal,
+/// Control-IQ) use `segmentStartMinutes == nil`; a global (non-profile) setting also uses `idpId == nil`.
+public struct SettingKey: Codable, Sendable, Hashable {
+    public var idpId: Int?
+    public var segmentStartMinutes: Int?
+    public var field: String
+
+    public init(idpId: Int? = nil, segmentStartMinutes: Int? = nil, field: String) {
+        self.idpId = idpId
+        self.segmentStartMinutes = segmentStartMinutes
+        self.field = field
+    }
+
+    /// A global (non-profile) setting: `maxBolus`, `maxBasal`, `controlIQ`, …
+    public static func global(_ field: String) -> SettingKey { SettingKey(field: field) }
+    /// A per-segment therapy value keyed on the segment's stable start time.
+    public static func segment(idpId: Int, startMinutes: Int, field: String) -> SettingKey {
+        SettingKey(idpId: idpId, segmentStartMinutes: startMinutes, field: field)
+    }
+}
+
+/// One recorded change to a tracked setting: the before/after values (for the §2.1(4) one-tap revert),
+/// its provenance, and when it happened. `atSeconds` is Unix seconds passed IN by the caller — the store
+/// never reads the wall clock, so tests are deterministic. `before == nil` marks the first record for a key.
+public struct StoredSettingChange: Codable, Sendable, Equatable {
+    public var key: SettingKey
+    public var before: BackupValue?
+    public var after: BackupValue
+    public var provenance: SettingProvenance
+    public var atSeconds: Int
+
+    public init(key: SettingKey, before: BackupValue?, after: BackupValue,
+                provenance: SettingProvenance, atSeconds: Int) {
+        self.key = key; self.before = before; self.after = after
+        self.provenance = provenance; self.atSeconds = atSeconds
+    }
+}
+
+/// The persisted container: the current record per key (provenance + revert target) plus a bounded,
+/// chronological audit log (the §2.1(3) exportable change-log). Kept as flat arrays (not a
+/// `[SettingKey: …]` dictionary) so the JSON stays clean — a struct dictionary key would encode as an
+/// awkward alternating array.
+public struct SettingChangeLog: Codable, Sendable, Equatable {
+    public static let currentVersion = 1
+    public var version: Int
+    /// The most recent change per key — the current provenance + the one-tap-revert target.
+    public var latest: [StoredSettingChange]
+    /// Chronological audit trail (oldest first), bounded by the store's cap.
+    public var log: [StoredSettingChange]
+
+    public init(version: Int = SettingChangeLog.currentVersion,
+                latest: [StoredSettingChange] = [], log: [StoredSettingChange] = []) {
+        self.version = version; self.latest = latest; self.log = log
+    }
+
+    /// Record a change: replace the key's `latest` entry and append to the audit log (trimming the oldest
+    /// when over `cap`). Appending, never mutating in place, so the audit trail is honest.
+    public mutating func record(_ change: StoredSettingChange, cap: Int) {
+        latest.removeAll { $0.key == change.key }
+        latest.append(change)
+        log.append(change)
+        if log.count > cap { log.removeFirst(log.count - cap) }
+    }
+
+    /// The current record for a key (nil ⇒ never changed ⇒ treat as consensus-default).
+    public func current(_ key: SettingKey) -> StoredSettingChange? { latest.last { $0.key == key } }
+    /// The current provenance for a key (nil ⇒ never recorded).
+    public func provenance(_ key: SettingKey) -> SettingProvenance? { current(key)?.provenance }
+    /// The full chronological history for a key (for the change-log view / export).
+    public func history(_ key: SettingKey) -> [StoredSettingChange] { log.filter { $0.key == key } }
+}
