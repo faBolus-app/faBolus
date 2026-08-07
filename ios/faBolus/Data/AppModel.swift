@@ -334,6 +334,10 @@ public final class AppModel {
                              watchChartRanges: AppSettings.shared.watchChartRanges,
                              garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
                              remotesReadOnly: AppSettings.shared.remotesReadOnly)
+        // Mirror the phone's Garmin clock-face preference to the remotes (analog vs digital), replacing
+        // the old on-watch tap toggle. Unconditional like garminComplicationDisplay ⇒ "absent" means a
+        // legacy host; the Garmin app keeps its digital default until it parses this.
+        cmd.clockAnalog = AppSettings.shared.garminClockAnalog
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel

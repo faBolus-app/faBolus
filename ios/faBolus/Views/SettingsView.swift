@@ -186,6 +186,7 @@ enum SettingsIndex {
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
+        .init(title: "Garmin analog clock face", keywords: "analog digital clock face hands watch", category: .remotes),
         .init(title: "Set up Garmin remote", keywords: "connect iq install", category: .remotes),
         .init(title: "Siri phrases", keywords: "voice shortcuts", category: .remotes),
         .init(title: "Help & documentation", keywords: "docs website fabolus.org support", category: .about),
@@ -535,6 +536,7 @@ struct RemotesSettingsView: View {
                 Picker("Complication display", selection: $settings.garminComplicationDisplay) {
                     ForEach(AppSettings.complicationDisplayOptions, id: \.self) { Text(AppSettings.complicationDisplayLabel($0)).tag($0) }
                 }
+                Toggle("Analog clock face", isOn: $settings.garminClockAnalog)
             } header: { Text("Garmin remote") } footer: {
                 Text("Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md).")
             }

@@ -170,6 +170,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var watchChartRanges: [Int]?
     /// How the Garmin BG complication should present ("numericColor" | "stringTrend"). Mirrored.
     public var garminComplicationDisplay: String?
+    /// Whether the Garmin clock screen draws an analog face (true) or the digital readout (false, default).
+    /// Mirrored from the phone, replacing the old on-watch tap toggle. Additive; auto-Codable, so the
+    /// existing initializer stays untouched (the host sets it via `cmd.clockAnalog = …`).
+    public var clockAnalog: Bool? = nil
     /// Read-only mode for the WATCH + GARMIN remotes: when true they hide their bolus screen/button and
     /// won't request a bolus (the host also refuses). Status/viewing stays. Mirrored (schema + Monkey C).
     public var remotesReadOnly: Bool?

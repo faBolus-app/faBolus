@@ -200,6 +200,10 @@
       "enum": ["numericColor", "stringTrend"],
       "description": "How the Garmin BG complication presents (statusRead reply): numericColor = numeric value with range-coloring + Latin trend in the unit slot; stringTrend = a plain value+trend string, no color."
     },
+    "clockAnalog": {
+      "type": "boolean",
+      "description": "Whether the Garmin clock screen draws an analog face (statusRead reply): true = analog hands, false (default) = the digital readout. Mirrored from the phone, replacing the old on-watch tap toggle. Absent ⇒ the remote keeps its digital default."
+    },
     "remotesReadOnly": {
       "type": "boolean",
       "description": "Read-only mode for the Apple Watch + Garmin remotes (statusRead reply): when true they hide the bolus screen/button and won't request a bolus (the host also refuses)."
