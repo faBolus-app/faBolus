@@ -23,16 +23,18 @@ struct WatchPairingView: View {
                 switch pump.pairState {
                 case .idle, .failed:
                     Text("Enter pump code").font(.headline)
-                    TextField("6 digits", text: $code)
-                        .textContentType(.oneTimeCode)
-                        .font(.title3.monospacedDigit())
+                    // 6-digit (modern) OR 16-char letters+numbers (older pumps, pre-v7.7). Case-sensitive.
+                    TextField("6-digit or 16-char code", text: $code)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.title3.monospaced())
                         .multilineTextAlignment(.center)
                     if case let .failed(msg) = pump.pairState {
                         Text(msg).font(.caption2).foregroundStyle(.red).multilineTextAlignment(.center)
                     }
                     Button("Pair") { pinOfferHandled = false; pump.pair(code: code) }
                         .tint(.indigo)
-                        .disabled(code.count != 6)
+                        .disabled(!WatchPumpClient.isValidPairingCode(code))
                     if hadSavedPin {
                         Button("Clear saved PIN", role: .destructive) {
                             WatchPairingStore.clearPin(); code = ""; hadSavedPin = false

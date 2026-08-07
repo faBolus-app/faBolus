@@ -19,10 +19,16 @@ final class WatchPumpClient: PumpBLEClientDelegate {
         case idle, connecting, pairing, paired, failed(String)
     }
     var pairState: PairState = .idle
-    var isPaired: Bool { WatchPairingStore.load() != nil }
+    var isPaired: Bool { WatchPairingStore.hasAnyPairing }
+
+    /// Valid iff a 6-digit (JPAKE) OR 16-char (legacy V1) code — mirrors the phone's `PumpPairingCode`.
+    static func isValidPairingCode(_ code: String) -> Bool {
+        (try? PairingAuth.processPairingCode(code, type: .short6Char)) != nil ||
+        (try? PairingAuth.processPairingCode(code, type: .long16Char)) != nil
+    }
 
     private let client = PumpBLEClient(restoreIdentifier: "com.fabolus.app.watch.pump")
-    private var coordinator: PairingCoordinator?
+    private var coordinator: (any PairingCoordinating)?
     private var pairingCode = ""
     private var authenticationKey: [UInt8] = []
 
@@ -77,24 +83,45 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     }
 
     func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        let coord: PairingCoordinator
-        let isFull: Bool
-        if !pairingCode.isEmpty, let full = try? PairingCoordinator(pairingCode: pairingCode) {
-            coord = full; isFull = true
-        } else if let stored = WatchPairingStore.load() {
-            coord = PairingCoordinator(resumeDerivedSecret: stored); isFull = false
+        // Auto-select the scheme from the code (JPAKE 6-digit vs legacy V1 16-char), or resume/
+        // re-challenge from saved material. `onFirstPair` is non-nil ONLY for a fresh full pair.
+        let coord: any PairingCoordinating
+        let onFirstPair: (() -> Void)?
+        if !pairingCode.isEmpty {
+            let code = pairingCode
+            switch PairingAuth.detectType(code) {
+            case .short6Char:
+                guard let full = try? PairingCoordinator(pairingCode: code) else {
+                    pairState = .failed("Invalid pairing code"); return
+                }
+                coord = full
+                onFirstPair = { [weak self] in WatchPairingStore.save(full.derivedSecret); self?.pairingCode = "" }
+            case .long16Char:
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else {
+                    pairState = .failed("Invalid pairing code"); return
+                }
+                coord = v1
+                onFirstPair = { [weak self] in WatchPairingStore.saveV1Code(code); self?.pairingCode = "" }
+            }
+        } else if let v1Code = WatchPairingStore.loadV1Code() {   // legacy reconnect: silent re-challenge
+            guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
+                WatchPairingStore.clear(); pairState = .failed("No code or saved pairing"); return
+            }
+            coord = v1; onFirstPair = nil
+        } else if let stored = WatchPairingStore.load() {          // modern reconnect: JPAKE resume
+            coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
         } else {
             pairState = .failed("No code or saved pairing"); return
         }
         coord.onSendRequest = { [weak self] msg in try? self?.client.send(msg) }   // AUTHORIZATION passes the interlock
         coord.onError = { [weak self] e in
-            if !isFull { WatchPairingStore.clear() }   // a bad stored secret → forget it
+            if onFirstPair == nil { WatchPairingStore.clear() }   // saved material failed → forget it
             self?.pairState = .failed("\(e)")
         }
         coord.onPaired = { [weak self] key, _ in
             guard let self else { return }
             self.authenticationKey = key
-            if isFull { WatchPairingStore.save(coord.derivedSecret); self.pairingCode = "" }
+            onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
             self.pairState = .paired
         }
         coordinator = coord
@@ -103,7 +130,14 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     }
 
     func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
-        if ch == .authorization { coordinator?.handle(frame: frame) }
+        if ch == .authorization {
+            // Validate the frame CRC-16 before the coordinator parses it inline (it bypasses
+            // ResponseParser's CRC check) — a corrupted pairing reply must not advance the handshake.
+            guard frame.count >= 5,
+                  Bytes.calculateCRC16(Array(frame[0..<(frame.count - 2)])) == Array(frame[(frame.count - 2)...])
+            else { return }
+            coordinator?.handle(frame: frame)
+        }
         // Phase 2 will parse status/control responses here.
     }
 

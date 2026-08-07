@@ -151,7 +151,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// pairing, and the delegate stay on `client`.
     private let injectedTransport: PumpTransport?
     private var tx: PumpTransport { injectedTransport ?? client }
-    private var coordinator: PairingCoordinator?
+    private var coordinator: (any PairingCoordinating)?
     private var pollTimer: Timer?
 
     /// 6-digit JPAKE pairing code (from the pump screen). Set before `connect()`.
@@ -1407,28 +1407,46 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        // Prefer resume (no code) when a prior pairing is saved; else full pair with the code.
-        let coord: PairingCoordinator
-        let isFullPairing: Bool
-        if pairingCode.isEmpty, let stored = PairingStore.load() {
-            coord = PairingCoordinator(resumeDerivedSecret: stored); isFullPairing = false
-        } else if let full = try? PairingCoordinator(pairingCode: pairingCode), !pairingCode.isEmpty {
-            coord = full; isFullPairing = true
+        // Pick the pairing SCHEME automatically from the code the user entered (JPAKE 6-digit vs
+        // legacy V1 16-char), or resume/re-challenge from saved material. `onFirstPair` is non-nil
+        // ONLY for a fresh full pair — it persists the material for silent reconnects; when it is
+        // nil we used saved material, so an error there means "forget it and re-pair".
+        let coord: any PairingCoordinating
+        let onFirstPair: (() -> Void)?
+
+        if !pairingCode.isEmpty {
+            let code = pairingCode
+            switch PairingAuth.detectType(code) {
+            case .short6Char:                                   // modern EC-JPAKE, resumable
+                guard let full = try? PairingCoordinator(pairingCode: code) else { startPolling(); return }
+                coord = full
+                onFirstPair = { [weak self] in PairingStore.save(full.derivedSecret); self?.pairingCode = "" }
+            case .long16Char:                                   // legacy V1 — no resume, persist the code
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { startPolling(); return }
+                coord = v1
+                onFirstPair = { [weak self] in PairingStore.saveV1Code(code); self?.pairingCode = "" }
+            }
+        } else if let v1Code = PairingStore.loadV1Code() {      // legacy reconnect: silent full re-challenge
+            guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
+                PairingStore.clear(); startPolling(); return
+            }
+            coord = v1; onFirstPair = nil
+        } else if let stored = PairingStore.load() {            // modern reconnect: JPAKE quick-pair resume
+            coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
         } else {
             startPolling(); return   // no code and no saved pairing — reads will be rejected
         }
+
         coord.onSendRequest = { msg in try? c.send(msg) }   // AUTHORIZATION passes the interlock
         coord.onError = { [weak self] _ in
-            // Resume can fail if the pump forgot us; drop the saved secret so the UI re-pairs.
-            if !isFullPairing { PairingStore.clear() }
+            // A resume / V1 re-challenge with SAVED material can fail if the pump forgot us; drop the
+            // saved material so the UI re-pairs. A fresh full-pair failure keeps whatever was there.
+            if onFirstPair == nil { PairingStore.clear() }
             self?.snapshot.connection = .error; self?.onChange?()
         }
         coord.onPaired = { [weak self] key, _ in
             self?.authenticationKey = key
-            if isFullPairing {
-                PairingStore.save(coord.derivedSecret)   // enable future quick-pair
-                self?.pairingCode = ""                    // subsequent connects resume
-            }
+            onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
             self?.startPolling()
             // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
             // drop), reconcile it against the pump now so new deliveries can unblock.
@@ -1438,11 +1456,19 @@ extension TandemBackend: PumpBLEClientDelegate {
         coord.start()
     }
 
-    public var hasStoredPairing: Bool { PairingStore.load() != nil }
+    public var hasStoredPairing: Bool { PairingStore.hasAnyPairing }
     public func forgetPairing() { PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = [] }
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
-        if ch == .authorization { coordinator?.handle(frame: frame); return }
+        if ch == .authorization {
+            // Validate the frame CRC-16 before handing it to the pairing coordinator: the coordinator
+            // parses AUTHORIZATION frames inline (bypassing ResponseParser, the only other CRC check),
+            // so a corrupted-but-well-formed pairing reply must not be trusted to advance the handshake.
+            guard frame.count >= 5,
+                  Bytes.calculateCRC16(Array(frame[0..<(frame.count - 2)])) == Array(frame[(frame.count - 2)...])
+            else { return }
+            coordinator?.handle(frame: frame); return
+        }
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else { return }
         switch parsed.message {
         case let m as ControlIQIOBResponse:

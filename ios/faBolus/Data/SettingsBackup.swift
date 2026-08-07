@@ -59,6 +59,7 @@ enum SettingsBackup {
         var items: [String: String] = [:]
         for a in cgmSecretAccounts { if let v = CredentialStore.get(account: a) { items["cgm.\(a)"] = v } }
         if let secret = PairingStore.load() { items["pump.jpakeDerivedSecret"] = Data(secret).base64EncodedString() }
+        if let v1 = PairingStore.loadV1Code() { items["pump.legacyV1Code"] = v1 }   // legacy 16-char pumps
         if let pin = PairingStore.loadPin() { items["pump.mobiPin"] = pin }
         return SecretsBackup(items: items)
     }
@@ -68,6 +69,7 @@ enum SettingsBackup {
         if let b64 = s.items["pump.jpakeDerivedSecret"], let data = Data(base64Encoded: b64) {
             PairingStore.save([UInt8](data))
         }
+        if let v1 = s.items["pump.legacyV1Code"] { PairingStore.saveV1Code(v1) }   // legacy 16-char pumps
         if let pin = s.items["pump.mobiPin"] { PairingStore.savePin(pin) }
     }
 
