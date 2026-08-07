@@ -162,7 +162,16 @@ public final class AppSettings {
 
     public var childModeEnabled: Bool { didSet { d.set(childModeEnabled, forKey: "childModeEnabled") } }
     public var childAllowed: Set<ChildFeature> {
-        didSet { d.set((try? JSONEncoder().encode(childAllowed)) ?? Data(), forKey: "childAllowed") }
+        didSet { d.set(Self.canonicalChildAllowedData(childAllowed), forKey: "childAllowed") }
+    }
+    /// Encode `childAllowed` deterministically. `Set` serializes to a JSON array in hash-iteration order,
+    /// which Swift randomizes per process — so the *same* set of features encodes to different bytes across
+    /// launches and devices, producing spurious backup/iCloud diffs (and a flaky `backupSnapshot` round-trip
+    /// equality check). Sorting by `rawValue` first makes the encoding canonical and seed-independent;
+    /// decoding `Set<ChildFeature>` from the array is unaffected, so old blobs still load and no migration is
+    /// needed. This is the only `Set`-backed persisted value; `alertRules` is an ordered array already.
+    nonisolated static func canonicalChildAllowedData(_ set: Set<ChildFeature>) -> Data {
+        (try? JSONEncoder().encode(set.sorted { $0.rawValue < $1.rawValue })) ?? Data()
     }
     /// Whether `feature` is currently permitted (always true when child mode is off).
     public func childAllows(_ feature: ChildFeature) -> Bool {
@@ -397,7 +406,10 @@ public final class AppSettings {
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
-        if let d2 = d.data(forKey: "childAllowed") { m["childAllowed"] = .data(d2) }
+        // Emit a canonical (sorted) encoding of the in-memory set rather than the raw persisted bytes, so the
+        // snapshot for a given set of features is byte-identical regardless of process hash-seed or persist
+        // history (see `canonicalChildAllowedData`). Still conditional on the key having ever been persisted.
+        if d.data(forKey: "childAllowed") != nil { m["childAllowed"] = .data(Self.canonicalChildAllowedData(childAllowed)) }
         return m
     }
 

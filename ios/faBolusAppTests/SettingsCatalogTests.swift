@@ -46,6 +46,20 @@ struct SettingsCatalogTests {
         #expect(before == after)
     }
 
+    /// The `childAllowed` set is the ONLY `Set`-backed persisted value, and `Set` serializes to a JSON array
+    /// in hash-iteration order — randomized per process. If we ever encode it raw again, the same set of
+    /// features would produce different bytes across launches/devices, reintroducing spurious backup/iCloud
+    /// diffs and the flaky `backupRoundTripsThroughBackupValue` failure this replaced. Pin the invariant
+    /// directly and process-independently: the canonical encoding lists features in ascending `rawValue`
+    /// order (not whatever order the set happens to iterate), and still decodes back to the identical set.
+    @Test func childAllowedEncodingIsCanonicalAndLossless() {
+        let set = Set(ChildFeature.allCases)
+        let data = AppSettings.canonicalChildAllowedData(set)
+        let arr = try? JSONDecoder().decode([String].self, from: data)
+        #expect(arr == set.map(\.rawValue).sorted(), "canonical encoding must be ascending-rawValue order")
+        #expect((try? JSONDecoder().decode(Set<ChildFeature>.self, from: data)) == set)
+    }
+
     // MARK: iCloud safety — the single biggest correctness item in the slice (C5)
 
     @Test func iCloudSubsetExcludesEveryCommandAdjacentFlag() {
