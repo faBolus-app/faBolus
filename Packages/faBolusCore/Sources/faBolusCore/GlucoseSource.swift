@@ -27,21 +27,35 @@ public enum GlucoseFreshness {
         set { _hideAfter.withLock { $0 = newValue } }
     }
 
+    /// Clock-skew tolerance for **future-dated** readings. A reading whose source timestamp is more
+    /// than this far ahead of `now` almost certainly came from a source with a fast clock; its true
+    /// age is unknowable, so it is treated as stale rather than trusted as the current value. Without
+    /// this, a future-dated reading has a negative elapsed time that both `isStale` and `presentation`
+    /// read as "fresh" — and since `age(of:)` clamps to 0, it would never age out (loop-comms audit
+    /// fix #1). Kept small (5 min) so ordinary phone↔sensor jitter is tolerated. LoopKit likewise
+    /// rejects future-dated glucose.
+    public static let futureSkewTolerance: TimeInterval = 5 * 60
+
     /// Age of a reading taken at `date` (never negative).
     public static func age(of date: Date, now: Date = Date()) -> TimeInterval {
         max(0, now.timeIntervalSince(date))
     }
 
-    /// True when a reading taken at `date` is older than the threshold. A nil date → stale.
+    /// True when a reading taken at `date` is older than the threshold. A nil date → stale. A reading
+    /// dated more than `futureSkewTolerance` in the FUTURE is also stale: its timestamp is untrustworthy
+    /// (fast source clock) and must never present as fresh (see `futureSkewTolerance`).
     public static func isStale(_ date: Date?, now: Date = Date()) -> Bool {
         guard let date else { return true }
-        return now.timeIntervalSince(date) > staleAfter
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < -futureSkewTolerance { return true }   // dated in the future beyond clock skew
+        return elapsed > staleAfter
     }
 
     /// How a reading of a given age should be presented on screen.
     public static func presentation(of date: Date?, now: Date = Date()) -> GlucosePresentation {
         guard let date else { return .stale }          // unknown age → conservative (marked, shown)
         let age = now.timeIntervalSince(date)
+        if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
         if age <= staleAfter { return .fresh }
         if let hide = hideAfter, age >= Swift.max(hide, staleAfter) { return .hidden }
         return .stale
