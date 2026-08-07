@@ -1399,7 +1399,13 @@ public final class AppModel {
     public func exitFillTubingMode() async { await runControl(.exitFillTubingMode) { try await source.exitFillTubingMode() } }
     public func fillCannula(milliunits: Int) async { await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) } }
     public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
-    public func setMaxBolus(units: Double) async { await runControl(.setMaxBolus) { try await source.setMaxBolus(units: units) } }
+    /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap (P14 §2.1(5), owner-locked):
+    /// clamp at the funnel so the invariant holds regardless of backend (the backends clamp too, as
+    /// defense-in-depth). Never a confirmation — a request above 25 U is capped, not offered.
+    public func setMaxBolus(units: Double) async {
+        let clamped = Interlocks.clampMaxBolusLimit(units)
+        await runControl(.setMaxBolus) { try await source.setMaxBolus(units: clamped) }
+    }
     public func setMaxBasal(unitsPerHour: Double) async { await runControl(.setMaxBasal) { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 
