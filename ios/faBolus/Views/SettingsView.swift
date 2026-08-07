@@ -75,6 +75,12 @@ struct SettingsView: View {
                             Label(settings.smartAssistEnabled || settings.hypoAlertsEnabled || settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
+                        #else
+                        // E6: show a DISABLED row rather than hiding Smart Assist, so a build without the
+                        // faBolusNudge SDK still discloses that the feature exists but isn't compiled in
+                        // (a hidden section reads as "never existed"). Non-interactive + greyed.
+                        Label("Smart Assist — unavailable in this build", systemImage: "sparkles")
+                            .foregroundStyle(.secondary)
                         #endif
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
