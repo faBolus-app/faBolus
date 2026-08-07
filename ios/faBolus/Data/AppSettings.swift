@@ -122,9 +122,11 @@ public final class AppSettings {
     public var watchBolusEnabled: Bool { didSet { d.set(watchBolusEnabled, forKey: "watchBolusEnabled") } }
 
     /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
-    /// immediately when the phone's clock or time zone changes (travel / DST). **Default ON.** Only
-    /// active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
-    /// `capabilities.supportsTimeSync`; not insulin-affecting and independent of `advancedControlEnabled`.
+    /// immediately when the phone's clock or time zone changes (travel / DST). **Default OFF (P15 E2 exit
+    /// criterion)** so a first connect never silently writes the pump clock without an explicit opt-in.
+    /// Only active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
+    /// `capabilities.supportsTimeSync`; not insulin-affecting and **independent of** `advancedControlEnabled`
+    /// (the opt-in is a plain preference, never re-coupled to the advanced-control gate).
     public var autoSyncPumpTime: Bool { didSet { d.set(autoSyncPumpTime, forKey: "autoSyncPumpTime") } }
 
     /// **Auto Exercise mode** — when a workout starts (via the Shortcuts automation the user sets up),
@@ -313,7 +315,9 @@ public final class AppSettings {
         }
     }
 
-    private let d = UserDefaults.standard
+    /// The backing store. `.standard` in the app (via `.shared`); a fresh throwaway suite in tests so the
+    /// first-launch defaults can be asserted without touching the real user defaults (P15 E2 exit test).
+    private let d: UserDefaults
 
     // P14 S8 (§2.1(2)): the one-time clinician-tier acknowledgment. Persisted (durable), but NOT a
     // catalog row — never backed up, never iCloud-synced: a per-install first-use disclosure of clinical
@@ -324,7 +328,11 @@ public final class AppSettings {
     /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
     public func acknowledgeClinicianTier() { if clinicianTierAckAt == nil { clinicianTierAckAt = Date() } }
 
-    private init() {
+    /// `.shared` uses `.standard`; the P15 E2 first-launch defaults test injects a fresh empty suite. Not
+    /// `private` (was) so `@testable` tests can construct an instance over an injected store — the app
+    /// still funnels everything through `.shared`.
+    init(defaults: UserDefaults = .standard) {
+        self.d = defaults
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
         // Watch default: fall back to the phone default for existing users who never set it separately.
         watchDefaultBolusMode = BolusMode(rawValue: d.string(forKey: "watchDefaultBolusMode")
@@ -368,7 +376,9 @@ public final class AppSettings {
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
         watchBolusEnabled = (d.object(forKey: "watchBolusEnabled") as? Bool) ?? false
-        autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? true
+        // P15 E2 exit criterion: default OFF so a first connect never silently writes the pump clock
+        // without an explicit opt-in. NOT re-coupled to advancedControlEnabled.
+        autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? false
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
