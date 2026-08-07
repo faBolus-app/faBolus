@@ -96,14 +96,16 @@ final class LibreLinkUpSource: PollingGlucoseSource {
         let graph: GraphResp = try await getJSON("/llu/connections/\(pid)/graph")
 
         var samples: [GlucoseSample] = []
+        // C8: an absent `TrendArrow` means no trend reported → `nil` (no arrow). Do NOT default it to
+        // 3 ("Flat"), which would fabricate a steady reading the source never sent.
         if let m = graph.data?.connection?.glucoseMeasurement, let d = parseUTC(m.FactoryTimestamp) {
             samples.append(GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
-                                         trend: CgmTrend.libre(m.TrendArrow ?? 3), sourceID: id))
+                                         trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id))
         }
         for m in graph.data?.graphData ?? [] {
             if let d = parseUTC(m.FactoryTimestamp) {
                 samples.append(GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
-                                             trend: CgmTrend.libre(m.TrendArrow ?? 3), sourceID: id))
+                                             trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id))
             }
         }
         if samples.isEmpty { throw SourceError.badResponse }

@@ -66,13 +66,17 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         onChange?()
     }
 
-    private static func trend(_ d: G6TrendDirection?) -> GlucoseTrend {
+    // C8: `.flat` is a *reported* steady slope (|rate| < 1 mg/dL/min) and keeps its arrow; `nil` means
+    // the transmitter sent the "unavailable" sentinel (0x7f) so `trendRateMgDlPerMin` is nil — no
+    // trend reported, so we report no arrow, never a synthesized flat.
+    private static func trend(_ d: G6TrendDirection?) -> GlucoseTrend? {
         switch d {
         case .downDownDown, .downDown: return .downDown
         case .down: return .down
-        case .flat, nil: return .flat
+        case .flat: return .flat
         case .up: return .up
         case .upUp, .upUpUp: return .upUp
+        case nil: return nil
         }
     }
 
