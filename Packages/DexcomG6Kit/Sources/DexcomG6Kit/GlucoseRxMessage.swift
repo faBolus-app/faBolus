@@ -34,9 +34,13 @@ public struct GlucoseRxMessage: Equatable {
     public init?(data: Data) {
         guard data.count >= 16, data.isCRCValid,
               data.starts(with: .glucoseRx) || data.starts(with: .glucoseG6Rx) else { return nil }
-        status = data[1]
-        sequence = data[2..<6].toInt()
-        guard let sub = GlucoseSubMessage(data: data[6...]) else { return nil }
+        // Index relative to `data.startIndex`, never absolutely: this init is `public`, so a caller can
+        // pass a non-zero-based `Data` slice (e.g. `full[6...]`), on which `data[1]`/`data[2..<6]` would
+        // trap. The nested `GlucoseSubMessage.init` already bases on `startIndex`; match it here.
+        let s = data.startIndex
+        status = data[s + 1]
+        sequence = data[(s + 2)..<(s + 6)].toInt()
+        guard let sub = GlucoseSubMessage(data: data[(s + 6)...]) else { return nil }
         glucose = sub
     }
 
