@@ -1405,12 +1405,19 @@ public final class AppModel {
     public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
     /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap (P14 §2.1(5), owner-locked):
     /// clamp at the funnel so the invariant holds regardless of backend (the backends clamp too, as
-    /// defense-in-depth). Never a confirmation — a request above 25 U is capped, not offered.
+    /// defense-in-depth). Never a confirmation — a request above 25 U is capped, not offered. The
+    /// `.selfSet` provenance records the value ACTUALLY applied (clamped), not the raw request (§2.1(2)).
     public func setMaxBolus(units: Double) async {
         let clamped = Interlocks.clampMaxBolusLimit(units)
+        let before = snapshot.maxBolusUnits
         await runControl(.setMaxBolus) { try await source.setMaxBolus(units: clamped) }
+        recordClinicianEditIfChanged(.global("maxBolus"), before: .double(before), afterOnSuccess: .double(clamped))
     }
-    public func setMaxBasal(unitsPerHour: Double) async { await runControl(.setMaxBasal) { try await source.setMaxBasal(unitsPerHour: unitsPerHour) } }
+    public func setMaxBasal(unitsPerHour: Double) async {
+        let before = snapshot.maxBasalUnitsPerHour
+        await runControl(.setMaxBasal) { try await source.setMaxBasal(unitsPerHour: unitsPerHour) }
+        recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before), afterOnSuccess: .double(unitsPerHour))
+    }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 
     private var timeSyncInFlight = false
@@ -1436,9 +1443,32 @@ public final class AppModel {
     /// precondition). Exposed for the wizard's guard.
     public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }
 
+    // MARK: - §2.1(2)(3)(4) provenance recording (S7 store, S8 wiring)
+
+    /// The provenance / change-log sidecar (S7). A user editing a clinician-tier setting IS taking
+    /// ownership of it → the change is recorded as `SettingProvenance.selfSet`. Test-injectable (a test
+    /// swaps in a unique/failing store); production uses the App-Group-backed store. Best-effort +
+    /// fail-open by construction (`StoredSettingChangeStore.record` never throws/blocks) — provenance is
+    /// disclosure, never a gate on the therapy write it annotates.
+    public var settingChangeStore = StoredSettingChangeStore(
+        url: StoredSettingChangeStore.defaultURL(appGroupID: WidgetStore.appGroup)
+            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("setting-change-log.json"))
+
+    /// Record a user-made clinician-tier edit as `.selfSet` — but ONLY when the write actually SUCCEEDED
+    /// (`lastError == nil`; `performControl` clears it on success and sets it on any denial/failure) AND
+    /// the value changed. So a blocked, failed, or no-op edit records nothing.
+    func recordClinicianEditIfChanged(_ key: SettingKey, before: BackupValue?, afterOnSuccess after: BackupValue) {
+        guard lastError == nil, before != after else { return }
+        settingChangeStore.record(StoredSettingChange(
+            key: key, before: before, after: after, provenance: .selfSet,
+            atSeconds: Int(Date().timeIntervalSince1970)))
+    }
+
     // MARK: Config wizards (A4 continued)
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
+        let before = snapshot.controlIQEnabled
         await runControl(.setControlIQ) { try await source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
+        recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }

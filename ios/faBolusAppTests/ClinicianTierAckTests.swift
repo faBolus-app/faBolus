@@ -26,9 +26,10 @@ struct ClinicianTierAckTests {
 
     @Test func clinicianTierWriteIsNotBlockedByAMissingAcknowledgment() async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, ack = s.clinicianTierAckAt
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.clinicianTierAckAt = ack }
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, ack = s.clinicianTierAckAt, mode = s.appMode
+        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.clinicianTierAckAt = ack; s.appMode = mode }
         s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.appMode = .advanced                         // setMaxBolus is an Advanced-mode write (P14 S2 gate)
         s.clinicianTierAckAt = nil                    // deliberately NOT acknowledged
 
         let backend = MockBackend()                   // Mobi, .mobiAdvanced
@@ -41,5 +42,39 @@ struct ClinicianTierAckTests {
         await model.setMaxBolus(units: 10)
         // …and it still reaches the pump with no acknowledgment present — the ack is a disclosure, not a lock.
         #expect(backend.snapshot.maxBolusUnits == 10)
+    }
+
+    /// §2.1(2)(3)(4): a successful clinician-tier edit is RECORDED as `.selfSet` provenance (with a
+    /// before/after revert target) in the S7 store; a BLOCKED edit records nothing.
+    @Test func clinicianTierEditRecordsSelfSetProvenanceOnlyOnSuccess() async {
+        let s = AppSettings.shared
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, mode = s.appMode
+        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.appMode = mode }
+        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.appMode = .advanced                          // setMaxBolus is an Advanced-mode write (P14 S2 gate)
+
+        let backend = MockBackend()                    // Mobi
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s8l-\(UUID().uuidString).json")
+        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
+        let storeURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s8p-\(UUID().uuidString).json")
+        model.settingChangeStore = StoredSettingChangeStore(url: storeURL)
+        let store = model.settingChangeStore
+        await backend.connect()
+
+        // Successful edit → one `.selfSet` record with the exact before/after (the revert target).
+        let before = backend.snapshot.maxBolusUnits
+        await model.setMaxBolus(units: 10)
+        #expect(model.lastError == nil)
+        let rec = store.load().current(.global("maxBolus"))
+        #expect(rec?.provenance == .selfSet)
+        #expect(rec?.before == .double(before))
+        #expect(rec?.after == .double(10))
+
+        // A BLOCKED edit records nothing: drop the advanced-control opt-in → the write is denied, so the
+        // stored record stays the previous one (no `.selfSet` for an edit that never reached the pump).
+        s.advancedControlEnabled = false
+        await model.setMaxBolus(units: 7)
+        #expect(model.lastError != nil)
+        #expect(store.load().current(.global("maxBolus"))?.after == .double(10))
     }
 }
