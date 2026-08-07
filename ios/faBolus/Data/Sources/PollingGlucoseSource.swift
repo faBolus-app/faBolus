@@ -96,11 +96,13 @@ class PollingGlucoseSource: GlucoseSource {
 
 enum SourceError: LocalizedError {
     case needsSetup(String)
+    case invalidConfig(String)
     case http(Int)
     case badResponse
     var errorDescription: String? {
         switch self {
         case .needsSetup(let s): return "\(s) not configured"
+        case .invalidConfig(let s): return "\(s) is invalid — check settings"
         case .http(let c): return "HTTP \(c)"
         case .badResponse: return "Unexpected response"
         }
