@@ -616,6 +616,17 @@ public final class AppModel {
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
 
+    // P14 S12 (§2.2.3): the pump model behind the unpair warning. Prefer the live snapshot; fall back to
+    // the persisted offline signal (`PumpModelStore`) so a Mobi still warns correctly after it has
+    // disconnected (the snapshot's model reads `.unknown` once the name clears). C19: `PumpModelStore` is
+    // the only offline Mobi signal.
+    public var lastKnownPumpModel: PumpModel {
+        UnpairAdvisory.resolvedModel(snapshotModel: snapshot.pumpModel, storedIsMobi: PumpModelStore.isMobi())
+    }
+    /// The §2.2.3 unpair confirmation text for the current pump (a Mobi carries the unconditional
+    /// charging-base warning). No forced settings backup is needed — see `UnpairAdvisory` for why.
+    public var unpairConfirmation: String { UnpairAdvisory.confirmationMessage(for: lastKnownPumpModel) }
+
     // MARK: - Mobi PIN saving
     // The Tandem Mobi's 6-digit PIN is fixed. After a full pairing (a typed code) completes on a
     // pump detected as a Mobi, offer to save that PIN so re-pairing skips re-typing. Users can pair
