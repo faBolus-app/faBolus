@@ -226,7 +226,13 @@ struct MacBolusEntryView: View {
             } else if confirming {
                 // Inline confirm — a system confirmationDialog dismisses the menu-bar popover, so the
                 // second tap ("Deliver") never registers. Confirm in place instead.
-                confirmView
+                // P15 Addendum B (AB5): a carb bolus while the CGM reading is stale gets the three-way
+                // choice (include the stale reading / carbs only / cancel) instead of the plain confirm.
+                if isCarbs && value > 0 && model.staleCarbWarnNeeded {
+                    staleConfirmView
+                } else {
+                    confirmView
+                }
             } else {
                 if showFailure, let m = model.statusMessage {
                     Text(m).font(.caption).foregroundStyle(.red)
@@ -304,6 +310,59 @@ struct MacBolusEntryView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
+    }
+
+    /// P15 Addendum B (AB5): the stale-CGM three-way, inline (a system dialog dismisses the popover).
+    /// Include the stale reading (insulin-INCREASING, per-attempt), bolus for carbs only (drop the
+    /// correction — today's behavior), or cancel (send NOTHING). Reached only for a carb bolus that is
+    /// stale at confirm; a fresh reading routes to the plain `confirmView`. Reuses the shared
+    /// `RemoteClientModel` include-stale path (AB3) so the Mac agrees with the iPhone/Watch.
+    private var staleConfirmView: some View {
+        VStack(spacing: 8) {
+            Text("CGM reading is stale").font(.callout.weight(.semibold))
+            Text(staleMessage)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+            VStack(spacing: 6) {
+                if let g = model.glucose {
+                    Button(includeStaleLabel(g)) {
+                        model.deliverCarbs(value, includeStaleBG: true)
+                        amount = nil; confirming = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Button(carbsOnlyLabel) {
+                    model.deliverCarbs(value)
+                    amount = nil; confirming = false
+                }
+                .buttonStyle(.bordered)
+                Button("Cancel") { confirming = false }   // sends NOTHING
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    /// The include-stale button label: the stale value and the dose it WOULD produce (correction added).
+    private func includeStaleLabel(_ g: Int) -> String {
+        if let u = model.estimatedUnits(forCarbs: value, includeStaleBG: true) {
+            return "Include \(g) mg/dL → " + String(format: "%.2f U", u)
+        }
+        return "Include \(g) mg/dL"
+    }
+    /// The carbs-only button label: the correction dropped (today's silent behavior, now acknowledged).
+    private var carbsOnlyLabel: String {
+        if let u = model.estimatedUnits(forCarbs: value) {
+            return "Carbs only → " + String(format: "%.2f U", u)
+        }
+        return "Carbs only"
+    }
+    /// Shared warning lead (identical wording across surfaces) when the age is known; a compact fallback
+    /// when the reading has no source timestamp (still stale, but no age to name).
+    private var staleMessage: String {
+        if let g = model.glucose, let d = model.glucoseDate {
+            return StaleBolusPrompt.warningMessage(glucoseMgdl: g, glucoseDate: d)
+        }
+        return "Your CGM reading is stale and was left out of this dose. Include it, bolus for carbs only, or cancel."
     }
 
     private var deliveringView: some View {
