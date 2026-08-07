@@ -15,11 +15,14 @@ import Testing
 /// widget / watch / Garmin bolus path (Simple-only) has NO coherence gap.
 ///
 /// This test PINS that coherence surface so any change to `requiredMode` / peer permissions surfaces
-/// here. The recommended resolution — scope the mode gate to phone-owned surfaces (`Surface.isLocal`),
-/// leaving authenticated peers governed by their per-peer policy (Gate 4) rather than the phone's
-/// progressive-disclosure mode — is deliberately NOT implemented: it LOOSENS a (non-safety) gate and
-/// revises S2's "every surface" statement, so it awaits owner sign-off. (The alternative — publish the
-/// active mode to the remotes so they hide the affordance — is the heavier 9-artifact wire path.)
+/// here. OWNER RULING (2026-08-06): a show-then-fail is unacceptable AND remotes must NOT bypass the
+/// phone's settings — so the resolution is to make the remotes MODE-AWARE (not to exempt them). The
+/// phone now publishes its active mode over the wire (`RemoteCommand.activeMode`); the remote adopts it
+/// (`RemoteClientModel.activeMode`, absent ⇒ permissive `.advanced` for a legacy host) and HIDES a
+/// mode-gated affordance — concretely the extended (combo) bolus in `RemoteControlView` — so it never
+/// shows a control the host would refuse. The host still enforces the mode on every surface via
+/// `AccessPolicy` (the remote never bypasses it); the wire publish only removes the show-then-fail.
+/// Behavioral coverage: `RemoteClientBolusGateTests.remoteAdoptsPhoneActiveModeWithPermissiveLegacyDefault`.
 struct ModeCoherenceTests {
 
     @Test func remoteReachableActionsGatedAboveSimpleArePinned() {

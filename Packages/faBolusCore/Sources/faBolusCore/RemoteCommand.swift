@@ -240,6 +240,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// mirrored in the JSON schema + Monkey C; the host stays the enforcement point on the dismiss.
     public var supportsRemoteAlertDismiss: Bool? = nil
 
+    /// P14 S4 — the phone's active app MODE (`AppMode.rawValue`: simple / standard / advanced), so a
+    /// remote can HIDE an affordance the phone's mode would deny instead of showing-then-failing (owner:
+    /// remotes must be mode-aware and must not bypass the phone's settings). The host stays the
+    /// enforcement point (`AccessPolicy` gates every surface on this same mode); this only drives what the
+    /// remote UI offers. Absent ⇒ a legacy host that predates the mode system (and therefore never
+    /// mode-gates), so the remote treats it as the most-permissive `.advanced` and hides nothing — the
+    /// inverse default of `supportsRemoteAlertDismiss`, because over-hiding on a legacy host would be a
+    /// functional regression. Emitted unconditionally on every statusRead. Additive; mirrored in the JSON
+    /// schema.
+    public var activeMode: String? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,

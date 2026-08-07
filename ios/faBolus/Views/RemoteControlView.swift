@@ -193,8 +193,15 @@ struct RemoteBolusSheet: View {
     /// mid-entry state change — the pump dropping, a dose starting elsewhere, the host flipping the remote
     /// read-only — disables Deliver rather than sending into a state that will be rejected.
     private var gate: (canBolus: Bool, reason: BolusBlockReason?) {
-        model.bolusGate(amount: enteredUnits, minimum: extendedOn ? 0.4 : 0.05)
+        model.bolusGate(amount: enteredUnits, minimum: wantsExtended ? 0.4 : 0.05)
     }
+
+    /// P14 S4: an extended (combo) bolus is Advanced-tier, so the host would deny it when the phone is
+    /// below Advanced mode. Hide the affordance rather than show-then-fail. Absent mode ⇒ `.advanced`
+    /// (legacy host) ⇒ shown. The host still enforces this on the actual write — this only shapes the UI.
+    private var canExtend: Bool { model.activeMode >= GatedPumpWrite.deliverExtendedBolus.requiredMode }
+    /// Effective extended intent: a stale `extendedOn` is ignored the moment the mode no longer permits it.
+    private var wantsExtended: Bool { extendedOn && canExtend }
     /// The gate reason worth showing above Deliver — the "can't bolus right now" states, not the bounds
     /// reasons (below-min/above-max just keep Deliver disabled while the user types). Exhaustive so a new
     /// reason can't be silently dropped.
@@ -218,11 +225,15 @@ struct RemoteBolusSheet: View {
                 } else {
                     HStack { TextField("0", text: $units).keyboardType(.decimalPad); Text("U").foregroundStyle(.secondary) }
                 }
-                Section {
-                    Toggle("Extended (combo)", isOn: $extendedOn)
-                    if extendedOn {
-                        Stepper("Now: \(nowPct)%", value: $nowPct, in: 0...100, step: 10)
-                        Stepper("Over \(durationMin) min", value: $durationMin, in: 30...480, step: 30)
+                // P14 S4: only offer the extended (combo) bolus when the phone's mode allows it, so the
+                // remote never shows a control the host would refuse.
+                if canExtend {
+                    Section {
+                        Toggle("Extended (combo)", isOn: $extendedOn)
+                        if extendedOn {
+                            Stepper("Now: \(nowPct)%", value: $nowPct, in: 0...100, step: 10)
+                            Stepper("Over \(durationMin) min", value: $durationMin, in: 30...480, step: 30)
+                        }
                     }
                 }
                 if let m = blockMessage {
@@ -251,7 +262,7 @@ struct RemoteBolusSheet: View {
 
     private func send() {
         let u = enteredUnits
-        if extendedOn {
+        if wantsExtended {
             model.deliverExtended(totalUnits: u, nowUnits: u * Double(nowPct) / 100, durationMinutes: durationMin)
         } else if mode == 0 {
             model.deliverCarbs(Double(carbs) ?? 0)

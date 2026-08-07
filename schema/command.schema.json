@@ -216,6 +216,11 @@
     "supportsRemoteAlertDismiss": {
       "type": "boolean",
       "description": "statusRead reply — whether the pump firmware actually honors a REMOTE alert dismissal (P13 capability channel). t:slim X2 silently rejects it, so on t:slim a remote's alert action only snoozes the alert locally; Mobi clears it on the pump. A remote uses this to label its alert action 'Clear' (true) vs 'Snooze' (false), matching the phone. Absent ⇒ the remote keeps its safe default (Snooze); the host stays the enforcement point on the actual dismiss."
+    },
+    "activeMode": {
+      "type": "string",
+      "enum": ["simple", "standard", "advanced"],
+      "description": "statusRead reply — the phone's active app MODE (P14). A remote uses it to HIDE an affordance the phone's mode would deny (e.g. an extended/combo bolus needs 'advanced') instead of showing-then-failing. Absent ⇒ a legacy host that predates modes (and never mode-gates), so the remote treats it as the most-permissive 'advanced' and hides nothing. The host stays the enforcement point on every actual write via AccessPolicy — this only shapes the remote UI."
     }
   },
   "additionalProperties": false
