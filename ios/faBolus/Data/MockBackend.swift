@@ -258,7 +258,7 @@ public final class MockBackend: PumpBackend {
     }
     public func refreshLoadStatus() async {}
 
-    public func setMaxBolus(units: Double) async throws { snapshot.maxBolusUnits = units; onChange?() }
+    public func setMaxBolus(units: Double) async throws { snapshot.maxBolusUnits = Interlocks.clampMaxBolusLimit(units); onChange?() }   // S9: was unclamped
     public func setMaxBasal(unitsPerHour: Double) async throws {}
     public func syncTimeToNow() async throws {}
 

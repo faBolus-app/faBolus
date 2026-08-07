@@ -286,4 +286,16 @@ public enum BolusError: Error, LocalizedError {
 /// absurd amount (the pump also rejects anything over its own limit).
 public enum Interlocks {
     public static let absoluteMaxUnits: Double = 25.0
+    /// The smallest programmable max-bolus limit (the pump's 0.05 U minimum increment); a limit below this
+    /// is meaningless.
+    public static let minMaxBolusLimitUnits: Double = 0.05
+    /// Clamp a requested max-bolus **limit** into the app's absolute range. The 25 U ceiling is a HARD cap
+    /// (owner-locked, P14 §2.1(5): never a confirmation) — a limit can never be set above it, on ANY
+    /// backend. This is the single definition the funnel (`AppModel.setMaxBolus`) and every backend share,
+    /// so the invariant no longer depends on which backend is active (a `MockBackend` used to skip it).
+    /// Distinct from the per-bolus DELIVERY block (`deliverBolus` throws `.exceedsMax`) — this does not
+    /// replace that.
+    public static func clampMaxBolusLimit(_ units: Double) -> Double {
+        max(minMaxBolusLimitUnits, min(units, absoluteMaxUnits))
+    }
 }

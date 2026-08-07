@@ -882,7 +882,7 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     // Settings — non-insulin config.
     public func setMaxBolus(units: Double) async throws {
-        let clamped = max(0.05, min(units, Interlocks.absoluteMaxUnits))
+        let clamped = Interlocks.clampMaxBolusLimit(units)   // shared hard-cap clamp (defense-in-depth; funnel clamps too)
         try await sendControl(SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
     }
     public func setMaxBasal(unitsPerHour: Double) async throws {
