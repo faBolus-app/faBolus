@@ -235,6 +235,9 @@ public final class AppSettings {
     /// How the Garmin BG complication presents: "numericColor" (numeric value with range-coloring +
     /// a Latin trend in the unit slot) or "stringTrend" (a plain "124 ^" string, no color). Mirrored.
     public var garminComplicationDisplay: String { didSet { d.set(garminComplicationDisplay, forKey: "garminComplicationDisplay") } }
+    /// Whether the Garmin clock screen draws an analog face (true) or the digital readout (false, default).
+    /// Pushed to the remote in the status payload, replacing the old on-watch tap toggle. Mirrored.
+    public var garminClockAnalog: Bool { didSet { d.set(garminClockAnalog, forKey: "garminClockAnalog") } }
     /// Which Garmin store app the phone pairs with: "beta" (id a1b2c3d4…) or "official" (id ded131…).
     /// Developer setting; applied when the Garmin remote (re)registers — reopen the app after changing.
     public var garminTargetApp: String { didSet { d.set(garminTargetApp, forKey: "garminTargetApp") } }
@@ -437,6 +440,7 @@ public final class AppSettings {
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
         let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
+        garminClockAnalog = (d.object(forKey: "garminClockAnalog") as? Bool) ?? false
         let gt = d.string(forKey: "garminTargetApp") ?? "beta"   // default to beta (official listing is dormant)
         garminTargetApp = (gt == "official") ? "official" : "beta"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
@@ -487,6 +491,7 @@ public final class AppSettings {
             "garminScreenOrder": .stringArray(garminScreenOrder),
             "garminDefaultScreen": .string(garminDefaultScreen),
             "garminComplicationDisplay": .string(garminComplicationDisplay),
+            "garminClockAnalog": .bool(garminClockAnalog),
             "garminTargetApp": .string(garminTargetApp),
             "nightscoutUploadEnabled": .bool(nightscoutUploadEnabled),
             "childModeEnabled": .bool(childModeEnabled),
@@ -547,6 +552,7 @@ public final class AppSettings {
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
         if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
+        if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
         if let v = b("nightscoutUploadEnabled") { nightscoutUploadEnabled = v }
         if let v = b("childModeEnabled") { childModeEnabled = v }

@@ -3,7 +3,7 @@ import faBolusCore
 
 /// P14 Slice 1 — the single source of truth for every persisted `AppSettings` key.
 ///
-/// Today the 47 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
+/// Today the 48 keys are enumerated across four hand-maintained lists (`AppSettings.init` defaults,
 /// `backupSnapshot()`, `applyBackup()`, and `SettingsView.SettingsIndex.entries`) that drift
 /// independently, and the mode system would have added a fifth (per-mode membership). This catalog folds
 /// the metadata for all of them into one table: which keys exist, their editability `tier`, the `modes`
@@ -26,7 +26,7 @@ struct SettingDescriptor: Identifiable {
     let key: String
     /// Which Settings screen category owns the control (reuses `SettingsCategory`).
     let category: SettingsCategory
-    /// Editability tier. All 47 current keys are `.user` app preferences; `.clinician`/`.fixed` are
+    /// Editability tier. All 48 current keys are `.user` app preferences; `.clinician`/`.fixed` are
     /// reserved for the pump-therapy descriptors S6–S8 add.
     let tier: SettingTier
     /// The modes in which this setting is shown. `.advanced` sees everything, so it is always a member.
@@ -81,7 +81,7 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 47 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 48 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -133,6 +133,7 @@ enum SettingsCatalog {
         .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),
         .init("garminDefaultScreen", .remotes, from: .standard, backsUp: true),
         .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),
+        .init("garminClockAnalog", .remotes, from: .standard, backsUp: true),
         .init("garminTargetApp", .remotes, from: .advanced, backsUp: true),
         // MARK: Alerts
         .init("alertRules", .alerts, from: .advanced, backsUp: true),
