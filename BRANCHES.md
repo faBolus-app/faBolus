@@ -88,3 +88,95 @@ one dangerous failure is a silent fallback that greens a mismatch. See each repo
 Per §1.2: `deprecated` was cut first (before any merge, so it captures the pre-fix `main`), then the
 round-3 fixes merged to `main`, then `experimental` was created from the fixed `main`. Creating
 `experimental` from a pre-fix `main` would have carried the P0s into it.
+
+## §1.3 — versioning and the cross-repo contract
+
+This is the **canonical** version + cross-repo contract for all three code repos. `AGENTS.md` and
+`CONTRIBUTING.md` cross-reference this section rather than restating it, so there is one source of truth.
+
+### App version — single source
+
+Each app carries a marketing version (`CFBundleShortVersionString`, semver) and a build number
+(`CFBundleVersion`). These are single-sourced in `Config.xcconfig` (`MARKETING_VERSION` /
+`CURRENT_PROJECT_VERSION`) exactly the way `APP_BUNDLE_ID` is: every target inherits them from the
+project-level `configFiles` in `project.yml` — there are **no** per-target version literals to drift.
+Bump `MARKETING_VERSION` on a release and record it in `CHANGELOG.md`. Current: **0.1.0 / build 1**.
+
+### Backend version-pinning contract — the TARGET state
+
+The intended contract for the backend dependency (PumpX2Kit) is:
+
+1. PumpX2Kit is released under **annotated** tags (`git tag -a`), so a tag carries its own message and
+   date and is a first-class object, not a bare pointer.
+2. Apps pin the backend by an **explicit version** (SwiftPM `url:` + version range/exact), not an
+   unversioned local path — so a build is reproducible and a rollback to `safe-baseline`/`deprecated`
+   is meaningful for the pump-protocol stack, with a **documented local-path override** for day-to-day
+   development against an unreleased backend.
+3. The resolved graph is captured in a **committed `Package.resolved`** so CI and every clone build the
+   same backend revision.
+
+### Backend version-pinning — DECLARED UNMET (current state)
+
+This contract is **not yet met**, and per the plan it is **declared unmet here rather than silently
+satisfied by the local path.** faBolus continues to consume the backend by path
+(`project.yml`: `PumpX2Kit: path: ../PumpX2Kit`). Reasons:
+
+- **SwiftPM forbids a URL+version dependency on a package that uses `.unsafeFlags`.** PumpX2Kit's crypto
+  target (`CMbedTLSJPAKE`, used by the `PumpX2Auth`/`PumpX2BLE` products faBolus consumes) sets
+  `.unsafeFlags([...])` at `Package.swift:37`. Removing it is a real vendoring refactor (rehoming
+  `../../vendor/mbedtls` header escapes and 13 committed mbedtls symlinks into the package tree) guarded
+  by the EC-JPAKE oracle-parity tests that pump **pairing** depends on — not a one-line change.
+- The **in-progress M1 driver** (`feat/m1-tandem-pumpmanager`, `integrations/PumpX2LoopKit`, task #99)
+  currently **depends on consuming PumpX2Kit by path** for the same crypto reason, so removing the
+  local path mid-M1 would be a two-front change to the same crypto target.
+
+**Current tag state (PumpX2Kit)**, recorded so it is not re-discovered — *do not create or modify these
+tags as part of this contract*:
+
+| Tag | Type | Note |
+|---|---|---|
+| `v0.1.0` | **annotated** | first-class tag object |
+| `v0.2.0` | **lightweight** | bare commit pointer — should be re-cut annotated as a cleanup |
+| `v0.3.0` | *(absent)* | would be the vendored-crypto release that unblocks the URL+version pin |
+
+There is **no committed `Package.resolved`** in any repo (it is gitignored; only the ephemeral copy
+inside the generated `.xcodeproj` exists). Meeting the contract is tracked as a standing item; it does
+not change any shipped delivery/dosing/alerting behavior when it lands (it is dependency-resolution
+metadata).
+
+### Garmin moves in lockstep with the app
+
+> **A Garmin main release accompanies every app main release and holds the same quality bar. Garmin work
+> does not lag behind the app and does not ship separately.**
+
+The **enforcement mechanism already exists** — it is the P5/P6 **branch-aware cross-repo CI** described
+above (faBolus's `resolve-refs`; faBolusGarmin's inline `fbref` step + the schema-drift check), which
+builds each repo against the sibling on the matching branch and logs the resolved ref **and its SHA** so
+a silent fallback that greens a mismatch is caught. No new CI is required for this clause.
+
+### Compatibility matrix
+
+The wire contract between the app and its remotes is the `RemoteCommand` **schema version**, asserted
+in code (`Packages/faBolusCore/.../RemoteCommand.swift`: `schemaVersion = 1`, with a decode guard
+`guard version == Self.schemaVersion`) and mirrored on Garmin (`source/app/RemoteComm.mc`:
+`SCHEMA_VERSION = 1`), with `faBolusGarmin/scripts/check-schema-drift.sh` failing CI on drift. This
+table documents that existing invariant across releases:
+
+| App `MARKETING_VERSION` | faBolusGarmin version | `RemoteCommand` schemaVersion |
+|---|---|---|
+| 0.1.0 | 0.1.0 (lockstep; the Connect IQ `manifest.xml` carries no independent semver — its releases are tagged in lockstep with the app) | 1 |
+
+Add a row on any release that bumps the app version or the schema version; a schema bump is a breaking
+change that both sides must land together (§1.4-4 + the drift checker).
+
+### Minimum Garmin device set
+
+- **Hardware-validated:** `venu3s` is the **sole** hardware-validated Garmin device.
+- **Build-target set:** the `iq:products` in `faBolusGarmin/manifest.xml` — `venu3s`, `fr265s`,
+  `fenix7`, `fr245`, `edge540`, `edge1040` — is the published minimum device set the app compiles for
+  (touch and button watches + Edge cycling computers, adapting to touch vs. buttons); those beyond
+  `venu3s` are compile-verified only, **not** hardware-validated.
+- The store-facing source of truth for this list is `faBolusGarmin/store/connectiq-listing.md`
+  (SUPPORTED DEVICES). On a device that is not supported, the app should fail gracefully with an
+  explicit message rather than misbehave — a datafield/complication that structurally cannot render the
+  honest-staleness `--` must say the value is unavailable rather than show a stale number.

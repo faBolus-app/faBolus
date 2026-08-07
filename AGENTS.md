@@ -50,6 +50,22 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
 - Sibling repos: `../PumpX2Kit` (pump protocol — change message bytes there, with an oracle test) and
   `../faBolusGarmin` (Garmin remote). Keep the `RemoteCommand` schema in sync across them.
 
+## Versioning & governance (§1.3 / §1.4)
+- **`BRANCHES.md` is canonical governance** for the branch model, the §1.2 experimental gate, the §1.4
+  promotion criteria, and the §1.3 versioning + cross-repo contract. Read it before a release-shaped
+  change; don't restate its rules here — link to them.
+- **App version is single-sourced in `Config.xcconfig`** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`),
+  inherited by every target the same way as `APP_BUNDLE_ID`. Never add a per-target version literal in
+  `project.yml`. Bump `MARKETING_VERSION` on a release and add a `CHANGELOG.md` entry.
+- **Backend (PumpX2Kit) version-pinning contract** — the target is: annotated release tags, an explicit
+  version pin in `project.yml` (with a documented local-path override for dev), and a committed
+  `Package.resolved`. This is **currently DECLARED UNMET**: faBolus consumes PumpX2Kit by
+  `path: ../PumpX2Kit` because the backend's crypto target uses `.unsafeFlags` (which SwiftPM forbids in
+  a URL+version dependency) and the in-progress M1 driver relies on path-consumption. See BRANCHES.md
+  §1.3 for the reason and the current tag state — do not "satisfy" it by quietly leaving the local path.
+- **Garmin ships in lockstep** with the app (same release, same quality bar), enforced by the existing
+  branch-aware cross-repo CI. See BRANCHES.md §1.3.
+
 ## Gotchas
 - One CoreBluetooth restore-id per central per process (a 2nd restorable central SIGABRTs — see
   `DexcomG6BLESource`). The pump owns `com.fabolus.app.pump`; the BLE peer peripheral is separate.
