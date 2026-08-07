@@ -88,6 +88,16 @@ public final class AppSettings {
     /// the confirm/hold + max-bolus-clamp + WritePolicy interlocks.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
+    /// P14 — the active experience **mode** (Simple / Standard / Advanced), the axis the access evaluator
+    /// gates on (`AccessPolicy.ModeGateContext`). This is the mode *selector*, not a mode-gated setting, so
+    /// it is deliberately NOT a `SettingsCatalog` row and is **never** backed up or iCloud-synced (a synced
+    /// mode could silently unlock features on another device — the S3 coherence hazard). Default `.advanced`
+    /// in Slice 2 is behavior-preserving (Advanced sees everything, so the mode gate is a no-op); S3
+    /// introduces the guided Objectives unlock and flips the effective default to Simple with the unlock
+    /// path in the same change, so no build ever ships Simple-with-no-way-out. Phone↔watch mode coherence
+    /// (S4) rides the App Group + status payload, independent of iCloud.
+    public var appMode: AppMode { didSet { d.set(appMode.rawValue, forKey: "appMode") } }
+
     /// **Read-only mode (this phone).** Turns the app into a safe viewer: bolusing and all pump control
     /// are disabled and their UI (Bolus tab, Pump Control) is hidden. **Default OFF.** Clearing pump
     /// alerts is also disabled by default while read-only, unless `readOnlyAllowAlertClear` is on.
@@ -325,6 +335,8 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
+        // P14 S2: default Advanced (behavior-preserving no-op); S3 flips the default to Simple + Objectives.
+        appMode = AppMode(rawValue: d.string(forKey: "appMode") ?? "") ?? .advanced
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
