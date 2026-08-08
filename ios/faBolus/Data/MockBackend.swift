@@ -141,6 +141,12 @@ public final class MockBackend: PumpBackend {
     /// Test knob (FB-01): when true, `recommendBolus` reports the dose as computed from ASSUMED
     /// (unverified) settings, so callers must fail closed / require the assumptions ack.
     public var forceUnverifiedInputs = false
+    /// Test knob (DIF-ux): force the IOB read to read as STALE even after the mock re-stamps it fresh in
+    /// `refreshCalcInputsNow()`, so a test can exercise the warned include-last-known-IOB override path.
+    public var forceIobStale = false
+    /// Test knob (DIF-ux): force the therapy-params read to read as STALE, for the use-last-known-settings
+    /// override path.
+    public var forceTherapyStale = false
     /// Test knob (FB-02): when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
@@ -177,6 +183,11 @@ public final class MockBackend: PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
+        await recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl, allowStaleIob: false, allowStaleTherapy: false)
+    }
+
+    public func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
+                               allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation {
         // DIF-core parity with the real backend: build the authoritative recommendation from FRESH inputs.
         await refreshCalcInputsNow()
         var rec = BolusRecommendation()
@@ -186,14 +197,28 @@ public final class MockBackend: PumpBackend {
         let now = Date()
         rec.iobDate = snapshot.iobDate
         rec.therapyParamsDate = snapshot.therapyParamsDate
-        rec.iobStale = snapshot.isIobStale(now: now)
-        rec.therapyStale = snapshot.isTherapyStale(now: now)
+        // Test knobs (DIF-ux) let a test force staleness independent of the just-re-stamped dates.
+        rec.iobStale = forceIobStale || snapshot.isIobStale(now: now)
+        rec.therapyStale = forceTherapyStale || snapshot.isTherapyStale(now: now)
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
                                         targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
-        rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbsGrams > 0 ? carbsGrams : nil,
-                                                          bgMgdl: bgMgdl, profile: profile)
+        let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
+        let verified = !forceUnverifiedInputs && !rec.iobStale && !rec.therapyStale
+        if verified {
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: bgMgdl, profile: profile)
+            rec.inputsVerified = true
+        } else {
+            rec.inputsVerified = false
+            rec.assumedProfile = profile
+            // Mirror the TandemBackend DIF-ux override: only under an explicit owner override do we retain
+            // the BG correction off the last-known (mock: fixed) profile; include-last-known IOB keeps
+            // SUBTRACTING `snapshot.iobUnits` (never zeroes it). The mock always HAS last-known therapy.
+            let overrideActive = allowStaleIob || allowStaleTherapy
+            let therapyTrustworthy = !rec.therapyStale || allowStaleTherapy
+            let overrideBg: Int? = (overrideActive && therapyTrustworthy) ? bgMgdl : nil
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: overrideBg, profile: profile)
+        }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // round to 0.05u
-        if forceUnverifiedInputs { rec.inputsVerified = false; rec.assumedProfile = profile }
         return rec
     }
 
