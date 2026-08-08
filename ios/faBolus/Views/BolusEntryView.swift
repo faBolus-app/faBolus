@@ -50,11 +50,25 @@ struct BolusEntryView: View {
     }
     /// Supersedes out-of-order async recommendation results (audit C-04).
     @State private var calcSeq = 0
-    /// FB-01: when the recommendation was computed from ASSUMED (unverified) pump settings, delivery
-    /// requires a distinct blocking acknowledgement of those assumed CR/ISF/target values first. Reset on
-    /// every recompute so each new dose re-requires the ack.
-    @State private var pendingAssumed: (extended: Bool, profile: BolusMath.Profile)?
-    @State private var assumedAcknowledged = false
+    /// DIF-ux: the calc-input freshness prompt shown at deliver time when the recommendation's inputs
+    /// weren't confirmed fresh this compose (`inputsVerified == false`). Carries the override dose
+    /// (precomputed off last-known values, so the button label == the delivered amount) and which
+    /// override(s) the "use / include" button applies. Per-attempt — reset on every recompute
+    /// (`calculate()`), never sticky, never default-selected. Replaces the FB-01 single assumed-ack gate.
+    private struct CalcInputPrompt: Identifiable {
+        enum Kind { case iob, therapy, both }
+        let id = UUID()
+        let kind: Kind
+        let extended: Bool
+        let overrideUnits: Double          // dose recomputed with the accepted override(s) applied
+        let allowStaleIob: Bool
+        let allowStaleTherapy: Bool
+        let iobUnits: Double
+        let iobDate: Date?
+        let assumedProfile: BolusMath.Profile?
+        let therapyDate: Date?
+    }
+    @State private var calcInputPrompt: CalcInputPrompt?
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -180,7 +194,21 @@ struct BolusEntryView: View {
                         if settings.showBolusReasoning {
                             DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
                                 LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                                LabeledContent("Active insulin (IOB)", value: String(format: "−%.2f U", rec.iobUnits))
+                                // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
+                                // age is unknown), via the shared `CalcInputFreshness` presentation — so the
+                                // term the dose subtracts reads the same as a stale glucose row.
+                                let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
+                                let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
+                                LabeledContent {
+                                    Text(String(format: "−%.2f U", rec.iobUnits))
+                                        .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
+                                } label: {
+                                    if iobStalePresent, let a = iobAge {
+                                        Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
+                                    } else {
+                                        Text("Active insulin (IOB)")
+                                    }
+                                }
                             }
                         }
                     }
@@ -381,23 +409,50 @@ struct BolusEntryView: View {
             let now = units * Double(extendedNowPercent) / 100
             Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
         }
-        // FB-01: assumed-settings acknowledgement — the pump's verified profile hasn't arrived, so the
-        // dose used ASSUMED values. Force the user to see and accept them before anything is delivered.
-        .confirmationDialog("Pump settings not verified",
-                            isPresented: Binding(get: { pendingAssumed != nil },
-                                                 set: { if !$0 { pendingAssumed = nil } }),
+        // DIF-ux: the calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
+        // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
+        // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
+        // option exists (that is the maximum-dose direction — prohibited by the frozen owner decision).
+        .confirmationDialog(calcInputDialogTitle,
+                            isPresented: Binding(get: { calcInputPrompt != nil },
+                                                 set: { if !$0 { calcInputPrompt = nil } }),
                             titleVisibility: .visible) {
-            if let p = pendingAssumed {
-                Button("Use assumed settings & deliver \(String(format: "%.2f U", units))", role: .destructive) {
-                    let ext = p.extended; pendingAssumed = nil; assumedAcknowledged = true
-                    Task { await attemptDeliver(extended: ext) }
+            if let p = calcInputPrompt {
+                Button(calcInputUseLabel(p), role: .destructive) {
+                    Task { await deliverWithOverride(p) }
                 }
-                Button("Cancel", role: .cancel) { pendingAssumed = nil }
+                Button("Cancel", role: .cancel) { calcInputPrompt = nil }   // sends NOTHING
             }
         } message: {
-            if let p = pendingAssumed {
-                Text("faBolus hasn't read this pump's bolus settings yet, so this dose assumes carb ratio \(String(format: "%.0f", p.profile.carbRatioGramsPerUnit)) g/U, ISF \(p.profile.isfMgdlPerUnit), target \(p.profile.targetBgMgdl) mg/dL and ignores BG correction. Only continue if those match your pump.")
-            }
+            if let p = calcInputPrompt { Text(calcInputMessage(p)) }
+        }
+    }
+
+    // DIF-ux calc-input prompt copy (title / button / message), keyed on which input(s) were unconfirmed.
+    private var calcInputDialogTitle: String {
+        switch calcInputPrompt?.kind {
+        case .iob:            return "Active insulin not confirmed"
+        case .therapy:        return "Pump settings not confirmed"
+        case .both, .none:    return "Pump inputs not confirmed"
+        }
+    }
+    private func calcInputUseLabel(_ p: CalcInputPrompt) -> String {
+        let dose = String(format: "%.2f U", p.overrideUnits)
+        switch p.kind {
+        case .iob:     return "Use last-known IOB → \(dose)"
+        case .therapy: return "Use last-known settings → \(dose)"
+        case .both:    return "Use last-known & deliver \(dose)"
+        }
+    }
+    private func calcInputMessage(_ p: CalcInputPrompt) -> String {
+        switch p.kind {
+        case .iob:
+            return StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
+        case .therapy:
+            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate)
+        case .both:
+            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate)
+                + "\n\n" + StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
         }
     }
 
@@ -412,7 +467,7 @@ struct BolusEntryView: View {
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
         let seq = calcSeq
-        assumedAcknowledged = false   // FB-01: a changed dose must re-acknowledge assumed settings
+        calcInputPrompt = nil   // DIF-ux: a changed dose re-requires the per-attempt freshness override
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
@@ -429,10 +484,31 @@ struct BolusEntryView: View {
     /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
     /// stale on-screen value.
     private func attemptDeliver(extended: Bool) async {
-        // FB-01: never deliver a dose computed from ASSUMED pump settings without an explicit, distinct
-        // acknowledgement of the assumed CR/ISF/target — separate from the generic dose confirm.
-        if let rec = recommendation, !rec.inputsVerified, let ap = rec.assumedProfile, !assumedAcknowledged {
-            pendingAssumed = (extended, ap)
+        // DIF-ux: gate on `!inputsVerified` FIRST (BEFORE the CGM re-check), so the unconfirmed-but-in-window
+        // case — `iobStale == therapyStale == false` yet `inputsVerified == false` — is still caught and can
+        // never silently deliver. Present the WARNED two-way override, keyed on WHICH input(s) were
+        // unconfirmed: therapy-only → use-last-known-settings; IOB-only → include-last-known-IOB; both, OR
+        // neither flag but still unverified → the unified use-last-known override (both flags). `cancel`
+        // sends nothing. The chosen dose is recomputed off last-known values and delivered by the dialog
+        // button (`deliverWithOverride`). Remotes never reach this — they fail closed in `resolveRemoteDose`.
+        if let rec = recommendation, !rec.inputsVerified, calcInputPrompt == nil {
+            let kind: CalcInputPrompt.Kind
+            let allowIob: Bool, allowTherapy: Bool
+            if rec.therapyStale && !rec.iobStale {
+                kind = .therapy; allowIob = false; allowTherapy = true
+            } else if rec.iobStale && !rec.therapyStale {
+                kind = .iob; allowIob = true; allowTherapy = false
+            } else {
+                kind = .both; allowIob = true; allowTherapy = true   // both stale, or neither-flag-but-!verified
+            }
+            // Precompute the override dose off last-known values (button label == the delivered amount),
+            // using the on-screen BG — exactly what the user sees.
+            let ov = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+                                                allowStaleIob: allowIob, allowStaleTherapy: allowTherapy)
+            calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: ov.recommendedUnits,
+                                              allowStaleIob: allowIob, allowStaleTherapy: allowTherapy,
+                                              iobUnits: rec.iobUnits, iobDate: rec.iobDate,
+                                              assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
             return
         }
         preparingDeliver = true
@@ -489,6 +565,15 @@ struct BolusEntryView: View {
                     iobUnits: recommendation?.iobUnits,
                     extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
                     extendedDurationMin: extended ? extendedDurationMin : nil)
+    }
+
+    /// DIF-ux: the user accepted the warned override for THIS attempt (use-last-known-settings /
+    /// include-last-known-IOB). Freeze + deliver exactly the precomputed override dose (so the number the
+    /// button showed is the number delivered), via the same freeze/deliver path every other button uses.
+    /// `cancel` never routes here — it just clears the prompt, sending nothing.
+    private func deliverWithOverride(_ p: CalcInputPrompt) async {
+        calcInputPrompt = nil
+        await deliverFrozen(freeze(units: p.overrideUnits, bg: Int(bg), extended: p.extended))
     }
 
     /// Deliver exactly the frozen proposal — the only place that calls the backend (audit C-04).
