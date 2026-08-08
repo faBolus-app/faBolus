@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 48 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 46 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
@@ -16,9 +16,10 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly48UniqueKeys() {
-        #expect(SettingsCatalog.descriptors.count == 48)
-        #expect(SettingsCatalog.byKey.count == 48)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+    @Test func descriptorsCoverExactly46UniqueKeys() {
+        // P16 §3.2: down from 48 — smartAssistEnabled (R6) and hypoAlertsEnabled (R5) were removed.
+        #expect(SettingsCatalog.descriptors.count == 46)
+        #expect(SettingsCatalog.byKey.count == 46)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -103,7 +104,7 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 48 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 46 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })

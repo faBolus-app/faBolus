@@ -17,6 +17,9 @@ markers rather than releases, and are listed under Unreleased until a version is
 
 ### Added
 - Root `CHANGELOG.md` (this file), in Keep a Changelog format (P16).
+- Standing safety-guard test (`RescueCarbGuardTests`, faBolusCore) enforcing P16 §8-H: the app must
+  **never** surface a suggested rescue-carbohydrate amount for treating a low. It scans the app +
+  faBolusCore sources on every `swift test` run and fails if such an API/string is reintroduced.
 - **§1.3 versioning + cross-repo contract** documented in `BRANCHES.md`: app-version single-sourcing,
   the backend (PumpX2Kit) version-pinning contract, the Garmin lockstep clause, an
   app × faBolusGarmin × `RemoteCommand` schema **compatibility matrix**, and the published **minimum
@@ -28,6 +31,22 @@ markers rather than releases, and are listed under Unreleased until a version is
   inherited by all six targets (`faBolus`, `faBolusWatch`, `faBolusWatchWidgets`, `faBolusWidgets`,
   `faBolusMac`, `faBolusMacWidgets`); the per-target version literals were removed from `project.yml`.
   Docs/config only — no delivery, dosing, or alerting behavior changes.
+
+### Removed
+Prohibited advisory/experimental features removed per P16 §3.2 (`faBolus-internal` Reconciliation
+Report R1/R2/R5/R6). All were advisory display/alerting only and off (or not toggle-gated) —
+**none disabled, blocked, or clamped a dose**, and the delivery disposition (**NO-GO for real
+insulin**) is unchanged.
+- **Predictive-low (hypo) banner** (R5) — the in-app "low likely soon" advisory banner and its
+  *Predictive-low alerts* toggle. It was a glucose forecast (prohibited); off by default. If you had
+  it enabled it no longer appears.
+- **Bolus guardrail** (R6) — the advisory guardrail warnings on the bolus screen (predicted-low /
+  stacking / oversized) and their *Bolus guardrail* toggle. Advisory-only and off by default; **no
+  dose was ever blocked or changed**. If you had it enabled the advisory strings no longer appear.
+- **Data & History "Settings suggestions"** (R1 + R2) — the oref0 *autotune* basal/ISF/carb-ratio
+  suggestions, the autosens-style *insulin-sensitivity* assessment, and the *suggested ISF / carb
+  ratio / basal* advice. All derived a personalized recommendation from your own data (prohibited).
+  Retrospective **Insights** (time-in-range, recurring patterns) are unaffected and remain.
 
 ### Declared unmet
 - **Backend version-pinning is declared UNMET** (§1.3): faBolus still consumes PumpX2Kit by
