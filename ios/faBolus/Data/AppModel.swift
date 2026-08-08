@@ -26,13 +26,6 @@ public final class AppModel {
     private var lastGlucoseIngest = Date.distantPast
     private var lastBolusIngest = Date.distantPast
 
-    // Predictive-low (GlucoseIntelligenceKit) — advisory, gated by AppSettings.hypoAlertsEnabled.
-    #if FABOLUS_NUDGE
-    private let hypoEngine = SmartAssist.makeHypoEngine()
-    #endif
-    private var lastHypoIngest = Date.distantPast
-    private(set) var hypoWarning: HypoAlert?
-
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
     @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
     @ObservationIgnored private var lastEatingConfig: Data?
@@ -866,25 +859,6 @@ public final class AppModel {
         history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
     }
 
-    private var hypoDelegateSet = false
-    /// Feed new readings to the predictive-low engine; it publishes via the delegate below (advisory).
-    private func updateHypoWarning() {
-        #if FABOLUS_NUDGE
-        guard AppSettings.shared.hypoAlertsEnabled else { hypoWarning = nil; return }
-        if !hypoDelegateSet { hypoEngine.delegate = self; hypoDelegateSet = true }
-        let fresh = glucoseHistory.filter { $0.date > lastHypoIngest }.sorted { $0.date < $1.date }
-        for r in fresh {
-            hypoEngine.ingest(GlucoseIntelligenceKit.CGMReading(mgdl: Double(r.mgdl), date: r.date))
-        }
-        lastHypoIngest = fresh.last?.date ?? lastHypoIngest
-        if let w = hypoWarning, Date().timeIntervalSince(w.at) > Double(w.horizonMinutes) * 60 {
-            hypoWarning = nil   // expire past its horizon
-        }
-        #else
-        hypoWarning = nil
-        #endif
-    }
-
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) {
@@ -964,14 +938,6 @@ public final class AppModel {
         if let d = try? JSONEncoder().encode(alertIntel) { UserDefaults.standard.set(d, forKey: "alertIntel") }
     }
     #endif
-    /// User dismissed the predictive-low banner → teach the fatigue layer + clear it.
-    public func dismissHypoWarning() {
-        #if FABOLUS_NUDGE
-        alertIntel.record("predicted_low", .dismissed); saveAlertIntel()
-        #endif
-        hypoWarning = nil
-    }
-
     /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
     /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
     private func updateEatingNudge() {
@@ -1114,7 +1080,6 @@ public final class AppModel {
                                 bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason)
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
-        updateHypoWarning()
         maybeBackfillNightscout()
         updateEatingNudge()
         evaluateSavePinOffer()
@@ -2068,20 +2033,3 @@ public final class AppModel {
     }
 }
 
-// Predictive-low engine callback (advisory). `ingest` is only ever called on the main actor (from
-// refresh), so the delegate fires on main — assumeIsolated publishes synchronously without a cross-actor send.
-#if FABOLUS_NUDGE
-extension AppModel: GlucoseIntelligenceDelegate {
-    nonisolated public func glucoseIntelligence(_ g: GlucoseIntelligence, didPredictLow warning: HypoWarning) {
-        let alert = HypoAlert(horizonMinutes: warning.horizonMinutes, probability: warning.probability,
-                              projectedLowMgdl: warning.projectedLowMgdl, at: warning.at,
-                              nocturnal: warning.nocturnal)
-        Task { @MainActor in
-            // Learned fatigue layer: rate-limit / quiet-hours / auto-quiet a kind the user keeps dismissing.
-            let decision = self.alertIntel.decide(AlertIntelligenceKit.Alert(kind: "predicted_low", severity: 2))
-            if case .suppress = decision { return }
-            self.hypoWarning = alert
-        }
-    }
-}
-#endif

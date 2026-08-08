@@ -2,7 +2,6 @@ import Foundation
 import faBolusCore
 #if FABOLUS_NUDGE
 import DosingSafetyKit
-import GlucoseIntelligenceKit
 import TherapyInsightsKit
 #endif
 
@@ -14,22 +13,6 @@ struct EatingAlert: Sendable, Equatable {
         estimatedCarbs > 0
             ? "Looks like you're eating (~\(Int(estimatedCarbs))g). Bolus?"
             : "Looks like you might be eating. Bolus?"
-    }
-}
-
-/// A Sendable, faBolus-local view of a predictive-low warning (so it can cross actor isolation and drive
-/// the UI without coupling stored state to the SDK's type).
-struct HypoAlert: Sendable, Equatable {
-    let horizonMinutes: Int
-    let probability: Double
-    let projectedLowMgdl: Double?
-    let at: Date
-    let nocturnal: Bool
-    var message: String {
-        if let low = projectedLowMgdl {
-            return "Low likely within ~\(horizonMinutes) min (projected ~\(Int(low)) mg/dL)."
-        }
-        return "Low likely within ~\(horizonMinutes) min."
     }
 }
 
@@ -61,13 +44,6 @@ enum SmartAssist {
             DosingSafetyKit.GlucoseSample(mgdl: Double($0.mgdl), date: $0.date)
         }
         return safety.evaluateBolus(proposal, recentDoses: doses, recentGlucose: cgm)
-    }
-
-    // MARK: Predictive-low (GlucoseIntelligenceKit)
-
-    /// A stateful hypo engine (heuristic — no model file needed). Feed new readings via `ingest`.
-    static func makeHypoEngine() -> GlucoseIntelligence {
-        GlucoseIntelligence(predictor: HeuristicHypoPredictor(lowThreshold: 70, horizonSteps: 6))
     }
 
     // MARK: Retrospective insights (TherapyInsightsKit)
