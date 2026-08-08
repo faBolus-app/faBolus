@@ -121,4 +121,38 @@ final class RemoteBolusLedgerTests: XCTestCase {
         var reloaded = store2.load()
         XCTAssertEqual(reloaded.begin(peerId: "peer", requestId: "x", doseKey: key(nil, 30, 120)), .duplicateInFlight)
     }
+
+    // MARK: - F1 (§13): at-rest protection is AfterFirstUnlock, NEVER .complete
+
+    /// The load-bearing safety choice: the durable ledger MUST stay readable at a locked background
+    /// relaunch (crash-recovery / reconciliation of an in-flight delivery). So it is written with
+    /// `completeUntilFirstUserAuthentication`, and never with `.completeFileProtection` (which locks the
+    /// file whenever the device locks and would break reconciliation).
+    func testLedgerFileProtectionIsAfterFirstUnlockNotComplete() {
+        XCTAssertTrue(RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtectionUntilFirstUserAuthentication),
+                      "ledger must be protected at AfterFirstUnlock")
+        XCTAssertFalse(RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtection),
+                       ".complete would make the ledger unreadable at a locked relaunch and break reconciliation")
+    }
+
+    /// A save writes a real file and a fresh store round-trips it (the write options — atomic +
+    /// AfterFirstUnlock — do not prevent read-back).
+    func testProtectedSaveRoundTripsAndFileExists() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ledger-prot-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("l.json")
+        let store = RemoteBolusLedgerStore(url: url)
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
+        l.settle(peerId: "watch", requestId: "r1", status: "delivered", message: nil, deliveredUnits: 2.0)
+        try store.save(l)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let outcome = RemoteBolusLedgerStore(url: url).loadOutcome()
+        XCTAssertFalse(outcome.failedClosed)
+        var reloaded = outcome.ledger
+        XCTAssertEqual(reloaded.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
+                       .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+    }
 }

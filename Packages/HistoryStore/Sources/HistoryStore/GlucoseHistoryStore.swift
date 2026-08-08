@@ -21,6 +21,24 @@ public final class GlucoseHistoryStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
                                        configurations: config)
+        if !inMemory { Self.pinFileProtection(storeURL: config.url) }
+    }
+
+    /// F1 (§13) — pin the on-disk SwiftData store (and its `-wal` / `-shm` siblings) to
+    /// `completeUntilFirstUserAuthentication`: encrypted at rest, still readable at a locked background
+    /// relaunch when the pump/CGM sync writes new history. Deliberately NOT `.complete` (which would lock
+    /// history writes/reads whenever the device locks). New files created later inherit iOS's default
+    /// protection class, which is also `CompleteUntilFirstUserAuthentication`; this pins existing files
+    /// explicitly. Best-effort: platforms without file protection (the Simulator) silently no-op.
+    private static func pinFileProtection(storeURL: URL) {
+        let fm = FileManager.default
+        let attrs: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        for url in [storeURL,
+                    URL(fileURLWithPath: storeURL.path + "-wal"),
+                    URL(fileURLWithPath: storeURL.path + "-shm")]
+        where fm.fileExists(atPath: url.path) {
+            try? fm.setAttributes(attrs, ofItemAtPath: url.path)
+        }
     }
 
     // MARK: Ingest

@@ -70,6 +70,9 @@ struct SettingsView: View {
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
+                        NavigationLink { PrivacyDataView(model: model) } label: {
+                            Label("Privacy & data", systemImage: "hand.raised")
+                        }
                         #if FABOLUS_NUDGE
                         NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
                             Label(settings.eatingNudgesEnabled

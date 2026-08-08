@@ -22,6 +22,10 @@ final class ConnectionTelemetryStore {
     var enabled: Bool { store.bool(forKey: NotificationRuntime.telemetryEnabledKey) }
     var snapshot: ConnectionTelemetry { Self.load(store, key) }
 
+    /// F1 (§13) — erase the accumulated diagnostics blob (for "Delete all on-device data"). Leaves the
+    /// opt-in flag alone: that's a preference the user set, not health/diagnostics DATA.
+    func clearStoredData() { store.removeObject(forKey: key) }
+
     // MARK: recorders (all no-ops unless opted in)
 
     /// The pump link came up: count the connect and start the uptime clock.
