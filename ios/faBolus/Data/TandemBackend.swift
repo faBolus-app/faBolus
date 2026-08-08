@@ -511,12 +511,15 @@ public final class TandemBackend: NSObject, PumpBackend {
             // the op-115↔op-109 CROSS-CHECK DIVERGENCE case breaks that assumption: right after a bolus,
             // op-109 (swan6hrIOB) can still read LOW while op-115 already reflects the delivery. Subtracting
             // the lower op-109 there would size a LARGER correction than a confirmed-fresh read — insulin
-            // stacking, the exact hazard the DIF-core divergence block prevents. So when the owner accepts
-            // the IOB override AND the two reads disagree, subtract the LARGER of the two, so the override can
-            // never subtract LESS active insulin than either pump read implies (dose ≤ a confirmed-fresh
-            // read). Pure-age staleness keeps the authoritative op-109 value.
+            // stacking, the exact hazard the DIF-core divergence block prevents. So WHENEVER a correction is
+            // being applied off cached inputs AND the two IOB reads disagree, subtract the LARGER of the two,
+            // so the override can never subtract LESS active insulin than either pump read implies (dose ≤ a
+            // confirmed-fresh read). This is keyed on the LIVE divergence — not the compose-time
+            // `allowStaleIob` flag — because divergence can first appear at the deliver-time recompute (a
+            // therapy-only override whose IOB was fresh at compose but diverged when a bolus/Control-IQ
+            // correction landed before deliver). Pure-age staleness with agreeing reads keeps op-109.
             var overrideProfile = assumed
-            if allowStaleIob, let s = calcSnapshot {
+            if let s = calcSnapshot {
                 let op115Iob = Double(s.iob) / 1000.0
                 if abs(op115Iob - snapshot.iobUnits) > Self.iobCrossCheckEpsilonUnits {
                     overrideProfile = BolusMath.Profile(carbRatioGramsPerUnit: assumed.carbRatioGramsPerUnit,

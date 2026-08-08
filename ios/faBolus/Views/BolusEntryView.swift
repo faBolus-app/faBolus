@@ -547,7 +547,11 @@ struct BolusEntryView: View {
         acceptedOverride = nil
         preparingDeliver = true
         defer { preparingDeliver = false }
-        if mode == .carbs, bgSource == .cgm, carbs > 0 {
+        // Every CGM-sourced carbs-mode bolus routes here — meal+correction AND correction-only (carbs == 0).
+        // A correction-only dose is still a BG correction off the CGM, so it MUST get the same deliver-time
+        // fresh read + stale-CGM three-way as a meal bolus; gating this on `carbs > 0` previously let a
+        // correction-only bolus (and a correction-only override) dose off a stale on-screen CGM value.
+        if mode == .carbs, bgSource == .cgm {
             let justChanged = lastCGMChangeAt.map { Date().timeIntervalSince($0) <= 2 } ?? false
             // Divergence baseline: for an accepted override it's the dose the warned button showed (off the
             // compose-time BG); otherwise the on-screen `units`. Either way the guard fires on a real CGM
@@ -600,15 +604,19 @@ struct BolusEntryView: View {
             }
             return
         }
-        // No CGM-correction handling here: UNITS mode, manual BG, or carbs with no BG. In carbs mode with an
-        // accepted override, deliver the override dose recomputed off the on-screen (manual/absent) BG +
-        // last-known inputs — no CGM staleness to guard, since the BG is user-entered or absent. Otherwise
-        // (UNITS mode, or a verified carbs dose off manual BG) freeze the on-screen values as-is — in UNITS
-        // mode that is exactly the number the user dialed.
+        // No CGM-correction handling here: UNITS mode, or carbs mode with a manual/absent BG (bgSource !=
+        // .cgm) — every CGM-sourced carbs dose took the branch above. In carbs mode with an accepted
+        // override, deliver the override dose off the on-screen (manual/absent, so never "stale") BG +
+        // last-known inputs, but NEVER MORE than the dose the warned button showed (`ov.baseline`, what the
+        // owner consented to): a routine IOB poll landing between the button and accept must not silently
+        // inflate the correction (op-109 decays → less IOB subtracted → a larger recompute). Delivering
+        // min(baseline, fresh) never over-delivers vs either the consent or a fresh read (and the recompute
+        // carries the divergence-max IOB guard). Otherwise (UNITS mode, or a verified carbs dose off manual
+        // BG) freeze the on-screen values as-is — in UNITS mode that is exactly the number the user dialed.
         if mode == .carbs, let ov {
             let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
                                                  allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
-            await deliverFrozen(freeze(units: rec.recommendedUnits, bg: Int(bg), extended: extended))
+            await deliverFrozen(freeze(units: min(ov.baseline, rec.recommendedUnits), bg: Int(bg), extended: extended))
         } else {
             await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
         }

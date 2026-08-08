@@ -189,6 +189,23 @@ struct DosingInputFreshnessTests {
         #expect(abs(rec.recommendedUnits - 4.0) < 0.0001)
     }
 
+    /// The conservative-max IOB guard must be keyed on the LIVE divergence, NOT the compose-time
+    /// `allowStaleIob` flag: a THERAPY-only override (`allowStaleIob:false, allowStaleTherapy:true`) whose IOB
+    /// reads diverge (op-109 lags LOW after a bolus/Control-IQ correction) must STILL subtract the larger
+    /// op-115, or it would size a correction off the too-low op-109 and stack. Pins that the guard fires with
+    /// allowStaleIob == false.
+    @Test func tandemTherapyOnlyOverrideStillSubtractsTheLargerIobOnDivergence() async {
+        let (b, _) = makeBackend()
+        b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1000))          // op-109 = 1.0 U (lagging)
+        b.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(
+            iobMilliunits: 4000, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))  // op-115 = 4.0 U
+        let rec = await b.recommendBolus(carbsGrams: 40, bgMgdl: 220, allowStaleIob: false, allowStaleTherapy: true)
+        #expect(rec.inputsVerified == false)
+        // Same conservative result as the allowStaleIob case: max(1.0, 4.0) = 4.0 fully offsets the 2.75
+        // correction → carbs-only 4.0 U. Keyed on the divergence, not the flag, so it holds here too.
+        #expect(abs(rec.recommendedUnits - 4.0) < 0.0001)
+    }
+
     // MARK: - AppModel: the divergence guard now catches an INPUT change between compose and deliver
 
     private func makeModel(connected: Bool) async -> (AppModel, MockBackend, AppModelBehaviorTests.EchoRecorder) {
