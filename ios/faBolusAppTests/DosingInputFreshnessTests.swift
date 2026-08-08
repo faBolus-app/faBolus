@@ -112,6 +112,30 @@ struct DosingInputFreshnessTests {
         #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 g/U, carbs-only (correction dropped)
     }
 
+    /// DIF-core per-attempt proof is COALESCING-AWARE (no spurious fail-closed on overlapping composes). The
+    /// bolus screen fires `recommendBolus` on every keystroke, so a second compose routinely JOINS an
+    /// already-in-flight `refreshCalcInputsConfirmed()` read — and can start AFTER the first of the two
+    /// frames has already been received. Here op-109 lands while only the initiator exists, THEN the joiner
+    /// starts, THEN op-115 completes the read: both callers must verify, because the read they both
+    /// participated in got both frames. A wall-clock "the stamp must post-date MY composeStart" proof would
+    /// wrongly fail the joiner closed (op-109's stamp predates the joiner's start); the confirmation-return
+    /// proof does not. This is the exact false-block the adversarial review flagged.
+    @Test func coalescedJoinerVerifiesEvenWhenItStartsAfterTheFirstFrame() async {
+        let (b, _) = makeBackend()               // testTransport init leaves it `.connected`
+        b.calcInputRefreshTimeout = 5            // ensure the timeout never wins the race in-test
+        let t1 = Task { await b.recommendBolus(carbsGrams: 30, bgMgdl: 120) }   // initiator starts the read
+        await Task.yield(); await Task.yield()   // t1 now in-flight (op-115+op-109 requests sent, suspended)
+        b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1400))   // FIRST frame (op-109)
+        let t2 = Task { await b.recommendBolus(carbsGrams: 30, bgMgdl: 120) }   // JOINER starts AFTER op-109's stamp
+        await Task.yield(); await Task.yield()   // t2 coalesces onto the same in-flight read
+        b.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(       // SECOND frame (op-115) completes it
+            iobMilliunits: 1400, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))
+        let r1 = await t1.value
+        let r2 = await t2.value
+        #expect(r1.inputsVerified == true)   // initiator verified
+        #expect(r2.inputsVerified == true)   // JOINER verified too, despite starting after op-109 (the fix)
+    }
+
     // MARK: - MockBackend spy: recommendBolus forces the fresh calc-input read
 
     /// The dose path forces a fresh op-115 + op-109 read (the mock's `refreshCalcInputsNow`) BEFORE building

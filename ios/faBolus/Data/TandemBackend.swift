@@ -234,8 +234,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     // DIF-core single-flight for the calc inputs (modeled on the glucose one above). Concurrent callers
     // coalesce onto ONE in-flight op-115 + op-109 read and are all resumed exactly once when BOTH frames
     // arrive, on timeout, or on disconnect. `calcInputGotIob`/`calcInputGotTherapy` track which of the two
-    // frames has landed since the read began; the generation tag makes a stale timeout a no-op.
-    private var calcInputWaiters: [CheckedContinuation<Void, Never>] = []
+    // frames has landed since the read began; the generation tag makes a stale timeout a no-op. Each waiter
+    // is resumed with a Bool = "did BOTH frames confirm for the read I participated in" — the per-attempt
+    // freshness proof `recommendBolus` gates on. This is coalescing-aware (a joiner gets the SAME result as
+    // the in-flight read it joined, not a wall-clock compare against its own start) and clock-free.
+    private var calcInputWaiters: [CheckedContinuation<Bool, Never>] = []
     private var calcInputReadGeneration = 0
     private var calcInputReadInFlight = false
     private var calcInputGotIob = false
@@ -419,36 +422,26 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-        // DIF-core: the AUTHORITATIVE recommendation is built from inputs proven fresh THIS compose. Capture
-        // the compose-start instant, force a bounded op-115 (CR/ISF/target/max, resolved for the active
-        // profile+segment) + op-109 (IOB) read, then require BOTH receive-stamps to POST-DATE composeStart —
-        // proof the pump actually answered during this attempt, not merely that a routine-poll value is still
-        // inside the display window. On a SUCCESSFUL read this structurally kills the clinician-edit /
-        // profile-segment-boundary / profile-switch hazards (the fresh op-115 frame is a self-consistent set
-        // for the current segment); on a timed-out / disconnected read it does NOT degrade to the in-window
-        // cache — it fails closed. Coalesced + bounded, never hangs.
-        let composeStart = Date()
-        await refreshCalcInputsNow()
+        // DIF-core: the AUTHORITATIVE recommendation is built from inputs proven fresh THIS compose. Force a
+        // bounded op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read
+        // and gate on its CONFIRMATION — whether both frames were actually received by the read this compose
+        // participated in — rather than a wall-clock stamp comparison. On a SUCCESSFUL read this structurally
+        // kills the clinician-edit / profile-segment-boundary / profile-switch hazards (the fresh op-115
+        // frame is a self-consistent set for the current segment); on a timed-out / disconnected read it does
+        // NOT degrade to the in-window cache — it fails closed. Coalescing-aware and clock-free, so an
+        // overlapping (keystroke-triggered) compose that joins the in-flight read verifies correctly and a
+        // backward clock step cannot make a stale value look fresh. Coalesced + bounded, never hangs.
+        let inputsFreshThisAttempt = await refreshCalcInputsConfirmed()
 
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
         let now = Date()
         rec.iobDate = snapshot.iobDate
         rec.therapyParamsDate = snapshot.therapyParamsDate
+        // Window staleness drives the DISPLAY (grey/age) and DIF-ux, not the fail-closed gate above.
         rec.iobStale = snapshot.isIobStale(now: now)
         rec.therapyStale = snapshot.isTherapyStale(now: now)
         let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
-
-        // PER-ATTEMPT freshness proof (the authoritative gate). A read is confirmed only if its op-109 /
-        // op-115 receive-stamp post-dates composeStart, i.e. the pump answered DURING this compose. A nil or
-        // pre-composeStart stamp (the fire-and-forget refresh timed out and left the last routine-poll value
-        // untouched) is NOT confirmed → fail closed, even when that stale value is still inside the display
-        // window `isIobStale`/`isTherapyStale` measure. Stamps only ever move forward (set to `Date()` on
-        // arrival), so this is immune to any interleaving refresh; a backward clock skew only ever makes it
-        // MORE conservative (a genuinely-fresh stamp read as older than composeStart → fail closed).
-        let iobFreshThisAttempt = (snapshot.iobDate.map { $0 >= composeStart }) ?? false
-        let therapyFreshThisAttempt = (snapshot.therapyParamsDate.map { $0 >= composeStart }) ?? false
-        let inputsFreshThisAttempt = iobFreshThisAttempt && therapyFreshThisAttempt
 
         // Cross-check the op-115 `iob` against the op-109 `swan6hrIOB` the dose uses (owner decision 3): a
         // mismatch beyond epsilon means the two pump reads of active insulin disagree, so we can't trust
@@ -523,19 +516,33 @@ public final class TandemBackend: NSObject, PumpBackend {
         for w in waiters { w.resume() }
     }
 
-    /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read and wait (bounded) for BOTH,
-    /// so an authoritative dose is reconstructed from fresh, self-consistent pump inputs rather than the
-    /// ~10-min-stale cache. Single-flight (audit C-05, modeled on `refreshGlucoseNow`): concurrent callers
-    /// coalesce onto one read; all resume exactly once when both frames arrive, on timeout, or on
-    /// disconnect. Never hangs — the safety timeout guarantees resumption. When either frame fails to
-    /// arrive, its `snapshot.iobDate` / `therapyParamsDate` simply stays where it was (an earlier
-    /// routine-poll instant, never re-stamped), so `recommendBolus`'s per-attempt check sees a stamp that
-    /// does NOT post-date its `composeStart` and fails closed — the in-window cache is not silently reused.
+    /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read (public entry point for a
+    /// display refresh; the confirmation result is only needed by `recommendBolus`, which calls the
+    /// `-Confirmed` variant directly).
     public func refreshCalcInputsNow() async {
-        guard snapshot.connection == .connected else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        _ = await refreshCalcInputsConfirmed()
+    }
+
+    /// DIF-core per-attempt freshness proof. Forces a fresh op-115 + op-109 read and waits (bounded) for
+    /// BOTH, then RETURNS whether both frames were confirmed by the read this call participated in.
+    /// Single-flight (audit C-05, modeled on `refreshGlucoseNow`): concurrent callers coalesce onto one
+    /// read; all resume exactly once — with the SAME confirmation Bool — when both frames arrive, on
+    /// timeout, or on disconnect. Never hangs (the safety timeout guarantees resumption).
+    ///
+    /// The returned Bool — not a wall-clock stamp comparison — is the authoritative gate, which fixes two
+    /// hazards a `Date()`-based proof had: (1) a compose that JOINS an in-flight read gets that read's real
+    /// outcome, so a healthy pump that answered both frames verifies even for the joiner (no spurious
+    /// fail-closed on every keystroke-triggered overlapping compose); (2) there is no clock in the proof,
+    /// so a backward wall-clock step can't make a stale value look freshly confirmed. `false` (⇒ fail
+    /// closed) when not connected, on timeout (a frame never arrived), or on disconnect. `calcInputGotIob`/
+    /// `calcInputGotTherapy` count only genuinely-received parsed frames (set in the op-109/op-115 handlers
+    /// via `noteCalcInputArrived`), so a cache can never satisfy the proof.
+    @discardableResult
+    func refreshCalcInputsConfirmed() async -> Bool {
+        guard snapshot.connection == .connected else { return false }
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             calcInputWaiters.append(cont)
-            if calcInputReadInFlight { return }   // join the in-flight read
+            if calcInputReadInFlight { return }   // join the in-flight read; resumed with its result
             calcInputReadInFlight = true
             calcInputGotIob = false
             calcInputGotTherapy = false
@@ -553,19 +560,23 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Record that one of the two calc-input frames arrived since the read began; complete once BOTH have.
-    /// A no-op when no `refreshCalcInputsNow` is in flight (routine polling also delivers these frames).
+    /// A no-op when no read is in flight (routine polling also delivers these frames). Only fires from the
+    /// op-109/op-115 delegate handlers on a genuinely-received frame — never from cache.
     private func noteCalcInputArrived(iob: Bool) {
         guard calcInputReadInFlight else { return }
         if iob { calcInputGotIob = true } else { calcInputGotTherapy = true }
         if calcInputGotIob && calcInputGotTherapy { completeCalcInputRead() }
     }
 
-    /// Resume every coalesced calc-input waiter exactly once (both frames, timeout, or disconnect).
+    /// Resume every coalesced calc-input waiter exactly once, with the read's confirmation (both frames
+    /// arrived ⇒ true; timeout/disconnect ⇒ at least one flag false ⇒ false). The value is captured BEFORE
+    /// the reset so a subsequent read cannot race it.
     private func completeCalcInputRead() {
         calcInputReadInFlight = false
+        let confirmed = calcInputGotIob && calcInputGotTherapy
         let waiters = calcInputWaiters
         calcInputWaiters.removeAll()
-        for w in waiters { w.resume() }
+        for w in waiters { w.resume(returning: confirmed) }
     }
 
     /// Delivers a standard bolus via the validated signed path. Raises the write policy to
