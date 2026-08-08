@@ -38,15 +38,11 @@ public enum StaleIobChoice: String, Sendable, Codable, CaseIterable {
 
 public enum StaleIobPrompt {
 
-    /// Whether to show the two-way IOB warning before composing. Only when the IOB read is stale (past the
-    /// `CalcInputFreshness.staleAfterIob` window) or its age is unknown at compose time — a nil date is
-    /// unknown-age ⇒ stale ⇒ warn (fail-closed). A fresh IOB read composes normally.
-    public static func shouldWarn(iobDate: Date?, now: Date = Date()) -> Bool {
-        CalcInputFreshness.isIobStale(iobDate, now: now)
-    }
-
-    /// Whether a chosen path should compose and send a dose at all. `false` only for `cancel`.
-    public static func proceeds(_ choice: StaleIobChoice) -> Bool { choice != .cancel }
+    // NOTE: the deliver-time DECISION of whether to warn — and which two-way prompt — is NOT here; it is the
+    // pure, unit-tested `CalcInputGate.decide` (keyed on the recommendation's `inputsVerified`/`iobStale`/
+    // `therapyStale`, the values the compose actually produced). This enum only owns the shared WARNING COPY
+    // so every surface reads identically. (Earlier `shouldWarn`/`proceeds` helpers here were unused by any
+    // production path and were removed — they had tests that gave false confidence they were the gate.)
 
     /// Shared warning lead every surface shows (each renders its own two buttons around it), naming the
     /// last-known IOB, its age, and — critically — that it will be SUBTRACTED (never zeroed), so the framing
@@ -72,14 +68,8 @@ public enum StaleTherapyChoice: String, Sendable, Codable, CaseIterable {
 
 public enum StaleTherapyPrompt {
 
-    /// Whether to show the two-way therapy warning before composing. Only when the therapy-params read is
-    /// stale (past `CalcInputFreshness.staleAfterTherapy`) or its age is unknown at compose time. Nil ⇒ stale.
-    public static func shouldWarn(therapyDate: Date?, now: Date = Date()) -> Bool {
-        CalcInputFreshness.isTherapyStale(therapyDate, now: now)
-    }
-
-    /// Whether a chosen path should compose and send a dose at all. `false` only for `cancel`.
-    public static func proceeds(_ choice: StaleTherapyChoice) -> Bool { choice != .cancel }
+    // The warn/which-prompt decision lives in the pure `CalcInputGate.decide` (see StaleIobPrompt note);
+    // this enum only owns the shared warning COPY. (Unused `shouldWarn`/`proceeds` helpers removed.)
 
     /// Shared warning lead every surface shows. Names the last-known CR/ISF/target and their age when the
     /// profile is available (so the user sees exactly what the dose will be sized from); a compact fallback

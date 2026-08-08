@@ -30,36 +30,10 @@ struct StaleCalcInputPromptTests {
         #expect(StaleTherapyChoice.allCases.count == 2)
     }
 
-    // MARK: - shouldWarn: stale / unknown-age warns; fresh does not; future is stale
-
-    @Test func iobShouldWarnOnlyWhenStaleOrUnknownOrFuture() {
-        let fresh = now.addingTimeInterval(-10)              // 10 s old — fresh
-        let stale = now.addingTimeInterval(-24 * 3600)       // 24 h old — stale
-        let future = now.addingTimeInterval(60 * 60)         // 1 h ahead — beyond the 5-min future skew
-        #expect(!StaleIobPrompt.shouldWarn(iobDate: fresh, now: now))
-        #expect(StaleIobPrompt.shouldWarn(iobDate: stale, now: now))
-        #expect(StaleIobPrompt.shouldWarn(iobDate: future, now: now))
-        #expect(StaleIobPrompt.shouldWarn(iobDate: nil, now: now))   // unknown age ⇒ stale ⇒ warn (fail-closed)
-    }
-
-    @Test func therapyShouldWarnOnlyWhenStaleOrUnknownOrFuture() {
-        let fresh = now.addingTimeInterval(-10)
-        let stale = now.addingTimeInterval(-24 * 3600)
-        let future = now.addingTimeInterval(60 * 60)
-        #expect(!StaleTherapyPrompt.shouldWarn(therapyDate: fresh, now: now))
-        #expect(StaleTherapyPrompt.shouldWarn(therapyDate: stale, now: now))
-        #expect(StaleTherapyPrompt.shouldWarn(therapyDate: future, now: now))
-        #expect(StaleTherapyPrompt.shouldWarn(therapyDate: nil, now: now))
-    }
-
-    // MARK: - proceeds: only cancel does not proceed
-
-    @Test func onlyCancelDoesNotProceed() {
-        #expect(StaleIobPrompt.proceeds(.includeLastKnownIob))
-        #expect(!StaleIobPrompt.proceeds(.cancel))
-        #expect(StaleTherapyPrompt.proceeds(.useLastKnownSettings))
-        #expect(!StaleTherapyPrompt.proceeds(.cancel))
-    }
+    // NOTE: the WARN / which-prompt decision is pinned by `CalcInputGateTests` (the pure gate the production
+    // deliver path actually calls). This suite covers only the shared choice shape + warning COPY. The
+    // former `shouldWarn`/`proceeds` tests were removed with those unused helpers — they tested logic no
+    // production path invoked, which was false confidence.
 
     // MARK: - Warning copy names the SUBTRACT framing (never "ignore/zero the IOB")
 

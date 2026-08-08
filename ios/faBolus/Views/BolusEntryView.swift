@@ -56,9 +56,8 @@ struct BolusEntryView: View {
     /// override(s) the "use / include" button applies. Per-attempt — reset on every recompute
     /// (`calculate()`), never sticky, never default-selected. Replaces the FB-01 single assumed-ack gate.
     private struct CalcInputPrompt: Identifiable {
-        enum Kind { case iob, therapy, both }
         let id = UUID()
-        let kind: Kind
+        let kind: CalcInputGate.Kind   // pure, unit-tested gate decision (faBolusCore)
         let extended: Bool
         let overrideUnits: Double          // dose recomputed with the accepted override(s) applied
         let allowStaleIob: Bool
@@ -518,38 +517,28 @@ struct BolusEntryView: View {
     /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
     /// stale on-screen value.
     private func attemptDeliver(extended: Bool) async {
-        // DIF-ux: gate on `!inputsVerified` FIRST (BEFORE the CGM re-check), so the unconfirmed-but-in-window
-        // case — `iobStale == therapyStale == false` yet `inputsVerified == false` — is still caught and can
-        // never silently deliver. Present the WARNED two-way override, keyed on WHICH input(s) were
-        // unconfirmed: therapy-only → use-last-known-settings; IOB-only → include-last-known-IOB; both, OR
-        // neither flag but still unverified → the unified use-last-known override (both flags). `cancel`
-        // sends nothing. Accepting sets `acceptedOverride` and RE-ENTERS this method, which then runs the
-        // full deliver-time machinery below (fresh-CGM refresh + divergence guard + Addendum-B stale-CGM
-        // three-way) with the override threaded in. Remotes never reach this — they fail closed in
-        // `resolveRemoteDose`.
-        // The gate fires ONLY in carbs-calculator mode, where the dose comes from the recommendation. In UNITS mode
-        // the delivered amount is the number the user dialed, not a recommendation, so a lingering unverified
-        // carb recommendation must never divert it into a carb-calc dose. Skip the gate once an override was
-        // already accepted for this attempt (re-entry). The unconfirmed-but-in-window case
-        // (`iobStale == therapyStale == false` yet `!inputsVerified`) is still caught. `cancel` sends nothing.
-        if mode == .carbs, let rec = recommendation, !rec.inputsVerified,
-           acceptedOverride == nil, calcInputPrompt == nil {
-            let kind: CalcInputPrompt.Kind
-            let allowIob: Bool, allowTherapy: Bool
-            if rec.therapyStale && !rec.iobStale {
-                kind = .therapy; allowIob = false; allowTherapy = true
-            } else if rec.iobStale && !rec.therapyStale {
-                kind = .iob; allowIob = true; allowTherapy = false
-            } else {
-                kind = .both; allowIob = true; allowTherapy = true   // both stale, or neither-flag-but-!verified
-            }
+        // DIF-ux: the deliver-time gate is the PURE, unit-tested `CalcInputGate.decide` (faBolusCore) — no
+        // gating logic lives inline here anymore. It fires ONLY in carbs mode, keys on `!inputsVerified`
+        // BEFORE any staleness flag (so the unconfirmed-but-in-window case is caught → `.both`), and skips
+        // once an override was accepted this attempt (re-entry). A Units-mode dose is the number the user
+        // dialed — a carbs-calc dose can't reach here, it's cleared on the mode switch. `.prompt` shows the
+        // WARNED two-way override; accepting sets `acceptedOverride` and RE-ENTERS this method, which runs
+        // the full deliver-time machinery below (fresh-CGM refresh + divergence guard + Addendum-B stale-CGM
+        // three-way) with the override threaded in. `cancel` sends nothing. Remotes never reach this — they
+        // fail closed in `resolveRemoteDose`.
+        if let rec = recommendation, calcInputPrompt == nil,
+           case let .prompt(kind) = CalcInputGate.decide(isCarbsMode: mode == .carbs,
+                                                         inputsVerified: rec.inputsVerified,
+                                                         iobStale: rec.iobStale, therapyStale: rec.therapyStale,
+                                                         overrideAccepted: acceptedOverride != nil) {
             // Precompute the override dose off last-known values + the on-screen BG so the button shows the
             // estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time recompute
-            // below off FRESH CGM, so a CGM move since compose is still caught by the divergence guard.
+            // below (CGM path: fresh-read + divergence guard) or the min(baseline, fresh) cap (manual-BG
+            // path), so drift since compose is still caught.
             let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
-                                                 allowStaleIob: allowIob, allowStaleTherapy: allowTherapy)
+                                                 allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
             calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
-                                              allowStaleIob: allowIob, allowStaleTherapy: allowTherapy,
+                                              allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
                                               iobUnits: rec.iobUnits, iobDate: rec.iobDate,
                                               assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
             return
@@ -629,7 +618,8 @@ struct BolusEntryView: View {
         if mode == .carbs, let ov {
             let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
                                                  allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
-            await deliverFrozen(freeze(units: min(ov.baseline, rec.recommendedUnits), bg: Int(bg), extended: extended))
+            let capped = CalcInputGate.overrideDeliverUnits(baseline: ov.baseline, freshRecompute: rec.recommendedUnits)
+            await deliverFrozen(freeze(units: capped, bg: Int(bg), extended: extended))
         } else {
             await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
         }
