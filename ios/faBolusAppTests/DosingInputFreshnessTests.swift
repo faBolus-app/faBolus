@@ -77,6 +77,7 @@ struct DosingInputFreshnessTests {
         #expect(rec.inputsVerified == false)          // BLOCKED (DIF-core interim, pre DIF-ux)
         #expect(rec.iobStale)                         // op-109 never arrived → stale
         #expect(rec.therapyStale)                     // op-115 never arrived → stale
+        #expect(rec.therapyUnavailable)               // op-115 NEVER arrived → hardcoded guess → DIF-ux blocks (cancel-only)
         #expect(rec.assumedProfile != nil)            // the assumed profile the UI must confirm
         #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 (assumed CR), carbs-only
     }
@@ -161,6 +162,7 @@ struct DosingInputFreshnessTests {
             iobMilliunits: 1000, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))
         let rec = await b.recommendBolus(carbsGrams: 40, bgMgdl: 220, allowStaleIob: true, allowStaleTherapy: true)
         #expect(rec.inputsVerified == false)   // an override dose is NEVER verified
+        #expect(!rec.therapyUnavailable)       // op-115 WAS read (real last-known) → override is offerable, not blocked
         // 40 g / 10 (CR) + (220 − 110)/40 (ISF) − 1.0 (last-known IOB) = 4.0 + 2.75 − 1.0 = 5.75 U.
         #expect(abs(rec.recommendedUnits - 5.75) < 0.0001)
         // Without the override the same state is carbs-only (BG correction dropped) → 4.0 U.

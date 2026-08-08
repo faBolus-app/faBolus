@@ -494,6 +494,10 @@ public final class TandemBackend: NSObject, PumpBackend {
             }
             rec.inputsVerified = false
             rec.assumedProfile = assumed
+            // DIF-ux: flag when `assumed` is the HARDCODED fallback (op-115 never arrived) vs the pump's real
+            // last-known therapy. The warned "use last-known settings" override is only honest/safe in the
+            // latter case; the former must block (a carb dose off a guessed CR could be a multiple-dose).
+            rec.therapyUnavailable = !haveLastKnownTherapy
             // DIF-ux warned override (HOST-OWNER ONLY; remotes always pass false,false → carbs-only/blocked).
             // When the owner has explicitly accepted using LAST-KNOWN inputs for THIS attempt, compute the
             // FULL dose off those cached values WITH `bgMgdl` (correction retained) — still

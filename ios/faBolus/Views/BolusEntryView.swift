@@ -79,6 +79,10 @@ struct BolusEntryView: View {
     /// never sticky. Remotes never reach any of this (they fail closed in `resolveRemoteDose`).
     private struct AcceptedOverride { let allowStaleIob: Bool; let allowStaleTherapy: Bool; let baseline: Double }
     @State private var acceptedOverride: AcceptedOverride?
+    /// DIF-ux: the pump never reported its bolus settings this attempt (`BolusRecommendation.therapyUnavailable`),
+    /// so no dose can be safely sized — drives a cancel-only "settings not read yet" notice (fail-closed),
+    /// never a deliverable dose off a guessed carb ratio. Per-attempt; reset on recompute / mode switch.
+    @State private var calcInputBlocked = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -341,6 +345,7 @@ struct BolusEntryView: View {
             unitsText = ""
             calcInputPrompt = nil
             acceptedOverride = nil
+            calcInputBlocked = false
             if newMode == .carbs { Task { await calculate() } }
         }
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
@@ -432,6 +437,14 @@ struct BolusEntryView: View {
             let now = units * Double(extendedNowPercent) / 100
             Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
         }
+        // DIF-ux: the pump never reported its bolus settings this attempt, so no dose can be safely sized.
+        // Cancel-only (fail-closed) — NEVER a deliverable dose off a guessed carb ratio, and no false
+        // "last-known" label. The user retries once the pump reports its settings.
+        .alert("Pump settings not read yet", isPresented: $calcInputBlocked) {
+            Button("OK", role: .cancel) { calcInputBlocked = false }   // sends NOTHING
+        } message: {
+            Text("faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again.")
+        }
         // DIF-ux: the calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
         // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
         // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
@@ -501,6 +514,7 @@ struct BolusEntryView: View {
         let seq = calcSeq
         calcInputPrompt = nil       // DIF-ux: a changed dose re-requires the per-attempt freshness override
         acceptedOverride = nil      // …and drops any override accepted for a prior compose
+        calcInputBlocked = false    // …and clears any prior "settings not read" block
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
@@ -526,22 +540,33 @@ struct BolusEntryView: View {
         // the full deliver-time machinery below (fresh-CGM refresh + divergence guard + Addendum-B stale-CGM
         // three-way) with the override threaded in. `cancel` sends nothing. Remotes never reach this — they
         // fail closed in `resolveRemoteDose`.
-        if let rec = recommendation, calcInputPrompt == nil,
-           case let .prompt(kind) = CalcInputGate.decide(isCarbsMode: mode == .carbs,
-                                                         inputsVerified: rec.inputsVerified,
-                                                         iobStale: rec.iobStale, therapyStale: rec.therapyStale,
-                                                         overrideAccepted: acceptedOverride != nil) {
-            // Precompute the override dose off last-known values + the on-screen BG so the button shows the
-            // estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time recompute
-            // below (CGM path: fresh-read + divergence guard) or the min(baseline, fresh) cap (manual-BG
-            // path), so drift since compose is still caught.
-            let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
-                                                 allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
-            calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
-                                              allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
-                                              iobUnits: rec.iobUnits, iobDate: rec.iobDate,
-                                              assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
-            return
+        if let rec = recommendation, calcInputPrompt == nil, !calcInputBlocked {
+            switch CalcInputGate.decide(isCarbsMode: mode == .carbs, inputsVerified: rec.inputsVerified,
+                                        iobStale: rec.iobStale, therapyStale: rec.therapyStale,
+                                        therapyAvailable: !rec.therapyUnavailable,
+                                        overrideAccepted: acceptedOverride != nil) {
+            case .proceed:
+                break   // fall through to the deliver machinery below
+            case .blockNoTherapy:
+                // The pump has NEVER reported its bolus settings this attempt, so any dose would be sized off
+                // a hardcoded guess — no honest "last-known" to offer and a carb dose can't be sized without
+                // a real carb ratio. Block with a cancel-only notice (fail-closed); the user retries once the
+                // pump reports its settings (the next compose forces a fresh op-115 read).
+                calcInputBlocked = true
+                return
+            case .prompt(let kind):
+                // Precompute the override dose off last-known values + the on-screen BG so the button shows
+                // the estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time
+                // recompute below (CGM path: fresh-read + divergence guard) or the min(baseline, fresh) cap
+                // (manual-BG path), so drift since compose is still caught.
+                let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+                                                     allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
+                calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
+                                                  allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
+                                                  iobUnits: rec.iobUnits, iobDate: rec.iobDate,
+                                                  assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
+                return
+            }
         }
         // Consume the accepted override (if any) for THIS attempt only, then clear it so it can never persist
         // to a later Deliver tap without a fresh warning (per-attempt). nil ⇒ the verified / normal path.

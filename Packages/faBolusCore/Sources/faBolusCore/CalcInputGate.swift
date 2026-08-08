@@ -25,9 +25,11 @@ public enum CalcInputGate {
     public enum Decision: Equatable, Sendable {
         case proceed              // no gate — deliver on the normal path
         case prompt(Kind)         // show the warned two-way override of this kind BEFORE composing a dose
+        case blockNoTherapy       // the pump never reported its bolus settings — no dose can be sized; cancel only
     }
 
-    /// The gate. Returns `.prompt` iff a warned override must be shown first. It fires:
+    /// The gate. Returns `.prompt` iff a warned override must be shown first, `.blockNoTherapy` iff no dose
+    /// can be safely sized at all, else `.proceed`. It engages:
     ///   • ONLY in carbs-calculator mode — a Units-mode dose is the exact number the user dialed and does
     ///     NOT use the pump's CR/ISF/target/IOB, so the "inputs unconfirmed" warning does not apply to it;
     ///     a carbs-calculator dose that was left in the Units field is cleared on the mode switch, so it
@@ -38,9 +40,17 @@ public enum CalcInputGate {
     ///     still caught and routed to `.both`.
     ///   • ONLY if the owner has NOT already accepted an override for this attempt (`overrideAccepted`),
     ///     so the re-entry after accepting the prompt proceeds to actually deliver.
+    ///
+    /// `therapyAvailable == false` means the pump has NEVER reported its bolus settings this session — the
+    /// dose would be sized off a hardcoded guess (a carb dose cannot be computed without a real carb ratio;
+    /// a wrong guess is a potential multiple-dose), and there are no "last-known" settings to honestly offer.
+    /// That case returns `.blockNoTherapy` (warn + cancel only), never a deliverable override.
     public static func decide(isCarbsMode: Bool, inputsVerified: Bool,
-                              iobStale: Bool, therapyStale: Bool, overrideAccepted: Bool) -> Decision {
-        guard isCarbsMode, !inputsVerified, !overrideAccepted else { return .proceed }
+                              iobStale: Bool, therapyStale: Bool,
+                              therapyAvailable: Bool, overrideAccepted: Bool) -> Decision {
+        guard isCarbsMode, !inputsVerified else { return .proceed }
+        if overrideAccepted { return .proceed }          // re-entry after an accepted override (therapy WAS available)
+        guard therapyAvailable else { return .blockNoTherapy }   // never-read therapy → no dose can be sized
         if therapyStale && !iobStale { return .prompt(.therapy) }
         if iobStale && !therapyStale { return .prompt(.iob) }
         return .prompt(.both)   // both stale, OR neither flag set but still unverified
