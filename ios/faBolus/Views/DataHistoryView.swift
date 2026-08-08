@@ -10,8 +10,6 @@ struct DataHistoryView: View {
     @State private var confirmClear = false
     @State private var stats: GlucoseStatistics?
     @State private var insights: [TherapyInsightItem] = []
-    @State private var sensitivity: SensitivitySummary?
-    @State private var advice: SettingsAdvice?
 
     private let retentionOptions: [(label: String, days: Int)] = [
         ("Keep everything", 0), ("90 days", 90), ("1 year", 365),
@@ -42,31 +40,6 @@ struct DataHistoryView: View {
                 }
             }
 
-            if hasSuggestions {
-                Section {
-                    if let s = sensitivity, s.level != "unknown" {
-                        LabeledContent("Insulin sensitivity", value: s.level.capitalized)
-                        if !s.note.isEmpty { Text(s.note).font(.caption).foregroundStyle(.secondary) }
-                    }
-                    if let isf = advice?.isf {
-                        LabeledContent("Suggested ISF", value: "\(Int(isf)) mg/dL/U")
-                    }
-                    if let cr = advice?.carbRatio {
-                        LabeledContent("Suggested carb ratio", value: "\(Int(cr)) g/U")
-                    }
-                    if let basal = advice?.basalByHour, basal.contains(where: { $0 != nil }) {
-                        let n = basal.filter { $0 != nil }.count
-                        LabeledContent("Basal tweaks suggested", value: "\(n) hour\(n == 1 ? "" : "s")")
-                        if !model.basalScheduleSource.isEmpty {
-                            Text("Basal schedule from \(model.basalScheduleSource).")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                } header: { Text("Settings suggestions (advisory)") } footer: {
-                    Text("Derived from your own data — **advisory only, discuss with your clinician** before changing pump settings.\(model.basalByHour() == nil ? " (Basal suggestions need the pump's basal schedule — connect the pump or a Nightscout profile.)" : "")")
-                }
-            }
-
             Section {
                 LabeledContent("Stored on this device", value: sizeText)
                 Picker("Keep history for", selection: $settings.historyRetentionDays) {
@@ -75,7 +48,7 @@ struct DataHistoryView: View {
             } header: {
                 Text("Storage")
             } footer: {
-                Text("faBolus keeps your glucose, insulin and carb history on this device to power stats, charts, and smart-assist advice — about **1 MB per month**, so keeping everything is fine. This control is only if you prefer to auto-delete older data.")
+                Text("faBolus keeps your glucose, insulin and carb history on this device to power stats, charts, and retrospective insights — about **1 MB per month**, so keeping everything is fine. This control is only if you prefer to auto-delete older data.")
             }
 
             Section {
@@ -93,10 +66,6 @@ struct DataHistoryView: View {
             Button("Cancel", role: .cancel) {}
         }
         .onAppear { model.applyRetention(days: settings.historyRetentionDays); reload() }
-        .task {
-            // Fallback: grab the pump's basal schedule if no external one is cached (enables basal advice).
-            if model.basalByHour() == nil { await model.captureBasalScheduleFromPump(); reload() }
-        }
         .onChange(of: settings.historyRetentionDays) { _, days in
             model.applyRetention(days: days); reload()
         }
@@ -107,15 +76,8 @@ struct DataHistoryView: View {
         return mb < 1 ? String(format: "~%.0f KB", mb * 1000) : String(format: "~%.1f MB", mb)
     }
 
-    private var hasSuggestions: Bool {
-        (sensitivity != nil && sensitivity?.level != "unknown") || advice?.isf != nil || advice?.carbRatio != nil
-            || (advice?.basalByHour.contains { $0 != nil } ?? false)
-    }
-
     private func reload() {
         stats = model.storedStatistics(days: 90)
         insights = model.therapyInsights()
-        sensitivity = model.sensitivityState()
-        advice = model.settingsAdvice()
     }
 }

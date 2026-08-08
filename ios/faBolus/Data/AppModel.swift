@@ -912,35 +912,6 @@ public final class AppModel {
     /// Human label for where the basal schedule came from ("" if none).
     public var basalScheduleSource: String { AppSettings.shared.basalScheduleSource }
 
-    /// Insulin-sensitivity assessment (autosens-style) over the last ~14 days of stored data.
-    public func sensitivityState() -> SensitivitySummary? {
-        #if FABOLUS_NUDGE
-        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
-        let range = Date().addingTimeInterval(-14 * 86400)...Date()
-        let s = SmartAssist.sensitivity(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                        carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
-                                        isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
-        return SensitivitySummary(level: s.level.rawValue, note: s.note)
-        #else
-        return nil
-        #endif
-    }
-
-    /// Settings advice (ISF / carb-ratio, and basal drift once a basal schedule is available). Advisory;
-    /// needs weeks of data for confidence.
-    public func settingsAdvice() -> SettingsAdvice? {
-        #if FABOLUS_NUDGE
-        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
-        let range = Date().addingTimeInterval(-30 * 86400)...Date()
-        let a = SmartAssist.settingsAdvice(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                           carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
-                                           isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
-        return SettingsAdvice(isf: a.isf, carbRatio: a.carbRatio, basalByHour: a.basalByHour)
-        #else
-        return nil
-        #endif
-    }
-
     private var lastNSBackfill = Date.distantPast
     /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
     /// schedule into faBolus. Throttled hourly. Best-effort/background.
