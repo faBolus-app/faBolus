@@ -112,6 +112,10 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var glucoseDate: Date? = nil
     public var trend: String = GlucoseTrend.flat.rawValue
     public var iobUnits: Double = 0          // Active Insulin
+    /// When `iobUnits` (op-109 ControlIQIOBResponse) was last received from the pump. Used by the dose path
+    /// to prove the active-insulin term is fresh before subtracting it, and to grey/age the IOB row —
+    /// exactly like `glucoseDate` for the glucose feed. nil ⇒ unknown age ⇒ treated as stale.
+    public var iobDate: Date? = nil
     public var reservoirUnits: Double = 0
     public var batteryPercent: Int = 0
     public var cgmActive: Bool = false
@@ -125,6 +129,11 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var carbRatio: Double = 0    // grams per unit
     public var isf: Int = 0             // correction factor, mg/dL per unit
     public var targetBg: Int = 0        // mg/dL
+    /// When the therapy parameters above (op-115 BolusCalcDataSnapshotResponse — carb ratio / ISF / target
+    /// / max) were last received from the pump. One op-115 frame resolves the ACTIVE profile+segment to a
+    /// self-consistent set, so a single stamp governs all three. Used by the dose path to prove they are
+    /// fresh before building the calculator profile, and to grey/age the therapy row. nil ⇒ stale.
+    public var therapyParamsDate: Date? = nil
 
     // Workstream B (controlX2 parity) status fields.
     /// Pump model detection (from ApiVersionResponse). Mobi gates advanced control.
@@ -184,6 +193,20 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }  // unknown age → treat as stale
         return GlucoseFreshness.isStale(d)
+    }
+
+    /// Active insulin (op-109) is stale after the shared `CalcInputFreshness.staleAfterIob` threshold
+    /// (default 5 min). Mirrors `isGlucoseStale`, but IOB is always numerically "present" (defaults to 0),
+    /// so an unknown age (`iobDate == nil`) is unconditionally stale — the dose path must not subtract an
+    /// active-insulin term it can't prove is current. `now` is injectable for tests.
+    public func isIobStale(now: Date = Date()) -> Bool {
+        CalcInputFreshness.isIobStale(iobDate, now: now)
+    }
+
+    /// Therapy params (op-115 CR/ISF/target) are stale after `CalcInputFreshness.staleAfterTherapy`
+    /// (default 15 min). Unknown age (`therapyParamsDate == nil`) → stale.
+    public func isTherapyStale(now: Date = Date()) -> Bool {
+        CalcInputFreshness.isTherapyStale(therapyParamsDate, now: now)
     }
 }
 
@@ -462,5 +485,15 @@ public struct BolusRecommendation: Sendable, Equatable {
     public var inputsVerified: Bool = true
     /// The assumed profile used when `inputsVerified == false`, so the UI can show and confirm it.
     public var assumedProfile: BolusMath.Profile? = nil
+    /// DIF-core freshness channel. True when the active-insulin term the dose was built from was stale (or
+    /// the op-115/op-109 IOB cross-check diverged) at compose time. `inputsVerified` is the fail-closed
+    /// gate every surface already honors; these carry the *why* (and the ages) so DIF-ux can later offer the
+    /// warned include-last-known override. `iobStale || therapyStale` ⇒ `inputsVerified == false`.
+    public var iobStale: Bool = false
+    /// True when the therapy params (CR/ISF/target) the dose was built from were stale at compose time.
+    public var therapyStale: Bool = false
+    /// Age provenance of the two calc inputs (from the snapshot at compose time), for the UI/remote wire.
+    public var iobDate: Date? = nil
+    public var therapyParamsDate: Date? = nil
     public init() {}
 }

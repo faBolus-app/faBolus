@@ -1178,6 +1178,13 @@ public final class AppModel {
     /// on open and again right before delivery so a correction is off the freshest value).
     public func refreshGlucoseNow() async { await source.refreshGlucoseNow(); refresh() }
 
+    /// DIF-core: force the pump to report its newest bolus-calculator INPUTS (op-115 CR/ISF/target/max +
+    /// op-109 IOB) and wait briefly (bounded). The bolus screen and the authoritative deliver-time
+    /// recompute call this alongside `refreshGlucoseNow()` so the delivered dose is always built from fresh,
+    /// self-consistent pump inputs. `recommendBolus` also forces this internally; calling it here keeps the
+    /// displayed IOB/therapy rows fresh (and the single-flight coalesces the two into one pump read).
+    public func refreshCalcInputsNow() async { await source.refreshCalcInputsNow(); refresh() }
+
     /// The correction BG a remote/host carb dose is computed from: the freshest CGM if it's non-stale,
     /// else `nil` (carbs-only). Call `refreshGlucoseNow()` first. FB-09: exposed so a remote's *estimate*
     /// and the host's *authoritative* resolve bind to the SAME staleness-gated basis and don't diverge
@@ -1813,6 +1820,11 @@ public final class AppModel {
             return nil
         }
         await refreshGlucoseNow()
+        // DIF-core: force the calc INPUTS (op-115 + op-109) fresh alongside the CGM so the authoritative
+        // recompute below is built from fresh, self-consistent pump values (`recommendBolus` also refreshes
+        // internally; the single-flight coalesces). If a fresh read can't be obtained, `recommendBolus`
+        // returns `inputsVerified == false` and the FB-01 guard just below fails the remote closed.
+        await refreshCalcInputsNow()
         let freshBg = freshCorrectionBG
         let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
         // FB-01: a remote/automatic surface must NEVER auto-deliver a dose computed from unverified
