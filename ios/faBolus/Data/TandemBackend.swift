@@ -243,6 +243,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Bounded wait for `refreshCalcInputsNow` (safety timeout so a silent pump never hangs a compose).
     /// Overridable in tests to keep the fail-closed suite fast. Same 2.5 s default as the glucose refresh.
     var calcInputRefreshTimeout: TimeInterval = 2.5
+
+    #if DEBUG
+    /// Test seam: feed a raw response frame through the REAL parse + delegate-handler path (`didReceiveFrame`),
+    /// exactly as if it had arrived over BLE, so a test can seed cached pump state (e.g. an in-window op-115 /
+    /// op-109) that the `FakePumpTransport` harness — which only models coordinator-awaited replies — cannot.
+    /// The delegate ignores its `PumpBLEClient` argument (it operates on `self`), so passing our own `client`
+    /// is a no-op receiver; no CoreBluetooth manager is created.
+    func injectStatusFrameForTesting(_ frame: [UInt8]) {
+        pumpClient(client, didReceiveFrame: frame, on: .currentStatus)
+    }
+    #endif
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
@@ -408,10 +419,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-        // DIF-core: the AUTHORITATIVE recommendation is built from FRESH inputs. Force a bounded fresh
-        // op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read before
-        // reading them, so the dose can't be built off a ~10-min-stale cache (kills the clinician-edit /
-        // profile-segment-boundary / profile-switch hazards structurally). Coalesced + bounded, never hangs.
+        // DIF-core: the AUTHORITATIVE recommendation is built from inputs proven fresh THIS compose. Capture
+        // the compose-start instant, force a bounded op-115 (CR/ISF/target/max, resolved for the active
+        // profile+segment) + op-109 (IOB) read, then require BOTH receive-stamps to POST-DATE composeStart —
+        // proof the pump actually answered during this attempt, not merely that a routine-poll value is still
+        // inside the display window. On a SUCCESSFUL read this structurally kills the clinician-edit /
+        // profile-segment-boundary / profile-switch hazards (the fresh op-115 frame is a self-consistent set
+        // for the current segment); on a timed-out / disconnected read it does NOT degrade to the in-window
+        // cache — it fails closed. Coalesced + bounded, never hangs.
+        let composeStart = Date()
         await refreshCalcInputsNow()
 
         var rec = BolusRecommendation()
@@ -423,6 +439,17 @@ public final class TandemBackend: NSObject, PumpBackend {
         rec.therapyStale = snapshot.isTherapyStale(now: now)
         let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
 
+        // PER-ATTEMPT freshness proof (the authoritative gate). A read is confirmed only if its op-109 /
+        // op-115 receive-stamp post-dates composeStart, i.e. the pump answered DURING this compose. A nil or
+        // pre-composeStart stamp (the fire-and-forget refresh timed out and left the last routine-poll value
+        // untouched) is NOT confirmed → fail closed, even when that stale value is still inside the display
+        // window `isIobStale`/`isTherapyStale` measure. Stamps only ever move forward (set to `Date()` on
+        // arrival), so this is immune to any interleaving refresh; a backward clock skew only ever makes it
+        // MORE conservative (a genuinely-fresh stamp read as older than composeStart → fail closed).
+        let iobFreshThisAttempt = (snapshot.iobDate.map { $0 >= composeStart }) ?? false
+        let therapyFreshThisAttempt = (snapshot.therapyParamsDate.map { $0 >= composeStart }) ?? false
+        let inputsFreshThisAttempt = iobFreshThisAttempt && therapyFreshThisAttempt
+
         // Cross-check the op-115 `iob` against the op-109 `swan6hrIOB` the dose uses (owner decision 3): a
         // mismatch beyond epsilon means the two pump reads of active insulin disagree, so we can't trust
         // either → mark IOB stale (fails closed via the same gate as an aged read).
@@ -431,17 +458,21 @@ public final class TandemBackend: NSObject, PumpBackend {
             if abs(op115Iob - snapshot.iobUnits) > Self.iobCrossCheckEpsilonUnits { rec.iobStale = true }
         }
 
-        if let s = calcSnapshot, s.carbRatio > 0, !rec.iobStale, !rec.therapyStale {
-            // Verified AND fresh pump profile → the single oracle-backed calculator (audit C-01). Below-
-            // target BG correctly *reduces* the dose; IOB (op-109 swan6hrIOB) only offsets a BG correction.
+        if inputsFreshThisAttempt, let s = calcSnapshot, s.carbRatio > 0, !rec.iobStale, !rec.therapyStale {
+            // Verified AND confirmed-fresh-this-attempt pump profile → the single oracle-backed calculator
+            // (audit C-01). Below-target BG correctly *reduces* the dose; IOB (op-109 swan6hrIOB) only
+            // offsets a BG correction. `inputsFreshThisAttempt` is the per-attempt gate; the two `!…Stale`
+            // clauses additionally carry the op-115↔op-109 IOB cross-check result below.
             let profile = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit,
                                             isfMgdlPerUnit: s.isf, targetBgMgdl: s.targetBg,
                                             iobUnits: snapshot.iobUnits)
             rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: bgMgdl, profile: profile)
             rec.inputsVerified = true
         } else {
-            // FAIL-CLOSED (DIF-core): the fresh read couldn't be obtained (timed out / disconnected), an
-            // input is stale, or the IOB cross-check diverged. Reuse the existing unverified-inputs path:
+            // FAIL-CLOSED (DIF-core): a fresh read was NOT confirmed this attempt (timed out / disconnected,
+            // so the last routine-poll value — even if still in-window — is not trusted to size this dose),
+            // op-115 never landed, an input is window-stale, or the IOB cross-check diverged. Reuse the
+            // existing unverified-inputs path:
             // compute a carbs-only dose off an explicitly-assumed profile (real CR/ISF/target when we at
             // least have them, so the confirm UI shows the true values it would use; the hardcoded assumed
             // profile only when op-115 never arrived) and flag `inputsVerified = false` so every surface
@@ -497,8 +528,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// ~10-min-stale cache. Single-flight (audit C-05, modeled on `refreshGlucoseNow`): concurrent callers
     /// coalesce onto one read; all resume exactly once when both frames arrive, on timeout, or on
     /// disconnect. Never hangs — the safety timeout guarantees resumption. When either frame fails to
-    /// arrive, its `snapshot.iobDate` / `therapyParamsDate` simply stays where it was, so `recommendBolus`
-    /// reads it as stale and fails closed.
+    /// arrive, its `snapshot.iobDate` / `therapyParamsDate` simply stays where it was (an earlier
+    /// routine-poll instant, never re-stamped), so `recommendBolus`'s per-attempt check sees a stamp that
+    /// does NOT post-date its `composeStart` and fails closed — the in-window cache is not silently reused.
     public func refreshCalcInputsNow() async {
         guard snapshot.connection == .connected else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in

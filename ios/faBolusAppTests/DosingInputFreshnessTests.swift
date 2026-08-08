@@ -81,6 +81,37 @@ struct DosingInputFreshnessTests {
         #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 (assumed CR), carbs-only
     }
 
+    /// DIF-core PER-ATTEMPT freshness gate (the fix for the window-vs-per-attempt gap). Seed an IN-WINDOW
+    /// cached op-115 + op-109 (routine-poll values only ~0 s old, so `isIobStale`/`isTherapyStale` are BOTH
+    /// false, and the op-115↔op-109 IOB cross-check agrees), then let the compose-time refresh TIME OUT (the
+    /// fake never answers the fire-and-forget reads, so the stamps are never re-set this attempt). A
+    /// WINDOW-based gate would build a VERIFIED dose off those in-window cached values — the exact hazard-(b)
+    /// case (a scheduled profile time-segment boundary changes CR/ISF/target with IOB unchanged, which the
+    /// cross-check cannot catch). The per-attempt gate must instead FAIL CLOSED, because neither input was
+    /// confirmed by a read DURING this compose. Pre-fix this test would see `inputsVerified == true`.
+    @Test func recommendBolusFailsClosedWhenInWindowCacheIsNotConfirmedThisAttempt() async {
+        let (b, _) = makeBackend()
+        // Seed an in-window cache via the REAL didReceiveFrame path: matching IOB (1.4 U) so the cross-check
+        // does NOT trip, and real CR (10 g/U) / ISF / target so a verified dose COULD be built if the gate
+        // were window-based. No op-115/op-109 reply is scripted, so the compose-time refresh times out.
+        b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1400))
+        b.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(
+            iobMilliunits: 1400, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))
+        // Sanity: the cache is present AND in-window — a pure window gate would PASS from here.
+        #expect(b.snapshot.iobUnits == 1.4)
+        #expect(!b.snapshot.isIobStale())
+        #expect(!b.snapshot.isTherapyStale())
+
+        let rec = await b.recommendBolus(carbsGrams: 30, bgMgdl: 120)
+        #expect(rec.inputsVerified == false)          // per-attempt gate: not confirmed THIS compose → block
+        // The display staleness flags stay FALSE (the values really are recent) — proving the block is
+        // driven by PER-ATTEMPT freshness, not by window staleness (which is what the old gate keyed on).
+        #expect(!rec.iobStale)
+        #expect(!rec.therapyStale)
+        #expect(rec.assumedProfile != nil)            // exposes the true cached CR for the confirm UI
+        #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 g/U, carbs-only (correction dropped)
+    }
+
     // MARK: - MockBackend spy: recommendBolus forces the fresh calc-input read
 
     /// The dose path forces a fresh op-115 + op-109 read (the mock's `refreshCalcInputsNow`) BEFORE building
