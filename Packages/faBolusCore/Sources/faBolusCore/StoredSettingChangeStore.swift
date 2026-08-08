@@ -25,6 +25,11 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
         self.cap = cap
     }
 
+    /// F1 (§13) — at-rest protection for the setting-change (provenance) sidecar. Same class as the
+    /// delivery ledger, `completeUntilFirstUserAuthentication`: encrypted at rest, readable after first
+    /// unlock (a background write can annotate a therapy edit while locked). Not `.completeFileProtection`.
+    public static let fileProtection: Data.WritingOptions = .completeFileProtectionUntilFirstUserAuthentication
+
     /// A change-log file inside an App Group container (shared with extensions), else Application Support.
     public static func defaultURL(appGroupID: String?) -> URL? {
         let fm = FileManager.default
@@ -79,7 +84,7 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
     /// Atomically persist the log (a crash mid-save can't leave a truncated file).
     public func save(_ log: SettingChangeLog) throws {
         let data = try JSONEncoder().encode(log)
-        try data.write(to: url, options: .atomic)
+        try data.write(to: url, options: [.atomic, Self.fileProtection])   // F1 §13: AfterFirstUnlock at rest
     }
 
     public func saveBestEffort(_ log: SettingChangeLog) { try? save(log) }

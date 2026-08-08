@@ -27,6 +27,15 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         self.cap = cap
     }
 
+    /// F1 (§13) — the at-rest data-protection class the durable ledger is written with:
+    /// `completeUntilFirstUserAuthentication` ("after first unlock"). The file is encrypted at rest but
+    /// stays **readable at a locked background relaunch**, so crash-recovery / reconciliation of an
+    /// in-flight delivery still works. This is the LOAD-BEARING safety choice: it is deliberately NOT
+    /// `.completeFileProtection` (which locks the file whenever the device locks) — that class would make
+    /// the ledger unreadable during a locked background relaunch and break reconciliation of a delivery
+    /// that was in flight. Exposed so a test can pin AfterFirstUnlock and assert it is never `.complete`.
+    public static let fileProtection: Data.WritingOptions = .completeFileProtectionUntilFirstUserAuthentication
+
     /// Convenience: a ledger file inside an App Group container (shared with widgets), else Application
     /// Support. Returns nil only if no usable directory exists.
     public static func defaultURL(appGroupID: String?) -> URL? {
@@ -81,7 +90,9 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
     /// proceed if its intent couldn't be recorded — see the host's use).
     public func save(_ ledger: RemoteBolusLedger) throws {
         let data = try JSONEncoder().encode(ledger)
-        try data.write(to: url, options: .atomic)
+        // F1 (§13): atomic + AfterFirstUnlock at-rest protection. NEVER `.completeFileProtection` — the
+        // ledger must be readable at a locked background relaunch for crash-recovery (see `fileProtection`).
+        try data.write(to: url, options: [.atomic, Self.fileProtection])
     }
 
     /// Best-effort save that never throws (for the settle/echo paths where the write already happened and
