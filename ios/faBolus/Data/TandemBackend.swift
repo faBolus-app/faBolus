@@ -507,7 +507,25 @@ public final class TandemBackend: NSObject, PumpBackend {
             let overrideActive = allowStaleIob || allowStaleTherapy
             let therapyTrustworthy = haveLastKnownTherapy && (!rec.therapyStale || allowStaleTherapy)
             let overrideBg: Int? = (overrideActive && therapyTrustworthy) ? bgMgdl : nil
-            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: overrideBg, profile: assumed)
+            // include-last-known IOB is meant to be CONSERVATIVE ("stale IOB is typically older→higher"), but
+            // the op-115↔op-109 CROSS-CHECK DIVERGENCE case breaks that assumption: right after a bolus,
+            // op-109 (swan6hrIOB) can still read LOW while op-115 already reflects the delivery. Subtracting
+            // the lower op-109 there would size a LARGER correction than a confirmed-fresh read — insulin
+            // stacking, the exact hazard the DIF-core divergence block prevents. So when the owner accepts
+            // the IOB override AND the two reads disagree, subtract the LARGER of the two, so the override can
+            // never subtract LESS active insulin than either pump read implies (dose ≤ a confirmed-fresh
+            // read). Pure-age staleness keeps the authoritative op-109 value.
+            var overrideProfile = assumed
+            if allowStaleIob, let s = calcSnapshot {
+                let op115Iob = Double(s.iob) / 1000.0
+                if abs(op115Iob - snapshot.iobUnits) > Self.iobCrossCheckEpsilonUnits {
+                    overrideProfile = BolusMath.Profile(carbRatioGramsPerUnit: assumed.carbRatioGramsPerUnit,
+                                                        isfMgdlPerUnit: assumed.isfMgdlPerUnit,
+                                                        targetBgMgdl: assumed.targetBgMgdl,
+                                                        iobUnits: max(snapshot.iobUnits, op115Iob))
+                }
+            }
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: overrideBg, profile: overrideProfile)
         }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // snap to 0.05 u pump increment
         return rec

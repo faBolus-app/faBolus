@@ -53,9 +53,13 @@ public enum StaleIobPrompt {
     /// is identical everywhere and can never read as "ignore the IOB".
     public static func warningMessage(iobUnits: Double, iobDate: Date?, now: Date = Date()) -> String {
         let age = iobDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
+        // "keep SUBTRACTING" (never drop/zero). If the pump's two active-insulin reads disagree (the
+        // cross-check-divergence case, e.g. just after a bolus), the dose subtracts the LARGER of them, so
+        // the shown last-known value can only understate — never overstate — what is subtracted (the safe
+        // direction). The copy stays honest about that without over-committing to a single number.
         return String(format: "faBolus couldn't confirm your active insulin is current "
-            + "(last known %.2f U, %@). It will keep SUBTRACTING that %.2f U from this dose. "
-            + "Use it, or cancel.", iobUnits, age, iobUnits)
+            + "(last known %.2f U, %@). It will keep SUBTRACTING that active insulin — the higher reading if "
+            + "the pump's two readings disagree — never dropping it. Use it, or cancel.", iobUnits, age)
     }
 }
 

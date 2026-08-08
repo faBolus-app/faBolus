@@ -147,6 +147,48 @@ struct DosingInputFreshnessTests {
         #expect(backend.refreshCalcInputsNowCount == 1)   // exactly one forced read per recommend
     }
 
+    // MARK: - DIF-ux override dose-math on the REAL TandemBackend (not the mock)
+
+    /// Seed an in-window op-115 (CR 10 g/U, ISF 40, target 110) + op-109 (IOB 1.0 U) via the REAL
+    /// didReceiveFrame path, so the compose-time fresh read still times out (`inputsVerified == false`) but
+    /// the cached last-known therapy/IOB exist. The host-owner override then recomputes the FULL dose off
+    /// those cached values WITH the BG correction, and SUBTRACTS the last-known IOB (never zeroes it). This
+    /// exercises `TandemBackend`'s 4-arg override branch directly — the mock's predicate can't stand in.
+    @Test func tandemOverrideRecomputesOffLastKnownTherapyAndSubtractsIob() async {
+        let (b, _) = makeBackend()
+        b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1000))          // op-109 = 1.0 U
+        b.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(
+            iobMilliunits: 1000, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))
+        let rec = await b.recommendBolus(carbsGrams: 40, bgMgdl: 220, allowStaleIob: true, allowStaleTherapy: true)
+        #expect(rec.inputsVerified == false)   // an override dose is NEVER verified
+        // 40 g / 10 (CR) + (220 − 110)/40 (ISF) − 1.0 (last-known IOB) = 4.0 + 2.75 − 1.0 = 5.75 U.
+        #expect(abs(rec.recommendedUnits - 5.75) < 0.0001)
+        // Without the override the same state is carbs-only (BG correction dropped) → 4.0 U.
+        let blocked = await b.recommendBolus(carbsGrams: 40, bgMgdl: 220)
+        #expect(blocked.inputsVerified == false)
+        #expect(abs(blocked.recommendedUnits - 4.0) < 0.0001)
+    }
+
+    /// The op-115↔op-109 CROSS-CHECK DIVERGENCE case (e.g. right after a bolus, op-109 swan6hrIOB still reads
+    /// LOW while op-115 already reflects the delivery). The include-last-known-IOB override MUST subtract the
+    /// LARGER of the two reads, so it can never size a correction bigger than a confirmed-fresh read would —
+    /// otherwise it would stack insulin. Pins the fix: subtract max(op-109, op-115), not op-109 blindly.
+    @Test func tandemOverrideOnCrossCheckDivergenceSubtractsTheLargerIob() async {
+        let (b, _) = makeBackend()
+        b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1000))          // op-109 = 1.0 U (lagging)
+        b.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(
+            iobMilliunits: 4000, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000, maxBolusMilliunits: 25_000))  // op-115 = 4.0 U
+        let rec = await b.recommendBolus(carbsGrams: 40, bgMgdl: 220, allowStaleIob: true, allowStaleTherapy: false)
+        #expect(rec.inputsVerified == false)
+        #expect(rec.iobStale)   // the cross-check divergence set it
+        // Conservative IOB = max(op-109 1.0, op-115 4.0) = 4.0. The correction (220−110)/40 = 2.75 is fully
+        // offset by that 4.0 (clamped at 0 — IOB never reduces the carb dose), so the dose is carbs-only
+        // 40/10 = 4.0 U — exactly what a confirmed-fresh read (op-109 caught up to ~4.0) would give. The BUG
+        // (subtracting the lower op-109 1.0) would have added a 1.75 U correction → 5.75 U, stacking onto the
+        // just-delivered bolus. So max() removes the stacking.
+        #expect(abs(rec.recommendedUnits - 4.0) < 0.0001)
+    }
+
     // MARK: - AppModel: the divergence guard now catches an INPUT change between compose and deliver
 
     private func makeModel(connected: Bool) async -> (AppModel, MockBackend, AppModelBehaviorTests.EchoRecorder) {
