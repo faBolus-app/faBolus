@@ -485,6 +485,14 @@ public struct BolusRecommendation: Sendable, Equatable {
     public var inputsVerified: Bool = true
     /// The assumed profile used when `inputsVerified == false`, so the UI can show and confirm it.
     public var assumedProfile: BolusMath.Profile? = nil
+    /// DIF-ux: TRUE when the pump has NEVER reported its bolus settings this session (op-115 never arrived),
+    /// so `assumedProfile` is a HARDCODED fallback guess (CR 10 / ISF 40 / target 110), NOT the pump's real
+    /// last-known values. A dose sized off that guess must NOT be deliverable via the warned "use last-known
+    /// settings" override (there are no last-known settings, and a carb dose cannot be sized without a real
+    /// carb ratio — a wrong guess is a potential multiple-dose). The DIF-ux gate blocks (cancel-only) in
+    /// this case. FALSE means real CR/ISF/target were read at some point (they may be *stale* — that IS the
+    /// legitimate warned-override case, using real-but-old values).
+    public var therapyUnavailable: Bool = false
     /// DIF-core freshness channel. True when the active-insulin term the dose was built from was stale (or
     /// the op-115/op-109 IOB cross-check diverged) at compose time. `inputsVerified` is the fail-closed
     /// gate every surface already honors; these carry the *why* (and the ages) so DIF-ux can later offer the

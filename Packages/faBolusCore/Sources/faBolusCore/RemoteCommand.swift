@@ -271,6 +271,18 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Absent/false ⇒ the surface's normal confirm. Additive; mirrored.
     public var bolusPasscodeRequired: Bool? = nil
 
+    /// DIF-ux — the immutable source timestamps (Unix seconds) of the bolus-calculator inputs the host
+    /// relayed: `iobEpochSec` for the active-insulin (op-109) read, `therapyEpochSec` for the therapy-params
+    /// (carb ratio / ISF / target, op-115) read. Mirrors `glucoseEpochSec` exactly — set once at origin from
+    /// the pump's own read time, propagated unchanged, and a receiver computes age as `now − epoch` at
+    /// display time. When absent, the input's age is UNKNOWN and MUST render as stale/no-data, never fresh.
+    /// Remotes use these only to grey/age their IOB + therapy rows and PRE-WARN; the host stays the
+    /// authoritative dose gate and remotes never send an override. Swift-only additive fields (set
+    /// post-init), mirrored in the JSON schema + (view-only) the Monkey C mirror. Same `Int32.max`
+    /// (2038-01-19) ceiling as `glucoseEpochSec` (32-bit watchOS `Int` / Monkey C `Lang.Number`).
+    public var iobEpochSec: Int? = nil
+    public var therapyEpochSec: Int? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -414,6 +426,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // moving to Int64 here, `Lang.Long` on Garmin, and the schema maximum — all three together.
         if let e = glucoseEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("glucoseEpochSec")
+        }
+        // DIF-ux — the calc-input source stamps follow the exact same rule as `glucoseEpochSec`: a zero /
+        // negative value reads as decades-old (harmless — stale), but a FUTURE one would compute a negative
+        // age that reads as permanently fresh, so reject anything outside (0, Int32.max]. Absent is fine
+        // (⇒ unknown age ⇒ stale). Same 2038-01-19 ceiling every 32-bit consumer can represent.
+        if let e = iobEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("iobEpochSec")
+        }
+        if let e = therapyEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("therapyEpochSec")
         }
 
         // String length caps.

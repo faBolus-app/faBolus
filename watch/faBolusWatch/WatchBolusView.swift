@@ -90,6 +90,27 @@ struct WatchBolusView: View {
                     .foregroundStyle(model.isGlucoseStale ? .secondary : .primary)
                 }
 
+                // DIF-ux: the active-insulin the estimate subtracts, greyed + aged when the host couldn't
+                // confirm it fresh — so a stale IOB is visible before you confirm. VIEW-ONLY on a remote.
+                if model.iobUnits > 0 || model.iobDate != nil {
+                    HStack(spacing: 4) {
+                        Text(String(format: "IOB %.2f U", model.iobUnits))
+                        if let a = model.iobAgeLabel {
+                            Text("· \(a)").foregroundStyle(model.isIobStale ? .orange : .secondary)
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(model.isIobStale ? .secondary : .primary)
+                }
+
+                // DIF-ux pre-warn (carbs mode): the estimate rides on last-known IOB / therapy the host
+                // couldn't confirm fresh. VIEW/PRE-WARN ONLY — a remote NEVER offers an include-last-known
+                // override and NEVER sends one; the phone offers it and stays the authoritative dose gate.
+                if isCarbs, amount > 0, model.isIobStale || model.isTherapyStale {
+                    Text(calcInputPreWarn)
+                        .font(.caption2).foregroundStyle(.orange).multilineTextAlignment(.center)
+                }
+
                 Text(amountLabel)
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(.indigo)
@@ -138,6 +159,18 @@ struct WatchBolusView: View {
         } message: {
             Text(staleMessage)
         }
+    }
+
+    /// DIF-ux pre-warn copy (carbs mode) — names which calc input(s) the host couldn't confirm current, so
+    /// the wrist estimate's basis is honest. The phone offers the actual use-last-known override + delivers.
+    private var calcInputPreWarn: String {
+        if model.isIobStale && model.isTherapyStale {
+            return "Active insulin & pump settings aren't confirmed current — the phone will confirm before delivering."
+        }
+        if model.isTherapyStale {
+            return "Pump settings aren't confirmed current — the phone will confirm before delivering."
+        }
+        return "Active insulin isn't confirmed current — the phone will confirm before delivering."
     }
 
     /// The include-stale button label: the stale value and the dose it WOULD produce (the correction is

@@ -121,6 +121,18 @@
       "maximum": 2147483647,
       "description": "Immutable source timestamp of the current CGM reading (Unix seconds), set once at origin from the pump's own reading time and propagated unchanged through every hop. A receiver computes age as now - glucoseEpochSec at display time. When absent, the reading's age is UNKNOWN and must render as stale/no-data, never as fresh. The maximum is Int32.max (2038-01-19) because that is the widest value every consumer can represent: Int is 32-bit on watchOS (arm64_32) and Monkey C's Lang.Number is a signed 32-bit integer. Widening requires Int64 in faBolusCore, Lang.Long on Garmin, and this maximum, changed together."
     },
+    "iobEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "DIF-ux — immutable source timestamp (Unix seconds) of the active-insulin (IOB, op-109) read the host relayed, set once at origin from the pump's own read time. A remote computes age as now - iobEpochSec at display time to grey/age its IOB row and PRE-WARN before a bolus. When absent the IOB age is UNKNOWN and must render as stale (never fresh) — the same rule as glucoseEpochSec, and the same Int32.max (2038-01-19) ceiling because Int is 32-bit on watchOS and Monkey C's Lang.Number is signed 32-bit. Remotes only view/pre-warn on this; the host stays the authoritative dose gate."
+    },
+    "therapyEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "DIF-ux — immutable source timestamp (Unix seconds) of the therapy-params (carb ratio / ISF / target, op-115) read the host relayed. A remote computes age as now - therapyEpochSec to grey/age its carb-ratio/ISF/target rows and PRE-WARN. Absent ⇒ age UNKNOWN ⇒ render stale, never fresh. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec (32-bit watchOS Int / Monkey C Lang.Number). View/pre-warn only on remotes; the host stays the authoritative dose gate."
+    },
     "history": {
       "type": "array",
       "items": { "type": "integer" },
