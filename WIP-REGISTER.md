@@ -13,7 +13,9 @@ branch operation or restructuring).
 | `git status` | clean |
 
 **Disposition key:** **R** = resume after restructuring · **F** = fold into the v3 plan · **A** = abandon
-(with reason) · **N** = not our WIP (vendored upstream, platform requirement, or deliberate permanent design).
+(with reason) · **N** = not our WIP (vendored upstream, platform requirement, or deliberate permanent design)
+· **RESOLVED** = landed since this register was written (cited to the phase/commit; reconciled at the P16
+close-out, 2026-08-07).
 
 ---
 
@@ -21,7 +23,7 @@ branch operation or restructuring).
 
 | # | Item | State | Disp. | Note |
 |---|---|---|---|---|
-| 1 | `remediation/audit-round3-2026-07-24` | 3 commits ahead of `main`, unmerged; 2 unpushed | **F** | Round-3 auditor remediation = v3 deliverables 6/7. Must land before or as group B. |
+| 1 | ~~`remediation/audit-round3-2026-07-24` — 3 commits ahead of `main`, unmerged~~ | **RESOLVED (P85 / V3-P3)** | Round-3 auditor remediation (v3 deliverables 6/7) landed via the PumpX2Kit→faBolus→Garmin merge chain — `git branch --merged origin/main` lists the branch, so it is fully contained in `main`. The stale local pointer may be deleted. |
 | 2 | `8c34223` R3-C — durable acknowledged bolus-ID | code complete, **tests absent** | **F** | Deliverable 7. Blocks nothing else, but must not be called done. |
 | 3 | `remediation/audit-2026-07` | local-only, 0 ahead, fully merged | **A** | Stale pointer. Delete after `deprecated` is tagged (its content is in `main`). |
 | 4 | local `main` has no upstream configured | identical to `origin/main` | **F** | Fix during §1 restructuring (`git branch -u`). |
@@ -48,7 +50,7 @@ branch operation or restructuring).
 | 15 | `Packages/DexcomG6Kit` tests never run in CI | **F** | Same. |
 | 16 | `Packages/ShareClient` has no test target at all (`Package.swift:11`) | **N** | Vendored LoopKit; upstream shipped it untested. |
 | 17 | `project.yml:439-440` — pump-transaction drop/timeout (A-03) and glucose single-flight (C-05) have no automated coverage | **F** | Now reachable via the R3-A `PumpTransport` seam + `FakePumpTransport`. Deliverable 7. |
-| 18 | `docs/RELEASE-GATES.md:11-62` — 5 on-hardware gate categories open; `:39` IDP CRUD + backup-restore "unproven end-to-end" | **R** | Hardware-gated; unblocked only on the bench. |
+| 18 | `docs/RELEASE-GATES.md:11-62` — 5 on-hardware gate categories open; `:39` IDP CRUD + backup-restore "unproven end-to-end" | **R — standing NO-GO hold** | Hardware-gated; unblocked only on the saline bench. **Kept OPEN at P16 close-out** — these gates are the safety boundary (NO-GO for real insulin) and must not be reclassified as done-in-software. |
 | 19 | 39 unchecked acceptance criteria across the two committed auditor handoffs | **F** | Deliverables 6/7 close these. |
 
 ## 4. Feature flags and excluded targets
@@ -59,9 +61,9 @@ branch operation or restructuring).
 | 21 | `GARMIN` — `GarminRemoteBridge.swift:3,204,216`; on locally, off in CI | **F** | The Garmin bridge — a base feature per v3 §1.3 — is never compiled by CI. |
 | 22 | `FABOLUS_ONWATCH_EATING` wraps all of `WatchEatingSensor.swift`; default OFF, stripped from the generated project | **R** | Compiled by nothing, anywhere. Eating-model workstream. |
 | 23 | `ICLOUD_SYNC` — **no build configuration sets it** | **RESOLVED (P14 S5)** | Was: dead in every build (no-op `#else` stub). Fixed in P14 S5 — renamed to `FABOLUS_ICLOUD`, gated by `generate-project.sh` (default OFF strips the entitlement + flag so a free-account clone signs; `FABOLUS_ICLOUD=1` compiles the real store). No in-app toggle (owner 2026-08-06): automatic when signed in, silent local-only fallback via `ubiquityIdentityToken`. Syncs only the C5-safe subset (`SettingsCatalog.iCloudSyncedKeys` — excludes the five command-adjacent flags). |
-| 24 | `faBolusWidgets` (iOS) is **not embedded** in the `faBolus` target and is in no scheme | **F** | v3 N4 lists widgets as `main`/Simple/on and defect A4 is about widget staleness — but the extension does not ship. Fix before A4 can mean anything. |
-| 25 | `faBolusWatchWidgets` **not embedded** (`project.yml:284-286`, needs the watch App Group registered) | **F** | The CI step named "Build watch app + complication" (`ci.yml:108`) does not build the complication. Rename the step or embed the target. |
-| 26 | `faBolusMac` + `faBolusMacWidgets` in no scheme and no CI job | **F** | The macOS app is never compiled by CI; v3 §1.5 asks whether it is `main`-ready. It cannot be until CI builds it. |
+| 24 | ~~`faBolusWidgets` (iOS) is **not embedded** in the `faBolus` target and is in no scheme~~ | **RESOLVED (P4 / P86)** | Now embedded as a target dependency of `faBolus` (`project.yml:99` `- target: faBolusWidgets`) and built by the primary `faBolus` scheme; the A4 widget-staleness work now has a shipping extension to act on. |
+| 25 | ~~`faBolusWatchWidgets` **not embedded**; CI step name misleading~~ | **RESOLVED (P16 verify)** | Verified: now embedded as a target dependency of `faBolusWatch` (`project.yml:224-225`, "App Group now enabled on the watch App IDs"). The `WatchCI` scheme builds `faBolusWatch: all`, so the `ci.yml` "Build watch app + complication" step **does** build the complication (as an embedded dependency) — the step name is accurate. |
+| 26 | ~~`faBolusMac` + `faBolusMacWidgets` in no scheme and no CI job~~ | **RESOLVED (P4 / P86)** | The `mac-build` CI job (`ci.yml:176-212`) builds the `faBolusMac` scheme, which embeds `faBolusMacWidgets`. §1.5 macOS main-readiness is now answerable in software (green in CI); remaining gaps are hardware-only. |
 | 27 | `hosts/loop/` — "design scaffold, not built"; `RemoteHost.swift.example` deliberately uncompilable | **N** | Open contribution placeholder. |
 | 28 | `project.yml:114-115,126,129-130` — commented-out xDrip App Groups, ubiquity-kvstore, HealthKit entitlements | **R** | All gated on a paid Apple team. |
 | 29 | `WATCH_EMBEDDED` (`project.yml:187,189`) | **N** | Working build switch. |
@@ -70,9 +72,9 @@ branch operation or restructuring).
 
 | # | Item | Disp. | Note |
 |---|---|---|---|
-| 30 | ~~`watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch, reachable from `WatchApp.swift:24`~~ **RESOLVED 2026-08-04** | **F** | Was: a second pump-connection holder bypassing the `PumpBackend` seam, shipping and user-visible, in direct conflict with v3 C9. Owner decision: **hide behind a default-off build flag**, matching `faBolusGarmin/direct-pump/`. Done — the five files moved to `watch/faBolusWatch/direct-pump/` (see its `STATUS.md`), excluded from the target unless `FABOLUS_WATCH_DIRECT_PUMP=1`, with the `PumpX2Messages`/`Auth`/`BLE` deps dropped alongside. `WatchPumpClient.swift` was the only watch file importing those, so a shipping watch build now **links no pump BLE stack at all** — verified in the generated project, and both flag states compile. |
+| 30 | ~~`watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch, reachable from `WatchApp.swift:24`~~ **RESOLVED 2026-08-04** | **RESOLVED** | Was: a second pump-connection holder bypassing the `PumpBackend` seam, shipping and user-visible, in direct conflict with v3 C9. Owner decision: **hide behind a default-off build flag**, matching `faBolusGarmin/direct-pump/`. Done — the five files moved to `watch/faBolusWatch/direct-pump/` (see its `STATUS.md`), excluded from the target unless `FABOLUS_WATCH_DIRECT_PUMP=1`, with the `PumpX2Messages`/`Auth`/`BLE` deps dropped alongside. `WatchPumpClient.swift` was the only watch file importing those, so a shipping watch build now **links no pump BLE stack at all** — verified in the generated project, and both flag states compile. |
 | 31 | `watch/README.md:13-14` standalone phone-less watch build "designed but not built … paused" | **R** | Same decision as 30. |
-| 32 | `ICloudSync.swift:41-46` — the live implementation in every build is an empty stub | **F** | Duplicate of 23; listed here because the code, not just the flag, is the artifact. |
+| 32 | ~~`ICloudSync.swift:41-46` — the live implementation in every build is an empty stub~~ | **RESOLVED (P14 S5)** | Resolved with item 23 via the `FABOLUS_ICLOUD` gate: default OFF compiles the no-op stub (so a free-account clone signs); `FABOLUS_ICLOUD=1` compiles the real KV store. The stub is now the deliberate free-account path, not dead code. |
 
 ## 6. Not our WIP
 

@@ -50,6 +50,23 @@ your app drive them:
 update **both** the Swift `RemoteCommand` and the Monkey C mirror, and bump the version. Prefer
 additive, optional fields so older remotes keep working.
 
+## Versioning & the cross-repo contract (§1.3 / §1.4)
+`BRANCHES.md` is the **canonical** governance doc for versioning, the experimental gate (§1.2), the
+promotion criteria (§1.4), and the cross-repo contract (§1.3). This section points at it; it does not
+restate it.
+
+- **App version** lives once in `Config.xcconfig` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`) and
+  is inherited by every target — do not add per-target version literals in `project.yml`. Bump it on a
+  release and add a `CHANGELOG.md` (Keep a Changelog) entry.
+- **Backend pin.** The contract is: PumpX2Kit released under annotated tags, apps pinned to an explicit
+  version (with a documented local-path override for development), and a committed `Package.resolved`.
+  This is **currently declared UNMET** — faBolus consumes PumpX2Kit by local path because the backend's
+  crypto target uses `.unsafeFlags` (forbidden by SwiftPM in a URL+version dependency) and the M1 driver
+  work depends on path-consumption. See `BRANCHES.md` §1.3 for the full reason, the tag state, and the
+  compatibility matrix.
+- **Garmin lockstep.** A Garmin `main` release accompanies every app `main` release at the same quality
+  bar; it does not lag or ship separately. Enforced by the branch-aware cross-repo CI (§1.3).
+
 ## Before you open a PR
 - `xcodegen generate` after adding/removing files.
 - Build the `faBolus` scheme (and `faBolusWatch` if you touched watch/shared code).
