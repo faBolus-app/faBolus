@@ -142,7 +142,6 @@ enum SettingsCatalog {
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
-        .init("smartAssistEnabled", .bolus, from: .advanced, backsUp: false),
         .init("eatingNudgesEnabled", .bolus, from: .advanced, backsUp: false),
         .init("eatingTriggerConfig", .bolus, from: .advanced, backsUp: false),
         .init("eatingLearnFromFeedback", .bolus, from: .advanced, backsUp: false),
