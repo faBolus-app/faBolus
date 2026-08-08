@@ -2,7 +2,6 @@ import Foundation
 import faBolusCore
 import HistoryStore
 #if FABOLUS_NUDGE
-import DosingSafetyKit
 import GlucoseIntelligenceKit
 import TherapyInsightsKit
 import AlertIntelligenceKit
@@ -25,13 +24,6 @@ public final class AppModel {
     private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
     private var lastGlucoseIngest = Date.distantPast
     private var lastBolusIngest = Date.distantPast
-
-    // Predictive-low (GlucoseIntelligenceKit) — advisory, gated by AppSettings.hypoAlertsEnabled.
-    #if FABOLUS_NUDGE
-    private let hypoEngine = SmartAssist.makeHypoEngine()
-    #endif
-    private var lastHypoIngest = Date.distantPast
-    private(set) var hypoWarning: HypoAlert?
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
     @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
@@ -843,19 +835,6 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
-    /// Advisory "Smart Assist" warnings for a bolus the user is about to give (predicted low / stacking /
-    /// oversized). Empty when the feature is off or nothing's concerning. Advisory only — never blocks.
-    public func smartAssistWarnings(units: Double, carbs: Double, recommendedUnits: Double?) -> [String] {
-        guard AppSettings.shared.smartAssistEnabled else { return [] }
-        #if FABOLUS_NUDGE
-        return SmartAssist.warnings(units: units, carbs: carbs, recommendedUnits: recommendedUnits,
-                                    snapshot: snapshot, glucoseHistory: glucoseHistory,
-                                    bolusMarkers: bolusMarkers).map(\.message)
-        #else
-        return []
-        #endif
-    }
-
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
 
@@ -864,25 +843,6 @@ public final class AppModel {
     public func applyRetention(days: Int) {
         guard days > 0, let history else { return }
         history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
-    }
-
-    private var hypoDelegateSet = false
-    /// Feed new readings to the predictive-low engine; it publishes via the delegate below (advisory).
-    private func updateHypoWarning() {
-        #if FABOLUS_NUDGE
-        guard AppSettings.shared.hypoAlertsEnabled else { hypoWarning = nil; return }
-        if !hypoDelegateSet { hypoEngine.delegate = self; hypoDelegateSet = true }
-        let fresh = glucoseHistory.filter { $0.date > lastHypoIngest }.sorted { $0.date < $1.date }
-        for r in fresh {
-            hypoEngine.ingest(GlucoseIntelligenceKit.CGMReading(mgdl: Double(r.mgdl), date: r.date))
-        }
-        lastHypoIngest = fresh.last?.date ?? lastHypoIngest
-        if let w = hypoWarning, Date().timeIntervalSince(w.at) > Double(w.horizonMinutes) * 60 {
-            hypoWarning = nil   // expire past its horizon
-        }
-        #else
-        hypoWarning = nil
-        #endif
     }
 
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
@@ -911,52 +871,6 @@ public final class AppModel {
     }
     /// Human label for where the basal schedule came from ("" if none).
     public var basalScheduleSource: String { AppSettings.shared.basalScheduleSource }
-
-    /// Insulin-sensitivity assessment (autosens-style) over the last ~14 days of stored data.
-    public func sensitivityState() -> SensitivitySummary? {
-        #if FABOLUS_NUDGE
-        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
-        let range = Date().addingTimeInterval(-14 * 86400)...Date()
-        let s = SmartAssist.sensitivity(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                        carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
-                                        isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
-        return SensitivitySummary(level: s.level.rawValue, note: s.note)
-        #else
-        return nil
-        #endif
-    }
-
-    /// Settings advice (ISF / carb-ratio, and basal drift once a basal schedule is available). Advisory;
-    /// needs weeks of data for confidence.
-    public func settingsAdvice() -> SettingsAdvice? {
-        #if FABOLUS_NUDGE
-        guard let history, snapshot.isf > 0, snapshot.carbRatio > 0 else { return nil }
-        let range = Date().addingTimeInterval(-30 * 86400)...Date()
-        let a = SmartAssist.settingsAdvice(cgm: history.glucose(in: range), insulin: history.boluses(in: range),
-                                           carbs: history.carbs(in: range), basalByHour: basalByHour() ?? [],
-                                           isf: snapshot.isf, carbRatio: snapshot.carbRatio, targetBg: snapshot.targetBg)
-        return SettingsAdvice(isf: a.isf, carbRatio: a.carbRatio, basalByHour: a.basalByHour)
-        #else
-        return nil
-        #endif
-    }
-
-    /// Run the REAL oref0 autotune over stored data (experimental; needs weeks of data). On-demand only
-    /// (heavy: loads the oref JS bundle in JavaScriptCore) — runs off the main actor.
-    public func autotuneSuggestions() async -> [String] {
-        #if FABOLUS_NUDGE
-        guard let history, let basal = basalByHour(), snapshot.isf > 0, snapshot.carbRatio > 0 else { return [] }
-        let range = Date().addingTimeInterval(-30 * 86400)...Date()
-        let cgm = history.glucose(in: range), bol = history.boluses(in: range)
-        let isf = snapshot.isf, cr = snapshot.carbRatio, tgt = snapshot.targetBg
-        return await Task.detached {
-            AutotuneAdapter.suggestions(cgm: cgm, boluses: bol, basalByHour: basal, isf: isf,
-                                        carbRatio: cr, targetBg: tgt, diaHours: 6) ?? []
-        }.value
-        #else
-        return []
-        #endif
-    }
 
     private var lastNSBackfill = Date.distantPast
     /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
@@ -1010,14 +924,6 @@ public final class AppModel {
         if let d = try? JSONEncoder().encode(alertIntel) { UserDefaults.standard.set(d, forKey: "alertIntel") }
     }
     #endif
-    /// User dismissed the predictive-low banner → teach the fatigue layer + clear it.
-    public func dismissHypoWarning() {
-        #if FABOLUS_NUDGE
-        alertIntel.record("predicted_low", .dismissed); saveAlertIntel()
-        #endif
-        hypoWarning = nil
-    }
-
     /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
     /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
     private func updateEatingNudge() {
@@ -1160,7 +1066,6 @@ public final class AppModel {
                                 bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason)
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
-        updateHypoWarning()
         maybeBackfillNightscout()
         updateEatingNudge()
         evaluateSavePinOffer()
@@ -2114,20 +2019,3 @@ public final class AppModel {
     }
 }
 
-// Predictive-low engine callback (advisory). `ingest` is only ever called on the main actor (from
-// refresh), so the delegate fires on main — assumeIsolated publishes synchronously without a cross-actor send.
-#if FABOLUS_NUDGE
-extension AppModel: GlucoseIntelligenceDelegate {
-    nonisolated public func glucoseIntelligence(_ g: GlucoseIntelligence, didPredictLow warning: HypoWarning) {
-        let alert = HypoAlert(horizonMinutes: warning.horizonMinutes, probability: warning.probability,
-                              projectedLowMgdl: warning.projectedLowMgdl, at: warning.at,
-                              nocturnal: warning.nocturnal)
-        Task { @MainActor in
-            // Learned fatigue layer: rate-limit / quiet-hours / auto-quiet a kind the user keeps dismissing.
-            let decision = self.alertIntel.decide(AlertIntelligenceKit.Alert(kind: "predicted_low", severity: 2))
-            if case .suppress = decision { return }
-            self.hypoWarning = alert
-        }
-    }
-}
-#endif

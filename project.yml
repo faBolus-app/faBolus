@@ -71,15 +71,11 @@ targets:
         product: ShareClient
       # >>> NUDGE (stripped by scripts/generate-project.sh when the faBolusNudge repo is unavailable)
       - package: faBolusNudge
-        product: DosingSafetyKit
-      - package: faBolusNudge
         product: GlucoseIntelligenceKit
       - package: faBolusNudge
         product: TherapyInsightsKit
       - package: faBolusNudge
         product: AlertIntelligenceKit
-      - package: faBolusNudge
-        product: AutotuneKit
       - package: faBolusNudge
         product: EatingDetectionKit
       - package: faBolusNudge

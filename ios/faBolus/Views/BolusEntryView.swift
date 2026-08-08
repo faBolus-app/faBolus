@@ -104,10 +104,6 @@ struct BolusEntryView: View {
 
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
-    /// Advisory Smart Assist warnings for the current entry (empty unless the feature is on). Never blocks.
-    private var smartWarnings: [String] {
-        model.smartAssistWarnings(units: units, carbs: carbs, recommendedUnits: recommendation?.recommendedUnits)
-    }
     /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
     /// for a carb bolus, so the carbs recorded on the pump won't match the delivered units. Uses the same
     /// conservative 0.10 U limit as the remote divergence guard.
@@ -278,11 +274,6 @@ struct BolusEntryView: View {
                        r == .pumpNotLinked || r == .bolusInFlight {
                         Label(r.userMessage, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(.secondary)
-                    }
-                    // Smart Assist (advisory) — never blocks; the deliver button stays enabled.
-                    ForEach(smartWarnings, id: \.self) { warning in
-                        Label(warning, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote).foregroundStyle(.orange)
                     }
                     // Dose overridden away from the carb recommendation (advisory; carbs still logged).
                     if let w = carbOverrideWarning {

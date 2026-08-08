@@ -35,13 +35,6 @@ public final class AppSettings {
     /// so the default is unlimited; this only exists for users who prefer data-minimization.
     public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
 
-    /// "Smart Assist" advisory guardrails (DosingSafetyKit): predicted-low / stacking / oversized-bolus
-    /// warnings at bolus time. **OFF by default** — advisory only, never blocks a dose.
-    public var smartAssistEnabled: Bool { didSet { d.set(smartAssistEnabled, forKey: "smartAssistEnabled") } }
-
-    /// Predictive-low (hypo) alerts (GlucoseIntelligenceKit). **OFF by default** — advisory in-app warning.
-    public var hypoAlertsEnabled: Bool { didSet { d.set(hypoAlertsEnabled, forKey: "hypoAlertsEnabled") } }
-
     /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
     public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
@@ -381,8 +374,6 @@ public final class AppSettings {
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
-        smartAssistEnabled = (d.object(forKey: "smartAssistEnabled") as? Bool) ?? false
-        hypoAlertsEnabled = (d.object(forKey: "hypoAlertsEnabled") as? Bool) ?? false
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         if let data = d.data(forKey: "eatingTriggerConfig"),

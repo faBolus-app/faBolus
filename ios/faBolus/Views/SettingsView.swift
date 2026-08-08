@@ -72,7 +72,7 @@ struct SettingsView: View {
                         }
                         #if FABOLUS_NUDGE
                         NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
-                            Label(settings.smartAssistEnabled || settings.hypoAlertsEnabled || settings.eatingNudgesEnabled
+                            Label(settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
                         #else
