@@ -201,4 +201,74 @@ struct DosingInputFreshnessTests {
             #expect(rec2.last?.status == .delivered)
         }
     }
+
+    // MARK: - DIF-ux: the warned host-owner overrides relax the DIF-core block (mock profile 10/40/110)
+
+    /// (a) include-last-known-IOB: the override recomputes the FULL dose off the last-known values WITH the
+    /// BG correction, and keeps SUBTRACTING the last-known IOB — it is NOT carbs-only, and it never zeroes
+    /// the IOB. With no override the same request stays blocked at the DIF-core carbs-only dose.
+    @Test func includeLastKnownIobSubtractsIobAndKeepsBgCorrection() async {
+        let b = MockBackend()
+        b.setLiveIob(1.4)
+        b.forceIobStale = true
+        // Baseline (no override): fail closed, carbs-only (correction dropped): 30 g / 10 g·U⁻¹ = 3.0.
+        let blocked = await b.recommendBolus(carbsGrams: 30, bgMgdl: 250)
+        #expect(blocked.inputsVerified == false)
+        #expect(blocked.iobStale)
+        #expect(abs(blocked.recommendedUnits - 3.0) < 0.0001)
+        // Override: 3.0 carbs + (250−110)/40 = 3.5 correction − 1.4 IOB = 5.1.
+        let ov = await b.recommendBolus(carbsGrams: 30, bgMgdl: 250, allowStaleIob: true, allowStaleTherapy: false)
+        #expect(ov.inputsVerified == false)                    // (c) the override NEVER "verifies" the inputs
+        #expect(abs(ov.recommendedUnits - 5.1) < 0.0001)
+        #expect(ov.recommendedUnits > blocked.recommendedUnits)  // BG correction is INCLUDED (not carbs-only)
+        #expect(ov.recommendedUnits < 6.5)                       // < the zero-IOB dose ⇒ IOB is SUBTRACTED, not zeroed
+    }
+
+    /// (b) use-last-known-therapy: the override computes off the last-known CR/ISF/target WITH the BG
+    /// correction. IOB pinned to 0 to isolate the therapy+BG effect.
+    @Test func useLastKnownTherapyComputesOffCachedSettingsAndBg() async {
+        let b = MockBackend()
+        b.setLiveIob(0)
+        b.forceTherapyStale = true
+        let blocked = await b.recommendBolus(carbsGrams: 30, bgMgdl: 250)
+        #expect(blocked.inputsVerified == false)
+        #expect(blocked.therapyStale)
+        #expect(abs(blocked.recommendedUnits - 3.0) < 0.0001)   // carbs-only
+        let ov = await b.recommendBolus(carbsGrams: 30, bgMgdl: 250, allowStaleIob: false, allowStaleTherapy: true)
+        #expect(ov.inputsVerified == false)
+        // off last-known CR 10 / ISF 40 / target 110: 3.0 + (250−110)/40 = 6.5.
+        #expect(abs(ov.recommendedUnits - 6.5) < 0.0001)
+        #expect(ov.recommendedUnits > blocked.recommendedUnits)
+    }
+
+    /// (c) both stale + both overrides: still `inputsVerified == false`, and it sizes the full dose off the
+    /// last-known values (the unified "use last-known & deliver" case in the host UI).
+    @Test func bothOverridesStayUnverifiedAndSizeAFullDose() async {
+        let b = MockBackend()
+        b.setLiveIob(1.4)
+        b.forceIobStale = true
+        b.forceTherapyStale = true
+        let ov = await b.recommendBolus(carbsGrams: 30, bgMgdl: 250, allowStaleIob: true, allowStaleTherapy: true)
+        #expect(ov.inputsVerified == false)
+        #expect(ov.iobStale && ov.therapyStale)
+        #expect(abs(ov.recommendedUnits - 5.1) < 0.0001)        // 3 + 3.5 − 1.4
+    }
+
+    /// (d) FAIL-CLOSED HAZARD #1: the REMOTE path must STILL fail closed even though the override API now
+    /// exists — `resolveRemoteDose` recomputes with NO override, so `guard rec.inputsVerified` blocks. The
+    /// remote's estimate carrying the override dose must NOT let it through (the host recompute decides).
+    @Test func remotePathStillFailsClosedDespiteOverrideApi() async {
+        await withCleanGates {
+            let (model, backend, rec) = await makeModel(connected: true)
+            backend.seedFreshGlucose(250)
+            backend.setLiveIob(1.4)
+            backend.forceIobStale = true          // inputs unconfirmable ⇒ host recompute fails closed
+            // A HOST could override to this dose; the remote sends it as its estimate — the host must still block.
+            let overrideEstimate = await model.recommendBolus(carbsGrams: 30, bgMgdl: 250, allowStaleIob: true).recommendedUnits
+            await model.remoteDeliver(requestId: "difux-remote", carbsGrams: 30, remoteEstimate: overrideEstimate, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("not verified") == true)
+            #expect(rec.count(.delivering) == 0)   // never reached the backend delivery
+        }
+    }
 }

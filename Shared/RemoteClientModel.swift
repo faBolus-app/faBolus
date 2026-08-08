@@ -32,6 +32,13 @@ class RemoteClientModel {
     var isf: Int = 0
     var targetBg: Int = 0
     var maxBolusUnits: Double = 25
+    /// DIF-ux — the pump's own read times of the calc inputs, relayed as immutable source epochs
+    /// (`iobEpochSec` / `therapyEpochSec`), so this remote greys/ages its IOB + therapy rows and PRE-WARNS
+    /// exactly like the host. `nil` ⇒ the host didn't send one (legacy host) ⇒ age UNKNOWN ⇒ stale, never
+    /// fresh. A remote only VIEWS these — it never offers an include-last-known override and never sends one;
+    /// the host stays the authoritative dose gate.
+    var iobDate: Date?
+    var therapyDate: Date?
     // Entry prefs (from phone Settings — the remote increments)
     var bolusIncrement: Double = 0.05
     var carbIncrement: Double = 5
@@ -175,6 +182,15 @@ class RemoteClientModel {
     /// Relative age label ("now", "3 min ago"), or nil when there's no reading yet.
     var ageLabel: String? { glucoseDate.map { GlucoseFreshness.ageLabel(for: $0) } }
 
+    // DIF-ux calc-input freshness (view/pre-warn only — a remote never overrides). `nil` date ⇒ stale (age
+    // unknown), mirroring `PumpSnapshot.isIobStale` / `isTherapyStale` and the host's `CalcInputFreshness`.
+    var isIobStale: Bool { CalcInputFreshness.isIobStale(iobDate) }
+    var isTherapyStale: Bool { CalcInputFreshness.isTherapyStale(therapyDate) }
+    /// Compact age labels ("now", "7 min ago") for the IOB / therapy rows, or nil when the host sent no
+    /// source epoch (legacy host).
+    var iobAgeLabel: String? { iobDate.map { CalcInputFreshness.ageLabel(for: $0) } }
+    var therapyAgeLabel: String? { therapyDate.map { CalcInputFreshness.ageLabel(for: $0) } }
+
     static func arrow(fromToken t: String?) -> String {
         switch t {
         case "up": return "↑"; case "upup": return "⇈"; case "up45": return "↗"
@@ -219,6 +235,11 @@ class RemoteClientModel {
             if let cr = cmd.carbRatio { carbRatio = cr }
             if let i = cmd.isf { isf = Int(i) }
             if let tb = cmd.targetBg { targetBg = Int(tb) }
+            // DIF-ux: adopt the immutable source epochs of the calc inputs, exactly like `glucoseEpochSec`.
+            // Absent ⇒ leave nil ⇒ `isIobStale`/`isTherapyStale` treat the age as unknown ⇒ stale (never
+            // fresh), so a legacy host that predates the fields can never make a remote render these fresh.
+            iobDate = cmd.iobEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            therapyDate = cmd.therapyEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             if let mx = cmd.maxBolusUnits, mx > 0 { maxBolusUnits = mx }
             if let bi = cmd.bolusIncrement, bi > 0 { bolusIncrement = bi }
             if let ci = cmd.carbIncrement, ci > 0 { carbIncrement = ci }
