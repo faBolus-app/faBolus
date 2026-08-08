@@ -69,6 +69,17 @@ struct BolusEntryView: View {
         let therapyDate: Date?
     }
     @State private var calcInputPrompt: CalcInputPrompt?
+    /// DIF-ux: the override the owner accepted for THIS attempt, captured when they tap the warned dialog's
+    /// "use last-known" button. Re-entering `attemptDeliver` with this set SKIPS the warning gate but runs
+    /// the SAME deliver-time machinery every verified dose does — the fresh-CGM refresh, the 0.10 U
+    /// divergence guard, and (critically) the Addendum-B stale-CGM three-way — with these flags threaded
+    /// into each recompute. So a stale-IOB/therapy override never bypasses the stale-CGM warning and never
+    /// doses a correction off an unrefreshed on-screen glucose. `baseline` is the dose the button showed
+    /// (off the compose-time BG), used as the divergence comparison point so the guard catches a real CGM
+    /// move, not the expected correction. Consumed-and-cleared at the top of `attemptDeliver` → per-attempt,
+    /// never sticky. Remotes never reach any of this (they fail closed in `resolveRemoteDose`).
+    private struct AcceptedOverride { let allowStaleIob: Bool; let allowStaleTherapy: Bool; let baseline: Double }
+    @State private var acceptedOverride: AcceptedOverride?
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
 
@@ -419,7 +430,16 @@ struct BolusEntryView: View {
                             titleVisibility: .visible) {
             if let p = calcInputPrompt {
                 Button(calcInputUseLabel(p), role: .destructive) {
-                    Task { await deliverWithOverride(p) }
+                    // Accept the override for THIS attempt and RE-ENTER attemptDeliver — which now skips the
+                    // warning gate but still runs the fresh-CGM refresh + divergence guard + Addendum-B
+                    // stale-CGM three-way, with these flags threaded in. The button's dose is the baseline
+                    // for the divergence comparison; the delivered dose is the deliver-time recompute.
+                    acceptedOverride = AcceptedOverride(allowStaleIob: p.allowStaleIob,
+                                                        allowStaleTherapy: p.allowStaleTherapy,
+                                                        baseline: p.overrideUnits)
+                    let ext = p.extended
+                    calcInputPrompt = nil
+                    Task { await attemptDeliver(extended: ext) }
                 }
                 Button("Cancel", role: .cancel) { calcInputPrompt = nil }   // sends NOTHING
             }
@@ -467,7 +487,8 @@ struct BolusEntryView: View {
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
         let seq = calcSeq
-        calcInputPrompt = nil   // DIF-ux: a changed dose re-requires the per-attempt freshness override
+        calcInputPrompt = nil       // DIF-ux: a changed dose re-requires the per-attempt freshness override
+        acceptedOverride = nil      // …and drops any override accepted for a prior compose
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
@@ -489,9 +510,17 @@ struct BolusEntryView: View {
         // never silently deliver. Present the WARNED two-way override, keyed on WHICH input(s) were
         // unconfirmed: therapy-only → use-last-known-settings; IOB-only → include-last-known-IOB; both, OR
         // neither flag but still unverified → the unified use-last-known override (both flags). `cancel`
-        // sends nothing. The chosen dose is recomputed off last-known values and delivered by the dialog
-        // button (`deliverWithOverride`). Remotes never reach this — they fail closed in `resolveRemoteDose`.
-        if let rec = recommendation, !rec.inputsVerified, calcInputPrompt == nil {
+        // sends nothing. Accepting sets `acceptedOverride` and RE-ENTERS this method, which then runs the
+        // full deliver-time machinery below (fresh-CGM refresh + divergence guard + Addendum-B stale-CGM
+        // three-way) with the override threaded in. Remotes never reach this — they fail closed in
+        // `resolveRemoteDose`.
+        // The gate fires ONLY in carbs-calculator mode, where the dose comes from the recommendation. In UNITS mode
+        // the delivered amount is the number the user dialed, not a recommendation, so a lingering unverified
+        // carb recommendation must never divert it into a carb-calc dose. Skip the gate once an override was
+        // already accepted for this attempt (re-entry). The unconfirmed-but-in-window case
+        // (`iobStale == therapyStale == false` yet `!inputsVerified`) is still caught. `cancel` sends nothing.
+        if mode == .carbs, let rec = recommendation, !rec.inputsVerified,
+           acceptedOverride == nil, calcInputPrompt == nil {
             let kind: CalcInputPrompt.Kind
             let allowIob: Bool, allowTherapy: Bool
             if rec.therapyStale && !rec.iobStale {
@@ -501,30 +530,42 @@ struct BolusEntryView: View {
             } else {
                 kind = .both; allowIob = true; allowTherapy = true   // both stale, or neither-flag-but-!verified
             }
-            // Precompute the override dose off last-known values (button label == the delivered amount),
-            // using the on-screen BG — exactly what the user sees.
-            let ov = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
-                                                allowStaleIob: allowIob, allowStaleTherapy: allowTherapy)
-            calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: ov.recommendedUnits,
+            // Precompute the override dose off last-known values + the on-screen BG so the button shows the
+            // estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time recompute
+            // below off FRESH CGM, so a CGM move since compose is still caught by the divergence guard.
+            let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+                                                 allowStaleIob: allowIob, allowStaleTherapy: allowTherapy)
+            calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
                                               allowStaleIob: allowIob, allowStaleTherapy: allowTherapy,
                                               iobUnits: rec.iobUnits, iobDate: rec.iobDate,
                                               assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
             return
         }
+        // Consume the accepted override (if any) for THIS attempt only, then clear it so it can never persist
+        // to a later Deliver tap without a fresh warning (per-attempt). nil ⇒ the verified / normal path.
+        let ov = acceptedOverride
+        acceptedOverride = nil
         preparingDeliver = true
         defer { preparingDeliver = false }
         if mode == .carbs, bgSource == .cgm, carbs > 0 {
             let justChanged = lastCGMChangeAt.map { Date().timeIntervalSince($0) <= 2 } ?? false
-            let priorUnits = units
+            // Divergence baseline: for an accepted override it's the dose the warned button showed (off the
+            // compose-time BG); otherwise the on-screen `units`. Either way the guard fires on a real CGM
+            // move between compose and deliver, not on the override's expected correction.
+            let priorUnits = ov?.baseline ?? units
             await model.refreshGlucoseNow()
             // DIF-core: also force the calc inputs fresh right before the authoritative deliver-time
             // recompute, so the delivered dose is built from fresh CR/ISF/target + IOB. Because
             // `recommendBolus` re-reads fresh, the 0.10 U divergence guard below now also catches an INPUT
             // change (clinician edit / profile-segment boundary / IOB drift) between compose and deliver —
             // the recompute differs from the on-screen `priorUnits` and the CGM-updated prompt fires.
+            // DIF-ux: any accepted override (`ov`) is threaded into EVERY recompute here, so last-known
+            // IOB/therapy apply while this fresh-CGM / stale-CGM machinery still governs the glucose term.
             await model.refreshCalcInputsNow()
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
-                let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g)
+                let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g,
+                                                     allowStaleIob: ov?.allowStaleIob ?? false,
+                                                     allowStaleTherapy: ov?.allowStaleTherapy ?? false)
                 let delta = abs(rec.recommendedUnits - priorUnits)
                 if delta > AppModel.remoteDivergenceLimitUnits || (justChanged && delta > 0.0001) {
                     cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
@@ -537,14 +578,20 @@ struct BolusEntryView: View {
                 await deliverFrozen(freeze(units: priorUnits, bg: Int(bg), extended: extended))
                 return
             }
-            // Addendum B: CGM stale/missing — never SILENTLY correct off the stale on-screen value. Offer
+            // Addendum B: CGM stale/missing — never SILENTLY correct off the stale on-screen value, EVEN when
+            // a stale-IOB/therapy override was accepted (the override covers those inputs, NOT glucose). Offer
             // the three-way choice (StaleBolusChoice: includeStale / proceedWithout / cancel). `newBG = -1`
             // selects the carbs-only branch of the dialog; when a stale-but-real reading exists, `staleBG`
             // adds the "include it" option (insulin-INCREASING, per-attempt, recomputed WITH the stale
-            // value). With no reading at all there is nothing to include → carbs-only / cancel only.
-            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil)
+            // value). With no reading at all there is nothing to include → carbs-only / cancel only. The
+            // override is threaded into each offered dose so last-known IOB/therapy still apply.
+            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil,
+                                                       allowStaleIob: ov?.allowStaleIob ?? false,
+                                                       allowStaleTherapy: ov?.allowStaleTherapy ?? false)
             if let sg = model.snapshot.glucose {   // we're in the stale branch, so a present reading is stale
-                let withStale = await model.recommendBolus(carbsGrams: carbs, bgMgdl: sg)
+                let withStale = await model.recommendBolus(carbsGrams: carbs, bgMgdl: sg,
+                                                           allowStaleIob: ov?.allowStaleIob ?? false,
+                                                           allowStaleTherapy: ov?.allowStaleTherapy ?? false)
                 cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
                                            extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
             } else {
@@ -553,8 +600,18 @@ struct BolusEntryView: View {
             }
             return
         }
-        // No CGM correction (units mode, manual BG, or no carbs): freeze the on-screen values as-is.
-        await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
+        // No CGM-correction handling here: UNITS mode, manual BG, or carbs with no BG. In carbs mode with an
+        // accepted override, deliver the override dose recomputed off the on-screen (manual/absent) BG +
+        // last-known inputs — no CGM staleness to guard, since the BG is user-entered or absent. Otherwise
+        // (UNITS mode, or a verified carbs dose off manual BG) freeze the on-screen values as-is — in UNITS
+        // mode that is exactly the number the user dialed.
+        if mode == .carbs, let ov {
+            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+                                                 allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
+            await deliverFrozen(freeze(units: rec.recommendedUnits, bg: Int(bg), extended: extended))
+        } else {
+            await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
+        }
     }
 
     /// Build the immutable proposal from confirmed values.
@@ -565,15 +622,6 @@ struct BolusEntryView: View {
                     iobUnits: recommendation?.iobUnits,
                     extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
                     extendedDurationMin: extended ? extendedDurationMin : nil)
-    }
-
-    /// DIF-ux: the user accepted the warned override for THIS attempt (use-last-known-settings /
-    /// include-last-known-IOB). Freeze + deliver exactly the precomputed override dose (so the number the
-    /// button showed is the number delivered), via the same freeze/deliver path every other button uses.
-    /// `cancel` never routes here — it just clears the prompt, sending nothing.
-    private func deliverWithOverride(_ p: CalcInputPrompt) async {
-        calcInputPrompt = nil
-        await deliverFrozen(freeze(units: p.overrideUnits, bg: Int(bg), extended: p.extended))
     }
 
     /// Deliver exactly the frozen proposal — the only place that calls the backend (audit C-04).
