@@ -1435,6 +1435,33 @@ public final class AppModel {
             atSeconds: Int(Date().timeIntervalSince1970)))
     }
 
+    // MARK: - P16 S3 (manual precedence for scheduled mode automation)
+
+    /// When the user last changed the pump's activity/sleep mode BY HAND (from the Pump Control UI).
+    /// Stamped ONLY on the manual path (`noteManualModeChange`, called from the mode buttons) — never on
+    /// `ModeAutomation`'s automated apply — so scheduled automation can tell "the user just did this
+    /// themselves" from "we did it". Not observed by the UI; purely feeds `lastManualTherapyActionAt`.
+    @ObservationIgnored private var lastManualModeChangeAt: Date?
+
+    /// Record a manual (user-initiated) activity/sleep mode change for S3 manual-precedence. The `at`
+    /// clock is injectable (matching the codebase's `now:`/`add:` convention); production stamps now.
+    func noteManualModeChange(at: Date = Date()) { lastManualModeChangeAt = at }
+
+    /// P16 S3 — the most recent time the user took a manual therapy action, read by `ModeAutomation` to
+    /// DEFER (prompt) a scheduled Sleep/Exercise switch rather than silently override a hands-on change.
+    /// The max of: the last manual bolus (`snapshot.lastBolusDate`), the most recent recorded
+    /// clinician-tier setting edit (`settingChangeStore`), and the last manual mode change
+    /// (`lastManualModeChangeAt`). nil ⇒ no known manual action. Disclosure only — never gates delivery.
+    var lastManualTherapyActionAt: Date? {
+        var candidates: [Date] = []
+        if let bolus = snapshot.lastBolusDate { candidates.append(bolus) }
+        if let latestEditSeconds = settingChangeStore.load().latest.map(\.atSeconds).max() {
+            candidates.append(Date(timeIntervalSince1970: Double(latestEditSeconds)))
+        }
+        if let mode = lastManualModeChangeAt { candidates.append(mode) }
+        return candidates.max()
+    }
+
     // MARK: Config wizards (A4 continued)
     // P14 S6 (§2.1(1)): Control-IQ config is therapy-defining → route through the ACK funnel (was
     // `runControl`, no acknowledgment).
