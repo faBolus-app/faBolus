@@ -39,6 +39,13 @@ public protocol PumpBackend: AnyObject {
     /// correction is computed off the freshest possible value. Best-effort: returns when the reading
     /// arrives or a short timeout elapses. Default no-op for backends that can't force a read.
     func refreshGlucoseNow() async
+    /// Request the newest bolus-calculator INPUTS from the pump **now** and wait briefly for them
+    /// (bounded), so an authoritative dose is built from fresh, self-consistent pump values rather than a
+    /// ~10-min-stale cache: op-115 (carb ratio / ISF / target / max, resolved for the active
+    /// profile+segment) and op-109 (active insulin). The exact analogue of `refreshGlucoseNow` for the
+    /// calc inputs. Best-effort: returns when both arrive or a short timeout elapses. Default no-op for
+    /// backends that can't force a read.
+    func refreshCalcInputsNow() async
     /// Deliver a bolus of the given units. Returns the **actual delivered** units
     /// (may be a partial amount if cancelled mid-delivery). Check `lastBolusCancelled`.
     /// `carbsGrams`/`bgMgdl` are optional **metadata** recorded on the pump (pump graph / t:connect /
@@ -187,6 +194,7 @@ public enum BolusReconciliation: Sendable, Equatable {
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
     func refreshGlucoseNow() async {}
+    func refreshCalcInputsNow() async {}
     /// Default: a backend that can't query its bolus history can never auto-reconcile, so a lost outcome
     /// stays blocked until manual verification (fail closed).
     func reconcile(bolusId: Int) async -> BolusReconciliation { .unavailable }

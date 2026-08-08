@@ -118,4 +118,27 @@ final class FakePumpTransport: PumpTransport {
         let dv = Bytes.toUint32(deliveredMilliunits); for i in 0..<4 { c[9 + i] = dv[i] }
         return frame(opCode: LastBolusStatusV2Response.props.opCode, cargo: c, signed: false)
     }
+
+    /// op-109 `ControlIQIOBResponse` (size 17). Only `swan6hrIOB` (offset 12) drives `iobUnits`, the value
+    /// `TandemBackend` reads; the other IOB fields are left zero. Delivered via `didReceiveFrame`, not the
+    /// coordinator (these reads are fire-and-forget), so a test seeds it with `injectStatusFrameForTesting`.
+    static func controlIQIOB(iobMilliunits: UInt32) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 17)
+        let v = Bytes.toUint32(iobMilliunits); for i in 0..<4 { c[12 + i] = v[i] }   // swan6hrIOB
+        return frame(opCode: ControlIQIOBResponse.props.opCode, cargo: c, signed: false)
+    }
+
+    /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)
+    /// resolved for the active profile+segment. `carbRatioMilliGramsPerUnit` = grams-per-unit × 1000 (so 10000
+    /// ⇒ 10 g/U); `iobMilliunits` should match the op-109 value or the host's cross-check trips `iobStale`.
+    static func calcDataSnapshot(iobMilliunits: UInt32, targetBg: Int, isf: Int,
+                                 carbRatioMilliGramsPerUnit: UInt32, maxBolusMilliunits: Int) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 46)
+        let iobB = Bytes.toUint32(iobMilliunits); for i in 0..<4 { c[3 + i] = iobB[i] }      // iob
+        let tb = le2(targetBg); c[9] = tb[0]; c[10] = tb[1]                                   // targetBg
+        let isfB = le2(isf); c[11] = isfB[0]; c[12] = isfB[1]                                 // isf
+        let cr = Bytes.toUint32(carbRatioMilliGramsPerUnit); for i in 0..<4 { c[14 + i] = cr[i] }  // carbRatio
+        let mb = le2(maxBolusMilliunits); c[18] = mb[0]; c[19] = mb[1]                        // maxBolusAmount
+        return frame(opCode: BolusCalcDataSnapshotResponse.props.opCode, cargo: c, signed: false)
+    }
 }
