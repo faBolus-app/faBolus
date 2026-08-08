@@ -34,16 +34,37 @@ enum ModeAutomation {
     /// Entry point for the intents. Applies immediately when a Mobi is connected + mode-capable;
     /// otherwise queues the request and (if reminders are on) notifies the user. Returns a
     /// human-readable result string for the intent's spoken/te​xt dialog.
-    static func request(_ mode: Mode, enabled: Bool) async -> String {
+    ///
+    /// Injectable seams (all default to production): `model` (the live `AppModel.shared`), `now` (the
+    /// clock, for the S3 manual-precedence window), and `post` (the broker poster). Production callers
+    /// pass none of them; the app tests inject a model + clock + a capturing poster.
+    static func request(_ mode: Mode, enabled: Bool,
+                        model: AppModel? = nil,
+                        now: Date = Date(),
+                        post: ((NotificationBroker.Message) -> Void)? = nil) async -> String {
+        let model = model ?? AppModel.shared
+        let post = post ?? Self.livePost
         guard settingOn(mode) else {
             return "Auto \(mode == .exercise ? "Exercise" : "Sleep") mode is turned off in faBolus."
         }
         let label = label(mode, enabled)
+        let modeWord = mode == .exercise ? "Exercise" : "Sleep"
         // P13: gated on the pump-derived capability (`supportsModes`, Mobi-only in practice), not the
         // raw `isMobi` model check.
-        if let model = AppModel.shared,
-           model.advancedControlAllowed, model.capabilities.supportsModes {
+        if let model, model.advancedControlAllowed, model.capabilities.supportsModes {
             if model.pumpReady {
+                // P16 S3: a scheduled switch must DEFER to a recent hands-on change — prompt, don't
+                // silently apply. Queue it (harmless; the reconnect drain also honors precedence, so it
+                // expires rather than auto-applying) and post a SUPPRESSIBLE informational reminder. This
+                // is the conservative direction: it withholds an automatic action and asks — it never
+                // applies a mode, changes a dose, or blocks anything the user does.
+                if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) {
+                    queue(mode, enabled: enabled)
+                    remind(title: "faBolus",
+                           body: "Scheduled \(modeWord) mode wasn't applied automatically because you made a manual change recently. Open faBolus to apply it.",
+                           now: now, post: post)
+                    return "faBolus didn't switch \(label.lowercased()) automatically — you made a manual change recently. Open faBolus to apply it."
+                }
                 await model.applyMode(mode, on: enabled)
                 clear(mode)
                 if let err = model.lastError { return "Couldn't set \(label.lowercased()): \(err)" }
@@ -51,14 +72,16 @@ enum ModeAutomation {
             }
             // Mobi app is alive but the pump link is down — queue it for the reconnect drain.
             queue(mode, enabled: enabled)
-            remind(title: "faBolus", body: "Will set \(label.lowercased()) when your pump reconnects.")
+            remind(title: "faBolus", body: "Will set \(label.lowercased()) when your pump reconnects.",
+                   now: now, post: post)
             return "faBolus will set \(label.lowercased()) once the pump reconnects."
         }
         // No live Mobi model (t:slim, non-Mobi, or the app isn't running): queue in case a Mobi
         // opens shortly, and remind the user to switch on the pump themselves.
         queue(mode, enabled: enabled)
         remind(title: "Set \(label) on your pump",
-               body: "faBolus can't switch this pump's mode automatically — change it on the pump.")
+               body: "faBolus can't switch this pump's mode automatically — change it on the pump.",
+               now: now, post: post)
         return "Reminder posted to set \(label.lowercased()) on your pump."
     }
 
@@ -75,8 +98,12 @@ enum ModeAutomation {
 
     /// Apply any fresh queued requests — called from `AppModel.refresh()` once a mode-capable Mobi is
     /// connected, so a switch requested while offline still lands (within the TTL).
-    static func applyPendingIfDue(using model: AppModel) {
+    static func applyPendingIfDue(using model: AppModel, now: Date = Date()) {
         guard let store, model.canControlModes else { return }   // P13: canControlModes ⇒ supportsModes (Mobi-only)
+        // P16 S3: do NOT silently drain a queued switch while a recent manual action stands — draining it
+        // would be exactly the silent auto-apply S3 prevents. Leave it queued; because the manual window
+        // (60 min) outlives the pending TTL (15 min), it expires on its own if the user never applies it.
+        if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) { return }
         for mode in [Mode.exercise, .sleep] {
             guard store.object(forKey: key(mode)) != nil, settingOn(mode) else { continue }
             let ts = store.double(forKey: tsKey(mode))
@@ -89,17 +116,23 @@ enum ModeAutomation {
 
     // MARK: Reminder
 
-    private static func remind(title: String, body: String) {
+    /// The production poster: route through the broker's App-Group-backed runtime (works out-of-process,
+    /// e.g. an App Intent while the app isn't live). Split out so tests can inject a capturing `post`.
+    static func livePost(_ message: NotificationBroker.Message) {
+        NotificationPoster.post(message, runtime: NotificationRuntime())
+    }
+
+    private static func remind(title: String, body: String, now: Date,
+                               post: (NotificationBroker.Message) -> Void) {
         guard AppSettings.shared.modeReminders else { return }
-        // Routed through the broker like every other notification. This can run out-of-process (an App
-        // Intent while the app isn't live), so it posts via the App-Group-backed runtime directly rather
-        // than a live `AppModel`. Stable `dedupeKey` (iOS collapses a rapid repeat) but a unique
-        // `episodeKey` per fire, so the broker's one-per-episode never permanently silences a recurring
-        // reminder.
+        // Routed through the broker like every other notification — a SUPPRESSIBLE `.info`/`.modeReminder`
+        // message, never a never-suppressible safety alert. Stable `dedupeKey` (iOS collapses a rapid
+        // repeat) but a unique `episodeKey` per fire, so the broker's one-per-episode never permanently
+        // silences a recurring reminder.
         let msg = NotificationBroker.Message(
             category: .modeReminder, severity: .info, title: title, body: body,
             dedupeKey: "modeReminder-\(title)",
-            episodeKey: "modeReminder-\(title)-\(Date().timeIntervalSince1970)")
-        NotificationPoster.post(msg, runtime: NotificationRuntime())
+            episodeKey: "modeReminder-\(title)-\(now.timeIntervalSince1970)")
+        post(msg)
     }
 }

@@ -77,11 +77,13 @@ struct PumpControlView: View {
             if caps.supportsModes {
                 Section {
                     Text("Current: \(modeName(model.snapshot.controlIQMode))").font(.subheadline).foregroundStyle(.secondary)
-                    Button { ask("Set Normal mode?", "Clears Sleep/Exercise and returns Control-IQ to normal targets.", destructive: true) { await model.setNormalMode() } }
+                    // P16 S3: stamp the manual mode change so scheduled automation defers to this hands-on
+                    // action for the next hour (see AppModel.noteManualModeChange / ModeAutomation).
+                    Button { ask("Set Normal mode?", "Clears Sleep/Exercise and returns Control-IQ to normal targets.", destructive: true) { model.noteManualModeChange(); await model.setNormalMode() } }
                         label: { Label("Normal", systemImage: "checkmark.circle") }
-                    Button { ask("Set Sleep mode?", "Control-IQ uses your sleep glucose targets.", destructive: true) { await model.setSleepMode(true) } }
+                    Button { ask("Set Sleep mode?", "Control-IQ uses your sleep glucose targets.", destructive: true) { model.noteManualModeChange(); await model.setSleepMode(true) } }
                         label: { Label("Sleep", systemImage: "moon.zzz.fill") }
-                    Button { ask("Set Exercise mode?", "Control-IQ raises your glucose target for activity.", destructive: true) { await model.setExerciseMode(true) } }
+                    Button { ask("Set Exercise mode?", "Control-IQ raises your glucose target for activity.", destructive: true) { model.noteManualModeChange(); await model.setExerciseMode(true) } }
                         label: { Label("Exercise", systemImage: "figure.run") }
                 } header: { Text("Mode") } footer: {
                     Text("Requires Control-IQ to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings.")
