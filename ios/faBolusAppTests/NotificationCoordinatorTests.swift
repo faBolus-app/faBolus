@@ -107,6 +107,29 @@ import UserNotifications
         #expect(rt2.telemetry["pumpAlert"]?.delivered == 1)
     }
 
+    /// S7: an escalation step posts with a `UNTimeIntervalNotificationTrigger` at its elapsed time (so the
+    /// OS delivers it while the app is suspended), while a default (nil-trigger) post is still immediate —
+    /// proving the new optional trigger threads through the sole poster without changing existing callers.
+    @Test func posterThreadsAScheduledTriggerButDefaultsToImmediate() {
+        let rt = NotificationRuntime(store: isolatedStore(#function))
+        let step = DisconnectEscalation.steps.first!
+        var scheduled: [UNNotificationRequest] = []
+        let d = NotificationPoster.post(
+            msg(.pumpDisconnect, key: step.id), runtime: rt,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
+            now: at(9, 0)) { scheduled.append($0) }
+        #expect(d.deliver)                                            // never-suppressible → always posts
+        #expect(scheduled.first?.identifier == step.id)              // step's own stable id
+        let trig = scheduled.first?.trigger as? UNTimeIntervalNotificationTrigger
+        #expect(trig?.timeInterval == step.afterSeconds)
+        #expect(trig?.repeats == false)
+        // A default post (no trigger arg) is still immediate — existing callers are unchanged.
+        var immediate: [UNNotificationRequest] = []
+        NotificationPoster.post(msg(.pumpDisconnect, key: "safety.pumpDisconnect"),
+                                runtime: rt, now: at(9, 0)) { immediate.append($0) }
+        #expect(immediate.first?.trigger == nil)
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
