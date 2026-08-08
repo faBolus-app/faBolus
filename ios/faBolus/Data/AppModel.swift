@@ -843,6 +843,32 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
+    // MARK: F1 (§13) — unified export of on-device health data
+
+    /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
+    /// provenance log + the remote-bolus ledger audit trail. Pure read; safe to call any time.
+    /// (`internal`, not `public`: `PrivacyDataExport` is an app-module type.)
+    func buildPrivacyExport(now: Date = Date()) -> PrivacyDataExport {
+        // A window wide enough to capture the entire persisted history.
+        let all = Date(timeIntervalSince1970: 0)...now.addingTimeInterval(86400)
+        let g = history?.glucose(in: all) ?? []
+        let b = history?.boluses(in: all) ?? []
+        let c = history?.carbs(in: all) ?? []
+        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+        return PrivacyDataExport(
+            meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
+            glucose: g.map { .init(date: $0.date, mgdl: $0.mgdl) },
+            boluses: b.map { .init(date: $0.date, units: $0.units) },
+            carbs: c.map { .init(date: $0.date, grams: $0.grams) },
+            settingChangeLog: settingChangeStore.load(),
+            remoteBolusLedger: remoteBolusLedger)
+    }
+
+    /// Encode the unified export as one shareable JSON payload (for the Privacy & data → Export action).
+    func exportPrivacyDataJSON(now: Date = Date()) throws -> Data {
+        try buildPrivacyExport(now: now).encoded()
+    }
+
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
 
