@@ -41,7 +41,8 @@ struct MacStatusPills: View {
     var body: some View {
         let d = model.display
         HStack(spacing: 8) {
-            if d.showIOB { pill("IOB", String(format: "%.2f U", model.iobUnits)) }
+            // DIF-ux: grey + age the IOB pill when the host couldn't confirm the active-insulin read fresh.
+            if d.showIOB { pill("IOB", String(format: "%.2f U", model.iobUnits), stale: model.isIobStale, age: model.iobAgeLabel) }
             if d.showReservoir { pill("Reservoir", String(format: "%.0f U", model.reservoirUnits)) }
             if d.showBattery { pill("Battery", "\(model.batteryPercent)%") }
             if d.showLastBolus, let last = model.lastBolusUnits {
@@ -50,10 +51,13 @@ struct MacStatusPills: View {
         }
     }
 
-    private func pill(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
+    private func pill(_ title: String, _ value: String, stale: Bool = false, age: String? = nil) -> some View {
+        // DIF-ux: a stale calc-input pill names its age and tints orange (mirrors the phone's CGM/IOB).
+        let shownTitle = (stale && age != nil) ? "\(title) · \(age!)" : title
+        return VStack(spacing: 2) {
+            Text(shownTitle).font(.caption2).foregroundStyle(.secondary)
             Text(value).font(.callout.monospacedDigit()).fontWeight(.medium)
+                .foregroundStyle(stale ? .orange : .primary)
         }
         .padding(.vertical, 6).padding(.horizontal, 10)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
@@ -120,30 +124,47 @@ struct MacChartView: View {
 struct MacDetailsView: View {
     var model: MacRemoteModel
 
-    private var rows: [(String, String)] {
-        var out: [(String, String)] = [
-            ("Active insulin", String(format: "%.2f U", model.iobUnits)),
-            ("Reservoir", "\(Int(model.reservoirUnits)) U"),
-            ("Pump battery", model.batteryPercent > 0 ? "\(model.batteryPercent)%" : "—"),
-            ("Basal", String(format: "%.2f U/hr", model.basalRate)),
-            ("CGM", model.cgmActive ? "Active" : "Inactive"),
+    /// A relayed pump/calc row. `stale`/`age` are set (DIF-ux) for the calc-input rows the host couldn't
+    /// confirm fresh, so they grey + name their age like the phone's status pills; other rows leave them off.
+    private struct Row: Identifiable {
+        let title: String, value: String
+        var stale = false
+        var age: String? = nil
+        var id: String { title }
+    }
+
+    private var rows: [Row] {
+        let iobStale = model.isIobStale, therapyStale = model.isTherapyStale
+        var out: [Row] = [
+            Row(title: "Active insulin", value: String(format: "%.2f U", model.iobUnits),
+                stale: iobStale, age: model.iobAgeLabel),
+            Row(title: "Reservoir", value: "\(Int(model.reservoirUnits)) U"),
+            Row(title: "Pump battery", value: model.batteryPercent > 0 ? "\(model.batteryPercent)%" : "—"),
+            Row(title: "Basal", value: String(format: "%.2f U/hr", model.basalRate)),
+            Row(title: "CGM", value: model.cgmActive ? "Active" : "Inactive"),
         ]
-        if let last = model.lastBolusUnits { out.append(("Last bolus", String(format: "%.2f U", last))) }
-        out.append(("Carb ratio", model.carbRatio > 0 ? String(format: "%.0f g/U", model.carbRatio) : "—"))
-        out.append(("Correction (ISF)", model.isf > 0 ? "\(model.isf)" : "—"))
-        out.append(("Target", model.targetBg > 0 ? "\(model.targetBg)" : "—"))
-        out.append(("Max bolus", String(format: "%.1f U", model.maxBolusUnits)))
-        if !model.connection.isEmpty { out.append(("Pump", model.connection)) }
+        if let last = model.lastBolusUnits { out.append(Row(title: "Last bolus", value: String(format: "%.2f U", last))) }
+        out.append(Row(title: "Carb ratio", value: model.carbRatio > 0 ? String(format: "%.0f g/U", model.carbRatio) : "—",
+                       stale: therapyStale, age: model.therapyAgeLabel))
+        out.append(Row(title: "Correction (ISF)", value: model.isf > 0 ? "\(model.isf)" : "—",
+                       stale: therapyStale, age: model.therapyAgeLabel))
+        out.append(Row(title: "Target", value: model.targetBg > 0 ? "\(model.targetBg)" : "—",
+                       stale: therapyStale, age: model.therapyAgeLabel))
+        out.append(Row(title: "Max bolus", value: String(format: "%.1f U", model.maxBolusUnits)))
+        if !model.connection.isEmpty { out.append(Row(title: "Pump", value: model.connection)) }
         return out
     }
 
     var body: some View {
         VStack(spacing: 4) {
-            ForEach(rows, id: \.0) { r in
+            ForEach(rows) { r in
                 HStack {
-                    Text(r.0).font(.caption).foregroundStyle(.secondary)
+                    // DIF-ux: a stale calc-input row names its age and tints orange (like the phone).
+                    Text((r.stale && r.age != nil) ? "\(r.title) · \(r.age!)" : r.title)
+                        .font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Text(r.1).font(.caption.monospacedDigit()).fontWeight(.medium)
+                    Text(r.value).font(.caption.monospacedDigit()).fontWeight(.medium)
+                        .foregroundStyle(r.stale ? .orange : .primary)
                 }
             }
         }

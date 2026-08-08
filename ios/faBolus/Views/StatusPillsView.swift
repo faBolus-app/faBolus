@@ -21,8 +21,13 @@ struct StatusPillsView: View {
     @ViewBuilder private func pillFor(_ id: String, now: Date) -> some View {
         switch id {
         case "iob":
-            pill(icon: "drop.fill", tint: AppTheme.insulin,
-                 value: String(format: "%.2f U", snapshot.iobUnits), label: "Active Insulin")
+            // DIF-ux: grey (AppTheme.low) + age the IOB pill when the active-insulin read is stale, via the
+            // shared `CalcInputFreshness` presentation — mirrors `cgmPill`. Absent date ⇒ hidden ⇒ no age to
+            // show ⇒ normal styling (like the CGM pill), never invented as fresh on the dose path itself.
+            let iobStale = CalcInputFreshness.iobPresentation(of: snapshot.iobDate, now: now) == .stale
+            pill(icon: "drop.fill", tint: iobStale ? AppTheme.low : AppTheme.insulin,
+                 value: String(format: "%.2f U", snapshot.iobUnits),
+                 label: calcAgedLabel("Active Insulin", date: snapshot.iobDate, stale: iobStale, now: now))
         case "reservoir":
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
@@ -46,14 +51,20 @@ struct StatusPillsView: View {
             pill(icon: "drop.triangle.fill", tint: AppTheme.insulin,
                  value: snapshot.lastBolusUnits.map { String(format: "%.2f U", $0) } ?? "—", label: "Last bolus")
         case "carbRatio":
-            pill(icon: "fork.knife", tint: .orange,
-                 value: snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—", label: "Carb ratio")
+            let thStale = therapyStale(now)
+            pill(icon: "fork.knife", tint: thStale ? AppTheme.low : .orange,
+                 value: snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—",
+                 label: calcAgedLabel("Carb ratio", date: snapshot.therapyParamsDate, stale: thStale, now: now))
         case "isf":
-            pill(icon: "arrow.down.right.circle", tint: .purple,
-                 value: snapshot.isf > 0 ? "\(snapshot.isf)" : "—", label: "ISF")
+            let thStale = therapyStale(now)
+            pill(icon: "arrow.down.right.circle", tint: thStale ? AppTheme.low : .purple,
+                 value: snapshot.isf > 0 ? "\(snapshot.isf)" : "—",
+                 label: calcAgedLabel("ISF", date: snapshot.therapyParamsDate, stale: thStale, now: now))
         case "target":
-            pill(icon: "target", tint: AppTheme.inRange,
-                 value: snapshot.targetBg > 0 ? "\(snapshot.targetBg)" : "—", label: "Target")
+            let thStale = therapyStale(now)
+            pill(icon: "target", tint: thStale ? AppTheme.low : AppTheme.inRange,
+                 value: snapshot.targetBg > 0 ? "\(snapshot.targetBg)" : "—",
+                 label: calcAgedLabel("Target", date: snapshot.therapyParamsDate, stale: thStale, now: now))
         case "maxBolus":
             pill(icon: "gauge.with.dots.needle.67percent", tint: .teal,
                  value: String(format: "%.1f U", snapshot.maxBolusUnits), label: "Max bolus")
@@ -97,6 +108,17 @@ struct StatusPillsView: View {
         }
         return pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
                     tint: tint, value: value, label: "CGM")
+    }
+
+    /// DIF-ux: whether the therapy params (CR/ISF/target — one shared op-115 stamp) are stale for display.
+    private func therapyStale(_ now: Date) -> Bool {
+        CalcInputFreshness.therapyPresentation(of: snapshot.therapyParamsDate, now: now) == .stale
+    }
+    /// DIF-ux: append the read's age to a calc-input pill's label when it's stale ("Active Insulin · 7 min
+    /// ago"), so a greyed pill also names HOW old — mirroring the CGM pill's age readout.
+    private func calcAgedLabel(_ base: String, date: Date?, stale: Bool, now: Date) -> String {
+        guard stale, let d = date else { return base }
+        return "\(base) · \(CalcInputFreshness.ageLabel(for: d, now: now))"
     }
 
     /// SF Symbol whose fill level tracks the battery percentage.

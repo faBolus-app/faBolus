@@ -286,6 +286,10 @@ extension RemoteClientModel {
         s.carbRatio = carbRatio
         s.isf = isf
         s.targetBg = targetBg
+        // DIF-ux: carry the relayed calc-input source epochs so the remote-iPhone's `StatusPillsView` greys/
+        // ages the IOB + therapy pills exactly like the host. Absent (legacy host) ⇒ nil ⇒ stale, never fresh.
+        s.iobDate = iobDate
+        s.therapyParamsDate = therapyDate
         s.maxBolusUnits = maxBolusUnits
         s.lastBolusUnits = lastBolusUnits
         s.basalRateUnitsPerHour = basalRate
