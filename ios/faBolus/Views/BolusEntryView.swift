@@ -330,7 +330,20 @@ struct BolusEntryView: View {
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
         .onChange(of: bg) { _, _ in if mode == .carbs { Task { await calculate() } } }
-        .onChange(of: mode) { _, newMode in if newMode == .carbs { Task { await calculate() } } }
+        .onChange(of: mode) { _, newMode in
+            // Switching modes starts a FRESH entry. Clear any carry-over first: a carbs-calculator dose can
+            // be from an UNVERIFIED recommendation (`inputsVerified == false`, e.g. sized off the hardcoded
+            // assumed CR/ISF/target before op-115 lands), and the deliver-time warned-override gate is
+            // carbs-mode-only — so a stale carb dose left in the Units field would deliver in Units mode with
+            // NO acknowledgement. Clearing `unitsText`/`recommendation` here makes Units mode start empty
+            // (Deliver stays disabled until the user dials a number), closing that carry-over. Carbs mode
+            // then recomputes from the current carbs/BG.
+            recommendation = nil
+            unitsText = ""
+            calcInputPrompt = nil
+            acceptedOverride = nil
+            if newMode == .carbs { Task { await calculate() } }
+        }
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
         .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
