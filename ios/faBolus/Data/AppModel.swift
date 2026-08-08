@@ -152,6 +152,11 @@ public final class AppModel {
     /// Withdraw delivered notifications by dedupe key — used when a safety condition resolves (pump
     /// reconnects, CGM feed resumes) so a stale banner doesn't linger.
     public var notificationWithdrawSink: (([String]) -> Void)?
+    /// S7: schedule the pump-disconnect escalation ladder (delayed re-notifications) when the link drops.
+    /// The coordinator turns each step into an OS-scheduled `UNNotificationRequest` so it fires even while
+    /// the app is suspended. Like the other sinks, nil when no coordinator is installed (unit tests, an
+    /// out-of-process intent). Notification-only — it never blocks/delays/affects a dose or pump command.
+    public var notificationScheduleSink: (([DisconnectEscalation.Step]) -> Void)?
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
@@ -175,6 +180,9 @@ public final class AppModel {
                                                      title: title, body: body, dedupeKey: dedupeKey), [:], "")
     }
     private func withdrawNotifications(_ dedupeKeys: [String]) { notificationWithdrawSink?(dedupeKeys) }
+    /// S7: request the delayed pump-disconnect escalation steps be scheduled (fired once on the live→down
+    /// edge, alongside the immediate T0 post). No-op when no coordinator sink is installed.
+    private func scheduleDisconnectEscalation() { notificationScheduleSink?(DisconnectEscalation.steps) }
 
     // MARK: Child (locked) mode gate
     //
@@ -1032,12 +1040,16 @@ public final class AppModel {
         switch SafetyEdge.connection(prev: previousConnection, now: snap.connection) {
         case .raise:
             postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
-                       body: "faBolus lost the connection to your pump. Use the pump directly until it reconnects.",
+                       body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
                        dedupeKey: Self.pumpDisconnectKey)
+            // S7: schedule the delayed escalation ladder so a user who WALKS AWAY (app backgrounded) is
+            // re-notified with intensified copy while the pump stays unreachable. Notification-only.
+            scheduleDisconnectEscalation()
             // §5.2.8: bucket WHY the link dropped (off the app-boundary `connectionDetail`) + accrue uptime.
             connectionTelemetry.recordDisconnected(reason: ConnectionTelemetryStore.reasonToken(from: snap.connectionDetail))
         case .clear:
-            withdrawNotifications([Self.pumpDisconnectKey])
+            // Withdraw the immediate T0 banner AND cancel every pending/delivered escalation step (S7).
+            withdrawNotifications([Self.pumpDisconnectKey] + DisconnectEscalation.stepIds)
             connectionTelemetry.recordConnected()   // §5.2.8: connect count + start the uptime clock
         case .none: break
         }

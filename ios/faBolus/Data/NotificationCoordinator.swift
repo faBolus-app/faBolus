@@ -135,11 +135,16 @@ enum NotificationPoster {
     /// Decide `message` against `runtime`, and — only if the broker says deliver — build and enqueue the
     /// one request. `add` is injectable so tests observe posted requests without a real notification
     /// center; `now` keeps the clock explicit. Returns the decision so callers can log a suppression.
+    ///
+    /// `trigger` defaults to `nil` (deliver immediately), so every existing caller is unchanged. S7 passes
+    /// a `UNTimeIntervalNotificationTrigger` so a pump-disconnect escalation step is delivered by the OS at
+    /// its elapsed time even while the app is suspended — a user who walked away still gets the escalation.
     @discardableResult
     static func post(_ message: NotificationBroker.Message,
                      runtime: NotificationRuntime,
                      userInfo: [AnyHashable: Any] = [:],
                      categoryId: String = "",
+                     trigger: UNNotificationTrigger? = nil,
                      now: Date = Date(),
                      add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
@@ -156,7 +161,7 @@ enum NotificationPoster {
         var info = userInfo
         info["brokerCategory"] = message.category.rawValue
         content.userInfo = info
-        add(UNNotificationRequest(identifier: message.dedupeKey, content: content, trigger: nil))
+        add(UNNotificationRequest(identifier: message.dedupeKey, content: content, trigger: trigger))
         return decision
     }
 }
@@ -187,6 +192,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
         }
         model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
+        // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
+        model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
     }
 
@@ -203,13 +210,30 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     @discardableResult
     func post(_ message: NotificationBroker.Message,
-              userInfo: [AnyHashable: Any] = [:], categoryId: String = "") -> NotificationBroker.Decision {
+              userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
+              trigger: UNNotificationTrigger? = nil) -> NotificationBroker.Decision {
         // Default a governed category to its registered id (which carries the SNOOZE action) unless the
         // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
         return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
-                                       categoryId: cat,
+                                       categoryId: cat, trigger: trigger,
                                        add: { [center] in center.add($0) })
+    }
+
+    // MARK: S7 — pump-disconnect escalation ladder
+
+    /// Schedule each `DisconnectEscalation` step as an OS-delivered notification that fires at its elapsed
+    /// time even while the app is suspended (`UNTimeIntervalNotificationTrigger`), in the never-suppressible
+    /// `.pumpDisconnect` family with its own stable identifier. Built through the one poster so it shares
+    /// the governed path; distinct ids mean the broker never coalesces steps onto each other or onto the
+    /// immediate T0 banner. Cancelled by `withdraw(_:)` on reconnect (the `.clear` edge in `AppModel`).
+    private func scheduleDisconnectEscalation(_ steps: [DisconnectEscalation.Step]) {
+        for step in steps {
+            let msg = NotificationBroker.Message(
+                category: .pumpDisconnect, severity: .error,
+                title: step.title, body: step.body, dedupeKey: step.id)
+            post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false))
+        }
     }
 
     /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
