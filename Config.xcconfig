@@ -10,6 +10,14 @@
 // from this one value in project.yml. Change it in LocalConfig.xcconfig, not here.
 APP_BUNDLE_ID = com.fabolus.app
 
+// App version, single-sourced here the same way as APP_BUNDLE_ID: every target inherits these two
+// values from the project-level configFiles (project.yml) rather than repeating them. MARKETING_VERSION
+// is the user-facing CFBundleShortVersionString (semver); CURRENT_PROJECT_VERSION is the build number
+// (CFBundleVersion). Bump MARKETING_VERSION on a release and record it in CHANGELOG.md. See BRANCHES.md
+// for the versioning contract (annotated tags + the compatibility matrix).
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
 // Your 10-character Apple Developer Team ID. Leave blank to pick a Team in Xcode's
 // Signing & Capabilities UI instead. (Xcode → Settings → Accounts → your team, or
 // developer.apple.com → Account → Membership.)
