@@ -172,6 +172,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     private static let food2 = 8    // units-only (no carbs)
     private static let extendedBit = 4
     private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion (audit C-07)
+    /// DIF-core IOB cross-check tolerance (owner-confirmable, §13). The dose is built from op-109
+    /// `swan6hrIOB` (hardware-verified to match the pump display); op-115 `iob` is only a divergence
+    /// check. If the two pump reads of active insulin disagree by more than this, we can't stand behind
+    /// either → treat IOB as stale and fail closed. 0.05 U = one pump increment. Recorded for the §13
+    /// clinical-review gate; tune here if the two frames prove to differ systematically on hardware.
+    private static let iobCrossCheckEpsilonUnits = 0.05
     /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
@@ -225,6 +231,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var glucoseWaiters: [CheckedContinuation<Void, Never>] = []
     private var glucoseReadGeneration = 0
     private var glucoseReadInFlight = false
+    // DIF-core single-flight for the calc inputs (modeled on the glucose one above). Concurrent callers
+    // coalesce onto ONE in-flight op-115 + op-109 read and are all resumed exactly once when BOTH frames
+    // arrive, on timeout, or on disconnect. `calcInputGotIob`/`calcInputGotTherapy` track which of the two
+    // frames has landed since the read began; the generation tag makes a stale timeout a no-op.
+    private var calcInputWaiters: [CheckedContinuation<Void, Never>] = []
+    private var calcInputReadGeneration = 0
+    private var calcInputReadInFlight = false
+    private var calcInputGotIob = false
+    private var calcInputGotTherapy = false
+    /// Bounded wait for `refreshCalcInputsNow` (safety timeout so a silent pump never hangs a compose).
+    /// Overridable in tests to keep the fail-closed suite fast. Same 2.5 s default as the glucose refresh.
+    var calcInputRefreshTimeout: TimeInterval = 2.5
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
     private var profileActiveIdpId = -1
@@ -390,24 +408,53 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
+        // DIF-core: the AUTHORITATIVE recommendation is built from FRESH inputs. Force a bounded fresh
+        // op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read before
+        // reading them, so the dose can't be built off a ~10-min-stale cache (kills the clinician-edit /
+        // profile-segment-boundary / profile-switch hazards structurally). Coalesced + bounded, never hangs.
+        await refreshCalcInputsNow()
+
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
+        let now = Date()
+        rec.iobDate = snapshot.iobDate
+        rec.therapyParamsDate = snapshot.therapyParamsDate
+        rec.iobStale = snapshot.isIobStale(now: now)
+        rec.therapyStale = snapshot.isTherapyStale(now: now)
         let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
-        if let s = calcSnapshot, s.carbRatio > 0 {
-            // Verified pump profile → the single oracle-backed calculator (audit C-01). Below-target
-            // BG now correctly *reduces* the dose; IOB only offsets a BG correction, matching the pump.
+
+        // Cross-check the op-115 `iob` against the op-109 `swan6hrIOB` the dose uses (owner decision 3): a
+        // mismatch beyond epsilon means the two pump reads of active insulin disagree, so we can't trust
+        // either → mark IOB stale (fails closed via the same gate as an aged read).
+        if let s = calcSnapshot {
+            let op115Iob = Double(s.iob) / 1000.0   // Tandem stores IOB milliunits, like swan6hrIOB
+            if abs(op115Iob - snapshot.iobUnits) > Self.iobCrossCheckEpsilonUnits { rec.iobStale = true }
+        }
+
+        if let s = calcSnapshot, s.carbRatio > 0, !rec.iobStale, !rec.therapyStale {
+            // Verified AND fresh pump profile → the single oracle-backed calculator (audit C-01). Below-
+            // target BG correctly *reduces* the dose; IOB (op-109 swan6hrIOB) only offsets a BG correction.
             let profile = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit,
                                             isfMgdlPerUnit: s.isf, targetBgMgdl: s.targetBg,
                                             iobUnits: snapshot.iobUnits)
             rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: bgMgdl, profile: profile)
             rec.inputsVerified = true
         } else {
-            // Guarded fallback (audit C-01): the verified profile hasn't arrived. Use the SAME
-            // calculator with an explicitly-assumed carb ratio and compute carbs-only (no correction
-            // off an unknown ISF/target), then flag it so the UI requires the user to confirm the
-            // assumed value before delivering — never auto-deliver on unverified inputs.
-            let assumed = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
+            // FAIL-CLOSED (DIF-core): the fresh read couldn't be obtained (timed out / disconnected), an
+            // input is stale, or the IOB cross-check diverged. Reuse the existing unverified-inputs path:
+            // compute a carbs-only dose off an explicitly-assumed profile (real CR/ISF/target when we at
+            // least have them, so the confirm UI shows the true values it would use; the hardcoded assumed
+            // profile only when op-115 never arrived) and flag `inputsVerified = false` so every surface
+            // BLOCKS — the UI requires an explicit confirmation and remotes fail closed. The warned
+            // include-last-known override for stale IOB / therapy is DIF-ux, a LATER PR — not here.
+            let assumed: BolusMath.Profile
+            if let s = calcSnapshot, s.carbRatio > 0 {
+                assumed = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit, isfMgdlPerUnit: s.isf,
+                                            targetBgMgdl: s.targetBg, iobUnits: snapshot.iobUnits)
+            } else {
+                assumed = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
                                             targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
+            }
             rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: nil, profile: assumed)
             rec.inputsVerified = false
             rec.assumedProfile = assumed
@@ -442,6 +489,50 @@ public final class TandemBackend: NSObject, PumpBackend {
         glucoseReadInFlight = false
         let waiters = glucoseWaiters
         glucoseWaiters.removeAll()
+        for w in waiters { w.resume() }
+    }
+
+    /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read and wait (bounded) for BOTH,
+    /// so an authoritative dose is reconstructed from fresh, self-consistent pump inputs rather than the
+    /// ~10-min-stale cache. Single-flight (audit C-05, modeled on `refreshGlucoseNow`): concurrent callers
+    /// coalesce onto one read; all resume exactly once when both frames arrive, on timeout, or on
+    /// disconnect. Never hangs — the safety timeout guarantees resumption. When either frame fails to
+    /// arrive, its `snapshot.iobDate` / `therapyParamsDate` simply stays where it was, so `recommendBolus`
+    /// reads it as stale and fails closed.
+    public func refreshCalcInputsNow() async {
+        guard snapshot.connection == .connected else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            calcInputWaiters.append(cont)
+            if calcInputReadInFlight { return }   // join the in-flight read
+            calcInputReadInFlight = true
+            calcInputGotIob = false
+            calcInputGotTherapy = false
+            calcInputReadGeneration &+= 1
+            let gen = calcInputReadGeneration
+            try? client.send(BolusCalcDataSnapshotRequest())
+            try? client.send(ControlIQIOBRequest())
+            // Safety timeout so a silent pump never hangs the compose. Tagged by generation, so a stale
+            // timeout whose read already completed is a no-op.
+            DispatchQueue.main.asyncAfter(deadline: .now() + calcInputRefreshTimeout) { [weak self] in
+                guard let self, self.calcInputReadInFlight, self.calcInputReadGeneration == gen else { return }
+                self.completeCalcInputRead()
+            }
+        }
+    }
+
+    /// Record that one of the two calc-input frames arrived since the read began; complete once BOTH have.
+    /// A no-op when no `refreshCalcInputsNow` is in flight (routine polling also delivers these frames).
+    private func noteCalcInputArrived(iob: Bool) {
+        guard calcInputReadInFlight else { return }
+        if iob { calcInputGotIob = true } else { calcInputGotTherapy = true }
+        if calcInputGotIob && calcInputGotTherapy { completeCalcInputRead() }
+    }
+
+    /// Resume every coalesced calc-input waiter exactly once (both frames, timeout, or disconnect).
+    private func completeCalcInputRead() {
+        calcInputReadInFlight = false
+        let waiters = calcInputWaiters
+        calcInputWaiters.removeAll()
         for w in waiters { w.resume() }
     }
 
@@ -711,7 +802,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         deliveryOutcomeUnknown = false
         if snapshot.connection == .bolusing { snapshot.connection = .connected }
         snapshot.lastBolusUnits = delivered
-        snapshot.iobUnits += delivered
+        // DIF-core: the fabricated `snapshot.iobUnits += delivered` is DELETED. IOB is authoritative from
+        // the pump (op-109 ControlIQIOBResponse, `swan6hrIOB`) on the ~60 s poll and on the compose-time
+        // `refreshCalcInputsNow()`; adding the just-delivered amount here double-counted it against the
+        // pump's own IOB and was never a real pump read. The delivered amount above still comes verbatim
+        // from the authoritative `lastBolusStatus` — that reporting is unchanged.
         if delivered > 0 {
             bolusMarkers.append(BolusMarker(date: Date(), units: delivered))
             if bolusMarkers.count > 60 { bolusMarkers.removeFirst() }
@@ -1357,8 +1452,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
             snapshot.connectionDetail = Self.linkDetail(for: state)
-            // Resume any glucose-refresh waiters so they don't hang across a disconnect (audit C-05).
+            // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
+            // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
+            // path reads them as stale and fails closed.
             if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+            if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
             // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
             failPumpWaiters(BolusError.notConnected)
             // Re-backfill on the next connect so the gap from this disconnect gets filled.
@@ -1473,6 +1571,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         switch parsed.message {
         case let m as ControlIQIOBResponse:
             snapshot.iobUnits = m.iobUnits
+            // DIF-core: stamp the receive time so the dose path can prove the active-insulin term is fresh
+            // (mirrors `glucoseDate`). Wake any coalesced `refreshCalcInputsNow()` waiter once both the IOB
+            // (op-109) and therapy (op-115) frames have landed since the refresh began.
+            snapshot.iobDate = Date()
+            noteCalcInputArrived(iob: true)
             // Accumulate an IOB time series (append on change or every ~4.5 min) for the chart.
             let now = Date()
             if let last = iobHistory.last {
@@ -1568,6 +1671,10 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.carbRatio = m.carbRatioGramsPerUnit
             snapshot.isf = m.isf
             snapshot.targetBg = m.targetBg
+            // DIF-core: stamp the receive time (one op-115 frame resolves the active profile+segment to a
+            // self-consistent CR/ISF/target set) and wake a coalesced `refreshCalcInputsNow()` waiter.
+            snapshot.therapyParamsDate = Date()
+            noteCalcInputArrived(iob: false)
         case let m as TimeSinceResetResponse:
             // PX-08: awaited time responses are consumed by the coordinator (side-effects applied in
             // `applyTimeResponse`); this handles any unsolicited time frame.
@@ -1650,6 +1757,7 @@ extension TandemBackend: PumpBLEClientDelegate {
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
         // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
         if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+        if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
         failPumpWaiters(error)
     }
 }

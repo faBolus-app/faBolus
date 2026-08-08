@@ -283,7 +283,10 @@ struct BolusEntryView: View {
             // it (never from a stale value). The user can still type their own.
             if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)"; bgSource = .cgm }
             if mode == .carbs { Task { await calculate() } }
-            Task { await model.refreshGlucoseNow(); syncBGFromCGM() }
+            // DIF-core: pull the freshest CGM AND the freshest calc inputs (op-115 CR/ISF/target + op-109
+            // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
+            // fresh from the start (never the ~10-min-stale cache).
+            Task { await model.refreshGlucoseNow(); await model.refreshCalcInputsNow(); syncBGFromCGM() }
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
@@ -438,6 +441,12 @@ struct BolusEntryView: View {
             let justChanged = lastCGMChangeAt.map { Date().timeIntervalSince($0) <= 2 } ?? false
             let priorUnits = units
             await model.refreshGlucoseNow()
+            // DIF-core: also force the calc inputs fresh right before the authoritative deliver-time
+            // recompute, so the delivered dose is built from fresh CR/ISF/target + IOB. Because
+            // `recommendBolus` re-reads fresh, the 0.10 U divergence guard below now also catches an INPUT
+            // change (clinician edit / profile-segment boundary / IOB drift) between compose and deliver —
+            // the recompute differs from the on-screen `priorUnits` and the CGM-updated prompt fires.
+            await model.refreshCalcInputsNow()
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
                 let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g)
                 let delta = abs(rec.recommendedUnits - priorUnits)

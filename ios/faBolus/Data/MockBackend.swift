@@ -81,6 +81,12 @@ public final class MockBackend: PumpBackend {
         // Any new backend has the same obligation; see `PumpSnapshot.isGlucoseStale`.
         snapshot.glucoseDate = readings.last?.date
         snapshot.iobUnits = 1.4
+        // DIF-core: a backend must stamp WHEN it read the calc inputs, exactly as it does `glucoseDate`.
+        // The simulator's IOB + therapy are "read" at seed time, so they start fresh (a real backend seeds
+        // these on connect + poll). `refreshCalcInputsNow()` and `tick()` keep them fresh thereafter.
+        let seededAt = Date()
+        snapshot.iobDate = seededAt
+        snapshot.therapyParamsDate = seededAt
         snapshot.reservoirUnits = 142
         snapshot.batteryPercent = 78
         snapshot.cgmActive = true
@@ -125,6 +131,7 @@ public final class MockBackend: PumpBackend {
         snapshot.glucose = last
         snapshot.glucoseDate = at          // group A: value and timestamp move together, always
         snapshot.iobUnits = max(0, snapshot.iobUnits - 0.02)
+        snapshot.iobDate = at              // DIF-core: IOB value and its receive-time move together, always
         onChange?()
     }
 
@@ -155,12 +162,32 @@ public final class MockBackend: PumpBackend {
     public func setLiveIob(_ u: Double) { snapshot.iobUnits = u; onChange?() }
     /// Spy (FB-04): the exact metadata the most recent delivery passed to the backend.
     public private(set) var lastDeliver: (units: Double, carbs: Double?, bg: Int?, iob: Double?)?
+    /// DIF-core spy: how many times `refreshCalcInputsNow()` was invoked, so a test can prove the dose path
+    /// forced a fresh op-115 + op-109 read (the mock's analogue of those pump reads) before recommending.
+    public private(set) var refreshCalcInputsNowCount = 0
+
+    /// DIF-core: the simulator's analogue of forcing a fresh op-115 + op-109 read — it re-stamps the calc
+    /// inputs fresh (a real pump answers those reads) and counts the call for the spy.
+    public func refreshCalcInputsNow() async {
+        refreshCalcInputsNowCount += 1
+        let now = Date()
+        snapshot.iobDate = now
+        snapshot.therapyParamsDate = now
+        onChange?()
+    }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
+        // DIF-core parity with the real backend: build the authoritative recommendation from FRESH inputs.
+        await refreshCalcInputsNow()
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams
         rec.bgMgdl = bgMgdl
         rec.iobUnits = snapshot.iobUnits
+        let now = Date()
+        rec.iobDate = snapshot.iobDate
+        rec.therapyParamsDate = snapshot.therapyParamsDate
+        rec.iobStale = snapshot.isIobStale(now: now)
+        rec.therapyStale = snapshot.isTherapyStale(now: now)
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
                                         targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
         rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbsGrams > 0 ? carbsGrams : nil,
