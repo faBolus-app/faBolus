@@ -113,6 +113,20 @@ struct BolusEntryView: View {
         return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
                       units, carbs, rec.recommendedUnits)
     }
+    /// O3 (ambient): the controller's "automatic correction is active" line, or nil. Pure faBolusCore
+    /// disclosure derived from the pump's controller descriptor + runtime on/off — NEVER gates delivery.
+    private var autoCorrectionAmbient: String? {
+        AutoCorrectionDisclosure.ambientIndicator(descriptor: model.snapshot.controllerDescriptor,
+                                                  controllerEnabled: model.snapshot.controlIQEnabled)
+    }
+    /// S1: the high/rising auto-correction lockout disclosure, or nil. Uses the pump's OWN trend arrow
+    /// (mapped from the raw snapshot string) — never a computed rate (C8). NEVER gates delivery.
+    private var autoCorrectionLockout: String? {
+        AutoCorrectionDisclosure.lockoutMessage(descriptor: model.snapshot.controllerDescriptor,
+                                                controllerEnabled: model.snapshot.controlIQEnabled,
+                                                glucoseMgdl: model.snapshot.glucose,
+                                                trend: GlucoseTrend(rawValue: model.snapshot.trend))
+    }
     private var cgmAgeMinutes: Int? {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
@@ -278,6 +292,18 @@ struct BolusEntryView: View {
                     // Dose overridden away from the carb recommendation (advisory; carbs still logged).
                     if let w = carbOverrideWarning {
                         Label(w, systemImage: "pencil.and.outline")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                    // O3 (ambient) + S1 (lockout) auto-correction DISCLOSURE. Pure faBolusCore strings,
+                    // rendered unconditionally when applicable (Simple-mode floor, not user-disableable) —
+                    // NEVER inside a gate: they never block, change, or delay the dose. O3 is neutral
+                    // context; S1 is a mild caution shown only at high/rising glucose.
+                    if let ambient = autoCorrectionAmbient {
+                        Label(ambient, systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let lockout = autoCorrectionLockout {
+                        Label(lockout, systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
                     }
                     Button { confirming = true } label: {
