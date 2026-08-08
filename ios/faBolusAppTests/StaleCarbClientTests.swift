@@ -109,4 +109,64 @@ import faBolusCore
         #expect(b?.bgMgdl == 150)
         #expect(a?.remoteEstimateUnits == b?.remoteEstimateUnits)
     }
+
+    // MARK: DIF-ux — the client decodes the calc-input source epochs and greys/ages by them, but NEVER
+    // overrides on them (the host is the authoritative gate). Ages are far from the 300 s / 900 s windows so
+    // the test doesn't depend on the runtime `CalcInputFreshness` thresholds.
+
+    @Test func decodesCalcInputEpochsAndReportsStaleness() {
+        let link = CapturingLink()
+        let m = RemoteClientModel(link: link)
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
+        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 10)            // 10 s old → fresh
+        cmd.therapyEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600) // 24 h old → stale
+        m.handle(cmd)
+        #expect(m.iobDate != nil)
+        #expect(m.therapyDate != nil)
+        #expect(!m.isIobStale)                 // fresh IOB
+        #expect(m.isTherapyStale)              // stale therapy
+        #expect(m.iobAgeLabel != nil)
+        #expect(m.therapyAgeLabel != nil)
+    }
+
+    @Test func absentCalcInputEpochsReadAsStale() {
+        // A legacy host that predates the fields sends no calc epochs ⇒ nil ⇒ unknown age ⇒ stale, never
+        // fresh (the fail-closed invariant; a remote can't be tricked into rendering these fresh).
+        let link = CapturingLink()
+        let m = RemoteClientModel(link: link)
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
+        m.handle(cmd)
+        #expect(m.iobDate == nil)
+        #expect(m.therapyDate == nil)
+        #expect(m.isIobStale)
+        #expect(m.isTherapyStale)
+        #expect(m.iobAgeLabel == nil)
+        #expect(m.therapyAgeLabel == nil)
+    }
+
+    @Test func remoteNeverAltersTheDoseOnCalcInputStaleness() {
+        // Even with BOTH calc inputs marked stale, the remote sends a plain carb `bolusRequest` and its
+        // estimate is computed off the relayed settings/IOB UNCHANGED — it neither blocks nor applies any
+        // include-last-known override (only the host may, on the host UI). There is no override channel on
+        // the wire for a remote to smuggle one through.
+        let link = CapturingLink()
+        let m = RemoteClientModel(link: link)
+        var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 150)
+        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
+        cmd.glucoseEpochSec = Int(Date().timeIntervalSince1970 - 30)         // fresh CGM
+        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)      // stale IOB
+        cmd.therapyEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)  // stale therapy
+        m.handle(cmd)
+        link.sent.removeAll()
+        #expect(m.isIobStale && m.isTherapyStale)
+        let est = m.estimatedUnits(forCarbs: 30)
+        m.deliverCarbs(30)
+        let sent = link.sent.last
+        #expect(sent?.kind == .bolusRequest)
+        #expect(sent?.carbsGrams == 30)
+        #expect(sent?.bgMgdl == 150)                     // fresh CGM used; calc staleness didn't alter it
+        #expect(sent?.remoteEstimateUnits == est)        // estimate unchanged by calc-input staleness
+    }
 }

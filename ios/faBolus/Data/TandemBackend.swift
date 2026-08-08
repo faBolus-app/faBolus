@@ -422,6 +422,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
+        await recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl, allowStaleIob: false, allowStaleTherapy: false)
+    }
+
+    public func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
+                               allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation {
         // DIF-core: the AUTHORITATIVE recommendation is built from inputs confirmed fresh THIS compose. Force
         // a bounded op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read
         // and gate on its CONFIRMATION — whether both frames were actually received by the read this compose
@@ -470,24 +475,64 @@ public final class TandemBackend: NSObject, PumpBackend {
         } else {
             // FAIL-CLOSED (DIF-core): a fresh read was NOT confirmed this attempt (timed out / disconnected,
             // so the last routine-poll value — even if still in-window — is not trusted to size this dose),
-            // op-115 never landed, an input is window-stale, or the IOB cross-check diverged. Reuse the
-            // existing unverified-inputs path:
-            // compute a carbs-only dose off an explicitly-assumed profile (real CR/ISF/target when we at
-            // least have them, so the confirm UI shows the true values it would use; the hardcoded assumed
-            // profile only when op-115 never arrived) and flag `inputsVerified = false` so every surface
-            // BLOCKS — the UI requires an explicit confirmation and remotes fail closed. The warned
-            // include-last-known override for stale IOB / therapy is DIF-ux, a LATER PR — not here.
+            // op-115 never landed, an input is window-stale, or the IOB cross-check diverged. Build the
+            // explicitly-assumed profile (real CR/ISF/target when we at least have them, so the confirm UI
+            // shows the true values it would use; the hardcoded assumed profile only when op-115 never
+            // arrived). The IOB term is ALWAYS the pump's own last-known op-109 value — never zeroed. Flag
+            // `inputsVerified = false` so every surface still BLOCKS (the UI requires an explicit
+            // confirmation and remotes fail closed).
             let assumed: BolusMath.Profile
+            let haveLastKnownTherapy: Bool
             if let s = calcSnapshot, s.carbRatio > 0 {
                 assumed = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit, isfMgdlPerUnit: s.isf,
                                             targetBgMgdl: s.targetBg, iobUnits: snapshot.iobUnits)
+                haveLastKnownTherapy = true
             } else {
                 assumed = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40,
                                             targetBgMgdl: 110, iobUnits: snapshot.iobUnits)
+                haveLastKnownTherapy = false
             }
-            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: nil, profile: assumed)
             rec.inputsVerified = false
             rec.assumedProfile = assumed
+            // DIF-ux: flag when `assumed` is the HARDCODED fallback (op-115 never arrived) vs the pump's real
+            // last-known therapy. The warned "use last-known settings" override is only honest/safe in the
+            // latter case; the former must block (a carb dose off a guessed CR could be a multiple-dose).
+            rec.therapyUnavailable = !haveLastKnownTherapy
+            // DIF-ux warned override (HOST-OWNER ONLY; remotes always pass false,false → carbs-only/blocked).
+            // When the owner has explicitly accepted using LAST-KNOWN inputs for THIS attempt, compute the
+            // FULL dose off those cached values WITH `bgMgdl` (correction retained) — still
+            // `inputsVerified = false`. The BG correction needs trustworthy therapy: keep it only when we
+            // actually HAVE last-known therapy AND either therapy wasn't the stale input or the owner
+            // accepted last-known therapy (`allowStaleTherapy`). If op-115 never arrived we cannot size a
+            // correction → stay carbs-only for that sub-case (the frozen owner decision). include-last-known
+            // IOB is realized by the profile carrying `snapshot.iobUnits` (the op-109 swan6hrIOB the verified
+            // branch also uses): it keeps SUBTRACTING it, never zeroes it. With no override this is exactly
+            // the DIF-core carbs-only dose (`overrideBg == nil`).
+            let overrideActive = allowStaleIob || allowStaleTherapy
+            let therapyTrustworthy = haveLastKnownTherapy && (!rec.therapyStale || allowStaleTherapy)
+            let overrideBg: Int? = (overrideActive && therapyTrustworthy) ? bgMgdl : nil
+            // include-last-known IOB is meant to be CONSERVATIVE ("stale IOB is typically older→higher"), but
+            // the op-115↔op-109 CROSS-CHECK DIVERGENCE case breaks that assumption: right after a bolus,
+            // op-109 (swan6hrIOB) can still read LOW while op-115 already reflects the delivery. Subtracting
+            // the lower op-109 there would size a LARGER correction than a confirmed-fresh read — insulin
+            // stacking, the exact hazard the DIF-core divergence block prevents. So WHENEVER a correction is
+            // being applied off cached inputs AND the two IOB reads disagree, subtract the LARGER of the two,
+            // so the override can never subtract LESS active insulin than either pump read implies (dose ≤ a
+            // confirmed-fresh read). This is keyed on the LIVE divergence — not the compose-time
+            // `allowStaleIob` flag — because divergence can first appear at the deliver-time recompute (a
+            // therapy-only override whose IOB was fresh at compose but diverged when a bolus/Control-IQ
+            // correction landed before deliver). Pure-age staleness with agreeing reads keeps op-109.
+            var overrideProfile = assumed
+            if let s = calcSnapshot {
+                let op115Iob = Double(s.iob) / 1000.0
+                if abs(op115Iob - snapshot.iobUnits) > Self.iobCrossCheckEpsilonUnits {
+                    overrideProfile = BolusMath.Profile(carbRatioGramsPerUnit: assumed.carbRatioGramsPerUnit,
+                                                        isfMgdlPerUnit: assumed.isfMgdlPerUnit,
+                                                        targetBgMgdl: assumed.targetBgMgdl,
+                                                        iobUnits: max(snapshot.iobUnits, op115Iob))
+                }
+            }
+            rec.recommendedUnits = BolusMath.recommendedUnits(carbsGrams: carbs, bgMgdl: overrideBg, profile: overrideProfile)
         }
         rec.recommendedUnits = (rec.recommendedUnits * 20).rounded() / 20   // snap to 0.05 u pump increment
         return rec

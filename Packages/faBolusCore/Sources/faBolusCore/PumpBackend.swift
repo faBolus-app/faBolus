@@ -35,6 +35,15 @@ public protocol PumpBackend: AnyObject {
     /// Compute a bolus recommendation for the given carbs/BG (uses the pump's calculator on
     /// the live source; a simple model on the mock).
     func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation
+    /// DIF-ux — the same recommendation, but with the HOST-OWNER's warned per-attempt overrides for stale /
+    /// unconfirmable calc inputs. `allowStaleIob` keeps SUBTRACTING the last-known op-109 IOB (never zeroes
+    /// it); `allowStaleTherapy` sizes the dose off the last-known op-115 carb ratio / ISF / target — both
+    /// still returning `inputsVerified == false`. Both default OFF everywhere via the extension below, so
+    /// existing callers and remotes are unchanged and fail closed. ONLY the iPhone host compose flow ever
+    /// passes `true`, and ONLY after an explicit warning (`StaleIobPrompt` / `StaleTherapyPrompt`); remotes
+    /// (`resolveRemoteDose`) MUST never plumb it through, so a remote can never dose off unconfirmed inputs.
+    func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
+                        allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation
     /// Request the newest CGM reading from the pump **now** and wait briefly for it (bounded), so a
     /// correction is computed off the freshest possible value. Best-effort: returns when the reading
     /// arrives or a short timeout elapses. Default no-op for backends that can't force a read.
@@ -193,6 +202,15 @@ public enum BolusReconciliation: Sendable, Equatable {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    /// DIF-ux default: a backend that doesn't implement the override IGNORES it and falls back to the plain
+    /// (no-override) recommendation — i.e. it stays fail-closed. This is the fail-SAFE direction (an
+    /// unhonored "use last-known" simply keeps the surface blocked, never dosing off unconfirmed inputs), so
+    /// community backends + the conformance stub get correct safety for free. `TandemBackend` / `MockBackend`
+    /// override this with the real last-known recompute.
+    func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
+                        allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation {
+        await recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+    }
     func refreshGlucoseNow() async {}
     func refreshCalcInputsNow() async {}
     /// Default: a backend that can't query its bolus history can never auto-reconcile, so a lost outcome

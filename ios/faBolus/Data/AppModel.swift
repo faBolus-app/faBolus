@@ -370,6 +370,13 @@ public final class AppModel {
         // affordance this mode would deny. The host still enforces the mode on every surface via
         // `AccessPolicy`; this only drives the remote UI. Unconditional ⇒ "absent" means a legacy host.
         cmd.activeMode = AppSettings.shared.appMode.rawValue
+        // DIF-ux: relay the pump's own read times of the calc inputs (IOB op-109, therapy op-115) as
+        // immutable source epochs — exactly like `glucoseEpochSec` above — so a remote can grey/age its IOB
+        // + therapy rows and PRE-WARN off the same freshness the host judges. Absent (nil date) ⇒ the remote
+        // treats the input's age as unknown ⇒ stale (never fresh). The host stays the authoritative dose
+        // gate; remotes never dose off these.
+        cmd.iobEpochSec = s.iobDate.map { Int($0.timeIntervalSince1970) }
+        cmd.therapyEpochSec = s.therapyParamsDate.map { Int($0.timeIntervalSince1970) }
         return cmd
     }
 
@@ -1170,8 +1177,14 @@ public final class AppModel {
     public func connect() async { await source.connect(); refresh() }
     public func disconnect() { source.disconnect(); refresh() }
 
-    public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-        await source.recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+    /// `allowStaleIob` / `allowStaleTherapy` are the DIF-ux warned host-owner overrides, defaulted OFF so
+    /// every existing caller — and, critically, `resolveRemoteDose` (remotes) — keeps recomputing with NO
+    /// override and stays fail-closed. ONLY `BolusEntryView` (the iPhone host compose flow) ever passes
+    /// `true`, and only after an explicit `StaleIobPrompt` / `StaleTherapyPrompt` warning.
+    public func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
+                               allowStaleIob: Bool = false, allowStaleTherapy: Bool = false) async -> BolusRecommendation {
+        await source.recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl,
+                                    allowStaleIob: allowStaleIob, allowStaleTherapy: allowStaleTherapy)
     }
 
     /// Force the pump to report its newest CGM reading and wait briefly for it (bolus screen uses this
