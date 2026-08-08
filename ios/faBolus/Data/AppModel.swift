@@ -843,6 +843,77 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
+    // MARK: F1 (§13) — unified export of on-device health data
+
+    /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
+    /// provenance log + the remote-bolus ledger audit trail. Pure read; safe to call any time.
+    /// (`internal`, not `public`: `PrivacyDataExport` is an app-module type.)
+    func buildPrivacyExport(now: Date = Date()) -> PrivacyDataExport {
+        // A window wide enough to capture the entire persisted history.
+        let all = Date(timeIntervalSince1970: 0)...now.addingTimeInterval(86400)
+        let g = history?.glucose(in: all) ?? []
+        let b = history?.boluses(in: all) ?? []
+        let c = history?.carbs(in: all) ?? []
+        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+        return PrivacyDataExport(
+            meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
+            glucose: g.map { .init(date: $0.date, mgdl: $0.mgdl) },
+            boluses: b.map { .init(date: $0.date, units: $0.units) },
+            carbs: c.map { .init(date: $0.date, grams: $0.grams) },
+            settingChangeLog: settingChangeStore.load(),
+            remoteBolusLedger: remoteBolusLedger)
+    }
+
+    /// Encode the unified export as one shareable JSON payload (for the Privacy & data → Export action).
+    func exportPrivacyDataJSON(now: Date = Date()) throws -> Data {
+        try buildPrivacyExport(now: now).encoded()
+    }
+
+    // MARK: F1 (§13) — complete erase of on-device health data (GATED)
+
+    /// Outcome of a complete on-device erase attempt.
+    public enum EraseOutcome: Equatable {
+        case erased
+        /// Refused because erasing now would destroy state crash-recovery / reconciliation still needs.
+        case refused(String)
+    }
+
+    /// Wipe ALL on-device HEALTH data: glucose/insulin/carb history, the remote-bolus ledger audit trail,
+    /// the setting-change provenance log, and the local telemetry/runtime blobs.
+    ///
+    /// REFUSES (returning `.refused`) if a delivery is in flight or the ledger holds any unresolved /
+    /// indeterminate / unreadable entry — the SAME signals the delivery mutex and reconciliation consult
+    /// (`inFlightDeliveryKey`, `computeDeliveryBlockReason`) — because erasing then would destroy state a
+    /// crash-recovery still needs to reconcile against the pump.
+    ///
+    /// SCOPE: on-device health data ONLY. Deliberately does NOT clear Keychain secrets (pump JPAKE secret
+    /// / PIN / CGM logins) and does NOT unpair the pump. A full reset that includes unpair interacts with
+    /// the S12 unpair interlock and is a separate owner decision. The caller gates EXPOSURE to the owner
+    /// (not child / read-only profiles).
+    public func eraseAllOnDeviceHealthData() -> EraseOutcome {
+        // Never erase over an in-flight or otherwise unresolved delivery.
+        if inFlightDeliveryKey != nil {
+            return .refused("A bolus is being delivered right now. Wait for it to finish, then try again.")
+        }
+        if let reason = computeDeliveryBlockReason() {
+            return .refused("Can't erase while a delivery is unresolved — this data is needed to reconcile it. \(reason)")
+        }
+
+        // 1) Glucose / insulin / carb history (SwiftData).
+        history?.clear()
+        // 2) Remote-bolus ledger audit trail → fresh empty, persisted durably (no unresolved entries remain).
+        remoteBolusLedger = RemoteBolusLedger()
+        remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger)
+        // 3) Setting-change provenance log → empty.
+        settingChangeStore.saveBestEffort(SettingChangeLog())
+        // 4) Local telemetry / runtime blobs in the App Group (diagnostics DATA; NOT the opt-in flag/prefs).
+        connectionTelemetry.clearStoredData()
+        NotificationRuntime.eraseStoredBlobs()
+
+        refreshDeliveryBlock()
+        return .erased
+    }
+
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
 

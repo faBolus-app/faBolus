@@ -110,6 +110,13 @@ targets:
           # See docs/operate/cgm-failover.md.
           # - group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup                 # xDrip share type: Loop
           # - group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group   # xDrip share type: Trio
+        # F1 (§13): default at-rest data protection for files this app creates that can't take a per-file
+        # class (App-Group UserDefaults telemetry/runtime plists, the SwiftData history store).
+        # "AfterFirstUnlock" — encrypted at rest yet readable during a locked background relaunch, matching
+        # the delivery ledger. NEVER "…Complete": that would lock the ledger/history when the device locks
+        # and break crash-recovery/reconciliation of an in-flight delivery. This is also iOS's own default
+        # class, so it needs no extra device capability; it is inert on the unsigned Simulator (CI) build.
+        com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
         # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
         # it needs the paid Apple Developer Program to enable the capability, so it's off by default
         # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
@@ -343,6 +350,10 @@ targets:
       path: ios/faBolusWidgets/faBolusWidgets.entitlements
       properties:
         com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+        # F1 (§13): match the app's default at-rest protection so files the widget creates in the shared
+        # App Group (e.g. a ledger write) get the same "AfterFirstUnlock" class. NEVER "…Complete" (the
+        # widget reads the ledger while the phone is locked). Inert on the unsigned Simulator (CI) build.
+        com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).widgets

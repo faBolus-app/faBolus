@@ -26,8 +26,10 @@ import UserNotifications
 @MainActor
 final class NotificationRuntime {
     private let store: UserDefaults
-    private let stateKey = "notificationBroker.state.v1"
-    private let telemetryKey = "notificationBroker.telemetry.v1"
+    static let stateKey = "notificationBroker.state.v1"
+    static let telemetryKey = "notificationBroker.telemetry.v1"
+    private let stateKey = NotificationRuntime.stateKey
+    private let telemetryKey = NotificationRuntime.telemetryKey
     /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
     /// out-of-process mode-reminder intent honors the same choice the main app made.
     static let telemetryEnabledKey = "notificationBroker.telemetryEnabled"
@@ -58,6 +60,15 @@ final class NotificationRuntime {
 
     /// True when the user has opted into local notification telemetry (default false).
     var telemetryEnabled: Bool { store.bool(forKey: Self.telemetryEnabledKey) }
+
+    /// F1 (§13) — erase the persisted broker runtime state + per-category telemetry BLOBS from the App
+    /// Group (for "Delete all on-device data"). Leaves the opt-in flag and per-category SETTINGS alone —
+    /// those are preferences, not accumulated data.
+    static func eraseStoredBlobs(store: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup)) {
+        guard let store else { return }
+        store.removeObject(forKey: stateKey)
+        store.removeObject(forKey: telemetryKey)
+    }
 
     /// Record a delivered notification for `category` (opt-in only). Called from the poster's deliver path.
     func recordDelivered(_ category: NotificationBroker.Category) {
