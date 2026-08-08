@@ -422,15 +422,21 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-        // DIF-core: the AUTHORITATIVE recommendation is built from inputs proven fresh THIS compose. Force a
-        // bounded op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read
+        // DIF-core: the AUTHORITATIVE recommendation is built from inputs confirmed fresh THIS compose. Force
+        // a bounded op-115 (CR/ISF/target/max, resolved for the active profile+segment) + op-109 (IOB) read
         // and gate on its CONFIRMATION — whether both frames were actually received by the read this compose
-        // participated in — rather than a wall-clock stamp comparison. On a SUCCESSFUL read this structurally
-        // kills the clinician-edit / profile-segment-boundary / profile-switch hazards (the fresh op-115
-        // frame is a self-consistent set for the current segment); on a timed-out / disconnected read it does
-        // NOT degrade to the in-window cache — it fails closed. Coalescing-aware and clock-free, so an
+        // participated in — rather than a wall-clock stamp comparison. On a timed-out / disconnected read it
+        // does NOT degrade to the in-window cache — it fails closed. Coalescing-aware and clock-free, so an
         // overlapping (keystroke-triggered) compose that joins the in-flight read verifies correctly and a
         // backward clock step cannot make a stale value look fresh. Coalesced + bounded, never hangs.
+        //
+        // Scope of the guarantee (honest): this collapses the therapy-param staleness the clinician-edit /
+        // profile-segment-boundary / profile-switch hazards can cause from up-to-~10-min (the routine-poll
+        // cache) to at most the ~1 s a reply is in transit. `noteCalcInputArrived` correlates frames only by
+        // opcode, NOT per-request (txId correlation is Addendum G, deferred to newer-firmware bench), so in a
+        // sub-second race a routine-poll reply already in transit when this compose began can satisfy the
+        // proof on ~1-s-old params. Clinically indistinguishable (a segment boundary ±1 s); txId correlation
+        // closes it fully. Recorded for §13 in dosing-input-freshness-plan-2026-08-07.md.
         let inputsFreshThisAttempt = await refreshCalcInputsConfirmed()
 
         var rec = BolusRecommendation()
@@ -562,6 +568,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Record that one of the two calc-input frames arrived since the read began; complete once BOTH have.
     /// A no-op when no read is in flight (routine polling also delivers these frames). Only fires from the
     /// op-109/op-115 delegate handlers on a genuinely-received frame — never from cache.
+    ///
+    /// Correlation caveat (§13 / Addendum G): frames are attributed to the in-flight read by OPCODE only,
+    /// not per-request — the fire-and-forget reads carry no txId the delegate layer can match. So a
+    /// routine-poll reply already in transit when the read began counts toward it. Bounded to ~1 s of
+    /// possible staleness (the in-transit window) and clinically indistinguishable; per-request txId
+    /// correlation (Addendum G, deferred to newer-firmware bench) is the complete fix.
     private func noteCalcInputArrived(iob: Bool) {
         guard calcInputReadInFlight else { return }
         if iob { calcInputGotIob = true } else { calcInputGotTherapy = true }
