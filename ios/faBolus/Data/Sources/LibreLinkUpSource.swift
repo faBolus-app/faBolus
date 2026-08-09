@@ -1,3 +1,12 @@
+//  LibreLinkUpSource.swift
+//
+//  Independent Swift implementation of the unofficial LibreLinkUp REST API. The endpoint/header
+//  behaviour was documented by the community projects nightscout-librelink-up
+//  (timoschlueter/nightscout-librelink-up, MIT) and libre-link-unofficial-api. This is a clean
+//  reimplementation of that documented REST protocol — NOT a code port of those JS/TS clients (no
+//  upstream source is copied), so it carries no upstream license obligation; the projects are credited
+//  for the API knowledge. Attribution: NOTICE.md · docs/SBOM.md · THIRD_PARTY.md (§3.1 / plan Q4).
+//
 import Foundation
 import CryptoKit
 import faBolusCore
