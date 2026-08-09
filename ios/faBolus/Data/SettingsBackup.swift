@@ -19,8 +19,9 @@ enum SettingsBackup {
         "dexcomshare.username", "dexcomshare.region",
         "nightscout.url", "dexcomg6.transmitterId",
     ]
-    /// Keychain CGM credential accounts (CredentialStore).
-    private static let cgmSecretAccounts = [
+    /// Keychain CGM credential accounts (CredentialStore). Internal (not private) so the F1 full-reset
+    /// (`AppModel.eraseEverythingFullReset`) can enumerate + clear the same accounts it backs up.
+    static let cgmSecretAccounts = [
         "librelinkup.password", "dexcomshare.password", "nightscout.token", "nightscout.apisecret",
     ]
 
