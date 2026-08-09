@@ -24,6 +24,11 @@ import Foundation
         [c: B.CategorySettings(enabled: true, quietStartMinuteOfDay: quiet.0, quietEndMinuteOfDay: quiet.1,
                                minIntervalSeconds: minInterval)]
     }
+    /// A CRITICAL-severity alarm on the GOVERNED `.pumpAlert` category — exactly what the coordinator
+    /// builds for a pump `kind == .alarm` (occlusion / empty-cartridge / pump-error).
+    private func criticalAlarm(episode: String? = nil) -> B.Message {
+        B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "occ", episodeKey: episode)
+    }
 
     @Test func exactlyTheThreeSafetyCategoriesAreNeverSuppressible() {
         let safety = Set(C.allCases.filter { $0.neverSuppressible }.map(\.rawValue))
@@ -171,6 +176,37 @@ import Foundation
         for c in C.allCases where c.neverSuppressible {
             #expect(B.decide(msg(c), settings: [:], state: forged, now: at(9, 0), calendar: cal).deliver)
         }
+    }
+
+    @Test func criticalGovernedAlarmBypassesEveryUserAndBudgetSuppression() {
+        // S8 / §6 #6: an occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
+        // `.pumpAlert` category but with `Severity.critical`. It must survive a maximally hostile config —
+        // category disabled, all-day quiet-hours, huge rate-limit, a snooze in force, and a day past a zero
+        // budget — because critical alarms bypass the budget/quiet-hours. A `.warning` in the SAME config
+        // is suppressed (proving the config is genuinely hostile).
+        let settings: [C: B.CategorySettings] = [.pumpAlert: B.CategorySettings(
+            enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999)]
+        var state = B.State(lastDeliveredAt: ["pumpAlert": at(3, 0)],
+                            dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
+        state = B.snooze(state, category: .pumpAlert, until: at(23, 59))
+        let budget = B.Budget(dailyTotal: 0)
+        let crit = B.decide(criticalAlarm(), settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
+        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/quiet-hours/rate/budget")
+        #expect(crit.nextState.deliveredToday == 1000, "still recorded")
+        let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
+        #expect(!B.decide(warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal).deliver)
+    }
+
+    @Test func criticalAlarmStillHonorsOneNotificationPerEpisode() {
+        // The nuance vs a neverSuppressible category: a critical governed alarm is NOT re-delivered every
+        // poll. The pump re-raises an ACTIVE alarm each cycle; re-notification is driven by forgetEpisode
+        // (dropping the episode from state), NOT by ignoring the dedup here — else an active occlusion
+        // would spam a notification every few seconds.
+        let s = enabled(.pumpAlert)
+        let first = B.decide(criticalAlarm(episode: "occ-1"), settings: s, state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(first.deliver)
+        let again = B.decide(criticalAlarm(episode: "occ-1"), settings: s, state: first.nextState, now: at(9, 1), calendar: cal)
+        #expect(again.reason == .episodeAlreadyNotified, "an active critical alarm dedupes per episode (no spam)")
     }
 
     @Test func stateAndSettingsRoundTripCodable() throws {
