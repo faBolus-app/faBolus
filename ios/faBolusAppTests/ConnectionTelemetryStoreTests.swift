@@ -63,6 +63,66 @@ struct ConnectionTelemetryStoreTests {
         #expect(ConnectionTelemetryStore.reasonToken(from: "Peer removed pairing") == "error")
     }
 
+    // MARK: - B3a: command-latency dimension
+
+    @Test func commandLatencyBucketsResponsesAndTimeouts() {
+        let (s, _) = makeStore(enabled: true)
+        s.recordCommandLatency(0.30)   // → lt500ms
+        s.recordCommandLatency(0.31)   // → lt500ms
+        s.recordCommandLatency(1.5)    // → lt2s
+        s.recordCommandLatency(nil)    // → timeout
+        let t = s.snapshot
+        #expect(t.commandLatency["lt500ms"] == 2)
+        #expect(t.commandLatency["lt2s"] == 1)
+        #expect(t.commandLatency["timeout"] == 1)
+    }
+
+    @Test func commandLatencyIsNoOpWhenDisabled() {
+        let (s, _) = makeStore(enabled: false)
+        s.recordCommandLatency(0.3)
+        s.recordCommandLatency(nil)
+        #expect(s.snapshot.commandLatency.isEmpty)
+    }
+
+    @Test func latencyBucketEdges() {
+        #expect(ConnectionTelemetry.latencyBucket(0.0) == "lt250ms")
+        #expect(ConnectionTelemetry.latencyBucket(0.249) == "lt250ms")
+        #expect(ConnectionTelemetry.latencyBucket(0.25) == "lt500ms")
+        #expect(ConnectionTelemetry.latencyBucket(0.999) == "lt1s")
+        #expect(ConnectionTelemetry.latencyBucket(1.0) == "lt2s")
+        #expect(ConnectionTelemetry.latencyBucket(3.999) == "lt4s")
+        #expect(ConnectionTelemetry.latencyBucket(4.0) == "ge4s")
+        #expect(ConnectionTelemetry.latencyBucket(30) == "ge4s")
+    }
+
+    /// MIGRATION GUARD (B3a): a P12 blob persisted BEFORE `commandLatency` existed (no such key) must
+    /// upgrade in place — the shipped connect/uptime/disconnect/reconcile counters MUST survive, not reset
+    /// to zero. Regression pin for the synthesized-Codable hazard (a missing non-optional key would throw →
+    /// `try? decode` → zeroed telemetry).
+    @Test func oldBlobWithoutCommandLatencyPreservesCounters() throws {
+        let suite = "ct-test-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        d.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
+        // A pre-B3a JSON payload — note: NO `commandLatency` key.
+        let old = #"{"connectCount":3,"totalUptimeSeconds":600,"disconnects":{"btOff":2},"reconcile":{"delivered":1}}"#
+        d.set(Data(old.utf8), forKey: "connectionTelemetry.v1")
+
+        let t = ConnectionTelemetryStore(store: d).snapshot
+        #expect(t.connectCount == 3)                 // preserved, not zeroed
+        #expect(t.totalUptimeSeconds == 600)
+        #expect(t.disconnects["btOff"] == 2)
+        #expect(t.reconcile["delivered"] == 1)
+        #expect(t.commandLatency.isEmpty)            // new field defaults empty
+
+        // …and a subsequent latency record composes with the migrated blob.
+        let s = ConnectionTelemetryStore(store: d)
+        s.recordCommandLatency(0.1)
+        let t2 = s.snapshot
+        #expect(t2.connectCount == 3)                // still there after the write
+        #expect(t2.commandLatency["lt250ms"] == 1)
+    }
+
     /// Two stores on the same suite must not clobber each other's counters (read-modify-write).
     @Test func readModifyWriteDoesNotClobberAcrossStores() {
         let suite = "ct-test-\(UUID().uuidString)"
