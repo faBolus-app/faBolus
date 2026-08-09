@@ -138,6 +138,15 @@ struct PumpControlView: View {
                 } header: { Text("Profiles") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
             }
 
+            // §2.1(3) B1(b): the therapy-settings change log (origin + before/after + when). Read-only
+            // disclosure, here in the therapy hub (already advanced-control + not-read-only gated), so a
+            // plain caregiver/viewer phone never surfaces it.
+            Section {
+                NavigationLink { SettingChangeLogView(model: model) } label: {
+                    Label("Change log", systemImage: "clock.arrow.circlepath")
+                }
+            } footer: { Text("Every therapy-setting change, with its origin and time — stays on this device.").font(.footnote) }
+
             if caps.supportsReminders {
                 Section("Reminders & alerts") {
                     NavigationLink { RemindersAlertsView(model: model) } label: {
