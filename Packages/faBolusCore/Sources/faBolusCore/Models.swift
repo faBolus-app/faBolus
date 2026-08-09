@@ -394,7 +394,13 @@ public struct PumpFeatureBits: Sendable, Equatable {
 /// model name: `.none` (no closed-loop controller, e.g. a pump with Control-IQ off at the firmware
 /// level or a non-Tandem pump), `.controlIQ` (classic Control-IQ), `.controlIQPro` (Control-IQ+).
 public enum ControllerVariant: String, Sendable, Equatable, CaseIterable {
-    case none, controlIQ, controlIQPro
+    // B2 — these raw values are a REMOTE WIRE CONTRACT (`RemoteCommand.controllerVariant`): a remote decodes
+    // the token and reconstructs the descriptor locally. Pinned explicitly (and asserted by a rawValue test)
+    // so a future case *rename* can't silently change the token an older remote parses. The marketing name
+    // is "Control-IQ+", but the wire token stays `controlIQPro` permanently.
+    case none = "none"
+    case controlIQ = "controlIQ"
+    case controlIQPro = "controlIQPro"
 }
 
 /// The pump *model* identity, as typed data instead of a bare `isMobi` boolean threaded through the UI.

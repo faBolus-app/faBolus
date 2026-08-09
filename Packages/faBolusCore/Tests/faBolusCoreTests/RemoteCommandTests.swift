@@ -42,6 +42,24 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.trend, "up45")
     }
 
+    /// B2 (S1+O3): the controller-identity fields round-trip on the wire (JSON + dictionary), and the
+    /// variant token is the FROZEN rawValue.
+    func testControllerVariantRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.controllerVariant = ControllerVariant.controlIQPro.rawValue
+        cmd.controlIQEnabled = true
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.controllerVariant, "controlIQPro")
+        XCTAssertEqual(decoded.controlIQEnabled, true)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.controllerVariant, "controlIQPro")
+        XCTAssertEqual(back.controlIQEnabled, true)
+        // Absent ⇒ nil (legacy host); a remote maps nil → .none / false (no disclosure).
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.controllerVariant)
+        XCTAssertNil(bare.controlIQEnabled)
+    }
+
     func testDictionaryRoundTrip() throws {
         // Transport for WatchConnectivity + Connect IQ is [String:Any].
         let cmd = RemoteCommand(kind: .bolusRequest, carbsGrams: 30, bgMgdl: 150)
