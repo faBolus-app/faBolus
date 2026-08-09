@@ -220,27 +220,42 @@ public enum NotificationBroker {
         if message.category.neverSuppressible { return deliver() }
 
         let cfg = settings[message.category] ?? .defaults(for: message.category)
-        if !cfg.enabled { return suppress(.categoryDisabled) }
+
+        // S8 / §6 #6: a CRITICAL-severity governed message (e.g. an occlusion / empty-cartridge /
+        // pump-error alarm — surfaced as the `.pumpAlert` category, which is `Severity.critical` by
+        // construction for `kind == .alarm`) must NOT be droppable by the category being disabled, a user
+        // snooze, quiet-hours, a rate limit, or the daily/meal budget. The handoff requires critical
+        // alarms to bypass the budget. It is NOT `neverSuppressible`, so it still honors
+        // one-notification-per-episode: an ACTIVE alarm the pump re-raises every poll does not spam
+        // (re-notification is driven by `forgetEpisode`, not by re-delivering here). Only the
+        // user/budget suppressions below are skipped for it.
+        let critical = message.severity == .critical
+
+        if !critical, !cfg.enabled { return suppress(.categoryDisabled) }
 
         // User snooze: suppress this category until its deadline. Placed BELOW the `neverSuppressible`
-        // return above, so a snooze can never silence pumpDisconnect / bolusReconciliation / cgmDataLoss.
-        if let until = s.snoozedUntil?[message.category.rawValue], now < until { return suppress(.snoozed) }
+        // return above (and skipped for `.critical`), so neither a snooze nor a disable can silence a
+        // safety alarm — even one carried by a governed category.
+        if !critical, let until = s.snoozedUntil?[message.category.rawValue], now < until { return suppress(.snoozed) }
 
         // One-notification-per-episode: a governed repeat of an already-notified episode is dropped.
+        // Applies to `.critical` too (re-raise of an active alarm is driven by `forgetEpisode`).
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
-        let comps = calendar.dateComponents([.hour, .minute], from: now)
-        let minute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        if cfg.inQuietHours(minute: minute) { return suppress(.quietHours) }
+        if !critical {
+            let comps = calendar.dateComponents([.hour, .minute], from: now)
+            let minute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+            if cfg.inQuietHours(minute: minute) { return suppress(.quietHours) }
 
-        if cfg.minIntervalSeconds > 0, let last = s.lastDeliveredAt[message.category.rawValue],
-           now.timeIntervalSince(last) < cfg.minIntervalSeconds {
-            return suppress(.rateLimited)
-        }
+            if cfg.minIntervalSeconds > 0, let last = s.lastDeliveredAt[message.category.rawValue],
+               now.timeIntervalSince(last) < cfg.minIntervalSeconds {
+                return suppress(.rateLimited)
+            }
 
-        if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
-        if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
-            return suppress(.mealBudgetReached)
+            if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
+            if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
+                return suppress(.mealBudgetReached)
+            }
         }
         return deliver()
     }
