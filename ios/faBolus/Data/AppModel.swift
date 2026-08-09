@@ -969,6 +969,36 @@ public final class AppModel {
         return .erased
     }
 
+    /// F1 option (b) — FULL app reset (owner-only, destructive). DECIDED (post-p16-owner-decisions):
+    /// wipes on-device health data **and** Keychain secrets (pump JPAKE/legacy-V1 secret, fixed PIN, CGM
+    /// logins) **and** unpairs the pump.
+    ///
+    /// Enforces the SAME in-flight/unresolved-delivery refusal gate as the health-only erase by running it
+    /// FIRST and bailing on `.refused` — so on refusal **nothing** is cleared (Keychain + pairing stay
+    /// intact). On @MainActor the gate→wipe→unpair sequence is atomic w.r.t. any delivery (which also runs
+    /// on the main actor), so no delivery can start between the gate and the unpair. The caller honors the
+    /// S12 unpair interlock (shows `unpairConfirmation` — the Mobi charging-base warning — in the
+    /// destructive confirm, and gates exposure to the owner).
+    ///
+    /// SCOPE: health data + secrets + pairing, per the owner's enumerated list. Does NOT reset user
+    /// PREFERENCES (`AppSettings` modes/toggles) — those are settings the user chose, not health data,
+    /// secrets, or pairing.
+    public func eraseEverythingFullReset() -> EraseOutcome {
+        // Reuse the health-data wipe, which enforces the delivery gate first. Refuse ⇒ nothing cleared.
+        let health = eraseAllOnDeviceHealthData()
+        guard health == .erased else { return health }
+        // Clear the pairing Keychain + persisted peripheral EXPLICITLY (backend-agnostic): a backend's own
+        // `forgetPairing` may be a no-op (e.g. the simulator), and the pairing secret lives in the global
+        // Keychain regardless of which backend is active, so we must clear it here, not only via the backend.
+        PairingStore.clear()          // pump JPAKE derived secret + legacy V1 code
+        clearSavedPin()               // fixed PIN (PairingStore.clearPin)
+        PumpPeripheralStore.clear()   // persisted peripheral id (the cold-launch retrieve target)
+        for account in SettingsBackup.cgmSecretAccounts { CredentialStore.set(nil, account: account) }   // CGM logins
+        // Also tell the active backend to drop its in-memory pairing/auth state + run its own cleanup.
+        forgetPairing()
+        return .erased
+    }
+
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
 
