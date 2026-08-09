@@ -85,6 +85,21 @@ public enum BackupValue: Codable, Sendable, Equatable {
                                 debugDescription: "unknown BackupValue type \(other)")
         }
     }
+
+    /// B1(b): a human-readable rendering for the setting change-log (before → after). Not a wire/JSON
+    /// form — display only. `.double` is a plain trimmed number with NO unit suffix (the change-log row's
+    /// field title already implies the unit, and this value is generic — a carb ratio isn't insulin units).
+    public var displayString: String {
+        switch self {
+        case .bool(let v):        return v ? "on" : "off"
+        case .int(let v):         return String(v)
+        case .double(let v):      return String(format: "%g", v)   // 1.2 / 12 / 0.05 — no trailing zeros, no unit
+        case .string(let v):      return v
+        case .stringArray(let v): return v.joined(separator: ", ")
+        case .intArray(let v):    return v.map(String.init).joined(separator: ", ")
+        case .data:               return "(data)"
+        }
+    }
 }
 
 /// Sensitive Keychain items, opaque key→value (Data values base64-encoded into the string). Only
