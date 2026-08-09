@@ -852,6 +852,11 @@ public final class AppModel {
     /// connection edges below and in `reconcileUnresolvedDeliveries`.
     @ObservationIgnored let connectionTelemetry = ConnectionTelemetryStore()
 
+    /// F7 (P16) — opt-in, in-memory ring buffer of connection-layer events for the in-app debug console
+    /// ("verbose BLE session logging"). No-op unless opted in; shares the same diagnostics flag; forgotten
+    /// on restart; never uploaded. Appended from the SAME connection edges below — no new BLE poll/cadence.
+    @ObservationIgnored let bleSessionLog = BLESessionLog()
+
     static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
     /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
     /// in Settings to try again.
@@ -958,6 +963,7 @@ public final class AppModel {
         // 4) Local telemetry / runtime blobs in the App Group (diagnostics DATA; NOT the opt-in flag/prefs).
         connectionTelemetry.clearStoredData()
         NotificationRuntime.eraseStoredBlobs()
+        bleSessionLog.clear()   // F7: in-memory only, but erase it here too for "Delete all on-device data"
 
         refreshDeliveryBlock()
         return .erased
@@ -1139,11 +1145,14 @@ public final class AppModel {
             // re-notified with intensified copy while the pump stays unreachable. Notification-only.
             scheduleDisconnectEscalation()
             // §5.2.8: bucket WHY the link dropped (off the app-boundary `connectionDetail`) + accrue uptime.
-            connectionTelemetry.recordDisconnected(reason: ConnectionTelemetryStore.reasonToken(from: snap.connectionDetail))
+            let reason = ConnectionTelemetryStore.reasonToken(from: snap.connectionDetail)
+            connectionTelemetry.recordDisconnected(reason: reason)
+            bleSessionLog.record(.disconnect, detail: reason)   // F7: same edge, opt-in, in-memory only
         case .clear:
             // Withdraw the immediate T0 banner AND cancel every pending/delivered escalation step (S7).
             withdrawNotifications([Self.pumpDisconnectKey] + DisconnectEscalation.stepIds)
             connectionTelemetry.recordConnected()   // §5.2.8: connect count + start the uptime clock
+            bleSessionLog.record(.reconnect)        // F7: link returned to connected (prev was not)
         case .none: break
         }
         previousConnection = snap.connection
