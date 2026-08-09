@@ -358,10 +358,19 @@ struct PumpSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
-    // P14 S12 (§2.2.3): pending unpair awaiting confirmation. `repairAfter` re-opens pairing on confirm
-    // (the "Re-pair with new code" path). One confirm funnel for both unpair entry points.
-    @State private var pendingUnpair: PendingUnpair?
-    private struct PendingUnpair: Identifiable { let id = UUID(); let repairAfter: Bool }
+    // P14 S12 (§2.2.3): the unpair flow. `repairAfter` re-opens pairing after unpair (the "Re-pair with
+    // new code" path). One funnel for both unpair entry points. A4 (owner 2026-08-09): the flow is now
+    // TWO steps — step 1 offers a settings backup (or explicit skip), step 2 is the model-appropriate
+    // confirm — so an unpair can't complete without a backup-or-skip choice first (UnpairAdvisory.steps).
+    @State private var unpairStep: UnpairStep?
+    private enum UnpairStep: Identifiable {
+        case backup(repairAfter: Bool)    // step 1: back up or skip
+        case confirm(repairAfter: Bool)   // step 2: S12 charging-base confirm
+        var id: String { switch self { case .backup(let r): return "backup-\(r)"; case .confirm(let r): return "confirm-\(r)" } }
+        var repairAfter: Bool { switch self { case .backup(let r), .confirm(let r): return r } }
+    }
+    @State private var showBackupSheet = false
+    @State private var repairAfterBackup = false
     var body: some View {
         Form {
             Section("Pump") {
@@ -369,8 +378,8 @@ struct PumpSettingsView: View {
                 connectionControls
                 if model.hasStoredPairing && model.capabilities.supportsPairing {
                     // P14 S12 (§2.2.3): confirm before an unpair; a Mobi gets the unconditional
-                    // charging-base warning (re-pairing needs the base). See UnpairAdvisory.
-                    Button("Forget pairing", role: .destructive) { pendingUnpair = PendingUnpair(repairAfter: false) }
+                    // charging-base warning (re-pairing needs the base). A4: step 1 is the backup gate.
+                    Button("Forget pairing", role: .destructive) { unpairStep = .backup(repairAfter: false) }
                 }
             }
             // Pump clock sync isn't advanced control, so it's its own section — no need to enable
@@ -430,17 +439,46 @@ struct PumpSettingsView: View {
         }
         .navigationTitle("Pump & control")
         .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-        // P14 S12 (§2.2.3): the unpair interlock — a single confirm for both entry points, carrying the
-        // model-appropriate warning (Mobi ⇒ charging-base caveat). No forced settings backup: an unpair
-        // loses only the pairing bond, which a settings backup can't restore anyway (see UnpairAdvisory).
-        .alert(item: $pendingUnpair) { intent in
-            Alert(title: Text("Forget pairing?"),
-                  message: Text(model.unpairConfirmation),
-                  primaryButton: .destructive(Text("Forget pairing")) {
-                      model.forgetPairing()
-                      if intent.repairAfter { showPairing = true }
-                  },
-                  secondaryButton: .cancel())
+        // A4 (§2.2.3, owner 2026-08-09): STEP 1 — the backup gate. Before the unpair confirm, offer a
+        // settings backup or an explicit skip (never a default), so an unpair can't complete without that
+        // choice. "Back up settings" opens the Backup & restore sheet; whichever way that sheet is
+        // dismissed, the flow advances to step 2 (the user was given the chance to back up).
+        .confirmationDialog(UnpairAdvisory.backupPromptTitle,
+                            isPresented: Binding(get: { if case .backup = unpairStep { return true } else { return false } },
+                                                 set: { if !$0, case .backup = unpairStep { unpairStep = nil } }),
+                            titleVisibility: .visible) {
+            if case .backup(let repair) = unpairStep {
+                Button(UnpairAdvisory.backUpNowLabel) {
+                    repairAfterBackup = repair
+                    unpairStep = nil
+                    showBackupSheet = true
+                }
+                Button(UnpairAdvisory.skipBackupLabel, role: .destructive) {
+                    unpairStep = .confirm(repairAfter: repair)   // explicit skip → straight to the confirm
+                }
+                Button("Cancel", role: .cancel) { unpairStep = nil }
+            }
+        } message: {
+            Text(UnpairAdvisory.backupPromptMessage)
+        }
+        // The backup sheet; on dismiss (saved or not) advance to the model-appropriate confirm.
+        .sheet(isPresented: $showBackupSheet, onDismiss: { unpairStep = .confirm(repairAfter: repairAfterBackup) }) {
+            NavigationStack { BackupRestoreView(model: model) }
+        }
+        // P14 S12 (§2.2.3): STEP 2 — the unpair confirm, carrying the model-appropriate warning
+        // (Mobi ⇒ charging-base caveat). One funnel for both entry points.
+        .alert("Forget pairing?",
+               isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
+                                    set: { if !$0, case .confirm = unpairStep { unpairStep = nil } })) {
+            Button("Forget pairing", role: .destructive) {
+                let repair = unpairStep?.repairAfter ?? false
+                unpairStep = nil
+                model.forgetPairing()
+                if repair { showPairing = true }
+            }
+            Button("Cancel", role: .cancel) { unpairStep = nil }
+        } message: {
+            Text(model.unpairConfirmation)
         }
     }
 
@@ -451,7 +489,7 @@ struct PumpSettingsView: View {
                 Button("Connect") { Task { await model.connect() } }
             } else if model.hasStoredPairing {
                 Button("Connect (saved pairing)") { Task { await model.connect() } }
-                Button("Re-pair with new code") { pendingUnpair = PendingUnpair(repairAfter: true) }
+                Button("Re-pair with new code") { unpairStep = .backup(repairAfter: true) }
             } else {
                 Button("Connect") { showPairing = true }
             }

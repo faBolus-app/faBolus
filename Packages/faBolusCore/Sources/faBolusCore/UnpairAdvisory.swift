@@ -5,16 +5,37 @@ import Foundation
 /// therapy event (no way to reconnect until you're back at the base). That warning is KEPT
 /// unconditionally (owner OQ8). Pure and pump-neutral so the copy lives in one place and is testable.
 ///
-/// OQ8 evaluation — forced settings backup before unpair (NOT built, deliberately): an unpair
-/// (`forgetPairing`) drops only the pairing bond. App preferences persist locally in `UserDefaults`
-/// (untouched by an unpair) and the pump's therapy settings live on the pump itself — neither is lost.
-/// A *settings* backup contains neither the pairing bond nor the pump-side therapy values, so forcing
-/// one before an unpair would protect nothing that the unpair puts at risk. The real, unavoidable cost
-/// is re-pairing (and, for a Mobi, needing the base) — which a backup cannot restore. So there is no
-/// settings-loss gap to close: the interlock is the warning, not a forced backup.
+/// §2.2.3 backup gate (A4, owner decision 2026-08-09) — the unpair flow now OFFERS a settings backup, or
+/// an explicit skip, BEFORE it completes. This supersedes the earlier OQ8 "no forced backup" reading for a
+/// reason that evaluation under-weighted: an unpair is frequently a prelude to **switching or replacing** a
+/// pump (see the pump-switch settings reset, plan B4), and a pump's therapy settings live only on that pump
+/// — once it is unpaired and gone they cannot be re-read. A settings backup taken while still connected
+/// captures the pump's therapy values (carb ratios / correction factors / targets / limits, for manual
+/// re-entry or a Mobi reconfigure) AND the app's own preferences — so it DOES protect something the
+/// unpair-to-switch puts at risk. (The earlier reasoning holds only for re-pairing the *same* pump, where
+/// nothing is lost.) The gate never blocks: "skip backup" is always available as an explicit, acknowledged
+/// choice, and the charging-base warning below is still shown at the final confirm.
 public enum UnpairAdvisory {
     /// Whether re-pairing this model needs the charging base — the load-bearing §2.2.3 Mobi warning.
     public static func requiresChargingBaseToRepair(_ model: PumpModel) -> Bool { model == .mobi }
+
+    // MARK: §2.2.3 backup gate — step 1 of the two-step unpair flow (A4)
+
+    /// The two ordered steps the unpair flow must present: the backup-or-skip choice ALWAYS precedes the
+    /// model-appropriate confirm, so an unpair can never complete without the user having made a
+    /// backup-or-skip choice first. Pure so the gate's presence + ordering is testable without the UI.
+    public enum Step: Equatable, Sendable { case backupChoice, confirm }
+    public static let steps: [Step] = [.backupChoice, .confirm]
+
+    /// Copy for the step-1 backup prompt. `skipBackup` is the explicit acknowledgment (never a default).
+    public static let backupPromptTitle = "Back up your settings first?"
+    public static let backupPromptMessage =
+        "Backing up now saves your app settings and a snapshot of this pump's therapy settings (carb "
+        + "ratios, correction factors, targets, limits) to a file — worth doing if you're switching or "
+        + "replacing pumps, because those settings live only on the pump and can't be re-read once it's "
+        + "unpaired."
+    public static let backUpNowLabel = "Back up settings"
+    public static let skipBackupLabel = "Skip backup and continue"
 
     /// Resolve the model for the unpair warning: prefer the LIVE snapshot model; when it's `.unknown`
     /// (disconnected / the name has cleared), fall back to the persisted offline Mobi signal. C19: that
