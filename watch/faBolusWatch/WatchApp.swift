@@ -30,6 +30,8 @@ struct WatchRootView: View {
             #endif
         }
         .tabViewStyle(.page)
+        // N12 (Dynamic Type): scale up to the largest accessibility text size across every watch page.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         // The load-bearing block: the bolus sheet can never present unless remotes aren't read-only AND the
         // phone has enabled watch bolusing (§2.3), however showBolus is set.
         .sheet(isPresented: Binding(get: { showBolus && model.watchBolusAllowed }, set: { showBolus = $0 })) {
