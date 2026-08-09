@@ -22,7 +22,10 @@ import Testing
         P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                         phoneReadOnly: false, remotesReadOnly: false,
                         advancedControlOptIn: true, capabilities: .mobiAdvanced,
-                        hasRecentUnverifiedAck: true, peerPolicy: peer)
+                        hasRecentUnverifiedAck: true, peerPolicy: peer,
+                        // "Fully permissive" must set these explicitly now that the init defaults are
+                        // fail-closed (false); openCtx asserts a Garmin/Watch deliver is ALLOWED.
+                        garminBolusEnabled: true, watchBolusEnabled: true)
     }
 
     /// P15 §2.3: an otherwise-permissive host still refuses a Garmin/Watch `deliverBolus` when that
@@ -45,6 +48,18 @@ import Testing
         // Enabled ⇒ the deliver is allowed on both remotes (openCtx defaults the two flags to true).
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: openCtx()).allowed)
         #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: openCtx()).allowed)
+    }
+
+    /// Q1.2: a context built WITHOUT the per-surface remote-bolus flags must default them fail-CLOSED, so a
+    /// future call site that forgets to thread them cannot silently arm Garmin/Watch bolusing.
+    @Test func accessContextDefaultsFailClosedForRemoteBolus() {
+        let c = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
+                                phoneReadOnly: false, remotesReadOnly: false,
+                                advancedControlOptIn: true, capabilities: .mobiAdvanced,
+                                hasRecentUnverifiedAck: true, peerPolicy: .fullControl)   // flags OMITTED
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
+        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: c).reason == .remoteBolusDisabled)
+        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)   // phone unaffected
     }
 
     @Test func fullyLockedDeniesEveryActionOnEverySurface() {

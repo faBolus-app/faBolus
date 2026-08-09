@@ -88,7 +88,11 @@ public enum AccessPolicy {
                     advancedControlOptIn: Bool, capabilities: PumpCapabilities,
                     hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
                     modeContext: ModeGateContext = .init(),
-                    garminBolusEnabled: Bool = true, watchBolusEnabled: Bool = true) {
+                    // Fail-closed defaults (§2.3): a caller that forgets to thread the per-surface remote
+                    // bolus enables must NOT silently arm Garmin/Watch bolusing. The one production call
+                    // site (AppModel) always passes the real persisted values; these defaults only guard a
+                    // future second call site.
+                    garminBolusEnabled: Bool = false, watchBolusEnabled: Bool = false) {
             self.childModeEnabled = childModeEnabled
             self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
