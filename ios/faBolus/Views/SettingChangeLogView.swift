@@ -2,12 +2,23 @@ import SwiftUI
 import UIKit
 import faBolusCore
 
-/// §2.1(3) B1(b): the therapy-settings CHANGE LOG — a human-readable, shareable audit trail of every
-/// recorded setting change (origin + before/after + when), newest first. Read-only DISCLOSURE; reached
-/// from `PumpControlView` (already behind advanced-control + not-read-only), so a plain caregiver/viewer
-/// phone never surfaces it. The shareable/copyable text is the deterministic `SettingChangeLog.exportText()`.
+/// §2.1(3)(4) B1(b)+B1(c): the therapy-settings CHANGE LOG — a human-readable, shareable audit trail of
+/// every recorded setting change (origin + before/after + when), newest first, with a **one-tap revert**
+/// on the current value of each setting. Reached from `PumpControlView` (already behind advanced-control +
+/// not-read-only), so a plain caregiver/viewer phone never surfaces it. The shareable/copyable text is the
+/// deterministic `SettingChangeLog.exportText()`. A revert re-applies the previous value through the SAME
+/// gated therapy-write funnel as a normal edit (ack + capability + read-only + WritePolicy all still apply)
+/// and is itself recorded as a new change.
 struct SettingChangeLogView: View {
     let model: AppModel
+    @State private var pendingRevert: PendingRevert?
+
+    private struct PendingRevert: Identifiable {
+        let id = UUID()
+        let key: SettingKey
+        let title: String
+        let toDisplay: String
+    }
 
     var body: some View {
         let o = model.settingChangeStore.loadOutcome()
@@ -21,9 +32,14 @@ struct SettingChangeLogView: View {
                 Section { Text("No setting changes recorded yet.").foregroundStyle(.secondary) }
             } else {
                 Section {
-                    ForEach(Array(o.log.history().enumerated()), id: \.offset) { _, c in row(c) }
+                    ForEach(Array(o.log.history().enumerated()), id: \.offset) { _, c in
+                        // Revert is offered ONLY on a key's CURRENT change (reverting a superseded one would
+                        // fight a newer edit) and only when it has a previous value to restore.
+                        let target = (o.log.current(c.key) == c) ? o.log.revertTarget(c.key) : nil
+                        row(c, revertTo: target)
+                    }
                 } footer: {
-                    Text("Every therapy-setting change is recorded with its origin and time. This log stays on this device.")
+                    Text("Every therapy-setting change is recorded with its origin and time. This log stays on this device. Revert re-applies the previous value to the pump — it asks for confirmation and needs a live pump connection.")
                 }
                 Section {
                     ShareLink(item: o.log.exportText()) { Label("Share log", systemImage: "square.and.arrow.up") }
@@ -32,12 +48,30 @@ struct SettingChangeLogView: View {
                     }
                 }
             }
+            if let err = model.lastError {
+                Section { Text(err).font(.footnote).foregroundStyle(.red) }
+            }
         }
         .navigationTitle("Change log")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Revert this setting?",
+                            isPresented: Binding(get: { pendingRevert != nil },
+                                                 set: { if !$0 { pendingRevert = nil } }),
+                            presenting: pendingRevert) { r in
+            Button("Revert to \(r.toDisplay)", role: .destructive) {
+                let key = r.key
+                // This explicit confirm IS the untested-feature acknowledgment for the one gated write the
+                // revert performs (parallel to the editor's warning sheet). It does NOT bypass any other
+                // gate — child mode / read-only / capability are all still enforced inside `revertSetting`.
+                Task { model.acknowledgeUnverifiedTherapy(); await model.revertSetting(key) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { r in
+            Text("This changes \(r.title) on your pump back to \(r.toDisplay). It's recorded as a new change and can itself be reverted.")
+        }
     }
 
-    @ViewBuilder private func row(_ c: StoredSettingChange) -> some View {
+    @ViewBuilder private func row(_ c: StoredSettingChange, revertTo: BackupValue?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(Self.fieldTitle(c.key)).fontWeight(.medium)
@@ -51,6 +85,16 @@ struct SettingChangeLogView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if let revertTo {
+                Button {
+                    pendingRevert = PendingRevert(key: c.key, title: Self.fieldTitle(c.key),
+                                                  toDisplay: revertTo.displayString)
+                } label: { Label("Revert", systemImage: "arrow.uturn.backward") }
+                    .tint(.orange)
+                    .disabled(!model.pumpReady)
+            }
+        }
     }
 
     /// A human title for a change row: the field's friendly name, plus the segment start time for a

@@ -1618,6 +1618,85 @@ public final class AppModel {
         return ["basalRate": p("basalRate"), "carbRatio": p("carbRatio"), "isf": p("isf"), "targetBg": p("targetBg")]
     }
 
+    // MARK: - §2.1(4) B1(c) auto-snapshot baseline + one-tap revert
+
+    /// B1(c): record an explicit `.consensusDefault` baseline (`before == nil`) for each therapy field of a
+    /// segment that has NO record yet — so every value carries an explicit origin and a one-tap-revert
+    /// anchor even if the user never edited it. **Idempotent:** a field that already has any record (a prior
+    /// baseline OR a real `.selfSet` edit) is skipped, so a re-read never re-baselines and never overwrites
+    /// `.selfSet` provenance. Baselines go to `latest` only (`recordBaseline`), never the visible audit
+    /// trail. Fail-open: skipped entirely when the store failed closed (don't scribble on an unreadable
+    /// store), and `recordBaseline` never throws. Keyed on the segment START TIME (its stable identity).
+    func recordConsensusBaselineIfAbsent(idpId: Int, startMinutes: Int,
+                                         basalRate: Double, carbRatio: Double, isf: Int, targetBg: Int) {
+        let outcome = settingChangeStore.loadOutcome()
+        if outcome.failedClosed { return }
+        let now = Int(Date().timeIntervalSince1970)
+        func baseline(_ field: String, _ value: BackupValue) {
+            let key = SettingKey.segment(idpId: idpId, startMinutes: startMinutes, field: field)
+            guard outcome.log.current(key) == nil else { return }
+            settingChangeStore.recordBaseline(StoredSettingChange(
+                key: key, before: nil, after: value, provenance: .consensusDefault, atSeconds: now))
+        }
+        baseline("basalRate", .double(basalRate))
+        baseline("carbRatio", .double(carbRatio))
+        baseline("isf", .int(isf))
+        baseline("targetBg", .int(targetBg))
+    }
+
+    /// §2.1(4) B1(c) — one-tap revert of the MOST RECENT change to a setting: re-apply its `before` value
+    /// through the SAME gated therapy-write funnel as a normal edit, so the ack + capability + read-only +
+    /// WritePolicy gates ALL still apply, and the revert is itself recorded as a new `.selfSet` change (an
+    /// honest audit trail — a revert IS a user edit). Only the latest change for a key is revertible (the
+    /// change-log UI offers it only on the current row), and only when it has a `before` value. Failures
+    /// (nothing to revert / segment gone / gate denial) surface via `lastError`; no silent no-op.
+    func revertSetting(_ key: SettingKey) async {
+        guard let target = settingChangeStore.load().revertTarget(key) else {
+            lastError = "Nothing to revert — this setting hasn't been changed from its original value."
+            return
+        }
+        switch (key.idpId, key.segmentStartMinutes, key.field) {
+        case (nil, nil, "maxBolus"):
+            if case .double(let v) = target { await setMaxBolus(units: v) }
+            else { lastError = "Couldn't read the previous value to revert to." }
+        case (nil, nil, "maxBasal"):
+            if case .double(let v) = target { await setMaxBasal(unitsPerHour: v) }
+            else { lastError = "Couldn't read the previous value to revert to." }
+        case let (idpId?, start?, field) where ["basalRate", "carbRatio", "isf", "targetBg"].contains(field):
+            await revertSegmentField(idpId: idpId, startMinutes: start, field: field, to: target)
+        default:
+            // Control-IQ enable/disable needs its full weight/TDI config → reverted from the Control-IQ
+            // screen, not here; anything else has no automatic write path.
+            lastError = "This setting can't be reverted automatically — adjust it from its settings screen."
+        }
+    }
+
+    /// Revert one field of a profile segment: reload the profile's current segments (to resolve the segment
+    /// by its stable START TIME and its live index, since indices renumber), substitute ONLY the reverted
+    /// field, and write the whole segment back through the gated `modifyProfileSegment`. Refuses (with a
+    /// reason) if the segment is no longer on the pump.
+    private func revertSegmentField(idpId: Int, startMinutes: Int, field: String, to target: BackupValue) async {
+        await refreshProfileSegments(idpId: idpId)
+        guard let seg = snapshot.viewedProfileSegments.first(where: {
+            $0.idpId == idpId && $0.startTimeMinutes == startMinutes
+        }) else {
+            lastError = "The time segment for this setting is no longer on the pump — it can't be reverted."
+            return
+        }
+        var basal = seg.basalRateUnitsPerHour, cr = seg.carbRatioGramsPerUnit, isf = seg.isf, tgt = seg.targetBg
+        switch (field, target) {
+        case ("basalRate", .double(let v)): basal = v
+        case ("carbRatio", .double(let v)): cr = v
+        case ("isf", .int(let v)):          isf = v
+        case ("targetBg", .int(let v)):     tgt = v
+        default: lastError = "Couldn't read the previous value to revert to."; return
+        }
+        await modifyProfileSegment(idpId: idpId, segmentIndex: seg.segmentIndex,
+                                   startTimeMinutes: seg.startTimeMinutes,
+                                   basalRateUnitsPerHour: basal, carbRatioGramsPerUnit: cr,
+                                   isf: isf, targetBg: tgt)
+    }
+
     // MARK: - P16 S3 (manual precedence for scheduled mode automation)
 
     /// When the user last changed the pump's activity/sleep mode BY HAND (from the Pump Control UI).
@@ -1638,7 +1717,11 @@ public final class AppModel {
     var lastManualTherapyActionAt: Date? {
         var candidates: [Date] = []
         if let bolus = snapshot.lastBolusDate { candidates.append(bolus) }
-        if let latestEditSeconds = settingChangeStore.load().latest.map(\.atSeconds).max() {
+        // B1(c): exclude consensus-default BASELINES — they are stamped at profile-READ time, not at a user
+        // edit, so counting one would spuriously look like a recent manual therapy action and defer a
+        // scheduled mode switch. Only real edits (`.selfSet`/`.clinicianSet`) count.
+        if let latestEditSeconds = settingChangeStore.load().latest
+            .filter({ $0.provenance != .consensusDefault }).map(\.atSeconds).max() {
             candidates.append(Date(timeIntervalSince1970: Double(latestEditSeconds)))
         }
         if let mode = lastManualModeChangeAt { candidates.append(mode) }
@@ -1701,7 +1784,18 @@ public final class AppModel {
     private func createProfileRaw(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
         await performControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
     }
-    public func refreshProfileSegments(idpId: Int) async { await source.refreshProfileSegments(idpId: idpId); refresh() }
+    public func refreshProfileSegments(idpId: Int) async {
+        await source.refreshProfileSegments(idpId: idpId); refresh()
+        // §2.1(4) B1(c): capture a consensus-default baseline for any not-yet-recorded field of this
+        // profile's segments, so every therapy value has an explicit origin + a revert anchor. Idempotent
+        // (skips fields with any existing record) and fail-open, so it never affects the read it rides on.
+        for seg in snapshot.viewedProfileSegments where seg.idpId == idpId {
+            recordConsensusBaselineIfAbsent(idpId: idpId, startMinutes: seg.startTimeMinutes,
+                                            basalRate: seg.basalRateUnitsPerHour,
+                                            carbRatio: seg.carbRatioGramsPerUnit,
+                                            isf: seg.isf, targetBg: seg.targetBg)
+        }
+    }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
         await runGatedTherapy(.addProfileSegment) {
             try await self.source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
