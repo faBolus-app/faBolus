@@ -245,7 +245,13 @@ public final class AppModel {
     /// the UI's `advancedControlAllowed`.
     func accessDecision(_ action: GatedPumpWrite,
                         from surface: AccessPolicy.Surface,
-                        peerId: String? = nil) -> AccessPolicy.AccessDecision {
+                        peerId: String? = nil,
+                        // C2 §2.3 — the OPTIONAL Garmin bolus passcode, computed by the caller
+                        // (`remoteDeliver`) which does the single stateful `BolusPasscodeStore.verify()`.
+                        // Defaults are fail-closed / no-op: `required=false` ⇒ no passcode gate (every
+                        // caller that isn't a Garmin deliver leaves these untouched).
+                        bolusPasscodeRequired: Bool = false,
+                        bolusPasscodeSatisfied: Bool = false) -> AccessPolicy.AccessDecision {
         let peerPolicy: RemotePeerPolicy? = surface.isAuthenticatedPeer
             ? RemotePeerPolicyStore.effectivePolicy(for: peerId ?? "")
             : nil
@@ -265,7 +271,11 @@ public final class AppModel {
             // P15 §2.3: per-surface remote bolus enables (default OFF on the phone) so the evaluator
             // refuses a Garmin/Watch deliver the user hasn't opted into — not a seventh mechanism.
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            watchBolusEnabled: AppSettings.shared.watchBolusEnabled)
+            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
+            // C2 §2.3: the host-verified passcode result (pure bits — the Keychain read + verify happened
+            // in the caller so the evaluator stays pure and the exp-backoff is armed exactly once).
+            bolusPasscodeRequired: bolusPasscodeRequired,
+            bolusPasscodeSatisfied: bolusPasscodeSatisfied)
         return AccessPolicy.evaluate(action, surface: surface, context: ctx)
     }
 
@@ -2076,11 +2086,26 @@ public final class AppModel {
     /// delivering a surprising amount. Units-mode requests deliver the sent `units` unchanged. Carbs are
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
-                              bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
+                              bgMgdl: Int? = nil, remoteEstimate: Double? = nil, passcode: String? = nil,
                               from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+        // C2 §2.3 — the OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
+        // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
+        // GARMIN ONLY — Apple Watch is exempt (wrist detection). An ABSENT code is NOT run through
+        // `verify()` (so a legacy watch that never prompts isn't charged a lockout attempt); it simply
+        // fails the gate as `required && !satisfied`.
+        var passcodeRequired = false
+        var passcodeSatisfied = false
+        if surface == .garmin && BolusPasscodeStore.isRequired {
+            passcodeRequired = true
+            if let entered = passcode, !entered.isEmpty {
+                passcodeSatisfied = BolusPasscodeStore.verify(entered)
+            }
+        }
         // P8: gate through the single evaluator (child mode for local/watch/Garmin; the `.bolus` peer
         // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
-        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
+        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId,
+                                      bolusPasscodeRequired: passcodeRequired,
+                                      bolusPasscodeSatisfied: passcodeSatisfied)
         guard decision.allowed else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
                                message: decision.reason?.userMessage ?? "Not allowed"))

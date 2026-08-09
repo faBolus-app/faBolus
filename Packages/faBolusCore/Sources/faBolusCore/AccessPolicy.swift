@@ -82,6 +82,15 @@ public enum AccessPolicy {
         // from `.garmin` / `.appleWatch`.
         public var garminBolusEnabled: Bool
         public var watchBolusEnabled: Bool
+        // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone
+        // (`BolusPasscodeStore.isRequired`), a Garmin `.deliverBolus` must carry the correct entered code.
+        // The host does the single stateful `verify()` (which arms the exp-backoff) and hands the evaluator
+        // a pure `required`/`satisfied` pair — faBolusCore never touches the Keychain. Apple Watch is EXEMPT
+        // (wrist detection is a materially stronger presence signal — see the gate). `satisfied` defaults
+        // FALSE (fail-closed: required-but-unthreaded denies); `required` defaults false so no other
+        // surface/action is affected. Only consulted for `.deliverBolus` from `.garmin`.
+        public var bolusPasscodeRequired: Bool
+        public var bolusPasscodeSatisfied: Bool
 
         public init(childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
                     phoneReadOnly: Bool, remotesReadOnly: Bool,
@@ -92,7 +101,10 @@ public enum AccessPolicy {
                     // bolus enables must NOT silently arm Garmin/Watch bolusing. The one production call
                     // site (AppModel) always passes the real persisted values; these defaults only guard a
                     // future second call site.
-                    garminBolusEnabled: Bool = false, watchBolusEnabled: Bool = false) {
+                    garminBolusEnabled: Bool = false, watchBolusEnabled: Bool = false,
+                    // C2 §2.3 fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
+                    // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
+                    bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false) {
             self.childModeEnabled = childModeEnabled
             self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
@@ -104,6 +116,8 @@ public enum AccessPolicy {
             self.modeContext = modeContext
             self.garminBolusEnabled = garminBolusEnabled
             self.watchBolusEnabled = watchBolusEnabled
+            self.bolusPasscodeRequired = bolusPasscodeRequired
+            self.bolusPasscodeSatisfied = bolusPasscodeSatisfied
         }
     }
 
@@ -118,6 +132,7 @@ public enum AccessPolicy {
         case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
         case featureDisabledInMode               // P14: user turned this feature off within the mode
         case remoteBolusDisabled                 // P15 §2.3: bolusing from this remote is turned off
+        case remoteBolusPasscodeRequired         // C2 §2.3: Garmin bolus needs the correct passcode
 
         public var userMessage: String {
             switch self {
@@ -130,6 +145,7 @@ public enum AccessPolicy {
             case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
             case .featureDisabledInMode: return "This feature is turned off in your settings."
             case .remoteBolusDisabled:  return "Bolusing from this device is turned off — enable it in faBolus on the phone."
+            case .remoteBolusPasscodeRequired: return "Enter the bolus passcode set in faBolus on your phone to bolus from this device."
             }
         }
     }
@@ -181,6 +197,19 @@ public enum AccessPolicy {
         if action == .deliverBolus {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
             if surface == .appleWatch && !context.watchBolusEnabled { return .deny(.remoteBolusDisabled) }
+        }
+
+        // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone, a Garmin
+        // `.deliverBolus` must carry the correct entered code (the host verifies it against the salted hash
+        // and passes the result as `bolusPasscodeSatisfied`; the evaluator stays pure). Fail-closed:
+        // required-but-unsatisfied (absent OR wrong OR backing off) denies. APPLE WATCH IS EXEMPT — its
+        // wrist detection is a materially stronger presence signal than a Garmin button press, so §2.3 does
+        // not require a passcode there; gating only `.garmin` keeps the watch's existing confirm. Every
+        // other surface/action is unaffected (`required` defaults false). Ordered after the enable gate so
+        // "bolusing off" still takes precedence over "needs a passcode".
+        if action == .deliverBolus && surface == .garmin
+            && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied {
+            return .deny(.remoteBolusPasscodeRequired)
         }
 
         // Gate 5 — pump capability + advanced-control opt-in (enforced at the funnel — owner decision

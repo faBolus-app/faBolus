@@ -212,9 +212,13 @@ final class GarminRemoteBridge: NSObject {
             // Units mode sends `units`; carbs mode sends `carbsGrams` (+ bgMgdl + the Garmin's own
             // estimate). The host recomputes carbs→units, runs the divergence guard, records carbs.
             guard cmd.units != nil || (cmd.carbsGrams ?? 0) > 0 else { return }
+            // C2 §2.3: forward the entered bolus passcode (if any) so the host verifies it against the
+            // salted hash. When a passcode is required and this is absent/wrong, `remoteDeliver` denies and
+            // echoes `.failed` — the watch never verifies or stores it.
             Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, from: .garmin, peerId: "garmin") }
+                                             remoteEstimate: cmd.remoteEstimateUnits, passcode: cmd.bolusPasscode,
+                                             from: .garmin, peerId: "garmin") }
         case .cancelBolus:
             // Just request the cancel; the in-flight delivery loop echoes the single final
             // status (cancelled · partial, or delivered if it finished first). No echo here, or
