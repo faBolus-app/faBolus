@@ -590,12 +590,19 @@ struct SegmentEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var f = SegmentFields()
     @State private var unverified = UnverifiedFeatureGate()
+    /// §2.1(4) B1(e): the first-use "affects automated delivery" ack, shown ONCE at the first therapy edit.
+    @State private var showTherapyEditAck = false
 
     var body: some View {
         NavigationStack {
             Form {
                 SegmentFieldsEditor(f: $f, showStart: true, provenance: provenance,
                                     totalDailyInsulinUnits: totalDailyInsulinUnits)
+                // §2.1(4) B1(e): point-of-editing titration guidance (DRAFT / §13-pending). Passive — never
+                // blocks or changes the edit; just advises how to adjust safely.
+                Section {
+                    Text(TherapyEditAck.titrationGuidance).font(.footnote).foregroundStyle(.secondary)
+                } header: { Label("How to adjust", systemImage: "lightbulb") }
                 Section {
                     HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
                         // Basal-schedule write; capture-aligned masks, end-to-end pump write bench-gated (docs/UNVERIFIED-GUESSES.md #2).
@@ -608,11 +615,17 @@ struct SegmentEditSheet: View {
             .navigationTitle(title)
             .unverifiedFeatureGate(unverified)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            // §2.1(4) B1(e): first-use disclosure that these values drive AUTOMATED delivery, not just
+            // manual boluses. Shown once (persisted), non-blocking — the editor stays usable regardless.
+            .alert("These settings affect automated delivery", isPresented: $showTherapyEditAck) {
+                Button("I understand") { AppSettings.shared.acknowledgeTherapyEdit() }
+            } message: { Text(TherapyEditAck.firstUseDisclosure) }
             .onAppear {
                 if let s = initial {
                     f = SegmentFields(startHour: Double(s.startTimeMinutes / 60), basal: s.basalRateUnitsPerHour,
                                       carbRatio: s.carbRatioGramsPerUnit, isf: Double(s.isf), target: Double(s.targetBg))
                 }
+                if !AppSettings.shared.hasAcknowledgedTherapyEdit { showTherapyEditAck = true }
             }
         }
     }
