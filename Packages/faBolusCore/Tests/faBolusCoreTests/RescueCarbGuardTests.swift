@@ -5,7 +5,9 @@ import Foundation
 /// amount** for treating a low. §8-H is explicit — *"Do not implement. Do not reintroduce."* — so this is
 /// a permanent guard, not a one-off check.
 ///
-/// It scans the shipping app (`ios/faBolus`) **and** `faBolusCore` sources for any rescue-carb-amount API
+/// It scans ALL shipping app targets (`ios/*`: phone, watch, Mac, widgets), `Shared/`, **and** `faBolusCore`
+/// sources (production surfaces only — test paths skipped; the Garmin Monkey C repo is guarded separately)
+/// for any rescue-carb-amount API
 /// or user-facing string and fails here — in the always-run `swift test` suite (CI runs this even with
 /// `FABOLUS_NUDGE=0`) — the moment one is reintroduced. It is deliberately tight so ordinary carb-entry /
 /// meal-bolus code (a *bolus input*, not a low treatment) never trips it; the repo currently contains no
@@ -32,10 +34,13 @@ struct RescueCarbGuardTests {
         let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         var probe = here
         for _ in 0..<8 {
-            let app = probe.appendingPathComponent("ios/faBolus")
+            let ios = probe.appendingPathComponent("ios")   // Q5.5: ALL app targets (faBolus + Watch + Mac + Widgets), not just ios/faBolus
             let core = probe.appendingPathComponent("Packages/faBolusCore/Sources")
-            if fm.fileExists(atPath: app.path), fm.fileExists(atPath: core.path) {
-                return ([app, core], true)
+            if fm.fileExists(atPath: ios.path), fm.fileExists(atPath: core.path) {
+                var dirs = [ios, core]
+                let shared = probe.appendingPathComponent("Shared")
+                if fm.fileExists(atPath: shared.path) { dirs.append(shared) }
+                return (dirs, true)
             }
             probe = probe.deletingLastPathComponent()
         }
@@ -59,6 +64,7 @@ struct RescueCarbGuardTests {
             for case let url as URL in walker where url.pathExtension == "swift" {
                 // This guard file necessarily contains the banned patterns — don't flag itself.
                 if url.lastPathComponent == "RescueCarbGuardTests.swift" { continue }
+                if url.path.contains("Tests") { continue }   // Q5.5: shipping SURFACES only — a test mentioning the banned concept is not a surfaced suggestion
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
                 scanned += 1
                 let range = NSRange(text.startIndex..., in: text)
