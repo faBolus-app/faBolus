@@ -1549,6 +1549,24 @@ public final class AppModel {
             atSeconds: Int(Date().timeIntervalSince1970)))
     }
 
+    /// §2.1(2): record `.selfSet` provenance for each CHANGED therapy field of a profile segment. Keyed on
+    /// the segment's START TIME — its stable identity across the pump's index-renumbering (S7 / `SettingKey`
+    /// doc). Fail-open and only on a successful, value-changing edit (both guarded by
+    /// `recordClinicianEditIfChanged`). This closes the §2.1(2) gap where only the 3 global settings
+    /// (maxBolus / maxBasal / controlIQ) recorded provenance while the Personal-Profile basal / carb-ratio /
+    /// ISF / target — the values the pump actually doses from — recorded nothing.
+    func recordSegmentEditIfChanged(idpId: Int, startMinutes: Int,
+                                    beforeBasal: Double?, afterBasal: Double,
+                                    beforeCR: Double?, afterCR: Double,
+                                    beforeISF: Int?, afterISF: Int,
+                                    beforeTarget: Int?, afterTarget: Int) {
+        func key(_ f: String) -> SettingKey { .segment(idpId: idpId, startMinutes: startMinutes, field: f) }
+        recordClinicianEditIfChanged(key("basalRate"), before: beforeBasal.map(BackupValue.double), afterOnSuccess: .double(afterBasal))
+        recordClinicianEditIfChanged(key("carbRatio"), before: beforeCR.map(BackupValue.double), afterOnSuccess: .double(afterCR))
+        recordClinicianEditIfChanged(key("isf"), before: beforeISF.map(BackupValue.int), afterOnSuccess: .int(afterISF))
+        recordClinicianEditIfChanged(key("targetBg"), before: beforeTarget.map(BackupValue.int), afterOnSuccess: .int(afterTarget))
+    }
+
     // MARK: - P16 S3 (manual precedence for scheduled mode automation)
 
     /// When the user last changed the pump's activity/sleep mode BY HAND (from the Pump Control UI).
@@ -1629,15 +1647,28 @@ public final class AppModel {
         await runGatedTherapy(.addProfileSegment) {
             try await self.source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
+        // §2.1(2): a new segment sets all four therapy fields (before = nil), recorded as .selfSet on success.
+        recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
+                                   beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
+                                   beforeCR: nil, afterCR: carbRatioGramsPerUnit,
+                                   beforeISF: nil, afterISF: isf,
+                                   beforeTarget: nil, afterTarget: targetBg)
     }
     /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
     private func addProfileSegmentRaw(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
         await performControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
     }
     public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
+        // §2.1(2): capture the pre-edit values BEFORE the write (the write then refreshes the segment array).
+        let before = snapshot.viewedProfileSegments.first { $0.segmentIndex == segmentIndex }
         await runGatedTherapy(.modifyProfileSegment) {
             try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
+        recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
+                                   beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
+                                   beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
+                                   beforeISF: before?.isf, afterISF: isf,
+                                   beforeTarget: before?.targetBg, afterTarget: targetBg)
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
         await runGatedTherapy(.deleteProfileSegment) {
