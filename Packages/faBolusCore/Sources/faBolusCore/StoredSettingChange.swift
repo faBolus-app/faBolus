@@ -104,4 +104,23 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
     public func provenance(_ key: SettingKey) -> SettingProvenance? { current(key)?.provenance }
     /// The full chronological history for a key (for the change-log view / export).
     public func history(_ key: SettingKey) -> [StoredSettingChange] { log.filter { $0.key == key } }
+
+    /// B1(b) — the entire audit trail, NEWEST FIRST, for the §2.1(3) change-log view.
+    public func history() -> [StoredSettingChange] { log.reversed() }
+
+    /// B1(b) — a deterministic, shareable plain-text rendering of the whole change-log (newest first).
+    /// Timestamps are ISO-8601 **UTC** so the export is portable and the text is test-stable regardless of
+    /// device locale/zone; the on-screen view formats dates for the device separately. Pure.
+    public func exportText() -> String {
+        let iso = ISO8601DateFormatter()
+        iso.timeZone = TimeZone(identifier: "UTC")
+        let entries = history()
+        var lines = ["faBolus setting change log — \(entries.count) entr\(entries.count == 1 ? "y" : "ies") (newest first)"]
+        for c in entries {
+            let when = iso.string(from: Date(timeIntervalSince1970: TimeInterval(c.atSeconds)))
+            let before = c.before?.displayString ?? "—"
+            lines.append("\(when) · \(c.key.field): \(before) → \(c.after.displayString) (\(ClinicianTierAck.label(for: c.provenance)))")
+        }
+        return lines.joined(separator: "\n")
+    }
 }
