@@ -15,3 +15,29 @@ enum PumpPeripheralStore {
 
     static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
+
+/// B4 — the outcome of a pump-switch check on a fresh connection.
+enum PumpSwitchOutcome: Equatable {
+    case firstConnect   // no prior pump on record ⇒ just remember this one; nothing to reset
+    case samePump       // same identity as last handled ⇒ nothing to do
+    case switched       // a DIFFERENT pump (sim↔real, or a different real pump) ⇒ reset pump-specific state
+}
+
+/// B4 — remembers which pump the app last RAN THROUGH the pump-switch check, so a connect to a DIFFERENT
+/// pump can reset pump-specific state instead of silently mixing two pumps' settings (owner 2026-08-09).
+///
+/// Deliberately NOT `PumpPeripheralStore`: that store is written at *discovery*, which precedes the
+/// `.connected` edge, so by the time the switch check runs it already holds the NEW pump — it can't be its
+/// own "last handled" memory. This is a separate marker, compared-then-updated at the edge.
+enum PumpSwitchStore {
+    private static let key = "lastHandledPumpIdentity"
+    static func lastHandled() -> String? { UserDefaults.standard.string(forKey: key) }
+    static func setHandled(_ identity: String) { UserDefaults.standard.set(identity, forKey: key) }
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
+
+    /// Pure 3-way decision (testable): nil last ⇒ `.firstConnect`; equal ⇒ `.samePump`; else ⇒ `.switched`.
+    static func decide(current: String, lastHandled: String?) -> PumpSwitchOutcome {
+        guard let last = lastHandled else { return .firstConnect }
+        return last == current ? .samePump : .switched
+    }
+}

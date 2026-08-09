@@ -149,6 +149,14 @@ public protocol PumpBackend: AnyObject {
     /// Set the pump clock to the phone's current time.
     func syncTimeToNow() async throws
 
+    /// B4 — clear the pump-DERIVED CONFIG fields of the snapshot (max bolus/basal, calculator therapy
+    /// params, Control-IQ config, controller variant, profiles/segments) back to defaults so a DIFFERENT
+    /// pump's values can't be shown or dosed against in the window before the new pump's reads land.
+    /// Preserves LIVE fields (connection, glucose, IOB, reservoir, battery, delivery-suspended). MUST NOT
+    /// call `onChange` — the caller (`AppModel.refresh`) republishes; a nested notify would re-enter refresh.
+    /// Synchronous. Default no-op (a stateless/simulated backend re-seeds on connect anyway).
+    func resetSnapshotForPumpSwitch()
+
     // Control-IQ settings (non-insulin config; changes closed-loop behavior).
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
     func refreshControlIQSettings() async
@@ -213,6 +221,9 @@ public extension PumpBackend {
     }
     func refreshGlucoseNow() async {}
     func refreshCalcInputsNow() async {}
+    /// B4 default: no-op. A backend that rebuilds its snapshot on connect (the simulator) needs nothing
+    /// here; `TandemBackend` overrides to clear the live pump's stale config on an in-run pump swap.
+    func resetSnapshotForPumpSwitch() {}
     /// Default: a backend that can't query its bolus history can never auto-reconcile, so a lost outcome
     /// stays blocked until manual verification (fail closed).
     func reconcile(bolusId: Int) async -> BolusReconciliation { .unavailable }

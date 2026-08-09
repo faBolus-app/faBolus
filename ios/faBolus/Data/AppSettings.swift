@@ -544,4 +544,20 @@ public final class AppSettings {
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()
     }
+
+    /// B4 (owner 2026-08-09) — reset the PUMP-SPECIFIC prefs to their off/default state on a pump switch,
+    /// so one pump's automation/limits don't silently carry onto a different pump. Turns off the Control-IQ
+    /// mode automation + reminders (Mobi-only closed-loop behavior), the first-connect pump-time-sync, and
+    /// the advanced-control opt-in; drops the optional remote dose ceiling and any pump-alert auto-rules.
+    /// Deliberately KEEPS display preferences, app mode, child/read-only, and CGM setup (pump-independent).
+    /// Each assignment goes through the property's `didSet` so it persists + updates the live singleton.
+    public func resetPumpRelevantSettings() {
+        advancedControlEnabled = false
+        autoSyncPumpTime = false
+        autoSleepMode = false
+        autoExerciseMode = false
+        modeReminders = false
+        remoteBolusCeiling = nil
+        alertRules = []
+    }
 }
