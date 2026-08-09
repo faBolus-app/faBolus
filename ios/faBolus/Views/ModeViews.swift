@@ -23,7 +23,7 @@ struct ModeOnboardingView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
-                Text("Not medical advice. Not FDA-cleared. Check every dose against your own judgment and your clinician.")
+                Text(RegulatoryCopy.firstRun)
                     .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     .padding(.horizontal)
                 Spacer()
