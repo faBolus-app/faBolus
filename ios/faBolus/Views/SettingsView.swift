@@ -510,6 +510,11 @@ struct RemotesSettingsView: View {
     // §2.3 (G5): the one-time warning shown the FIRST time each surface's bolusing is enabled.
     @State private var showWatchBolusWarning = false
     @State private var showGarminBolusWarning = false
+    // C2 §2.3: the OPTIONAL Garmin bolus passcode set-UI. `passcodeSet` mirrors the Keychain-backed
+    // `BolusPasscodeStore.isRequired` (refreshed on appear + after every set/clear) so the section shows
+    // the right state without making the store observable.
+    @State private var showSetPasscode = false
+    @State private var passcodeSet = false
     static let siriPhrases = [
         "What's my glucose in faBolus", "Insulin on board in faBolus", "Pump status in faBolus",
         "Any alerts in faBolus", "Last bolus in faBolus",
@@ -562,6 +567,26 @@ struct RemotesSettingsView: View {
                 Toggle("Read-only (view only)", isOn: $settings.remotesReadOnly)
             } header: { Text("Watch & Garmin bolusing") } footer: {
                 Text("**Bolusing from the Apple Watch and Garmin is off by default.** Turn on a switch above to let that device deliver a bolus — you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Watch/Garmin bolus can be, on top of your pump's max bolus; the iPhone is never affected. **Read-only** overrides everything: while on, the Watch and Garmin show pump + CGM data only and can't deliver, whatever the switches above say. The iPhone is always unaffected — this is separate from the phone's own read-only mode.")
+            }
+            // C2 §2.3: the OPTIONAL Garmin bolus passcode. Gates GARMIN delivery only (Apple Watch is exempt
+            // — wrist detection). Shown when Garmin bolusing is enabled; the code is verified on the phone.
+            if settings.garminBolusEnabled {
+                Section {
+                    if passcodeSet {
+                        Label("A passcode is required to bolus from Garmin", systemImage: "lock.fill")
+                            .foregroundStyle(.indigo)
+                        Button("Change passcode") { showSetPasscode = true }
+                        Button("Remove passcode", role: .destructive) {
+                            BolusPasscodeStore.setPasscode(nil); passcodeSet = BolusPasscodeStore.isRequired
+                        }
+                    } else {
+                        Button { showSetPasscode = true } label: {
+                            Label("Require a passcode to bolus from Garmin", systemImage: "lock")
+                        }
+                    }
+                } header: { Text("Garmin bolus passcode") } footer: {
+                    Text("Optional. When set, delivering a bolus from your Garmin watch asks for this **4-digit passcode instead of** the tap-to-confirm — a stronger check for a watch with no wrist detection. The code is verified on this phone (stored only as a salted hash); the watch never stores it. Wrong entries slow down with a soft lockout that resets itself — never a permanent lock. You can change or remove it here anytime. The Apple Watch doesn't use a passcode: its wrist detection already confirms you're wearing it.")
+                }
             }
             #if GARMIN
             Section {
@@ -656,6 +681,14 @@ struct RemotesSettingsView: View {
             ControllingSection()
         }
         .navigationTitle("Remotes & devices")
+        // C2 §2.3: keep the passcode section's state in sync with the Keychain-backed store.
+        .onAppear { passcodeSet = BolusPasscodeStore.isRequired }
+        .sheet(isPresented: $showSetPasscode) {
+            BolusPasscodeEntryView { code in
+                BolusPasscodeStore.setPasscode(code)
+                passcodeSet = BolusPasscodeStore.isRequired
+            }
+        }
         // §2.3: one-time warnings. Confirm arms the enable + records the ack; Cancel leaves it off. The
         // Apple Watch copy notes that wrist detection makes an accidental tap materially less likely than
         // on Garmin, but the enable is still explicit and off by default.
@@ -671,6 +704,48 @@ struct RemotesSettingsView: View {
         } message: {
             Text("This lets you deliver real insulin from your Garmin watch. A Garmin has no wrist detection, so take extra care that a bolus is never started by an accidental button press — it stays off until you allow it here, and every bolus still needs your confirmation on the watch. You can turn this off any time.")
         }
+    }
+}
+
+/// C2 §2.3 — set (or change) the OPTIONAL 4-digit Garmin bolus passcode. Enters it twice to confirm and
+/// stores it via `BolusPasscodeStore` (salted SHA-256 in the Keychain; the raw code is never persisted).
+/// Modeled on `PinEntryView`'s `.set` mode but fixed at exactly 4 digits (`BolusPasscodeStore.isValidFormat`),
+/// with its own store so the bolus passcode and the child-mode PIN stay fully independent.
+struct BolusPasscodeEntryView: View {
+    /// The validated 4-digit code to store.
+    let onSet: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var pin = ""
+    @State private var confirm = ""
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("4-digit passcode", text: $pin)
+                        .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                    SecureField("Confirm passcode", text: $confirm)
+                        .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                } footer: {
+                    if let error { Text(error).foregroundStyle(.red) }
+                    else { Text("Choose a 4-digit passcode. You'll enter it on your Garmin watch to confirm a bolus. It's stored only as a salted hash on this phone — never sent to the watch.") }
+                }
+            }
+            .navigationTitle("Garmin bolus passcode")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { submit() } }
+            }
+        }
+    }
+
+    private func submit() {
+        let digits = pin.filter(\.isNumber)
+        guard BolusPasscodeStore.isValidFormat(digits) else { error = "Use exactly 4 digits."; return }
+        guard pin == confirm else { error = "Passcodes don't match."; return }
+        onSet(digits); dismiss()
     }
 }
 
