@@ -98,10 +98,35 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
         if log.count > cap { log.removeFirst(log.count - cap) }
     }
 
+    /// B1(c) — set a key's baseline/current record WITHOUT appending to the visible audit trail. Used for
+    /// the §2.1(4) consensus-default snapshot (`before == nil`, `.consensusDefault`) so an unedited value
+    /// still carries an explicit origin + a one-tap-revert anchor, without flooding the change-log with a
+    /// "— → value" row per field or consuming the audit-trail cap. Only replaces `latest`; a subsequent
+    /// real `record` overwrites this baseline for the key. No-op'd by callers unless the key is unrecorded.
+    public mutating func setBaseline(_ change: StoredSettingChange) {
+        latest.removeAll { $0.key == change.key }
+        latest.append(change)
+    }
+
+    /// B1(c) — prune audit-log entries older than the retention window. Applied ALONGSIDE the count cap
+    /// (both bounds hold). NEVER touches `latest`: a key's current provenance + one-tap-revert target must
+    /// survive regardless of age, so a long-untouched setting stays revertible. Pure — `nowSeconds` is
+    /// passed in (the store uses the recording change's own timestamp as "now").
+    public mutating func pruneExpired(retentionSeconds: Int, nowSeconds: Int) {
+        let cutoff = nowSeconds - retentionSeconds
+        log.removeAll { $0.atSeconds < cutoff }
+    }
+
     /// The current record for a key (nil ⇒ never changed ⇒ treat as consensus-default).
     public func current(_ key: SettingKey) -> StoredSettingChange? { latest.last { $0.key == key } }
     /// The current provenance for a key (nil ⇒ never recorded).
     public func provenance(_ key: SettingKey) -> SettingProvenance? { current(key)?.provenance }
+
+    /// B1(c) — the one-tap-revert target for a key: the `before` value of its most recent change, or nil
+    /// when the key was never changed from its baseline (a pure consensus-default snapshot has `before ==
+    /// nil`, so there is nothing to revert to). Pure lookup; the caller re-applies it through the gated
+    /// therapy-write funnel.
+    public func revertTarget(_ key: SettingKey) -> BackupValue? { current(key)?.before }
     /// The full chronological history for a key (for the change-log view / export).
     public func history(_ key: SettingKey) -> [StoredSettingChange] { log.filter { $0.key == key } }
 

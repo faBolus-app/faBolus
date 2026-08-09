@@ -19,10 +19,17 @@ public protocol StoredSettingChangePersisting: AnyObject {
 public final class StoredSettingChangeStore: StoredSettingChangePersisting {
     private let url: URL
     private let cap: Int
+    private let retentionSeconds: Int
 
-    public init(url: URL, cap: Int = 512) {
+    /// §2.1(4) B1(c) — audit-log retention window, applied ALONGSIDE the count `cap` (both bounds hold).
+    /// 30 days: the handoff's stated one-tap-revert horizon. Pruning touches only the visible audit trail
+    /// (`log`), never a key's `latest` record, so an old-but-current value stays revertible past 30 days.
+    public static let defaultRetentionSeconds = 30 * 24 * 60 * 60
+
+    public init(url: URL, cap: Int = 512, retentionSeconds: Int = StoredSettingChangeStore.defaultRetentionSeconds) {
         self.url = url
         self.cap = cap
+        self.retentionSeconds = retentionSeconds
     }
 
     /// F1 (§13) — at-rest protection for the setting-change (provenance) sidecar. Same class as the
@@ -63,6 +70,19 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
     public func record(_ change: StoredSettingChange) {
         var log = loadOutcome().log
         log.record(change, cap: cap)
+        // B1(c): apply the retention window using THIS record's own timestamp as "now" — the store never
+        // reads the wall clock (determinism), and a change is by definition recorded at its `atSeconds`.
+        log.pruneExpired(retentionSeconds: retentionSeconds, nowSeconds: change.atSeconds)
+        saveBestEffort(log)
+    }
+
+    /// B1(c) — persist a consensus-default BASELINE for a key (§2.1(4)) without appending to the visible
+    /// audit trail (`SettingChangeLog.setBaseline`). Gives an unedited therapy value an explicit origin +
+    /// a revert anchor. Best-effort + fail-open, like `record`. Callers gate on "key has no record yet"
+    /// so this never overwrites a real edit or re-baselines.
+    public func recordBaseline(_ change: StoredSettingChange) {
+        var log = loadOutcome().log
+        log.setBaseline(change)
         saveBestEffort(log)
     }
 

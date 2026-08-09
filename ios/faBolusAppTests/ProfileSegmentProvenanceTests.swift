@@ -36,12 +36,17 @@ struct ProfileSegmentProvenanceTests {
                                          isf: seg.isf, targetBg: seg.targetBg)
         #expect(model.lastError == nil)
         let r = store.load()
-        // The changed field is recorded as .selfSet…
+        // The changed field is recorded as .selfSet, and it IS a real entry in the audit trail…
         #expect(r.provenance(.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: "basalRate")) == .selfSet)
-        // …and the UNCHANGED fields record nothing (the value-changed guard).
-        #expect(r.current(.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: "isf")) == nil)
-        #expect(r.current(.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: "carbRatio")) == nil)
-        #expect(r.current(.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: "targetBg")) == nil)
+        #expect(!r.history(.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: "basalRate")).isEmpty)
+        // …the UNCHANGED fields are the B1(c) consensus-default BASELINE (present in `latest` so a revert
+        // anchor exists, but with NO real change in the visible audit trail — the value-changed guard).
+        for field in ["isf", "carbRatio", "targetBg"] {
+            let key = SettingKey.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: field)
+            #expect(r.provenance(key) == .consensusDefault)
+            #expect(r.current(key)?.before == nil)           // a pure baseline: nothing to revert to
+            #expect(r.history(key).isEmpty)                   // not a change → not in the audit log
+        }
     }
 
     @Test func addProfileSegmentRecordsAllFourFieldsAsSelfSet() async {
