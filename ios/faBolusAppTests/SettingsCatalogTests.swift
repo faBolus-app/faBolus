@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 46 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 44 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
@@ -16,10 +16,11 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly46UniqueKeys() {
-        // P16 §3.2: down from 48 — smartAssistEnabled (R6) and hypoAlertsEnabled (R5) were removed.
-        #expect(SettingsCatalog.descriptors.count == 46)
-        #expect(SettingsCatalog.byKey.count == 46)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+    @Test func descriptorsCoverExactly44UniqueKeys() {
+        // P16 §3.2: 48 → 46 (smartAssistEnabled R6 + hypoAlertsEnabled R5 removed). P16 F2: 46 → 44
+        // (basalScheduleByHour + basalScheduleSource removed with the dead display-only basal cache).
+        #expect(SettingsCatalog.descriptors.count == 44)
+        #expect(SettingsCatalog.byKey.count == 44)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -45,6 +46,27 @@ struct SettingsCatalogTests {
         AppSettings.shared.applyBackup(before)
         let after = AppSettings.shared.backupSnapshot()
         #expect(before == after)
+    }
+
+    /// P16 F2 backup-format tolerance. `basalScheduleByHour` / `basalScheduleSource` were removed with the
+    /// dead display-only basal cache. A backup written by an OLDER build may still carry those keys; restore
+    /// must (a) decode such a file (an unknown *key* with a valid `BackupValue` is not an unknown *type*, so
+    /// it survives JSON) and (b) silently ignore them in `applyBackup` — never crash, never resurrect a
+    /// removed setting. Start from the current snapshot so the assertion stays an idempotent no-op round-trip.
+    @Test @MainActor func restoreToleratesLegacyBasalScheduleKeys() {
+        let base = AppSettings.shared.backupSnapshot()
+        var legacy = base
+        legacy["basalScheduleByHour"] = .data(Data([0, 1, 2, 3]))   // stand-in for the old [Double] cache blob
+        legacy["basalScheduleSource"] = .string("Nightscout")
+        // Survive a full JSON encode→decode like a real on-disk backup, not just an in-memory dict.
+        let backup = FaBolusBackup(meta: .init(createdAt: Date(), appVersion: "test",
+                                               pumpModel: "unknown", deviceName: "test"),
+                                   appSettings: legacy)
+        let decoded = try? FaBolusBackup.decode(backup.encoded())
+        #expect(decoded != nil, "a legacy backup carrying removed keys must still decode")
+        #expect(decoded?.appSettings?["basalScheduleByHour"] != nil)   // the unknown key round-trips…
+        AppSettings.shared.applyBackup(decoded?.appSettings ?? [:])    // …and applying it must not crash
+        #expect(AppSettings.shared.backupSnapshot() == base)           // removed keys ignored; nothing changed
     }
 
     /// The `childAllowed` set is the ONLY `Set`-backed persisted value, and `Set` serializes to a JSON array
@@ -104,7 +126,7 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 46 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 44 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })

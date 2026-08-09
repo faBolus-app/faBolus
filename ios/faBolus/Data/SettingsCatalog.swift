@@ -81,7 +81,7 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 48 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 44 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -145,8 +145,6 @@ enum SettingsCatalog {
         .init("eatingNudgesEnabled", .bolus, from: .advanced, backsUp: false),
         .init("eatingTriggerConfig", .bolus, from: .advanced, backsUp: false),
         .init("eatingLearnFromFeedback", .bolus, from: .advanced, backsUp: false),
-        .init("basalScheduleByHour", .pump, from: .advanced, backsUp: false),
-        .init("basalScheduleSource", .pump, from: .advanced, backsUp: false),
     ]
 
     /// Lookup by key.
