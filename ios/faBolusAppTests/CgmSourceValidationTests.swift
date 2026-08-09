@@ -33,4 +33,14 @@ import Foundation
             #expect(LibreLinkUpSource.regionHost(bad) == nil, "\(bad.debugDescription) must be rejected")
         }
     }
+
+    /// E7 (A3): the "Test" button exercises ONLY the currently-selected fallback source — the one the app
+    /// will actually use — not the old whole-set sweep. Empty when no fallback has been chosen yet (button
+    /// disabled). This pins the selected-only contract independent of the SwiftUI view.
+    @Test func testExercisesOnlyTheSelectedSource() {
+        #expect(CgmCredentialsView.sourcesToTest(selectedId: "nightscout") == ["nightscout"])
+        #expect(CgmCredentialsView.sourcesToTest(selectedId: "dexcom-g7-ble") == ["dexcom-g7-ble"])
+        #expect(CgmCredentialsView.sourcesToTest(selectedId: nil).isEmpty)
+        #expect(CgmCredentialsView.sourcesToTest(selectedId: "").isEmpty)
+    }
 }
