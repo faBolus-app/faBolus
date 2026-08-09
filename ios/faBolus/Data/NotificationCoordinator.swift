@@ -156,6 +156,7 @@ enum NotificationPoster {
                      userInfo: [AnyHashable: Any] = [:],
                      categoryId: String = "",
                      trigger: UNNotificationTrigger? = nil,
+                     allowCritical: Bool = false,
                      now: Date = Date(),
                      add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
@@ -165,7 +166,17 @@ enum NotificationPoster {
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
-        content.sound = .default
+        // §6/S8 B6: iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
+        // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
+        // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
+        // this can never over-escalate a routine or governed notification. Graceful degradation: when the
+        // entitlement isn't granted, `allowCritical` is false and this is exactly today's behavior.
+        if allowCritical && message.category.neverSuppressible {
+            content.interruptionLevel = .critical
+            content.sound = .defaultCritical
+        } else {
+            content.sound = .default
+        }
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
         // Stamp the broker category so the delegate can route a SNOOZE action (and attribute telemetry)
         // back to the right category, for every category — not just pump alerts.
@@ -197,7 +208,14 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         super.init()
         center.delegate = self
         registerCategories()
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // B6: also request critical-alert permission. Harmless (a no-op) when the app lacks the
+        // critical-alerts entitlement. We deliberately DON'T read `getNotificationSettings` to gate the
+        // `.critical` level: that completion runs on a background queue, and a `@MainActor`-inferred closure
+        // there SIGTRAPs at launch under CI's Xcode 16.4 (the trap the `registerCategories` note documents).
+        // It's also unnecessary — iOS itself downgrades a `.critical` notification to a normal one when the
+        // app isn't entitled, so gating on the user's `criticalAlertsEnabled` alone is correct and degrades
+        // gracefully at the OS level.
+        center.requestAuthorization(options: [.alert, .sound, .criticalAlert]) { _, _ in }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
@@ -226,8 +244,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // Default a governed category to its registered id (which carries the SNOOZE action) unless the
         // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
+        // B6: request the OS Critical Alert level when the user opted in; the poster restricts it to the
+        // never-suppressible safety categories, and iOS ignores it unless the app holds the entitlement
+        // (graceful degradation at the OS level — see the note in `init`).
+        let allowCritical = AppSettings.shared.criticalAlertsEnabled
         return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
-                                       categoryId: cat, trigger: trigger,
+                                       categoryId: cat, trigger: trigger, allowCritical: allowCritical,
                                        add: { [center] in center.add($0) })
     }
 
@@ -259,11 +281,25 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     private func key(_ n: PumpAlert) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
 
+    /// §6/S8 B6 — whether a pump notification is a user-opted-out MIRRORED ALARM and should NOT be
+    /// re-notified by the app. True ONLY for a pump ALARM (`.alarm`, which the pump annunciates itself)
+    /// when the user opted out. Lower-priority pump ALERTS still surface, and this can never match the
+    /// app-only never-suppressible safety trio (they aren't `PumpAlert`s and post on other paths). Pure.
+    static func suppressesMirroredAlarm(kind: PumpAlertKind, optedOut: Bool) -> Bool {
+        kind == .alarm && optedOut
+    }
+
     /// Post newly-active pump alerts through the broker; withdraw the ones that have cleared. Preserves the
     /// prior identity-keyed dedupe (`postedPumpAlerts`) so re-evaluation only happens on a real transition.
     private func syncPumpAlerts(_ notifications: [PumpAlert]) {
         let active = Set(notifications.map(key))
         for n in notifications where !postedPumpAlerts.contains(key(n)) {
+            // §6/S8 B6: the user can opt out of the app RE-notifying pump ALARMS (kind `.alarm`) — the pump
+            // itself already annunciates them audibly, so mirroring them can be notification fatigue (esp.
+            // on a t:slim). Lower-priority pump ALERTS still surface. We skip WITHOUT recording it as posted,
+            // so turning the opt-out back off re-surfaces a still-active alarm on the next sync. This gates
+            // ONLY the pump-mirrored `.pumpAlert` path; the never-suppressible safety trio posts elsewhere.
+            if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) { continue }
             let k = key(n)
             postedPumpAlerts.insert(k)
             let msg = NotificationBroker.Message(
