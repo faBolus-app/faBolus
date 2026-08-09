@@ -239,6 +239,10 @@ public final class MockBackend: PumpBackend {
         snapshot.connection = .bolusing; onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
+        // (§3.2 R3 / Q5.4) INTENTIONAL simulator state, NOT the C4 invented-IOB defect: a MockBackend has
+        // no pump to read, so its IOB is necessarily synthesized. The C4 violation was the REAL backend
+        // fabricating IOB instead of reading the pump — removed in TandemBackend. Kept so a demo's IOB
+        // responds to a demo bolus (use `setLiveIob` to override). See also the sibling site below.
         snapshot.iobUnits += totalUnits
         snapshot.lastBolusUnits = totalUnits
         snapshot.lastBolusDate = Date()
@@ -265,7 +269,7 @@ public final class MockBackend: PumpBackend {
         snapshot.connection = .bolusing; onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
-        snapshot.iobUnits += units
+        snapshot.iobUnits += units   // (§3.2 R3 / Q5.4) intentional simulator IOB — see the carb-path note above (C4 N/A to a mock)
         snapshot.lastBolusUnits = units
         snapshot.lastBolusDate = Date()
         onChange?()
