@@ -558,7 +558,8 @@ struct ProfileSegmentsView: View {
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .task { await model.refreshProfileSegments(idpId: idpId) }
         .sheet(item: $editing) { seg in
-            SegmentEditSheet(title: "Edit segment", initial: seg) { f in
+            SegmentEditSheet(title: "Edit segment", initial: seg,
+                             provenance: model.segmentFieldProvenance(idpId: idpId, startMinutes: seg.startTimeMinutes)) { f in
                 run { await model.modifyProfileSegment(idpId: idpId, segmentIndex: seg.segmentIndex, startTimeMinutes: Int(f.startHour) * 60,
                                                        basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
             }
@@ -579,6 +580,8 @@ struct ProfileSegmentsView: View {
 struct SegmentEditSheet: View {
     let title: String
     let initial: PumpProfileSegment?
+    /// §2.1(2) B1(a): per-field provenance for the segment being edited (nil for a new segment / add).
+    var provenance: [String: SettingProvenance]? = nil
     let onSave: (SegmentFields) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var f = SegmentFields()
@@ -587,7 +590,7 @@ struct SegmentEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                SegmentFieldsEditor(f: $f, showStart: true)
+                SegmentFieldsEditor(f: $f, showStart: true, provenance: provenance)
                 Section {
                     HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
                         // Basal-schedule write; capture-aligned masks, end-to-end pump write bench-gated (docs/UNVERIFIED-GUESSES.md #2).
@@ -614,15 +617,32 @@ struct SegmentEditSheet: View {
 struct SegmentFieldsEditor: View {
     @Binding var f: SegmentFields
     let showStart: Bool
+    /// §2.1(2) B1(a): per-field provenance keyed by field name (`basalRate`/`carbRatio`/`isf`/`targetBg`),
+    /// or nil to show no badge (new-profile create flow, or a failed-closed store). Disclosure only.
+    var provenance: [String: SettingProvenance]? = nil
+
+    /// The origin badge for a field's Section footer — icon + `ClinicianTierAck.label`, no color dependency.
+    @ViewBuilder private func badge(_ field: String) -> some View {
+        if let prov = provenance?[field] {
+            Label(ClinicianTierAck.label(for: prov), systemImage: prov.symbolName)
+                .font(.caption2).foregroundStyle(.secondary)
+                .accessibilityLabel("Origin: \(ClinicianTierAck.label(for: prov))")
+        }
+    }
+
     var body: some View {
         if showStart {
             Section("Start time") {
                 Stepper(value: $f.startHour, in: 0...23, step: 1) { Text(String(format: "%02d:00", Int(f.startHour))) }
             }
         }
-        Section("Basal rate") { Stepper(value: $f.basal, in: 0...15, step: 0.05) { Text("\(String(format: "%.2f", f.basal)) U/hr") } }
-        Section("Carb ratio") { Stepper(value: $f.carbRatio, in: 1...150, step: 1) { Text("\(Int(f.carbRatio)) g/U") } }
-        Section("Correction factor (ISF)") { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
-        Section("Target glucose") { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
+        Section { Stepper(value: $f.basal, in: 0...15, step: 0.05) { Text("\(String(format: "%.2f", f.basal)) U/hr") } }
+            header: { Text("Basal rate") } footer: { badge("basalRate") }
+        Section { Stepper(value: $f.carbRatio, in: 1...150, step: 1) { Text("\(Int(f.carbRatio)) g/U") } }
+            header: { Text("Carb ratio") } footer: { badge("carbRatio") }
+        Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
+            header: { Text("Correction factor (ISF)") } footer: { badge("isf") }
+        Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
+            header: { Text("Target glucose") } footer: { badge("targetBg") }
     }
 }
