@@ -1507,7 +1507,7 @@ public final class AppModel {
 
     private var timeSyncInFlight = false
     private static let lastTimeSyncKey = "lastPumpTimeSyncEpoch"
-    /// Auto-sync the pump clock to the phone (opt-in via `autoSyncPumpTime`, default on). Runs at most
+    /// Auto-sync the pump clock to the phone (opt-in via `autoSyncPumpTime`, **default OFF** since E2). Runs at most
     /// once a day on the refresh cadence, and immediately when `force` (a clock/time-zone change).
     /// No-op unless a time-sync-capable pump is connected and idle; best-effort (retries next cycle).
     func maybeAutoSyncPumpTime(force: Bool = false) {

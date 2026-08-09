@@ -193,8 +193,9 @@ final class GarminRemoteBridge: NSObject {
         guard let model else { return }
         // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
         // a bolus applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds are gated
-        // (RemoteCommandFreshness); a late cancel is still honored. (Effective once the Garmin remote stamps
-        // `sentAt`; until then a Garmin command has no stamp and is not gated — same as today.)
+        // (RemoteCommandFreshness); a late cancel is still honored. (A current faBolusGarmin remote stamps
+        // `sentAt` on these kinds, so freshness IS enforced; a legacy Garmin app that omits the stamp is
+        // not gated — the check is additive / backward-compatible.)
         if RemoteCommandFreshness.isStale(cmd) {
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
                                status: .failed, message: RemoteCommandFreshness.rejectionMessage))

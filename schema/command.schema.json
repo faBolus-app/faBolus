@@ -248,7 +248,7 @@
     },
     "bolusPasscodeRequired": {
       "type": "boolean",
-      "description": "statusRead reply (P15 §2.3) — whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the hash). When true the remote's confirm step is the passcode entry, which REPLACES the tap-sequence / two-button-hold; the host validates it. Absent/false ⇒ the surface's normal confirm."
+      "description": "statusRead reply (P15 §2.3) — signals whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the hash). When true the remote's confirm step would be the passcode entry, REPLACING the tap-sequence / two-button-hold. NOTE (2026-08-08): end-to-end enforcement is NOT yet wired — no set-UI exists (so this is currently always false), no wire field carries the entered code back to the host, and there is no host-side verify(); the flag is presently inert. The active §2.3 protection is the default-OFF, host-enforced garminBolusEnabled/watchBolusEnabled gate. Absent/false ⇒ the surface's normal confirm."
     }
   },
   "additionalProperties": false
