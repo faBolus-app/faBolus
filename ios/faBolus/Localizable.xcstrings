@@ -1,0 +1,222 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@: %@ You can switch down anytime; switching up needs the setup step below." : {
+      "comment" : "P16 F6 (N13) seed — mode picker footer. First %@ = active mode title, second %@ = its description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %@ You can switch down anytime; switching up needs the setup step below."
+          }
+        }
+      }
+    },
+    "Adds suspend/resume, activity (Sleep/Exercise) modes, and display customization." : {
+      "comment" : "P16 F6 (N13) seed — Standard mode description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds suspend/resume, activity (Sleep/Exercise) modes, and display customization."
+          }
+        }
+      }
+    },
+    "Adds temp basal, profiles, Control-IQ settings, cartridge & fill, and pump limits — features that change therapy." : {
+      "comment" : "P16 F6 (N13) seed — Advanced mode description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds temp basal, profiles, Control-IQ settings, cartridge & fill, and pump limits — features that change therapy."
+          }
+        }
+      }
+    },
+    "Advanced mode exposes temp basal, profiles, Control-IQ settings, and pump limits — these change therapy. Only continue if you understand them." : {
+      "comment" : "P16 F6 (N13) seed — expert opt-out alert body.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced mode exposes temp basal, profiles, Control-IQ settings, and pump limits — these change therapy. Only continue if you understand them."
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "comment" : "P16 F6 (N13) seed — dialog/alert cancel button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "Continue to %@ mode?" : {
+      "comment" : "P16 F6 (N13) seed — unlock confirmation dialog title. %@ = next mode title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue to %@ mode?"
+          }
+        }
+      }
+    },
+    "Current mode" : {
+      "comment" : "P16 F6 (N13) seed — mode picker label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current mode"
+          }
+        }
+      }
+    },
+    "faBolus starts in **Simple mode** — the essentials: see your glucose and give a bolus. As you get comfortable you can unlock more, one step at a time, in **Settings → Mode**." : {
+      "comment" : "P16 F6 (N13) seed — first-run onboarding body (Markdown emphasis).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "faBolus starts in **Simple mode** — the essentials: see your glucose and give a bolus. As you get comfortable you can unlock more, one step at a time, in **Settings → Mode**."
+          }
+        }
+      }
+    },
+    "I already know pump control — unlock Advanced" : {
+      "comment" : "P16 F6 (N13) seed — expert opt-out button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I already know pump control — unlock Advanced"
+          }
+        }
+      }
+    },
+    "Just the essentials: glucose and bolus." : {
+      "comment" : "P16 F6 (N13) seed — Simple mode description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just the essentials: glucose and bolus."
+          }
+        }
+      }
+    },
+    "Mode" : {
+      "comment" : "P16 F6 (N13) seed — mode section header and navigation title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode"
+          }
+        }
+      }
+    },
+    "Set up %@ mode…" : {
+      "comment" : "P16 F6 (N13) seed — guided next-step unlock button. %@ = next mode title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up %@ mode…"
+          }
+        }
+      }
+    },
+    "Skips the guided steps and switches straight to Advanced. Only if you already understand these features." : {
+      "comment" : "P16 F6 (N13) seed — expert opt-out footer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skips the guided steps and switches straight to Advanced. Only if you already understand these features."
+          }
+        }
+      }
+    },
+    "Start in Simple mode" : {
+      "comment" : "P16 F6 (N13) seed — first-run onboarding dismiss button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start in Simple mode"
+          }
+        }
+      }
+    },
+    "Unlock %@" : {
+      "comment" : "P16 F6 (N13) seed — confirmation dialog unlock button. %@ = next mode title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock %@"
+          }
+        }
+      }
+    },
+    "Unlock Advanced" : {
+      "comment" : "P16 F6 (N13) seed — expert opt-out confirm button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Advanced"
+          }
+        }
+      }
+    },
+    "Unlock Advanced mode?" : {
+      "comment" : "P16 F6 (N13) seed — expert opt-out alert title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Advanced mode?"
+          }
+        }
+      }
+    },
+    "Welcome to faBolus" : {
+      "comment" : "P16 F6 (N13) seed — first-run onboarding title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to faBolus"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

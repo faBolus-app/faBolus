@@ -2,6 +2,16 @@ name: faBolus
 options:
   bundleIdPrefix: com.fabolus
   createIntermediateGroups: true
+  # P16 F6 (N13) — localization SEED. Pin the development language to English so
+  # developmentRegion=en and knownRegions=(Base, en) stay stable across regeneration. This is
+  # deliberately EN-ONLY: no second language is added (adding one incurs translation ownership).
+  # The mechanism is the String Catalog `ios/faBolus/Localizable.xcstrings` — XcodeGen auto-includes
+  # it as a resource of the `faBolus` app target because it lives under that target's source dir
+  # (`ios/faBolus`), so Xcode's build system compiles it into the app's .lproj tables. The seeded
+  # slice is the P14 mode/Objectives copy (see ios/faBolus/Views/ModeCopy.swift + ModeViews.swift).
+  # Follow-up (deferred): faBolusCore-package strings (e.g. AppMode.title) need Package.swift
+  # defaultLocalization + Bundle.module and are intentionally left English for now.
+  developmentLanguage: en
 
 # Build configuration is read from Config.xcconfig, which pulls in your personal,
 # gitignored LocalConfig.xcconfig (copy it from LocalConfig.xcconfig.example).
