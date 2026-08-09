@@ -3,6 +3,11 @@ import faBolusCore
 
 /// modern semantic palette. Green = in range, yellow/orange = high, red = urgent/low,
 /// purple accents for insulin. (Visual language only — FaBolus does not automate dosing.)
+///
+/// **§13-locked band tokens (P16 F4 / N12).** The four explicit-RGB glucose band colors below are
+/// audited for WCAG contrast in `docs/accessibility-contrast-audit.md`; their measured ratios are pinned
+/// by `WCAGContrastTests` (faBolusCore) + `AppThemeContrastAuditTests` (app). Do NOT recolor them without
+/// an owner/designer decision — a change fails those tests and must update the audit doc.
 public enum AppTheme {
     public static let inRange = Color(red: 0.30, green: 0.78, blue: 0.36)   // green
     public static let high = Color(red: 0.98, green: 0.76, blue: 0.18)      // yellow
