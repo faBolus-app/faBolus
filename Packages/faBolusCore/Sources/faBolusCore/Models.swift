@@ -213,6 +213,18 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// a no-controller pump (e.g. Omnipod DASH) is handled by construction.
     public var controllerDescriptor: ControllerDescriptor { .for(controllerVariant) }
 
+    /// C1 (§2.4) — the Control-IQ family brand name to render in the pump's OWN controller UI: the exact
+    /// variant when the pump's op-79 feature bits are known (`"Control-IQ"` / `"Control-IQ+"`), else the
+    /// generic `"Control-IQ"` as a fallback. **Only meaningful inside Control-IQ-capability-gated UI**
+    /// (`supportsControlIQSettings` / `supportsModes`): during the connect→feature-read window the
+    /// capability preset already reports Control-IQ support while `controllerVariant` is still `.none`
+    /// (`displayName == ""`), so a bare `displayName` would render blank — this returns the generic label
+    /// instead. A genuine no-controller pump never reaches this: once op-79 lands, its Control-IQ
+    /// capabilities go false and the gated section disappears. Never a dose input (C3); display only.
+    public var controlIQBrandName: String {
+        controllerDescriptor.hasController ? controllerDescriptor.displayName : "Control-IQ"
+    }
+
     /// A CGM reading is considered stale after the shared `GlucoseFreshness` threshold (default
     /// 6 min). Old readings must never be shown as current — the UI shows the value flagged instead.
     public var isGlucoseStale: Bool {

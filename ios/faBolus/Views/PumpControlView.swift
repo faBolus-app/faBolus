@@ -22,6 +22,10 @@ struct PumpControlView: View {
     }
 
     private var caps: PumpCapabilities { model.capabilities }
+    /// C1 (§2.4): the connected pump's Control-IQ family name (Control-IQ vs Control-IQ+), from the pump's
+    /// own op-79 bits, with a generic "Control-IQ" fallback for the pre-feature-read window. Used only in
+    /// the Control-IQ-capability-gated sections below. Display only.
+    private var ciq: String { model.snapshot.controlIQBrandName }
     /// P14 S8: does this pump expose any clinician-tier section here? Gates the one-time disclosure.
     private var hasClinicianTierSection: Bool {
         caps.supportsLimits || caps.supportsControlIQSettings || caps.supportsProfiles
@@ -48,7 +52,7 @@ struct PumpControlView: View {
                         Button { ask("Resume insulin?", "Insulin delivery will resume at the active basal rate.", destructive: false) { await model.resumeDelivery() } }
                             label: { Label("Resume insulin", systemImage: "play.fill") }
                     } else {
-                        Button(role: .destructive) { ask("Suspend insulin?", "All insulin delivery (basal + Control-IQ) stops until you resume.", destructive: true) { await model.suspendDelivery() } }
+                        Button(role: .destructive) { ask("Suspend insulin?", "All insulin delivery (basal + \(ciq)) stops until you resume.", destructive: true) { await model.suspendDelivery() } }
                             label: { Label("Suspend insulin", systemImage: "pause.fill") }
                     }
                 }
@@ -66,7 +70,7 @@ struct PumpControlView: View {
                     Picker("Duration", selection: $tempDurationMin) {
                         ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
                     }
-                    Button { ask("Set temp basal?", "\(Int(tempPercent))% for \(tempDurationMin) min. Control-IQ must be off.", destructive: true) {
+                    Button { ask("Set temp basal?", "\(Int(tempPercent))% for \(tempDurationMin) min. \(ciq) must be off.", destructive: true) {
                         await model.setTempBasal(percent: Int(tempPercent), durationMinutes: tempDurationMin) } }
                         label: { Label("Start temp basal", systemImage: "timer") }
                     Button(role: .destructive) { ask("Stop temp basal?", "Return to the scheduled basal rate.", destructive: false) { await model.stopTempBasal() } }
@@ -79,14 +83,14 @@ struct PumpControlView: View {
                     Text("Current: \(modeName(model.snapshot.controlIQMode))").font(.subheadline).foregroundStyle(.secondary)
                     // P16 S3: stamp the manual mode change so scheduled automation defers to this hands-on
                     // action for the next hour (see AppModel.noteManualModeChange / ModeAutomation).
-                    Button { ask("Set Normal mode?", "Clears Sleep/Exercise and returns Control-IQ to normal targets.", destructive: true) { model.noteManualModeChange(); await model.setNormalMode() } }
+                    Button { ask("Set Normal mode?", "Clears Sleep/Exercise and returns \(ciq) to normal targets.", destructive: true) { model.noteManualModeChange(); await model.setNormalMode() } }
                         label: { Label("Normal", systemImage: "checkmark.circle") }
-                    Button { ask("Set Sleep mode?", "Control-IQ uses your sleep glucose targets.", destructive: true) { model.noteManualModeChange(); await model.setSleepMode(true) } }
+                    Button { ask("Set Sleep mode?", "\(ciq) uses your sleep glucose targets.", destructive: true) { model.noteManualModeChange(); await model.setSleepMode(true) } }
                         label: { Label("Sleep", systemImage: "moon.zzz.fill") }
-                    Button { ask("Set Exercise mode?", "Control-IQ raises your glucose target for activity.", destructive: true) { model.noteManualModeChange(); await model.setExerciseMode(true) } }
+                    Button { ask("Set Exercise mode?", "\(ciq) raises your glucose target for activity.", destructive: true) { model.noteManualModeChange(); await model.setExerciseMode(true) } }
                         label: { Label("Exercise", systemImage: "figure.run") }
                 } header: { Text("Mode") } footer: {
-                    Text("Requires Control-IQ to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings.")
+                    Text("Requires \(ciq) to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings.")
                 }
             }
 
@@ -125,9 +129,9 @@ struct PumpControlView: View {
             if caps.supportsControlIQSettings {
                 Section {
                     NavigationLink { ControlIQSettingsView(model: model) } label: {
-                        Label("Control-IQ settings", systemImage: "brain.head.profile")
+                        Label("\(ciq) settings", systemImage: "brain.head.profile")
                     }
-                } header: { Text("Control-IQ") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
+                } header: { Text(ciq) } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
             }
 
             if caps.supportsProfiles {
