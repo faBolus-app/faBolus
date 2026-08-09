@@ -40,6 +40,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
     public var commitBolusId: (@MainActor (Int) async -> Bool)?
+    /// B3a (§5.2.8): observational command round-trip latency sink. `seconds` = a response arrived after
+    /// that long; `nil` = the wait ran to its deadline with no response (a timeout). Fired from
+    /// `awaitResponse` for every response-bearing command; the host buckets + counts it only when the
+    /// diagnostics opt-in is on. Never influences control flow — purely a diagnostic signal.
+    public var onCommandLatency: (@MainActor (Double?) -> Void)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
@@ -279,14 +284,30 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func awaitResponse<T: Message>(_ message: Message, as _: T.Type, deadline: TimeInterval,
                                            signed: Bool = false, allowInsulinDelivery: Bool = false,
                                            serialized: Bool = false) async throws -> T {
-        let frame = try await tx.sendAwaitingResponse(
-            message,
-            authenticationKey: signed ? authenticationKey : [],
-            pumpTimeSinceReset: signed ? signingTimestamp : 0,
-            allowInsulinDelivery: allowInsulinDelivery,
-            responseOpCode: nil,
-            deadline: deadline,
-            serialized: serialized)
+        // B3a (§5.2.8): time the round-trip for the observational latency dimension. `start` is a
+        // monotonic clock (never wall-clock), so a system time change can't skew it. On a response, report
+        // the elapsed seconds; on a throw that ran to the deadline (a genuine timeout), report `nil`; a fast
+        // pre-flight failure (e.g. not connected) is NOT a latency signal and reports nothing. This wraps
+        // the SAME call with no change to its arguments, result, or error — purely observational.
+        let start = DispatchTime.now()
+        func elapsedSeconds() -> Double {
+            Double(DispatchTime.now().uptimeNanoseconds &- start.uptimeNanoseconds) / 1_000_000_000
+        }
+        let frame: [UInt8]
+        do {
+            frame = try await tx.sendAwaitingResponse(
+                message,
+                authenticationKey: signed ? authenticationKey : [],
+                pumpTimeSinceReset: signed ? signingTimestamp : 0,
+                allowInsulinDelivery: allowInsulinDelivery,
+                responseOpCode: nil,
+                deadline: deadline,
+                serialized: serialized)
+        } catch {
+            if elapsedSeconds() >= deadline { onCommandLatency?(nil) }   // ran to the deadline → timeout
+            throw error
+        }
+        onCommandLatency?(elapsedSeconds())   // a response arrived
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic),
               let typed = parsed.message as? T else {
             throw BolusError.pumpRejected("could not parse \(T.self) response")
