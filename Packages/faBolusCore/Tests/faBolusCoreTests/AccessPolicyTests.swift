@@ -62,6 +62,31 @@ import Testing
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)   // phone unaffected
     }
 
+    /// C2 §2.3 — the OPTIONAL Garmin bolus passcode gate. When a passcode is required, a Garmin deliver is
+    /// allowed ONLY with a host-verified (satisfied) code; absent/wrong (satisfied=false) denies with the
+    /// passcode reason. Apple Watch is EXEMPT (wrist detection), the phone/peers are unaffected, a
+    /// non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
+    @Test func garminBolusPasscodeGateRequiresASatisfiedCode() {
+        // Required + verified ⇒ the Garmin deliver is allowed.
+        var ok = openCtx(); ok.bolusPasscodeRequired = true; ok.bolusPasscodeSatisfied = true
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: ok).allowed)
+        // Required + NOT satisfied (absent OR wrong OR backing off) ⇒ denied by the passcode gate.
+        var bad = openCtx(); bad.bolusPasscodeRequired = true; bad.bolusPasscodeSatisfied = false
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: bad).reason == .remoteBolusPasscodeRequired)
+        // Not required ⇒ no passcode gate at all (today's behavior), even with satisfied=false.
+        var noReq = openCtx(); noReq.bolusPasscodeRequired = false; noReq.bolusPasscodeSatisfied = false
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: noReq).allowed)
+        // APPLE WATCH EXEMPT: a required-but-unsatisfied passcode never blocks the watch.
+        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: bad).allowed)
+        // The phone is unaffected by the Garmin passcode.
+        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: bad).allowed)
+        // A non-deliver Garmin action (cancel) is never passcode-gated.
+        #expect(P.evaluate(.cancelBolus, surface: .garmin, context: bad).reason != .remoteBolusPasscodeRequired)
+        // Precedence: "Garmin bolusing off" still takes priority over "needs a passcode".
+        var offAndReq = bad; offAndReq.garminBolusEnabled = false
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: offAndReq).reason == .remoteBolusDisabled)
+    }
+
     @Test func fullyLockedDeniesEveryActionOnEverySurface() {
         for a in A.allCases {
             for s in S.allCases {

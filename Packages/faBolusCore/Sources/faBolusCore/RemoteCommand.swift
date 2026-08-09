@@ -270,6 +270,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// entry (which REPLACES the tap-sequence / two-button-hold), and the host validates the entered code.
     /// Absent/false ⇒ the surface's normal confirm. Additive; mirrored.
     public var bolusPasscodeRequired: Bool? = nil
+    /// C2 §2.3 — the INBOUND direction (remote → host): the plaintext passcode a Garmin remote's user
+    /// ENTERED to confirm a `.bolusRequest`, carried alongside `units`/`carbsGrams`. The host verifies it
+    /// against the salted hash it holds (`BolusPasscodeStore.verify`) and refuses the bolus if it is
+    /// wrong/absent — the watch never verifies or stores it (it keeps it in RAM only, transmits, discards).
+    /// Absent ⇒ no code was entered (a legacy remote, or one where no passcode is required); the host's
+    /// gate then denies iff a passcode IS required for that surface. Not persisted in the ledger. Additive.
+    public var bolusPasscode: String? = nil
 
     /// B2 (S1+O3) — the pump's automated-controller identity as a FROZEN wire token
     /// (`ControllerVariant.rawValue`: none / controlIQ / controlIQPro), derived from the pump's own op-79
@@ -456,7 +463,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("message", message), ("confirmToken", confirmToken), ("trend", trend),
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
             ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
-            ("authNonce", authNonce), ("authProof", authProof),
+            ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }

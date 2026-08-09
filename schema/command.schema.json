@@ -248,7 +248,12 @@
     },
     "bolusPasscodeRequired": {
       "type": "boolean",
-      "description": "statusRead reply (P15 §2.3) — signals whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the hash). When true the remote's confirm step would be the passcode entry, REPLACING the tap-sequence / two-button-hold. NOTE (2026-08-08): end-to-end enforcement is NOT yet wired — no set-UI exists (so this is currently always false), no wire field carries the entered code back to the host, and there is no host-side verify(); the flag is presently inert. The active §2.3 protection is the default-OFF, host-enforced garminBolusEnabled/watchBolusEnabled gate. Absent/false ⇒ the surface's normal confirm."
+      "description": "statusRead reply (P15 §2.3 / C2) — signals whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the salted hash; BolusPasscodeStore.isRequired). When true a Garmin remote's confirm step is the passcode entry, REPLACING the tap-sequence / two-button-hold; the entered code rides back on bolusRequest.bolusPasscode and the host verifies it (C2 wired this end-to-end: phone set-UI → this flag → bolusPasscode field → host verify). Apple Watch is exempt (wrist detection). This flag only shapes the remote UI; the host stays the enforcement point (AccessPolicy refuses a Garmin deliver with a wrong/absent code even if the remote UI skipped the prompt). Absent/false ⇒ the surface's normal confirm."
+    },
+    "bolusPasscode": {
+      "type": "string",
+      "maxLength": 12,
+      "description": "bolusRequest (remote → host, C2 §2.3) — the plaintext passcode the remote's user ENTERED to confirm a Garmin bolus, carried alongside units/carbsGrams. The host verifies it against the salted hash it holds (BolusPasscodeStore.verify) and refuses the bolus if wrong/absent; the watch keeps it in RAM only and never stores or verifies it. Absent ⇒ no code was entered (a legacy remote, or one where no passcode is required); the host's gate then denies iff a passcode IS required for that surface. maxLength is a loose upper bound — the store enforces exactly 4 digits — to reject an oversized string. Not persisted in the ledger."
     },
     "controllerVariant": {
       "type": "string",
