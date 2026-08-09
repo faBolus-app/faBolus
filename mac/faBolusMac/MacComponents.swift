@@ -331,6 +331,20 @@ struct MacBolusEntryView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                // B2 (S1+O3): the controller auto-correction disclosure — reconstructed locally from the
+                // mirrored controllerVariant + controlIQEnabled, matching the phone bolus screen. Facts
+                // only; NEVER gates/changes/delays the dose.
+                if let ambient = model.autoCorrectionAmbient {
+                    Label(ambient, systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+                }
+                if let lockout = model.autoCorrectionLockout {
+                    Label(lockout, systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+                }
+
                 Button {
                     if let a = amount { amount = min(max(0, a), maxV) }   // clamp typed value
                     if canDeliver { confirming = true }

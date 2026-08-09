@@ -41,6 +41,7 @@ VALID = [
         "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
         "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
         "garminBolusEnabled": False, "watchBolusEnabled": False, "bolusPasscodeRequired": False,
+        "controllerVariant": "controlIQPro", "controlIQEnabled": True,
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     {"version": 1, "kind": "bolusRequest", "requestId": "r3", "carbsGrams": 30, "bgMgdl": 120, "remoteEstimateUnits": 3.0},
@@ -57,6 +58,7 @@ INVALID = [
     {"version": 1, "kind": "bolusStatus", "requestId": "b2", "status": "teleported"},        # bad status enum
     {"version": 2, "kind": "statusRead", "requestId": "b3"},                                  # bad const version
     {"version": 1, "kind": "statusRead", "requestId": "b4", "bgMgdl": "high"},                # wrong type
+    {"version": 1, "kind": "statusRead", "requestId": "b4b", "controllerVariant": "controlIQPlus"}, # bad enum (frozen token is controlIQPro)
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties
     {"version": 1, "kind": "statusRead"},                                                     # missing required requestId
 ]

@@ -65,6 +65,31 @@ class RemoteClientModel {
     var garminBolusEnabled: Bool = false
     /// P15 §2.3: whether the phone requires a 4-digit passcode to confirm a remote bolus.
     var bolusPasscodeRequired: Bool = false
+    /// B2 (S1+O3): the pump's automated-controller identity, mirrored from the phone so this remote can
+    /// reconstruct the `ControllerDescriptor` and render the auto-correction disclosure locally. Safe
+    /// default `.none` ⇒ a legacy host (or none-controller pump) shows nothing controller-specific.
+    var controllerVariant: ControllerVariant = .none
+    /// B2 (S1+O3): whether Control-IQ is ON at runtime, mirrored from the phone. The disclosure renders only
+    /// when the variant can auto-correct AND this is true. Safe default false ⇒ render no disclosure.
+    var controlIQEnabled: Bool = false
+
+    /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
+    /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
+    /// every surface shows the same facts from one faBolusCore source (no prose crosses the wire).
+    var controllerDescriptor: ControllerDescriptor { .for(controllerVariant) }
+    /// O3 — the persistent "automatic correction is active" line, or nil when it shouldn't show.
+    var autoCorrectionAmbient: String? {
+        AutoCorrectionDisclosure.ambientIndicator(descriptor: controllerDescriptor,
+                                                  controllerEnabled: controlIQEnabled)
+    }
+    /// S1 — the high/rising auto-correction lockout disclosure, or nil. Uses the pump's OWN mirrored trend
+    /// arrow (C8: read, never synthesized) — `GlucoseTrend(rawValue:)` since the wire trend is the arrow.
+    var autoCorrectionLockout: String? {
+        AutoCorrectionDisclosure.lockoutMessage(descriptor: controllerDescriptor,
+                                                controllerEnabled: controlIQEnabled,
+                                                glucoseMgdl: glucose,
+                                                trend: GlucoseTrend(rawValue: trend))
+    }
     /// P15 §2.3 (watch): the watch may show/permit its bolus affordance only when remotes aren't read-only
     /// AND the phone has enabled watch bolusing. Fail-closed by default (`watchBolusEnabled` starts false).
     /// The Mac has its own gating and does not use this.
@@ -277,6 +302,10 @@ class RemoteClientModel {
             if let w = cmd.watchBolusEnabled { watchBolusEnabled = w }
             if let g = cmd.garminBolusEnabled { garminBolusEnabled = g }
             if let p = cmd.bolusPasscodeRequired { bolusPasscodeRequired = p }
+            // B2 (S1+O3): adopt the pump's controller identity + runtime on/off. Absent ⇒ legacy host ⇒
+            // stays the safe default (.none / false ⇒ no disclosure). Unknown token ⇒ .none (never crash).
+            if let v = cmd.controllerVariant { controllerVariant = ControllerVariant(rawValue: v) ?? .none }
+            if let e = cmd.controlIQEnabled { controlIQEnabled = e }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

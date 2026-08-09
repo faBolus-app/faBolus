@@ -135,6 +135,18 @@ struct WatchBolusView: View {
                     Text(String(format: "≈ %.2f U", u)).font(.caption).foregroundStyle(.secondary)
                 }
 
+                // B2 (S1+O3): the controller auto-correction disclosure — reconstructed locally from the
+                // mirrored controllerVariant + controlIQEnabled, matching the phone bolus screen. Facts
+                // only; NEVER gates/changes/delays the dose.
+                if let ambient = model.autoCorrectionAmbient {
+                    Label(ambient, systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                if let lockout = model.autoCorrectionLockout {
+                    Label(lockout, systemImage: "exclamationmark.triangle")
+                        .font(.caption2).foregroundStyle(.orange).multilineTextAlignment(.center)
+                }
+
                 Button { confirming = true } label: {
                     Label("Bolus \(amountLabel)", systemImage: "drop.fill")
                 }

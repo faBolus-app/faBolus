@@ -271,6 +271,19 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Absent/false ⇒ the surface's normal confirm. Additive; mirrored.
     public var bolusPasscodeRequired: Bool? = nil
 
+    /// B2 (S1+O3) — the pump's automated-controller identity as a FROZEN wire token
+    /// (`ControllerVariant.rawValue`: none / controlIQ / controlIQPro), derived from the pump's own op-79
+    /// feature bits. A remote reconstructs the `ControllerDescriptor` locally from this and renders the
+    /// auto-correction disclosure itself — no prose crosses the wire. Paired with `controlIQEnabled` because
+    /// the disclosure gates on the runtime on/off too. Display-only, never a dose input (C3). Absent ⇒ a
+    /// legacy host; the remote treats it as `.none` (renders nothing controller-specific). Additive; mirrored.
+    public var controllerVariant: String? = nil
+    /// B2 (S1+O3) — whether the pump's Control-IQ is ON at runtime (`PumpSnapshot.controlIQEnabled`), distinct
+    /// from `controllerVariant` (firmware capability). The disclosure renders only when the variant can
+    /// auto-correct AND this is true, so a remote needs both. Display-only. Absent ⇒ legacy host; the remote
+    /// treats it as `false` (renders no disclosure — a safe, non-misleading default). Additive; mirrored.
+    public var controlIQEnabled: Bool? = nil
+
     /// DIF-ux — the immutable source timestamps (Unix seconds) of the bolus-calculator inputs the host
     /// relayed: `iobEpochSec` for the active-insulin (op-109) read, `therapyEpochSec` for the therapy-params
     /// (carb ratio / ISF / target, op-115) read. Mirrors `glucoseEpochSec` exactly — set once at origin from
