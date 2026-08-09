@@ -56,4 +56,35 @@ struct ProfileSegmentProvenanceTests {
                     "\(field) of a new segment must record .selfSet provenance")
         }
     }
+
+    // MARK: - B1(a): the editor's per-field provenance badge lookup
+
+    /// `segmentFieldProvenance` feeds the editor badge: an edited field reads `.selfSet`, an untouched one
+    /// falls back to `.consensusDefault` (absence == consensus default). Never nil here (store is healthy).
+    @Test func segmentFieldProvenanceReflectsEditsAndDefaultsTheRest() async {
+        let (model, _, _) = await openGatesAndMakeModel()
+        await model.refreshProfileSegments(idpId: 0)
+        guard let seg = model.snapshot.viewedProfileSegments.first(where: { $0.segmentIndex == 0 }) else {
+            Issue.record("mock did not seed a viewed segment"); return
+        }
+        await model.modifyProfileSegment(idpId: 0, segmentIndex: 0, startTimeMinutes: seg.startTimeMinutes,
+                                         basalRateUnitsPerHour: seg.basalRateUnitsPerHour + 0.15,
+                                         carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit,
+                                         isf: seg.isf, targetBg: seg.targetBg)
+        let prov = model.segmentFieldProvenance(idpId: 0, startMinutes: seg.startTimeMinutes)
+        #expect(prov != nil)                                   // healthy store → not nil
+        #expect(prov?["basalRate"] == .selfSet)                // the edited field
+        #expect(prov?["carbRatio"] == .consensusDefault)       // untouched → consensus default
+        #expect(prov?["isf"] == .consensusDefault)
+        #expect(prov?["targetBg"] == .consensusDefault)
+    }
+
+    /// The non-color badge cue: every provenance has a distinct, non-empty SF-symbol name (WCAG parity
+    /// with the F4 band channel).
+    @Test func everyProvenanceHasADistinctSymbol() {
+        let all = SettingProvenance.allCases
+        let symbols = all.map(\.symbolName)
+        #expect(Set(symbols).count == all.count)
+        #expect(symbols.allSatisfy { !$0.isEmpty })
+    }
 }
