@@ -411,6 +411,12 @@ public final class AppModel {
         // affordance this mode would deny. The host still enforces the mode on every surface via
         // `AccessPolicy`; this only drives the remote UI. Unconditional ⇒ "absent" means a legacy host.
         cmd.activeMode = AppSettings.shared.appMode.rawValue
+        // B2 (S1+O3): publish the pump's controller identity + runtime on/off so a remote can render the
+        // auto-correction disclosure locally (it reconstructs the ControllerDescriptor from the variant and
+        // gates the copy on controlIQEnabled). Display-only, never a dose input (C3). Unconditional ⇒
+        // "absent" can only mean a legacy host (which renders nothing controller-specific).
+        cmd.controllerVariant = snapshot.controllerVariant.rawValue
+        cmd.controlIQEnabled = snapshot.controlIQEnabled
         // DIF-ux: relay the pump's own read times of the calc inputs (IOB op-109, therapy op-115) as
         // immutable source epochs — exactly like `glucoseEpochSec` above — so a remote can grey/age its IOB
         // + therapy rows and PRE-WARN off the same freshness the host judges. Absent (nil date) ⇒ the remote

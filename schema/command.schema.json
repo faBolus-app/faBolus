@@ -249,6 +249,15 @@
     "bolusPasscodeRequired": {
       "type": "boolean",
       "description": "statusRead reply (P15 §2.3) — signals whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the hash). When true the remote's confirm step would be the passcode entry, REPLACING the tap-sequence / two-button-hold. NOTE (2026-08-08): end-to-end enforcement is NOT yet wired — no set-UI exists (so this is currently always false), no wire field carries the entered code back to the host, and there is no host-side verify(); the flag is presently inert. The active §2.3 protection is the default-OFF, host-enforced garminBolusEnabled/watchBolusEnabled gate. Absent/false ⇒ the surface's normal confirm."
+    },
+    "controllerVariant": {
+      "type": "string",
+      "enum": ["none", "controlIQ", "controlIQPro"],
+      "description": "statusRead reply (B2 / S1+O3) — the pump's automated-controller identity (ControllerVariant, derived from the pump's own op-79 feature bits): none / controlIQ (Control-IQ) / controlIQPro (Control-IQ+). A remote reconstructs the ControllerDescriptor locally from this token and renders the auto-correction disclosure itself, so no prose crosses the wire. Display-only — never a dose input (C3). These tokens are a FROZEN contract (see ControllerVariant). Absent ⇒ a legacy host; the remote treats it as `none` and renders nothing controller-specific."
+    },
+    "controlIQEnabled": {
+      "type": "boolean",
+      "description": "statusRead reply (B2 / S1+O3) — whether the pump's Control-IQ is turned ON at runtime (PumpSnapshot.controlIQEnabled), distinct from controllerVariant (which is firmware capability/identity). The auto-correction disclosure renders only when BOTH the variant can auto-correct AND it is enabled here, so a remote needs both. Display-only. Absent ⇒ a legacy host; the remote treats it as false (renders no disclosure) — a safe, non-misleading default."
     }
   },
   "additionalProperties": false
