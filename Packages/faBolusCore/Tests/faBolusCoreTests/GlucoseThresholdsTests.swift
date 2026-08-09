@@ -80,4 +80,23 @@ struct GlucoseThresholdsTests {
         #expect(onlyBucket(250) == "high")       // 250 is high, not very-high
         #expect(onlyBucket(251) == "veryHigh")
     }
+
+    // MARK: - F4 (A5): the non-color band redundancy channel
+
+    /// Every band carries a distinct, non-empty label AND SF-symbol name, so the band can be conveyed
+    /// without color (WCAG 1.4.1). A representative reading in each band classifies to the right label.
+    @Test func everyBandHasADistinctNonColorLabelAndSymbol() {
+        let bands: [GlucoseRange] = [.low, .inRange, .high, .urgentHigh]
+        let labels = bands.map(\.shortLabel)
+        let symbols = bands.map(\.symbolName)
+        #expect(Set(labels).count == 4)            // all distinct
+        #expect(Set(symbols).count == 4)
+        #expect(labels.allSatisfy { !$0.isEmpty })
+        #expect(symbols.allSatisfy { !$0.isEmpty })
+        // The channel tracks classify, so a colorblind user reads the same band the color would show.
+        #expect(GlucoseRange.classify(55).shortLabel == "Low")
+        #expect(GlucoseRange.classify(120).shortLabel == "In range")
+        #expect(GlucoseRange.classify(200).shortLabel == "High")
+        #expect(GlucoseRange.classify(300).shortLabel == "Very high")
+    }
 }
