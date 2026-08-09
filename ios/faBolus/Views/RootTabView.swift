@@ -69,5 +69,15 @@ struct RootTabView: View {
         } message: {
             Text("A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed.")
         }
+        // B4 (owner 2026-08-09): a DIFFERENT pump connected. Its therapy values were already refreshed
+        // automatically; offer to also reset pump-specific app settings so two pumps' configs don't mix.
+        .alert("A different pump is connected", isPresented: Binding(
+            get: { model.pendingPumpSwitch },
+            set: { if !$0 { model.pendingPumpSwitch = false } })) {
+            Button("Reset pump settings", role: .destructive) { model.resetPumpRelevantSettingsAfterSwitch() }
+            Button("Keep everything", role: .cancel) { model.keepSettingsAfterPumpSwitch() }
+        } message: {
+            Text("This pump is different from the one faBolus last used, so its therapy values were refreshed automatically. Reset pump-specific app settings too — Control-IQ automation, pump time-sync, alert rules, and the therapy change history — back to defaults? Your display preferences and CGM setup are kept either way.")
+        }
     }
 }

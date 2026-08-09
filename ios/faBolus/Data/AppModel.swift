@@ -1012,6 +1012,61 @@ public final class AppModel {
         return .erased
     }
 
+    // MARK: - B4 pump-switch settings reset (owner 2026-08-09)
+
+    /// True while the "a different pump connected — reset pump-specific app settings?" prompt should show
+    /// (RootTabView presents it). Observed. The pump-DERIVED snapshot config is cleared automatically on
+    /// the switch regardless of the answer; this prompt governs only the pump-specific *app prefs*.
+    var pendingPumpSwitch = false
+
+    /// A stable identity for the CURRENTLY-connected pump, from the LIVE backend (not the persisted
+    /// `BackendRegistry` selection — that only takes effect next launch): sim-vs-real plus which real pump
+    /// (its CoreBluetooth peripheral UUID). Enough to tell "a different pump than last time" with no new
+    /// pump-protocol read.
+    private func currentPumpIdentity() -> String {
+        let real = source is TandemBackend
+        let detail = real ? (PumpPeripheralStore.id()?.uuidString ?? "unpaired")
+                          : (source.snapshot.isMobi ? "mobi" : "tslim")
+        return "\(real ? "real" : "sim")|\(detail)"
+    }
+
+    /// B4 — on a fresh `.connected` edge, detect a switch to a DIFFERENT pump and, if so, clear the old
+    /// pump's derived config (auto) + raise the settings-reset prompt. First connect ever only records the
+    /// identity (no prior pump to reset). GATED: never disturbs the snapshot over an in-flight/unresolved
+    /// delivery (the ledger + snapshot are needed to reconcile it) — it defers by leaving the marker
+    /// un-advanced, so a later clean connect handles it. Uses the pre-update `previousConnection` as the
+    /// edge and mutates `source.snapshot` before `refresh()`'s merge, so there is no re-entrancy.
+    private func maybeHandlePumpSwitch() {
+        guard previousConnection != .connected, source.snapshot.connection == .connected else { return }
+        let current = currentPumpIdentity()
+        switch PumpSwitchStore.decide(current: current, lastHandled: PumpSwitchStore.lastHandled()) {
+        case .firstConnect:
+            PumpSwitchStore.setHandled(current)      // baseline; nothing to reset on the very first pump
+        case .samePump:
+            break
+        case .switched:
+            if inFlightDeliveryKey != nil || computeDeliveryBlockReason() != nil { return }   // defer
+            source.resetSnapshotForPumpSwitch()      // auto-clear the old pump's config (re-read on connect)
+            PumpSwitchStore.setHandled(current)      // handled ⇒ don't re-fire every refresh
+            pendingPumpSwitch = true                 // offer to reset pump-specific app prefs too
+        }
+    }
+
+    /// B4 — the user chose to reset pump-specific app settings after a switch: reset the pump-specific
+    /// automation/limit prefs to their off/default state AND clear the therapy change-log (its provenance +
+    /// one-tap-revert targets are keyed to the PREVIOUS pump's profile/segments — a revert must never write
+    /// a prior pump's value onto the new one). Display prefs, app mode, child/read-only, and CGM setup are
+    /// deliberately kept.
+    func resetPumpRelevantSettingsAfterSwitch() {
+        AppSettings.shared.resetPumpRelevantSettings()
+        settingChangeStore.saveBestEffort(SettingChangeLog())
+        pendingPumpSwitch = false
+    }
+
+    /// B4 — the user chose to keep their settings; just dismiss the prompt. The stale snapshot config was
+    /// already cleared automatically on the switch, so nothing pump-derived leaks either way.
+    func keepSettingsAfterPumpSwitch() { pendingPumpSwitch = false }
+
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
 
@@ -1164,6 +1219,10 @@ public final class AppModel {
     }
 
     private func refresh() {
+        // B4: on a fresh connect to a DIFFERENT pump, clear the previous pump's derived config off the
+        // backend snapshot BEFORE the merge below reads it, so a stale max-bolus / therapy param / profile
+        // can't be shown or dosed against in the window before the new pump's reads land.
+        maybeHandlePumpSwitch()
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
         // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).

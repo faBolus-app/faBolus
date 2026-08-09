@@ -1119,6 +1119,30 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await sendControl(ChangeTimeDateRequest(tandemEpochTime: tandemEpoch), delivery: false)
     }
 
+    /// B4 — clear the pump-DERIVED CONFIG so a DIFFERENT pump can't be dosed against the previous pump's
+    /// values before its own reads land (the in-run re-pair window). Resets ONLY config/therapy fields to
+    /// their `PumpSnapshot()` defaults (max bolus back to the 25 U default — never 0, which the per-bolus
+    /// clamp reads); preserves every LIVE field (connection, glucose/IOB, reservoir, battery, basal rate,
+    /// delivery-suspended, cartridge/CGM state, model identity). No `onChange` — `AppModel.refresh`
+    /// republishes on the same cycle (a nested notify would re-enter refresh).
+    public func resetSnapshotForPumpSwitch() {
+        let d = PumpSnapshot()
+        snapshot.maxBolusUnits = d.maxBolusUnits
+        snapshot.maxBasalUnitsPerHour = d.maxBasalUnitsPerHour
+        snapshot.carbRatio = d.carbRatio
+        snapshot.isf = d.isf
+        snapshot.targetBg = d.targetBg
+        snapshot.therapyParamsDate = d.therapyParamsDate
+        snapshot.activeProfileName = d.activeProfileName
+        snapshot.controlIQMode = d.controlIQMode
+        snapshot.controlIQEnabled = d.controlIQEnabled
+        snapshot.controlIQWeightLbs = d.controlIQWeightLbs
+        snapshot.controlIQTotalDailyInsulin = d.controlIQTotalDailyInsulin
+        snapshot.controllerVariant = d.controllerVariant
+        snapshot.profiles = d.profiles
+        snapshot.viewedProfileSegments = d.viewedProfileSegments
+    }
+
     // Control-IQ settings — non-insulin config.
     public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
         try await sendControl(ChangeControlIQSettingsRequest(enabled: enabled, weightLbs: weightLbs,
