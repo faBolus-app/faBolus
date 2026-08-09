@@ -559,13 +559,15 @@ struct ProfileSegmentsView: View {
         .task { await model.refreshProfileSegments(idpId: idpId) }
         .sheet(item: $editing) { seg in
             SegmentEditSheet(title: "Edit segment", initial: seg,
-                             provenance: model.segmentFieldProvenance(idpId: idpId, startMinutes: seg.startTimeMinutes)) { f in
+                             provenance: model.segmentFieldProvenance(idpId: idpId, startMinutes: seg.startTimeMinutes),
+                             totalDailyInsulinUnits: model.snapshot.controlIQTotalDailyInsulin) { f in
                 run { await model.modifyProfileSegment(idpId: idpId, segmentIndex: seg.segmentIndex, startTimeMinutes: Int(f.startHour) * 60,
                                                        basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
             }
         }
         .sheet(isPresented: $adding) {
-            SegmentEditSheet(title: "Add segment", initial: nil) { f in
+            SegmentEditSheet(title: "Add segment", initial: nil,
+                             totalDailyInsulinUnits: model.snapshot.controlIQTotalDailyInsulin) { f in
                 run { await model.addProfileSegment(idpId: idpId, startTimeMinutes: Int(f.startHour) * 60,
                                                     basalRateUnitsPerHour: f.basal, carbRatioGramsPerUnit: f.carbRatio, isf: Int(f.isf), targetBg: Int(f.target)) }
             }
@@ -582,6 +584,8 @@ struct SegmentEditSheet: View {
     let initial: PumpProfileSegment?
     /// §2.1(2) B1(a): per-field provenance for the segment being edited (nil for a new segment / add).
     var provenance: [String: SettingProvenance]? = nil
+    /// §2.1(5) B1(d): the pump's TDD (0 ⇒ unknown), for the warn-only rule-of-thumb advisories.
+    var totalDailyInsulinUnits: Int = 0
     let onSave: (SegmentFields) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var f = SegmentFields()
@@ -590,7 +594,8 @@ struct SegmentEditSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                SegmentFieldsEditor(f: $f, showStart: true, provenance: provenance)
+                SegmentFieldsEditor(f: $f, showStart: true, provenance: provenance,
+                                    totalDailyInsulinUnits: totalDailyInsulinUnits)
                 Section {
                     HoldToConfirmButton(title: "save segment", systemImage: "checkmark.circle") {
                         // Basal-schedule write; capture-aligned masks, end-to-end pump write bench-gated (docs/UNVERIFIED-GUESSES.md #2).
@@ -620,6 +625,9 @@ struct SegmentFieldsEditor: View {
     /// §2.1(2) B1(a): per-field provenance keyed by field name (`basalRate`/`carbRatio`/`isf`/`targetBg`),
     /// or nil to show no badge (new-profile create flow, or a failed-closed store). Disclosure only.
     var provenance: [String: SettingProvenance]? = nil
+    /// §2.1(5) B1(d): the pump's total daily insulin (from a configured Control-IQ; 0 ⇒ unknown), used only
+    /// to surface a WARN-ONLY "unusual for your TDD" advisory below basal / carb ratio / ISF. 0 ⇒ no advisory.
+    var totalDailyInsulinUnits: Int = 0
 
     /// The origin badge for a field's Section footer — icon + `ClinicianTierAck.label`, no color dependency.
     @ViewBuilder private func badge(_ field: String) -> some View {
@@ -630,6 +638,19 @@ struct SegmentFieldsEditor: View {
         }
     }
 
+    /// §2.1(5) B1(d): a passive, WARN-ONLY advisory when a value is far from its TDD rule of thumb. Never
+    /// blocks or changes the edit — it's shown alongside the origin badge in the field's footer.
+    @ViewBuilder private func footer(_ field: String, advisory: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            badge(field)
+            if let advisory {
+                Label(advisory, systemImage: "exclamationmark.triangle")
+                    .font(.caption2).foregroundStyle(.orange)
+                    .accessibilityLabel("Check: \(advisory)")
+            }
+        }
+    }
+
     var body: some View {
         if showStart {
             Section("Start time") {
@@ -637,11 +658,17 @@ struct SegmentFieldsEditor: View {
             }
         }
         Section { Stepper(value: $f.basal, in: 0...15, step: 0.05) { Text("\(String(format: "%.2f", f.basal)) U/hr") } }
-            header: { Text("Basal rate") } footer: { badge("basalRate") }
+            header: { Text("Basal rate") } footer: {
+                footer("basalRate", advisory: TherapyConfirmations.basalTddAdvisory(
+                    basalUnitsPerHour: f.basal, totalDailyInsulinUnits: totalDailyInsulinUnits)) }
         Section { Stepper(value: $f.carbRatio, in: 1...150, step: 1) { Text("\(Int(f.carbRatio)) g/U") } }
-            header: { Text("Carb ratio") } footer: { badge("carbRatio") }
+            header: { Text("Carb ratio") } footer: {
+                footer("carbRatio", advisory: TherapyConfirmations.carbRatioTddAdvisory(
+                    carbRatioGramsPerUnit: f.carbRatio, totalDailyInsulinUnits: totalDailyInsulinUnits)) }
         Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
-            header: { Text("Correction factor (ISF)") } footer: { badge("isf") }
+            header: { Text("Correction factor (ISF)") } footer: {
+                footer("isf", advisory: TherapyConfirmations.isfTddAdvisory(
+                    isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits)) }
         Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
             header: { Text("Target glucose") } footer: { badge("targetBg") }
     }
