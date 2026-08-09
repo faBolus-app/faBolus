@@ -17,6 +17,7 @@ struct PrivacyDataView: View {
 
     // Erase
     @State private var confirmErase = false
+    @State private var confirmFullReset = false
 
     /// Owner-only surface for the destructive erase: hidden for a read-only (caregiver) phone. Child mode
     /// already gates all of Settings behind a PIN (SettingsLockGate), so reaching here implies the owner —
@@ -47,6 +48,16 @@ struct PrivacyDataView: View {
                 } footer: {
                     Text("Permanently deletes all on-device health data — glucose/insulin/carb history, the settings change log, the bolus delivery audit trail, and local diagnostics. **Your pump pairing and saved logins are kept, and your pump/CGM are not touched.** If a bolus is in progress or unconfirmed, deletion is refused until it's resolved.")
                 }
+
+                Section {
+                    Button(role: .destructive) { confirmFullReset = true } label: {
+                        Label("Full reset (unpair + delete logins)", systemImage: "trash.slash")
+                    }
+                } header: {
+                    Text("Full reset")
+                } footer: {
+                    Text("A complete reset: deletes everything above **plus** your saved logins (pump pairing, PIN, and CGM credentials) and **unpairs the pump**. Your app preferences (modes, toggles) are kept. This can't be undone — export first. Like the delete above, it's refused while a bolus is unresolved.")
+                }
             }
 
             if let message {
@@ -67,6 +78,12 @@ struct PrivacyDataView: View {
         } message: {
             Text("This permanently deletes all on-device health data (history, settings change log, bolus audit trail, diagnostics). Your pump pairing and saved logins are kept. This can't be undone — export first if you want a copy.")
         }
+        .confirmationDialog("Full reset?", isPresented: $confirmFullReset, titleVisibility: .visible) {
+            Button("Erase everything & unpair", role: .destructive) { fullReset() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes all on-device health data AND your saved logins (pump pairing, PIN, CGM credentials), and unpairs the pump. \(model.unpairConfirmation) Your app preferences are kept. This can't be undone — export first. Refused while a bolus is unresolved.")
+        }
     }
 
     private func export() {
@@ -82,6 +99,13 @@ struct PrivacyDataView: View {
     private func erase() {
         switch model.eraseAllOnDeviceHealthData() {
         case .erased:            message = "All on-device data deleted."
+        case .refused(let why):  message = why
+        }
+    }
+
+    private func fullReset() {
+        switch model.eraseEverythingFullReset() {
+        case .erased:            message = "Full reset complete — on-device data, saved logins, and pump pairing cleared."
         case .refused(let why):  message = why
         }
     }
