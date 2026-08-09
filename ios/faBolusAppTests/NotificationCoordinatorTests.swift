@@ -130,6 +130,34 @@ import UserNotifications
         #expect(immediate.first?.trigger == nil)
     }
 
+    /// B6: the OS Critical Alert level is applied ONLY to the never-suppressible safety categories, and
+    /// ONLY when the caller allows it (entitlement granted + user opted in). A governed category never gets
+    /// it, and a safety category degrades gracefully to the normal level when not allowed.
+    @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
+        let rt = NotificationRuntime(store: isolatedStore(#function))
+        var reqs: [UNNotificationRequest] = []
+        // Safety category + allowed → .critical.
+        NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .critical)
+        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to normal.
+        reqs.removeAll()
+        NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .active)
+        // A governed (suppressible) category never gets .critical, even when allowed.
+        reqs.removeAll()
+        NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .active)
+    }
+
+    /// B6: the pump-alarm opt-out suppresses ONLY a pump ALARM the user opted out of — never a lower-
+    /// priority pump ALERT, and never when the opt-out is off.
+    @Test func mirroredAlarmOptOutSuppressesOnlyAlarmsAndOnlyWhenOptedOut() {
+        #expect(NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: true))
+        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: false))
+        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alert, optedOut: true))
+        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .cgmAlert, optedOut: true))
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
