@@ -943,17 +943,9 @@ public final class AppModel {
         #endif
     }
 
-    /// Best available basal schedule (24 hourly U/hr) — external (Nightscout profile) or pump. nil if unknown.
-    public func basalByHour() -> [Double]? {
-        let s = AppSettings.shared.basalScheduleByHour
-        return s.count == 24 ? s : nil
-    }
-    /// Human label for where the basal schedule came from ("" if none).
-    public var basalScheduleSource: String { AppSettings.shared.basalScheduleSource }
-
     private var lastNSBackfill = Date.distantPast
-    /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) + the profile's basal
-    /// schedule into faBolus. Throttled hourly. Best-effort/background.
+    /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) into faBolus.
+    /// Throttled hourly. Best-effort/background.
     private func maybeBackfillNightscout() {
         guard GlucoseSourceConfig.string("nightscout.url") != nil,
               Date().timeIntervalSince(lastNSBackfill) > 3600 else { return }
@@ -968,27 +960,8 @@ public final class AppModel {
                     self.history?.ingestBoluses(r.insulin.map { BolusMarker(date: $0.date, units: $0.units) },
                                                 sourceID: "nightscout")
                 }
-                if let b = r.basalByHour, b.count == 24, AppSettings.shared.basalScheduleSource != "Pump" {
-                    AppSettings.shared.basalScheduleByHour = b
-                    AppSettings.shared.basalScheduleSource = "Nightscout"
-                }
             }
         }
-    }
-
-    /// Capture the pump's active basal schedule (fallback when no external profile is available).
-    public func captureBasalScheduleFromPump() async {
-        guard snapshot.connection == .connected else { return }
-        let backup = await readPumpSettingsForBackup()
-        guard let active = backup.profiles.first(where: { $0.active }) ?? backup.profiles.first,
-              !active.segments.isEmpty else { return }
-        let segs = active.segments.sorted { $0.startTimeMinutes < $1.startTimeMinutes }
-        let byHour: [Double] = (0..<24).map { hour in
-            let m = hour * 60
-            return (segs.last { $0.startTimeMinutes <= m } ?? segs[0]).basalRateUnitsPerHour
-        }
-        AppSettings.shared.basalScheduleByHour = byHour
-        AppSettings.shared.basalScheduleSource = "Pump"
     }
 
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
