@@ -52,6 +52,17 @@ struct StatusRingView: View {
                         .foregroundStyle(stale ? AppTheme.stale : .primary)
                 }
                 Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                // F4 (A5) — non-color band channel (WCAG 1.4.1): when the number is shown in its band
+                // COLOR (fresh reading), also name the band with an icon + word, so it reads without
+                // relying on color. Not shown when stale — the number is grey then (no band color to
+                // duplicate). Hidden from VoiceOver (a11yLabel already speaks the band below).
+                if present == .fresh {
+                    let band = GlucoseRange.classify(g)
+                    Label(band.shortLabel, systemImage: band.symbolName)
+                        .font(.caption2).labelStyle(.titleAndIcon)
+                        .foregroundStyle(AppTheme.glucoseColor(g))
+                        .accessibilityHidden(true)
+                }
                 if let d = snapshot.glucoseDate {
                     Text(GlucoseFreshness.ageLabel(for: d, now: now))
                         .font(.caption2)
@@ -107,6 +118,9 @@ struct StatusRingView: View {
         if let g = snapshot.glucose, present != .hidden {
             parts.append("Glucose \(g) mg/dL")
             parts.append(snapshot.trend)
+            // F4 (A5): speak the band word too when it's a live (band-colored) reading — the spoken
+            // parallel of the on-screen band label, so the band never depends on color alone.
+            if present == .fresh { parts.append(GlucoseRange.classify(g).shortLabel) }
             if present == .stale { parts.append("stale") }
             if let d = snapshot.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
         } else {

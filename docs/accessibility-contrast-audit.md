@@ -1,9 +1,25 @@
 # Accessibility contrast audit — glucose band colors (P16 F4 / N12)
 
-**Status: AUDIT + RECOMMEND only. No colors were changed by this work.** The §13-locked glucose band
-tokens (`AppTheme`, `MacTheme`, `WatchApp`, the widgets) are **unchanged**. Recoloring, or adding a
-non-color redundancy channel, is an **owner/designer decision** — this document measures the current
-state and flags it; it does not act on it.
+**Status (updated 2026-08-09): Option 1 IMPLEMENTED — non-color band channel added; colors unchanged.**
+Per the owner decision (2026-08-09, item 12: "add a glyph/text redundancy channel; keep the clinical band
+colors"), the recommended **Option 1** below is now built on the primary surface. The §13-locked band
+color tokens (`AppTheme`, `MacTheme`, `WatchApp`, the widgets) are **unchanged** — no recolor (Option 2)
+was done, so the light-mode 1.4.3 contrast ratios below still stand as measured; the channel addresses the
+color-*only* dependency (1.4.1).
+
+**What shipped (A5).** `GlucoseRange` (faBolusCore) now exposes a pure, color-independent
+`shortLabel` ("Low" / "In range" / "High" / "Very high") + `symbolName` (down/check/up-circle,
+warning-triangle) — pinned by `GlucoseThresholdsTests.everyBandHasADistinctNonColorLabelAndSymbol`. The
+iOS status ring (`StatusRingView` — the primary band-colored surface, shared by the phone HUD and the
+remote-control view) renders that icon+word under the reading whenever the number is shown in its band
+COLOR (a fresh reading; a stale reading is grey, with no band color to duplicate), and the VoiceOver label
+speaks the band word in the same case. So the band no longer depends on color alone there.
+
+**Not yet covered (recorded, lower priority).** The system-color surfaces — `MacTheme.glucoseColor`,
+`watchGlucoseColor`, and the widgets' `WidgetUI.glucoseColor` — still convey the band by color alone. They
+use Apple **system** colors (generally tuned for contrast) and live in space-constrained glanceable
+layouts, so a channel there is a follow-up (and, for the widgets, a shared-target concern since they can't
+link faBolusCore). Tracked as a residual F4 item.
 
 This accompanies the N12 accessibility work (VoiceOver labels + Dynamic Type). It answers one WCAG
 question the VoiceOver/Dynamic-Type work does not: **does the color used to convey a glucose band have
