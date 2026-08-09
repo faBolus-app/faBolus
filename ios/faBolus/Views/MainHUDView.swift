@@ -38,6 +38,25 @@ struct DashboardView: View {
                         .padding(.horizontal)
                     }
 
+                    // P16 F3 (WARN-ONLY): iOS Low Power Mode may delay background pump/CGM updates.
+                    // Advisory pill only — dismissible per Low Power Mode episode; shown only while a
+                    // source is connected. It never changes any cadence and never gates/blocks a dose.
+                    if model.shouldShowLowPowerAdvisory {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "bolt.slash").foregroundStyle(.orange)
+                            Text(LowPowerAdvisory.message)
+                                .font(.footnote)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button { model.dismissLowPowerAdvisory() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }.buttonStyle(.plain)
+                        }
+                        .padding().frame(maxWidth: .infinity)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal)
+                    }
+
                     AlertsBannerView(model: model)
 
                     if let pending = model.pendingApproval {

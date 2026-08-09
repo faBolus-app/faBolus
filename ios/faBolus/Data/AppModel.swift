@@ -191,6 +191,47 @@ public final class AppModel {
     // `AccessPolicy` evaluator, reached via `allow(_:from:peerId:)` / `accessDecision(_:from:peerId:)`
     // below. The pure enforcement rules live in faBolusCore; this file only builds the context.
 
+    // MARK: - P16 F3 — iOS Low Power Mode advisory (WARN-ONLY)
+    //
+    // Purely advisory: this tells the user that iOS Low Power Mode may delay background pump/CGM updates.
+    // It NEVER changes any poll/scan/timer cadence, NEVER blocks/delays/changes a dose, NEVER gates any
+    // control, and NEVER touches delivery. Nothing below reads or mutates cadence.
+
+    /// True when iOS Low Power Mode is on. Observable so the Dashboard advisory updates live; refreshed
+    /// from `NSProcessInfoPowerStateDidChange` (see `init`). ADVISORY ONLY — read for the banner via
+    /// `shouldShowLowPowerAdvisory`; it never influences polling or dosing.
+    public private(set) var lowPowerModeActive: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+    /// Whether the user dismissed the Low Power Mode advisory for the CURRENT episode. Per-episode: reset
+    /// on the off→on edge in `refreshLowPowerMode` so the banner returns on the next Low Power Mode
+    /// episode (mirrors the eating-nudge dismissal). `@ObservationIgnored` — banner visibility is driven
+    /// by `shouldShowLowPowerAdvisory`, not by observing this flag directly.
+    @ObservationIgnored private var lowPowerAdvisoryDismissed = false
+
+    /// Refresh the cached Low Power Mode flag from `ProcessInfo`. On the off→on edge, clear the
+    /// per-episode dismissal so the advisory can reappear for the new episode. WARN-only — touches no
+    /// cadence, no dose, no gate.
+    private func refreshLowPowerMode() {
+        let now = ProcessInfo.processInfo.isLowPowerModeEnabled
+        if now && !lowPowerModeActive { lowPowerAdvisoryDismissed = false }   // new episode → allow re-show
+        lowPowerModeActive = now
+    }
+
+    /// P16 F3 — should the phone Dashboard show the Low Power Mode advisory? Defers the rule to the pure
+    /// `LowPowerAdvisory.shouldWarn` (unit-testable without the UI). Shown only while a live source is
+    /// connected (`snapshot.isLinked` — a pump/CGM link whose background updates Low Power Mode would
+    /// delay), so it isn't noise when idle, and not once dismissed this episode. ADVISORY ONLY — reading
+    /// this never changes cadence and never gates anything.
+    public var shouldShowLowPowerAdvisory: Bool {
+        LowPowerAdvisory.shouldWarn(lpmActive: lowPowerModeActive,
+                                    sourceConnected: snapshot.isLinked,
+                                    dismissedEpisode: lowPowerAdvisoryDismissed)
+    }
+
+    /// Dismiss the Low Power Mode advisory for the current episode (like the eating nudge). It reappears
+    /// if Low Power Mode toggles off then on again. Advisory-only — changes nothing about polling/dosing.
+    public func dismissLowPowerAdvisory() { lowPowerAdvisoryDismissed = true }
+
     // MARK: - P8 — single access-policy evaluator (the one decision point for every gate)
 
     /// Build the pure `AccessContext` from live app / pump / peer state and defer to
@@ -760,6 +801,14 @@ public final class AppModel {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.maybeAutoSyncPumpTime(force: true) }
             }
+        }
+        // P16 F3 (WARN-ONLY): refresh the Low Power Mode flag when iOS toggles power state, so the
+        // Dashboard advisory appears/clears live. Mirrors the clock observers above (a `[weak self]`
+        // block that hops to the main actor); like them it is left registered for the model's lifetime.
+        // This is purely advisory — it never changes any poll/scan/timer cadence and never gates a dose.
+        NotificationCenter.default.addObserver(forName: Notification.Name.NSProcessInfoPowerStateDidChange,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.refreshLowPowerMode() }
         }
         // Optional glucose failover source, with a crash-loop guard: if the selected source was armed
         // on the previous launch and never disarmed, it crashed during start — do NOT auto-start it
