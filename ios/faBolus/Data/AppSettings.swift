@@ -336,6 +336,15 @@ public final class AppSettings {
     /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
     public func acknowledgeClinicianTier() { if clinicianTierAckAt == nil { clinicianTierAckAt = Date() } }
 
+    // §2.1(4) B1(e): the one-time "editing these values affects AUTOMATED delivery, not just manual
+    // boluses" acknowledgment, shown at the first therapy-segment edit. Same idiom as `clinicianTierAckAt`:
+    // durable per-install marker, NOT a catalog row — never backed up, never iCloud-synced (a synced ack
+    // must not silently pre-suppress the disclosure on another device). NEVER gates a write. nil ⇒ never shown.
+    public var therapyEditAckAt: Date? { didSet { d.set(therapyEditAckAt?.timeIntervalSince1970 ?? 0, forKey: "therapyEditAckAt") } }
+    public var hasAcknowledgedTherapyEdit: Bool { therapyEditAckAt != nil }
+    /// Record the one-time therapy-edit acknowledgment (idempotent — keeps the first timestamp).
+    public func acknowledgeTherapyEdit() { if therapyEditAckAt == nil { therapyEditAckAt = Date() } }
+
     // §2.3 (G5): the one-time "you're turning on real insulin delivery from this remote" acknowledgment,
     // shown the FIRST time each surface's enable is switched on. Same idiom as `clinicianTierAckAt`:
     // durable per-install markers, NOT catalog rows — never backed up, never iCloud-synced (a synced ack
@@ -384,6 +393,8 @@ public final class AppSettings {
         appMode = AppMode(rawValue: d.string(forKey: "appMode") ?? "") ?? .advanced
         let ackTs = d.double(forKey: "clinicianTierAckAt")   // P14 S8: 0 (absent) ⇒ never acknowledged
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
+        let teAck = d.double(forKey: "therapyEditAckAt")     // B1(e): 0 (absent) ⇒ never acknowledged
+        therapyEditAckAt = teAck > 0 ? Date(timeIntervalSince1970: teAck) : nil
         let wAck = d.double(forKey: "watchBolusWarningAckAt")   // §2.3: 0 (absent) ⇒ never acknowledged
         watchBolusWarningAckAt = wAck > 0 ? Date(timeIntervalSince1970: wAck) : nil
         let gAck = d.double(forKey: "garminBolusWarningAckAt")
