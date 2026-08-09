@@ -196,6 +196,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// once-per-connect `staticRead` reply lands (or on firmware that never answers) → preset fallback.
     /// Reset on disconnect so a model/firmware change on reconnect re-derives cleanly.
     private var pumpFeatureBits: PumpFeatureBits?
+    /// E8: the pump's `HomeScreenMirrorResponse` trend is authoritative — including its explicit "no
+    /// arrow" state (`cgmTrendArrow == ""`), which the client-side `trendRate` derivation cannot express.
+    /// The derived arrow is a COLD-START bridge only: apply it *until the first HomeScreenMirror trend is
+    /// ever received*, and never after — so an EGV frame can never overwrite the pump's authoritative ""
+    /// (which `snapshot.trend.isEmpty` alone cannot distinguish from "not polled yet"). Deliberately NOT
+    /// reset on disconnect: once the pump's trend channel is known good we keep trusting it for the
+    /// backend's lifetime (a reconnect re-sends the mirror promptly, and holding the last authoritative
+    /// value is the safe direction vs. re-arming the derivation over a stale "").
+    private var pumpTrendEverReceived = false
     private var backfillActive = false
     private var backfillBuffer: [(pumpSec: UInt32, mgdl: Int)] = []
     // Completed boluses recovered from the same history pages (for the chart's bolus bars + to seed
@@ -1720,13 +1729,16 @@ extension TandemBackend: PumpBLEClientDelegate {
             // showing on its own home screen, so it cannot disagree with the pump — including its
             // explicit "no arrow" state, which a client-side derivation from `trendRate` cannot express.
             snapshot.trend = m.cgmTrendArrow
+            pumpTrendEverReceived = true   // E8: the pump's trend channel is now authoritative — retire the fallback
+
         case let m as CurrentEgvGuiDataV2Response:
             snapshot.cgmActive = m.hasValidReading
-            // Fallback only, and only until the first HomeScreenMirror reply lands: never overwrite the
-            // pump's own arrow with a derived one, and never invent one when the rate is unknown (an
-            // INVALID/UNAVAILABLE frame carries a sentinel rate — that was E8's mechanism, made worse by
-            // assigning the arrow OUTSIDE this validity check).
-            if snapshot.trend.isEmpty, let derived = m.trendArrow { snapshot.trend = derived }
+            // Fallback only, and only until the first HomeScreenMirror trend is EVER received: never
+            // overwrite the pump's own arrow with a derived one — including its explicit "no arrow" ("")
+            // (E8: the old `snapshot.trend.isEmpty`-only guard conflated "pump says no arrow" with "not
+            // polled yet", so a derived arrow overwrote the pump's authoritative empty). And never invent
+            // one when the rate is unknown (an INVALID/UNAVAILABLE frame carries a sentinel rate).
+            if !pumpTrendEverReceived, snapshot.trend.isEmpty, let derived = m.trendArrow { snapshot.trend = derived }
             if m.hasValidReading {
                 // Age must reflect the pump's OWN reading time, not when the phone happened to poll
                 // it (which understated age and lagged the pump). Convert `bgReadingTimestampSeconds`
