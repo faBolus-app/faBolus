@@ -796,6 +796,13 @@ public final class AppModel {
         // BEFORE the backend writes metadata/initiate. Returns false if the save failed, so the backend
         // aborts before initiate (nothing delivered, no id-less record to misread later).
         source.commitBolusId = { [weak self] bolusId in await self?.commitInFlightBolusId(bolusId) ?? false }
+        // B3a (§5.2.8): route the concrete Tandem backend's command round-trip latency into the opt-in
+        // telemetry store (the 4th dimension). Concrete-only (the `PumpBackend` protocol stays clean — see
+        // the Phase-B addendum default); the sink is @MainActor and a no-op unless the diagnostics opt-in is
+        // on, so it can never touch a decision path.
+        (source as? TandemBackend)?.onCommandLatency = { [weak self] seconds in
+            self?.connectionTelemetry.recordCommandLatency(seconds)
+        }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
         for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

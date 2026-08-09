@@ -50,6 +50,13 @@ final class ConnectionTelemetryStore {
         bump { $0.reconcile[outcome.rawValue, default: 0] += 1 }
     }
 
+    /// B3a (§5.2.8): a command round-trip completed. `seconds != nil` → count its latency bucket;
+    /// `seconds == nil` → the wait timed out (no response). Observational; a no-op unless opted in.
+    func recordCommandLatency(_ seconds: Double?) {
+        let bucket = seconds.map(ConnectionTelemetry.latencyBucket) ?? ConnectionTelemetry.timeoutBucket
+        bump { $0.commandLatency[bucket, default: 0] += 1 }
+    }
+
     /// Bucket a disconnect into a stable token. Keyed off `PumpSnapshot.connectionDetail` (set at the
     /// app boundary in P12 increment 6), so no new backend/protocol plumbing is needed. `nil` detail is a
     /// plain drop or a user-initiated disconnect ("dropped"); the known radio-down phrases map to their
