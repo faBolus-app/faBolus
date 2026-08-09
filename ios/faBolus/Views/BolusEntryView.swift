@@ -112,7 +112,9 @@ struct BolusEntryView: View {
     /// for a carb bolus, so the carbs recorded on the pump won't match the delivered units. Uses the same
     /// conservative 0.10 U limit as the remote divergence guard.
     private var carbOverrideWarning: String? {
-        guard mode == .carbs, carbs > 0, let rec = recommendation, rec.recommendedUnits > 0,
+        // §13 Rule-1 (A1): don't cite the calculator's number when it's sized off a hardcoded guess
+        // (`!displaysNumericDose`) — the "suggested %.2f U" would trace to an uncited literal.
+        guard mode == .carbs, carbs > 0, let rec = recommendation, rec.displaysNumericDose, rec.recommendedUnits > 0,
               abs(units - rec.recommendedUnits) > AppModel.remoteDivergenceLimitUnits else { return nil }
         return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
                       units, carbs, rec.recommendedUnits)
@@ -159,6 +161,12 @@ struct BolusEntryView: View {
     private var unitsStep: Binding<Double> {
         Binding(get: { units }, set: { unitsText = $0 <= 0 ? "" : Self.trimUnits($0) })
     }
+    /// §13 Rule-1 (A1) DRAFT copy, §13-pending — shown in the "Recommended" card when the pump's bolus
+    /// settings haven't been read yet, in place of a numeric dose sized off a hardcoded guess. Kept as a
+    /// single constant so the wording (which must pass §13 clinical review before any experimental
+    /// distribution) has one home; no control flow or dose logic depends on the string.
+    static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
+
     /// Compact units string: 1.00 → "1", 1.50 → "1.5", 0.05 → "0.05".
     private static func trimUnits(_ v: Double) -> String {
         var s = String(format: "%.2f", v)
@@ -222,26 +230,37 @@ struct BolusEntryView: View {
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
-                        LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
-                        if settings.showBolusReasoning {
-                            DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
-                                LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                                // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
-                                // age is unknown), via the shared `CalcInputFreshness` presentation — so the
-                                // term the dose subtracts reads the same as a stale glucose row.
-                                let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
-                                let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
-                                LabeledContent {
-                                    Text(String(format: "−%.2f U", rec.iobUnits))
-                                        .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
-                                } label: {
-                                    if iobStalePresent, let a = iobAge {
-                                        Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
-                                    } else {
-                                        Text("Active insulin (IOB)")
+                        if rec.displaysNumericDose {
+                            LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
+                            if settings.showBolusReasoning {
+                                DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
+                                    LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
+                                    // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
+                                    // age is unknown), via the shared `CalcInputFreshness` presentation — so the
+                                    // term the dose subtracts reads the same as a stale glucose row.
+                                    let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
+                                    let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
+                                    LabeledContent {
+                                        Text(String(format: "−%.2f U", rec.iobUnits))
+                                            .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
+                                    } label: {
+                                        if iobStalePresent, let a = iobAge {
+                                            Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
+                                        } else {
+                                            Text("Active insulin (IOB)")
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            // §13 Rule-1 (A1): the pump's bolus settings (carb ratio / correction factor /
+                            // target) have NOT been read this session, so any recommendation would be sized off
+                            // a hardcoded CR 10 / ISF 40 / target 110 guess — an uncited literal. Suppress the
+                            // numeric dose entirely (`rec.displaysNumericDose == false`) and prompt to wait for
+                            // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy). DRAFT
+                            // copy, §13-pending.
+                            Label(BolusEntryView.awaitingPumpSettingsCopy, systemImage: "hourglass")
+                                .font(.callout).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -553,7 +572,10 @@ struct BolusEntryView: View {
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
-        unitsText = rec.recommendedUnits > 0 ? Self.trimUnits(rec.recommendedUnits) : ""
+        // §13 Rule-1 (A1): never pre-fill the units field with a dose sized off a hardcoded CR/ISF/target
+        // guess (`!displaysNumericDose`) — that number traces to an uncited literal. The field stays empty;
+        // delivery is blocked anyway (CalcInputGate → .blockNoTherapy) until the pump reports its settings.
+        unitsText = (rec.displaysNumericDose && rec.recommendedUnits > 0) ? Self.trimUnits(rec.recommendedUnits) : ""
     }
 
     /// Immutable, confirmed bolus (audit C-04): captured once at confirm time; delivery uses exactly
