@@ -147,6 +147,20 @@ public final class AppSettings {
     /// themselves. **Default OFF.**
     public var modeReminders: Bool { didSet { d.set(modeReminders, forKey: "modeReminders") } }
 
+    /// §6/S8 B6: opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
+    /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
+    /// on the pump). **Default OFF**; enabling it is behind a warning + explicit confirm (safety-reducing).
+    /// It NEVER touches the app-only never-suppressible safety trio (pump disconnect / CGM data loss /
+    /// bolus reconciliation) — those post on separate paths. A LOCAL device pref: deliberately NOT backed
+    /// up and NOT iCloud-synced (a synced value must not silently silence alarms on another device).
+    public var suppressMirroredPumpAlarms: Bool { didSet { d.set(suppressMirroredPumpAlarms, forKey: "suppressMirroredPumpAlarms") } }
+    /// §6/S8 B6: use iOS **Critical Alerts** (which alert even under Do Not Disturb / the ringer switch)
+    /// for the never-suppressible safety notifications — WHEN the app holds the critical-alerts entitlement;
+    /// it degrades gracefully to a normal notification when the entitlement isn't granted. Defaults **ON for
+    /// a Mobi** (screenless — the phone is the primary annunciator) and OFF otherwise, until the user sets
+    /// it explicitly. Local device pref: not backed up / iCloud-synced.
+    public var criticalAlertsEnabled: Bool { didSet { d.set(criticalAlertsEnabled, forKey: "criticalAlertsEnabled") } }
+
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
     /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
     /// cost. Unlike the Apple Watch / Garmin links (bound to your own paired device, not discoverable
@@ -415,6 +429,9 @@ public final class AppSettings {
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
+        suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
+        // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
+        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
         remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
