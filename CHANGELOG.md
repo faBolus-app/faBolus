@@ -54,6 +54,15 @@ insulin**) is unchanged.
   a URL+version dependency, and the in-progress M1 driver depends on path-consumption. Declared here per
   the plan rather than silently satisfied by the local path. See `BRANCHES.md` §1.3.
 
+### Accepted gaps (owner decision 2026-08-09)
+- **§2.1(7) validated-firmware WRITE gate — NOT built (accepted).** No general firmware-version
+  write-allowlist was added across therapy writes. Pump capabilities are already derived from the pump's
+  own op-79 feature bitmask (narrow-only), so an unsupported write is refused at the capability funnel and
+  NACKed by the pump; and the disposition is **NO-GO for real insulin** (saline bench). The Control-IQ
+  config compatibility pre-flight (`setControlIQ`, P14 S11) is the one firmware/CIQ-version check that IS
+  enforced. Recorded (not silently skipped); reconsider under §13 if real-insulin distribution is pursued.
+  Authoritative record: `faBolus-internal/REMEDIATION.md` ("Accepted gaps").
+
 ### Baseline pointers advanced since 0.1.0 (development, not yet cut as a release)
 - `safe-baseline/2026-08-04` — P13a-1 capability channel (`supportsRemoteAlertDismiss`).
 - `safe-baseline/2026-08-06-p14` — P14 complete (S1–S12) + P15 partial.
