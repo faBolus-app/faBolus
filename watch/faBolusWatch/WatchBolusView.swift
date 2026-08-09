@@ -9,6 +9,9 @@ struct WatchBolusView: View {
     @Bindable var model: WatchModel
     @Environment(\.dismiss) private var dismiss
 
+    // N12 (Dynamic Type): the big amount readout scales instead of a fixed 32 pt.
+    @ScaledMetric(relativeTo: .largeTitle) private var amountFontSize: CGFloat = 32
+
     private enum Mode: String { case carbs, units }
     @State private var mode: Mode = .carbs
     @State private var modeInit = false
@@ -88,6 +91,9 @@ struct WatchBolusView: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(model.isGlucoseStale ? .secondary : .primary)
+                    // N12: one spoken element; "stale" injected when the reading is de-emphasized.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(bolusGlucoseLabel(g))
                 }
 
                 // DIF-ux: the active-insulin the estimate subtracts, greyed + aged when the host couldn't
@@ -101,6 +107,9 @@ struct WatchBolusView: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(model.isIobStale ? .secondary : .primary)
+                    // N12: one spoken element; "stale" injected when the IOB read is de-emphasized.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(bolusIobLabel)
                 }
 
                 // DIF-ux pre-warn (carbs mode): the estimate rides on last-known IOB / therapy the host
@@ -112,11 +121,15 @@ struct WatchBolusView: View {
                 }
 
                 Text(amountLabel)
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .font(.system(size: amountFontSize, weight: .bold, design: .rounded))
+                    .lineLimit(1).minimumScaleFactor(0.5)
                     .foregroundStyle(.indigo)
                     .focusable()
                     .digitalCrownRotation($amount, from: 0, through: maxAmount, by: step,
                                           sensitivity: .medium, isContinuous: false)
+                    // N12: the crown-adjustable amount reads as an adjustable value ("Carbs, 30 g").
+                    .accessibilityLabel(isCarbs ? "Carbs, grams" : "Bolus, units")
+                    .accessibilityValue(amountLabel)
                 Text("Turn crown to set").font(.caption2).foregroundStyle(.secondary)
                 if let u = estUnits {
                     Text(String(format: "≈ %.2f U", u)).font(.caption).foregroundStyle(.secondary)
@@ -127,6 +140,7 @@ struct WatchBolusView: View {
                 }
                 .tint(.indigo)
                 .disabled(!gate.canBolus)
+                .accessibilityLabel("Bolus \(amountLabel)")
 
                 if let m = blockMessage {
                     Text(m).font(.caption2).foregroundStyle(.orange)
@@ -227,6 +241,24 @@ struct WatchBolusView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(mode == m ? .indigo : .gray.opacity(0.4))
+        // N12: name the mode and mark the active one selected (otherwise conveyed only by tint).
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(mode == m ? .isSelected : [])
+    }
+
+    /// N12: spoken description of the bolus-screen glucose line, with "stale" when de-emphasized.
+    private func bolusGlucoseLabel(_ g: Int) -> String {
+        var parts = ["Glucose \(g)"]
+        if !model.isGlucoseStale { parts.append(model.trend) } else { parts.append("stale") }
+        if let age = model.ageLabel { parts.append(age) }
+        return parts.joined(separator: ", ")
+    }
+    /// N12: spoken description of the bolus-screen active-insulin line, with "stale" when de-emphasized.
+    private var bolusIobLabel: String {
+        var parts = [String(format: "Active insulin %.2f units", model.iobUnits)]
+        if model.isIobStale { parts.append("stale") }
+        if let a = model.iobAgeLabel { parts.append(a) }
+        return parts.joined(separator: ", ")
     }
 
     private func deliver() {

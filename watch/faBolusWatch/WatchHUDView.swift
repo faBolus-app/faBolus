@@ -6,6 +6,8 @@ import faBolusCore
 struct WatchGlanceView: View {
     @Bindable var model: WatchModel
     @Binding var showBolus: Bool
+    // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
+    @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
     var body: some View {
         ScrollView {
@@ -18,7 +20,8 @@ struct WatchGlanceView: View {
                         if model.glucose != nil, present != .hidden {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text(model.displayGlucose)
-                                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                                    .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
+                                    .lineLimit(1).minimumScaleFactor(0.5)
                                     .foregroundStyle(watchGlucoseColor(model.glucose, stale: stale))
                                 Text(model.trend).font(.title2)
                                     .foregroundStyle(stale ? .gray : .primary)
@@ -28,17 +31,25 @@ struct WatchGlanceView: View {
                                 .fontWeight(stale ? .semibold : .regular)
                                 .foregroundStyle(stale ? .orange : .secondary)
                         } else {
-                            Text("—").font(.system(size: 44, weight: .bold, design: .rounded))
+                            Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
+                                .lineLimit(1).minimumScaleFactor(0.5)
                             Text(model.glucose == nil ? "mg/dL" : "no recent CGM")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
+                    // N12: read the glucose block as one element — "Glucose 124, ↑, 2 min ago", with
+                    // "stale" injected when de-emphasized (grey is otherwise the only stale cue).
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(glanceGlucoseLabel(now: ctx.date))
                 }
 
                 HStack(spacing: 12) {
                     Label(String(format: "%.2f U", model.iobUnits), systemImage: "syringe")
                     Label("\(Int(model.reservoirUnits)) U", systemImage: "drop")
                 }.font(.caption2).foregroundStyle(.secondary)
+                    // N12: the two icon-only Labels read raw values; combine into a spoken row.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Active insulin \(String(format: "%.2f", model.iobUnits)) units, reservoir \(Int(model.reservoirUnits)) units")
 
                 if !model.alerts.isEmpty {
                     Label("\(model.alerts.count) alert\(model.alerts.count == 1 ? "" : "s")",
@@ -50,6 +61,7 @@ struct WatchGlanceView: View {
                       systemImage: model.reachable ? "iphone" : "iphone.slash")
                     .font(.caption2)
                     .foregroundStyle(model.reachable ? .green : .orange)
+                    .accessibilityLabel(model.reachable ? "iPhone connected" : "iPhone out of range")
 
                 if model.reachable && !model.pumpConnected {
                     Label("Pump not connected", systemImage: "wifi.slash")
@@ -61,9 +73,22 @@ struct WatchGlanceView: View {
                         .tint(.indigo)
                         // Needs both the phone link AND the pump actually connected.
                         .disabled(!model.reachable || !model.pumpConnected)
+                        .accessibilityLabel("Bolus")
                 }
             }
             .padding(.top, 4)
         }
+    }
+
+    /// N12: spoken description of the glance glucose block, including "stale" when de-emphasized.
+    private func glanceGlucoseLabel(now: Date) -> String {
+        let present = GlucoseFreshness.presentation(of: model.glucoseDate, now: now)
+        guard model.glucose != nil, present != .hidden else {
+            return model.glucose == nil ? "Glucose unavailable" : "No recent CGM"
+        }
+        var parts = ["Glucose \(model.displayGlucose)", model.trend]
+        if present == .stale { parts.append("stale") }
+        if let d = model.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
+        return parts.joined(separator: ", ")
     }
 }

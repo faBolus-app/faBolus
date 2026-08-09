@@ -10,6 +10,12 @@ struct StatusRingView: View {
     /// feed is live, so nothing extra is drawn (keeps the ring clean in the common case).
     var failover: (name: String, reason: String)? = nil
 
+    // N12 (Dynamic Type): the big glucose number and the ring frame scale with the user's text-size
+    // setting (up to the accessibility sizes), instead of a fixed 44 pt / 180 pt that clips or looks
+    // tiny for low-vision users. `relativeTo: .largeTitle` ties both to the same scale curve.
+    @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var ringSize: CGFloat = 180
+
     var body: some View {
         ZStack {
             Circle()
@@ -27,7 +33,7 @@ struct StatusRingView: View {
                 content(now: context.date)
             }
         }
-        .frame(width: 180, height: 180)
+        .frame(width: ringSize, height: ringSize)
     }
 
     /// A stale reading is shown but de-emphasized (gray) with its age called out — "old is worse
@@ -39,7 +45,8 @@ struct StatusRingView: View {
             if let g = snapshot.glucose, present != .hidden {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(g)")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
+                        .lineLimit(1).minimumScaleFactor(0.5)
                         .foregroundStyle(AppTheme.glucoseColor(g, stale: stale))
                     Text(snapshot.trend).font(.title2)
                         .foregroundStyle(stale ? AppTheme.stale : .primary)
@@ -53,7 +60,8 @@ struct StatusRingView: View {
                 }
             } else {
                 // No reading, or past the "hide" delay → show no value.
-                Text("—").font(.system(size: 44, weight: .bold, design: .rounded))
+                Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
+                    .lineLimit(1).minimumScaleFactor(0.5)
                 Text(snapshot.glucose == nil ? "mg/dL" : "no recent CGM")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -82,5 +90,31 @@ struct StatusRingView: View {
                     .accessibilityHint(f.reason)
             }
         }
+        // N12 (VoiceOver): the whole ring reads as ONE element — "Glucose 124 mg/dL, ↑, 2 min ago,
+        // Connected" — rather than five separate swipe stops. `.ignore` (not `.combine`) so the label
+        // reads a proper sentence with the word "Glucose" up front and the word "stale" injected when
+        // the reading is de-emphasized (a signal that is otherwise conveyed only by the grey color).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yLabel(now: now))
+        .accessibilityHint(failover?.reason ?? "")
+    }
+
+    /// N12: the spoken description of the ring, mirroring what's drawn. Includes "stale" whenever the
+    /// reading is de-emphasized so a VoiceOver user gets the same "not current" cue the grey color gives.
+    private func a11yLabel(now: Date) -> String {
+        let present = GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
+        var parts: [String] = []
+        if let g = snapshot.glucose, present != .hidden {
+            parts.append("Glucose \(g) mg/dL")
+            parts.append(snapshot.trend)
+            if present == .stale { parts.append("stale") }
+            if let d = snapshot.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
+        } else {
+            parts.append(snapshot.glucose == nil ? "Glucose unavailable" : "No recent CGM")
+        }
+        parts.append(snapshot.connection.rawValue)
+        if let detail = snapshot.connectionDetail { parts.append(detail) }
+        if let f = failover { parts.append("via \(f.name)") }
+        return parts.joined(separator: ", ")
     }
 }

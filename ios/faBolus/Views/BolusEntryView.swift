@@ -85,6 +85,10 @@ struct BolusEntryView: View {
     @State private var calcInputBlocked = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
+    /// N12: drives the size-gated `.fixedSize()` on the compact carbs/units fields — kept at normal text
+    /// sizes (so the one-glyph field + big tap target stays), dropped at accessibility sizes where a
+    /// fixed width would clip the digits.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// BG field binding that flags a user edit as `.manual` (auto-fills set `bg` directly + mark `.cgm`).
     private var bgField: Binding<String> {
@@ -189,18 +193,22 @@ struct BolusEntryView: View {
                         // row space used to miss. Visuals are unchanged; only the hit area grows.
                         HStack(spacing: 6) {
                             TextField("0", text: $carbsText)
-                                .keyboardType(.numberPad).fixedSize()
+                                .keyboardType(.numberPad)
+                                .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
                                 .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
+                                .accessibilityLabel("Carbs, grams")
                             Text("g carbs").foregroundStyle(.secondary)
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { focus = .carbs }
                         Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
+                            .accessibilityLabel("Carbs")
                     }
                     LabeledContent("Blood glucose") {
                         TextField("mg/dL", text: bgField).keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
+                            .accessibilityLabel("Blood glucose, mg/dL")
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { focus = .bg }
@@ -246,21 +254,26 @@ struct BolusEntryView: View {
                         Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                             HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
                         }.buttonStyle(.borderedProminent).tint(.red)
+                        .accessibilityLabel("Cancel bolus")
                     }
                 } else {
                     HStack(spacing: 6) {
                         // Enlarged tap target (see the carbs field) — visuals unchanged.
                         HStack(spacing: 6) {
                             TextField("0", text: $unitsText)
-                                .keyboardType(.decimalPad).fixedSize()
+                                .keyboardType(.decimalPad)
+                                .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
                                 .font(.title3.weight(.semibold)).focused($focus, equals: .units)
                                 .foregroundStyle(overMax ? AppTheme.low : .primary)
+                                .accessibilityLabel("Bolus, units")
+                                .accessibilityValue(unitsText.isEmpty ? "0 units" : "\(unitsText) units")
                             Text("U").foregroundStyle(.secondary)
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { focus = .units }
                         Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
+                            .accessibilityLabel("Bolus units")
                     }
                     // §11 + Addendum B awareness: units mode showed NO CGM value/age (the readout lives in
                     // the carbs Entry section). A user dosing by units off a stale reading they mentally
@@ -311,6 +324,8 @@ struct BolusEntryView: View {
                     }
                     .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
                     .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
+                    // N12: the button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
+                    .accessibilityLabel(preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
                 }
             }
 
@@ -328,11 +343,14 @@ struct BolusEntryView: View {
                     }
                     .buttonStyle(.bordered).tint(AppTheme.insulin)
                     .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
+                    .accessibilityLabel("Deliver extended \(String(format: "%.2f", units)) units")
                 }
             }
         }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
+        // N12 (Dynamic Type): scale up to the largest accessibility text size.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         .onAppear {
             if !modeInitialized {
                 mode = model.capabilities.supportsCarbEntry ? settings.defaultBolusMode : .units
@@ -698,5 +716,14 @@ struct BolusEntryView: View {
         } else {
             dismiss()
         }
+    }
+}
+
+private extension View {
+    /// N12: apply `.fixedSize()` (compact one-glyph field) at normal text sizes, but NOT at accessibility
+    /// sizes — where a fixed width clips the digits. Presentation-only: the default-size layout is
+    /// unchanged; only accessibility sizes let the field grow.
+    @ViewBuilder func compactFixedSize(_ isAccessibility: Bool) -> some View {
+        if isAccessibility { self } else { self.fixedSize() }
     }
 }
