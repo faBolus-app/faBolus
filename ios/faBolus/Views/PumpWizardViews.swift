@@ -270,13 +270,15 @@ struct ControlIQSettingsView: View {
     @State private var tdi: Double = 40
     @State private var busy = false
     @State private var loaded = false
+    /// C1 (§2.4): the pump's Control-IQ family name (Control-IQ vs Control-IQ+), with a generic fallback.
+    private var ciq: String { model.snapshot.controlIQBrandName }
 
     var body: some View {
         Form {
             Section {
-                Toggle("Control-IQ closed loop", isOn: $enabled)
+                Toggle("\(ciq) closed loop", isOn: $enabled)
             } footer: {
-                Text("Turning Control-IQ off stops automatic basal adjustments. Weight and total daily insulin are used by the algorithm.")
+                Text("Turning \(ciq) off stops automatic basal adjustments. Weight and total daily insulin are used by the algorithm.")
             }
             Section("Weight") {
                 Stepper(value: $weightLbs, in: 40...400, step: 1) { Text("\(Int(weightLbs)) lb") }
@@ -285,7 +287,7 @@ struct ControlIQSettingsView: View {
                 Stepper(value: $tdi, in: 1...300, step: 1) { Text("\(Int(tdi)) U/day") }
             }
             Section {
-                Button { save() } label: { Label(busy ? "Saving…" : "Save Control-IQ settings", systemImage: "checkmark.circle") }
+                Button { save() } label: { Label(busy ? "Saving…" : "Save \(ciq) settings", systemImage: "checkmark.circle") }
                     .disabled(busy || configBlockReason != nil)
             } footer: {
                 // P14 S11: if this pump can't take a remote Control-IQ config, say so up front and disable
@@ -294,7 +296,7 @@ struct ControlIQSettingsView: View {
             }
             if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
         }
-        .navigationTitle("Control-IQ")
+        .navigationTitle(ciq)
         .disabled(!model.pumpReady)
         .task {
             await model.refreshControlIQSettings()

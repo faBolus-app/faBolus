@@ -102,4 +102,17 @@ struct ControllerDescriptorTests {
         #expect(snap.controllerDescriptor == .controlIQPlus)
         #expect(snap.controllerDescriptor.hasController)
     }
+
+    /// C1 (§2.4) — `controlIQBrandName` renders the exact variant when known and the GENERIC "Control-IQ"
+    /// as a fallback for the pre-op-79 window (variant still `.none`, `displayName == ""`), so a
+    /// Control-IQ-capability-gated section never shows a blank brand.
+    @Test func controlIQBrandNameNamesTheVariantWithAGenericFallback() {
+        var snap = PumpSnapshot()
+        #expect(snap.controlIQBrandName == "Control-IQ")          // .none ⇒ generic fallback (never "")
+        snap.controllerVariant = .controlIQ
+        #expect(snap.controlIQBrandName == "Control-IQ")
+        snap.controllerVariant = .controlIQPro
+        #expect(snap.controlIQBrandName == "Control-IQ+")         // the exact variant when known
+        #expect(!snap.controlIQBrandName.isEmpty)
+    }
 }
