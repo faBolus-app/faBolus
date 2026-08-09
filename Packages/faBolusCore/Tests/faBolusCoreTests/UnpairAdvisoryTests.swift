@@ -33,4 +33,17 @@ struct UnpairAdvisoryTests {
         #expect(UnpairAdvisory.requiresChargingBaseToRepair(
             UnpairAdvisory.resolvedModel(snapshotModel: .unknown, storedIsMobi: true)))
     }
+
+    /// A4 (§2.2.3, owner 2026-08-09): the unpair flow gates on a backup-or-skip choice BEFORE it completes.
+    /// Pin the two-step ordering (backup choice always precedes the confirm) and that the prompt copy is
+    /// present — the invariant the two-stage SwiftUI flow implements.
+    @Test func unpairFlowOffersBackupBeforeTheConfirm() {
+        #expect(UnpairAdvisory.steps == [.backupChoice, .confirm])
+        #expect(UnpairAdvisory.steps.first == .backupChoice)   // backup is offered first — can't be skipped silently
+        #expect(UnpairAdvisory.steps.last == .confirm)
+        #expect(!UnpairAdvisory.backupPromptTitle.isEmpty)
+        #expect(UnpairAdvisory.backupPromptMessage.localizedCaseInsensitiveContains("back"))
+        #expect(!UnpairAdvisory.backUpNowLabel.isEmpty)
+        #expect(UnpairAdvisory.skipBackupLabel.localizedCaseInsensitiveContains("skip"))
+    }
 }
