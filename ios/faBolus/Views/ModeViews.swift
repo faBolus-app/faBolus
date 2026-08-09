@@ -6,6 +6,12 @@ import faBolusCore
 // §13 NOTICE: every user-facing string in this file is DRAFT and is experimental-distribution surface —
 // it must pass clinical review before an `experimental` build is distributed (BRANCHES.md §13). The
 // mechanism (ModeStore) is copy-agnostic.
+//
+// P16 F6 (N13) — localization SEED: this file's mode/Objectives copy is the first slice backed by the
+// app's String Catalog (`Localizable.xcstrings`). The SwiftUI `Text("…")`/`Button("…")`/`Label("…")`
+// literals below already localize via `LocalizedStringKey`; their keys are seeded in the catalog. The
+// mode descriptions route through `ModeCopy` (`String(localized:)`). English wording is UNCHANGED — the
+// seed proves the pipeline, it does not re-word anything, and the §13 gate above is unaffected.
 
 /// First-run overlay. Everyone starts in Simple (owner-locked); this simply explains that and dismisses.
 /// Presented once (gated on `ModeStore.hasCompletedOnboarding`), never interactively dismissable so the
@@ -54,13 +60,9 @@ struct ModeSettingsView: View {
         }
     }
 
-    private func blurb(_ mode: AppMode) -> String {
-        switch mode {
-        case .simple:   return "Just the essentials: glucose and bolus."
-        case .standard: return "Adds suspend/resume, activity (Sleep/Exercise) modes, and display customization."
-        case .advanced: return "Adds temp basal, profiles, Control-IQ settings, cartridge & fill, and pump limits — features that change therapy."
-        }
-    }
+    // P16 F6 (N13): the mode descriptions now resolve through the String Catalog (see `ModeCopy` /
+    // `Localizable.xcstrings`). English values are unchanged; this is a localization-mechanism seed.
+    private func blurb(_ mode: AppMode) -> String { ModeCopy.description(mode) }
 
     var body: some View {
         Form {
