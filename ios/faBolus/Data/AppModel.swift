@@ -1633,6 +1633,14 @@ public final class AppModel {
         // non-Control-IQ pump has none) with a plain reason, rather than issuing a write it silently
         // rejects. Gated on the authoritative remote-config capability, NOT on `controllerVariant` (which
         // is `.none` until the feature bits are read — see `configBlockReason`).
+        //
+        // §2.1(7) ACCEPTED GAP (owner decision 2026-08-09, item 4): this Control-IQ compat check is the ONLY
+        // firmware-version write-gate. A GENERAL validated-firmware write-allowlist across every therapy
+        // write was deliberately NOT built — pump capabilities are already derived from the pump's own op-79
+        // bitmask (narrow-only), so an unsupported write is refused at the capability funnel and NACKed by the
+        // pump, and the standing disposition is saline-bench NO-GO for real insulin. Recorded in
+        // faBolus-internal/REMEDIATION.md ("Accepted gaps"); reconsider if real-insulin distribution is ever
+        // pursued (§13).
         if let reason = ControlIQPrecondition.configBlockReason(
             supportsControlIQConfig: capabilities.supportsControlIQSettings,
             controllerVariant: snapshot.controllerVariant) {
