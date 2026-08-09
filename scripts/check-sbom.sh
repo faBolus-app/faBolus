@@ -26,8 +26,26 @@ for dir in Packages/*/; do
   esac
 done
 
+# App-tree ported/adapted source (§3.1 / plan Q4). The Packages/* loop above cannot see the app target,
+# so a CGM reader copied/derived from an upstream could ship un-attributed (exactly what happened to
+# XDripAppGroupSource). Scan the app tree for a `Ported from` / `Adapted from` attribution comment and
+# require the file's basename to appear in $SBOM WITH a recognizable SPDX/license token. Deliberately
+# narrow to those two markers (NOT "derived from", which legitimately describes many pump-derived values)
+# to keep false positives out; a genuine port must carry the marker AND an SBOM row.
+LICENSE_RE='MIT|Apache-2\.0|Apache 2|BSD|ISC|MPL|GPL|LicenseRef|independent Swift impl'
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  base="$(basename "$f")"
+  row="$(grep -F "$base" "$SBOM" || true)"
+  if [[ -z "$row" ]]; then
+    echo "MISSING SBOM ENTRY: ported/adapted app-tree file $f ($base) is not listed in $SBOM"; fail=1
+  elif ! grep -qE "$LICENSE_RE" <<<"$row"; then
+    echo "MISSING LICENSE: the $SBOM row for $base carries no recognizable SPDX/license token"; fail=1
+  fi
+done < <(grep -rlE '(^|[^[:alnum:]])[Pp]orted from|(^|[^[:alnum:]])[Aa]dapted from' ios Shared 2>/dev/null | grep -vE '/[^/]*Tests?/|Tests?\.swift' || true)
+
 if [[ "$fail" -ne 0 ]]; then
   echo "SBOM check FAILED — reconcile the component with $SBOM (audit L-01)." >&2
   exit 1
 fi
-echo "SBOM check passed: all Packages/* accounted for in $SBOM."
+echo "SBOM check passed: all Packages/* + app-tree ported source accounted for in $SBOM."

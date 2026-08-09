@@ -1,3 +1,11 @@
+//  XDripAppGroupSource.swift
+//
+//  Ported from JohanDegraeve/xdrip-client-swift, used under the MIT License. That project descends from
+//  the xDripG5 / CGMBLEKit lineage; the license's original copyright line is:
+//      Copyright (c) 2016 Mark Wilson   (MIT License)
+//  faBolus's reader is a passive, read-only consumer of xDrip's documented "Share to Loop" App-Group
+//  JSON contract. Attribution: NOTICE.md · docs/SBOM.md · THIRD_PARTY.md (§3.1 / plan Q4).
+//
 import Foundation
 import faBolusCore
 

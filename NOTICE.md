@@ -40,6 +40,23 @@ The Dexcom Share follower core in `Packages/ShareClient` is vendored from
 **[LoopKit/dexcom-share-client-swift](https://github.com/LoopKit/dexcom-share-client-swift)** (MIT).
 The reproduced license is in `Packages/ShareClient/LICENSE`.
 
+## XDripAppGroupSource (xDrip4iOS "Share to Loop" App-Group reader)
+
+The xDrip App-Group glucose reader in `ios/faBolus/Data/Sources/XDripAppGroupSource.swift` is ported
+from **[JohanDegraeve/xdrip-client-swift](https://github.com/JohanDegraeve/xdrip-client-swift)**, used
+under the MIT License. That project descends from the xDripG5 / CGMBLEKit lineage; its license's
+original copyright is **© 2016 Mark Wilson**. faBolus's reader is passive and read-only, consuming
+xDrip's documented "Share to Loop" App-Group JSON contract.
+
+## LibreLinkUpSource (unofficial LibreLinkUp follower)
+
+The LibreLinkUp follower in `ios/faBolus/Data/Sources/LibreLinkUpSource.swift` is an **independent
+Swift implementation** of the unofficial LibreLinkUp REST API. The endpoint/header behaviour was
+documented by the community projects
+**[nightscout-librelink-up](https://github.com/timoschlueter/nightscout-librelink-up)** (MIT) and
+**libre-link-unofficial-api**; faBolus credits them for that API knowledge but copies no upstream
+source (a clean reimplementation, so no upstream code license attaches).
+
 See `docs/SBOM.md` for the full machine-checked component inventory (audit L-01).
 
 ## Loop / LoopDocs (design + documentation)
