@@ -133,5 +133,7 @@ struct MenuBarContentView: View {
                 Rectangle().fill(Color(nsColor: .windowBackgroundColor)).ignoresSafeArea()
             }
         }
+        // N12 (Dynamic Type): scale up to the largest accessibility text size in the popover.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
     }
 }

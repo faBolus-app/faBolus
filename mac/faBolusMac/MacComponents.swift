@@ -7,6 +7,8 @@ import faBolusCore
 /// Big current glucose + trend arrow, grayed/aged when stale, plus a connection note.
 struct MacStatusView: View {
     var model: MacRemoteModel
+    // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
+    @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
     var body: some View {
         VStack(spacing: 4) {
@@ -14,7 +16,8 @@ struct MacStatusView: View {
                 // Past the phone's "hide after" age, hide the value ("—") like the phone/watch,
                 // rather than showing a stale number. Between stale and hide it shows greyed.
                 Text(model.glucoseHidden ? "—" : model.displayGlucose)
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
+                    .lineLimit(1).minimumScaleFactor(0.5)
                     .foregroundStyle(model.isGlucoseStale ? Color.secondary : MacTheme.glucoseColor(model.glucose))
                 if !model.glucoseHidden {
                     Text(model.trend).font(.system(size: 28))
@@ -31,6 +34,25 @@ struct MacStatusView: View {
                 Text(model.connection).font(.caption2).foregroundStyle(.secondary)
             }
         }
+        // N12: read the status block as one element — "Glucose 124, ↑, 2 min ago, Connected", with
+        // "stale" injected when the value is de-emphasized (grey is otherwise the only stale cue).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(statusA11yLabel)
+    }
+
+    /// N12: spoken description of the Mac status block, including "stale" when de-emphasized.
+    private var statusA11yLabel: String {
+        var parts: [String] = []
+        if model.glucoseHidden { parts.append("Glucose unavailable") }
+        else {
+            parts.append("Glucose \(model.displayGlucose)")
+            parts.append(model.trend)
+        }
+        if model.isGlucoseStale { parts.append("stale") }
+        if let age = model.ageLabel { parts.append(age) }
+        if !model.reachable { parts.append("iPhone not reachable") }
+        else if !model.connection.isEmpty { parts.append(model.connection) }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -61,6 +83,10 @@ struct MacStatusPills: View {
         }
         .padding(.vertical, 6).padding(.horizontal, 10)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        // N12: one element reading "<title>, <value>" (+ "stale" when greyed — the orange tint is
+        // otherwise the only stale cue).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(stale ? "\(shownTitle), \(value), stale" : "\(shownTitle), \(value)")
     }
 }
 
@@ -166,8 +192,17 @@ struct MacDetailsView: View {
                     Text(r.value).font(.caption.monospacedDigit()).fontWeight(.medium)
                         .foregroundStyle(r.stale ? .orange : .primary)
                 }
+                // N12: each detail row reads as one element — "Active insulin, 1.23 U" (+ "stale").
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(macRowLabel(r))
             }
         }
+    }
+
+    /// N12: spoken description of a details row, with age + "stale" when the calc input is de-emphasized.
+    private func macRowLabel(_ r: Row) -> String {
+        let title = (r.stale && r.age != nil) ? "\(r.title) · \(r.age!)" : r.title
+        return r.stale ? "\(title), \(r.value), stale" : "\(title), \(r.value)"
     }
 }
 
@@ -271,6 +306,7 @@ struct MacBolusEntryView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .onChange(of: mode) { _, _ in amount = nil }
+                .accessibilityLabel("Bolus mode")
 
                 // Type a value directly, or use the − / + stepper. Both edit the same amount.
                 HStack(spacing: 8) {
@@ -280,9 +316,11 @@ struct MacBolusEntryView: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 84)
                         .onSubmit { if let a = amount { amount = min(max(0, a), maxV) } }
+                        .accessibilityLabel(isCarbs ? "Amount, grams" : "Amount, units")
                     Text(unitLabel).foregroundStyle(.secondary)
                     Stepper("", value: stepperBinding, in: 0...maxV, step: step)
                         .labelsHidden()
+                        .accessibilityLabel(isCarbs ? "Carbs" : "Bolus units")
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity)
@@ -301,6 +339,7 @@ struct MacBolusEntryView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canDeliver)
+                .accessibilityLabel(bolusButtonLabel)
             }
         }
         .onAppear { mode = model.display.defaultBolusMode }

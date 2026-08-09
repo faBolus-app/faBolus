@@ -28,10 +28,13 @@ struct DashboardView: View {
                                 Label(eating.message, systemImage: "fork.knife")
                                     .font(.subheadline).foregroundStyle(.orange)
                             }.buttonStyle(.plain)
+                            .accessibilityLabel(eating.message)
+                            .accessibilityHint("Opens bolus entry")
                             Spacer()
                             Button { model.dismissEatingNudge() } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                             }
+                            .accessibilityLabel("Dismiss eating nudge")
                         }
                         .padding().frame(maxWidth: .infinity)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -44,6 +47,7 @@ struct DashboardView: View {
                     if model.shouldShowLowPowerAdvisory {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "bolt.slash").foregroundStyle(.orange)
+                                .accessibilityHidden(true)
                             Text(LowPowerAdvisory.message)
                                 .font(.footnote)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -51,6 +55,7 @@ struct DashboardView: View {
                             Button { model.dismissLowPowerAdvisory() } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                             }.buttonStyle(.plain)
+                            .accessibilityLabel("Dismiss low power notice")
                         }
                         .padding().frame(maxWidth: .infinity)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -62,7 +67,9 @@ struct DashboardView: View {
                     if let pending = model.pendingApproval {
                         VStack(spacing: 6) {
                             HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
+                                .accessibilityElement(children: .combine)
                             Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
+                                .accessibilityLabel("Cancel pending approval")
                         }
                         .padding().frame(maxWidth: .infinity)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
@@ -72,6 +79,7 @@ struct DashboardView: View {
                         Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                             Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
                         }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
+                        .accessibilityLabel("Cancel bolus")
                     }
 
                     StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
@@ -110,6 +118,8 @@ struct DashboardView: View {
             .navigationTitle("faBolus")
             .navigationBarTitleDisplayMode(.inline)
         }
+        // N12 (Dynamic Type): let the dashboard scale up to the largest accessibility text size.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility5)
     }
 }
 
@@ -157,6 +167,8 @@ struct PumpDetailsCard: View {
             Text(value).fontWeight(.medium)
         }
         .font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
+        // N12: each detail row reads as one element — "Active insulin, 1.23 U".
+        .accessibilityElement(children: .combine)
         if !last { Divider().padding(.leading, 14) }
     }
 }

@@ -27,7 +27,8 @@ struct StatusPillsView: View {
             let iobStale = CalcInputFreshness.iobPresentation(of: snapshot.iobDate, now: now) == .stale
             pill(icon: "drop.fill", tint: iobStale ? AppTheme.low : AppTheme.insulin,
                  value: String(format: "%.2f U", snapshot.iobUnits),
-                 label: calcAgedLabel("Active Insulin", date: snapshot.iobDate, stale: iobStale, now: now))
+                 label: calcAgedLabel("Active Insulin", date: snapshot.iobDate, stale: iobStale, now: now),
+                 stale: iobStale)
         case "reservoir":
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
@@ -54,17 +55,20 @@ struct StatusPillsView: View {
             let thStale = therapyStale(now)
             pill(icon: "fork.knife", tint: thStale ? AppTheme.low : .orange,
                  value: snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—",
-                 label: calcAgedLabel("Carb ratio", date: snapshot.therapyParamsDate, stale: thStale, now: now))
+                 label: calcAgedLabel("Carb ratio", date: snapshot.therapyParamsDate, stale: thStale, now: now),
+                 stale: thStale)
         case "isf":
             let thStale = therapyStale(now)
             pill(icon: "arrow.down.right.circle", tint: thStale ? AppTheme.low : .purple,
                  value: snapshot.isf > 0 ? "\(snapshot.isf)" : "—",
-                 label: calcAgedLabel("ISF", date: snapshot.therapyParamsDate, stale: thStale, now: now))
+                 label: calcAgedLabel("ISF", date: snapshot.therapyParamsDate, stale: thStale, now: now),
+                 stale: thStale)
         case "target":
             let thStale = therapyStale(now)
             pill(icon: "target", tint: thStale ? AppTheme.low : AppTheme.inRange,
                  value: snapshot.targetBg > 0 ? "\(snapshot.targetBg)" : "—",
-                 label: calcAgedLabel("Target", date: snapshot.therapyParamsDate, stale: thStale, now: now))
+                 label: calcAgedLabel("Target", date: snapshot.therapyParamsDate, stale: thStale, now: now),
+                 stale: thStale)
         case "maxBolus":
             pill(icon: "gauge.with.dots.needle.67percent", tint: .teal,
                  value: String(format: "%.1f U", snapshot.maxBolusUnits), label: "Max bolus")
@@ -107,7 +111,7 @@ struct StatusPillsView: View {
         case .fresh:  value = age ?? "OK"; tint = AppTheme.inRange
         }
         return pill(icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-                    tint: tint, value: value, label: "CGM")
+                    tint: tint, value: value, label: "CGM", stale: present == .stale)
     }
 
     /// DIF-ux: whether the therapy params (CR/ISF/target — one shared op-115 stamp) are stale for display.
@@ -132,9 +136,12 @@ struct StatusPillsView: View {
         }
     }
 
-    private func pill(icon: String, tint: Color, value: String, label: String) -> some View {
+    private func pill(icon: String, tint: Color, value: String, label: String, stale: Bool = false) -> some View {
         HStack(spacing: 8) {
+            // N12: the tint-colored SF Symbol is decorative (the label/value already name the field),
+            // so it's hidden from VoiceOver to avoid reading the raw symbol name.
             Image(systemName: icon).foregroundStyle(tint)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(value).font(.subheadline.weight(.semibold))
                 Text(label).font(.caption2).foregroundStyle(.secondary)
@@ -144,5 +151,10 @@ struct StatusPillsView: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        // N12: one VoiceOver element reading "<label>, <value>" (the aged label already carries the
+        // "· N min ago" when stale). "stale" is appended so a greyed pill also SAYS it's stale — that
+        // state is otherwise conveyed only by the grey (AppTheme.low) tint.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(stale ? "\(label), \(value), stale" : "\(label), \(value)")
     }
 }
