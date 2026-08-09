@@ -1597,6 +1597,20 @@ public final class AppModel {
         recordClinicianEditIfChanged(key("targetBg"), before: beforeTarget.map(BackupValue.int), afterOnSuccess: .int(afterTarget))
     }
 
+    /// §2.1(2) B1(a): the per-field provenance for one profile segment, for the editor's origin badges.
+    /// Keyed by the SAME field names `recordSegmentEditIfChanged` writes (`basalRate`/`carbRatio`/`isf`/
+    /// `targetBg`). A field with no record is `.consensusDefault` (absence == consensus default, per
+    /// `StoredSettingChange`). Returns `nil` when the store failed closed (corrupt) — the UI then shows NO
+    /// badge rather than mislabeling every value as a consensus default. Pure read; never gates anything.
+    func segmentFieldProvenance(idpId: Int, startMinutes: Int) -> [String: SettingProvenance]? {
+        let outcome = settingChangeStore.loadOutcome()
+        if outcome.failedClosed { return nil }
+        func p(_ f: String) -> SettingProvenance {
+            outcome.log.provenance(.segment(idpId: idpId, startMinutes: startMinutes, field: f)) ?? .consensusDefault
+        }
+        return ["basalRate": p("basalRate"), "carbRatio": p("carbRatio"), "isf": p("isf"), "targetBg": p("targetBg")]
+    }
+
     // MARK: - P16 S3 (manual precedence for scheduled mode automation)
 
     /// When the user last changed the pump's activity/sleep mode BY HAND (from the Pump Control UI).

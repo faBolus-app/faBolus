@@ -15,6 +15,17 @@ public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
     case consensusDefault   // a published/guideline default the user never changed
     case clinicianSet       // set with clinical guidance (the §2.1 clinician tier)
     case selfSet            // the user set it themselves
+
+    /// §2.1(2) B1(a) — the SF Symbol paired with `ClinicianTierAck.label(for:)` so the provenance badge
+    /// carries a non-color cue too (a book for a published default, a stethoscope for clinician-set, a
+    /// person for self-set). Pure data; the view renders it via `Image(systemName:)`.
+    public var symbolName: String {
+        switch self {
+        case .consensusDefault: return "book.closed"
+        case .clinicianSet:     return "stethoscope"
+        case .selfSet:          return "person.fill"
+        }
+    }
 }
 
 /// Stable identity for a tracked therapy setting.
