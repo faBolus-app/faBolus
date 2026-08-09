@@ -27,7 +27,21 @@ struct CgmCredentialsView: View {
 
     @State private var testing = false
     @State private var results: [SourceResult] = []
-    @State private var savedNote = false
+
+    /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
+    /// "Test <name>" button label and the empty-state guidance.
+    private var selectedSourceName: String? {
+        guard let id = GlucoseSourceRegistry.selectedId() else { return nil }
+        return GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
+    }
+
+    /// E7: which sources the "Test" button exercises — ONLY the currently-selected fallback source (the
+    /// one the app will actually use), never the whole set. Empty when no fallback is chosen yet. Pure so
+    /// the selected-only contract is unit-testable without the SwiftUI view.
+    static func sourcesToTest(selectedId: String?) -> [String] {
+        guard let id = selectedId, !id.isEmpty else { return [] }
+        return [id]
+    }
 
     /// One method's save-&-test outcome, shown in the results list.
     private struct SourceResult: Identifiable {
@@ -111,16 +125,16 @@ struct CgmCredentialsView: View {
 
             Section {
                 Button {
-                    Task { await saveAndTestAll() }
+                    Task { await testSelected() }
                 } label: {
                     HStack {
                         Image(systemName: "checkmark.circle")
-                        Text(testing ? "Testing…" : "Save & test").fontWeight(.semibold)
+                        Text(testing ? "Testing…" : "Test \(selectedSourceName ?? "selected source")").fontWeight(.semibold)
                         Spacer()
                         if testing { ProgressView() }
                     }
                 }
-                .disabled(testing)
+                .disabled(testing || selectedSourceName == nil)
 
                 ForEach(results) { r in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -131,17 +145,20 @@ struct CgmCredentialsView: View {
                         }
                     }
                 }
-                if savedNote && results.isEmpty {
-                    Text("Saved. Enter credentials for a source above to test it.")
+                if selectedSourceName == nil {
+                    Text("Pick a fallback source above, then test it here. Credentials save automatically.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Saves credentials, then tries to pull a live reading from each source — the credential-free ones (Dexcom G7/G6 direct BLE, xDrip App Group) plus any you've entered logins for — so you can see which actually work. Then pick the one to use above. Direct-BLE sources need the sensor nearby and can take up to ~30 s.")
+                Text("Credentials save automatically. **Test** pulls a live reading from the fallback source you've selected above, so you can confirm just that one works. Direct-BLE sources (Dexcom G7/G6) need the sensor nearby and can take up to ~30 s.")
             }
         }
         .navigationTitle("CGM credentials & testing")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
+        // E7: no Save button — leaving this sub-view persists whatever was entered (and Test / "read
+        // transmitter ID" also save immediately), so credentials are never lost to a missed tap.
+        .onDisappear(perform: save)
     }
 
     private func load() {
@@ -176,25 +193,15 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 
-    private func filled(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-    /// Save all credentials, then test each source: build it, start it, and poll for a live reading,
-    /// appending a per-method result as each finishes. Always tests the **credential-free** sources
-    /// (Dexcom G7/G6 direct BLE, xDrip App Group); also tests the cloud sources you've entered logins
-    /// for. Direct-BLE sources need the sensor nearby and get a longer window.
-    @MainActor private func saveAndTestAll() async {
+    /// E7: save the entered credentials, then test ONLY the currently-selected fallback source (build it,
+    /// start it, and poll for a live reading) — not the whole set — so the test verifies the source the
+    /// app will actually fall back to. Direct-BLE sources (G7/G6) get a longer window (the sensor emits
+    /// only every ~5 min).
+    @MainActor private func testSelected() async {
         save()
-        testing = true; savedNote = true; results = []
+        testing = true; results = []
         defer { testing = false }
-        // Credential-free failovers first (the common case: "can my G7 pull values?"), then any
-        // cloud sources with credentials entered.
-        var toTest: [String] = ["dexcom-g7-ble", "xdrip-appgroup"]
-        if GlucoseSourceRegistry.selectedId() == "dexcom-g6-ble" || filled(g6TransmitterID) { toTest.append("dexcom-g6-ble") }
-        if filled(libreUser) && filled(librePass) { toTest.append("librelinkup") }
-        if filled(shareUser) && filled(sharePass) { toTest.append("dexcom-share") }
-        if filled(nsURL) { toTest.append("nightscout") }
-
-        for id in toTest {
+        for id in Self.sourcesToTest(selectedId: GlucoseSourceRegistry.selectedId()) {
             let name = GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
             guard let source = GlucoseSourceRegistry.make(id: id) else {
                 results.append(SourceResult(id: id, name: name, status: .fail, detail: "couldn't build source"))
