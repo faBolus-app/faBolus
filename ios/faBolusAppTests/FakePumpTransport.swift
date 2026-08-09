@@ -128,6 +128,28 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: ControlIQIOBResponse.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-57 `HomeScreenMirrorResponse` (9 bytes). Byte 0 is `cgmTrendIconId` (0 = the pump's explicit
+    /// **no arrow**; 2 = up, etc. — matching `CGMTrendIcon`). The pump's icon is authoritative, so a test
+    /// can pin that a later client-side derivation never overwrites it (E8). Byte 8 = `cgmDisplayData`.
+    static func homeScreenMirror(trendIconId: Int) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 9)
+        c[0] = UInt8(trendIconId)
+        c[8] = 1   // cgmDisplayData: the mirror carries live CGM display state
+        return frame(opCode: HomeScreenMirrorResponse.props.opCode, cargo: c, signed: false)
+    }
+
+    /// op-193 `CurrentEgvGuiDataV2Response` (8 bytes): a VALID reading (`egvStatusId` 1, mg/dL at offset 4)
+    /// plus a signed `trendRate` at offset 7 that the client-side derivation turns into an arrow. Used to
+    /// prove the derived arrow is only a cold-start bridge and never overwrites the pump's authoritative
+    /// HomeScreenMirror trend (E8). `trendRate` is 0.1 mg/dL/min units (30 ⇒ +3.0 ⇒ a rising arrow).
+    static func currentEgvV2(mgdl: Int, trendRate: Int) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 8)
+        let bg = le2(mgdl); c[4] = bg[0]; c[5] = bg[1]              // cgmReading (LE short)
+        c[6] = 1                                                    // egvStatusId = 1 → hasValidReading
+        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))   // signed trend rate
+        return frame(opCode: CurrentEgvGuiDataV2Response.props.opCode, cargo: c, signed: false)
+    }
+
     /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)
     /// resolved for the active profile+segment. `carbRatioMilliGramsPerUnit` = grams-per-unit × 1000 (so 10000
     /// ⇒ 10 g/U); `iobMilliunits` should match the op-109 value or the host's cross-check trips `iobStale`.
