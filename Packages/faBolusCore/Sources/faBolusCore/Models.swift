@@ -503,5 +503,14 @@ public struct BolusRecommendation: Sendable, Equatable {
     /// Age provenance of the two calc inputs (from the snapshot at compose time), for the UI/remote wire.
     public var iobDate: Date? = nil
     public var therapyParamsDate: Date? = nil
+    /// §13 Rule-1 DISPLAY gate. A recommendation is sized off a hardcoded CR/ISF/target guess whenever the
+    /// pump's bolus settings were never read this session (`therapyUnavailable`); any number derived from
+    /// that guess — the "Recommended dose", the carb+correction/IOB reasoning breakdown, an override-divergence
+    /// note, or a pre-filled units field — traces to an uncited literal (Rule 1: "every displayed number
+    /// traces to a pump read, a user entry, or a published constant"). It MUST NOT be displayed; the UI shows
+    /// a "waiting for the pump's settings" prompt instead. Delivery is already blocked in this case
+    /// (`CalcInputGate.decide` → `.blockNoTherapy`). A recommendation off real-but-STALE last-known therapy is
+    /// exempt (its numbers trace to real pump reads, just old — the legitimate warned-override case).
+    public var displaysNumericDose: Bool { !therapyUnavailable }
     public init() {}
 }

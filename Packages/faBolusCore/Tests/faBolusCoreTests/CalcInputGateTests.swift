@@ -95,4 +95,34 @@ import Testing
         // Equal → either.
         #expect(CalcInputGate.overrideDeliverUnits(baseline: 3.0, freshRecompute: 3.0) == 3.0)
     }
+
+    // MARK: - §13 Rule-1 (A1): DISPLAY gate — a dose sized off the hardcoded guess is never shown
+
+    @Test func hardcodedGuessSuppressesNumericDose() {
+        // op-115 never arrived → `therapyUnavailable` → the "recommendation" is sized off the hardcoded
+        // CR 10 / ISF 40 / target 110 guess (uncited literals). Its number MUST NOT be displayed (Rule 1:
+        // "every displayed number traces to a pump read, a user entry, or a published constant"). This is
+        // the compose-time sibling of `carbsUnverifiedNoTherapyBlocks`, which blocks *delivering* the guess.
+        var rec = BolusRecommendation()
+        rec.recommendedUnits = 3.0
+        rec.inputsVerified = false
+        rec.therapyUnavailable = true
+        #expect(rec.displaysNumericDose == false)
+    }
+
+    @Test func realButStaleOrVerifiedTherapyDisplays() {
+        // Real CR/ISF/target were read at some point (possibly stale) → the numbers trace to real pump
+        // reads, so they MAY display (the legitimate warned-override case). Only `therapyUnavailable` hides.
+        var stale = BolusRecommendation()
+        stale.recommendedUnits = 3.0
+        stale.inputsVerified = false
+        stale.therapyUnavailable = false
+        stale.therapyStale = true
+        #expect(stale.displaysNumericDose)
+        // The verified fresh case displays too.
+        var verified = BolusRecommendation()
+        verified.recommendedUnits = 2.5
+        verified.inputsVerified = true
+        #expect(verified.displaysNumericDose)
+    }
 }
