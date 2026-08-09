@@ -37,6 +37,17 @@ PumpX2Kit in turn vendors (see its own `NOTICE`):
 | pumpx2-oracle | jwoglom/pumpx2 (© James Woglom) | MIT | Reverse-engineered protocol reference + parity fixtures |
 | Mbed TLS | Mbed-TLS/mbedtls | `Apache-2.0 OR GPL-2.0` | EC-JPAKE pairing |
 
+## Ported / API-derived app-tree source (not a Package — lives in the app target)
+
+CGM feed readers that originate from a documented upstream. `check-sbom.sh` scans the app tree for a
+`Ported from` / `Adapted from` attribution comment and fails CI if such a file is not listed here with a
+license token (§3.1 / plan Q4).
+
+| Component | Upstream | License (SPDX) | Source | Usage |
+|---|---|---|---|---|
+| XDripAppGroupSource.swift | JohanDegraeve/xdrip-client-swift (© 2016 Mark Wilson) | MIT | `ios/faBolus/Data/Sources/XDripAppGroupSource.swift` | Passive reader of xDrip's "Share to Loop" App-Group JSON |
+| LibreLinkUpSource.swift | community LibreLinkUp API — timoschlueter/nightscout-librelink-up (MIT) + libre-link-unofficial-api | MIT (API knowledge; independent Swift impl, no upstream code copied) | `ios/faBolus/Data/Sources/LibreLinkUpSource.swift` | Independent Swift client of the unofficial LibreLinkUp REST API |
+
 ## Optional / credential-gated (not committed, not in the open-source build)
 
 | Component | Version | License (SPDX) | Notes |
