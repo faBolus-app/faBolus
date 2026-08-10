@@ -49,10 +49,18 @@ public struct RemoteBolusLedger: Codable, Sendable {
         /// "not sent" merely from a missing bolus id; a nonterminal record with `sentToPump == true` stays
         /// globally blocked (reconcile by id), while `false` proves pre-initiate (safe to auto-clear).
         var sentToPump: Bool = false
+        /// Addendum B (Option B): DURABLE provenance — true iff this dose's correction basis was the host's
+        /// OWN acknowledged stale CGM reading (the include-stale path). A pure audit sidecar: it is NOT part
+        /// of `doseKey`, never influences the conflict/replay/in-flight decision, and defaults false on a
+        /// carbs-only or fresh-reading dose (and on any ledger persisted before this field existed).
+        var usedIncludedStaleBG: Bool = false
 
-        init(doseKey: String, state: State) { self.doseKey = doseKey; self.state = state }
-        // Tolerant decode so a ledger persisted before `sentToPump` existed still loads (defaults false).
-        private enum K: String, CodingKey { case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump }
+        init(doseKey: String, state: State, usedIncludedStaleBG: Bool = false) {
+            self.doseKey = doseKey; self.state = state; self.usedIncludedStaleBG = usedIncludedStaleBG
+        }
+        // Tolerant decode so a ledger persisted before `sentToPump`/`usedIncludedStaleBG` existed still
+        // loads (both default false).
+        private enum K: String, CodingKey { case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump, usedIncludedStaleBG }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: K.self)
             doseKey = try c.decode(String.self, forKey: .doseKey)
@@ -62,6 +70,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
             deliveredUnits = try c.decodeIfPresent(Double.self, forKey: .deliveredUnits)
             bolusId = try c.decodeIfPresent(Int.self, forKey: .bolusId)
             sentToPump = try c.decodeIfPresent(Bool.self, forKey: .sentToPump) ?? false
+            usedIncludedStaleBG = try c.decodeIfPresent(Bool.self, forKey: .usedIncludedStaleBG) ?? false
         }
     }
 
@@ -92,8 +101,11 @@ public struct RemoteBolusLedger: Codable, Sendable {
         return "u:\(f(units))|c:\(f(carbsGrams))|bg:\(bgMgdl.map(String.init) ?? "-")"
     }
 
-    /// Record intent to deliver. Returns the decision the caller must honor.
-    public mutating func begin(peerId: String, requestId: String, doseKey: String) -> Decision {
+    /// Record intent to deliver. Returns the decision the caller must honor. `usedIncludedStaleBG` is a
+    /// DURABLE provenance sidecar only (Addendum B): it is stored on a freshly-created entry but plays NO
+    /// part in the decision — `doseKey`, conflict, replay, and in-flight logic are all unchanged.
+    public mutating func begin(peerId: String, requestId: String, doseKey: String,
+                               usedIncludedStaleBG: Bool = false) -> Decision {
         let k = key(peerId, requestId)
         if let e = entries[k] {
             if e.doseKey != doseKey { return .conflict }
@@ -105,7 +117,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
                 return .duplicateInFlight
             }
         }
-        entries[k] = Entry(doseKey: doseKey, state: .awaiting)
+        entries[k] = Entry(doseKey: doseKey, state: .awaiting, usedIncludedStaleBG: usedIncludedStaleBG)
         order.append(k)
         evictIfNeeded()
         return .proceed
@@ -174,6 +186,12 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     public func state(peerId: String, requestId: String) -> State? {
         entries[key(peerId, requestId)]?.state
+    }
+
+    /// Addendum B: whether this request's recorded dose used the host's acknowledged stale reading for its
+    /// correction basis (durable provenance; introspection helper). False for unknown/absent requests.
+    public func usedIncludedStaleBG(peerId: String, requestId: String) -> Bool {
+        entries[key(peerId, requestId)]?.usedIncludedStaleBG ?? false
     }
 
     /// Requests that were mid-flight when the process stopped: `delivering` or `indeterminate`. The host

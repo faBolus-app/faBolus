@@ -1,0 +1,290 @@
+import Testing
+import Foundation
+import faBolusCore
+@testable import faBolus
+
+/// Addendum B (Option B, PR-2) — HOST behavior for the explicit per-attempt include-stale intent.
+///
+/// These drive the REAL `AppModel` against the in-memory `MockBackend` (no BLE), exercising the dose-path
+/// change in `resolveRemoteDose`: when a remote sends the explicit `includeStaleBG` intent AND the host's
+/// OWN reading is genuinely stale-but-present AND equals the wire value, the host recomputes the correction
+/// from ITS OWN stale reading (real-not-modelled); otherwise it fails closed to carbs-only exactly as
+/// before. The host stays the single calculator — the wire `bgMgdl` is used ONLY for the equality gate,
+/// never as a dose input — and the FB-01 verified-inputs gate + the 0.10 U divergence guard run unchanged.
+///
+/// `MockBackend` seeds a reading 10 min old (stale, known age). `seedFreshGlucose(_:at:)` lets a test pin a
+/// KNOWN stale value (`at: 10 min ago`) or a fresh one (`at: now`). The mock's `recommendBolus` is the same
+/// oracle-backed calculator the host uses, so the expected dose is probed with `model.recommendBolus(...)`
+/// and the divergence guard sees identical inputs (no flake) — mirroring `AppModelBehaviorTests`.
+@Suite(.serialized)
+@MainActor
+struct StaleRemoteDoseHostTests {
+
+    // MARK: - Test harness (mirrors AppModelBehaviorTests)
+
+    @MainActor
+    final class EchoRecorder {
+        private(set) var commands: [RemoteCommand] = []
+        func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
+        var last: RemoteCommand? { commands.last }
+        var statuses: [RemoteCommand.Status] { commands.compactMap { $0.status } }
+        func count(_ s: RemoteCommand.Status) -> Int { statuses.filter { $0 == s }.count }
+    }
+
+    /// A fresh model + backend + recorder + the model's durable-ledger URL (so a test can load the ledger
+    /// and assert the durable provenance the delivery recorded).
+    private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder, URL) {
+        let backend = MockBackend()
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stalehost-ledger-\(UUID().uuidString).json")
+        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
+        let rec = EchoRecorder(); rec.attach(to: model)
+        if connected { await backend.connect() }
+        return (model, backend, rec, ledgerURL)
+    }
+
+    private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
+        let s = AppSettings.shared
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
+        let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
+        let mode = s.appMode
+        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
+        s.appMode = .advanced
+        let d = UserDefaults.standard
+        let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
+        d.removeObject(forKey: "remotePeerPolicies"); d.removeObject(forKey: "remotePeerHighEntropy")
+        defer {
+            s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed
+            s.advancedControlEnabled = adv; s.remotesReadOnly = rro; s.readOnlyAllowAlertClear = clr
+            s.appMode = mode
+            d.set(peerPolicies, forKey: "remotePeerPolicies"); d.set(peerQR, forKey: "remotePeerHighEntropy")
+        }
+        try await body()
+    }
+
+    private func grantFullControlPeer(_ clientId: String) {
+        RemotePeerPolicyStore.setPairedViaQR(clientId, true)
+        RemotePeerPolicyStore.setPolicy(.fullControl, for: clientId)
+    }
+
+    /// Pin a KNOWN stale reading (10 min old): a fixed value above target so a correction is nonzero, with
+    /// a stale timestamp so `freshCorrectionBG == nil` and the include-stale branch is the one under test.
+    private func seedStale(_ backend: MockBackend, _ mgdl: Int) {
+        backend.seedFreshGlucose(mgdl, at: Date().addingTimeInterval(-600))
+    }
+
+    private let tol = 0.0001
+    private let staleBg = 200          // > target 110 ⇒ a real positive correction
+    private let carbs = 30.0
+
+    /// Load the durable ledger the model persisted, to assert the include-stale provenance sidecar.
+    private func loadedLedger(_ url: URL) -> RemoteBolusLedger { RemoteBolusLedgerStore(url: url).load() }
+
+    // MARK: - (a) THE GAP CLOSED: acknowledged stale ⇒ host delivers the stale-CORRECTED dose
+
+    @Test func includeStaleDeliversHostStaleCorrectedDose() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)                                  // deterministic IOB
+            seedStale(backend, staleBg)
+            let staleDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil).recommendedUnits
+            #expect(staleDose > carbsOnly)                           // sanity: the stale reading adds insulin
+            await model.remoteDeliver(requestId: "s-a", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: staleDose, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(abs((rec.last?.deliveredUnits ?? -1) - staleDose) < tol)
+            // The correction was recomputed from the HOST's own stale reading (recordedBg == the stale value).
+            #expect(backend.lastDeliver?.bg == staleBg)
+            #expect((backend.lastDeliver?.units ?? -1) > carbsOnly)  // strictly larger than carbs-only
+        }
+    }
+
+    // MARK: - (b) absent intent ⇒ carbs-only (bg nil), delivers
+
+    @Test func absentIntentFailsClosedToCarbsOnly() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)
+            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil).recommendedUnits
+            // No includeStaleBG intent; the client sends a carbs-only estimate → no divergence.
+            await model.remoteDeliver(requestId: "s-b", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: carbsOnly, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(backend.lastDeliver?.bg == nil)                  // carbs-only: no correction basis
+            #expect(abs((backend.lastDeliver?.units ?? -1) - carbsOnly) < tol)
+        }
+    }
+
+    // MARK: - (c) absent intent + include-stale estimate ⇒ divergence .failed
+
+    @Test func absentIntentWithCorrectedEstimateDiverges() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)
+            // A legacy/carbs-only host: no intent ⇒ carbs-only dose, but the client sent a stale-CORRECTED
+            // estimate → the two diverge → the existing guard rejects (the pre-PR-2 behavior, preserved).
+            let staleDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            await model.remoteDeliver(requestId: "s-c", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: staleDose, includeStaleBG: false, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("Dose changed") == true)
+            #expect(rec.count(.delivering) == 0)                     // never reached the backend
+            #expect(backend.lastDeliver == nil)
+        }
+    }
+
+    // MARK: - (d) consistency gate: intent true but wire bg ≠ host glucose ⇒ carbs-only ⇒ diverges ⇒ .failed
+
+    @Test func intentButHostClientMismatchFailsClosed() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)                              // host reading = 200
+            let wireBg = staleBg - 5                                 // client's own stale reading = 195 (mismatch)
+            // Client estimated its correction from 195; host reading is 200, so the equality gate fails →
+            // the host uses NO correction basis (carbs-only) → the corrected estimate diverges → rejected.
+            let clientEstimate = await model.recommendBolus(carbsGrams: carbs, bgMgdl: wireBg).recommendedUnits
+            await model.remoteDeliver(requestId: "s-d", carbsGrams: carbs, bgMgdl: wireBg,
+                                      remoteEstimate: clientEstimate, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("Dose changed") == true)
+            #expect(rec.count(.delivering) == 0)
+            #expect(backend.lastDeliver == nil)
+        }
+    }
+
+    // MARK: - (e) fresh precedence: fresh reading + intent ⇒ fresh used, provenance false
+
+    @Test func freshReadingWinsOverIncludeStaleIntent() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            backend.seedFreshGlucose(staleBg)                        // FRESH (now) reading of 200
+            let freshDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            // Intent is set, but the fresh reading always wins (unchanged behavior); provenance stays false.
+            await model.remoteDeliver(requestId: "s-e", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: freshDose, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(backend.lastDeliver?.bg == staleBg)              // fresh reading used as the basis
+            #expect(abs((backend.lastDeliver?.units ?? -1) - freshDose) < tol)
+            // NOT an acknowledged-stale delivery → the durable provenance sidecar is false.
+            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "watch", requestId: "s-e") == false)
+        }
+    }
+
+    // MARK: - (f) a genuine >0.10 U divergence still rejects (guard unchanged on the stale recompute)
+
+    @Test func genuineDivergenceStillRejectsOnIncludeStale() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)
+            let staleDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            // Same acknowledged-stale path as (a), but the client estimate is off by >0.10 U → still rejected.
+            await model.remoteDeliver(requestId: "s-f", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: staleDose + 0.5, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("Dose changed") == true)
+            #expect(rec.count(.delivering) == 0)
+            #expect(backend.lastDeliver == nil)
+        }
+    }
+
+    // MARK: - (g) durable provenance: true on include-stale, false on carbs-only; the ledger carries it
+
+    @Test func ledgerRecordsIncludeStaleProvenance() async {
+        try? await withCleanSettings {
+            // include-stale delivery ⇒ provenance TRUE, durably.
+            let (m1, b1, r1, url1) = await makeModel(connected: true)
+            b1.setLiveIob(1.0); seedStale(b1, staleBg)
+            let staleDose = await m1.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            await m1.remoteDeliver(requestId: "g-true", carbsGrams: carbs, bgMgdl: staleBg,
+                                   remoteEstimate: staleDose, includeStaleBG: true, peerId: "watch")
+            #expect(r1.last?.status == .delivered)
+            #expect(loadedLedger(url1).usedIncludedStaleBG(peerId: "watch", requestId: "g-true") == true)
+
+            // carbs-only delivery ⇒ provenance FALSE.
+            let (m2, b2, r2, url2) = await makeModel(connected: true)
+            b2.setLiveIob(1.0); seedStale(b2, staleBg)
+            let carbsOnly = await m2.recommendBolus(carbsGrams: carbs, bgMgdl: nil).recommendedUnits
+            await m2.remoteDeliver(requestId: "g-false", carbsGrams: carbs, bgMgdl: staleBg,
+                                   remoteEstimate: carbsOnly, peerId: "watch")
+            #expect(r2.last?.status == .delivered)
+            #expect(loadedLedger(url2).usedIncludedStaleBG(peerId: "watch", requestId: "g-false") == false)
+        }
+    }
+
+    // MARK: - (h) Mac host-approval path freezes + delivers with the provenance marker preserved
+
+    @Test func macApprovalPreservesIncludeStaleProvenance() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)
+            let staleDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            // Freeze (present) the acknowledged-stale dose for host approval (Mac path).
+            await model.presentRemoteBolus(requestId: "h1", units: 0, carbsGrams: carbs, bgMgdl: staleBg,
+                                           remoteEstimate: staleDose, includeStaleBG: true,
+                                           from: .macPeer, peerId: "mac")
+            let pending = model.pendingRemoteBolus
+            #expect(pending != nil)
+            #expect(pending?.usedIncludedStaleBG == true)            // frozen provenance carried onto the pending
+            #expect(pending?.bgMgdl == staleBg)                      // frozen off the host's own stale reading
+            #expect((pending?.units ?? -1) > 0)
+            // Confirm → delivers the FROZEN dose, marker preserved into the durable ledger.
+            await model.confirmRemoteBolus()
+            #expect(model.pendingRemoteBolus == nil)
+            #expect(rec.last?.status == .delivered)
+            #expect(backend.lastDeliver?.bg == staleBg)
+            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "mac", requestId: "h1") == true)
+        }
+    }
+
+    // MARK: - (i) access gates still deny BEFORE resolve (include-stale intent cannot bypass a gate)
+
+    @Test func gatesDenyBeforeResolveEvenWithIncludeStale() async {
+        // `refreshCalcInputsNowCount` proves whether `resolveRemoteDose` ran at all (it forces that read):
+        // a gate denial must reject before resolve, so the count stays 0 and nothing is delivered. Setup
+        // (connect/seed/setLiveIob) never touches that read, so no probe is taken here — the estimate value
+        // is irrelevant because resolve is never reached.
+
+        // remotesReadOnly (peer surface): denied before resolve.
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            grantFullControlPeer("mac")
+            backend.setLiveIob(1.0); seedStale(backend, staleBg)
+            AppSettings.shared.remotesReadOnly = true
+            #expect(backend.refreshCalcInputsNowCount == 0)          // baseline: resolve hasn't run
+            await model.remoteDeliver(requestId: "i-ro", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: 5.0, includeStaleBG: true,
+                                      from: .macPeer, peerId: "mac")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("read-only") == true)
+            #expect(rec.count(.delivering) == 0)
+            #expect(backend.lastDeliver == nil)
+            #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
+        }
+
+        // child mode (watch surface): denied before resolve.
+        try? await withCleanSettings {
+            let (model, backend, rec, _) = await makeModel(connected: true)
+            backend.setLiveIob(1.0); seedStale(backend, staleBg)
+            AppSettings.shared.childModeEnabled = true
+            AppSettings.shared.childAllowed = []                     // .bolus not permitted
+            #expect(backend.refreshCalcInputsNowCount == 0)
+            await model.remoteDeliver(requestId: "i-child", carbsGrams: carbs, bgMgdl: staleBg,
+                                      remoteEstimate: 5.0, includeStaleBG: true,
+                                      from: .appleWatch, peerId: "watch")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("child mode") == true)
+            #expect(rec.count(.delivering) == 0)
+            #expect(backend.lastDeliver == nil)
+            #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
+        }
+    }
+}
