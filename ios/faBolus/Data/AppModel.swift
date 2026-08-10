@@ -470,6 +470,9 @@ public final class AppModel {
         public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
+        /// Addendum B: frozen provenance carried through freeze→approve→deliver so the Mac host-approval
+        /// path preserves whether the dose used the host's acknowledged stale reading. Gates nothing.
+        public var usedIncludedStaleBG: Bool = false
     }
     /// A host-approval prompt older than this is stale (BG/IOB may have drifted) → fail closed and require
     /// the remote to re-send (audit C-02).
@@ -2003,6 +2006,7 @@ public final class AppModel {
 
     public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
                                    bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
+                                   includeStaleBG: Bool = false,
                                    from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // Ignore a duplicate request that is already pending or already handled (audit A-02): don't
         // stack a second confirmation prompt for the same (peer, requestId).
@@ -2029,7 +2033,8 @@ public final class AppModel {
         // units, carbs, and the fresh glucose the dose was computed from — never a placeholder "0.00 U".
         // resolveRemoteDose fail-closes (and echoes `.failed`) on a missing estimate or divergence.
         guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
-                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate) else { return }
+                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
+                                                     includeStaleBG: includeStaleBG) else { return }
         guard resolved.units > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
@@ -2038,7 +2043,8 @@ public final class AppModel {
                                                 carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
                                                 bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
                                                 remoteEstimate: remoteEstimate, requestedUnits: units,
-                                                createdAt: Date(), peerId: peerId)
+                                                createdAt: Date(), peerId: peerId,
+                                                usedIncludedStaleBG: resolved.usedIncludedStaleBG)
     }
 
     /// Drop a pending host-approval bolus bound to `peerId` (audit A-01). When a peer re-handshakes or
@@ -2061,7 +2067,8 @@ public final class AppModel {
             return
         }
         let resolved = ResolvedBolus(units: pending.units, carbsGrams: pending.carbsGrams,
-                                     recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits)
+                                     recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits,
+                                     usedIncludedStaleBG: pending.usedIncludedStaleBG)
         let dkey = RemoteBolusLedger.doseKey(units: pending.requestedUnits, carbsGrams: pending.carbsGrams,
                                              bgMgdl: pending.bgMgdl)
         await executeResolved(resolved, requestId: pending.requestId, peerId: pending.peerId, doseKey: dkey)
@@ -2087,6 +2094,7 @@ public final class AppModel {
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
                               bgMgdl: Int? = nil, remoteEstimate: Double? = nil, passcode: String? = nil,
+                              includeStaleBG: Bool = false,
                               from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
         // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
@@ -2112,7 +2120,8 @@ public final class AppModel {
             return
         }
         guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
-                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate) else { return }
+                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
+                                                     includeStaleBG: includeStaleBG) else { return }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
     }
@@ -2127,6 +2136,10 @@ public final class AppModel {
         let bgDate: Date?            // provenance/age of that glucose
         let iobUnits: Double?        // IOB the calc used
         var inputsVerified: Bool = true   // FB-01: frozen verification state (remotes never resolve unverified)
+        /// Addendum B: frozen provenance — true ONLY when the correction basis was the host's OWN
+        /// acknowledged stale reading (the include-stale path). Gates nothing; carried through for audit
+        /// (→ `RemoteBolusLedger.Entry`) so a delivered include-stale dose is durably attributable.
+        var usedIncludedStaleBG: Bool = false
     }
 
     /// Resolve + FREEZE the authoritative dose for a remote/widget request (audit C-02/C-04/C-06). For a
@@ -2135,8 +2148,15 @@ public final class AppModel {
     /// runs the divergence guard vs the remote's estimate. Returns nil (after echoing `.failed` for the
     /// request) on any fail-closed condition. `recordedBg` is the glucose actually used, so the pump
     /// metadata can never disagree with the dose input.
+    ///
+    /// Addendum B (Option B): `includeStaleBG` is the explicit per-attempt remote INTENT to include a
+    /// stale-but-real reading. It NEVER supplies the dose input — the host stays the single calculator and
+    /// recomputes from its OWN reading. When intent is set and the host's own reading is genuinely stale
+    /// AND equals the wire value (a consistency gate), the correction basis becomes the host's stale
+    /// `snapshot.glucose`; otherwise the basis fails closed to carbs-only exactly as before.
     private func resolveRemoteDose(requestId: String, units: Double?, carbsGrams: Double?,
-                                   bgMgdl: Int?, remoteEstimate: Double?) async -> ResolvedBolus? {
+                                   bgMgdl: Int?, remoteEstimate: Double?,
+                                   includeStaleBG: Bool = false) async -> ResolvedBolus? {
         // GA-05: a carbs-MODE request is signalled by `carbsGrams` being present at all — INCLUDING 0, a
         // correction-only dose (high BG, no food) the wrist can legitimately compute. The old `carbs > 0`
         // guard routed a zero-carb correction to the units path (units 0 → "no insulin needed"), silently
@@ -2158,8 +2178,31 @@ public final class AppModel {
         // internally; the single-flight coalesces). If a fresh read can't be obtained, `recommendBolus`
         // returns `inputsVerified == false` and the FB-01 guard just below fails the remote closed.
         await refreshCalcInputsNow()
-        let freshBg = freshCorrectionBG
-        let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: freshBg)
+        // Select the correction BASIS explicitly (Addendum B). The host is the single calculator: the basis
+        // is ALWAYS a measured host reading (fresh, or its OWN acknowledged stale one), NEVER the wire value
+        // — the wire `bgMgdl` is used ONLY for the equality/consistency gate below, never as a dose input.
+        let basis: Int?
+        let usedStale: Bool
+        if let fresh = freshCorrectionBG {
+            // Fresh reading present ⇒ it always wins (UNCHANGED behavior).
+            basis = fresh; usedStale = false
+        } else if includeStaleBG, let g = snapshot.glucose, snapshot.isGlucoseStale,
+                  GlucoseFreshness.withinIncludableStaleness(snapshot.glucoseDate),
+                  let wire = bgMgdl, wire == g {
+            // Acknowledged-stale path: the remote explicitly asked to include the stale reading AND the
+            // host's OWN reading is genuinely stale-but-present AND — CRITICALLY — is no older than
+            // `GlucoseFreshness.maxIncludableStaleness` (default 15 min, the includable-age CAP) AND matches
+            // the wire value the remote estimated from. Recompute the correction from the host's own stale
+            // reading (real-not-modelled). The age cap bounds this branch: without it a full
+            // insulin-INCREASING correction could be recomputed off a reading of arbitrary age.
+            basis = g; usedStale = true
+        } else {
+            // Fail closed to carbs-only: no intent, no reading, stale-but-no-intent, a stale reading OLDER
+            // than the includable cap (`maxIncludableStaleness`), or a host≠client mismatch. Identical to
+            // today's carbs-only behavior.
+            basis = nil; usedStale = false
+        }
+        let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: basis)
         // FB-01: a remote/automatic surface must NEVER auto-deliver a dose computed from unverified
         // (assumed) pump settings — the verified profile hasn't arrived, so we can't stand behind the
         // number. Fail closed and tell the user to confirm on the phone (where the assumptions are shown).
@@ -2177,8 +2220,9 @@ public final class AppModel {
             lastError = msg; notifyRemoteBolusRejected(msg)
             return nil
         }
-        return ResolvedBolus(units: dose, carbsGrams: carbs, recordedBg: freshBg,
-                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true)
+        return ResolvedBolus(units: dose, carbsGrams: carbs, recordedBg: basis,
+                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true,
+                             usedIncludedStaleBG: usedStale)
     }
 
     // MARK: - Durable delivery ledger (P0)
@@ -2201,12 +2245,16 @@ public final class AppModel {
     /// entry so the pump's assigned bolus id is persisted before initiate, and (4) settles /
     /// marks-indeterminate on outcome. `onStarted` fires only after intent is durably recorded.
     private func runLedgeredDelivery(peerId: String, requestId: String, doseKey: String,
+                                     usedIncludedStaleBG: Bool = false,
                                      onStarted: (() -> Void)? = nil,
                                      deliver: () async throws -> Double) async -> DeliveryOutcome {
         // Global block: survives restart via the durable ledger; corrupt ledger fails closed.
         if let reason = computeDeliveryBlockReason() { return .blocked(reason) }
 
-        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey) {
+        // `usedIncludedStaleBG` is DURABLE provenance only (Addendum B): recorded on a new ledger entry,
+        // never part of `doseKey` or the conflict/replay/in-flight decision.
+        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey,
+                                       usedIncludedStaleBG: usedIncludedStaleBG) {
         case .proceed: break
         case .duplicateInFlight: return .duplicateInFlight
         case .replay(let s, let m, let u): return .replay(status: s, message: m, deliveredUnits: u)
@@ -2312,6 +2360,7 @@ public final class AppModel {
             return
         }
         let outcome = await runLedgeredDelivery(peerId: peerId, requestId: requestId, doseKey: doseKey,
+            usedIncludedStaleBG: r.usedIncludedStaleBG,
             onStarted: { [weak self] in
                 self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
             }) {

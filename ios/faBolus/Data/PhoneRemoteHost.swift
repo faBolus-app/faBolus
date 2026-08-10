@@ -46,7 +46,9 @@ public final class PhoneRemoteHost {
             Task {
                 await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                           carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                          remoteEstimate: cmd.remoteEstimateUnits, from: .appleWatch, peerId: "watch")
+                                          remoteEstimate: cmd.remoteEstimateUnits,
+                                          includeStaleBG: cmd.includeStaleBG ?? false,
+                                          from: .appleWatch, peerId: "watch")
             }
         case .cancelBolus:
             // The in-flight delivery loop echoes the single final status; no echo here (else the

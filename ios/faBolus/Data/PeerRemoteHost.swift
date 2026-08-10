@@ -232,12 +232,14 @@ public final class PeerRemoteHost {
                 } else if policy.approvalMode == .hostApproval {
                     await model.presentRemoteBolus(requestId: cmd.requestId, units: cmd.units ?? 0,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, from: .macPeer,
+                                             remoteEstimate: cmd.remoteEstimateUnits,
+                                             includeStaleBG: cmd.includeStaleBG ?? false, from: .macPeer,
                                              peerId: self.peerClientId ?? "peer")
                 } else {
                     await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                               carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                              remoteEstimate: cmd.remoteEstimateUnits, from: .macPeer,
+                                              remoteEstimate: cmd.remoteEstimateUnits,
+                                              includeStaleBG: cmd.includeStaleBG ?? false, from: .macPeer,
                                               peerId: self.peerClientId ?? "peer")
                 }
             }
