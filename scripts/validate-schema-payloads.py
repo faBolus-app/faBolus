@@ -46,7 +46,8 @@ VALID = [
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     # C2 §2.3: a Garmin bolusRequest may carry the entered passcode (remote → host).
     {"version": 1, "kind": "bolusRequest", "requestId": "r2b", "units": 2.5, "bolusPasscode": "1234"},
-    {"version": 1, "kind": "bolusRequest", "requestId": "r3", "carbsGrams": 30, "bgMgdl": 120, "remoteEstimateUnits": 3.0},
+    # Addendum B: a carb bolusRequest may carry the per-attempt include-stale intent (remote → host).
+    {"version": 1, "kind": "bolusRequest", "requestId": "r3", "carbsGrams": 30, "bgMgdl": 120, "remoteEstimateUnits": 3.0, "includeStaleBG": True},
     {"version": 1, "kind": "bolusStatus", "requestId": "r4", "status": "unknown", "message": "Outcome unknown"},
     {"version": 1, "kind": "bolusStatus", "requestId": "r5", "status": "cancelled", "deliveredUnits": 0.5},
     {"version": 1, "kind": "cancelBolus", "requestId": "r6"},
@@ -62,6 +63,7 @@ INVALID = [
     {"version": 1, "kind": "statusRead", "requestId": "b4", "bgMgdl": "high"},                # wrong type
     {"version": 1, "kind": "statusRead", "requestId": "b4b", "controllerVariant": "controlIQPlus"}, # bad enum (frozen token is controlIQPro)
     {"version": 1, "kind": "bolusRequest", "requestId": "b5c", "bolusPasscode": 1234},         # C2: passcode must be a string, not a number
+    {"version": 1, "kind": "bolusRequest", "requestId": "b5d", "carbsGrams": 30, "includeStaleBG": "yes"}, # Addendum B: include-stale intent must be a boolean, not a string
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties
     {"version": 1, "kind": "statusRead"},                                                     # missing required requestId
 ]
