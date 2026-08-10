@@ -3,7 +3,6 @@ import faBolusCore
 import HistoryStore
 #if FABOLUS_NUDGE
 import GlucoseIntelligenceKit
-import TherapyInsightsKit
 import AlertIntelligenceKit
 #endif
 import Observation
@@ -1099,14 +1098,10 @@ public final class AppModel {
 
     /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
     public func therapyInsights() -> [TherapyInsightItem] {
-        #if FABOLUS_NUDGE
         let range = Date().addingTimeInterval(-90 * 86400)...Date()
         let cgm = history?.glucose(in: range) ?? glucoseHistory
         return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
             .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
-        #else
-        return []
-        #endif
     }
 
     private var lastNSBackfill = Date.distantPast

@@ -41,8 +41,9 @@ packages:
     path: Packages/ShareClient
   # >>> NUDGE (scripts/generate-project.sh strips this block when the faBolusNudge repo is unavailable)
   faBolusNudge:
-    # Advisory SDK (reusable, stateless): dosing-safety guardrails, hypo prediction, autotune/autosens,
-    # insights, eating detection. Xcode auto-resolves this remote package on build. See MIGRATION.md.
+    # Advisory SDK (reusable, stateless): on-device eating detection + meal-detection intelligence.
+    # Xcode auto-resolves this remote package on build. (Retrospective insights are no longer here —
+    # they moved to faBolusCore and build unconditionally.) See MIGRATION.md.
     url: https://github.com/faBolus-app/faBolusNudge.git
     revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
   # <<< NUDGE
@@ -82,8 +83,6 @@ targets:
       # >>> NUDGE (stripped by scripts/generate-project.sh when the faBolusNudge repo is unavailable)
       - package: faBolusNudge
         product: GlucoseIntelligenceKit
-      - package: faBolusNudge
-        product: TherapyInsightsKit
       - package: faBolusNudge
         product: AlertIntelligenceKit
       - package: faBolusNudge

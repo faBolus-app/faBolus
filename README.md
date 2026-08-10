@@ -137,12 +137,13 @@ SDK where `project.yml` expects it (see [docs/build](docs/build/index.md)) and r
 build the phone app **without the Apple Watch** app, run `FABOLUS_WATCH=0 ./scripts/generate-project.sh`
 (force Garmin on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works and includes both.
 
-**Smart Assist is optional too.** The advisory features (bolus guardrail, predictive-low alerts,
-retrospective insights, autotune, and eating detection) are powered by the private
+**Smart Assist is optional too.** The advisory eating-detection features (on-device meal detection and
+the eating nudge) are powered by the private
 [faBolusNudge](https://github.com/faBolus-app/faBolusNudge) SDK. `scripts/generate-project.sh`
 auto-detects whether that repo is reachable — **if you don't have access, it's dropped automatically**,
 those features compile out, and the app still builds (the Smart Assist settings section is hidden).
-Force it with `FABOLUS_NUDGE=1/0`.
+Force it with `FABOLUS_NUDGE=1/0`. Retrospective **Insights** (time-in-range, recurring patterns) are
+built into `faBolusCore` and are always available, with or without the SDK.
 
 **On-watch eating detection needs a paid account** (HealthKit + a workout session). It's **off by
 default and auto-excluded on a free account** — every paid-only piece (the HealthKit entitlement,

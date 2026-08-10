@@ -1,8 +1,5 @@
 import Foundation
 import faBolusCore
-#if FABOLUS_NUDGE
-import TherapyInsightsKit
-#endif
 
 /// An advisory eating-nudge shown in the UI (from the multi-signal EatingTriggerEngine).
 struct EatingAlert: Sendable, Equatable {
@@ -19,17 +16,15 @@ struct EatingAlert: Sendable, Equatable {
 // faBolusNudge types — the Smart Assist features can then compile out when the SDK is unavailable.
 public struct TherapyInsightItem: Identifiable, Equatable { public let id = UUID(); public let title: String; public let detail: String }
 
-#if FABOLUS_NUDGE
-/// faBolus's app-side glue for the retrospective TherapyInsightsKit reporting (PatternInsights).
-/// Advisory display only — never blocks or changes a dose; the algorithm lives in the reusable SDK.
-/// See MIGRATION.md (Phase 4).
+/// faBolus's app-side glue for the retrospective `PatternInsights` reporting (now vendored in
+/// faBolusCore, so it builds in every configuration — no private SDK required). Advisory display only —
+/// never blocks or changes a dose; the algorithm lives in the reusable core package. See MIGRATION.md.
 enum SmartAssist {
-    // MARK: Retrospective insights (TherapyInsightsKit)
+    // MARK: Retrospective insights (PatternInsights, faBolusCore)
 
     static func insights(cgm: [GlucoseReading], carbs: [(date: Date, grams: Double)] = []) -> [PatternInsights.Insight] {
         PatternInsights().insights(
-            cgm: cgm.map { TherapyInsightsKit.CGMPoint(mgdl: Double($0.mgdl), date: $0.date) },
-            carbs: carbs.map { TherapyInsightsKit.Carbs(grams: $0.grams, date: $0.date) })
+            cgm: cgm.map { PatternInsights.CGMPoint(mgdl: Double($0.mgdl), date: $0.date) },
+            carbs: carbs.map { PatternInsights.Carbs(grams: $0.grams, date: $0.date) })
     }
 }
-#endif
