@@ -7,7 +7,9 @@ import Foundation
 /// `UnverifiedFeatureGate`). Sibling of `ClinicianTierAck` (S8), which covers clinical ownership; this
 /// covers the distinct fact that these values drive AUTOMATED delivery, not only manual boluses.
 ///
-/// DRAFT copy — §13 clinical review gates it before any `experimental` distribution.
+/// §13 STATUS: SIGNED-OFF (owner Zev Granowitz, 2026-08-09) — approved verbatim. The owner is the §13
+/// approver of record and this sign-off satisfies the §13 copy-distribution gate for these strings.
+/// Any wording change re-opens the sign-off.
 public enum TherapyEditAck {
     /// First-use disclosure: editing basal / carb-ratio / ISF / target changes AUTOMATED insulin delivery
     /// (the Control-IQ closed loop runs on these continuously), not just the boluses entered by hand — so a

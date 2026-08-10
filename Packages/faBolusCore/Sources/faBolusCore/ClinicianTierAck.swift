@@ -5,7 +5,9 @@ import Foundation
 /// timestamp in `AppSettings` (durable, per-install), and it NEVER gates a write — it is an
 /// acknowledgment, not a lock (not a `DenialReason`, not the every-time `UnverifiedFeatureGate`).
 ///
-/// DRAFT copy — §13 clinical review gates it before any `experimental` distribution.
+/// §13 STATUS: SIGNED-OFF (owner Zev Granowitz, 2026-08-09) — approved verbatim. The owner is the §13
+/// approver of record and this sign-off satisfies the §13 copy-distribution gate for these strings.
+/// Any wording change re-opens the sign-off.
 public enum ClinicianTierAck {
     /// The first-use disclosure body. References the §13 provenance vocabulary (`SettingProvenance`):
     /// these values are normally `.clinicianSet`; a change made here is recorded as `.selfSet`, distinct
