@@ -47,6 +47,10 @@
       "minimum": 0,
       "description": "The dose the remote computed/showed for a carb bolusRequest. The host recomputes authoritatively from carbsGrams and rejects the bolus if the two diverge beyond its safety limit (stale-settings guard). Absent for a units-only request."
     },
+    "includeStaleBG": {
+      "type": "boolean",
+      "description": "bolusRequest (remote → host, Addendum B) — the remote's per-attempt intent to INCLUDE a stale-but-real CGM reading in the correction on a carb bolus; insulin-increasing. Set true ONLY when the user explicitly chose to include the stale reading for THIS attempt (never sticky, never on a fresh reading); absent otherwise. The host honors it only when it can recompute from its own matching stale reading; absent (and on any legacy host that ignores the field) the host fails closed to a carbs-only dose. Meaningful only on a carb/correction request, never a units-mode one."
+    },
     "forceGlucose": {
       "type": "boolean",
       "description": "On a statusRead, asks the host to force a fresh CGM read from the pump before replying. A remote sets this when opening its bolus screen so the shown estimate is off the newest value."

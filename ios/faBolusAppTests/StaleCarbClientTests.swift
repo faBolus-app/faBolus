@@ -97,6 +97,29 @@ import faBolusCore
         #expect(withStale! > carbsOnly!)
     }
 
+    // MARK: Addendum B (Option B, PR-1) — the explicit per-attempt include-stale INTENT on the wire
+
+    @Test func includeStaleSetsTheExplicitIntentOnlyWhenGenuinelyStale() {
+        // A genuine stale-include (the user chose it AND the reading is stale-but-present) carries the
+        // explicit `includeStaleBG` intent, so a future host can tell an acknowledged stale reading apart
+        // from a coincidentally-stale one and recompute the correction (PR-2). Absent otherwise ⇒ the host
+        // fails closed to carbs-only.
+        let (stale, staleLink) = model(bg: 200, ageMinutes: 60)
+        stale.deliverCarbs(30, includeStaleBG: true)
+        #expect(staleLink.sent.last?.includeStaleBG == true)
+
+        // Carbs-only on the same stale reading carries no intent.
+        let (staleCarbsOnly, carbsLink) = model(bg: 200, ageMinutes: 60)
+        staleCarbsOnly.deliverCarbs(30)
+        #expect(carbsLink.sent.last?.includeStaleBG == nil)
+
+        // A FRESH reading never carries the intent, even when includeStaleBG is requested (per-attempt,
+        // never on a fresh reading).
+        let (fresh, freshLink) = model(bg: 150, ageMinutes: 0.5)
+        fresh.deliverCarbs(30, includeStaleBG: true)
+        #expect(freshLink.sent.last?.includeStaleBG == nil)
+    }
+
     @Test func includeStaleIsANoOpWhenReadingIsFresh() {
         // A fresh reading is always used regardless of the flag: both paths send the same real bg and
         // estimate. The flag only matters when the reading is stale.

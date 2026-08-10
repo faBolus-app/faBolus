@@ -375,13 +375,21 @@ class RemoteClientModel {
     /// dose from these carbs and delivers. We also include THIS client's own estimate so the host can
     /// reject the bolus if the two diverge (a stale-settings guard). A stale CGM value is normally never
     /// sent for the correction (matches the phone's rule) — but Addendum B lets the user explicitly
-    /// include a stale-but-real reading for this one attempt (`includeStaleBG`, insulin-INCREASING). The
-    /// estimate is computed from the SAME bg the host will recompute with, so the host's divergence guard
-    /// doesn't reject an included-stale dose. Covers Watch + Mac + remote-iPhone (shared base).
+    /// include a stale-but-real reading for this one attempt (`includeStaleBG`, insulin-INCREASING). When
+    /// it is a genuine stale-include we set the explicit `includeStaleBG` intent on the wire so the host
+    /// can tell an acknowledged stale reading apart from a coincidentally-stale one. The host honors that
+    /// intent only once it recomputes from its OWN matching stale reading (PR-2); until then — and on any
+    /// legacy host that ignores the field — it fails closed to a carbs-only dose, so an included-stale
+    /// estimate carrying a correction diverges and the host's guard rejects it. Covers Watch + Mac +
+    /// remote-iPhone (shared base).
     func deliverCarbs(_ grams: Double, includeStaleBG: Bool = false) {
         let bg: Double? = bgForBolus(includeStale: includeStaleBG).map(Double.init)
         var cmd = RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg)
         cmd.remoteEstimateUnits = estimatedUnits(forCarbs: grams, includeStaleBG: includeStaleBG)
+        // Addendum B: carry the explicit per-attempt include-stale INTENT only when this genuinely IS a
+        // stale-include — the user chose it AND the reading is stale-but-present. Never on a fresh reading,
+        // never sticky; absent otherwise ⇒ the host fails closed to carbs-only.
+        cmd.includeStaleBG = (includeStaleBG && isGlucoseStale && glucose != nil) ? true : nil
         startPending(cmd)
     }
 
