@@ -215,6 +215,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// units-mode request. Swift-only additive field (set post-init), mirrored in the JSON schema.
     public var remoteEstimateUnits: Double? = nil
 
+    /// Addendum B (Option B) — the remote's per-attempt INTENT to INCLUDE a stale-but-real CGM reading in the
+    /// correction on a carb `bolusRequest` (inbound remote → host). Insulin-INCREASING: it authorizes the host
+    /// to add a correction off a reading it would otherwise drop as stale. Set `true` ONLY when the user
+    /// explicitly chose "include the stale reading" for THIS attempt (never sticky, never on a fresh reading);
+    /// absent otherwise. The host honors it only when it can recompute from its OWN matching stale reading
+    /// (PR-2); absent ⇒ (and on any legacy host that ignores the field) the host fails closed to a carbs-only
+    /// dose. Only meaningful on a carb/correction request, never a units-mode one. Swift-only additive field
+    /// (set post-init), mirrored in the JSON schema.
+    public var includeStaleBG: Bool? = nil
+
     /// On a `statusRead`, asks the host to force a fresh CGM read from the pump before replying (a
     /// remote sets this when opening its bolus screen, so the shown estimate is off the newest value).
     /// Omitted/false = reply from the host's current snapshot. Swift-only additive field.
@@ -495,6 +505,12 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             // positive dose-defining values is ambiguous — the host can't know which the user intended.
             if let u = units, u > 0, let c = carbsGrams, c > 0 {
                 throw ValidationError.crossField("ambiguous bolus: both units and carbsGrams set")
+            }
+            // Addendum B: the include-stale INTENT only means anything on a carb/correction request — a
+            // units-mode bolus carries no reading to correct with, so `includeStaleBG` on a units-only
+            // request is internally contradictory and must fail closed.
+            if includeStaleBG == true, units != nil, carbsGrams == nil {
+                throw ValidationError.crossField("includeStaleBG set on a units-mode bolus (no carbs to correct)")
             }
         }
     }
