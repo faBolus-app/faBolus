@@ -287,4 +287,138 @@ struct StaleRemoteDoseHostTests {
             #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
         }
     }
+
+    // MARK: - (j) FIX 2: carbs==0 PURE correction + include-stale (within cap) ⇒ doses off the stale reading
+
+    /// The riskiest include-stale variant: a correction-ONLY request (`carbsGrams == 0`) has no carb
+    /// component to anchor it, so it is a pure insulin-INCREASING dose driven entirely by the (stale) BG.
+    /// With explicit intent, a within-cap stale reading, and wire == host glucose, the host must recompute
+    /// that pure correction from ITS OWN stale reading, with the include-stale provenance recorded.
+    @Test func includeStaleZeroCarbPureCorrectionDosesOffStaleReading() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)                              // 10 min old ⇒ within the 15-min cap
+            // Probe the calculator for the pure correction. (200 → target 110, ISF 40, IOB 1.0) ⇒ 1.25 U:
+            // strictly positive here, so it delivers a real dose rather than rounding to 0 (documented).
+            let pureCorr = await model.recommendBolus(carbsGrams: 0, bgMgdl: staleBg).recommendedUnits
+            #expect(pureCorr > 0)
+            await model.remoteDeliver(requestId: "j-zerocarb", carbsGrams: 0, bgMgdl: staleBg,
+                                      remoteEstimate: pureCorr, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(abs((rec.last?.deliveredUnits ?? -1) - pureCorr) < tol)
+            #expect(backend.lastDeliver?.bg == staleBg)              // bg USED == the host's own stale value
+            #expect(backend.lastDeliver?.carbs == 0)                 // a PURE correction: no carb component
+            #expect(abs((backend.lastDeliver?.units ?? -1) - pureCorr) < tol)
+            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "watch", requestId: "j-zerocarb") == true)
+        }
+    }
+
+    // MARK: - (k) FIX 1/2: stale BEYOND the includable cap fails closed; a within-cap control still includes
+
+    /// The core FIX-1 assertion: an include-stale correction may only be recomputed from a reading no older
+    /// than `GlucoseFreshness.maxIncludableStaleness`. A reading past the cap fails closed to carbs-only
+    /// (basis nil, provenance false) exactly as a no-intent request; a within-cap control — same intent,
+    /// same wire==g consistency, ONLY the age differs — DOES include, proving the boundary is what bites.
+    @Test func includeStaleBeyondMaxAgeFailsClosedToCarbsOnly() async {
+        try? await withCleanSettings {
+            // Pin the window explicitly so the boundary is unambiguous regardless of the global default.
+            let savedStale = GlucoseFreshness.staleAfter, savedMax = GlucoseFreshness.maxIncludableStaleness
+            GlucoseFreshness.staleAfter = 6 * 60
+            GlucoseFreshness.maxIncludableStaleness = 15 * 60
+            defer { GlucoseFreshness.staleAfter = savedStale; GlucoseFreshness.maxIncludableStaleness = savedMax }
+
+            // (k1) reading OLDER than the cap (20 min > 15 min) + explicit intent + wire == host reading:
+            // the age cap bites ⇒ basis nil ⇒ carbs-only. A cap-aware remote sends a carbs-only estimate,
+            // so it DELIVERS carbs-only rather than diverging.
+            let (m1, b1, r1, url1) = await makeModel(connected: true)
+            b1.setLiveIob(1.0)
+            b1.seedFreshGlucose(staleBg, at: Date().addingTimeInterval(-20 * 60))   // 20 min old ⇒ beyond cap
+            let carbsOnly = await m1.recommendBolus(carbsGrams: carbs, bgMgdl: nil).recommendedUnits
+            await m1.remoteDeliver(requestId: "k-beyond", carbsGrams: carbs, bgMgdl: staleBg,
+                                   remoteEstimate: carbsOnly, includeStaleBG: true, peerId: "watch")
+            #expect(r1.last?.status == .delivered)
+            #expect(b1.lastDeliver?.bg == nil)                       // no correction basis: too old to include
+            #expect(abs((b1.lastDeliver?.units ?? -1) - carbsOnly) < tol)
+            #expect(loadedLedger(url1).usedIncludedStaleBG(peerId: "watch", requestId: "k-beyond") == false)
+
+            // (k2) CONTROL: identical request but the reading is WITHIN the cap (10 min) ⇒ the stale reading
+            // IS included ⇒ a strictly larger, stale-corrected dose with provenance TRUE.
+            let (m2, b2, r2, url2) = await makeModel(connected: true)
+            b2.setLiveIob(1.0)
+            b2.seedFreshGlucose(staleBg, at: Date().addingTimeInterval(-10 * 60))   // 10 min old ⇒ within cap
+            let staleDose = await m2.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
+            #expect(staleDose > carbsOnly)                           // sanity: the included stale reading adds insulin
+            await m2.remoteDeliver(requestId: "k-within", carbsGrams: carbs, bgMgdl: staleBg,
+                                   remoteEstimate: staleDose, includeStaleBG: true, peerId: "watch")
+            #expect(r2.last?.status == .delivered)
+            #expect(b2.lastDeliver?.bg == staleBg)                   // included the stale reading as the basis
+            #expect(abs((b2.lastDeliver?.units ?? -1) - staleDose) < tol)
+            #expect(loadedLedger(url2).usedIncludedStaleBG(peerId: "watch", requestId: "k-within") == true)
+        }
+    }
+
+    // MARK: - (l) FIX 2 (panel nonblocking): a UNITS-mode request treats includeStaleBG as a no-op
+
+    @Test func unitsModeRequestTreatsIncludeStaleAsNoOp() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)
+            // A TRUE units request (no carbsGrams): resolve returns the passed units verbatim BEFORE the
+            // basis-selection block, so includeStaleBG is never consulted — a pure no-op.
+            await model.remoteDeliver(requestId: "l-units", units: 1.0, bgMgdl: staleBg,
+                                      includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(abs((backend.lastDeliver?.units ?? -1) - 1.0) < tol)   // delivered the passed units, unchanged
+            // Never an include-stale dose (the branch is unreachable on the units path).
+            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "watch", requestId: "l-units") == false)
+        }
+    }
+
+    // MARK: - (m) FIX 2 (panel nonblocking): wire ≠ host glucose ⇒ basis nil (carbs-only), provenance false
+
+    @Test func wireMismatchYieldsCarbsOnlyBasisNil() async {
+        try? await withCleanSettings {
+            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
+            backend.setLiveIob(1.0)
+            seedStale(backend, staleBg)                              // host reading = 200 (within cap)
+            let wireBg = staleBg - 5                                 // 195: wire ≠ host glucose
+            // Direct assertion of the consistency gate: intent is set and the reading is within the cap, but
+            // the wire value disagrees with the host's own reading ⇒ NO correction basis (carbs-only). The
+            // client sends a carbs-only estimate so it DELIVERS (rather than diverging as in test (d)).
+            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil).recommendedUnits
+            await model.remoteDeliver(requestId: "m-mismatch", carbsGrams: carbs, bgMgdl: wireBg,
+                                      remoteEstimate: carbsOnly, includeStaleBG: true, peerId: "watch")
+            #expect(rec.last?.status == .delivered)
+            #expect(backend.lastDeliver?.bg == nil)                  // basis nil: wire≠g fails the equality gate
+            #expect(abs((backend.lastDeliver?.units ?? -1) - carbsOnly) < tol)
+            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "watch", requestId: "m-mismatch") == false)
+        }
+    }
+
+    // MARK: - (n) FIX 2 (panel nonblocking): RemoteBolusLedger tolerant decode ⇒ absent provenance ⇒ false
+
+    @Test func ledgerTolerantDecodeDefaultsProvenanceFalse() throws {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "p", requestId: "r", doseKey: "k", usedIncludedStaleBG: true)
+        ledger.settle(peerId: "p", requestId: "r", status: "delivered")
+        #expect(ledger.usedIncludedStaleBG(peerId: "p", requestId: "r") == true)
+        // Encode, then STRIP `usedIncludedStaleBG` from every entry to mimic a ledger persisted before the
+        // field existed, and decode it back: the tolerant `decodeIfPresent ?? false` must default it false
+        // without dropping the rest of the entry.
+        let data = try JSONEncoder().encode(ledger)
+        var obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        var entries = obj["entries"] as! [String: Any]
+        for (k, v) in entries {
+            var e = v as! [String: Any]
+            e.removeValue(forKey: "usedIncludedStaleBG")
+            entries[k] = e
+        }
+        obj["entries"] = entries
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+        let decoded = try JSONDecoder().decode(RemoteBolusLedger.self, from: stripped)
+        #expect(decoded.usedIncludedStaleBG(peerId: "p", requestId: "r") == false)   // absent key ⇒ false
+        #expect(decoded.state(peerId: "p", requestId: "r") == .terminal)             // rest of the entry survived
+    }
 }

@@ -2187,14 +2187,19 @@ public final class AppModel {
             // Fresh reading present ⇒ it always wins (UNCHANGED behavior).
             basis = fresh; usedStale = false
         } else if includeStaleBG, let g = snapshot.glucose, snapshot.isGlucoseStale,
+                  GlucoseFreshness.withinIncludableStaleness(snapshot.glucoseDate),
                   let wire = bgMgdl, wire == g {
             // Acknowledged-stale path: the remote explicitly asked to include the stale reading AND the
-            // host's OWN reading is genuinely stale-but-present AND matches the wire value the remote
-            // estimated from. Recompute the correction from the host's own stale reading (real-not-modelled).
+            // host's OWN reading is genuinely stale-but-present AND — CRITICALLY — is no older than
+            // `GlucoseFreshness.maxIncludableStaleness` (default 15 min, the includable-age CAP) AND matches
+            // the wire value the remote estimated from. Recompute the correction from the host's own stale
+            // reading (real-not-modelled). The age cap bounds this branch: without it a full
+            // insulin-INCREASING correction could be recomputed off a reading of arbitrary age.
             basis = g; usedStale = true
         } else {
-            // Fail closed to carbs-only: no intent, no reading, stale-but-no-intent, or a host≠client
-            // mismatch. Identical to today's behavior.
+            // Fail closed to carbs-only: no intent, no reading, stale-but-no-intent, a stale reading OLDER
+            // than the includable cap (`maxIncludableStaleness`), or a host≠client mismatch. Identical to
+            // today's carbs-only behavior.
             basis = nil; usedStale = false
         }
         let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: basis)

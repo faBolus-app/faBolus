@@ -11,6 +11,7 @@ public enum GlucoseFreshness {
     // `nonisolated(unsafe) static var` (which only silences the checker).
     private static let _staleAfter = OSAllocatedUnfairLock<TimeInterval>(initialState: 6 * 60)
     private static let _hideAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
+    private static let _maxIncludableStaleness = OSAllocatedUnfairLock<TimeInterval>(initialState: 15 * 60)
 
     /// Readings older than this are **stale**: shown de-emphasized ("grey") and — critically — no
     /// longer used to auto-fill a bolus carb→unit correction. Default 6 minutes; open for adjustment.
@@ -25,6 +26,21 @@ public enum GlucoseFreshness {
     public static var hideAfter: TimeInterval? {
         get { _hideAfter.withLock { $0 } }
         set { _hideAfter.withLock { $0 = newValue } }
+    }
+
+    /// The MAXIMUM age at which a stale-but-real CGM reading may still be **explicitly included** in a
+    /// correction via the include-stale override (Addendum B). A reading in the window
+    /// `(staleAfter, maxIncludableStaleness]` is genuinely stale yet recent enough that a remote MAY, with
+    /// explicit per-attempt intent, ask the host to recompute a correction from it. Beyond this cap the
+    /// reading is too old to dose a correction from at all: the app fails closed to carbs-only, exactly as
+    /// an *unacknowledged* stale reading always has. Without this bound the include-stale branch could
+    /// recompute a full insulin-INCREASING correction off a reading of arbitrary age (30 min, 2 h, older)
+    /// — the hazard this cap closes. Default 15 minutes, anchored to LoopKit's `inputDataRecencyInterval`
+    /// (its 15-minute maximum glucose age for a dosing decision). §13-clinical-review-pending;
+    /// owner-adjustable at runtime like `staleAfter`/`hideAfter`.
+    public static var maxIncludableStaleness: TimeInterval {
+        get { _maxIncludableStaleness.withLock { $0 } }
+        set { _maxIncludableStaleness.withLock { $0 = newValue } }
     }
 
     /// Clock-skew tolerance for **future-dated** readings. A reading whose source timestamp is more
@@ -49,6 +65,21 @@ public enum GlucoseFreshness {
         let elapsed = now.timeIntervalSince(date)
         if elapsed < -futureSkewTolerance { return true }   // dated in the future beyond clock skew
         return elapsed > staleAfter
+    }
+
+    /// True iff a reading taken at `date` exists AND its age falls in the window
+    /// `(staleAfter, maxIncludableStaleness]` — i.e. it is genuinely stale (past `staleAfter`) yet no older
+    /// than the includable cap. This is the ONLY window in which a stale reading may be explicitly included
+    /// in a correction (the include-stale override, Addendum B); beyond the cap the reading is too old to
+    /// dose from and the caller must fail closed to carbs-only. A nil date, or one dated more than
+    /// `futureSkewTolerance` in the FUTURE, is untrustworthy and returns false (the SAME future-skew
+    /// handling as `isStale`). A FRESH reading (within `staleAfter`) also returns false: it belongs to the
+    /// fresh branch, not this override.
+    public static func withinIncludableStaleness(_ date: Date?, now: Date = Date()) -> Bool {
+        guard let date else { return false }
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < -futureSkewTolerance { return false }  // future-dated beyond clock skew → untrusted
+        return elapsed > staleAfter && elapsed <= maxIncludableStaleness
     }
 
     /// How a reading of a given age should be presented on screen.
