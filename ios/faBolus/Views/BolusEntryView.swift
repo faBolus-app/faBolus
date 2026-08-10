@@ -448,8 +448,18 @@ struct BolusEntryView: View {
                     // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
                     if let sbg = u.staleBG, let su = u.staleUnits {
                         Button("Include \(sbg) mg/dL → \(String(format: "%.2f U", su))") {
-                            let ext = u.extended; cgmUpdate = nil
-                            Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
+                            let ext = u.extended; let carbsOnlyUnits = u.newUnits; cgmUpdate = nil
+                            // Defense-in-depth (Addendum B cap): the option is only ever OFFERED for a
+                            // within-window reading, but re-verify at TAP time through the SAME single bound
+                            // (`StaleBolusPrompt.mayOfferInclude` → `withinIncludableStaleness`). If the reading
+                            // aged past `maxIncludableStaleness` since the dialog opened, fail closed to the
+                            // carbs-only dose rather than dosing an insulin-INCREASING correction off a
+                            // now-too-old reading. Never over-delivers vs the choice the user was offered.
+                            if StaleBolusPrompt.mayOfferInclude(glucoseMgdl: sbg, glucoseDate: model.snapshot.glucoseDate) {
+                                Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
+                            } else {
+                                Task { await deliverFrozen(freeze(units: carbsOnlyUnits, bg: nil, extended: ext)) }
+                            }
                         }
                     }
                     Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
@@ -676,13 +686,22 @@ struct BolusEntryView: View {
             let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil,
                                                        allowStaleIob: ov?.allowStaleIob ?? false,
                                                        allowStaleTherapy: ov?.allowStaleTherapy ?? false)
-            if let sg = model.snapshot.glucose {   // we're in the stale branch, so a present reading is stale
+            // Addendum B includable-age cap (iPhone fast-follow, mirrors the host `resolveRemoteDose` gate):
+            // offer the "include the stale reading" option ONLY when the reading is within the includable
+            // window `(staleAfter, maxIncludableStaleness]` — `StaleBolusPrompt.mayOfferInclude` routes through
+            // the ONE bound `GlucoseFreshness.withinIncludableStaleness`. A reading present but OLDER than the
+            // cap is too old to dose a correction from: fall through to the carbs-only / cancel branch below
+            // (identical to "no includable reading") — never compute or offer a `withStale` correction off it.
+            if let sg = model.snapshot.glucose,
+               StaleBolusPrompt.mayOfferInclude(glucoseMgdl: sg, glucoseDate: model.snapshot.glucoseDate) {
                 let withStale = await model.recommendBolus(carbsGrams: carbs, bgMgdl: sg,
                                                            allowStaleIob: ov?.allowStaleIob ?? false,
                                                            allowStaleTherapy: ov?.allowStaleTherapy ?? false)
                 cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
                                            extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
             } else {
+                // No includable reading: none present, OR present but OLDER than the includable cap
+                // (`maxIncludableStaleness`). Carbs-only / cancel only — no Include choice, no stale-basis dose.
                 cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
                                            extended: extended)
             }
