@@ -27,6 +27,10 @@ markers rather than releases, and are listed under Unreleased until a version is
   Cross-referenced from `AGENTS.md` and `CONTRIBUTING.md`.
 
 ### Changed
+- Retrospective **Insights** (time-in-range, recurring lows/highs, dawn rise) moved from the private
+  faBolusNudge `TherapyInsightsKit` into the vendored `faBolusCore` package. They now build and run in the
+  default (`FABOLUS_NUDGE=0`) app with no private SDK required. Advisory display only — no delivery,
+  dosing, or alerting behavior changed; the algorithm is unchanged.
 - App `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` are now **single-sourced in `Config.xcconfig`** and
   inherited by all six targets (`faBolus`, `faBolusWatch`, `faBolusWatchWidgets`, `faBolusWidgets`,
   `faBolusMac`, `faBolusMacWidgets`); the per-target version literals were removed from `project.yml`.

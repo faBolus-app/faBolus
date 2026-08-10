@@ -37,10 +37,10 @@ else
   GARMIN=1; [ -d "$SDK_DIR" ] || GARMIN=0
 fi
 WATCH="${FABOLUS_WATCH:-1}"
-# faBolusNudge advisory SDK (Smart Assist: bolus guardrail, predictive-low, insights, autotune, eating
-# detection). Auto-detected: if the (private) repo isn't reachable, the package + its 7 products + the
-# FABOLUS_NUDGE compile flag are stripped and the Smart Assist features compile out — the app still
-# builds. Override with FABOLUS_NUDGE=0/1.
+# faBolusNudge advisory SDK (Smart Assist: on-device eating detection + meal-detection intelligence).
+# Auto-detected: if the (private) repo isn't reachable, the package + its 6 products + the
+# FABOLUS_NUDGE compile flag are stripped and those Smart Assist features compile out — the app still
+# builds (retrospective insights live in faBolusCore and are unaffected). Override with FABOLUS_NUDGE=0/1.
 if [ -n "${FABOLUS_NUDGE:-}" ]; then
   NUDGE="$FABOLUS_NUDGE"
 else
@@ -111,7 +111,7 @@ else
   strip_block WATCH_DIRECT_PUMP_OFF   # the `excludes: [direct-pump]` — compile the directory in
 fi
 if [ "$NUDGE" = 0 ]; then
-  strip_block NUDGE                        # the faBolusNudge package + its 7 product dependencies
+  strip_block NUDGE                        # the faBolusNudge package + its 6 product dependencies
   sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
 fi
 if [ "$ICLOUD" = 0 ]; then
