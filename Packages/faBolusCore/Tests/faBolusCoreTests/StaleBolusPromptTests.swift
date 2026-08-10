@@ -5,6 +5,11 @@ import Foundation
 /// P15 Addendum B (AB1): the shared stale-CGM bolus decision. Pins the warn predicate, the three-way
 /// choice → calculator-input mapping, and that `cancel` alone does not proceed — the contract every
 /// surface (iPhone / Watch / Garmin / Mac) will consume so the behavior and safety framing are identical.
+///
+/// `.serialized` because `mayOfferIncludeRespectsTheIncludableAgeCap` pins the global `GlucoseFreshness`
+/// thresholds (pin + restore) to make the includable-window boundary unambiguous — mirroring the host cap
+/// test (`StaleRemoteDoseHostTests`).
+@Suite(.serialized)
 struct StaleBolusPromptTests {
 
     /// Warn only for a reading that EXISTS and is stale at compose time. Dates are chosen far from any
@@ -21,6 +26,33 @@ struct StaleBolusPromptTests {
         #expect(StaleBolusPrompt.shouldWarn(glucoseMgdl: 120, glucoseDate: future, now: now))
         // No reading value ⇒ nothing to include ⇒ no warning (it is simply a carbs-only bolus).
         #expect(!StaleBolusPrompt.shouldWarn(glucoseMgdl: nil, glucoseDate: stale, now: now))
+    }
+
+    /// Addendum B includable-age cap: `mayOfferInclude` offers the include-stale option ONLY for a reading
+    /// inside the window `(staleAfter, maxIncludableStaleness]`. A within-cap reading (10 min) offers it; a
+    /// beyond-cap one (20 min) does NOT (too old to dose a correction from → carbs-only); fresh, missing, and
+    /// future-skewed all return false. The thresholds are pinned + restored so the boundary is unambiguous
+    /// regardless of the global default, mirroring the host cap test.
+    @Test func mayOfferIncludeRespectsTheIncludableAgeCap() {
+        let savedStale = GlucoseFreshness.staleAfter, savedMax = GlucoseFreshness.maxIncludableStaleness
+        GlucoseFreshness.staleAfter = 6 * 60
+        GlucoseFreshness.maxIncludableStaleness = 15 * 60
+        defer { GlucoseFreshness.staleAfter = savedStale; GlucoseFreshness.maxIncludableStaleness = savedMax }
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let fresh = now.addingTimeInterval(-2 * 60)      // 2 min — fresh
+        let within = now.addingTimeInterval(-10 * 60)    // 10 min — stale, within cap
+        let beyond = now.addingTimeInterval(-20 * 60)    // 20 min — stale, OLDER than the cap
+        let future = now.addingTimeInterval(60 * 60)     // 1 h ahead — beyond future-skew tolerance
+
+        #expect(StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: within, now: now))
+        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: beyond, now: now))
+        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: fresh, now: now))
+        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: future, now: now))
+        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: nil, glucoseDate: within, now: now))
+        // Boundary: exactly AT the cap is includable (closed upper bound); one second past is not.
+        #expect(StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60), now: now))
+        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60 - 1), now: now))
     }
 
     @Test func choiceMapsToCalculatorInput() {
