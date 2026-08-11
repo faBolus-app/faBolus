@@ -821,6 +821,12 @@ public final class AppModel {
         (source as? TandemBackend)?.onCommandLatency = { [weak self] seconds in
             self?.connectionTelemetry.recordCommandLatency(seconds)
         }
+        // D-05: route the concrete Tandem backend's reconnect-ladder attempt#/backoff-delay into the
+        // in-memory BLE session log — the same concrete-only, opt-in-gated sink shape as `onCommandLatency`
+        // above. `bleSessionLog.record` is itself a no-op unless the shared diagnostics opt-in is on.
+        (source as? TandemBackend)?.onWillRetryReconnect = { [weak self] attempt, delay in
+            self?.bleSessionLog.record(.reconnect, detail: "attempt \(attempt), retrying in \(Int(delay))s")
+        }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
         for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

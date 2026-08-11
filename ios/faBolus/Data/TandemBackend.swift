@@ -45,6 +45,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `awaitResponse` for every response-bearing command; the host buckets + counts it only when the
     /// diagnostics opt-in is on. Never influences control flow — purely a diagnostic signal.
     public var onCommandLatency: (@MainActor (Double?) -> Void)?
+    /// D-05: observational reconnect-ladder sink — fired once per scheduled attempt (attempt#/jittered
+    /// delay) from `PumpBLEClient.scheduleNextReconnectAttempt()`, including a silently-failed attempt
+    /// that never reaches a `didChange`/`didError` state edge. Same concrete-Tandem-only, opt-in-gated
+    /// diagnostic-sink shape as `onCommandLatency` above (the `PumpBackend` protocol stays clean); never
+    /// influences control flow.
+    public var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
@@ -1901,6 +1907,15 @@ extension TandemBackend: PumpBLEClientDelegate {
 
     public func pumpClient(_ c: PumpBLEClient, didError error: Error) {
         applyClientError(error)
+        onChange?()
+    }
+
+    /// D-05: the kit's reconnect ladder scheduled another throttled attempt — surface it via
+    /// `onWillRetryReconnect` (the host records it into `BLESessionLog`, mirroring `onCommandLatency`'s
+    /// sink shape) rather than reaching into a shared session-log store directly, since `TandemBackend`
+    /// has no reference to the app's `BLESessionLog` (owned by `AppModel`).
+    public func pumpClient(_ c: PumpBLEClient, willRetryReconnect attempt: Int, after delay: TimeInterval) {
+        onWillRetryReconnect?(attempt, delay)
         onChange?()
     }
 
