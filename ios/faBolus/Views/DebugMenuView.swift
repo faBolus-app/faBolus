@@ -251,9 +251,19 @@ struct DebugMenuView: View {
         lines.append("[BLE session log] (in-memory, last \(model.bleSessionLog.capacity))")
         let entries = model.bleSessionLog.entries
         if entries.isEmpty { lines.append("—") }
+        // D-04: per-connect durations from the pure helper — matched back onto the disconnect line that
+        // closed each span (spans and entries are both chronological, so a positional walk suffices; no
+        // pairing logic is re-derived here).
+        let spans = BLESessionLog.connectDurations(from: entries)
+        var spanIndex = 0
         for e in entries {
             let ts = e.at.formatted(date: .omitted, time: .standard)
             lines.append("\(ts) \(e.kind.rawValue)\(e.detail.isEmpty ? "" : " · \(e.detail)")")
+            if e.kind == .disconnect, spanIndex < spans.count, spans[spanIndex].end == e.at {
+                let duration = spans[spanIndex].end.timeIntervalSince(spans[spanIndex].start)
+                lines.append("  connected for \(Self.formatUptime(duration))")
+                spanIndex += 1
+            }
         }
         return lines.joined(separator: "\n")
     }

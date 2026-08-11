@@ -47,4 +47,26 @@ final class BLESessionLog {
 
     /// Discard the in-memory log (offered in the console; also called by "Delete all on-device data").
     func clear() { entries.removeAll() }
+
+    /// D-04 — pairs each `.connect`/`.reconnect`/`.restore` edge with the NEXT `.disconnect` edge, using
+    /// only the existing `Entry.at` timestamps already recorded. A pure function of the input array: no
+    /// new `Kind` case, no new stored field, no dependence on `enabled`/UserDefaults. A trailing open span
+    /// (a connect/reconnect/restore with no following disconnect yet) is dropped — it's still connected,
+    /// just not yet a closed span. A disconnect with no preceding open span is ignored.
+    nonisolated static func connectDurations(from entries: [Entry]) -> [(start: Date, end: Date)] {
+        var spans: [(start: Date, end: Date)] = []
+        var openAt: Date?
+        for e in entries {
+            switch e.kind {
+            case .connect, .reconnect, .restore:
+                openAt = e.at
+            case .disconnect:
+                if let start = openAt {
+                    spans.append((start: start, end: e.at))
+                    openAt = nil
+                }
+            }
+        }
+        return spans
+    }
 }

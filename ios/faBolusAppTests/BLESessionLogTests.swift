@@ -66,4 +66,51 @@ struct BLESessionLogTests {
         #expect(log.entries.count == 1)
         #expect(log.entries.last?.kind == .disconnect)
     }
+
+    // MARK: - D-04 connectDurations(from:)
+
+    /// Each `.connect`/`.reconnect`/`.restore` opens a span; the NEXT `.disconnect` closes it, pairing
+    /// purely off the existing `Entry.at` timestamps — no new `Kind` case, no new stored field.
+    @Test func connectDurationsPairsEachOpenSpanWithNextDisconnect() {
+        let (log, _) = makeLog(enabled: true)
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        let t1 = t0.addingTimeInterval(1_000)
+        log.record(.connect, at: t0)
+        log.record(.disconnect, detail: "btOff", at: t0.addingTimeInterval(30))
+        log.record(.reconnect, at: t1)
+        log.record(.disconnect, detail: "btOff", at: t1.addingTimeInterval(5))
+
+        let spans = BLESessionLog.connectDurations(from: log.entries)
+        #expect(spans.count == 2)
+        #expect(spans[0].end.timeIntervalSince(spans[0].start) == 30)
+        #expect(spans[1].end.timeIntervalSince(spans[1].start) == 5)
+    }
+
+    /// A trailing open span (a `.connect`/`.reconnect`/`.restore` with no following `.disconnect` yet) is
+    /// still "connected" — it is NOT emitted as a closed span by this helper.
+    @Test func connectDurationsDropsTrailingOpenSpan() {
+        let (log, _) = makeLog(enabled: true)
+        let t0 = Date(timeIntervalSince1970: 3_000_000)
+        log.record(.connect, at: t0)
+        log.record(.disconnect, at: t0.addingTimeInterval(10))
+        log.record(.reconnect, at: t0.addingTimeInterval(20))
+
+        let spans = BLESessionLog.connectDurations(from: log.entries)
+        #expect(spans.count == 1)
+        #expect(spans[0].end.timeIntervalSince(spans[0].start) == 10)
+    }
+
+    /// A `.disconnect` with no open span (no preceding connect/reconnect/restore) is ignored, not paired
+    /// with anything.
+    @Test func connectDurationsIgnoresDisconnectWithNoOpenSpan() {
+        let (log, _) = makeLog(enabled: true)
+        let t0 = Date(timeIntervalSince1970: 4_000_000)
+        log.record(.disconnect, at: t0)
+        log.record(.connect, at: t0.addingTimeInterval(5))
+        log.record(.disconnect, at: t0.addingTimeInterval(15))
+
+        let spans = BLESessionLog.connectDurations(from: log.entries)
+        #expect(spans.count == 1)
+        #expect(spans[0].end.timeIntervalSince(spans[0].start) == 10)
+    }
 }
