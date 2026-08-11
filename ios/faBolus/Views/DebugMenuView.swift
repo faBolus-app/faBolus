@@ -94,6 +94,12 @@ struct DebugMenuView: View {
                 } label: {
                     Label(didCopy ? "Copied to clipboard" : "Copy diagnostics", systemImage: "doc.on.doc")
                 }
+                // D-01b — a second, zero-tooling export path: the OS share sheet (AirDrop/Files/Messages),
+                // sharing the same plaintext diagnosticsText directly. No .fileExporter/BackupDocument save
+                // dialog (D-02) and no network — mirrors SettingChangeLogView's ShareLink idiom.
+                ShareLink(item: diagnosticsText) {
+                    Label("Share diagnostics", systemImage: "square.and.arrow.up")
+                }
             } footer: {
                 Text("Copies the diagnostics above to the clipboard so you can paste them into a support "
                      + "message you choose to send. faBolus never uploads or transmits them itself.")
