@@ -1910,7 +1910,12 @@ extension TandemBackend: PumpBLEClientDelegate {
     /// bare "Disconnected" with no cause.
     func applyClientError(_ error: Error) {
         snapshot.connection = .disconnected
-        snapshot.connectionDetail = error.localizedDescription
+        // D-03: capture the stable machine token (domain + code), not just the human-readable
+        // description — `CBError`/`NSError` bridging always succeeds for any Swift `Error`, so this
+        // survives into `ConnectionTelemetryStore.reasonToken` and the diagnostics dump richer than the
+        // old bare "error" bucket. `localizedDescription` is still appended for the human-readable tail.
+        let ns = error as NSError
+        snapshot.connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
         // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
         if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }

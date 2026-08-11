@@ -63,6 +63,22 @@ struct ConnectionTelemetryStoreTests {
         #expect(ConnectionTelemetryStore.reasonToken(from: "Peer removed pairing") == "error")
     }
 
+    /// D-03 — a CBError-shaped detail (`TandemBackend.applyClientError`'s enriched
+    /// `"\(domain)#\(code) \(description)"` format) must bucket on its `domain#code` prefix instead of
+    /// collapsing into the generic "error" token; the four pre-existing string-matched inputs above are
+    /// unaffected (re-asserted here so a regression in the fallback ordering fails loudly).
+    @Test func reasonTokenBucketsCBErrorDomainCodeInsteadOfGenericError() {
+        let token = ConnectionTelemetryStore.reasonToken(
+            from: "CBErrorDomain#6 The connection has timed out unexpectedly.")
+        #expect(token != "error")
+        #expect(token == "CBErrorDomain#6")
+        // Pre-existing branches still win over the new fallback (unchanged behavior).
+        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is off") == "btOff")
+        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings") == "unauthorized")
+        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth unavailable on this device") == "unsupported")
+        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is resetting…") == "resetting")
+    }
+
     // MARK: - B3a: command-latency dimension
 
     @Test func commandLatencyBucketsResponsesAndTimeouts() {

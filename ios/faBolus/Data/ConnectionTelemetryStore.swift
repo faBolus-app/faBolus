@@ -60,15 +60,34 @@ final class ConnectionTelemetryStore {
     /// Bucket a disconnect into a stable token. Keyed off `PumpSnapshot.connectionDetail` (set at the
     /// app boundary in P12 increment 6), so no new backend/protocol plumbing is needed. `nil` detail is a
     /// plain drop or a user-initiated disconnect ("dropped"); the known radio-down phrases map to their
-    /// own tokens; anything else (a transport error's description) buckets as "error" so free-text error
-    /// strings don't fragment the counters.
+    /// own tokens. D-03: `TandemBackend.applyClientError` now populates `connectionDetail` with a
+    /// `"\(domain)#\(code) \(description)"` shape (e.g. "CBErrorDomain#6 The connection has timed out
+    /// unexpectedly.") — bucket that on its `domain#code` prefix instead of collapsing it into the same
+    /// generic "error" token as every other unmatched detail, so distinct CBError codes stay distinct
+    /// counters. Anything that doesn't match any branch (a free-text description with no domain#code
+    /// shape) still buckets as "error".
     static func reasonToken(from detail: String?) -> String {
         guard let d = detail else { return "dropped" }
         if d.contains("Bluetooth is off") { return "btOff" }
         if d.contains("permission") { return "unauthorized" }
         if d.contains("unavailable") { return "unsupported" }
         if d.contains("resetting") { return "resetting" }
+        if let token = domainCodeToken(from: d) { return token }
         return "error"
+    }
+
+    /// Extract a leading `domain#code` token (e.g. "CBErrorDomain#6") from a detail string shaped
+    /// `"\(domain)#\(code) \(description)"`. Returns `nil` if `d` doesn't match that shape (no `#`, or
+    /// the segment right after `#` isn't a run of digits), so callers fall through to the generic
+    /// "error" bucket rather than mis-bucketing arbitrary free text that happens to contain a `#`.
+    private static func domainCodeToken(from d: String) -> String? {
+        guard let hashIndex = d.firstIndex(of: "#") else { return nil }
+        let afterHash = d.index(after: hashIndex)
+        guard afterHash < d.endIndex else { return nil }
+        let codeEnd = d[afterHash...].firstIndex(of: " ") ?? d.endIndex
+        let codeSubstring = d[afterHash..<codeEnd]
+        guard !codeSubstring.isEmpty, codeSubstring.allSatisfy(\.isNumber) else { return nil }
+        return String(d[d.startIndex..<codeEnd])
     }
 
     private func bump(_ mutate: (inout ConnectionTelemetry) -> Void) {
