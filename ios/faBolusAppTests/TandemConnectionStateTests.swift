@@ -57,6 +57,11 @@ struct TandemConnectionStateTests {
         let b = backend()
         b.applyClientError(LinkErr())
         #expect(b.snapshot.connection == .disconnected)
-        #expect(b.snapshot.connectionDetail == "Peer removed pairing")
+        // D-03 (01.1-01): `applyClientError` now prefixes the localized description with the bridged
+        // NSError `domain#code` (e.g. "CBErrorDomain#6 ..." for a real CoreBluetooth error) so the reason
+        // is a stable, bucketable token instead of a bare human string — the original description still
+        // appears verbatim as the suffix, which is the "preserves its reason" behavior this test pins.
+        #expect(b.snapshot.connectionDetail?.hasSuffix("Peer removed pairing") == true)
+        #expect(b.snapshot.connectionDetail?.contains("#") == true)
     }
 }
