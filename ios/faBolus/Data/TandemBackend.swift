@@ -1612,19 +1612,19 @@ extension TandemBackend: PumpBLEClientDelegate {
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
             snapshot.connectionDetail = Self.linkDetail(for: state)
-            // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
-            // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
-            // path reads them as stale and fails closed.
-            if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
-            if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
-            // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
-            failPumpWaiters(BolusError.notConnected)
-            // Re-backfill on the next connect so the gap from this disconnect gets filled.
-            didBackfill = false; backfillActive = false
-            backfillTimer?.invalidate(); backfillTimer = nil
-            backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
-            detectedIsMobi = nil   // re-detect the model on the next connect
-            pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
+            linkDroppedCleanup()
+        case .reconnectExhausted:
+            // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that never
+            // held `.ready` long enough to count as recovered — see `PumpBLEClient.readyStabilityWindow`).
+            // This is specifically the "pairing keeps looping" case the debug session
+            // (`.planning/debug/pump-pairing-loop.md`) traced to a peer that accepts the connection and
+            // drops it again (real-pump-confirmed: `CBErrorDomain` code 7) — the #1 known cause is the
+            // official t:connect app still holding the pump (one-connection-at-a-time; same guidance
+            // already given during setup, see `MainHUDView`). `.error` (not `.disconnected`) so this
+            // doesn't read as a plain, retryable drop — automatic retry has actually stopped.
+            snapshot.connection = .error
+            snapshot.connectionDetail = "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
+            linkDroppedCleanup()
         default:
             // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
             // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
@@ -1632,6 +1632,26 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.connection = .disconnected
             snapshot.connectionDetail = nil
         }
+    }
+
+    /// Shared cleanup for every "the link is genuinely down" state (`applyClientState`'s plain-disconnect
+    /// case and `.reconnectExhausted`): resume any in-flight read/signed-flow waiters so nothing hangs,
+    /// and re-arm backfill/model-detection for the next connect. Factored out so `.reconnectExhausted`
+    /// gets exactly the same fail-closed behavior as a plain disconnect, not a weaker copy.
+    private func linkDroppedCleanup() {
+        // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
+        // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
+        // path reads them as stale and fails closed.
+        if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+        if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
+        // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
+        failPumpWaiters(BolusError.notConnected)
+        // Re-backfill on the next connect so the gap from this disconnect gets filled.
+        didBackfill = false; backfillActive = false
+        backfillTimer?.invalidate(); backfillTimer = nil
+        backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+        detectedIsMobi = nil   // re-detect the model on the next connect
+        pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
     }
 
     /// A short human explanation for a specific down state; nil for the benign/transitional ones where
@@ -1924,6 +1944,19 @@ extension TandemBackend: PumpBLEClientDelegate {
     /// only the in-flight bolus caller (via `failPumpWaiters`), never the snapshot, so a viewer saw a
     /// bare "Disconnected" with no cause.
     func applyClientError(_ error: Error) {
+        // `.reconnectLoopDetected` always pairs with a `didChange(.reconnectExhausted)` that fires just
+        // before this (kit ordering: `reconnectTick()` sets `state` — which notifies synchronously via
+        // its `didSet` — THEN notifies `didError`). `applyClientState`'s `.reconnectExhausted` case
+        // already set a specific, actionable `connectionDetail`; `PumpBLEClient.ClientError` isn't
+        // `LocalizedError`, so bridging it to `NSError` below would silently overwrite that with Swift's
+        // unhelpful boilerplate ("The operation couldn't be completed…"). Still resume in-flight work
+        // exactly like every other transport error — only the connection/connectionDetail differ.
+        if case PumpBLEClient.ClientError.reconnectLoopDetected = error {
+            if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
+            if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
+            failPumpWaiters(error)
+            return
+        }
         snapshot.connection = .disconnected
         // D-03: capture the stable machine token (domain + code), not just the human-readable
         // description — `CBError`/`NSError` bridging always succeeds for any Swift `Error`, so this
