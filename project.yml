@@ -124,8 +124,13 @@ targets:
         # "AfterFirstUnlock" — encrypted at rest yet readable during a locked background relaunch, matching
         # the delivery ledger. NEVER "…Complete": that would lock the ledger/history when the device locks
         # and break crash-recovery/reconciliation of an in-flight delivery. This is also iOS's own default
-        # class, so it needs no extra device capability; it is inert on the unsigned Simulator (CI) build.
+        # class, and inert on the unsigned Simulator (CI) build. It DOES require the Data Protection
+        # capability provisioned on the App ID to SIGN a device build, so scripts/generate-project.sh
+        # strips the tagged line below by default (like HealthKit/iCloud) — set FABOLUS_DATA_PROTECTION=1
+        # on a provisioned/paid account to keep it. Stripping is a no-op on-device (this is iOS's default).
+        # >>> DATA_PROTECTION (stripped by scripts/generate-project.sh unless FABOLUS_DATA_PROTECTION=1)
         com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
+        # <<< DATA_PROTECTION
         # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
         # it needs the paid Apple Developer Program to enable the capability, so it's off by default
         # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
@@ -362,7 +367,9 @@ targets:
         # F1 (§13): match the app's default at-rest protection so files the widget creates in the shared
         # App Group (e.g. a ledger write) get the same "AfterFirstUnlock" class. NEVER "…Complete" (the
         # widget reads the ledger while the phone is locked). Inert on the unsigned Simulator (CI) build.
+        # >>> DATA_PROTECTION (stripped by scripts/generate-project.sh unless FABOLUS_DATA_PROTECTION=1)
         com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
+        # <<< DATA_PROTECTION
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).widgets

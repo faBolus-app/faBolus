@@ -150,6 +150,26 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: CurrentEgvGuiDataV2Response.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-35 `CurrentEGVGuiDataResponse`, the V1 twin of `currentEgvV2` above (identical 8-byte layout).
+    /// `TandemBackend.fastRead()`/`refreshGlucoseNow()`/`runPredictiveBurst()` send this request (op34)
+    /// exclusively — never the V2 request (op192), which an older t:slim X2 firmware rejects with
+    /// `ErrorResponse`/BAD_OPCODE and then drops the BLE link — see `.planning/debug/pump-pairing-loop.md`
+    /// (on-device capture #6).
+    static func currentEgvV1(mgdl: Int, trendRate: Int) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 8)
+        let bg = le2(mgdl); c[4] = bg[0]; c[5] = bg[1]              // cgmReading (LE short)
+        c[6] = 1                                                    // egvStatusId = 1 → hasValidReading
+        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))   // signed trend rate
+        return frame(opCode: CurrentEGVGuiDataResponse.props.opCode, cargo: c, signed: false)
+    }
+
+    /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).
+    /// errorCodeId 6 = BAD_OPCODE — what an older pump answers op192 with, right before tearing the
+    /// link down.
+    static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6) -> [UInt8] {
+        frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false)
+    }
+
     /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)
     /// resolved for the active profile+segment. `carbRatioMilliGramsPerUnit` = grams-per-unit × 1000 (so 10000
     /// ⇒ 10 g/U); `iobMilliunits` should match the op-109 value or the host's cross-check trips `iobStale`.

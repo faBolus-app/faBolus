@@ -90,8 +90,15 @@ struct DebugMenuView: View {
                 Button {
                     UIPasteboard.general.string = diagnosticsText
                     didCopy = true
+                    writeDiagnosticsExportFile(diagnosticsText)
                 } label: {
                     Label(didCopy ? "Copied to clipboard" : "Copy diagnostics", systemImage: "doc.on.doc")
+                }
+                // D-01b — a second, zero-tooling export path: the OS share sheet (AirDrop/Files/Messages),
+                // sharing the same plaintext diagnosticsText directly. No .fileExporter/BackupDocument save
+                // dialog (D-02) and no network — mirrors SettingChangeLogView's ShareLink idiom.
+                ShareLink(item: diagnosticsText) {
+                    Label("Share diagnostics", systemImage: "square.and.arrow.up")
                 }
             } footer: {
                 Text("Copies the diagnostics above to the clipboard so you can paste them into a support "
@@ -105,7 +112,13 @@ struct DebugMenuView: View {
             }
         }
         .navigationTitle("Debug")
-        .onAppear { shareDiagnostics = settings.notificationTelemetryEnabled }
+        .onAppear {
+            shareDiagnostics = settings.notificationTelemetryEnabled
+            // D-01a/Pitfall 4: write the export file as soon as the console is opened, so the fixed-name
+            // Documents file exists before anyone runs `devicectl device copy from` — not gated behind a
+            // button tap that may never happen on this install.
+            writeDiagnosticsExportFile(diagnosticsText)
+        }
         .onChange(of: shareDiagnostics) { _, on in
             settings.notificationTelemetryEnabled = on
         }
@@ -199,6 +212,23 @@ struct DebugMenuView: View {
         return "\(sec)s"
     }
 
+    /// D-01a/D-09/D-10 — best-effort write of `diagnosticsText` verbatim to a FIXED filename in the app's
+    /// OWN Documents directory (no date/timestamp in the name, so `xcrun devicectl device copy from` has a
+    /// stable, predictable path to pull with zero on-device UI). `.completeFileProtectionUntilFirstUserAuthentication`
+    /// is passed EXPLICITLY (not the ambient default) so the file stays pullable after the first unlock
+    /// since boot — do NOT change this to `.completeFileProtection` (would make a locked-device pull fail).
+    /// A write failure is swallowed: this is a debug-only affordance and must never surface as a
+    /// user-facing error. No network/upload code — the file never leaves the app's own sandbox (F7, D-02).
+    private func writeDiagnosticsExportFile(_ text: String) {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = docs.appendingPathComponent("faBolus-diagnostics.txt")
+        do {
+            try Data(text.utf8).write(to: url, options: [.completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            // no-op — best-effort debug affordance, never blocks or errors the UI
+        }
+    }
+
     /// Plain-text snapshot of everything the console surfaces, for the clipboard-only export.
     private var diagnosticsText: String {
         var lines: [String] = ["faBolus diagnostics (local-only, never uploaded)"]
@@ -227,9 +257,19 @@ struct DebugMenuView: View {
         lines.append("[BLE session log] (in-memory, last \(model.bleSessionLog.capacity))")
         let entries = model.bleSessionLog.entries
         if entries.isEmpty { lines.append("—") }
+        // D-04: per-connect durations from the pure helper — matched back onto the disconnect line that
+        // closed each span (spans and entries are both chronological, so a positional walk suffices; no
+        // pairing logic is re-derived here).
+        let spans = BLESessionLog.connectDurations(from: entries)
+        var spanIndex = 0
         for e in entries {
             let ts = e.at.formatted(date: .omitted, time: .standard)
             lines.append("\(ts) \(e.kind.rawValue)\(e.detail.isEmpty ? "" : " · \(e.detail)")")
+            if e.kind == .disconnect, spanIndex < spans.count, spans[spanIndex].end == e.at {
+                let duration = spans[spanIndex].end.timeIntervalSince(spans[spanIndex].start)
+                lines.append("  connected for \(Self.formatUptime(duration))")
+                spanIndex += 1
+            }
         }
         return lines.joined(separator: "\n")
     }

@@ -20,6 +20,13 @@
 #     (constraint C9) and pairing it EVICTS the phone's pairing. When off, the directory is excluded
 #     and the three PumpX2Kit dependencies are dropped, so the watch app links no pump BLE stack at
 #     all. Enable for bench work only with FABOLUS_WATCH_DIRECT_PUMP=1.
+#   - Data Protection (§13/F1 at-rest): the `com.apple.developer.default-data-protection` entitlement
+#     defaults OFF because it needs the Data Protection capability provisioned on the App ID (a paid /
+#     portal-enabled account); automatic signing on an account without it can't build the device app.
+#     When off, the tagged entitlement line is stripped from the generated spec for BOTH iOS targets so
+#     xcodegen omits it from the .entitlements files it writes, and an unmodified clone signs. It is a
+#     functional no-op on-device — the value (NSFileProtectionCompleteUntilFirstUserAuthentication) is
+#     already iOS's default level. Enable on a provisioned account with FABOLUS_DATA_PROTECTION=1.
 #
 # When a feature is off, the app shows a note where its pairing/setup would be, explaining it wasn't
 # included at build time. Re-run with the SDK present / FABOLUS_WATCH=1 to restore it.
@@ -65,6 +72,13 @@ DIRECT_PUMP="${FABOLUS_WATCH_DIRECT_PUMP:-0}"
 # entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
 # unmodified clone signs on a free account. Enable on a paid account with FABOLUS_ICLOUD=1.
 ICLOUD="${FABOLUS_ICLOUD:-0}"
+# Data Protection (§13/F1) at-rest entitlement defaults OFF: com.apple.developer.default-data-protection
+# needs the Data Protection capability provisioned on the App ID (paid / portal-enabled account), so
+# automatic signing on an account without it fails to build the device app. When off, the tagged line is
+# stripped from the generated spec (both iOS targets) so xcodegen omits it from the .entitlements files —
+# an unmodified clone signs. No-op on-device: the value is already iOS's default protection level. Enable
+# on a provisioned account with FABOLUS_DATA_PROTECTION=1 for release builds.
+DATA_PROTECTION="${FABOLUS_DATA_PROTECTION:-0}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -118,8 +132,16 @@ if [ "$ICLOUD" = 0 ]; then
   strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
   drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
 fi
+if [ "$DATA_PROTECTION" = 0 ]; then
+  # The default-data-protection entitlement is declared in project.yml under entitlements.properties for
+  # BOTH iOS targets (faBolus + faBolusWidgets); xcodegen writes it into the generated .entitlements
+  # files. Strip both tagged lines from the spec BEFORE xcodegen runs so it never emits the entitlement —
+  # an account without the Data Protection capability can then sign the device app. (strip_block handles
+  # the two blocks in one call.)
+  strip_block DATA_PROTECTION
+fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
@@ -129,5 +151,7 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$DIRECT_PUMP" = 1 ] && echo "  → ⚠️  watch DIRECT-TO-PUMP path ON (FABOLUS_WATCH_DIRECT_PUMP=1) — violates C9, evicts the phone's pairing, BENCH ONLY. Do not wear this build."
 [ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
 [ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
+[ "$DATA_PROTECTION" = 0 ] && echo "  → building WITHOUT the §13 Data Protection entitlement (needs the capability provisioned on the App ID; set FABOLUS_DATA_PROTECTION=1 to enable) — on-device protection unchanged (iOS default level)"
+[ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
 
 xcodegen generate --spec "$SPEC"

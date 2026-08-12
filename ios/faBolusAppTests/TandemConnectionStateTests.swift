@@ -57,6 +57,40 @@ struct TandemConnectionStateTests {
         let b = backend()
         b.applyClientError(LinkErr())
         #expect(b.snapshot.connection == .disconnected)
-        #expect(b.snapshot.connectionDetail == "Peer removed pairing")
+        // D-03 (01.1-01): `applyClientError` now prefixes the localized description with the bridged
+        // NSError `domain#code` (e.g. "CBErrorDomain#6 ..." for a real CoreBluetooth error) so the reason
+        // is a stable, bucketable token instead of a bare human string — the original description still
+        // appears verbatim as the suffix, which is the "preserves its reason" behavior this test pins.
+        #expect(b.snapshot.connectionDetail?.hasSuffix("Peer removed pairing") == true)
+        #expect(b.snapshot.connectionDetail?.contains("#") == true)
+    }
+
+    /// `.reconnectExhausted` (the kit's reconnect ladder gave up — `.planning/debug/pump-pairing-loop.md`)
+    /// must read as `.error`, not a plain retryable `.disconnected`, and must carry the specific,
+    /// actionable t:connect guidance — not fall through to `default:` with a nil detail (the gap this
+    /// fix closes; `.reconnectExhausted` used to have no explicit case).
+    @Test func reconnectExhaustedSurfacesAsErrorWithActionableGuidance() {
+        let b = backend()
+        b.setConnectionForTesting(.connected)             // pretend we were linked…
+        b.applyClientState(.reconnectExhausted)            // …then the ladder gives up
+        #expect(b.snapshot.connection == .error)
+        #expect(!b.snapshot.isLinked)                      // so the bolus gate refuses delivery
+        #expect(b.snapshot.connectionDetail?.contains("t:connect") == true)
+    }
+
+    /// Kit ordering: `reconnectTick()`'s `state = .reconnectExhausted` assignment fires `didChange`
+    /// synchronously (the `didSet`) BEFORE `notify { didError(.reconnectLoopDetected) }` runs — so
+    /// `applyClientState`'s actionable message is already set by the time `applyClientError` sees the
+    /// paired error. `PumpBLEClient.ClientError` isn't `LocalizedError`, so bridging it to `NSError` the
+    /// way every other transport error is handled would silently overwrite that message with Swift's
+    /// unhelpful boilerplate ("The operation couldn't be completed…") — pin that it doesn't.
+    @Test func reconnectLoopDetectedErrorDoesNotClobberTheGuidance() {
+        let b = backend()
+        b.applyClientState(.reconnectExhausted)
+        let detailBefore = b.snapshot.connectionDetail
+        #expect(detailBefore != nil)
+        b.applyClientError(PumpBLEClient.ClientError.reconnectLoopDetected)
+        #expect(b.snapshot.connection == .error)
+        #expect(b.snapshot.connectionDetail == detailBefore)
     }
 }
