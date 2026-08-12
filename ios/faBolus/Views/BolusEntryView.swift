@@ -133,6 +133,18 @@ struct BolusEntryView: View {
                                                 glucoseMgdl: model.snapshot.glucose,
                                                 trend: GlucoseTrend(rawValue: model.snapshot.trend))
     }
+    /// SG1: the calc-override disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's OWN
+    /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery;
+    /// same "disclosure only" contract as `autoCorrectionAmbient`/`autoCorrectionLockout` above.
+    private var sg1Disclosure: StackingGuard.Disclosure? {
+        guard let rec = recommendation else { return nil }
+        let disclosure = StackingGuard.calcOverride(enteredUnits: units, recommendedUnits: rec.recommendedUnits,
+                                                     displaysNumericDose: rec.displaysNumericDose,
+                                                     pumpIOBUnits: rec.iobUnits,
+                                                     glucoseMgdl: model.snapshot.glucose,
+                                                     targetMgdl: model.snapshot.targetBg)
+        return disclosure.friction == .none ? nil : disclosure
+    }
     private var cgmAgeMinutes: Int? {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
@@ -336,6 +348,13 @@ struct BolusEntryView: View {
                     }
                     if let lockout = autoCorrectionLockout {
                         Label(lockout, systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                    // SG1 (Insulin Stacking Guard, task #93): calc-override DISCLOSURE only — same
+                    // "never inside a gate" contract as the auto-correction lines above. NEVER touches
+                    // the Deliver button below.
+                    if let sg1 = sg1Disclosure, let message = sg1.message {
+                        Label(message, systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
                     }
                     Button { confirming = true } label: {
