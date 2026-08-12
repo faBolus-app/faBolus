@@ -377,6 +377,15 @@ public final class AppSettings {
     public var hasAcknowledgedGarminBolusWarning: Bool { garminBolusWarningAckAt != nil }
     public func acknowledgeGarminBolusWarning() { if garminBolusWarningAckAt == nil { garminBolusWarningAckAt = Date() } }
 
+    // FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior-change notice, shown
+    // the first time the bolus screen appears. Same idiom as `therapyEditAckAt`: durable per-install
+    // marker, NOT a `SettingsCatalog` row — never backed up, never iCloud-synced (a synced ack must not
+    // silently pre-suppress the notice on another device). NEVER gates a write. nil ⇒ never shown.
+    public var stackingGuardNoticeAckAt: Date? { didSet { d.set(stackingGuardNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "stackingGuardNoticeAckAt") } }
+    public var hasAcknowledgedStackingGuardNotice: Bool { stackingGuardNoticeAckAt != nil }
+    /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
+    public func acknowledgeStackingGuardNotice() { if stackingGuardNoticeAckAt == nil { stackingGuardNoticeAckAt = Date() } }
+
     /// `.shared` uses `.standard`; the P15 E2 first-launch defaults test injects a fresh empty suite. Not
     /// `private` (was) so `@testable` tests can construct an instance over an injected store — the app
     /// still funnels everything through `.shared`.
@@ -420,6 +429,8 @@ public final class AppSettings {
         watchBolusWarningAckAt = wAck > 0 ? Date(timeIntervalSince1970: wAck) : nil
         let gAck = d.double(forKey: "garminBolusWarningAckAt")
         garminBolusWarningAckAt = gAck > 0 ? Date(timeIntervalSince1970: gAck) : nil
+        let sgAck = d.double(forKey: "stackingGuardNoticeAckAt")   // FLAG-4: 0 (absent) ⇒ never acknowledged
+        stackingGuardNoticeAckAt = sgAck > 0 ? Date(timeIntervalSince1970: sgAck) : nil
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
