@@ -17,6 +17,8 @@ import Foundation
 ///
 /// **SG1** (`calcOverride`): discloses when the entered dose exceeds the pump's own op-115 calculator
 /// suggestion while glucose is above the pump's own op-115 target — never a fixed clinical threshold.
+/// **SG2** (`maxBolusProximity`): discloses when the entered dose is at or above the pump's own reported
+/// Max-Bolus (op-115 `maxBolusAmount`) — anchored purely on that pump read, never a hardcoded cap.
 /// **SG3b** (`tempRateOffer`): a strictly-inert stub — see its doc comment; BLOCKED pending a saline-bench
 /// check, per `PROJECT.md`'s Out-of-Scope entry and `TempRateRequests.swift:3-5`.
 public enum StackingGuard {
@@ -93,6 +95,27 @@ public enum StackingGuard {
         return Disclosure(friction: .disclose,
                           message: "You're entering more than the pump's calculator suggested.",
                           detail: Self.iobDetail(pumpIOBUnits))
+    }
+
+    // MARK: - SG2: max-bolus proximity disclosure
+
+    /// **SG2** — discloses when the entered dose is at or above the pump's OWN reported Max-Bolus
+    /// (`snapshot.maxBolusUnits`, a direct op-115 `maxBolusAmount` read) — never a hardcoded cap and never a
+    /// near-band fraction (an 80%-of-max warning is a §13 param, default off, NOT built this phase). Purely
+    /// informational: it never gates, clamps, or delays the Deliver button (see
+    /// `StackingGuardDeliverInvariantTests`).
+    ///
+    /// Fires (`.disclose`) when `maxBolusUnits > 0` (a valid pump max was actually reported) AND
+    /// `enteredUnits >= maxBolusUnits` (at or above the pump's own max — the existing `overMax` label already
+    /// covers strictly-above; SG2's disclosure additionally covers the boundary exactly-at-max case).
+    ///
+    /// Does NOT fire (`.none`) when `enteredUnits < maxBolusUnits`, or when `maxBolusUnits <= 0` (no valid
+    /// pump max reported — never disclose against an invalid/unread anchor).
+    public static func maxBolusProximity(enteredUnits: Double, maxBolusUnits: Double) -> Disclosure {
+        guard maxBolusUnits > 0 else { return .none }
+        guard enteredUnits >= maxBolusUnits else { return .none }
+        return Disclosure(friction: .disclose,
+                          message: "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U.")
     }
 
     // MARK: - SG3b: temp-rate offer (BLOCKED, strictly inert)
