@@ -87,4 +87,24 @@ struct StackingGuardDeliverInvariantTests {
 
         #expect(rec.iobUnits == snapshot.iobUnits)
     }
+
+    /// (d) SG2 extension (plan 02): with SG2 ACTIVE (entered >= the pump's own op-115 maxBolusUnits), the
+    /// REAL deliver path through the fake transport still delivers exactly the consented units — SG2's
+    /// disclosure never crosses into the number that reaches the pump, same coupled-pair proof as SG1 above.
+    @Test func deliveredEqualsConsentedWhileSG2Fires() async throws {
+        let entered = 25.0
+        let maxBolusUnits = 25.0
+
+        // Re-confirm SG2 is active for this exact scenario, coupled to the delivery assertion below — if a
+        // future edit makes SG2 stop firing here, this test fails LOUDLY rather than silently asserting
+        // delivered==consented against a scenario where SG2 was never active.
+        let disclosure = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: maxBolusUnits)
+        #expect(disclosure.friction != .none)
+
+        let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 25000)
+        let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: nil, iobUnits: 0)
+        #expect(delivered == entered)                 // exactly the consented dose, not clamped to a lower number
+        #expect(!backend.deliveryOutcomeUnknown)
+        _ = fake                                       // keep the fake alive for the duration of the assertion
+    }
 }

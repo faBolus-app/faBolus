@@ -145,6 +145,14 @@ struct BolusEntryView: View {
                                                      targetMgdl: model.snapshot.targetBg)
         return disclosure.friction == .none ? nil : disclosure
     }
+    /// SG2: the max-bolus proximity disclosure, or nil. Pure `faBolusCore` disclosure anchored solely on the
+    /// pump's own op-115 `maxBolusUnits` — never gates, changes, or delays delivery; same "disclosure only"
+    /// contract as `sg1Disclosure` above. Renders beside the existing "Exceeds pump max" label (:320-323
+    /// pattern), an additional pump-anchored disclosure, not a replacement for it.
+    private var sg2Disclosure: StackingGuard.Disclosure? {
+        let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
+        return disclosure.friction == .none ? nil : disclosure
+    }
     private var cgmAgeMinutes: Int? {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
@@ -320,6 +328,14 @@ struct BolusEntryView: View {
                     if overMax {
                         Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(AppTheme.low)
+                    }
+                    // SG2 (Insulin Stacking Guard, task #93): max-bolus proximity DISCLOSURE only — same
+                    // "never inside a gate" contract as the SG1 line below. Anchored solely on the pump's
+                    // own op-115 maxBolusUnits (never a hardcoded cap); additional to the overMax label
+                    // above, not a replacement.
+                    if let sg2 = sg2Disclosure, let message = sg2.message {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange)
                     }
                     if !settings.childAllows(.bolus) {
                         Label("Bolus is disabled by child mode", systemImage: "lock.fill")
