@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// **Insulin Stacking Guard — pure friction/disclosure surface (SG1–SG3b).**
 ///
@@ -19,6 +20,10 @@ import Foundation
 /// suggestion while glucose is above the pump's own op-115 target — never a fixed clinical threshold.
 /// **SG2** (`maxBolusProximity`): discloses when the entered dose is at or above the pump's own reported
 /// Max-Bolus (op-115 `maxBolusAmount`) — anchored purely on that pump read, never a hardcoded cap.
+/// **SG3a** (`escalation`): composes the SG1/SG2 signals into a single escalating `Friction`
+/// (`.disclose` → `.confirmExtra` → `.reenter`) as the override magnitude crosses §13 owner-confirmable,
+/// lock-backed cut-points (`confirmExtraOverrideRatio` / `reenterOverrideRatio`) — still friction/disclosure
+/// only, never a `.block` case, never a units field.
 /// **SG3b** (`tempRateOffer`): a strictly-inert stub — see its doc comment; BLOCKED pending a saline-bench
 /// check, per `PROJECT.md`'s Out-of-Scope entry and `TempRateRequests.swift:3-5`.
 public enum StackingGuard {
@@ -116,6 +121,95 @@ public enum StackingGuard {
         guard enteredUnits >= maxBolusUnits else { return .none }
         return Disclosure(friction: .disclose,
                           message: "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U.")
+    }
+
+    // MARK: - SG3a: escalating friction (SG1 override magnitude + SG2 max-proximity)
+
+    // Thread-safe backing (mirrors `CalcInputFreshness`'s `OSAllocatedUnfairLock` idiom): set at launch
+    // (or by a future §13-review Settings screen) and read from many isolation domains, so a bare
+    // `nonisolated(unsafe) static var` would only silence the checker, not make the mutation actually safe.
+    //
+    // **Owner-confirmable, subject to §13 review — starting points with no evidence base.** These are the
+    // override-ratio (entered ÷ recommended) cut-points at which SG3a escalates the friction tier. They are
+    // NOT clinical thresholds; they exist purely to decide how much friction/confirmation to surface before
+    // an unusually large override reaches the (unaffected) Deliver button.
+    private static let _confirmExtraOverrideRatio = OSAllocatedUnfairLock<Double>(initialState: 1.5)
+    private static let _reenterOverrideRatio = OSAllocatedUnfairLock<Double>(initialState: 2.0)
+
+    /// The override ratio (`enteredUnits / recommendedUnits`) at or above which `escalation` steps up from
+    /// `.disclose` to `.confirmExtra` — e.g. the default `1.5` means "50% more than the pump's calculator
+    /// suggested". **Owner-confirmable default, §13-adjustable; not a clinical constant.**
+    public static var confirmExtraOverrideRatio: Double {
+        get { _confirmExtraOverrideRatio.withLock { $0 } }
+        set { _confirmExtraOverrideRatio.withLock { $0 = newValue } }
+    }
+
+    /// The override ratio at or above which `escalation` steps up to the most extreme tier, `.reenter` —
+    /// e.g. the default `2.0` means "double the pump's calculator suggestion". Must stay `>=
+    /// confirmExtraOverrideRatio` for the tiers to remain ordered; **owner-confirmable default, §13-adjustable.**
+    public static var reenterOverrideRatio: Double {
+        get { _reenterOverrideRatio.withLock { $0 } }
+        set { _reenterOverrideRatio.withLock { $0 = newValue } }
+    }
+
+    /// **SG3a** — composes the SG1 override signal (`calcOverride`) and the SG2 max-proximity signal
+    /// (`maxBolusProximity`) into a single escalating `Friction` outcome. Purely informational/friction:
+    /// like every function in this file, it never gates, clamps, delays, or resizes the Deliver button (see
+    /// `StackingGuardDeliverInvariantTests`), and the return type is `Disclosure` — never a units/dose value.
+    ///
+    /// Escalation ladder, keyed on the override ratio `enteredUnits / recommendedUnits`:
+    /// - `.none` — SG1 would not fire (see `calcOverride`'s guards: not displayable, no glucose above the
+    ///   pump's own target, or `enteredUnits <= recommendedUnits` — the exact-match false-positive included,
+    ///   at ANY dose size).
+    /// - `.disclose` — SG1 fires and the ratio is below `confirmExtraOverrideRatio`, and the dose is below
+    ///   the pump's own reported max (SG2 does not fire either).
+    /// - `.confirmExtra` — the ratio has crossed `confirmExtraOverrideRatio` (a materially stronger
+    ///   override), OR the dose is at/above the pump's own reported max (SG2 fires) even if the ratio alone
+    ///   hasn't crossed that cut-point yet.
+    /// - `.reenter` — the ratio has crossed `reenterOverrideRatio` (the most extreme override), OR
+    ///   `recommendedUnits == 0` (a nonzero dose against a calculator that suggested nothing at all — the
+    ///   most extreme case there is, disclosed WITHOUT ever computing an entered/recommended ratio, so this
+    ///   branch can never divide by zero and never renders a NaN/inf into a message).
+    ///
+    /// Monotonic in override magnitude: a strictly larger `enteredUnits` (all else held fixed) never steps
+    /// the friction level DOWN, because the ratio and the max-proximity signal are each monotonic in
+    /// `enteredUnits` and the ladder above only ever steps up as either crosses its cut-point.
+    public static func escalation(enteredUnits: Double,
+                                  recommendedUnits: Double,
+                                  displaysNumericDose: Bool,
+                                  pumpIOBUnits: Double,
+                                  glucoseMgdl: Int?,
+                                  targetMgdl: Int,
+                                  maxBolusUnits: Double) -> Disclosure {
+        let sg1 = calcOverride(enteredUnits: enteredUnits, recommendedUnits: recommendedUnits,
+                               displaysNumericDose: displaysNumericDose, pumpIOBUnits: pumpIOBUnits,
+                               glucoseMgdl: glucoseMgdl, targetMgdl: targetMgdl)
+        guard sg1.friction != .none else { return .none }
+
+        let sg2 = maxBolusProximity(enteredUnits: enteredUnits, maxBolusUnits: maxBolusUnits)
+        let atOrAboveMax = sg2.friction != .none
+
+        // Full-override branch — BEFORE any ratio, mirroring `calcOverride`'s own zero-recommendation
+        // guard. The most extreme tier: there is no basis at all to measure "how much" of an override this
+        // is, so it goes straight to `.reenter` rather than ever dividing by zero.
+        if recommendedUnits == 0 {
+            return Disclosure(friction: .reenter,
+                              message: "You're entering \(Self.formatUnits(enteredUnits)) U with no calculator suggestion to compare against — please re-enter to confirm.",
+                              detail: sg1.detail)
+        }
+
+        let ratio = enteredUnits / recommendedUnits
+        if ratio >= reenterOverrideRatio {
+            return Disclosure(friction: .reenter,
+                              message: "This dose is far above what the pump's calculator suggested — please re-enter to confirm.",
+                              detail: sg1.detail)
+        }
+        if ratio >= confirmExtraOverrideRatio || atOrAboveMax {
+            return Disclosure(friction: .confirmExtra,
+                              message: "This dose is well above what the pump's calculator suggested — please confirm before delivering.",
+                              detail: sg1.detail)
+        }
+        return Disclosure(friction: .disclose, message: sg1.message, detail: sg1.detail)
     }
 
     // MARK: - SG3b: temp-rate offer (BLOCKED, strictly inert)
