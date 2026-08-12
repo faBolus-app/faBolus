@@ -26,6 +26,17 @@ struct BolusEntryView: View {
     @State private var extendedDurationMin = 120
     @State private var extendedNowPercent = 50
     @State private var confirmingExtended = false
+    // SG3a (Insulin Stacking Guard, task #93): escalating friction state at the standard confirm seam.
+    // Neither extra step ever changes `units` — both gate the SAME dose through to the unchanged
+    // `attemptDeliver` path (see `handleStandardConfirm`).
+    @State private var sgConfirmExtra = false
+    @State private var sgReenter = false
+    @State private var sgReenterText = ""
+    @State private var sgReenterMismatch = false
+    @State private var sgOriginalUnits: Double = 0
+    // FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior notice, shown once
+    // at the first bolus-screen appearance (`.onAppear` below).
+    @State private var showStackingGuardNotice = false
     /// Where the correction BG came from: auto-filled from the CGM, or typed by the user. Only a
     /// CGM-sourced BG is auto-refreshed / re-checked for freshness (a typed BG is the user's own).
     private enum BGSource { case none, cgm, manual }
@@ -153,6 +164,32 @@ struct BolusEntryView: View {
         let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
+    /// SG3a: the escalating-friction disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's
+    /// OWN op-115 target/max (never a hardcoded clinical constant) and NEVER gates, changes, or delays
+    /// delivery on its own; the escalated CONFIRM/RE-TYPE steps below are UI wiring layered on top of this
+    /// same disclosure, never a new dose decision. Unlike `sg1Disclosure`/`sg2Disclosure`, this is NOT gated
+    /// on `settings.stackingGuardFrictionEnabled` here — the message/band LINE always renders when SG3a
+    /// fires (per `AppSettings.stackingGuardFrictionEnabled`'s doc comment: "SG3a's own .disclose line still
+    /// render[s]" when the toggle is off); the toggle only caps which ESCALATED friction tier is actually
+    /// applied at the confirm seam (`sg3aAppliedFriction` below).
+    private var sg3aDisclosure: StackingGuard.Disclosure? {
+        guard let rec = recommendation else { return nil }
+        let disclosure = StackingGuard.escalation(enteredUnits: units, recommendedUnits: rec.recommendedUnits,
+                                                   displaysNumericDose: rec.displaysNumericDose,
+                                                   pumpIOBUnits: rec.iobUnits,
+                                                   glucoseMgdl: model.snapshot.glucose,
+                                                   targetMgdl: model.snapshot.targetBg,
+                                                   maxBolusUnits: model.snapshot.maxBolusUnits)
+        return disclosure.friction == .none ? nil : disclosure
+    }
+    /// The friction tier ACTUALLY applied at the confirm seam: when `stackingGuardFrictionEnabled` is off,
+    /// any escalated tier (`.confirmExtra`/`.reenter`) is capped down to `.disclose` — the message/band line
+    /// still shows (via `sg3aDisclosure` above), but the extra-confirm / re-type friction no longer gates
+    /// delivery. When the toggle is on, the tier is applied as `StackingGuard.escalation` computed it.
+    private var sg3aAppliedFriction: StackingGuard.Friction {
+        guard let f = sg3aDisclosure?.friction, f != .none else { return .none }
+        return settings.stackingGuardFrictionEnabled ? f : .disclose
+    }
     private var cgmAgeMinutes: Int? {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
@@ -168,6 +205,11 @@ struct BolusEntryView: View {
             parts.append("⚠️ Your CGM reading is \(m) min old — this correction may be based on outdated glucose.")
         }
         if let w = carbOverrideWarning { parts.append(w) }
+        // SG3a: compose the escalating-friction message into the STANDARD confirm dialog too — the
+        // `.disclose` tier's "no extra tap" contract (the message shows here; nothing further gates it).
+        // For `.confirmExtra`/`.reenter` this still shows as context BEFORE the extra step (added below at
+        // the confirm seam), never a replacement for it.
+        if let sg3a = sg3aDisclosure, let message = sg3a.message { parts.append(message) }
         parts.append("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
         return parts.joined(separator: "\n\n")
     }
@@ -187,6 +229,21 @@ struct BolusEntryView: View {
     /// distribution) has one home; no control flow or dose logic depends on the string.
     static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
 
+    /// FLAG-4 (§1.5, REQ-D16-flags) DRAFT copy, §13-pending — the DosingSafetyKit→SG advisory-behavior
+    /// change notice, shown once at the first bolus-screen appearance. Plain-language, non-alarming —
+    /// mirrors the `TherapyEditAck` tone. Kept as one string constant (same idiom as
+    /// `awaitingPumpSettingsCopy` above) so the wording has one home; no control flow depends on it.
+    static let stackingGuardNoticeCopy = "This version adds Insulin Stacking Guard: extra on-screen context, and for larger overrides an extra confirmation or a re-type step before an unusually large dose delivers. It's advisory only — it never blocks, resizes, or changes the amount you choose to deliver."
+
+    /// SG3a `.reenter` exact-match rule: a re-typed value must equal `original` (within floating-point
+    /// tolerance) to proceed — ANY other value is rejected/re-prompted, never delivered as a new (resized)
+    /// amount (T-01-08). `internal` (not `private`) so `StackingGuardDeliverInvariantTests` (`@testable
+    /// import faBolus`) can prove the MUST-NOT-BLOCK invariant's re-type counterpart directly: a mismatched
+    /// re-type never satisfies this check.
+    static func reenterMatches(retyped: Double, original: Double) -> Bool {
+        abs(retyped - original) < 0.005
+    }
+
     /// Compact units string: 1.00 → "1", 1.50 → "1.5", 0.05 → "0.05".
     private static func trimUnits(_ v: Double) -> String {
         var s = String(format: "%.2f", v)
@@ -196,9 +253,11 @@ struct BolusEntryView: View {
     }
 
     var body: some View {
-        Group {
-            if embedded { content } else { NavigationStack { content } }
-        }
+        withSG3aFriction(
+            Group {
+                if embedded { content } else { NavigationStack { content } }
+            }
+        )
     }
 
     private var content: some View {
@@ -373,6 +432,18 @@ struct BolusEntryView: View {
                         Label(message, systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange)
                     }
+                    // SG3a (Insulin Stacking Guard, task #93): escalating-friction DISCLOSURE line — same
+                    // "band" render as SG1/SG2 above. The message always shows when SG3a fires (even with
+                    // `stackingGuardFrictionEnabled` off — see `sg3aDisclosure`'s doc comment); the
+                    // ESCALATED confirm/re-type friction this can additionally require is wired at the
+                    // confirm seam below (`handleStandardConfirm`), never here. `.disclose`-tier reuses SG1's
+                    // exact message (see `StackingGuard.escalation`), so this line is suppressed when it
+                    // would be a verbatim duplicate of the SG1 label already shown above — only a
+                    // confirmExtra/reenter-tier message (which differs) renders as an additional line.
+                    if let sg3a = sg3aDisclosure, let message = sg3a.message, message != sg1Disclosure?.message {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
                     }
@@ -418,6 +489,10 @@ struct BolusEntryView: View {
             // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
             // fresh from the start (never the ~10-min-stale cache).
             Task { await model.refreshGlucoseNow(); await model.refreshCalcInputsNow(); syncBGFromCGM() }
+            // FLAG-4 (§1.5, REQ-D16-flags): first-use disclosure that this version adds Insulin Stacking
+            // Guard's advisory friction. Shown once (persisted), non-blocking — the screen stays usable
+            // regardless, same idiom as `TherapyEditAck` (PumpWizardViews.swift).
+            if !AppSettings.shared.hasAcknowledgedStackingGuardNotice { showStackingGuardNotice = true }
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
@@ -467,7 +542,7 @@ struct BolusEntryView: View {
         }
         .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
                             isPresented: $confirming, titleVisibility: .visible) {
-            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver(extended: false) } }
+            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { handleStandardConfirm() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(confirmMessage)
@@ -570,6 +645,90 @@ struct BolusEntryView: View {
         } message: {
             if let p = calcInputPrompt { Text(calcInputMessage(p)) }
         }
+    }
+
+    /// SG3a's escalated-friction dialogs (`.confirmExtra`/`.reenter`) + the FLAG-4 one-time notice, applied
+    /// as a SEPARATE modifier group (not inline in `content`'s chain above). Splitting these out keeps each
+    /// chained-modifier expression small enough for the type-checker — `content`'s chain was already long
+    /// before this plan, and appending these three `.confirmationDialog`/`.alert` modifiers directly onto it
+    /// pushed a single SwiftUI modifier-chain expression past what the compiler can type-check in
+    /// reasonable time (no behavior difference: `.alert`/`.confirmationDialog` attach presentation state via
+    /// the view hierarchy regardless of which ancestor they're applied to).
+    @ViewBuilder
+    private func withSG3aFriction<V: View>(_ view: V) -> some View {
+        view
+            // SG3a `.confirmExtra`: one ADDITIONAL confirmation step beyond the standard confirm dialog —
+            // routed here by `handleStandardConfirm` only when `sg3aAppliedFriction == .confirmExtra`. Gates
+            // the SAME dose (`sgOriginalUnits`, captured at the moment the standard dialog's Deliver was
+            // tapped) — Cancel sends NOTHING; Deliver proceeds to the unchanged `attemptDeliver` path with
+            // `units` unchanged (never resized by this step).
+            .confirmationDialog("Confirm again — deliver \(String(format: "%.2f U", sgOriginalUnits))?",
+                                isPresented: $sgConfirmExtra, titleVisibility: .visible) {
+                Button("Deliver \(String(format: "%.2f U", sgOriginalUnits))", role: .destructive) {
+                    Task { await attemptDeliver(extended: false) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This dose is well above what the pump's calculator suggested. Confirm once more before delivering — the amount will not change.")
+            }
+            // SG3a `.reenter`: the user must re-type the dose to proceed. A re-typed value that does not
+            // EXACTLY match `sgOriginalUnits` (captured at the moment the standard dialog's Deliver was
+            // tapped) is REJECTED and re-prompted — it NEVER becomes a new (resized) delivered amount; only
+            // an exact match proceeds to the unchanged `attemptDeliver` path. SwiftUI dismisses an `.alert`
+            // on every button tap, so a mismatch re-presents this SAME alert on the next runloop turn.
+            .alert("Re-enter your dose to confirm", isPresented: $sgReenter) {
+                TextField("Units", text: $sgReenterText).keyboardType(.decimalPad)
+                Button("Confirm", role: .destructive) {
+                    let candidate = sgReenterText
+                    sgReenterText = ""
+                    if let retyped = Double(candidate), Self.reenterMatches(retyped: retyped, original: sgOriginalUnits) {
+                        sgReenterMismatch = false
+                        Task { await attemptDeliver(extended: false) }
+                    } else {
+                        sgReenterMismatch = true
+                        DispatchQueue.main.async { sgReenter = true }
+                    }
+                }
+                Button("Cancel", role: .cancel) { sgReenterMismatch = false }
+            } message: {
+                Text(sgReenterMessage)
+            }
+            // FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior notice, shown
+            // once at the first bolus-screen appearance (`.onAppear`). Non-blocking — never gates a dose; it
+            // only records that the disclosure was shown and accepted, same idiom as `TherapyEditAck`.
+            .alert("New: Insulin Stacking Guard", isPresented: $showStackingGuardNotice) {
+                Button("I understand") { AppSettings.shared.acknowledgeStackingGuardNotice() }
+            } message: {
+                Text(Self.stackingGuardNoticeCopy)
+            }
+    }
+
+    /// SG3a: route the tap from the STANDARD confirm dialog through the friction tier ACTUALLY applied
+    /// (`sg3aAppliedFriction` — capped to `.disclose` when `stackingGuardFrictionEnabled` is off). `units`
+    /// is captured into `sgOriginalUnits` at THIS moment (audit C-04 "freeze once" idiom) so a field edit
+    /// under a later dialog can't silently substitute a different dose into the re-type check. Neither
+    /// `.confirmExtra` nor `.reenter` ever changes `units` itself — both gate the SAME dose through to the
+    /// unchanged `attemptDeliver` path.
+    private func handleStandardConfirm() {
+        sgOriginalUnits = units
+        switch sg3aAppliedFriction {
+        case .reenter:
+            sgReenterText = ""
+            sgReenterMismatch = false
+            sgReenter = true
+        case .confirmExtra:
+            sgConfirmExtra = true
+        case .disclose, .none:
+            Task { await attemptDeliver(extended: false) }
+        }
+    }
+
+    /// The re-type alert's message, keyed on whether the PREVIOUS attempt mismatched — never implies the
+    /// mismatched number was accepted or delivered.
+    private var sgReenterMessage: String {
+        sgReenterMismatch
+            ? "That doesn't match \(String(format: "%.2f", sgOriginalUnits)) U — nothing was delivered. Re-enter \(String(format: "%.2f", sgOriginalUnits)) U exactly to confirm, or cancel."
+            : "This dose is far above what the pump's calculator suggested. Re-enter \(String(format: "%.2f", sgOriginalUnits)) U exactly to confirm — the amount will not change."
     }
 
     // DIF-ux calc-input prompt copy (title / button / message), keyed on which input(s) were unconfirmed.

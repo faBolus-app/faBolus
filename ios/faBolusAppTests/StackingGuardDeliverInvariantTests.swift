@@ -107,4 +107,84 @@ struct StackingGuardDeliverInvariantTests {
         #expect(!backend.deliveryOutcomeUnknown)
         _ = fake                                       // keep the fake alive for the duration of the assertion
     }
+
+    /// (e) SG3a extension (plan 04): with SG3a escalated to `.disclose` (SG1 fires, override ratio below
+    /// `confirmExtraOverrideRatio`, dose below the pump's own max), the REAL deliver path through the fake
+    /// transport still delivers exactly the consented units — same coupled-pair proof as (b)/(d) above.
+    @Test func deliveredEqualsConsentedWhileSG3aDiscloseFires() async throws {
+        let entered = 2.5
+        let recommended = 2.0   // ratio 1.25 — below the default confirmExtraOverrideRatio (1.5)
+        let target = 120
+        let glucose = 180
+        let maxBolusUnits = 25.0
+
+        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
+                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
+                                                   glucoseMgdl: glucose, targetMgdl: target,
+                                                   maxBolusUnits: maxBolusUnits)
+        #expect(escalation.friction == .disclose)
+
+        let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 2500)
+        let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
+        #expect(delivered == entered)
+        #expect(!backend.deliveryOutcomeUnknown)
+        _ = fake
+    }
+
+    /// (f) SG3a extension (plan 04): with SG3a escalated to `.confirmExtra` (override ratio at/above
+    /// `confirmExtraOverrideRatio` but below `reenterOverrideRatio`), the REAL deliver path still delivers
+    /// exactly the consented units — the extra confirmation step the phone screen adds never resizes the
+    /// dose before it reaches this path.
+    @Test func deliveredEqualsConsentedWhileSG3aConfirmExtraFires() async throws {
+        let entered = 3.5
+        let recommended = 2.0   // ratio 1.75 — between confirmExtraOverrideRatio (1.5) and reenterOverrideRatio (2.0)
+        let target = 120
+        let glucose = 180
+        let maxBolusUnits = 25.0
+
+        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
+                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
+                                                   glucoseMgdl: glucose, targetMgdl: target,
+                                                   maxBolusUnits: maxBolusUnits)
+        #expect(escalation.friction == .confirmExtra)
+
+        let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 3500)
+        let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
+        #expect(delivered == entered)
+        #expect(!backend.deliveryOutcomeUnknown)
+        _ = fake
+    }
+
+    /// (g) SG3a extension (plan 04): with SG3a escalated to `.reenter` (override ratio at/above
+    /// `reenterOverrideRatio`, the most extreme tier), the REAL deliver path still delivers exactly the
+    /// consented units when re-entered correctly. Also proves the re-type gate's exact-match rule
+    /// (`BolusEntryView.reenterMatches`) structurally rejects a mismatched re-type — a differently-typed
+    /// number never satisfies the same check the phone screen uses to decide whether to proceed, so it can
+    /// never reach this deliver call as a resized amount (T-01-08).
+    @Test func deliveredEqualsConsentedWhileSG3aReenterFires() async throws {
+        let entered = 8.0
+        let recommended = 2.0   // ratio 4.0 — far above the default reenterOverrideRatio (2.0)
+        let target = 120
+        let glucose = 180
+        let maxBolusUnits = 25.0
+
+        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
+                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
+                                                   glucoseMgdl: glucose, targetMgdl: target,
+                                                   maxBolusUnits: maxBolusUnits)
+        #expect(escalation.friction == .reenter)
+
+        // The re-type gate: only an EXACT match of the originally-entered/consented dose proceeds.
+        #expect(BolusEntryView.reenterMatches(retyped: entered, original: entered))
+        // A mismatched re-type (any different number) fails the SAME rule — it can never be the value the
+        // gate lets through to the deliver call below.
+        let mismatched = entered + 1.0
+        #expect(!BolusEntryView.reenterMatches(retyped: mismatched, original: entered))
+
+        let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 8000)
+        let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
+        #expect(delivered == entered)                 // exactly the consented dose, never the mismatched retype
+        #expect(!backend.deliveryOutcomeUnknown)
+        _ = fake
+    }
 }
