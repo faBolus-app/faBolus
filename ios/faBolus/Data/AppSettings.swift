@@ -204,6 +204,13 @@ public final class AppSettings {
     /// recommendation. Default ON but collapsed; turn off to remove it entirely.
     public var showBolusReasoning: Bool { didSet { d.set(showBolusReasoning, forKey: "showBolusReasoning") } }
 
+    /// **Insulin Stacking Guard SG3a escalating friction (task #93), .user tier, Simple minimum mode.**
+    /// Default ON. Gates only whether SG3a's ESCALATED friction tiers (`.confirmExtra`/`.reenter`) are
+    /// applied on the bolus screen — SG1/SG2's plain disclosures and SG3a's own `.disclose` line still
+    /// render when this is OFF; turning it off never disables the underlying `StackingGuard.escalation`
+    /// computation, only the UI wiring that reads this flag (landing in plan 04).
+    public var stackingGuardFrictionEnabled: Bool { didSet { d.set(stackingGuardFrictionEnabled, forKey: "stackingGuardFrictionEnabled") } }
+
     public var childModeEnabled: Bool { didSet { d.set(childModeEnabled, forKey: "childModeEnabled") } }
     public var childAllowed: Set<ChildFeature> {
         didSet { d.set(Self.canonicalChildAllowedData(childAllowed), forKey: "childAllowed") }
@@ -438,6 +445,7 @@ public final class AppSettings {
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
+        stackingGuardFrictionEnabled = (d.object(forKey: "stackingGuardFrictionEnabled") as? Bool) ?? true
         childModeEnabled = (d.object(forKey: "childModeEnabled") as? Bool) ?? false
         childAllowed = d.data(forKey: "childAllowed").flatMap { try? JSONDecoder().decode(Set<ChildFeature>.self, from: $0) } ?? ChildFeature.defaultAllowed
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
@@ -476,6 +484,7 @@ public final class AppSettings {
             "carbIncrement": .double(carbIncrement),
             "extendedBolusEnabled": .bool(extendedBolusEnabled),
             "showBolusReasoning": .bool(showBolusReasoning),
+            "stackingGuardFrictionEnabled": .bool(stackingGuardFrictionEnabled),
             "watchDefaultBolusMode": .string(watchDefaultBolusMode.rawValue),
             "watchBolusIncrement": .double(watchBolusIncrement),
             "watchCarbIncrement": .double(watchCarbIncrement),
@@ -535,6 +544,7 @@ public final class AppSettings {
         if let v = dbl("carbIncrement") { carbIncrement = v }
         if let v = b("extendedBolusEnabled") { extendedBolusEnabled = v }
         if let v = b("showBolusReasoning") { showBolusReasoning = v }
+        if let v = b("stackingGuardFrictionEnabled") { stackingGuardFrictionEnabled = v }
         if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
         if let v = dbl("watchBolusIncrement") { watchBolusIncrement = v }
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }

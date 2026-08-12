@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 44 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 45 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
@@ -16,11 +16,12 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly44UniqueKeys() {
+    @Test func descriptorsCoverExactly45UniqueKeys() {
         // P16 §3.2: 48 → 46 (smartAssistEnabled R6 + hypoAlertsEnabled R5 removed). P16 F2: 46 → 44
         // (basalScheduleByHour + basalScheduleSource removed with the dead display-only basal cache).
-        #expect(SettingsCatalog.descriptors.count == 44)
-        #expect(SettingsCatalog.byKey.count == 44)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 01-03 (task #93, SG3a): 44 → 45 (stackingGuardFrictionEnabled added).
+        #expect(SettingsCatalog.descriptors.count == 45)
+        #expect(SettingsCatalog.byKey.count == 45)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -35,7 +36,7 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 40)                      // 36 unconditional + 4 conditional
+        #expect(SettingsCatalog.backedUpKeys.count == 41)                      // 37 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -126,9 +127,22 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 44 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 45 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
+    }
+
+    // MARK: Phase 01-03 (task #93, SG3a) — the escalating-friction disable toggle's registration
+
+    /// The SG3a escalating-friction disable toggle must be a `.user`-tier row visible from Simple minimum
+    /// mode (never `.clinician`/`.fixed`) — it only gates a UI friction-tier presentation choice, not a
+    /// therapy parameter.
+    @Test func stackingGuardFrictionEnabledIsRegisteredAtUserTierFromSimple() {
+        let d = SettingsCatalog.byKey["stackingGuardFrictionEnabled"]
+        #expect(d != nil, "stackingGuardFrictionEnabled missing from the catalog")
+        #expect(d?.tier == .user)
+        #expect(d?.isVisible(in: .simple) == true)
+        #expect(d?.backsUp == true)
     }
 }

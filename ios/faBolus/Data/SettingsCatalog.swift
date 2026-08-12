@@ -81,7 +81,7 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 44 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 45 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -91,6 +91,9 @@ enum SettingsCatalog {
         .init("carbIncrement", .bolus, from: .simple, backsUp: true),
         .init("extendedBolusEnabled", .bolus, from: .advanced, backsUp: true),
         .init("showBolusReasoning", .bolus, from: .standard, backsUp: true),
+        // Insulin Stacking Guard SG3a escalating-friction disable (task #93). .user tier, Simple minimum
+        // mode — a Simple bolus toggle exactly like the other rows in this section.
+        .init("stackingGuardFrictionEnabled", .bolus, from: .simple, backsUp: true),
         // MARK: Watch / Garmin entry (remotes)
         .init("watchDefaultBolusMode", .remotes, from: .standard, backsUp: true),
         .init("watchBolusIncrement", .remotes, from: .standard, backsUp: true),
