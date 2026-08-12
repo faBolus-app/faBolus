@@ -127,6 +127,10 @@ import Testing
                     let t = StackingGuard.tempRateOffer(iobUnits: entered, glucoseMgdl: nil, controlIQEnabled: ciq)
                     assertNoForbiddenPhrase(t)
                 }
+                for max in entries {
+                    let sg2 = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: max)
+                    assertNoForbiddenPhrase(sg2)
+                }
             }
         }
     }
@@ -137,6 +141,43 @@ import Testing
                 #expect(!s.lowercased().contains("rage bolus"))
             }
         }
+    }
+
+    // MARK: - SG2 (maxBolusProximity): exhaustive entered/max matrix — fire boundary is exactly entered >= max
+
+    @Test func firesAtOrAboveMaxAcrossRepresentativeEnteredMaxPairs() {
+        let maxValues: [Double] = [1.0, 5.0, 25.0]
+        for max in maxValues {
+            let below: [Double] = [0.0, max - 0.5, max - 0.01]
+            let atOrAbove: [Double] = [max, max + 0.01, max + 5.0]
+
+            for entered in below {
+                let d = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: max)
+                #expect(d.friction == .none, "entered \(entered) < max \(max) must not fire")
+            }
+            for entered in atOrAbove {
+                let d = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: max)
+                #expect(d.friction == .disclose, "entered \(entered) >= max \(max) must fire")
+                #expect(d.message != nil)
+            }
+        }
+    }
+
+    @Test func neverFiresOnZeroOrInvalidMax() {
+        let invalidMaxValues: [Double] = [0.0, -1.0, -25.0]
+        let enteredValues: [Double] = [0.0, 1.0, 25.0, 80.0]
+        for max in invalidMaxValues {
+            for entered in enteredValues {
+                let d = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: max)
+                #expect(d.friction == .none, "invalid max \(max) must never fire regardless of entered \(entered)")
+            }
+        }
+    }
+
+    @Test func maxBolusProximityMessageCitesThePassedMaxAnchor() {
+        let d = StackingGuard.maxBolusProximity(enteredUnits: 25.0, maxBolusUnits: 25.0)
+        #expect(d.friction == .disclose)
+        #expect(d.message?.contains("25") == true)
     }
 
     // MARK: - SG3b (tempRateOffer): inert under every input in a representative sweep
