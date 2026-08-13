@@ -11,6 +11,7 @@ struct FaBolusWidgetBundle: WidgetBundle {
         StatusWidget()    // Overview (Home Screen medium)
         BolusWidget()     // Tap-to-bolus shortcut (deep-links into the app)
         QuickBolusWidget() // Preset bolus with a 1-2-3 confirm (delivers via the app)
+        GlucoseLiveActivity() // Phase 5 (D-01) — Lock Screen + Dynamic Island glucose Live Activity
     }
 }
 

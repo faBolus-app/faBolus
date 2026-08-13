@@ -52,6 +52,9 @@ enum WidgetPublisher {
         let snap = makeSnapshot(s, history: history, alerts: alerts,
                                 staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter)
         WidgetStore.save(snap)
+        // Phase 5 (D-03) — the single BLE-driven choke point also drives the glucose Live Activity.
+        // App-driven only (no APNs); see GlucoseLiveActivityManager.update(from:).
+        GlucoseLiveActivityManager.update(from: snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
         WidgetBolusStore.increment = AppSettings.shared.bolusIncrement

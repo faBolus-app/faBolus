@@ -180,6 +180,10 @@ targets:
         # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
         UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
         UILaunchScreen: {}
+        # Phase 5 (D-04) — the ONLY addition this Live Activity needs: app-driven Activity.update()
+        # off the existing bluetooth-central background mode above. NO aps-environment entitlement,
+        # NO push; entitlements stay App-Groups-only.
+        NSSupportsLiveActivities: true
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.
         LSApplicationQueriesSchemes: [gcm-ciq]
