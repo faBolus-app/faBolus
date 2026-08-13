@@ -12,9 +12,17 @@ struct LiveActivityContentBuilderTests {
 
     private func snap(glucose: Int? = 120, glucoseDate: Date?, trendArrow: String = "→",
                        staleAfterSec: TimeInterval? = nil, displayUnit: String? = nil,
-                       points: [WidgetSnapshot.Point] = []) -> WidgetSnapshot {
+                       points: [WidgetSnapshot.Point] = [], connected: Bool = false,
+                       updatedAt: Date = Date(), iobDate: Date? = nil, iobUnits: Double = 0,
+                       basalRateUnitsPerHour: Double = 0, deliverySuspended: Bool = false,
+                       controlIQMode: Int = 0, controlIQEnabled: Bool = false,
+                       reservoirUnits: Double = 0, batteryPercent: Int = 0) -> WidgetSnapshot {
         WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trendArrow,
-                       recentPoints: points, staleAfterSec: staleAfterSec, displayUnit: displayUnit)
+                       iobUnits: iobUnits, reservoirUnits: reservoirUnits, batteryPercent: batteryPercent,
+                       connected: connected, updatedAt: updatedAt, recentPoints: points,
+                       staleAfterSec: staleAfterSec, displayUnit: displayUnit, iobDate: iobDate,
+                       basalRateUnitsPerHour: basalRateUnitsPerHour, deliverySuspended: deliverySuspended,
+                       controlIQMode: controlIQMode, controlIQEnabled: controlIQEnabled)
     }
 
     /// D-06: staleDate == the SAMPLE date + the published stale threshold, never `now + fixed`
@@ -92,5 +100,118 @@ struct LiveActivityContentBuilderTests {
         #expect(state.recentPoints.count == 24)   // capped at 24, not the widget's 48
         let data = try JSONEncoder().encode(state)
         #expect(data.count < 4096)
+    }
+
+    // MARK: - Phase 5 pump surfaces (05-02-PLAN.md, Task 1) — D-17/D-17a data + freshness
+
+    /// Value fidelity: the projected basal value is the EFFECTIVE U/hr straight from the snapshot,
+    /// never an invented temp-rate percent; deliverySuspended/controlIQ map straight through.
+    @Test func pumpScalarsProjectStraightThroughUnchanged() {
+        let now = Date(timeIntervalSince1970: 7_000_000)
+        let s = snap(glucoseDate: now, connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.iobUnits == 1.2)
+        #expect(state.reservoirUnits == 142)
+        #expect(state.batteryPercent == 80)
+        #expect(state.basalRateUnitsPerHour == 0.85)
+        #expect(state.deliverySuspended == false)
+        #expect(state.controlIQMode == 1)
+        #expect(state.controlIQEnabled == true)
+        #expect(state.connected == true)
+    }
+
+    /// IOB freshness parity with `CalcInputFreshness.iobPresentation`: `nil` stamp ⇒ stale; a stamp
+    /// older than the 300s IOB threshold ⇒ stale; a fresh stamp ⇒ not stale.
+    @Test func iobStaleHonorsOp109NilAndAgeThreshold() {
+        let now = Date(timeIntervalSince1970: 8_000_000)
+
+        let nilStamp = snap(glucoseDate: now, connected: true, updatedAt: now, iobDate: nil, iobUnits: 1.2)
+        #expect(GlucoseLiveActivityManager.makeContent(from: nilStamp, now: now).state.iobStale == true)
+
+        let oldStamp = snap(glucoseDate: now, connected: true, updatedAt: now,
+                            iobDate: now.addingTimeInterval(-301), iobUnits: 1.2)
+        #expect(GlucoseLiveActivityManager.makeContent(from: oldStamp, now: now).state.iobStale == true)
+
+        let freshStamp = snap(glucoseDate: now, connected: true, updatedAt: now,
+                              iobDate: now.addingTimeInterval(-30), iobUnits: 1.2)
+        #expect(GlucoseLiveActivityManager.makeContent(from: freshStamp, now: now).state.iobStale == false)
+    }
+
+    /// Dateless link freshness (reservoir/battery/basal/Control-IQ cluster): `pumpLinkStale` is true
+    /// when disconnected, OR when the snapshot's own age exceeds the published last-sync threshold —
+    /// never presented as current while the link is down (D-17, §13 Rule 1).
+    @Test func pumpLinkStaleHonorsConnectionAndLastSyncAge() {
+        let now = Date(timeIntervalSince1970: 9_000_000)
+
+        let disconnected = snap(glucoseDate: now, staleAfterSec: 360, connected: false, updatedAt: now)
+        #expect(GlucoseLiveActivityManager.makeContent(from: disconnected, now: now).state.pumpLinkStale == true)
+
+        let staleSync = snap(glucoseDate: now, staleAfterSec: 360, connected: true,
+                             updatedAt: now.addingTimeInterval(-361))
+        #expect(GlucoseLiveActivityManager.makeContent(from: staleSync, now: now).state.pumpLinkStale == true)
+
+        let fresh = snap(glucoseDate: now, staleAfterSec: 360, connected: true,
+                         updatedAt: now.addingTimeInterval(-10))
+        #expect(GlucoseLiveActivityManager.makeContent(from: fresh, now: now).state.pumpLinkStale == false)
+    }
+
+    /// Additive back-compat: a legacy JSON `WidgetSnapshot` that omits all five new pump keys
+    /// (`iobDate`, `basalRateUnitsPerHour`, `deliverySuspended`, `controlIQMode`, `controlIQEnabled`)
+    /// still decodes successfully and yields the documented defaults.
+    @Test func legacyWidgetSnapshotJSONWithoutPumpKeysDecodesWithDefaults() throws {
+        let legacyJSON = """
+        {"glucose":120,"trendArrow":"→","iobUnits":0,"reservoirUnits":0,"batteryPercent":0,
+         "connected":true,"updatedAt":730000000,"recentPoints":[],"activeAlerts":[],
+         "cgmActive":false,"carbRatio":0,"isf":0,"targetBg":0,"maxBolusUnits":0}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: legacyJSON)
+        #expect(decoded.iobDate == nil)
+        #expect(decoded.basalRateUnitsPerHour == 0)
+        #expect(decoded.deliverySuspended == false)
+        #expect(decoded.controlIQMode == 0)
+        #expect(decoded.controlIQEnabled == false)
+        #expect(decoded.glucose == 120)   // pre-existing fields still decode correctly
+        #expect(decoded.connected == true)
+    }
+
+    /// Size ceiling still holds with ALL five pump scalars + both stale flags populated alongside 24
+    /// capped points (the plan's own acceptance criterion, distinct from the tracer's glucose-only case
+    /// above).
+    @Test func encodedContentStateStaysUnderFourKBWithPumpScalarsAndStaleFlagsPopulated() throws {
+        let now = Date(timeIntervalSince1970: 10_000_000)
+        let points = (0..<48).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 48) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.recentPoints.count == 24)
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// PumpSnapshot→WidgetSnapshot mapping (`WidgetPublisher.makeSnapshot`) carries the five new
+    /// fields straight through, alongside the existing iobUnits/reservoirUnits mapping.
+    @MainActor
+    @Test func widgetPublisherMakeSnapshotMapsThePumpFieldsFromPumpSnapshot() {
+        var pump = PumpSnapshot()
+        pump.iobDate = Date(timeIntervalSince1970: 11_000_000)
+        pump.basalRateUnitsPerHour = 0.65
+        pump.deliverySuspended = true
+        pump.controlIQMode = 2
+        pump.controlIQEnabled = true
+
+        let widgetSnap = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                       staleAfterSec: 360, hideAfterSec: nil)
+        #expect(widgetSnap.iobDate == pump.iobDate)
+        #expect(widgetSnap.basalRateUnitsPerHour == 0.65)
+        #expect(widgetSnap.deliverySuspended == true)
+        #expect(widgetSnap.controlIQMode == 2)
+        #expect(widgetSnap.controlIQEnabled == true)
     }
 }

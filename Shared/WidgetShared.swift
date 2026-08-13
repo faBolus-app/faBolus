@@ -95,13 +95,31 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// `Codable`'s default-on-missing-key behavior and renders mg/dL, matching D-03's default.
     public var displayUnit: String?
 
+    // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields the Live
+    // Activity projects alongside glucose. All additive-optional, defaulted below AND in the
+    // custom `init(from:)` decoder (see Codable conformance) so an old JSON snapshot missing every
+    // one of these still decodes. `iobDate` is the op-109 stamp IOB greys/ages off (mirrors
+    // `PumpSnapshot.iobDate`); the other four are dateless — the Live Activity greys them as a
+    // single cluster off link/last-sync freshness, never their own timestamp (there isn't one).
+    /// When `iobUnits` was last received from the pump (op-109). `nil` ⇒ unknown age ⇒ always stale.
+    public var iobDate: Date?
+    /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
+    public var basalRateUnitsPerHour: Double
+    /// Whether basal delivery is currently suspended.
+    public var deliverySuspended: Bool
+    /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
+    public var controlIQMode: Int
+    /// Whether Control-IQ automation is enabled.
+    public var controlIQEnabled: Bool
+
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
                 staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
-                displayUnit: String? = nil) {
+                displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
+                deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -111,6 +129,52 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
         self.staleAfterSec = staleAfterSec; self.hideAfterSec = hideAfterSec
         self.displayUnit = displayUnit
+        self.iobDate = iobDate; self.basalRateUnitsPerHour = basalRateUnitsPerHour
+        self.deliverySuspended = deliverySuspended; self.controlIQMode = controlIQMode
+        self.controlIQEnabled = controlIQEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
+             lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
+             targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
+             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled
+    }
+
+    /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
+    /// falls back to its `init` default on a missing key — proven necessary because Swift's
+    /// synthesized `Decodable` only auto-tolerates a missing key for `Optional`-typed properties; a
+    /// non-optional stored property (e.g. `basalRateUnitsPerHour: Double`) throws `keyNotFound` on a
+    /// legacy payload despite having a default in the memberwise `init` above. This keeps the additive-
+    /// optional wire contract for the Phase 5 pump fields (and every earlier field) actually true.
+    /// `encode(to:)` stays compiler-synthesized (unaffected by a custom `init(from:)`).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        glucose = try c.decodeIfPresent(Int.self, forKey: .glucose)
+        glucoseDate = try c.decodeIfPresent(Date.self, forKey: .glucoseDate)
+        trendArrow = try c.decodeIfPresent(String.self, forKey: .trendArrow) ?? ""
+        iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
+        reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
+        batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
+        lastBolusUnits = try c.decodeIfPresent(Double.self, forKey: .lastBolusUnits)
+        lastBolusDate = try c.decodeIfPresent(Date.self, forKey: .lastBolusDate)
+        connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        recentPoints = try c.decodeIfPresent([Point].self, forKey: .recentPoints) ?? []
+        activeAlerts = try c.decodeIfPresent([String].self, forKey: .activeAlerts) ?? []
+        cgmActive = try c.decodeIfPresent(Bool.self, forKey: .cgmActive) ?? false
+        carbRatio = try c.decodeIfPresent(Double.self, forKey: .carbRatio) ?? 0
+        isf = try c.decodeIfPresent(Int.self, forKey: .isf) ?? 0
+        targetBg = try c.decodeIfPresent(Int.self, forKey: .targetBg) ?? 0
+        maxBolusUnits = try c.decodeIfPresent(Double.self, forKey: .maxBolusUnits) ?? 0
+        staleAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .staleAfterSec)
+        hideAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .hideAfterSec)
+        displayUnit = try c.decodeIfPresent(String.self, forKey: .displayUnit)
+        iobDate = try c.decodeIfPresent(Date.self, forKey: .iobDate)
+        basalRateUnitsPerHour = try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0
+        deliverySuspended = try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false
+        controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
+        controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.

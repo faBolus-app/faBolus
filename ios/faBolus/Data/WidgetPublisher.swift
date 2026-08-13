@@ -43,7 +43,14 @@ enum WidgetPublisher {
             // Phase 04-03: the active display unit, as the wire token ("mgdl"|"mmol") — never
             // GlucoseUnit itself (Pitfall 6). The widget/complication island resolves it via the
             // WidgetGlucoseUnit mirror; nil (impossible here, but legacy-safe) ⇒ mgdl.
-            displayUnit: AppSettings.shared.glucoseDisplayUnit.wireToken)
+            displayUnit: AppSettings.shared.glucoseDisplayUnit.wireToken,
+            // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields, mapped
+            // straight from PumpSnapshot alongside the existing iobUnits/reservoirUnits mapping above.
+            iobDate: s.iobDate,
+            basalRateUnitsPerHour: s.basalRateUnitsPerHour,
+            deliverySuspended: s.deliverySuspended,
+            controlIQMode: s.controlIQMode,
+            controlIQEnabled: s.controlIQEnabled)
     }
 
     @MainActor

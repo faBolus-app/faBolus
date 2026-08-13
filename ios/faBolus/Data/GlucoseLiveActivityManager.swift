@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 // ActivityKit's `Activity<Attributes>` (a `class`) isn't marked `Sendable` in its public interface,
 // even though Apple's own docs describe it as safe to call from any context — Apple hasn't audited
 // this framework for Swift 6 strict concurrency yet. `@preconcurrency` downgrades the "sending a
@@ -32,12 +33,39 @@ enum GlucoseLiveActivityManager {
         from snap: WidgetSnapshot, now: Date
     ) -> (state: FaBolusGlucoseAttributes.ContentState, staleDate: Date, timestamp: Date?) {
         let stale = snap.isStale(asOf: now)
+        // Phase 5 pump surfaces (D-17, 05-02) — the two APP-COMPUTED staleness flags. Computed HERE
+        // (the app target links faBolusCore) so the extension never re-derives a freshness threshold.
+        //
+        // iobStale mirrors CalcInputFreshness.iobPresentation exactly: a nil stamp is `.hidden`, not
+        // `.stale`, from that API's own perspective — but the LA still must never show a numberless/
+        // unstamped IOB as current, so `iobDate == nil` is folded in explicitly as its own `true`
+        // (matching the HUD's `StatusPillsView.pillFor("iob")`, which greys off the SAME presentation
+        // check, and the plan's own stated rule).
+        let iobStale = snap.iobDate == nil
+            || CalcInputFreshness.iobPresentation(of: snap.iobDate, now: now) == .stale
+        // The dateless cluster (reservoir/battery/basal/Control-IQ) has no per-field stamp, so it
+        // greys off LINK freshness instead: down, or the snapshot itself older than the phone's
+        // published last-sync threshold (reusing `staleAfterSec` rather than a second hardcode, so it
+        // tracks the user's own freshness setting).
+        let pumpLinkStale = !snap.connected || now.timeIntervalSince(snap.updatedAt) > (snap.staleAfterSec ?? 360)
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
             trendArrow: stale ? "" : snap.trendArrow,             // C8 — never synthesize a trend
             recentPoints: Array(snap.recentPoints.suffix(24)),    // tighter cap than the widget's 48
-            displayUnitToken: snap.displayUnit                    // D-09 — carried verbatim, no inline conversion
+            displayUnitToken: snap.displayUnit,                   // D-09 — carried verbatim, no inline conversion
+            iobUnits: snap.iobUnits,
+            iobDate: snap.iobDate,
+            reservoirUnits: snap.reservoirUnits,
+            batteryPercent: snap.batteryPercent,
+            basalRateUnitsPerHour: snap.basalRateUnitsPerHour,    // effective U/hr — never a synthesized temp-rate %
+            deliverySuspended: snap.deliverySuspended,
+            controlIQMode: snap.controlIQMode,
+            controlIQEnabled: snap.controlIQEnabled,
+            connected: snap.connected,
+            updatedAt: snap.updatedAt,
+            iobStale: iobStale,
+            pumpLinkStale: pumpLinkStale
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)
