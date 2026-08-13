@@ -280,11 +280,16 @@ public final class AppSettings {
     /// OFF** (opt-in, not opt-out — matches every other device-capability switch in this file). The
     /// manager AND-gates activity start on `liveActivityEnabled && ActivityAuthorizationInfo()
     /// .areActivitiesEnabled` (`GlucoseLiveActivityManager.gateEnabled`); flipping this off ends any
-    /// running Activity. Mirroring `liveActivityFields` to the App Group + the immediate
-    /// `refreshForSelectionChange()` push happen in the `didSet` added in 05-04 Task 2 (not referenced
-    /// here — that function doesn't exist until Task 2 adds it, same tracer-sequencing discipline
-    /// `decideAction`'s opt-in composition followed in 05-01→05-04).
-    public var liveActivityEnabled: Bool { didSet { d.set(liveActivityEnabled, forKey: "liveActivityEnabled"); syncWidgetConfig() } }
+    /// running Activity. `didSet` also force-pushes an immediate refresh (`refreshForSelectionChange`,
+    /// added in 05-04 Task 2) so a toggle applies at once rather than waiting for the next pump
+    /// reading (pump-surface research §2b).
+    public var liveActivityEnabled: Bool {
+        didSet {
+            d.set(liveActivityEnabled, forKey: "liveActivityEnabled")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
     /// Phase 5 (D-15/D-17a) — which Live Activity fields show, and in what order. Same reorder+hide
     /// pattern as `pillsOrder`: `restoreOrder` drops unknown/duplicate ids, preserves stored order, and
     /// falls back to the FULL LA vocabulary if the stored list is empty or absent — never leaves the
@@ -292,8 +297,15 @@ public final class AppSettings {
     /// (`LiveActivityComposer.compose`, 05-04 Task 2) still carries its own independent 0-field
     /// empty-selection fallback as a defensive belt-and-suspenders for the App-Group mirror path
     /// (`WidgetStore.liveActivityFields`), which is a separate nilable copy that can legitimately be
-    /// absent before the first `syncWidgetConfig()` call.
-    public var liveActivityFields: [String] { didSet { d.set(liveActivityFields, forKey: "liveActivityFields"); syncWidgetConfig() } }
+    /// absent before the first `syncWidgetConfig()` call. `didSet` also force-pushes an immediate
+    /// refresh (`refreshForSelectionChange`) so a reorder/hide change applies at once.
+    public var liveActivityFields: [String] {
+        didSet {
+            d.set(liveActivityFields, forKey: "liveActivityFields")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
     /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
     /// Mirrored to the watch. At least one is always kept.
     public var watchChartRanges: [Int] { didSet { d.set(watchChartRanges, forKey: "watchChartRanges") } }

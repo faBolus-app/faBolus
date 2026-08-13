@@ -44,4 +44,36 @@ struct LiveActivityManagerTests {
         #expect(GlucoseLiveActivityManager.decideAction(
             enabled: false, hasRunningActivity: true, runningIsStaleOrEnded: true) == .end)
     }
+
+    // MARK: 05-04 (D-15) — the composed opt-in gate
+
+    /// `gateEnabled` is true iff BOTH the app-level opt-in AND the system authorization are true —
+    /// the property the 05-01 tracer deliberately deferred to this plan.
+    @Test func gateEnabledIsTrueOnlyWhenBothOptInAndAuthorizedAreTrue() {
+        #expect(GlucoseLiveActivityManager.gateEnabled(optIn: true, authorized: true) == true)
+        #expect(GlucoseLiveActivityManager.gateEnabled(optIn: true, authorized: false) == false)
+        #expect(GlucoseLiveActivityManager.gateEnabled(optIn: false, authorized: true) == false)
+        #expect(GlucoseLiveActivityManager.gateEnabled(optIn: false, authorized: false) == false)
+    }
+
+    /// The opt-in being OFF resolves through `decideAction` to `.end` when something is running
+    /// (D-15 — flipping the opt-in off must tear down any existing Activity) and `.none` when nothing
+    /// is running, regardless of system authorization.
+    @Test func optInOffResolvesThroughDecideActionToEndOrNone() {
+        let gated = GlucoseLiveActivityManager.gateEnabled(optIn: false, authorized: true)
+        #expect(gated == false)
+        #expect(GlucoseLiveActivityManager.decideAction(
+            enabled: gated, hasRunningActivity: true, runningIsStaleOrEnded: false) == .end)
+        #expect(GlucoseLiveActivityManager.decideAction(
+            enabled: gated, hasRunningActivity: false, runningIsStaleOrEnded: false) == .none)
+    }
+
+    /// The opt-in being ON but the system authorization OFF behaves identically — the composed gate
+    /// collapses both reasons a Live Activity can't run into the SAME `decideAction` branch.
+    @Test func systemAuthorizationOffResolvesThroughDecideActionToEndOrNone() {
+        let gated = GlucoseLiveActivityManager.gateEnabled(optIn: true, authorized: false)
+        #expect(gated == false)
+        #expect(GlucoseLiveActivityManager.decideAction(
+            enabled: gated, hasRunningActivity: true, runningIsStaleOrEnded: false) == .end)
+    }
 }

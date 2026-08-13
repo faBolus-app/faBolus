@@ -48,6 +48,11 @@ enum GlucoseLiveActivityManager {
         // published last-sync threshold (reusing `staleAfterSec` rather than a second hardcode, so it
         // tracks the user's own freshness setting).
         let pumpLinkStale = !snap.connected || now.timeIntervalSince(snap.updatedAt) > (snap.staleAfterSec ?? 360)
+        // D-15/D-17a (05-04) — read the App-Group mirror the SwiftUI views can't access directly
+        // (pump-surface research §2b); fall back to the full LA vocabulary when nothing has synced
+        // yet (a legacy install, or before `AppSettings.syncWidgetConfig()` has ever run) rather than
+        // baking in an empty selection that would render the empty-selection fallback for no reason.
+        let selection = WidgetStore.liveActivityFields ?? LAFieldVocabulary.all
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
@@ -65,7 +70,8 @@ enum GlucoseLiveActivityManager {
             connected: snap.connected,
             updatedAt: snap.updatedAt,
             iobStale: iobStale,
-            pumpLinkStale: pumpLinkStale
+            pumpLinkStale: pumpLinkStale,
+            selectedFields: selection
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)
@@ -73,9 +79,8 @@ enum GlucoseLiveActivityManager {
 
     /// Start-vs-update-vs-re-arm-vs-gate decision — PURE, makes NO ActivityKit calls, so it's
     /// unit-testable off an injected activity state (Task 3, `LiveActivityManagerTests`). `enabled`
-    /// is `ActivityAuthorizationInfo().areActivitiesEnabled` in this tracer; 05-04 composes it with
-    /// the opt-in `AppSettings.shared.liveActivityEnabled` (D-15) — that property does not exist yet
-    /// and must NOT be referenced here.
+    /// is the COMPOSED gate from `gateEnabled(optIn:authorized:)` below (D-15) as of 05-04 — the
+    /// tracer's own `enabled` was `ActivityAuthorizationInfo().areActivitiesEnabled` alone.
     enum LiveActivityAction: Equatable { case start, update, end, none }
 
     static func decideAction(
@@ -88,6 +93,12 @@ enum GlucoseLiveActivityManager {
         return .update
     }
 
+    /// The D-15 opt-in gate, PURE and unit-testable off two injected booleans (no `ActivityKit`, no
+    /// `AppSettings`) — the property the 05-01 tracer deliberately deferred ("the opt-in
+    /// `AppSettings.shared.liveActivityEnabled` AND-gate is ADDED in 05-04"). `update(from:)` feeds
+    /// this composed result into `decideAction(enabled:...)` as its `enabled` argument.
+    static func gateEnabled(optIn: Bool, authorized: Bool) -> Bool { optIn && authorized }
+
     /// I/O half — called from `WidgetPublisher.publish(...)` (D-03), the single BLE-driven choke
     /// point. Reads `Activity<FaBolusGlucoseAttributes>.activities` synchronously (a plain static
     /// property, not async) to decide, then performs the ActivityKit side effect in a detached
@@ -96,7 +107,11 @@ enum GlucoseLiveActivityManager {
     /// async→sync by blocking this thread.
     @MainActor
     static func update(from snap: WidgetSnapshot) {
-        let enabled = ActivityAuthorizationInfo().areActivitiesEnabled
+        // D-15 (05-04) — the composed opt-in gate: the tracer's `areActivitiesEnabled` alone is no
+        // longer sufficient; the app-level opt-in (default OFF, AppSettings.swift) must ALSO be true.
+        let enabled = gateEnabled(
+            optIn: AppSettings.shared.liveActivityEnabled,
+            authorized: ActivityAuthorizationInfo().areActivitiesEnabled)
         let running = Activity<FaBolusGlucoseAttributes>.activities.first
         let runningIsStaleOrEnded: Bool = switch running?.activityState {
         case .some(.ended), .some(.dismissed), .some(.stale), .none: true
@@ -137,5 +152,17 @@ enum GlucoseLiveActivityManager {
                 break
             }
         }
+    }
+
+    /// D-15/D-17a (05-04) — forces an immediate LA refresh when the opt-in or field selection
+    /// changes, so a Settings toggle applies at once rather than waiting for the next pump reading
+    /// (pump-surface research §2b). Called from `AppSettings`'s `liveActivityEnabled`/
+    /// `liveActivityFields` `didSet`. Re-runs the normal `update(from:)` path over the LAST published
+    /// snapshot — there is nothing else to project; if nothing has ever been published yet, this is a
+    /// harmless no-op (there is nothing to show regardless of the toggle).
+    @MainActor
+    static func refreshForSelectionChange() {
+        guard let snap = WidgetStore.load() else { return }
+        update(from: snap)
     }
 }
