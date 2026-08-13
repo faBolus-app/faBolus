@@ -111,7 +111,9 @@ struct GlucoseComplicationView: View {
                     if let d = snap.glucoseDate {
                         Text(d, style: .relative).font(.caption2)
                             .foregroundStyle(snap.isStale(asOf: now) ? .orange : .secondary)
-                    } else {
+                    } else if snap.showUnitLabel {
+                        // Owner-requested toggle: this fallback caption (no reading yet, so no age to
+                        // show) is the only persistent unit caption this complication renders.
                         Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                     }
                 }

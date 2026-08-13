@@ -95,6 +95,13 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// `Codable`'s default-on-missing-key behavior and renders mg/dL, matching D-03's default.
     public var displayUnit: String?
 
+    /// Owner-requested "Show unit labels" toggle, mirrored from `AppSettings.showGlucoseUnitLabels`.
+    /// Additive-optional: `nil`/missing-key on a legacy snapshot decodes to **false** (labels hidden),
+    /// matching the setting's own default-OFF — a widget built before this field existed never starts
+    /// showing a caption it wasn't told to. Gates ONLY the persistent mg/dL·mmol/L CAPTION on the
+    /// widget/complication/Live Activity ambient surfaces; the glucose number itself is unaffected.
+    public var showUnitLabel: Bool
+
     // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields the Live
     // Activity projects alongside glucose. All additive-optional, defaulted below AND in the
     // custom `init(from:)` decoder (see Codable conformance) so an old JSON snapshot missing every
@@ -128,7 +135,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
                 staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
                 displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
                 deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
-                hasSnoozeEligibleAlert: Bool = false) {
+                hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -142,13 +149,15 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.deliverySuspended = deliverySuspended; self.controlIQMode = controlIQMode
         self.controlIQEnabled = controlIQEnabled
         self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
+        self.showUnitLabel = showUnitLabel
     }
 
     private enum CodingKeys: String, CodingKey {
         case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
              lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
              targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
-             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert
+             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
+             showUnitLabel
     }
 
     /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
@@ -186,6 +195,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
         controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
         hasSnoozeEligibleAlert = try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
+        // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
+        // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
+        showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.

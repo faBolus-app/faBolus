@@ -16,8 +16,10 @@ struct StatsCardView: View {
 
     /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
     /// display unit (D-10; not a glued suffix). `Localizable.xcstrings` carries both as siblings.
+    /// Owner-requested toggle: bare value (no unit phrase) when labels are hidden.
     private func glucoseLabel(_ mgdl: Int) -> String {
         let value = unit.format(mgdl: mgdl)
+        guard AppSettings.shared.showGlucoseUnitLabels else { return value }
         return unit == .mmol
             ? String(format: String(localized: "%@ mmol/L"), value)
             : String(format: String(localized: "%@ mg/dL"), value)
