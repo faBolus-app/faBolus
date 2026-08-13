@@ -87,10 +87,11 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 51 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// All 52 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
     /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
     /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
-    /// (999.2/D-01): `autoTempRate` added). Order mirrors
+    /// (999.2/D-01): `autoTempRate` added; 51 → 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation`
+    /// added). Order mirrors
     /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -156,6 +157,11 @@ enum SettingsCatalog {
         // autoExerciseMode/autoSleepMode/modeReminders, which permit an automated pump write but are not
         // in `commandAdjacentFlags` either) — default iCloud sync ON.
         .init("autoTempRate", .pump, from: .advanced, backsUp: true),
+        // Phase 6 (06-02, 999.2/D-02): auto profile activation — same reasoning as autoTempRate:
+        // only reachable through the Advanced-control surface (`supportsProfiles`), so `.advanced`
+        // minimum. Not command-adjacent (the `.unverifiedAck` gate, not iCloud sync, is what keeps a
+        // headless macro from ever completing this write) — default iCloud sync ON.
+        .init("autoProfileActivation", .pump, from: .advanced, backsUp: true),
         .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices

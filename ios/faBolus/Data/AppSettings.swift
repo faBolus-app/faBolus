@@ -182,6 +182,15 @@ public final class AppSettings {
     /// the intent stays functionally inert until BOTH the pump-derived `supportsTempBasal` capability
     /// AND the Phase-11 saline-bench flag (`TempRateAutomation.benchVerifiedDefault`) clear (D-03).
     public var autoTempRate: Bool { didSet { d.set(autoTempRate, forKey: "autoTempRate") } }
+    /// **Auto profile activation** (999.2, D-02) — permits `ActivateProfileIntent` (a Shortcuts action,
+    /// NOT a Siri phrase) to switch the active Personal Profile via `ProfileAutomation`. **Default OFF.**
+    /// Even when ON, `setActiveProfile` is gated `.unverifiedAck` (AccessPolicy.swift:229-232) — a
+    /// headless Shortcuts run can NEVER supply the required live in-app acknowledgment, so this permit
+    /// only ever matters for a Shortcut that opens the app first and lets the user confirm interactively
+    /// (D-02; the `.unverifiedAck` gate is NOT weakened for this toggle). Also gated on the pump-derived
+    /// `supportsProfiles` capability AND the Phase-11 saline-bench flag
+    /// (`ProfileAutomation.profileBenchVerifiedDefault`), mirroring `autoTempRate` (D-03).
+    public var autoProfileActivation: Bool { didSet { d.set(autoProfileActivation, forKey: "autoProfileActivation") } }
 
     /// §6/S8 B6: opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
     /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
@@ -569,6 +578,7 @@ public final class AppSettings {
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
         autoTempRate = (d.object(forKey: "autoTempRate") as? Bool) ?? false
+        autoProfileActivation = (d.object(forKey: "autoProfileActivation") as? Bool) ?? false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
@@ -646,6 +656,7 @@ public final class AppSettings {
             "autoSleepMode": .bool(autoSleepMode),
             "modeReminders": .bool(modeReminders),
             "autoTempRate": .bool(autoTempRate),
+            "autoProfileActivation": .bool(autoProfileActivation),
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
@@ -712,6 +723,7 @@ public final class AppSettings {
         if let v = b("autoSleepMode") { autoSleepMode = v }
         if let v = b("modeReminders") { modeReminders = v }
         if let v = b("autoTempRate") { autoTempRate = v }
+        if let v = b("autoProfileActivation") { autoProfileActivation = v }
         if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
@@ -748,6 +760,7 @@ public final class AppSettings {
         autoSleepMode = false
         autoExerciseMode = false
         autoTempRate = false
+        autoProfileActivation = false
         modeReminders = false
         remoteBolusCeiling = nil
         alertRules = []
