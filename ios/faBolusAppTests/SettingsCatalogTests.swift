@@ -16,12 +16,13 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly45UniqueKeys() {
+    @Test func descriptorsCoverExactly46UniqueKeys() {
         // P16 §3.2: 48 → 46 (smartAssistEnabled R6 + hypoAlertsEnabled R5 removed). P16 F2: 46 → 44
         // (basalScheduleByHour + basalScheduleSource removed with the dead display-only basal cache).
         // Phase 01-03 (task #93, SG3a): 44 → 45 (stackingGuardFrictionEnabled added).
-        #expect(SettingsCatalog.descriptors.count == 45)
-        #expect(SettingsCatalog.byKey.count == 45)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 04-01 (mmol/L display-unit support, D-03): 45 → 46 (glucoseDisplayUnit added).
+        #expect(SettingsCatalog.descriptors.count == 46)
+        #expect(SettingsCatalog.byKey.count == 46)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -36,7 +37,7 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 41)                      // 37 unconditional + 4 conditional
+        #expect(SettingsCatalog.backedUpKeys.count == 42)                      // 38 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -144,5 +145,33 @@ struct SettingsCatalogTests {
         #expect(d?.tier == .user)
         #expect(d?.isVisible(in: .simple) == true)
         #expect(d?.backsUp == true)
+    }
+
+    // MARK: Phase 04-01 (mmol/L display-unit support, D-03) — the glucoseDisplayUnit setting's registration
+
+    /// D-03: `.display` category, `backsUp: true` with iCloud ON (a display unit is NOT command-adjacent).
+    @Test func glucoseDisplayUnitIsRegisteredInDisplayWithICloudSyncOn() {
+        let d = SettingsCatalog.byKey["glucoseDisplayUnit"]
+        #expect(d != nil, "glucoseDisplayUnit missing from the catalog")
+        #expect(d?.category == .display)
+        #expect(d?.backsUp == true)
+        #expect(d?.syncsToICloud == true)
+        #expect(!SettingsCatalog.commandAdjacentFlags.contains("glucoseDisplayUnit"))
+    }
+
+    /// D-03: default = mg/dL (behavior-preserving for existing users) on a fresh install, and the setting
+    /// round-trips across a re-init of `AppSettings` over the SAME backing store (persists, doesn't just
+    /// live in memory).
+    @Test @MainActor func glucoseDisplayUnitDefaultsToMgdlAndRoundTripsAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucoseDisplayUnit == .mgdl)   // D-03: behavior-preserving default
+
+        fresh.glucoseDisplayUnit = .mmol
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.glucoseDisplayUnit == .mmol)   // persisted across re-init
     }
 }
