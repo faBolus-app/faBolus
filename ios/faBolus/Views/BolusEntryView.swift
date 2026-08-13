@@ -114,7 +114,29 @@ struct BolusEntryView: View {
     }
     /// True when the shown dose leans on a CGM value that is now stale (advisory, not a block).
     private var staleCGMCorrection: Bool {
-        mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (Int(bg) ?? 0) > 0
+        mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0
+    }
+
+    /// Phase 04-01 (D-07/D-09) — the entry-parse boundary. `bg` is typed in whichever unit
+    /// `settings.glucoseDisplayUnit` selects; every former bare integer-parse call site below now
+    /// calls `settings.glucoseDisplayUnit.parse(bg)` directly, the ONLY conversion of that text to
+    /// the canonical mg/dL `Int` that reaches `recommendBolus`/`BolusMath`/`RemoteCommand`. `nil`
+    /// means "no BG entered" — callers MUST NOT coerce it to `0` (a fabricated glucose reading
+    /// silently entering correction math is the exact hazard this phase exists to prevent).
+
+    /// The bg field's keyboard type: `.decimalPad` in mmol mode (a decimal point is required),
+    /// `.numberPad` in mgdl mode (unchanged behavior). `static`/pure so it's directly unit-testable
+    /// without instantiating the view (`BolusEntryUnitParseTests`).
+    static func bgKeyboardType(for unit: GlucoseUnit) -> UIKeyboardType {
+        unit == .mmol ? .decimalPad : .numberPad
+    }
+    /// The bg field's placeholder, naming the active unit.
+    static func bgPlaceholder(for unit: GlucoseUnit) -> String {
+        unit == .mmol ? "mmol/L" : "mg/dL"
+    }
+    /// The bg field's accessibility label, naming the active unit.
+    static func bgAccessibilityLabel(for unit: GlucoseUnit) -> String {
+        unit == .mmol ? "Blood glucose, mmol/L" : "Blood glucose, mg/dL"
     }
 
     private var carbs: Double { Double(carbsText) ?? 0 }
@@ -293,9 +315,10 @@ struct BolusEntryView: View {
                             .accessibilityLabel("Carbs")
                     }
                     LabeledContent("Blood glucose") {
-                        TextField("mg/dL", text: bgField).keyboardType(.numberPad)
+                        TextField(Self.bgPlaceholder(for: settings.glucoseDisplayUnit), text: bgField)
+                            .keyboardType(Self.bgKeyboardType(for: settings.glucoseDisplayUnit))
                             .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
-                            .accessibilityLabel("Blood glucose, mg/dL")
+                            .accessibilityLabel(Self.bgAccessibilityLabel(for: settings.glucoseDisplayUnit))
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { focus = .bg }
@@ -584,7 +607,7 @@ struct BolusEntryView: View {
                         Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
                     }
                     Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
-                        let ext = u.extended; let uu = u.oldUnits; let bgv = Int(bg); cgmUpdate = nil
+                        let ext = u.extended; let uu = u.oldUnits; let bgv = settings.glucoseDisplayUnit.parse(bg); cgmUpdate = nil
                         Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
                     }
                     Button("Cancel", role: .cancel) { cgmUpdate = nil }
@@ -765,7 +788,7 @@ struct BolusEntryView: View {
 
     private func calculate() async {
         // Nothing entered yet → no recommendation card.
-        guard carbs > 0 || (Int(bg) ?? 0) > 0 else { recommendation = nil; unitsText = ""; return }
+        guard carbs > 0 || (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0 else { recommendation = nil; unitsText = ""; return }
         // Generation token (audit C-04): a newer edit supersedes this calc, so an out-of-order async
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
@@ -773,7 +796,7 @@ struct BolusEntryView: View {
         calcInputPrompt = nil       // DIF-ux: a changed dose re-requires the per-attempt freshness override
         acceptedOverride = nil      // …and drops any override accepted for a prior compose
         calcInputBlocked = false    // …and clears any prior "settings not read" block
-        let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg))
+        let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
         // §13 Rule-1 (A1): never pre-fill the units field with a dose sized off a hardcoded CR/ISF/target
@@ -820,7 +843,7 @@ struct BolusEntryView: View {
                 // the estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time
                 // recompute below (CGM path: fresh-read + divergence guard) or the min(baseline, fresh) cap
                 // (manual-BG path), so drift since compose is still caught.
-                let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+                let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
                                                      allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
                 calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
                                                   allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
@@ -867,7 +890,7 @@ struct BolusEntryView: View {
                 // Deliver button showed), so bind it to the BG it was actually computed from — NOT the
                 // just-pulled `g`. Recording the fresh `g` against the old units would attach a glucose
                 // value the dose wasn't derived from (a false pump/t:connect metadata pairing).
-                await deliverFrozen(freeze(units: priorUnits, bg: Int(bg), extended: extended))
+                await deliverFrozen(freeze(units: priorUnits, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
                 return
             }
             // Addendum B: CGM stale/missing — never SILENTLY correct off the stale on-screen value, EVEN when
@@ -911,12 +934,12 @@ struct BolusEntryView: View {
         // carries the divergence-max IOB guard). Otherwise (UNITS mode, or a verified carbs dose off manual
         // BG) freeze the on-screen values as-is — in UNITS mode that is exactly the number the user dialed.
         if mode == .carbs, let ov {
-            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: Int(bg),
+            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
                                                  allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
             let capped = CalcInputGate.overrideDeliverUnits(baseline: ov.baseline, freshRecompute: rec.recommendedUnits)
-            await deliverFrozen(freeze(units: capped, bg: Int(bg), extended: extended))
+            await deliverFrozen(freeze(units: capped, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
         } else {
-            await deliverFrozen(freeze(units: units, bg: Int(bg), extended: extended))
+            await deliverFrozen(freeze(units: units, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
         }
     }
 
