@@ -89,7 +89,10 @@ struct GlucoseChartView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if showGlucose {
+            // Owner-requested toggle: this axis caption is the only persistent unit label the chart
+            // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
+            // with numeric ticks either way).
+            if showGlucose && AppSettings.shared.showGlucoseUnitLabels {
                 Text(unit == .mmol ? String(localized: "mmol/L") : String(localized: "mg/dL"))
                     .font(.caption2).foregroundStyle(.secondary).padding(.leading, 2)
             }

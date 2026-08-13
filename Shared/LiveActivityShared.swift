@@ -38,6 +38,12 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// `WidgetSnapshot.displayUnit` — `nil` resolves to mg/dL via `WidgetGlucoseUnit(wireToken:)`
         /// at render time (D-09). The builder never inlines its own mgdl/18.0182 conversion.
         public var displayUnitToken: String?
+        /// Owner-requested "Show unit labels" toggle, carried verbatim from
+        /// `WidgetSnapshot.showUnitLabel` — gates ONLY the LA's persistent mg/dL·mmol/L CAPTION
+        /// (`GlucoseNumeralView`'s dateless fallback caption); the glucose number itself is
+        /// unaffected. Missing/legacy `ContentState` payloads default to **false** (labels hidden),
+        /// matching the setting's own default-OFF.
+        public var showUnitLabel: Bool
 
         // Phase 5 pump surfaces (D-17, 05-02) — projected straight from `WidgetSnapshot`, pump units
         // only (U, U/hr, %); NEVER routed through the Phase-4 glucose mmol funnel above.
@@ -93,12 +99,13 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
                     controlIQEnabled: Bool = false, connected: Bool = false, updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
-                    hasSnoozeEligibleAlert: Bool = false) {
+                    hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
             self.recentPoints = recentPoints
             self.displayUnitToken = displayUnitToken
+            self.showUnitLabel = showUnitLabel
             self.iobUnits = iobUnits
             self.iobDate = iobDate
             self.reservoirUnits = reservoirUnits
@@ -119,7 +126,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
                  controlIQEnabled, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
-                 hasSnoozeEligibleAlert
+                 hasSnoozeEligibleAlert, showUnitLabel
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -153,7 +160,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
                 pumpLinkStale: try c.decodeIfPresent(Bool.self, forKey: .pumpLinkStale) ?? false,
                 selectedFields: try c.decodeIfPresent([String].self, forKey: .selectedFields) ?? [],
-                hasSnoozeEligibleAlert: try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
+                hasSnoozeEligibleAlert: try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false,
+                // Owner-requested toggle: missing key ⇒ false (labels hidden), same default-OFF rule
+                // every other additive field above follows.
+                showUnitLabel: try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
             )
         }
     }

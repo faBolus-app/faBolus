@@ -20,6 +20,10 @@ struct StatusRingView: View {
     /// through. mg/dL mode renders byte-identical to before this phase.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
     private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
+    /// Owner-requested toggle: gates ONLY the persistent unit CAPTION drawn below the glucose number
+    /// (and its no-reading placeholder) — never the VoiceOver `a11yLabel` below, which always speaks
+    /// the unit regardless of this flag.
+    private var showUnitLabel: Bool { AppSettings.shared.showGlucoseUnitLabels }
 
     var body: some View {
         ZStack {
@@ -56,7 +60,9 @@ struct StatusRingView: View {
                     Text(snapshot.trend).font(.title2)
                         .foregroundStyle(stale ? AppTheme.stale : .primary)
                 }
-                Text(unitLabel).font(.caption2).foregroundStyle(.secondary)
+                if showUnitLabel {
+                    Text(unitLabel).font(.caption2).foregroundStyle(.secondary)
+                }
                 // F4 (A5) — non-color band channel (WCAG 1.4.1): when the number is shown in its band
                 // COLOR (fresh reading), also name the band with an icon + word, so it reads without
                 // relying on color. Not shown when stale — the number is grey then (no band color to
@@ -78,7 +84,10 @@ struct StatusRingView: View {
                 // No reading, or past the "hide" delay → show no value.
                 Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                Text(snapshot.glucose == nil ? unitLabel : "no recent CGM")
+                // Owner-requested toggle: with labels hidden, the "no reading yet" placeholder can't
+                // fall back to the (now-gated) unit caption — show a neutral em dash instead, never
+                // the unit and never a blank string.
+                Text(snapshot.glucose == nil ? (showUnitLabel ? unitLabel : "—") : "no recent CGM")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text(snapshot.connection.rawValue)

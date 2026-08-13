@@ -17,14 +17,14 @@ struct LiveActivityContentBuilderTests {
                        basalRateUnitsPerHour: Double = 0, deliverySuspended: Bool = false,
                        controlIQMode: Int = 0, controlIQEnabled: Bool = false,
                        reservoirUnits: Double = 0, batteryPercent: Int = 0,
-                       hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
+                       hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) -> WidgetSnapshot {
         WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trendArrow,
                        iobUnits: iobUnits, reservoirUnits: reservoirUnits, batteryPercent: batteryPercent,
                        connected: connected, updatedAt: updatedAt, recentPoints: points,
                        staleAfterSec: staleAfterSec, displayUnit: displayUnit, iobDate: iobDate,
                        basalRateUnitsPerHour: basalRateUnitsPerHour, deliverySuspended: deliverySuspended,
                        controlIQMode: controlIQMode, controlIQEnabled: controlIQEnabled,
-                       hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
+                       hasSnoozeEligibleAlert: hasSnoozeEligibleAlert, showUnitLabel: showUnitLabel)
     }
 
     /// D-06: staleDate == the SAMPLE date + the published stale threshold, never `now + fixed`
@@ -176,6 +176,23 @@ struct LiveActivityContentBuilderTests {
         #expect(decoded.controlIQEnabled == false)
         #expect(decoded.glucose == 120)   // pre-existing fields still decode correctly
         #expect(decoded.connected == true)
+        #expect(decoded.showUnitLabel == false)   // absent key ⇒ false, same default the setting itself uses
+    }
+
+    /// Owner-requested "Show unit labels" toggle: a legacy `WidgetSnapshot` JSON payload missing the
+    /// `showUnitLabel` key entirely (predating the field) still decodes and falls back to **false**
+    /// (labels hidden) — never a thrown decode, and never defaulting to `true` for an old widget build.
+    @Test func legacyWidgetSnapshotJSONMissingShowUnitLabelKeyDecodesToFalse() throws {
+        let legacyJSON = """
+        {"glucose":124,"trendArrow":"→","iobUnits":1.2,"reservoirUnits":142,"batteryPercent":80,
+         "connected":true,"updatedAt":730000000,"recentPoints":[],"activeAlerts":[],
+         "cgmActive":true,"carbRatio":10,"isf":50,"targetBg":110,"maxBolusUnits":25,
+         "displayUnit":"mmol"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: legacyJSON)
+        #expect(decoded.showUnitLabel == false)
+        #expect(decoded.glucose == 124)          // pre-existing fields still decode correctly
+        #expect(decoded.displayUnit == "mmol")
     }
 
     /// Size ceiling still holds with ALL five pump scalars + both stale flags populated alongside 24

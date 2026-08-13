@@ -149,10 +149,14 @@ struct PumpDetailsCard: View {
             let unit = AppSettings.shared.glucoseDisplayUnit
             // WR-05 gap closure (04-07): standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin
             // convention) instead of "mmol/L·U⁻¹" — same unit, was two different renderings.
+            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.isf) }
             return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
         case "target":
             guard snapshot.targetBg > 0 else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
+            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.targetBg) }
             return "\(unit.format(mgdl: snapshot.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
         default: return nil

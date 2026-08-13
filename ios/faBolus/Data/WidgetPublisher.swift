@@ -55,7 +55,10 @@ enum WidgetPublisher {
             // Phase 5 (D-18, 05-05) — app-computed snooze-eligibility gate (see the field's own doc
             // comment on `WidgetSnapshot`); passed in from the caller, which has `PumpAlertKind` on
             // `activeNotifications` (this function only receives bare `alerts: [String]` titles).
-            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
+            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert,
+            // Owner-requested toggle — stamped straight from the setting so the widget/complication/
+            // Live Activity gate their persistent unit CAPTION the same way the phone does.
+            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels)
     }
 
     @MainActor
@@ -127,6 +130,18 @@ enum WidgetPublisher {
     static func republishDisplayUnit() {
         guard var snap = WidgetStore.load() else { return }
         snap.displayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
+        WidgetStore.save(snap)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Owner-requested toggle: re-stamp `showUnitLabel` on the most recently published snapshot and
+    /// reload the widget timelines immediately — same idiom as `republishDisplayUnit()` above, called
+    /// from `AppSettings.showGlucoseUnitLabels`'s `didSet`. A no-op if nothing has been published yet
+    /// (the next real publish carries the flag).
+    @MainActor
+    static func republishShowUnitLabel() {
+        guard var snap = WidgetStore.load() else { return }
+        snap.showUnitLabel = AppSettings.shared.showGlucoseUnitLabels
         WidgetStore.save(snap)
         WidgetCenter.shared.reloadAllTimelines()
     }
