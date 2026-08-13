@@ -78,4 +78,25 @@ struct TherapyConfirmationsTests {
         #expect(TherapyConfirmations.carbRatioTddAdvisory(carbRatioGramsPerUnit: 0, totalDailyInsulinUnits: 50) == nil)
         #expect(TherapyConfirmations.basalTddAdvisory(basalUnitsPerHour: 0, totalDailyInsulinUnits: 48) == nil)
     }
+
+    // MARK: - 04-08 gap closure (SC1): isfTddAdvisory's mg/dL literal must convert via a GlucoseUnit param
+    // (no AppSettings in faBolusCore); the no-arg default must stay byte-identical to before this plan.
+
+    @Test func isfAdvisoryDefaultUnitTextIsUnchanged() {
+        // No `unit:` argument — the pre-existing mg/dL wording must be byte-identical.
+        let far = TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 130, totalDailyInsulinUnits: 45)
+        #expect(far?.contains("mg/dL per unit") == true)
+        #expect(far?.contains("130 mg/dL per unit") == true)
+    }
+
+    @Test func isfAdvisoryMmolUnitConvertsBothFigures() {
+        // TDD 45 ⇒ expected 40 mg/dL/U ⇒ 2.2 mmol/L/U; entered 130 mg/dL/U ⇒ 7.2 mmol/L/U. Neither the
+        // "typical" nor the "entered" figure may leak a bare mg/dL number in mmol mode.
+        let far = TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 130, totalDailyInsulinUnits: 45, unit: .mmol)
+        #expect(far != nil)
+        #expect(far?.contains("mg/dL") == false, "mmol mode must never leak an mg/dL label")
+        #expect(far?.contains("mmol/L per unit") == true)
+        #expect(far?.contains("2.2 mmol/L per unit") == true)   // 1800/45 = 40 mg/dL → 2.2 mmol/L
+        #expect(far?.contains("7.2 mmol/L per unit") == true)   // 130 mg/dL → 7.2 mmol/L
+    }
 }
