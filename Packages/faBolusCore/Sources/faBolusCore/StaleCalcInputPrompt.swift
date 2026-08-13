@@ -74,13 +74,30 @@ public enum StaleTherapyPrompt {
     /// Shared warning lead every surface shows. Names the last-known CR/ISF/target and their age when the
     /// profile is available (so the user sees exactly what the dose will be sized from); a compact fallback
     /// when only the fact of staleness is known.
-    public static func warningMessage(profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date()) -> String {
+    ///
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the ISF/target figures (04-08 gap closure, SC1).
+    ///   `StaleCalcInputPrompt` is a `faBolusCore` type and must stay app-independent — it cannot read
+    ///   `AppSettings.shared` — so the caller (`BolusEntryView`) passes the unit through. Defaults to
+    ///   `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording) is
+    ///   byte-identical to before this parameter was added. `p.isfMgdlPerUnit`/`p.targetBgMgdl` stay
+    ///   mg/dL `Int` on `BolusMath.Profile` — only the rendered text changes. Carb ratio is
+    ///   unit-agnostic (g/U) and is never touched by this parameter.
+    public static func warningMessage(profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl) -> String {
         let age = therapyDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
         if let p = profile {
-            return String(format: "faBolus couldn't confirm this pump's bolus settings are current "
-                + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
-                + "Use those settings, or cancel.",
-                p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
+            switch unit {
+            case .mgdl:
+                return String(format: "faBolus couldn't confirm this pump's bolus settings are current "
+                    + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
+                    + "Use those settings, or cancel.",
+                    p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
+            case .mmol:
+                let carbRatioStr = String(format: "%.0f", p.carbRatioGramsPerUnit)
+                return "faBolus couldn't confirm this pump's bolus settings are current "
+                    + "(last known carb ratio \(carbRatioStr) g/U, ISF \(unit.format(mgdl: p.isfMgdlPerUnit)) mmol/L, "
+                    + "target \(unit.format(mgdl: p.targetBgMgdl)) mmol/L, \(age)). "
+                    + "Use those settings, or cancel."
+            }
         }
         return "faBolus couldn't confirm this pump's bolus settings are current (last known settings, \(age)). "
             + "Use them, or cancel."
