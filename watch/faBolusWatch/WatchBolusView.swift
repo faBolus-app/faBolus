@@ -225,7 +225,14 @@ struct WatchBolusView: View {
     /// when the reading has no source timestamp (still stale, but no age to name).
     private var staleMessage: String {
         if let g = model.glucose, let d = model.glucoseDate {
-            return StaleBolusPrompt.warningMessage(glucoseMgdl: g, glucoseDate: d)
+            // Gap closure (04-07, own-sweep finding beyond 04-VERIFICATION/04-REVIEW): the shared
+            // `StaleBolusPrompt.warningMessage` bakes in a bare " mg/dL" literal (correct for the
+            // intentionally-unconverted Mac target, which also calls it) — the Watch has its own
+            // unit-aware `unit`/`GlucoseUnit.format`, so build the identical wording locally
+            // instead, matching every other converted surface on this screen.
+            let value = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            return "Your CGM reading (\(value)) is \(GlucoseFreshness.ageLabel(for: d, now: Date())) "
+                + "and was left out of this dose. Include it in the correction, bolus for carbs only, or cancel?"
         }
         return "Your CGM reading is stale and was left out of this dose. Include it, bolus for carbs only, or cancel."
     }
