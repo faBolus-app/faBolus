@@ -88,4 +88,91 @@ enum WidgetUI {
     }
     /// Stale at `now` (de-emphasize + drop the trend arrow), per the published policy.
     static func isStale(_ snap: WidgetSnapshot, now: Date) -> Bool { snap.isStale(asOf: now) }
+
+    // MARK: - Phase 5 pump-chip vocabulary (D-17/D-17a, 05-02)
+    //
+    // The extension links neither the app target nor faBolusCore, so it can't import `AppTheme`
+    // (`ios/faBolus/Design/AppTheme.swift`) — these are literal RGB MIRRORS of the same tokens
+    // (`insulin`/`low`/`inRange`), not a re-import, per 05-UI-SPEC.md's "Pump-field chip tint
+    // vocabulary" and the plan's own instruction to use plain SwiftUI colors here (NOT app-side
+    // `AppTheme`). `FaBolusWidgetBundle.swift` compiles ONLY into the `faBolusWidgets` extension
+    // target (unlike `WidgetShared.swift`, which is shared with the app), so a cross-target
+    // drift-guard test isn't reachable from the app test target the way `WidgetGlucoseThresholds`
+    // is pinned — keep these in sync with `AppTheme` by inspection if that palette ever changes.
+    static let insulinTint = Color(red: 0.36, green: 0.42, blue: 0.90)   // == AppTheme.insulin
+    static let lowTint = Color(red: 0.90, green: 0.25, blue: 0.22)       // == AppTheme.low
+    static let inRangeTint = Color(red: 0.30, green: 0.78, blue: 0.36)   // == AppTheme.inRange
+
+    /// A single pump-field chip: SF Symbol + tint + formatted value, MIRRORING
+    /// `StatusPillsView.pillFor`'s iconography/formatting verbatim so the ambient surface and the
+    /// phone HUD agree on what each glyph/color means.
+    struct PumpChip {
+        let icon: String
+        let tint: Color
+        let value: String
+    }
+
+    /// IOB chip — `drop.fill`, greys to `lowTint` when `iobStale` (mirrors
+    /// `StatusPillsView.pillFor("iob")`'s `CalcInputFreshness`-driven grey exactly, via the
+    /// APP-COMPUTED flag carried on `ContentState` — no local freshness re-derivation).
+    static func iobChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        PumpChip(icon: "drop.fill", tint: state.iobStale ? lowTint : insulinTint,
+                 value: String(format: "%.2f U", state.iobUnits))
+    }
+
+    /// Reservoir chip — `cross.vial.fill`, dateless: greys off the `pumpLinkStale` cluster flag.
+    static func reservoirChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        PumpChip(icon: "cross.vial.fill", tint: state.pumpLinkStale ? .gray : .teal,
+                 value: String(format: "%.0f U", state.reservoirUnits))
+    }
+
+    /// Battery chip — level-matched `battery.*` glyph, dateless: greys off `pumpLinkStale`.
+    static func batteryChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        let icon: String
+        switch state.batteryPercent {
+        case ...5: icon = "battery.0"
+        case ...37: icon = "battery.25"
+        case ...62: icon = "battery.50"
+        case ...87: icon = "battery.75"
+        default: icon = "battery.100"
+        }
+        let tint = state.pumpLinkStale ? Color.gray : (state.batteryPercent <= 20 ? lowTint : .green)
+        return PumpChip(icon: icon, tint: tint, value: "\(state.batteryPercent)%")
+    }
+
+    /// Basal/suspended chip — `waveform.path.ecg` (running) or `pause.circle.fill` (suspended),
+    /// dateless: greys off `pumpLinkStale`. Suspension itself is ALWAYS shown as the salient
+    /// `lowTint`, never greyed further (mirrors `StatusPillsView.pillFor("basal")`). Value is the
+    /// EFFECTIVE U/hr, never an invented temp-rate percent.
+    static func basalChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        if state.deliverySuspended {
+            return PumpChip(icon: "pause.circle.fill", tint: lowTint, value: "Suspended")
+        }
+        return PumpChip(icon: "waveform.path.ecg", tint: state.pumpLinkStale ? .gray : insulinTint,
+                        value: String(format: "%.2f U/hr", state.basalRateUnitsPerHour))
+    }
+
+    /// Control-IQ chip — mode-matched glyph (`moon.zzz.fill` sleep / `figure.run` exercise /
+    /// `checkmark.circle.fill` on), dateless: greys off `pumpLinkStale`. Mirrors
+    /// `StatusPillsView.controlIQIcon`/`controlIQValue` exactly.
+    static func controlIQChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        let icon: String
+        switch state.controlIQMode {
+        case 1: icon = "moon.zzz.fill"
+        case 2: icon = "figure.run"
+        default: icon = "checkmark.circle.fill"
+        }
+        let value: String
+        if !state.controlIQEnabled {
+            value = "Off"
+        } else {
+            switch state.controlIQMode {
+            case 1: value = "Sleep"
+            case 2: value = "Exercise"
+            default: value = "On"
+            }
+        }
+        let tint = state.pumpLinkStale ? Color.gray : (state.controlIQEnabled ? inRangeTint : .gray)
+        return PumpChip(icon: icon, tint: tint, value: value)
+    }
 }
