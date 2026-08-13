@@ -737,7 +737,7 @@ struct SegmentFieldsEditor: View {
         Section { Stepper(value: $f.isf, in: 5...400, step: isfTargetStep) { Text(isfLabel(Int(f.isf))) } }
             header: { Text("Correction factor (ISF)") } footer: {
                 footer("isf", advisory: TherapyConfirmations.isfTddAdvisory(
-                    isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits)) }
+                    isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits, unit: unit)) }
         Section { Stepper(value: $f.target, in: 70...180, step: isfTargetStep) { Text(glucoseLabel(Int(f.target))) } }
             header: { Text("Target glucose") } footer: { badge("targetBg") }
     }

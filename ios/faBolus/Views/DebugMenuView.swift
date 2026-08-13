@@ -52,7 +52,12 @@ struct DebugMenuView: View {
                 row("Connection", model.snapshot.connection.rawValue)
             }
             Section("Live snapshot") {
-                row("Glucose", model.snapshot.glucose.map { "\($0) mg/dL" } ?? "—")
+                // 04-08 gap closure (SC1, WR-07): this screen is reachable via an undocumented 7-tap
+                // gesture on the Settings disclaimer footer (not #if DEBUG-gated) — 04-REVIEW.md flagged
+                // it as "technically user-reachable, not purely a developer tool." Route through the
+                // same funnel as every other mainline glucose surface rather than documenting an
+                // exception, since converting is no riskier than the mirror-the-pattern fix elsewhere.
+                row("Glucose", model.snapshot.glucose.map { "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")" } ?? "—")
                 row("IOB", String(format: "%.2f U", model.snapshot.iobUnits))
                 row("Basal", String(format: "%.2f U/hr", model.snapshot.basalRateUnitsPerHour))
                 row("Suspended", model.snapshot.deliverySuspended ? "yes" : "no")

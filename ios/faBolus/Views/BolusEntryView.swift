@@ -109,7 +109,11 @@ struct BolusEntryView: View {
     /// reading is fresh; keeps it live as new readings arrive. No-op once the user edits the field.
     private func syncBGFromCGM() {
         guard bgSource != .manual, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale else { return }
-        let s = "\(g)"
+        // 04-08 gap closure (SC1): this auto-fill wrote the bare mg/dL Int into the editable `bg` text
+        // field, which is later re-parsed via `settings.glucoseDisplayUnit.parse(bg)` — in mmol mode this
+        // silently fed a mg/dL-scaled number into the mmol parser (e.g. 124 → 2234 mg/dL after ×18.0182),
+        // corrupting the correction-dose input. Route through the SAME funnel the field's own parse uses.
+        let s = settings.glucoseDisplayUnit.format(mgdl: g)
         if bg != s { bg = s; bgSource = .cgm; if mode == .carbs { Task { await calculate() } } }
     }
     /// True when the shown dose leans on a CGM value that is now stale (advisory, not a block).
@@ -530,7 +534,9 @@ struct BolusEntryView: View {
             }
             // Pull the freshest CGM the moment the screen opens, then auto-fill the correction BG from
             // it (never from a stale value). The user can still type their own.
-            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = "\(g)"; bgSource = .cgm }
+            // 04-08 gap closure (SC1): same funnel fix as `syncBGFromCGM` — never write a bare mg/dL
+            // Int into the display-unit-typed `bg` field.
+            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = settings.glucoseDisplayUnit.format(mgdl: g); bgSource = .cgm }
             if mode == .carbs { Task { await calculate() } }
             // DIF-core: pull the freshest CGM AND the freshest calc inputs (op-115 CR/ISF/target + op-109
             // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
@@ -630,7 +636,9 @@ struct BolusEntryView: View {
                 } else {
                     // CR-02 gap closure (04-07): same funnel as the `message:` closure below.
                     Button("Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))") {
-                        bg = "\(u.newBG)"; bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
+                        // 04-08 gap closure (SC1): same funnel fix as `syncBGFromCGM` — this button's own
+                        // label above already shows the converted figure; the field it writes into must match.
+                        bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG); bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
                         let ext = u.extended; let bgv = u.newBG; let uu = u.newUnits; cgmUpdate = nil
                         Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
                     }
@@ -803,9 +811,9 @@ struct BolusEntryView: View {
         case .iob:
             return StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
         case .therapy:
-            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate)
+            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
         case .both:
-            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate)
+            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
                 + "\n\n" + StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
         }
     }

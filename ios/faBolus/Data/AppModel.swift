@@ -1110,7 +1110,7 @@ public final class AppModel {
     public func therapyInsights() -> [TherapyInsightItem] {
         let range = Date().addingTimeInterval(-90 * 86400)...Date()
         let cgm = history?.glucose(in: range) ?? glucoseHistory
-        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
+        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [], unit: AppSettings.shared.glucoseDisplayUnit)
             .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
     }
 

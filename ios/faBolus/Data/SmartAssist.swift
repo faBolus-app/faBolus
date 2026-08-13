@@ -22,9 +22,14 @@ public struct TherapyInsightItem: Identifiable, Equatable { public let id = UUID
 enum SmartAssist {
     // MARK: Retrospective insights (PatternInsights, faBolusCore)
 
-    static func insights(cgm: [GlucoseReading], carbs: [(date: Date, grams: Double)] = []) -> [PatternInsights.Insight] {
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the generated "Insights" prose (04-08 gap closure,
+    ///   SC1). `SmartAssist` — not `PatternInsights` (which stays app-independent) — is the funnel
+    ///   boundary: the caller (`AppModel.therapyInsights()`) passes `AppSettings.shared.glucoseDisplayUnit`
+    ///   explicitly rather than defaulting here, so the call site is grep-visible as funnel-routed.
+    static func insights(cgm: [GlucoseReading], carbs: [(date: Date, grams: Double)] = [], unit: GlucoseUnit) -> [PatternInsights.Insight] {
         PatternInsights().insights(
             cgm: cgm.map { PatternInsights.CGMPoint(mgdl: Double($0.mgdl), date: $0.date) },
-            carbs: carbs.map { PatternInsights.Carbs(grams: $0.grams, date: $0.date) })
+            carbs: carbs.map { PatternInsights.Carbs(grams: $0.grams, date: $0.date) },
+            unit: unit)
     }
 }
