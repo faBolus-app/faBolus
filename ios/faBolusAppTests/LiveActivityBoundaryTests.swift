@@ -70,6 +70,109 @@ struct LiveActivityBoundaryTests {
                 "boundary test could not locate Shared/LiveActivityIntents.swift — path resolution broke (#filePath=\(#filePath))")
     }
 
+    // MARK: - CR-02 gap closure (05-06) — broaden the scan past one hardcoded file
+
+    /// Resolve `ios/faBolus/App.swift` (the bridge-wiring site CR-02 names explicitly — the closures
+    /// installed there, not `LiveActivityIntents.swift`'s own source text, determine what
+    /// `LiveActivityIntentBridge.reconnect`/`.snoozeAlertIfSafe` actually DO once installed).
+    private static func appSwiftURL() -> URL? {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("ios/faBolus/App.swift")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+            probe = probe.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    /// The repo root, resolved the same way `intentsFileURL()` does (walk up from `#filePath` until
+    /// `Shared/LiveActivityIntents.swift` is found beneath the candidate).
+    private static func repoRootURL() -> URL? {
+        intentsFileURL()?.deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    /// Recursively enumerate every `.swift` file under `root`, skipping build artifacts/test targets
+    /// (none of those can define a `LiveActivityIntent` conformer that ships, and the test target
+    /// itself legitimately contains the forbidden symbols as STRING LITERALS in `forbiddenDeliverySymbols`
+    /// below — scanning it would false-positive on this very file).
+    private static func allSwiftFiles(under root: URL) -> [URL] {
+        let fm = FileManager.default
+        let skipDirNames: Set<String> = [".build", "DerivedData", "Pods", ".git", "node_modules"]
+        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                                              options: [.skipsHiddenFiles]) else { return [] }
+        var results: [URL] = []
+        for case let url as URL in enumerator {
+            let name = url.lastPathComponent
+            if skipDirNames.contains(name) || name.hasSuffix("Tests") {
+                enumerator.skipDescendants()
+                continue
+            }
+            if url.pathExtension == "swift" { results.append(url) }
+        }
+        return results
+    }
+
+    /// True when `stripped` (comment-stripped source) declares a type CONFORMING to
+    /// `LiveActivityIntent` — i.e. `: LiveActivityIntent` or `, LiveActivityIntent` immediately
+    /// preceding a brace/comma/newline, not merely a prose mention of the protocol name (several
+    /// production files — `App.swift`, `AppModel.swift`, `RootTabView.swift` — legitimately name
+    /// `LiveActivityIntentBridge` in doc comments without declaring a conformer; a bare substring
+    /// match on "LiveActivityIntent" would false-positive on `AppModel.swift`, which legitimately
+    /// contains the REAL `BolusGate`/`deliverWidgetBolus` implementation).
+    private static func declaresALiveActivityIntentConformer(_ stripped: String) -> Bool {
+        stripped.range(of: #"[:,]\s*LiveActivityIntent\b"#, options: .regularExpression) != nil
+    }
+
+    /// CR-02 point #2: "nothing stops a future `LiveActivityIntent` conformer from being declared
+    /// directly in `GlucoseLiveActivity.swift`... or in a brand-new file" — the old test only ever
+    /// scanned ONE hardcoded path. This scans EVERY `.swift` file in the repo (production sources,
+    /// not test targets) that declares a `LiveActivityIntent` conformer, wherever it lives, against
+    /// the SAME canonical `forbiddenDeliverySymbols` list — one source of truth for "what a delivery
+    /// seam looks like", just enumerated over a broader file set instead of a second ad hoc list.
+    @Test func noLiveActivityIntentConformerAnywhereInTheRepoReferencesADeliverySeamSymbol() throws {
+        guard let root = Self.repoRootURL() else {
+            Issue.record("could not resolve the repo root from #filePath=\(#filePath)")
+            return
+        }
+        var scanned = 0
+        for url in Self.allSwiftFiles(under: root) {
+            guard let raw = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let stripped = Self.stripLineComments(raw)
+            guard Self.declaresALiveActivityIntentConformer(stripped) else { continue }
+            scanned += 1
+            let violations = Self.forbiddenDeliverySymbols.filter { stripped.contains($0) }
+            #expect(violations.isEmpty,
+                    "Phase 7 boundary violated — \(url.lastPathComponent) declares a LiveActivityIntent conformer referencing delivery-seam symbol(s): \(violations.sorted().joined(separator: ", "))")
+        }
+        // A path-resolution/regex regression must fail loudly, not pass vacuously — today exactly
+        // the three intents in Shared/LiveActivityIntents.swift declare a conformer.
+        #expect(scanned > 0, "expected to find at least one LiveActivityIntent conformer under \(root.path) — scan broke")
+    }
+
+    /// CR-02 point #1: the intents file's own source is genuinely non-dosing today, but
+    /// `LiveActivityIntentBridge.reconnect`/`.snoozeAlertIfSafe` are `nil` there — they only become
+    /// dosing-safe or dosing-UNSAFE based on what `App.swift`'s `onAppear` (the bridge-wiring site)
+    /// installs at launch. The old test never scanned this file at all; a future rewire to something
+    /// dosing-adjacent would have stayed invisible to the boundary suite forever.
+    @Test func appSwiftBridgeWiringSiteReferencesNoDeliverySeamSymbol() throws {
+        guard let url = Self.appSwiftURL() else {
+            Issue.record("could not resolve ios/faBolus/App.swift from #filePath=\(#filePath)")
+            return
+        }
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        let stripped = Self.stripLineComments(raw)
+        let violations = Self.forbiddenDeliverySymbols.filter { stripped.contains($0) }
+        #expect(violations.isEmpty,
+                "Phase 7 boundary violated — App.swift's LiveActivityIntentBridge wiring references delivery-seam symbol(s): \(violations.sorted().joined(separator: ", "))")
+    }
+
+    /// A path-resolution bug for the App.swift scan must fail loudly too.
+    @Test func fileResolutionActuallyFoundAppSwift() {
+        #expect(Self.appSwiftURL() != nil,
+                "boundary test could not locate ios/faBolus/App.swift — path resolution broke (#filePath=\(#filePath))")
+    }
+
     // MARK: - Behavioral: open-to-bolus carries no dose/carb
 
     @Test func openBolusIntentSetsOnlyTheNavRequestAndCreatesNoPendingBolus() async throws {
