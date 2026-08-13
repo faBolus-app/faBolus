@@ -283,6 +283,18 @@ struct DisplaySettingsView: View {
             } header: { Text("Customize") } footer: {
                 Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
             }
+            Section {
+                Toggle("Live Activity", isOn: $settings.liveActivityEnabled)
+                if settings.liveActivityEnabled {
+                    NavigationLink {
+                        CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
+                                          label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
+                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.")
+                    } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
+                }
+            } header: { Text("Live Activity") } footer: {
+                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display.")
+            }
         }
         .navigationTitle("Display & chart")
     }
