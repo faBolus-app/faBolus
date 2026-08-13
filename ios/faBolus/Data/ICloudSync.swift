@@ -15,10 +15,12 @@ import faBolusCore
 ///
 /// **Settings-only, off the command path (C5).** Only the iCloud-SAFE subset syncs —
 /// `SettingsCatalog.iCloudSyncedKeys`, which EXCLUDES the five command-adjacent flags (phone/remotes
-/// read-only, child mode, advanced-control opt-in, remote-approval) and every non-backed / device-specific
-/// key. So a synced blob can never flip a safety/command decision on another device. Pump settings +
-/// secrets are NEVER auto-synced (file-only). The mode selector (`appMode`) is not a catalog row, so it
-/// never syncs either — a cloud pull cannot unlock a mode on another device.
+/// read-only, child mode, advanced-control opt-in, remote-approval), the three device-local
+/// ambient-surface flags (`liveActivityEnabled`, `liveActivityFields`, `glucoseBadgeEnabled` — opting into
+/// an always-on-screen surface is a per-device choice, not one to silently propagate), and every
+/// non-backed / device-specific key. So a synced blob can never flip a safety/command decision on another
+/// device. Pump settings + secrets are NEVER auto-synced (file-only). The mode selector (`appMode`) is not
+/// a catalog row, so it never syncs either — a cloud pull cannot unlock a mode on another device.
 
 #if FABOLUS_ICLOUD
 @MainActor

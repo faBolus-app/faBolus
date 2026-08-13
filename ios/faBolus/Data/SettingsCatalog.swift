@@ -35,7 +35,12 @@ struct SettingDescriptor: Identifiable {
     let backsUp: Bool
     /// True iff the key rides the iCloud KV settings sync (S5). Invariant: implies `backsUp` (iCloud only
     /// syncs `SettingsBackup.appSettingsSnapshot()`), and is forced **false** for the command-adjacent
-    /// flags so settings sync can never carry a safety/command decision to another device (C5).
+    /// flags so settings sync can never carry a safety/command decision to another device (C5). Also
+    /// forced **false** for the ambient ("ephemeral surface") ones — `liveActivityEnabled`,
+    /// `liveActivityFields`, `glucoseBadgeEnabled` — for a different reason: those opt into an
+    /// always-on-screen surface (Lock Screen Live Activity, home-screen badge), and turning that on is a
+    /// per-device decision the owner does not want silently propagated to a device where they never
+    /// opted in.
     let syncsToICloud: Bool
     /// Optional search metadata. Populated `nil` in S1 — the `SettingsIndex` fold is deferred to a later
     /// slice because its rows are category-grouped, not 1:1 with keys, and need a curated overlay (C4).
@@ -52,7 +57,8 @@ struct SettingDescriptor: Identifiable {
         self.tier = tier
         self.modes = Set(AppMode.allCases.filter { $0 >= minMode })
         self.backsUp = backsUp
-        // Default: a backed-up key syncs. The five command-adjacent flags pass `false` explicitly.
+        // Default: a backed-up key syncs. The five command-adjacent flags plus the three device-local
+        // ambient-surface flags pass `false` explicitly.
         self.syncsToICloud = (syncsToICloud ?? backsUp) && backsUp
         self.searchTitle = searchTitle
         self.searchKeywords = searchKeywords
@@ -112,12 +118,16 @@ enum SettingsCatalog {
         .init("pillsOrder", .display, from: .standard, backsUp: true),
         // Phase 5 (D-15/D-17a, 05-04): the ambient Live Activity opt-in + its per-field reorder+hide
         // selection. Display-only — neither is command-adjacent (SettingsCatalog.commandAdjacentFlags
-        // is unchanged), so both default to iCloud sync ON like glucoseDisplayUnit/pillsOrder.
-        .init("liveActivityEnabled", .display, from: .standard, backsUp: true),
-        .init("liveActivityFields", .display, from: .standard, backsUp: true),
+        // is unchanged) — but each opts into an always-visible on-device surface (Lock Screen Live
+        // Activity), so `syncsToICloud: false` keeps that opt-in per-device: enabling it on one iPhone
+        // must not silently switch it on for the owner on another device.
+        .init("liveActivityEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityFields", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
-        // command-adjacent, so it defaults to iCloud sync ON like liveActivityEnabled/pillsOrder.
-        .init("glucoseBadgeEnabled", .display, from: .standard, backsUp: true),
+        // command-adjacent — but the same per-device ambient-surface reasoning as liveActivityEnabled
+        // applies (a home-screen badge on one device should not silently light up on another), so it is
+        // also excluded from iCloud sync.
+        .init("glucoseBadgeEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // MARK: Watch/Garmin display (remotes)
         .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),
         .init("watchChartRanges", .remotes, from: .standard, backsUp: true),

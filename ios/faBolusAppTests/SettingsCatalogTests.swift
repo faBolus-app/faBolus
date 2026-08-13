@@ -151,6 +151,29 @@ struct SettingsCatalogTests {
         #expect(d?.backsUp == true)
     }
 
+    // MARK: Ambient-surface flags are per-device (never iCloud-synced)
+
+    /// The three ambient always-on-screen opt-ins — `liveActivityEnabled`, `liveActivityFields`,
+    /// `glucoseBadgeEnabled` — must stay per-device: enabling the Live Activity or the glucose badge on
+    /// one iPhone must never silently switch it on for the same owner on another device. They still back
+    /// up (a restore is an explicit user action) and are not command-adjacent — this is a distinct
+    /// exclusion reason from C5, so it's asserted independently of `commandAdjacentFlags`.
+    @Test func ambientSurfaceFlagsAreBackedUpButNeverICloudSynced() {
+        let ambientSurfaceFlags: Set<String> = [
+            "liveActivityEnabled", "liveActivityFields", "glucoseBadgeEnabled",
+        ]
+        let synced = SettingsCatalog.iCloudSyncedKeys
+        #expect(synced.isDisjoint(with: ambientSurfaceFlags))
+        for flag in ambientSurfaceFlags {
+            let d = SettingsCatalog.byKey[flag]
+            #expect(d != nil, "ambient-surface flag \(flag) missing from catalog")
+            #expect(d?.backsUp == true, "\(flag) must still back up (local persistence unaffected)")
+            #expect(d?.syncsToICloud == false, "\(flag) must not ride iCloud settings sync")
+            #expect(!SettingsCatalog.commandAdjacentFlags.contains(flag),
+                     "\(flag) is excluded for ambient-surface reasons, not C5 command-adjacency")
+        }
+    }
+
     // MARK: Phase 04-01 (mmol/L display-unit support, D-03) — the glucoseDisplayUnit setting's registration
 
     /// D-03: `.display` category, `backsUp: true` with iCloud ON (a display unit is NOT command-adjacent).
