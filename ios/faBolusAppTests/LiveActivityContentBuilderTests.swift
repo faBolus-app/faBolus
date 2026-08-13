@@ -16,13 +16,15 @@ struct LiveActivityContentBuilderTests {
                        updatedAt: Date = Date(), iobDate: Date? = nil, iobUnits: Double = 0,
                        basalRateUnitsPerHour: Double = 0, deliverySuspended: Bool = false,
                        controlIQMode: Int = 0, controlIQEnabled: Bool = false,
-                       reservoirUnits: Double = 0, batteryPercent: Int = 0) -> WidgetSnapshot {
+                       reservoirUnits: Double = 0, batteryPercent: Int = 0,
+                       hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
         WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trendArrow,
                        iobUnits: iobUnits, reservoirUnits: reservoirUnits, batteryPercent: batteryPercent,
                        connected: connected, updatedAt: updatedAt, recentPoints: points,
                        staleAfterSec: staleAfterSec, displayUnit: displayUnit, iobDate: iobDate,
                        basalRateUnitsPerHour: basalRateUnitsPerHour, deliverySuspended: deliverySuspended,
-                       controlIQMode: controlIQMode, controlIQEnabled: controlIQEnabled)
+                       controlIQMode: controlIQMode, controlIQEnabled: controlIQEnabled,
+                       hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
     }
 
     /// D-06: staleDate == the SAMPLE date + the published stale threshold, never `now + fixed`
@@ -213,5 +215,34 @@ struct LiveActivityContentBuilderTests {
         #expect(widgetSnap.deliverySuspended == true)
         #expect(widgetSnap.controlIQMode == 2)
         #expect(widgetSnap.controlIQEnabled == true)
+    }
+
+    // MARK: - D-18 (05-05) — the Snooze button's app-computed eligibility gate
+
+    /// `WidgetPublisher.makeSnapshot`'s new `hasSnoozeEligibleAlert` parameter carries straight
+    /// through onto `WidgetSnapshot` — the caller (`AppModel.refresh()`) is the only place
+    /// `PumpAlertKind` is available alongside the wire snapshot; this function must not silently
+    /// drop what it was handed.
+    @MainActor
+    @Test func widgetPublisherMakeSnapshotCarriesHasSnoozeEligibleAlertThrough() {
+        let pump = PumpSnapshot()
+        let eligible = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                     staleAfterSec: 360, hideAfterSec: nil,
+                                                     hasSnoozeEligibleAlert: true)
+        #expect(eligible.hasSnoozeEligibleAlert == true)
+        let none = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                staleAfterSec: 360, hideAfterSec: nil,
+                                                hasSnoozeEligibleAlert: false)
+        #expect(none.hasSnoozeEligibleAlert == false)
+    }
+
+    /// `GlucoseLiveActivityManager.makeContent` projects `hasSnoozeEligibleAlert` from the snapshot
+    /// onto `ContentState` verbatim — the gate the Live Activity's "Snooze" button visibility reads.
+    @Test func makeContentProjectsHasSnoozeEligibleAlertOntoContentState() {
+        let now = Date(timeIntervalSince1970: 12_000_000)
+        let eligible = snap(glucoseDate: now, hasSnoozeEligibleAlert: true)
+        #expect(GlucoseLiveActivityManager.makeContent(from: eligible, now: now).state.hasSnoozeEligibleAlert == true)
+        let none = snap(glucoseDate: now, hasSnoozeEligibleAlert: false)
+        #expect(GlucoseLiveActivityManager.makeContent(from: none, now: now).state.hasSnoozeEligibleAlert == false)
     }
 }
