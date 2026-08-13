@@ -28,7 +28,16 @@ public final class AppSettings {
     /// `Int` stays canonical everywhere internally; this ONLY selects which unit surfaces render/parse
     /// through (`GlucoseUnit.format`/`.parse`, faBolusCore). Default **mg/dL** (behavior-preserving for
     /// existing users, D-03). `.display` category, `backsUp: true`, iCloud sync ON — see `SettingsCatalog`.
-    public var glucoseDisplayUnit: GlucoseUnit { didSet { d.set(glucoseDisplayUnit.rawValue, forKey: "glucoseDisplayUnit") } }
+    public var glucoseDisplayUnit: GlucoseUnit {
+        didSet {
+            d.set(glucoseDisplayUnit.rawValue, forKey: "glucoseDisplayUnit")
+            // Phase 04-03: re-publish the App-Group WidgetSnapshot's displayUnit immediately so the
+            // Home/Lock-Screen widgets (and, transitively, the watch complication) reflect a unit
+            // toggle without waiting for the next pump reading. Not syncWidgetConfig() (Pattern 3 —
+            // that channel is for bolus increments, unrelated to glucose display).
+            WidgetPublisher.republishDisplayUnit()
+        }
+    }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 

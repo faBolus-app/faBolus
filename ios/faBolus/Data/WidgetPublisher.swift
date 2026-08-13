@@ -14,6 +14,7 @@ enum WidgetPublisher {
     /// mapping — including P10's freshness policy — is unit-testable without the shared store or a
     /// racing sibling test. `staleAfterSec`/`hideAfterSec` are passed in (from `GlucoseFreshness` at the
     /// call site) so the test can pin them deterministically.
+    @MainActor
     static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
                              staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?) -> WidgetSnapshot {
         let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
@@ -38,7 +39,11 @@ enum WidgetPublisher {
             // P10 (group A): carry the phone's freshness policy so the iOS widgets grey/hide off the
             // SAMPLE age exactly like the app + the Mac widget — instead of silently falling back to the
             // 6-min hardcode regardless of the user's setting (the iOS staleness defect).
-            staleAfterSec: staleAfterSec, hideAfterSec: hideAfterSec)
+            staleAfterSec: staleAfterSec, hideAfterSec: hideAfterSec,
+            // Phase 04-03: the active display unit, as the wire token ("mgdl"|"mmol") — never
+            // GlucoseUnit itself (Pitfall 6). The widget/complication island resolves it via the
+            // WidgetGlucoseUnit mirror; nil (impossible here, but legacy-safe) ⇒ mgdl.
+            displayUnit: AppSettings.shared.glucoseDisplayUnit.wireToken)
     }
 
     @MainActor
@@ -87,5 +92,20 @@ enum WidgetPublisher {
         WidgetBolusStore.bolusLocked = locked
         WidgetBolusStore.bolusLockReason = locked ? reason : ""
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
+    }
+
+    /// Phase 04-03: re-stamp `displayUnit` on the most recently published snapshot and reload the
+    /// widget timelines immediately — like `publishBolusLock`, this needs no `PumpSnapshot` (the
+    /// setting toggle isn't a pump event), so it patches the App-Group value already on disk rather
+    /// than waiting for the next `publish(_:)` from a pump update. Called from `AppSettings
+    /// .glucoseDisplayUnit`'s `didSet`. Uses the SAME WidgetSnapshot vehicle every glucose render
+    /// already reads (Pattern 3) — never `syncWidgetConfig()`, which is the unrelated bolus-increment
+    /// channel. A no-op if nothing has been published yet (the next real publish carries the unit).
+    @MainActor
+    static func republishDisplayUnit() {
+        guard var snap = WidgetStore.load() else { return }
+        snap.displayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
+        WidgetStore.save(snap)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
