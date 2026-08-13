@@ -235,11 +235,15 @@ struct BolusEntryView: View {
     private var cgmAgeMinutes: Int? {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
-    /// "124 mg/dL · 2 min ago" for the live CGM readout on the bolus screen (nil when no reading).
+    /// "6.9 mmol/L · 2 min ago" (or "124 mg/dL · …") for the live CGM readout on the bolus screen
+    /// (nil when no reading). CR-03 gap closure (04-07): routed through the display-unit funnel —
+    /// was the one live-status line on this screen left as a bare mg/dL integer.
     private var cgmReadout: String? {
         guard let g = model.snapshot.glucose else { return nil }
-        guard let d = model.snapshot.glucoseDate else { return "\(g) mg/dL" }
-        return "\(g) mg/dL · \(GlucoseFreshness.ageLabel(for: d, now: Date()))"
+        let unit = settings.glucoseDisplayUnit
+        let value = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+        guard let d = model.snapshot.glucoseDate else { return value }
+        return "\(value) · \(GlucoseFreshness.ageLabel(for: d, now: Date()))"
     }
     private var confirmMessage: String {
         var parts: [String] = []
@@ -600,7 +604,10 @@ struct BolusEntryView: View {
                     // WITH it — shown only when a stale reading exists; (2) carbs-only (drop the correction,
                     // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
                     if let sbg = u.staleBG, let su = u.staleUnits {
-                        Button("Include \(sbg) mg/dL → \(String(format: "%.2f U", su))") {
+                        // CR-02 gap closure (04-07): route through the SAME funnel as the adjacent
+                        // `message:` closure below so the button and the message never show two
+                        // different-looking numbers for the identical glucose value.
+                        Button("Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))") {
                             let ext = u.extended; let carbsOnlyUnits = u.newUnits; cgmUpdate = nil
                             // Defense-in-depth (Addendum B cap): the option is only ever OFFERED for a
                             // within-window reading, but re-verify at TAP time through the SAME single bound
@@ -621,7 +628,8 @@ struct BolusEntryView: View {
                     }
                     Button("Cancel", role: .cancel) { cgmUpdate = nil }
                 } else {
-                    Button("Use \(u.newBG) mg/dL → \(String(format: "%.2f U", u.newUnits))") {
+                    // CR-02 gap closure (04-07): same funnel as the `message:` closure below.
+                    Button("Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))") {
                         bg = "\(u.newBG)"; bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
                         let ext = u.extended; let bgv = u.newBG; let uu = u.newUnits; cgmUpdate = nil
                         Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }

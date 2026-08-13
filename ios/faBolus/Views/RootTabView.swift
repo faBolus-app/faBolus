@@ -49,8 +49,14 @@ struct RootTabView: View {
                 var parts = [String(format: "A remote requested %.2f U.", p.units)]
                 if let c = p.carbsGrams, c > 0 { parts.append(String(format: "Carbs: %.0f g.", c)) }
                 if let bg = p.bgMgdl {
+                    // CR-01 gap closure (04-07): route through the display-unit funnel — this
+                    // dialog is the highest-stakes confirm flow in the app (approving a
+                    // remote-triggered insulin delivery); the audit BG figure must match every
+                    // other glucose number the user sees, not stay a bare mg/dL literal.
+                    let unit = settings.glucoseDisplayUnit
+                    let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
                     let age = p.bgDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
-                    parts.append(age != nil ? "BG: \(bg) mg/dL (\(age!) min ago)." : "BG: \(bg) mg/dL.")
+                    parts.append(age != nil ? "BG: \(bgStr) (\(age!) min ago)." : "BG: \(bgStr).")
                 } else if let c = p.carbsGrams, c > 0 {
                     parts.append("No fresh CGM — carbs only, no correction.")
                 }
