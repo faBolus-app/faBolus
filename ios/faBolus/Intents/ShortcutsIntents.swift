@@ -22,13 +22,19 @@ private func loadSnap() throws -> WidgetSnapshot {
 
 struct GetGlucoseValueIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Glucose"
-    static let description = IntentDescription("The latest glucose value in mg/dL.")
+    /// Phase 04-06 (D-10, Open Question 2 / A4): the returned value is ALWAYS mg/dL, regardless of
+    /// the app's display-unit setting — so existing Shortcuts automations comparing against a
+    /// mg/dL threshold (e.g. "if Glucose > 180") never silently change scale. Only the spoken
+    /// dialog below honors the display unit.
+    static let description = IntentDescription("The latest glucose value, always in mg/dL regardless of the app's display-unit setting. The spoken dialog uses your display unit.")
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<Int> & ProvidesDialog {
         let s = try loadSnap()
         guard let g = s.glucose else { throw NoPumpDataError() }
         let age = s.isGlucoseStale ? " (stale)" : ""
-        return .result(value: g, dialog: "\(g) mg/dL\(age)")
+        let unit = await AppSettings.shared.glucoseDisplayUnit
+        let spoken = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+        return .result(value: g, dialog: "\(spoken)\(age)")
     }
 }
 
@@ -58,7 +64,9 @@ struct GetGlucoseAgeIntent: AppIntent {
 
 struct GetRecentGlucoseIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Recent Glucose Values"
-    static let description = IntentDescription("The recent glucose readings (mg/dL), oldest to newest.")
+    /// Phase 04-06 (A4): no dialog exists on this intent — the returned array is the whole payload,
+    /// so it stays mg/dL always, same rationale as `GetGlucoseValueIntent.result(value:)`.
+    static let description = IntentDescription("The recent glucose readings, always in mg/dL regardless of the app's display-unit setting, oldest to newest.")
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<[Int]> {
         let s = try loadSnap()
@@ -157,21 +165,29 @@ struct GetCarbRatioIntent: AppIntent {
 
 struct GetCorrectionFactorIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Correction Factor"
-    static let description = IntentDescription("Correction factor (ISF), in mg/dL per unit.")
+    /// Phase 04-06 (D-10, A4): the returned value is ALWAYS mg/dL per unit, regardless of the
+    /// app's display-unit setting — only the spoken dialog below converts.
+    static let description = IntentDescription("Correction factor (ISF), always in mg/dL per unit regardless of the app's display-unit setting. The spoken dialog uses your display unit.")
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<Int> & ProvidesDialog {
         let s = try loadSnap()
-        return .result(value: s.isf, dialog: "\(s.isf) mg/dL per unit")
+        let unit = await AppSettings.shared.glucoseDisplayUnit
+        let spoken = "\(unit.format(mgdl: s.isf)) \(unit == .mmol ? "mmol/L" : "mg/dL") per unit"
+        return .result(value: s.isf, dialog: IntentDialog(stringLiteral: spoken))
     }
 }
 
 struct GetTargetGlucoseIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Target Glucose"
-    static let description = IntentDescription("Target glucose, in mg/dL.")
+    /// Phase 04-06 (D-10, A4): the returned value is ALWAYS mg/dL, regardless of the app's
+    /// display-unit setting — only the spoken dialog below converts.
+    static let description = IntentDescription("Target glucose, always in mg/dL regardless of the app's display-unit setting. The spoken dialog uses your display unit.")
     static let openAppWhenRun = false
     func perform() async throws -> some ReturnsValue<Int> & ProvidesDialog {
         let s = try loadSnap()
-        return .result(value: s.targetBg, dialog: "\(s.targetBg) mg/dL")
+        let unit = await AppSettings.shared.glucoseDisplayUnit
+        let spoken = "\(unit.format(mgdl: s.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+        return .result(value: s.targetBg, dialog: IntentDialog(stringLiteral: spoken))
     }
 }
 
@@ -215,7 +231,15 @@ struct GetPumpSummaryIntent: AppIntent {
     func perform() async throws -> some ReturnsValue<String> & ProvidesDialog {
         let s = try loadSnap()
         var parts: [String] = []
-        if let g = s.glucose { parts.append("BG \(g)\(s.isGlucoseStale ? " (stale)" : "")") }
+        if let g = s.glucose {
+            // Phase 04-06 (D-10): this summary's returned value IS the spoken dialog (both are the
+            // same String, unlike the Int-returning intents above), so the BG figure here honors the
+            // display unit with an explicit unit label (there is no separate mg/dL numeric payload
+            // for an automation to compare against, unlike GetGlucoseValueIntent's .result(value:)).
+            let unit = await AppSettings.shared.glucoseDisplayUnit
+            let bg = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            parts.append("BG \(bg)\(s.isGlucoseStale ? " (stale)" : "")")
+        }
         parts.append(String(format: "IOB %.2fU", s.iobUnits))
         parts.append("Res \(Int(s.reservoirUnits))U")
         parts.append("Batt \(s.batteryPercent)%")
