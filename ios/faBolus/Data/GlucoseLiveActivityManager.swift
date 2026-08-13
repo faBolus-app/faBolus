@@ -100,14 +100,37 @@ enum GlucoseLiveActivityManager {
     /// this composed result into `decideAction(enabled:...)` as its `enabled` argument.
     static func gateEnabled(optIn: Bool, authorized: Bool) -> Bool { optIn && authorized }
 
+    /// WR-03 gap closure (05-06) — serializes overlapping `update(from:)` invocations. Chains each
+    /// call onto whatever the PREVIOUS call's work was doing, so two calls arriving in close
+    /// succession (plausible: `WidgetPublisher.publish` is reachable from `AppModel.refresh()`, which
+    /// itself can fire from a BLE notification callback, a manual pull-to-refresh, AND the ~20s
+    /// arbiter timer) never both read "no running activity" before either has actually run its
+    /// `Activity.request(...)` — the SAME race the pre-existing `endUnknownActivities()` cleanup loop
+    /// only papered over after the fact (a real, if self-correcting, transient double-request +
+    /// flicker). `update(from:)` itself stays synchronous/non-blocking for its @MainActor caller — it
+    /// only enqueues; the awaiting happens inside the chained `Task`.
+    @MainActor private static var inFlight: Task<Void, Never>?
+
     /// I/O half — called from `WidgetPublisher.publish(...)` (D-03), the single BLE-driven choke
-    /// point. Reads `Activity<FaBolusGlucoseAttributes>.activities` synchronously (a plain static
-    /// property, not async) to decide, then performs the ActivityKit side effect in a detached
-    /// `Task` so the hot `@MainActor` publish path never blocks on it — Loop's cooperative-pool
+    /// point. Enqueues `performUpdate(from:)` behind whatever is already in flight (WR-03) so the
+    /// decide+act sequence for a burst of calls runs one at a time, never overlapping.
+    @MainActor
+    static func update(from snap: WidgetSnapshot) {
+        let previous = inFlight
+        inFlight = Task {
+            _ = await previous?.value
+            await performUpdate(from: snap)
+        }
+    }
+
+    /// The actual decide+act sequence, run to completion by exactly one `update(from:)` call at a
+    /// time (WR-03's serialization) — otherwise UNCHANGED from the pre-05-06 body of `update(from:)`.
+    /// Reads `Activity<FaBolusGlucoseAttributes>.activities` synchronously (a plain static property,
+    /// not async) to decide, then performs the ActivityKit side effect — Loop's cooperative-pool
     /// discipline (`LiveActivityManager.swift`'s `getInsulinOnBoard()` deadlock note): never bridge
     /// async→sync by blocking this thread.
     @MainActor
-    static func update(from snap: WidgetSnapshot) {
+    private static func performUpdate(from snap: WidgetSnapshot) async {
         // D-15 (05-04) — the composed opt-in gate: the tracer's `areActivitiesEnabled` alone is no
         // longer sufficient; the app-level opt-in (default OFF, AppSettings.swift) must ALSO be true.
         let enabled = gateEnabled(
@@ -126,32 +149,31 @@ enum GlucoseLiveActivityManager {
         let content = ActivityContent(state: state, staleDate: staleDate)
         let keepId = running?.id
 
-        Task {
-            // endUnknownActivities() (Loop) — defend against a duplicate Activity somehow existing
-            // (e.g. across a relaunch) rather than assuming exactly one.
-            for other in Activity<FaBolusGlucoseAttributes>.activities where other.id != keepId {
-                await other.end(nil, dismissalPolicy: .immediate)
+        // endUnknownActivities() (Loop) — defend against a duplicate Activity somehow existing (e.g.
+        // across a relaunch) rather than assuming exactly one. With `update(from:)`'s calls now
+        // serialized (WR-03), this is a belt-and-suspenders defense, not the primary race guard.
+        for other in Activity<FaBolusGlucoseAttributes>.activities where other.id != keepId {
+            await other.end(nil, dismissalPolicy: .immediate)
+        }
+        switch action {
+        case .start:
+            // Re-arm (D-05): end whatever this stale/ended instance still is, then request fresh.
+            if let running { await running.end(nil, dismissalPolicy: .immediate) }
+            _ = try? Activity.request(attributes: FaBolusGlucoseAttributes(), content: content, pushType: nil)
+        case .update:
+            // D-06 monotonicity — `timestamp:` is the SAMPLE date, never `Date()`. The
+            // `timestamp:` overload needs iOS 17.2+ (D-11's floor is 17.0); 17.0/17.1 falls back
+            // to the base `update(_:)` (no monotonic guard available at that OS level — a
+            // disclosed, OS-imposed limitation, not a faBolus omission).
+            if #available(iOS 17.2, *) {
+                await running?.update(content, timestamp: timestamp ?? Date())
+            } else {
+                await running?.update(content)
             }
-            switch action {
-            case .start:
-                // Re-arm (D-05): end whatever this stale/ended instance still is, then request fresh.
-                if let running { await running.end(nil, dismissalPolicy: .immediate) }
-                _ = try? Activity.request(attributes: FaBolusGlucoseAttributes(), content: content, pushType: nil)
-            case .update:
-                // D-06 monotonicity — `timestamp:` is the SAMPLE date, never `Date()`. The
-                // `timestamp:` overload needs iOS 17.2+ (D-11's floor is 17.0); 17.0/17.1 falls back
-                // to the base `update(_:)` (no monotonic guard available at that OS level — a
-                // disclosed, OS-imposed limitation, not a faBolus omission).
-                if #available(iOS 17.2, *) {
-                    await running?.update(content, timestamp: timestamp ?? Date())
-                } else {
-                    await running?.update(content)
-                }
-            case .end:
-                await running?.end(nil, dismissalPolicy: .immediate)
-            case .none:
-                break
-            }
+        case .end:
+            await running?.end(nil, dismissalPolicy: .immediate)
+        case .none:
+            break
         }
     }
 

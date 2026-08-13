@@ -246,6 +246,38 @@ struct LiveActivityContentBuilderTests {
         #expect(GlucoseLiveActivityManager.makeContent(from: none, now: now).state.hasSnoozeEligibleAlert == false)
     }
 
+    // MARK: - WR-02 gap closure (05-06) — the single Snooze-eligibility predicate
+
+    /// `AppModel.snoozeGateAllows` is the ONE predicate both the button's visibility
+    /// (`hasSnoozeEligibleAlert`) and its action gate (`LiveActivityIntentBridge.snoozeAlertIfSafe`,
+    /// `App.swift`) must read — no active alerts, or any `.alarm` present, must both refuse.
+    @Test func snoozeGateAllowsIsFalseWhenNoAlertsAreActive() {
+        #expect(AppModel.snoozeGateAllows([]) == false)
+    }
+
+    @Test func snoozeGateAllowsIsTrueWhenAllActiveAlertsAreNonAlarm() {
+        let alerts = [
+            PumpAlert(id: 1, kind: .reminder, title: "Reminder"),
+            PumpAlert(id: 2, kind: .cgmAlert, title: "CGM alert"),
+        ]
+        #expect(AppModel.snoozeGateAllows(alerts) == true)
+    }
+
+    @Test func snoozeGateAllowsIsFalseWhenAnyActiveAlertIsAnAlarmEvenAlongsideASnoozeableOne() {
+        // The exact WR-02 scenario: an .alarm AND a snoozeable alert active at once. Previously the
+        // visibility gate ("any eligible") would have shown the button while the action gate ("all
+        // eligible") refused the tap — a dead tap. The single shared predicate now refuses BOTH.
+        let alerts = [
+            PumpAlert(id: 1, kind: .alarm, title: "Occlusion"),
+            PumpAlert(id: 2, kind: .reminder, title: "Reminder"),
+        ]
+        #expect(AppModel.snoozeGateAllows(alerts) == false)
+    }
+
+    @Test func snoozeGateAllowsIsFalseWhenTheOnlyActiveAlertIsAnAlarm() {
+        #expect(AppModel.snoozeGateAllows([PumpAlert(id: 1, kind: .alarm, title: "Occlusion")]) == false)
+    }
+
     // MARK: - CR-03 gap closure (05-06) — ContentState Codable back-compat
 
     /// Mirrors `legacyWidgetSnapshotJSONWithoutPumpKeysDecodesWithDefaults` for `ContentState` — the

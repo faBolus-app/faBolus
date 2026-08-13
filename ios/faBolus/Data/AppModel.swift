@@ -1236,6 +1236,22 @@ public final class AppModel {
         eatingLocation.reset()
     }
 
+    /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate.
+    /// Both the Live Activity's Snooze button VISIBILITY (baked into `hasSnoozeEligibleAlert` below,
+    /// which feeds `ContentState.hasSnoozeEligibleAlert`) and the button's ACTION gate
+    /// (`LiveActivityIntentBridge.snoozeAlertIfSafe`, installed in `App.swift`) must read exactly this
+    /// predicate — previously the visibility gate was "at least one non-`.alarm` alert is active"
+    /// while the action gate was "none of the active alerts is `.alarm`", which silently diverge the
+    /// moment an `.alarm` AND a snoozeable alert are active at the same time: the button would render
+    /// (visibility passed) but tapping it would no-op (action refused) — a dead tap with no error, no
+    /// toast (ActivityKit has no in-place toast mechanism here). True only when there's at least one
+    /// active alert AND none of them is `.alarm` (an `.alarm` blocks snoozing entirely — mirrors
+    /// `AlertRuleEngine`'s own "never match alarms" rule). Pure — no `AppModel` state read beyond the
+    /// alerts array handed in, so it's independently unit-testable off any `[PumpAlert]` fixture.
+    nonisolated static func snoozeGateAllows(_ alerts: [PumpAlert]) -> Bool {
+        !alerts.isEmpty && !alerts.contains(where: { !$0.kind.isAutoRuleEligible })
+    }
+
     private func refresh() {
         // B4: on a fresh connect to a DIFFERENT pump, clear the previous pump's derived config off the
         // backend snapshot BEFORE the merge below reads it, so a stale max-bolus / therapy param / profile
@@ -1306,7 +1322,10 @@ public final class AppModel {
                                 // computed HERE (the only place `PumpAlertKind` is available alongside
                                 // the wire snapshot) so neither the extension nor the LA intent ever
                                 // re-derives "is this an alarm" from a titles-only alert list.
-                                hasSnoozeEligibleAlert: activeNotifications.contains { $0.kind.isAutoRuleEligible })
+                                // WR-02 (05-06): routes through `Self.snoozeGateAllows` — the SAME
+                                // predicate the action gate in `App.swift` uses — so the button's
+                                // visibility can never promise an action the bridge will actually refuse.
+                                hasSnoozeEligibleAlert: Self.snoozeGateAllows(activeNotifications))
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
