@@ -48,8 +48,20 @@ packages:
     revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
   # <<< NUDGE
   PumpX2Kit:
-    # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
+    # Backend pump-protocol stack (Repo 1). §1.3 version-pin (revision form, D-01 owner override of
+    # the exactVersion approach RUNBOOK/SC1 describe). FABOLUS_PUMPX2_LOCAL=1 swaps to the sibling
+    # path for co-dev/offline/worktree builds (mirrors the existing NUDGE/GARMIN fenced blocks).
+    # >>> PUMPX2_LOCAL (generate-project.sh KEEPS this block ONLY when FABOLUS_PUMPX2_LOCAL=1)
     path: ../PumpX2Kit
+    # <<< PUMPX2_LOCAL
+    # >>> PUMPX2_PINNED (generate-project.sh strips this block when FABOLUS_PUMPX2_LOCAL=1)
+    url: https://github.com/faBolus-app/PumpX2Kit.git
+    # origin/main tip at pin time (2026-08-13, PR #16, CI green): carries D3 (crypto .unsafeFlags →
+    # .define, the version-pin prerequisite) squash-cherry-picked in the same commit as D2
+    # (experimental BLE txId correlation, opt-in/fail-closed, unused by faBolus) — an accepted §1.4
+    # deviation, owner-confirmed 2026-08-13 (pin-current-main), reconciled in 03-03/BRANCHES.md.
+    revision: 6efdd43d767c34a0d298ac52fbbd2cd77a6d192a
+    # <<< PUMPX2_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
     # Garmin Connect IQ Mobile SDK for iOS (binary xcframework). Not committed (Garmin

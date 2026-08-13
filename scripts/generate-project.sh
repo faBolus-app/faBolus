@@ -27,6 +27,9 @@
 #     xcodegen omits it from the .entitlements files it writes, and an unmodified clone signs. It is a
 #     functional no-op on-device — the value (NSFileProtectionCompleteUntilFirstUserAuthentication) is
 #     already iOS's default level. Enable on a provisioned account with FABOLUS_DATA_PROTECTION=1.
+#   - PumpX2Kit (backend pump-protocol stack, §1.3 version-pin): consumed by pinned `revision:` by
+#     default (reproducible across clones/CI — D-01). Set FABOLUS_PUMPX2_LOCAL=1 to swap in the
+#     sibling checkout (../PumpX2Kit) for day-to-day co-development; never for a build you keep.
 #
 # When a feature is off, the app shows a note where its pairing/setup would be, explaining it wasn't
 # included at build time. Re-run with the SDK present / FABOLUS_WATCH=1 to restore it.
@@ -79,6 +82,10 @@ ICLOUD="${FABOLUS_ICLOUD:-0}"
 # an unmodified clone signs. No-op on-device: the value is already iOS's default protection level. Enable
 # on a provisioned account with FABOLUS_DATA_PROTECTION=1 for release builds.
 DATA_PROTECTION="${FABOLUS_DATA_PROTECTION:-0}"
+# PumpX2Kit backend pump-protocol stack. Default: consume by pinned revision (reproducible; §1.3
+# version-pin, D-01). FABOLUS_PUMPX2_LOCAL=1 swaps in the sibling path (../PumpX2Kit) for day-to-day
+# co-development (never for a build you keep — see project.yml comment on the PumpX2Kit package).
+PUMPX2_LOCAL="${FABOLUS_PUMPX2_LOCAL:-0}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -128,6 +135,12 @@ if [ "$NUDGE" = 0 ]; then
   strip_block NUDGE                        # the faBolusNudge package + its 6 product dependencies
   sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
 fi
+if [ "$PUMPX2_LOCAL" = 1 ]; then
+  strip_block PUMPX2_PINNED   # keep the sibling path: ../PumpX2Kit — unpinned dev/co-dev build
+  echo "  → PumpX2Kit consumed by LOCAL PATH (FABOLUS_PUMPX2_LOCAL=1) — unpinned dev build"
+else
+  strip_block PUMPX2_LOCAL    # keep the pinned url:+revision: — the default, reproducible build
+fi
 if [ "$ICLOUD" = 0 ]; then
   strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
   drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
@@ -141,7 +154,7 @@ if [ "$DATA_PROTECTION" = 0 ]; then
   strip_block DATA_PROTECTION
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION PumpX2Local=$PUMPX2_LOCAL"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
