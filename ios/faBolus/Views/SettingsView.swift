@@ -246,6 +246,11 @@ struct BolusSettingsView: View {
 struct DisplaySettingsView: View {
     let model: AppModel
     @Bindable var settings: AppSettings
+    @State private var showBadgeMmolWarning = false
+    /// Mirrors the FB-07 CGM-source-warning idiom (`CgmSettingsView` below): the toggle is not
+    /// committed to `true` until the warning is accepted when unit == mmol; `isRevertingBadge`
+    /// suppresses the re-entrant `onChange` fired by the programmatic rollback on Cancel.
+    @State private var isRevertingBadge = false
     var body: some View {
         Form {
             Section {
@@ -301,8 +306,24 @@ struct DisplaySettingsView: View {
             // (05-UI-SPEC.md), plus a short note on the mmol rounding CR-01 introduced.
             Section {
                 Toggle("Glucose badge", isOn: $settings.glucoseBadgeEnabled)
+                    .onChange(of: settings.glucoseBadgeEnabled) { _, isOn in
+                        if isRevertingBadge { isRevertingBadge = false; return }   // programmatic rollback, don't re-handle
+                        if isOn && settings.glucoseDisplayUnit == .mmol {
+                            // Badge already flipped on; warn now and revert on Cancel below.
+                            showBadgeMmolWarning = true
+                        }
+                    }
             } header: { Text("Glucose badge") } footer: {
                 Text("Shows your current glucose number on the app icon. It can't show units, trend, or how old the reading is — it clears automatically whenever the reading goes stale, so it should never show an old number as current. In mmol/L, the badge rounds to the nearest whole number.")
+            }
+            .alert("Glucose badge rounds in mmol/L", isPresented: $showBadgeMmolWarning) {
+                Button("Enable") { }   // already on; nothing further to commit
+                Button("Cancel", role: .cancel) {
+                    isRevertingBadge = true
+                    settings.glucoseBadgeEnabled = false
+                }
+            } message: {
+                Text("The app-icon badge can only show a whole number, so in mmol/L your glucose will be shown ROUNDED to the nearest whole number (e.g. 5.5 shows as 6).")
             }
         }
         .navigationTitle("Display & chart")
