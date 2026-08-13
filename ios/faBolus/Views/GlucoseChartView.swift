@@ -15,6 +15,11 @@ struct GlucoseChartView: View {
     var showIOB: Bool = true
     var showBolusBars: Bool = true
 
+    /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
+    /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
+    /// mg/dL-scaled (Pitfall 4) — only the rendered text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
     /// True when any unit-scaled (right-axis) series is visible.
     private var showUnitsAxis: Bool { showIOB || showBolusBars }
 
@@ -65,7 +70,7 @@ struct GlucoseChartView: View {
             if showGlucose {
                 AxisMarks(position: .leading, values: [GlucoseThresholds.low, 120, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) { value in
                     AxisGridLine()
-                    AxisValueLabel { if let v = value.as(Int.self) { Text("\(v)") } }
+                    AxisValueLabel { if let v = value.as(Int.self) { Text(unit.format(mgdl: v)) } }
                 }
             }
             if showUnitsAxis {
@@ -84,7 +89,10 @@ struct GlucoseChartView: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            if showGlucose { Text("mg/dL").font(.caption2).foregroundStyle(.secondary).padding(.leading, 2) }
+            if showGlucose {
+                Text(unit == .mmol ? String(localized: "mmol/L") : String(localized: "mg/dL"))
+                    .font(.caption2).foregroundStyle(.secondary).padding(.leading, 2)
+            }
         }
         .overlay(alignment: .topTrailing) {
             if showUnitsAxis { Text("U").font(.caption2).foregroundStyle(AppTheme.insulin).padding(.trailing, 2) }
