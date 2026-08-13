@@ -283,7 +283,11 @@ public final class MockBackend: PumpBackend {
     // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
     public func suspendDelivery() async throws { snapshot.deliverySuspended = true; onChange?() }
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
-    public func setTempBasal(percent: Int, durationMinutes: Int) async throws { onChange?() }
+    /// 06-01: counts temp-rate writes that reach the backend, so `TempRateAutomationTests` can prove
+    /// an out-of-range/inert headless request never touches the pump (count stays 0) while an in-range
+    /// one passed through by `TempRateAutomation` does (count == 1) — mirrors `idpWriteCount`/`controlWriteCount`.
+    public private(set) var tempRateWriteCount = 0
+    public func setTempBasal(percent: Int, durationMinutes: Int) async throws { tempRateWriteCount += 1; onChange?() }
     public func stopTempBasal() async throws { onChange?() }
     public func setMode(_ command: ModeCommand) async throws {
         // Translate the typed command to the reported activity STATE the UI reads from controlIQMode

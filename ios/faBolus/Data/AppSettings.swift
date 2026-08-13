@@ -177,6 +177,11 @@ public final class AppSettings {
     /// pump isn't connected), post a notification reminding the user to switch modes on the pump
     /// themselves. **Default OFF.**
     public var modeReminders: Bool { didSet { d.set(modeReminders, forKey: "modeReminders") } }
+    /// **Auto temp rate** (999.2, D-01) — permits `SetTempRateIntent` (a Shortcuts action, NOT a Siri
+    /// phrase) to set a temporary basal rate via `TempRateAutomation`. **Default OFF.** Even when ON,
+    /// the intent stays functionally inert until BOTH the pump-derived `supportsTempBasal` capability
+    /// AND the Phase-11 saline-bench flag (`TempRateAutomation.benchVerifiedDefault`) clear (D-03).
+    public var autoTempRate: Bool { didSet { d.set(autoTempRate, forKey: "autoTempRate") } }
 
     /// §6/S8 B6: opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
     /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
@@ -563,6 +568,7 @@ public final class AppSettings {
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
+        autoTempRate = (d.object(forKey: "autoTempRate") as? Bool) ?? false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
@@ -639,6 +645,7 @@ public final class AppSettings {
             "autoExerciseMode": .bool(autoExerciseMode),
             "autoSleepMode": .bool(autoSleepMode),
             "modeReminders": .bool(modeReminders),
+            "autoTempRate": .bool(autoTempRate),
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
@@ -704,6 +711,7 @@ public final class AppSettings {
         if let v = b("autoExerciseMode") { autoExerciseMode = v }
         if let v = b("autoSleepMode") { autoSleepMode = v }
         if let v = b("modeReminders") { modeReminders = v }
+        if let v = b("autoTempRate") { autoTempRate = v }
         if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
@@ -739,6 +747,7 @@ public final class AppSettings {
         autoSyncPumpTime = false
         autoSleepMode = false
         autoExerciseMode = false
+        autoTempRate = false
         modeReminders = false
         remoteBolusCeiling = nil
         alertRules = []
