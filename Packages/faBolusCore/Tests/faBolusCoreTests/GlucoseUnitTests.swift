@@ -33,6 +33,14 @@ struct GlucoseUnitTests {
         #expect(GlucoseUnit.mmol.parse("7.1") == 128)
     }
 
+    @Test func parseMmolAcceptsCommaDecimalSeparator() {
+        // Gap closure (04-07/CR-04): `.decimalPad` presents a locale decimal separator (comma in
+        // most mainland-Europe mmol/L locales). "7,1" must parse identically to "7.1" — same
+        // nearest-mg/dL rounding, never a silent nil-drop of a correctly-typed correction.
+        #expect(GlucoseUnit.mmol.parse("7,1") == GlucoseUnit.mmol.parse("7.1"))
+        #expect(GlucoseUnit.mmol.parse("7,1") == 128)
+    }
+
     @Test func parseNonNumericOrEmptyReturnsNilNeverZero() {
         #expect(GlucoseUnit.mgdl.parse("") == nil)
         #expect(GlucoseUnit.mgdl.parse("abc") == nil)
