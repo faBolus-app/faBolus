@@ -9,6 +9,13 @@ struct WatchGlanceView: View {
     // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
+    /// Phase 4 (mmol/L display-unit support) — the unit mirrored from the phone's statusRead reply
+    /// (`WatchModel.glucoseDisplayUnit`). The watch links `faBolusCore` directly, so this renders
+    /// through the canonical `GlucoseUnit` funnel (no widget-style mirror needed here).
+    private var unit: GlucoseUnit { model.glucoseDisplayUnit }
+    private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
+    private var displayGlucose: String { model.glucose.map { unit.format(mgdl: $0) } ?? "—" }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
@@ -19,21 +26,21 @@ struct WatchGlanceView: View {
                     VStack(spacing: 8) {
                         if model.glucose != nil, present != .hidden {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(model.displayGlucose)
+                                Text(displayGlucose)
                                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                                     .lineLimit(1).minimumScaleFactor(0.5)
                                     .foregroundStyle(watchGlucoseColor(model.glucose, stale: stale))
                                 Text(model.trend).font(.title2)
                                     .foregroundStyle(stale ? .gray : .primary)
                             }
-                            Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? "mg/dL")
+                            Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? unitLabel)
                                 .font(.caption2)
                                 .fontWeight(stale ? .semibold : .regular)
                                 .foregroundStyle(stale ? .orange : .secondary)
                         } else {
                             Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                                 .lineLimit(1).minimumScaleFactor(0.5)
-                            Text(model.glucose == nil ? "mg/dL" : "no recent CGM")
+                            Text(model.glucose == nil ? unitLabel : "no recent CGM")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -86,7 +93,7 @@ struct WatchGlanceView: View {
         guard model.glucose != nil, present != .hidden else {
             return model.glucose == nil ? "Glucose unavailable" : "No recent CGM"
         }
-        var parts = ["Glucose \(model.displayGlucose)", model.trend]
+        var parts = ["Glucose \(displayGlucose) \(unitLabel)", model.trend]
         if present == .stale { parts.append("stale") }
         if let d = model.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
         return parts.joined(separator: ", ")

@@ -7,6 +7,11 @@ import faBolusCore
 struct WatchDetailsView: View {
     @Bindable var model: WatchModel
 
+    /// Phase 4 (mmol/L display-unit support) — the unit mirrored from the phone's statusRead reply
+    /// (`WatchModel.glucoseDisplayUnit`). ISF/target route through the canonical `GlucoseUnit` funnel,
+    /// matching the phone's `PumpDetailsCard` — mg/dL mode renders byte-identical to before this phase.
+    private var unit: GlucoseUnit { model.glucoseDisplayUnit }
+
     var body: some View {
         List {
             // Rows + order mirror the phone's Details customization (model.detailsOrder). "Last bolus"
@@ -41,8 +46,14 @@ struct WatchDetailsView: View {
         case "cgm": return model.cgmActive ? "Active" : "Inactive"
         case "lastBolus": return model.lastBolusUnits.map { String(format: "%.2f U", $0) }
         case "carbRatio": return model.carbRatio > 0 ? String(format: "%.0f g/U", model.carbRatio) : "—"
-        case "isf": return model.isf > 0 ? "\(model.isf)" : "—"
-        case "target": return model.targetBg > 0 ? "\(model.targetBg)" : "—"
+        // Phase 4 (D-10): ISF + target render in the received unit; the underlying mg/dL Int
+        // (model.isf/model.targetBg) is never converted — this is display-only, matching the phone.
+        case "isf":
+            guard model.isf > 0 else { return "—" }
+            return "\(unit.format(mgdl: model.isf)) \(unit == .mmol ? "mmol/L·U⁻¹" : "mg/dL/U")"
+        case "target":
+            guard model.targetBg > 0 else { return "—" }
+            return "\(unit.format(mgdl: model.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", model.maxBolusUnits)
         default: return nil
         }

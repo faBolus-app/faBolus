@@ -12,6 +12,13 @@ final class WatchModel: RemoteClientModel {
     /// Direct sources reuse the shared implementations; started only while unreachable, to save power.
     private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
 
+    /// Phase 4 (mmol/L display-unit support) — the phone's active glucose display-unit setting,
+    /// mirrored from the statusRead reply's `glucoseDisplayUnit` wire token. Watch-only (not on the
+    /// shared `RemoteClientModel` base, so the Mac remote — out of this phase's scope, CONTEXT.md
+    /// Open Question #1 — is untouched). Absent/unrecognized token ⇒ `.mgdl` (fail-closed default;
+    /// display-only, never affects dosing).
+    var glucoseDisplayUnit: GlucoseUnit = .mgdl
+
     #if FABOLUS_ONWATCH_EATING
     /// On-device eating detector (flag-gated; needs the paid HealthKit entitlement). Relays p(eating)
     /// to the phone, which owns the fusion + nudge. See WatchEatingSensor.swift.
@@ -31,16 +38,22 @@ final class WatchModel: RemoteClientModel {
         #endif
     }
 
-    #if FABOLUS_ONWATCH_EATING
-    /// The phone drives when the watch senses (battery): the routine status push carries
-    /// `eatingSensingOn`. Start/stop the on-device detector accordingly.
     override func handle(_ cmd: RemoteCommand) {
         super.handle(cmd)
-        if cmd.kind == .statusRead, let on = cmd.eatingSensingOn {
+        guard cmd.kind == .statusRead else { return }
+        // Phase 4: adopt the phone's active display-unit token (Pitfall 6 — a frozen String, never
+        // the raw enum, on the wire). Unknown/garbage token or an absent field (legacy host) ⇒
+        // `.mgdl`, never a crash — matches the fail-closed handling of `controllerVariant`/
+        // `bolusBlockReason` elsewhere in this class.
+        if let u = cmd.glucoseDisplayUnit { glucoseDisplayUnit = GlucoseUnit(rawValue: u) ?? .mgdl }
+        #if FABOLUS_ONWATCH_EATING
+        // The phone drives when the watch senses (battery): the routine status push carries
+        // `eatingSensingOn`. Start/stop the on-device detector accordingly.
+        if let on = cmd.eatingSensingOn {
             if on { eatingSensor?.start() } else { eatingSensor?.stop() }
         }
+        #endif
     }
-    #endif
 
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)
