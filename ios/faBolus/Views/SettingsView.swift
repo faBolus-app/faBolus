@@ -171,7 +171,7 @@ enum SettingsIndex {
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
         .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
-        .init(title: "Glucose unit", keywords: "mmol mg/dl mg dl unit display convert", category: .display),
+        .init(title: "Glucose unit", keywords: "mmol mg/dl mg dl unit display convert show unit labels caption", category: .display),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -259,10 +259,14 @@ struct DisplaySettingsView: View {
                     Text("mmol/L").tag(GlucoseUnit.mmol)
                 }
                 .pickerStyle(.segmented)
+                // Owner request: hides/shows the persistent mg/dL·mmol/L CAPTION on ambient display
+                // surfaces only. Default OFF. Dose prompts, VoiceOver, config/setup screens, and this
+                // picker are never affected — see `AppSettings.showGlucoseUnitLabels`.
+                Toggle("Show unit labels", isOn: $settings.showGlucoseUnitLabels)
             } header: { Text("Glucose unit") } footer: {
                 // WR-08 gap closure (04-07): narrowed from "everywhere" — the developer debug menu
                 // (reachable via a 7-tap gesture, not mainline UI) intentionally stays mg/dL-only.
-                Text("Applies to the glucose reading, correction factor (ISF), and target on every mainline screen where they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert.")
+                Text("Applies to the glucose reading, correction factor (ISF), and target on every mainline screen where they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert. \"Show unit labels\" shows or hides the mg/dL/mmol/L caption on glucose readouts, widgets, and the chart — dose prompts, VoiceOver, and this picker always show the unit regardless.")
             }
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)

@@ -38,6 +38,23 @@ public final class AppSettings {
             WidgetPublisher.republishDisplayUnit()
         }
     }
+    /// Whether the persistent/ambient mg/dL·mmol/L unit CAPTION is shown on display-only readouts
+    /// (status ring, HUD ISF/target, stats card, chart axis, history, widgets, complication, and the
+    /// Live Activity). **Default OFF** (owner request) — the number alone is shown on those ambient
+    /// surfaces, keeping them visually quieter for a user who already knows their unit. This NEVER
+    /// hides units from dose-confirmation dialogs (`BolusEntryView`), VoiceOver/accessibility strings,
+    /// config/setup screens (`AlertRulesView`/`PumpWizardViews`/`CgmCredentialsView`), or the Settings
+    /// unit picker itself — those are safety/clarity/setup contexts, not ambient display, and always
+    /// keep the unit regardless of this flag. A display-format preference like `glucoseDisplayUnit`
+    /// (NOT a per-device feature toggle), so it iCloud-syncs the same way — see `SettingsCatalog`.
+    public var showGlucoseUnitLabels: Bool {
+        didSet {
+            d.set(showGlucoseUnitLabels, forKey: "showGlucoseUnitLabels")
+            // Re-publish immediately (like `glucoseDisplayUnit`'s didSet) so the widgets/complication/
+            // Live Activity reflect the toggle without waiting for the next pump reading.
+            WidgetPublisher.republishShowUnitLabel()
+        }
+    }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
@@ -501,6 +518,8 @@ public final class AppSettings {
         // D-03: default mg/dL (behavior-preserving); an unrecognized/absent stored token also falls
         // back to mg/dL (fail-closed to the pre-existing display, never to an unexpected unit).
         glucoseDisplayUnit = GlucoseUnit(rawValue: d.string(forKey: "glucoseDisplayUnit") ?? "mgdl") ?? .mgdl
+        // Owner request: default OFF (labels hidden on ambient surfaces) for a fresh install / absent key.
+        showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
@@ -606,6 +625,7 @@ public final class AppSettings {
             "watchCarbIncrement": .double(watchCarbIncrement),
             "showGlucoseAxis": .bool(showGlucoseAxis),
             "glucoseDisplayUnit": .string(glucoseDisplayUnit.rawValue),
+            "showGlucoseUnitLabels": .bool(showGlucoseUnitLabels),
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
             "showStats": .bool(showStats),
@@ -670,6 +690,7 @@ public final class AppSettings {
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
         if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
         if let v = s("glucoseDisplayUnit"), let unit = GlucoseUnit(rawValue: v) { glucoseDisplayUnit = unit }
+        if let v = b("showGlucoseUnitLabels") { showGlucoseUnitLabels = v }
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
         if let v = b("showStats") { showStats = v }

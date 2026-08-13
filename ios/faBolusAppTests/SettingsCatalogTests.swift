@@ -23,8 +23,9 @@ struct SettingsCatalogTests {
         // Phase 04-01 (mmol/L display-unit support, D-03): 45 → 46 (glucoseDisplayUnit added).
         // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
         // Phase 5 (05-03, D-13/D-14): 48 → 49 (glucoseBadgeEnabled added).
-        #expect(SettingsCatalog.descriptors.count == 49)
-        #expect(SettingsCatalog.byKey.count == 49)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Owner-requested "Show unit labels" toggle: 49 → 50 (showGlucoseUnitLabels added).
+        #expect(SettingsCatalog.descriptors.count == 50)
+        #expect(SettingsCatalog.byKey.count == 50)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -41,7 +42,8 @@ struct SettingsCatalogTests {
         #expect(unconditional.isSubset(of: snapshotKeys))
         // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
         // Phase 5 (05-03): 44 → 45 (glucoseBadgeEnabled, unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 45)                      // 41 unconditional + 4 conditional
+        // Owner-requested toggle: 45 → 46 (showGlucoseUnitLabels, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 46)                      // 42 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -200,5 +202,35 @@ struct SettingsCatalogTests {
         fresh.glucoseDisplayUnit = .mmol
         let reloaded = AppSettings(defaults: defaults)
         #expect(reloaded.glucoseDisplayUnit == .mmol)   // persisted across re-init
+    }
+
+    // MARK: Owner-requested "Show unit labels" toggle — the setting's registration
+
+    /// Registered `.display`, `backsUp: true`, iCloud ON (a display-format preference, mirroring
+    /// `glucoseDisplayUnit`'s reasoning — NOT a per-device ambient-surface toggle like
+    /// `liveActivityEnabled`/`glucoseBadgeEnabled`, so it is deliberately excluded from
+    /// `ambientSurfaceFlags` above).
+    @Test func showGlucoseUnitLabelsIsRegisteredInDisplayWithICloudSyncOn() {
+        let d = SettingsCatalog.byKey["showGlucoseUnitLabels"]
+        #expect(d != nil, "showGlucoseUnitLabels missing from the catalog")
+        #expect(d?.category == .display)
+        #expect(d?.backsUp == true)
+        #expect(d?.syncsToICloud == true)
+        #expect(!SettingsCatalog.commandAdjacentFlags.contains("showGlucoseUnitLabels"))
+    }
+
+    /// Default OFF (owner request) on a fresh install, and round-trips across a re-init of
+    /// `AppSettings` over the SAME backing store.
+    @Test @MainActor func showGlucoseUnitLabelsDefaultsToOffAndRoundTripsAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.showGlucoseUnitLabels.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.showGlucoseUnitLabels == false)   // default OFF
+
+        fresh.showGlucoseUnitLabels = true
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.showGlucoseUnitLabels == true)   // persisted across re-init
     }
 }
