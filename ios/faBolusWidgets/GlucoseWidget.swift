@@ -23,7 +23,15 @@ struct GlucoseWidgetView: View {
     var now: Date = Date()
 
     private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
-    private var bg: String { WidgetUI.glucoseText(snap, now: now) }
+    /// Phase 04-03: same fresh/stale/hidden logic as `WidgetUI.glucoseText(_:now:)`, but the
+    /// numeric value renders through the `WidgetGlucoseUnit` mirror in the active display unit
+    /// (nil `displayUnit` ⇒ mgdl) instead of a bare mg/dL `"\(g)"`.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
+    private var bg: String {
+        if snap.isHidden(asOf: now) { return "--" }
+        guard let g = snap.glucose, g > 0 else { return "--" }
+        return unit.format(mgdl: g)
+    }
     private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
 
     var body: some View {
@@ -37,7 +45,7 @@ struct GlucoseWidgetView: View {
                 AccessoryWidgetBackground()
                 VStack(spacing: 0) {
                     Text(bg).font(.system(size: 22, weight: .bold, design: .rounded)).minimumScaleFactor(0.5)
-                    Text(arrow.isEmpty ? "mg/dL" : arrow).font(.system(size: 11))
+                    Text(arrow.isEmpty ? unit.unitLabel : arrow).font(.system(size: 11))
                 }
             }
             .containerBackground(.clear, for: .widget)
@@ -59,7 +67,7 @@ struct GlucoseWidgetView: View {
                     Text(arrow).font(.title2).foregroundStyle(color)
                     Spacer()
                 }
-                Text("mg/dL").font(.caption).foregroundStyle(.secondary)
+                Text(unit.unitLabel).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 HStack {
                     Label(String(format: "%.1f U", snap.iobUnits), systemImage: "syringe")

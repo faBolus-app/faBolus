@@ -78,12 +78,16 @@ struct GlucoseComplicationView: View {
     /// Entry display date — staleness is evaluated against this, not wall-clock (see the iOS widgets).
     var now: Date = Date()
 
+    /// Phase 04-03: resolve the active display unit from the snapshot (nil ⇒ mgdl). This
+    /// complication shows a bare number with no unit label today; the VALUE still converts via the
+    /// mirror so it matches the phone even though no suffix is shown.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
     // P10 (group A): honor the published freshness policy at the entry date (grey once stale, "--" once
     // hidden), consistent with the iOS + Mac widgets — instead of the old 6-min wall-clock hardcode.
     private var value: String {
         if snap.isHidden(asOf: now) { return "--" }
         guard let g = snap.glucose, g > 0 else { return "--" }
-        return "\(g)"
+        return unit.format(mgdl: g)
     }
     private var arrow: String { snap.isStale(asOf: now) ? "" : snap.trendArrow }
 
@@ -108,7 +112,7 @@ struct GlucoseComplicationView: View {
                         Text(d, style: .relative).font(.caption2)
                             .foregroundStyle(snap.isStale(asOf: now) ? .orange : .secondary)
                     } else {
-                        Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                        Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

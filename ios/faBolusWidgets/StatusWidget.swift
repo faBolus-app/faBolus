@@ -20,23 +20,31 @@ struct StatusWidgetView: View {
     /// Entry display date — staleness is evaluated against this, not wall-clock (see `GlucoseWidgetView`).
     var now: Date = Date()
     private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
+    /// Phase 04-03: resolve the active display unit from the snapshot (nil ⇒ mgdl) and render the
+    /// glucose number through the `WidgetGlucoseUnit` mirror instead of the bare mg/dL "\(g)" text.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
+    private var bg: String {
+        if snap.isHidden(asOf: now) { return "--" }
+        guard let g = snap.glucose, g > 0 else { return "--" }
+        return unit.format(mgdl: g)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(WidgetUI.glucoseText(snap, now: now))
+                    Text(bg)
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
                     Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
                 }
-                // The SAMPLE age (orange once stale), replacing a static "mg/dL" label — so a stale relay
+                // The SAMPLE age (orange once stale), replacing a static unit label — so a stale relay
                 // is visible on the overview, not silently shown as current (group A / C7).
                 if let d = snap.glucoseDate {
                     Text(d, style: .relative).font(.caption2)
                         .foregroundStyle(WidgetUI.isStale(snap, now: now) ? .orange : .secondary)
                 } else {
-                    Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                    Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                 }
                 Sparkline(points: snap.recentPoints).frame(height: 34).padding(.top, 2)
             }
