@@ -9,51 +9,105 @@ import ActivityKit
 // optional-arrow-view pattern from `LukaWidget/ReadingActivityConfiguration.swift`, rebound to
 // faBolus's own `WidgetSnapshot` projection (`FaBolusGlucoseAttributes.ContentState`) and the
 // existing `WidgetUI`/`Sparkline` helpers. Stripped: `Defaults`/`Dexcom`/`SmartStackMargins`, the
-// offline/debug/restart-intent machinery, and the HDR exposure-adjust tint — none apply here (this
-// tracer slice is glucose-only, no CarPlay/badge/interactivity yet). See 05-REFERENCE-COMPARISON.md §2.
+// offline/debug/restart-intent machinery, and the HDR exposure-adjust tint. See
+// 05-REFERENCE-COMPARISON.md §2.
+//
+// Portions adapted from Loop (github.com/LoopKit/Loop), MIT License.
+// Copyright (c) 2015 Nathan Racklyeft. Copyright (c) 2016 LoopKit Authors.
+//
+// The iOS-18 CarPlay `.small` gating below (`@available(iOS 18.0, *)` branch reading
+// `@Environment(\.activityFamily)`) adapts Loop's `GlucoseLiveActivityConfiguration`
+// `AdaptiveLockScreenView` availability-branch pattern — content is faBolus-original, not copied,
+// and none of Loop's named color assets / `SwiftCharts` are used (05-UI-SPEC.md Registry Safety).
 
-/// The glucose Live Activity + Dynamic Island (D-01) — glucose-only tracer slice (05-01). Pump
-/// fields, per-field toggles, CarPlay, the badge, and interactivity expand out from this proven
-/// slice in later plans (05-02..05-05).
+/// The glucose Live Activity + Dynamic Island (D-01). Every region below renders through
+/// `LiveActivityComposer.compose(selection:state:region:)` (05-04, D-17a) so the Lock Screen /
+/// Dynamic Island / CarPlay layout adapts to ANY 0..N user-selected field subset, with a documented
+/// empty-selection fallback — never a fixed field set.
+///
+/// `Widget.body` has no `@available`-branching result builder (unlike `View`/`WidgetBundle`), so an
+/// iOS-18-only `.supplementalActivityFamilies` call cannot live in a conditional branch of ONE
+/// widget's `body` — the CarPlay `.small` presentation instead ships as a SEPARATE `Widget` conformer
+/// (`GlucoseLiveActivityCarPlay`, `@available(iOS 18.0, *)`), and `FaBolusWidgetBundle` picks exactly
+/// one of the two via `if #available` at the BUNDLE level, which `WidgetBundleBuilder` DOES support.
+/// Both widgets share the identical Dynamic Island region tree (`glucoseDynamicIslandConfiguration`)
+/// so there is no duplicated region logic between the iOS-17 floor and the iOS-18 CarPlay variant.
 struct GlucoseLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
             LockScreenLiveActivityView(context: context)
                 .widgetURL(FaBolusDeepLink.open)
         } dynamicIsland: { context in
-            DynamicIsland {
-                // Phase 5 pump surfaces (D-17, 05-02) — IOB stacked below glucose in `.leading`,
-                // Control-IQ stacked below the arrow in `.trailing` (plan's discretion: "basal OR
-                // Control-IQ" — Control-IQ chosen as the stronger faBolus-differentiator summary).
-                // `.center`/`.bottom` are untouched — glucose age + Sparkline stay the tracer's own.
-                DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ExpandedGlucoseView(context: context)
-                        PumpChipView(chip: WidgetUI.iobChip(context.state))
-                    }
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        ExpandedArrowView(context: context)
-                        PumpChipView(chip: WidgetUI.controlIQChip(context.state))
-                    }
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    ExpandedAgeView(context: context)
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    Sparkline(points: context.state.recentPoints).frame(height: 40)
-                }
-            } compactLeading: {
-                CompactGlucoseView(context: context)
-            } compactTrailing: {
-                CompactArrowView(context: context)
-            } minimal: {
-                CompactGlucoseView(context: context)
-            }
-            .widgetURL(FaBolusDeepLink.open)
+            glucoseDynamicIslandConfiguration(context: context)
         }
     }
+}
+
+/// CarPlay `.small` presentation (iOS 18+, D-10) — identical Lock Screen + Dynamic Island content to
+/// `GlucoseLiveActivity` above, plus `.supplementalActivityFamilies([.small])` so the SAME Activity
+/// additionally renders on CarPlay. `.medium` is NOT built (D-10: `.small` ONLY for v1). Display-only
+/// — no CarPlay entitlement, no CarPlay app.
+@available(iOS 18.0, *)
+struct GlucoseLiveActivityCarPlay: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
+            CarPlayGatedView(context: context)
+                .widgetURL(FaBolusDeepLink.open)
+        } dynamicIsland: { context in
+            glucoseDynamicIslandConfiguration(context: context)
+        }
+        .supplementalActivityFamilies([.small])
+    }
+}
+
+/// The Dynamic Island region tree, factored out so it is written exactly once and shared by both
+/// `GlucoseLiveActivity` (iOS 17 floor) and `GlucoseLiveActivityCarPlay` (iOS 18+) — see the type
+/// doc comment above for why this can't be a single `if #available` branch inside one widget's body.
+@MainActor
+private func glucoseDynamicIslandConfiguration(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> DynamicIsland {
+    DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+            let composed = LiveActivityComposer.compose(
+                selection: context.state.selectedFields, state: context.state, region: .expanded)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(composed.dropFirst().prefix(2)), id: \.id) { field in
+                    ComposedFieldView(context: context, field: field, role: .label)
+                }
+            }
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+            let composed = LiveActivityComposer.compose(
+                selection: context.state.selectedFields, state: context.state, region: .expanded)
+            VStack(alignment: .trailing, spacing: 8) {
+                ForEach(Array(composed.dropFirst(3).prefix(2)), id: \.id) { field in
+                    ComposedFieldView(context: context, field: field, role: .label)
+                }
+            }
+        }
+        DynamicIslandExpandedRegion(.center) {
+            let composed = LiveActivityComposer.compose(
+                selection: context.state.selectedFields, state: context.state, region: .expanded)
+            if let first = composed.first {
+                ComposedFieldView(context: context, field: first, role: .display)
+            }
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+            let bottom = LiveActivityComposer.compose(
+                selection: context.state.selectedFields, state: context.state, region: .bottom)
+            if bottom.first?.id == "sparkline" {
+                Sparkline(points: context.state.recentPoints).frame(height: 40)
+            }
+        }
+    } compactLeading: {
+        CompactLeadingView(context: context)
+    } compactTrailing: {
+        CompactTrailingView(context: context)
+    } minimal: {
+        MinimalRegionView(context: context)
+    }
+    .widgetURL(FaBolusDeepLink.open)
 }
 
 /// Convenience readers shared by every region below — ALL derive staleness from `context.isStale`
@@ -77,54 +131,141 @@ private extension ActivityViewContext<FaBolusGlucoseAttributes> {
     var arrow: String { isStale ? "" : state.trendArrow }
 }
 
-// MARK: - Lock Screen
+// MARK: - Adaptive field rendering (D-17a, 05-04)
+
+/// Renders one field resolved by `LiveActivityComposer.compose(...)`. The three synthetic pseudo-ids
+/// ("glucose"/"sparkline"/"minimal") get their own dedicated view; every other id resolves through
+/// `WidgetUI.chip(for:_:)`. `role` controls typography per 05-UI-SPEC.md (`.display` = the 34pt Lock
+/// Screen/DI-expanded-center numeral, `.label` = the 15pt chip row, `.heading` = the 16pt compact/
+/// minimal/CarPlay-small single-field regions, which never show a text label — icon + value only).
+private struct ComposedFieldView: View {
+    let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    let field: LAField
+    var role: FieldRole = .heading
+
+    enum FieldRole { case display, heading, label }
+
+    var body: some View {
+        switch field.id {
+        case "glucose":
+            GlucoseNumeralView(context: context, role: role)
+        case "sparkline":
+            Sparkline(points: context.state.recentPoints).frame(height: 40)
+        case "minimal":
+            if role == .heading {
+                Image(systemName: "drop.fill").foregroundStyle(.secondary)
+            } else {
+                MinimalFallbackView(context: context)
+            }
+        default:
+            if let chip = WidgetUI.chip(for: field.id, context.state) {
+                if role == .heading {
+                    // Compact/minimal DI regions + CarPlay `.small`: glyph + value only, no field
+                    // label (05-UI-SPEC.md typography contract — labels appear ONLY on the Lock
+                    // Screen banner).
+                    HStack(spacing: 4) {
+                        Image(systemName: chip.icon).foregroundStyle(chip.tint)
+                        Text(chip.value)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(chip.tint)
+                    }
+                } else {
+                    PumpChipView(chip: chip, ageDate: field.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
+                }
+            }
+        }
+    }
+}
+
+/// The glucose numeral + trend arrow, sized per `role` (Display 34pt vs. Heading 16pt,
+/// 05-UI-SPEC.md Typography). Includes the sample-age caption below it ONLY at `.display` role —
+/// the compact/minimal regions have no room for a second line.
+private struct GlucoseNumeralView: View {
+    let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    var role: ComposedFieldView.FieldRole = .heading
+
+    var body: some View {
+        VStack(alignment: role == .display ? .leading : .center, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(context.glucoseText)
+                    .font(.system(size: role == .display ? 34 : 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(context.glucoseColor)
+                if !context.arrow.isEmpty {
+                    Text(context.arrow)
+                        .font(role == .display ? .title3 : .system(size: 16, weight: .bold))
+                        .foregroundStyle(context.glucoseColor)
+                }
+            }
+            if role == .display {
+                if let d = context.state.glucoseDate {
+                    Text(d, style: .relative).font(.caption2)
+                        .foregroundStyle(context.isStale ? .orange : .secondary)
+                } else {
+                    Text(context.unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+/// The documented empty-selection fallback (05-UI-SPEC.md Copywriting Contract): a minimal faBolus
+/// glyph + the connection line — "Synced {age} ago" / "Disconnected" — never a blank card.
+private struct MinimalFallbackView: View {
+    let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "drop.fill").foregroundStyle(.secondary).accessibilityHidden(true)
+            if context.state.connected {
+                (Text("Synced ") + Text(context.state.updatedAt, style: .relative))
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text("Disconnected").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Lock Screen (+ CarPlay fallback surface)
 
 private struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
 
     var body: some View {
+        let composed = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+        let hasGlucose = composed.first?.id == "glucose"
+        let isMinimalFallback = composed.first?.id == "minimal"
+        let chipFields = composed.filter { $0.id != "glucose" && $0.id != "minimal" }
+
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(context.glucoseText)
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundStyle(context.glucoseColor)
-                        Text(context.arrow).font(.title3).foregroundStyle(context.glucoseColor)
-                    }
-                    // The SAMPLE age (native relative style — 05-RESEARCH.md Pitfall #4/D-07), orange
-                    // once stale, so an old reading is never mistaken for current (C7).
-                    if let d = context.state.glucoseDate {
-                        Text(d, style: .relative).font(.caption2)
-                            .foregroundStyle(context.isStale ? .orange : .secondary)
-                    } else {
-                        Text(context.unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
+            if isMinimalFallback {
+                MinimalFallbackView(context: context)
+            } else {
+                if hasGlucose {
+                    HStack(spacing: 14) {
+                        GlucoseNumeralView(context: context, role: .display)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Sparkline(points: context.state.recentPoints).frame(width: 90, height: 34)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Sparkline(points: context.state.recentPoints).frame(width: 90, height: 34)
-            }
-
-            // Phase 5 pump surfaces (D-17, 05-02) — fixed HUD-priority chip row (per-field user
-            // toggles + adaptive 0..N composition arrive in 05-04). IOB carries its OWN op-109 age
-            // when stale; basal/Control-IQ are dateless and grey as a cluster off `pumpLinkStale`,
-            // with a single "Synced N ago" caption for the whole cluster rather than a per-chip age
-            // (there is no per-field stamp to show).
-            HStack(spacing: 8) {
-                PumpChipView(chip: WidgetUI.iobChip(context.state), ageDate: context.state.iobStale ? context.state.iobDate : nil)
-                PumpChipView(chip: WidgetUI.basalChip(context.state))
-                PumpChipView(chip: WidgetUI.controlIQChip(context.state))
-            }
-            if context.state.pumpLinkStale {
-                HStack(spacing: 4) {
-                    Image(systemName: "wifi.slash").foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    // `.relative` already renders "N ago" for a past date (e.g. "2 hours ago") —
-                    // never a manually-concatenated "ago" suffix, matching every other age caption
-                    // in this file/`StatusWidget.swift`/`GlucoseWidget.swift`.
-                    (Text("Synced ") + Text(context.state.updatedAt, style: .relative))
-                        .font(.caption2).foregroundStyle(.secondary)
+                if !chipFields.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(chipFields, id: \.id) { f in
+                            if let chip = WidgetUI.chip(for: f.id, context.state) {
+                                PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
+                            }
+                        }
+                    }
+                }
+                // The dateless pump cluster's shared "Synced N ago" caption — only when at least one
+                // dateless (non-"connection") chip is actually showing, so it never appears alongside
+                // an explicit "connection" chip that already says the same thing.
+                if context.state.pumpLinkStale && chipFields.contains(where: { $0.id != "connection" }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "wifi.slash").foregroundStyle(.secondary).accessibilityHidden(true)
+                        (Text("Synced ") + Text(context.state.updatedAt, style: .relative))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -159,58 +300,90 @@ private struct PumpChipView: View {
     }
 }
 
-// MARK: - Dynamic Island compact/minimal
+// MARK: - Dynamic Island compact/minimal (D-17a: adaptive, capacity-1 regions)
 
-private struct CompactGlucoseView: View {
+private struct CompactLeadingView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
-        Text(context.glucoseText)
-            .font(.system(size: 16, weight: .bold, design: .rounded))
-            .foregroundStyle(context.glucoseColor)
+        let field = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .compactLeading
+        ).first ?? LAField(id: "minimal")
+        ComposedFieldView(context: context, field: field, role: .heading)
     }
 }
 
-private struct CompactArrowView: View {
+/// The second-priority selected field, glyph-only when it's a pump chip (05-UI-SPEC.md: "a single
+/// glyph-only pump-status icon... to stay legible" — the compact-trailing slot is too tiny for a
+/// value alongside compact-leading's numeral). Renders the arrow specifically when the composed
+/// field IS glucose (mirrors the tracer's original compactLeading=value/compactTrailing=arrow pair).
+private struct CompactTrailingView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
-        // Optional/empty view when there's no arrow — mirrors luka's optional-image approach so
-        // "no trend" renders as no glyph at all, never a synthesized flat one (C8).
-        if !context.arrow.isEmpty {
-            Text(context.arrow)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(context.glucoseColor)
+        let field = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .compactTrailing
+        ).first
+        switch field?.id {
+        case "glucose":
+            if !context.arrow.isEmpty {
+                Text(context.arrow)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(context.glucoseColor)
+            }
+        case nil, "minimal", "sparkline":
+            EmptyView()
+        default:
+            if let id = field?.id, let chip = WidgetUI.chip(for: id, context.state) {
+                Image(systemName: chip.icon).foregroundStyle(chip.tint).font(.system(size: 16, weight: .bold))
+            }
         }
     }
 }
 
-// MARK: - Dynamic Island expanded
-
-private struct ExpandedGlucoseView: View {
+private struct MinimalRegionView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
-        Text(context.glucoseText)
-            .font(.system(size: 34, weight: .bold, design: .rounded))
-            .foregroundStyle(context.glucoseColor)
+        let field = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .minimal
+        ).first ?? LAField(id: "minimal")
+        ComposedFieldView(context: context, field: field, role: .heading)
     }
 }
 
-private struct ExpandedArrowView: View {
+// MARK: - CarPlay `.small` (iOS 18+, D-10) — adapts Loop's AdaptiveLockScreenView split
+
+/// The `GlucoseLiveActivityCarPlay` widget's Lock-Screen closure — reads `@Environment
+/// (\.activityFamily)` (iOS-18-only) to branch between the CarPlay `.small` layout and the SAME
+/// full Lock Screen content `GlucoseLiveActivity` (the iOS-17-floor widget) renders. `GlucoseLiveActivity`
+/// itself never sees this type — only the `@available(iOS 18.0, *)`-gated CarPlay widget does, so the
+/// iOS-17-only build path never references the iOS-18-only `activityFamily` environment key.
+@available(iOS 18.0, *)
+private struct CarPlayGatedView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    @Environment(\.activityFamily) private var activityFamily
     var body: some View {
-        if !context.arrow.isEmpty {
-            Text(context.arrow)
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(context.glucoseColor)
+        switch activityFamily {
+        case .small:
+            CarPlaySmallView(context: context)
+        default:
+            LockScreenLiveActivityView(context: context)
         }
     }
 }
 
-private struct ExpandedAgeView: View {
+/// The CarPlay `.small` glanceable field — a single highest-priority selected field, plain padding
+/// (NO `SmartStackMargins`, NO Loop named color assets — 05-UI-SPEC.md Registry Safety caveat).
+/// Display-only: no CarPlay entitlement, no CarPlay app (D-10).
+@available(iOS 18.0, *)
+private struct CarPlaySmallView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
-        if let d = context.state.glucoseDate {
-            Text(d, style: .relative).font(.caption2)
-                .foregroundStyle(context.isStale ? .orange : .secondary)
+        let field = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .carPlaySmall
+        ).first ?? LAField(id: "minimal")
+        HStack {
+            ComposedFieldView(context: context, field: field, role: .heading)
         }
+        .padding(8)
+        .containerBackground(.fill.tertiary, for: .widget)
     }
 }

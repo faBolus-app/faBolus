@@ -11,7 +11,28 @@ struct FaBolusWidgetBundle: WidgetBundle {
         StatusWidget()    // Overview (Home Screen medium)
         BolusWidget()     // Tap-to-bolus shortcut (deep-links into the app)
         QuickBolusWidget() // Preset bolus with a 1-2-3 confirm (delivers via the app)
-        GlucoseLiveActivity() // Phase 5 (D-01) — Lock Screen + Dynamic Island glucose Live Activity
+        // Phase 5 (D-01) — Lock Screen + Dynamic Island glucose Live Activity. Registered
+        // UNCONDITIONALLY: this is the iOS-17-floor widget (D-11) and every SDK version this app
+        // supports has it.
+        GlucoseLiveActivity()
+        // Phase 5 (D-10, 05-04) — the CarPlay `.small` supplemental presentation, additively
+        // registered when the SDK/OS supports it. `WidgetBundleBuilder` only provides `buildOptional`
+        // (a single-branch `if #available(...)` check via `buildLimitedAvailability`) — there is NO
+        // `buildEither`, so `if #available {} else {}` does not compile (confirmed: "closure
+        // containing control flow statement cannot be used with result builder 'WidgetBundleBuilder'"),
+        // and `if #unavailable(...)` used as the sole/negating branch triggers an internal compiler
+        // crash in this toolchain ("failed to produce diagnostic for expression") rather than a clean
+        // rejection — reported upstream is out of scope here; the additive single-branch form below is
+        // the only shape that compiles. `GlucoseLiveActivityCarPlay` shares the IDENTICAL Dynamic
+        // Island region tree and its Lock-Screen closure falls back to the SAME
+        // `LockScreenLiveActivityView` off-CarPlay, so registering both configurations for
+        // `FaBolusGlucoseAttributes` on iOS 18+ renders identically everywhere except the
+        // CarPlay-only `.small` presentation this one adds — see the Task-4 checkpoint for on-device
+        // confirmation that iOS resolves the dual registration as expected (05-RESEARCH.md §
+        // Environment Availability: CarPlay/dual-config behavior can't be verified off-device).
+        if #available(iOS 18.0, *) {
+            GlucoseLiveActivityCarPlay()
+        }
     }
 }
 
@@ -174,5 +195,30 @@ enum WidgetUI {
         }
         let tint = state.pumpLinkStale ? Color.gray : (state.controlIQEnabled ? inRangeTint : .gray)
         return PumpChip(icon: icon, tint: tint, value: value)
+    }
+
+    /// Connection chip — `antenna.radiowaves.left.and.right` (up) / `wifi.slash` (down), 05-UI-SPEC.md
+    /// Color table. Selected explicitly via the "connection" field id; `LiveActivityComposer.compose`
+    /// only ever surfaces it when the pump link is down or stale (05-04, D-17a), so by construction
+    /// this never renders while claiming "all fine".
+    static func connectionChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        if !state.connected {
+            return PumpChip(icon: "wifi.slash", tint: lowTint, value: "Disconnected")
+        }
+        return PumpChip(icon: "antenna.radiowaves.left.and.right", tint: .gray, value: "Synced")
+    }
+
+    /// Resolves a `LAField.id` (05-04, D-17a) to its chip, or `nil` for the special "glucose"/
+    /// "sparkline"/"minimal" pseudo-ids, which the view renders through their own dedicated views.
+    static func chip(for id: String, _ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip? {
+        switch id {
+        case "iob": return iobChip(state)
+        case "reservoir": return reservoirChip(state)
+        case "battery": return batteryChip(state)
+        case "basal": return basalChip(state)
+        case "controlIQ": return controlIQChip(state)
+        case "connection": return connectionChip(state)
+        default: return nil
+        }
     }
 }
