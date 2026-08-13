@@ -168,3 +168,12 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
 
 xcodegen generate --spec "$SPEC"
+
+# §1.3 version-pin (D-04): restore the tracked, root-level canonical Package.resolved into the
+# generated project's swiftpm dir so a fresh generation reuses the pinned graph (PumpX2Kit +
+# faBolusNudge/LoopAlgorithm) instead of re-resolving latest for every transitive dependency.
+if [ -f "$REPO/Package.resolved" ]; then
+  SWIFTPM_DIR="$REPO/faBolus.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
+  mkdir -p "$SWIFTPM_DIR"
+  cp "$REPO/Package.resolved" "$SWIFTPM_DIR/Package.resolved"
+fi
