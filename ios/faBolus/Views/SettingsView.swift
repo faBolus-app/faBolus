@@ -479,6 +479,7 @@ struct PumpSettingsView: View {
             Section {
                 Toggle("Allow auto Exercise mode", isOn: $settings.autoExerciseMode)
                 Toggle("Allow auto Sleep mode", isOn: $settings.autoSleepMode)
+                Toggle("Allow auto temp rate", isOn: $settings.autoTempRate)
                 Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
                 NavigationLink { ModeAutomationHelpView() } label: {
                     Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
