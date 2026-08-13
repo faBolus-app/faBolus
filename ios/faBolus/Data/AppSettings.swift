@@ -282,7 +282,9 @@ public final class AppSettings {
     /// .areActivitiesEnabled` (`GlucoseLiveActivityManager.gateEnabled`); flipping this off ends any
     /// running Activity. `didSet` also force-pushes an immediate refresh (`refreshForSelectionChange`,
     /// added in 05-04 Task 2) so a toggle applies at once rather than waiting for the next pump
-    /// reading (pump-surface research §2b).
+    /// reading (pump-surface research §2b). Backed up, but **not** iCloud-synced (`SettingsCatalog`
+    /// `syncsToICloud: false`) — an always-on-screen Lock Screen surface is a per-device opt-in, so
+    /// enabling it here must never silently switch it on for this owner on another device.
     public var liveActivityEnabled: Bool {
         didSet {
             d.set(liveActivityEnabled, forKey: "liveActivityEnabled")
@@ -298,7 +300,8 @@ public final class AppSettings {
     /// empty-selection fallback as a defensive belt-and-suspenders for the App-Group mirror path
     /// (`WidgetStore.liveActivityFields`), which is a separate nilable copy that can legitimately be
     /// absent before the first `syncWidgetConfig()` call. `didSet` also force-pushes an immediate
-    /// refresh (`refreshForSelectionChange`) so a reorder/hide change applies at once.
+    /// refresh (`refreshForSelectionChange`) so a reorder/hide change applies at once. Backed up, but
+    /// **not** iCloud-synced (same per-device ambient-surface reasoning as `liveActivityEnabled`).
     public var liveActivityFields: [String] {
         didSet {
             d.set(liveActivityFields, forKey: "liveActivityFields")
@@ -313,7 +316,9 @@ public final class AppSettings {
     /// to the nearest whole number — `GlucoseBadge.value(for:now:)`'s CR-01 fix) and is set from
     /// `GlucoseBadge.apply(_:now:)`, which is itself a pure function of freshness — never a frozen last
     /// value (D-13). `didSet` clears the app-icon badge the instant this is toggled OFF, so a disabled
-    /// badge never lingers showing a stale number.
+    /// badge never lingers showing a stale number. Backed up, but **not** iCloud-synced (same per-device
+    /// ambient-surface reasoning as `liveActivityEnabled` — a home-screen badge opt-in should not silently
+    /// light up on another device).
     public var glucoseBadgeEnabled: Bool {
         didSet {
             d.set(glucoseBadgeEnabled, forKey: "glucoseBadgeEnabled")
