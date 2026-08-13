@@ -1301,7 +1301,12 @@ public final class AppModel {
         alertDebug = source.alertDebug
         let widgetLock = widgetBolusLock   // A-05: same evaluator delivery routes through
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title },
-                                bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason)
+                                bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason,
+                                // Phase 5 (D-18, 05-05): the Live Activity's Snooze button/intent gate —
+                                // computed HERE (the only place `PumpAlertKind` is available alongside
+                                // the wire snapshot) so neither the extension nor the LA intent ever
+                                // re-derives "is this an alarm" from a titles-only alert list.
+                                hasSnoozeEligibleAlert: activeNotifications.contains { $0.kind.isAutoRuleEligible })
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
@@ -1319,6 +1324,16 @@ public final class AppModel {
 
     public func connect() async { await source.connect(); refresh() }
     public func disconnect() { source.disconnect(); refresh() }
+
+    /// Reconnect the pump link if a pairing exists and it's currently disconnected — pure link
+    /// maintenance, never a dose. Promoted here (from a private `RootTabView` helper of the exact
+    /// same name/guard) so the Live Activity's "Refresh" `LiveActivityIntent` can call the SAME seam
+    /// via `LiveActivityIntentBridge.reconnect` (D-18, 05-05) instead of re-implementing the guard —
+    /// `RootTabView` now delegates to this method too, so there is still exactly one implementation.
+    public func autoReconnectIfNeeded() async {
+        guard hasStoredPairing, snapshot.connection == .disconnected else { return }
+        await connect()
+    }
 
     /// `allowStaleIob` / `allowStaleTherapy` are the DIF-ux warned host-owner overrides, defaulted OFF so
     /// every existing caller — and, critically, `resolveRemoteDose` (remotes) — keeps recomputing with NO

@@ -16,7 +16,8 @@ enum WidgetPublisher {
     /// call site) so the test can pin them deterministically.
     @MainActor
     static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
-                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?) -> WidgetSnapshot {
+                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
+                             hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
         let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         return WidgetSnapshot(
             glucose: s.glucose,
@@ -50,14 +51,20 @@ enum WidgetPublisher {
             basalRateUnitsPerHour: s.basalRateUnitsPerHour,
             deliverySuspended: s.deliverySuspended,
             controlIQMode: s.controlIQMode,
-            controlIQEnabled: s.controlIQEnabled)
+            controlIQEnabled: s.controlIQEnabled,
+            // Phase 5 (D-18, 05-05) — app-computed snooze-eligibility gate (see the field's own doc
+            // comment on `WidgetSnapshot`); passed in from the caller, which has `PumpAlertKind` on
+            // `activeNotifications` (this function only receives bare `alerts: [String]` titles).
+            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
     }
 
     @MainActor
     static func publish(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
-                        bolusLocked: Bool = false, bolusLockReason: String = "") {
+                        bolusLocked: Bool = false, bolusLockReason: String = "",
+                        hasSnoozeEligibleAlert: Bool = false) {
         let snap = makeSnapshot(s, history: history, alerts: alerts,
-                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter)
+                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
+                                hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
         // Phase 5 (D-03) — the single BLE-driven choke point also drives the glucose Live Activity.
         // App-driven only (no APNs); see GlucoseLiveActivityManager.update(from:).

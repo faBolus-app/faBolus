@@ -96,8 +96,11 @@ private func glucoseDynamicIslandConfiguration(
         DynamicIslandExpandedRegion(.bottom) {
             let bottom = LiveActivityComposer.compose(
                 selection: context.state.selectedFields, state: context.state, region: .bottom)
-            if bottom.first?.id == "sparkline" {
-                Sparkline(points: context.state.recentPoints).frame(height: 40)
+            VStack(spacing: 6) {
+                if bottom.first?.id == "sparkline" {
+                    Sparkline(points: context.state.recentPoints).frame(height: 40)
+                }
+                LAActionRow(context: context, compact: true)
             }
         }
     } compactLeading: {
@@ -225,6 +228,47 @@ private struct MinimalFallbackView: View {
     }
 }
 
+// MARK: - D-18 interactive row (05-05) — Open Bolus / (conditional) Snooze / Refresh
+
+/// The three safe, NON-DOSING `LiveActivityIntent` buttons (05-UI-SPEC.md Interaction Contract).
+/// "Snooze" is shown ONLY when `context.state.hasSnoozeEligibleAlert` is true — an app-computed flag
+/// (never re-derived here) that is false whenever the only active alert is a non-snoozeable `.alarm`
+/// (`PumpAlertKind.isAutoRuleEligible`). `compact` trims to icon-only glyphs for the Dynamic Island's
+/// tight `.bottom` region; the Lock Screen banner has room for the full label.
+private struct LAActionRow: View {
+    let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    var compact: Bool = false
+
+    var body: some View {
+        Group {
+            if compact {
+                buttons.labelStyle(.iconOnly)
+            } else {
+                buttons.labelStyle(.titleAndIcon)
+            }
+        }
+        .font(compact ? .caption2 : .caption)
+        .buttonStyle(.bordered)
+        .tint(.secondary)
+    }
+
+    @ViewBuilder private var buttons: some View {
+        HStack(spacing: compact ? 14 : 20) {
+            Button(intent: LAOpenBolusIntent()) {
+                Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
+            }
+            if context.state.hasSnoozeEligibleAlert {
+                Button(intent: LASnoozeAlertIntent()) {
+                    Label("Snooze", systemImage: "bell.slash.fill")
+                }
+            }
+            Button(intent: LAReconnectIntent()) {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+        }
+    }
+}
+
 // MARK: - Lock Screen (+ CarPlay fallback surface)
 
 private struct LockScreenLiveActivityView: View {
@@ -268,6 +312,9 @@ private struct LockScreenLiveActivityView: View {
                     }
                 }
             }
+            // D-18 (05-05) — always available regardless of the field-selection/empty-selection state
+            // above (05-UI-SPEC.md Interaction Contract: Open Bolus/Refresh "Always available").
+            LAActionRow(context: context)
         }
         .padding(16)
         .containerBackground(.fill.tertiary, for: .widget)

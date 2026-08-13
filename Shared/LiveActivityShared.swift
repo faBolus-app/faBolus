@@ -79,13 +79,21 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         // ~4KB ContentState ceiling even with all 7 possible ids selected.
         public var selectedFields: [String]
 
+        /// Phase 5 (D-18, 05-05) — carried verbatim from `WidgetSnapshot.hasSnoozeEligibleAlert`
+        /// (app-computed, see that field's doc comment). Gates the LA's "Snooze" button visibility;
+        /// the intent's own runtime check (`LiveActivityIntentBridge.snoozeAlertIfSafe`) re-verifies
+        /// independently before acting, so a stale/desynced ContentState can never cause an alarm to
+        /// be silenced even if this flag were somehow wrong.
+        public var hasSnoozeEligibleAlert: Bool
+
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
                     batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
                     controlIQEnabled: Bool = false, connected: Bool = false, updatedAt: Date = Date(),
-                    iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = []) {
+                    iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
+                    hasSnoozeEligibleAlert: Bool = false) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
@@ -104,6 +112,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.iobStale = iobStale
             self.pumpLinkStale = pumpLinkStale
             self.selectedFields = selectedFields
+            self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         }
     }
 

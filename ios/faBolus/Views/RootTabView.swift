@@ -10,8 +10,10 @@ struct RootTabView: View {
     @State private var selection = 0
 
     private func autoReconnectIfNeeded() async {
-        guard model.hasStoredPairing, model.snapshot.connection == .disconnected else { return }
-        await model.connect()
+        // Guard now lives on AppModel (D-18, 05-05) so the Live Activity's Refresh intent can reuse
+        // the exact same seam via `LiveActivityIntentBridge.reconnect` — see `AppModel
+        // .autoReconnectIfNeeded()`'s doc comment.
+        await model.autoReconnectIfNeeded()
     }
 
     var body: some View {

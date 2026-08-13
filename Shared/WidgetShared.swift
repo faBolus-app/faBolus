@@ -111,6 +111,14 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var controlIQMode: Int
     /// Whether Control-IQ automation is enabled.
     public var controlIQEnabled: Bool
+    /// Phase 5 (D-18, 05-05) — true when at least one currently-active pump alert is snooze-eligible
+    /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
+    /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
+    /// the same "app computes the gate, the extension/intent only reads it" pattern as
+    /// `iobStale`/`pumpLinkStale` (D-17, §13 Rule 1). Gates BOTH the Live Activity's "Snooze" button
+    /// visibility and, independently, `LiveActivityIntentBridge.snoozeAlertIfSafe`'s own runtime
+    /// re-check — an `.alarm` must never be offered (or receive) a snooze affordance.
+    public var hasSnoozeEligibleAlert: Bool
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
@@ -119,7 +127,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
                 staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
                 displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
-                deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false) {
+                deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
+                hasSnoozeEligibleAlert: Bool = false) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -132,13 +141,14 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.iobDate = iobDate; self.basalRateUnitsPerHour = basalRateUnitsPerHour
         self.deliverySuspended = deliverySuspended; self.controlIQMode = controlIQMode
         self.controlIQEnabled = controlIQEnabled
+        self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
     }
 
     private enum CodingKeys: String, CodingKey {
         case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
              lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
              targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
-             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled
+             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert
     }
 
     /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
@@ -175,6 +185,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         deliverySuspended = try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false
         controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
         controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
+        hasSnoozeEligibleAlert = try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.

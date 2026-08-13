@@ -71,7 +71,8 @@ enum GlucoseLiveActivityManager {
             updatedAt: snap.updatedAt,
             iobStale: iobStale,
             pumpLinkStale: pumpLinkStale,
-            selectedFields: selection
+            selectedFields: selection,
+            hasSnoozeEligibleAlert: snap.hasSnoozeEligibleAlert
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)
