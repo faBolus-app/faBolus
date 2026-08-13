@@ -43,7 +43,9 @@ struct StatusWidgetView: View {
                 if let d = snap.glucoseDate {
                     Text(d, style: .relative).font(.caption2)
                         .foregroundStyle(WidgetUI.isStale(snap, now: now) ? .orange : .secondary)
-                } else {
+                } else if snap.showUnitLabel {
+                    // Owner-requested toggle: this fallback caption (no reading yet, so no age to
+                    // show) is the only persistent unit caption this tile renders.
                     Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                 }
                 Sparkline(points: snap.recentPoints).frame(height: 34).padding(.top, 2)

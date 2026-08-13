@@ -22,7 +22,10 @@ struct DataHistoryView: View {
                     LabeledContent("Time in range", value: "\(Int(s.timeInRangePct))%")
                     // WR-01 gap closure (04-07): route through the display-unit funnel — was a
                     // second, un-funneled "Average" glucose metric distinct from StatsCardView's.
-                    LabeledContent("Average", value: "\(settings.glucoseDisplayUnit.format(mgdl: Int(s.mean))) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")")
+                    // Owner-requested toggle: bare value (no unit suffix) when labels are hidden.
+                    LabeledContent("Average", value: settings.showGlucoseUnitLabels
+                        ? "\(settings.glucoseDisplayUnit.format(mgdl: Int(s.mean))) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")"
+                        : settings.glucoseDisplayUnit.format(mgdl: Int(s.mean)))
                     LabeledContent("GMI", value: String(format: "%.1f%%", s.gmi))
                     LabeledContent("Readings", value: "\(s.count)")
                 } else {

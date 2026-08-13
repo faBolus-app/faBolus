@@ -203,7 +203,10 @@ private struct GlucoseNumeralView: View {
                 if let d = context.state.glucoseDate {
                     Text(d, style: .relative).font(.caption2)
                         .foregroundStyle(context.isStale ? .orange : .secondary)
-                } else {
+                } else if context.state.showUnitLabel {
+                    // Owner-requested toggle: this fallback caption (no reading yet, so no age to
+                    // show) is the only persistent unit-label text this Live Activity renders — gate
+                    // it on the flag; when off, no caption is shown here at all.
                     Text(context.unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                 }
             }

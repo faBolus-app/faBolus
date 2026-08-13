@@ -45,7 +45,10 @@ struct GlucoseWidgetView: View {
                 AccessoryWidgetBackground()
                 VStack(spacing: 0) {
                     Text(bg).font(.system(size: 22, weight: .bold, design: .rounded)).minimumScaleFactor(0.5)
-                    Text(arrow.isEmpty ? unit.unitLabel : arrow).font(.system(size: 11))
+                    // Owner-requested toggle: keep showing the arrow always; only the unitLabel-as-
+                    // fallback (when there's no arrow to show) is gated — an empty string when off,
+                    // never the unit.
+                    Text(arrow.isEmpty ? (snap.showUnitLabel ? unit.unitLabel : "") : arrow).font(.system(size: 11))
                 }
             }
             .containerBackground(.clear, for: .widget)
@@ -67,7 +70,10 @@ struct GlucoseWidgetView: View {
                     Text(arrow).font(.title2).foregroundStyle(color)
                     Spacer()
                 }
-                Text(unit.unitLabel).font(.caption).foregroundStyle(.secondary)
+                // Owner-requested toggle: this is the systemSmall tile's only persistent unit caption.
+                if snap.showUnitLabel {
+                    Text(unit.unitLabel).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 HStack {
                     Label(String(format: "%.1f U", snap.iobUnits), systemImage: "syringe")
