@@ -73,4 +73,90 @@ struct NudgeDeliveryBoundaryTests {
         #expect(carbAlert.message == "Looks like you're eating (~42g). Bolus?")
         #expect(carbAlert.message.contains("42"))
     }
+
+    // MARK: - Task 2: belt-and-suspenders static source scan
+
+    /// Second, independent proof (source-level, D-02/D-05b): the eating-nudge source contains ZERO
+    /// delivery-seam symbols. `EatingTrigger.swift` and `SmartAssist.swift` are scanned WHOLE-FILE (both
+    /// are delivery-symbol-free today); `AppModel.swift` is scanned by FUNCTION-BODY SLICE ONLY, for its
+    /// three eating-nudge functions located by signature — NEVER whole-file, because `deliverBolus` /
+    /// `remoteDeliver` are legitimately declared elsewhere in that same file (RESEARCH Pitfall 1). A
+    /// future line-shift in `AppModel.swift` cannot silently widen or narrow the scanned region because
+    /// the slice is found by signature, not by hardcoded line numbers.
+    @Test func nudgeSourceContainsNoDeliverySeamSymbols() throws {
+        // The forbidden delivery-seam identifier set: the two `GatedPumpWrite` delivery verbs plus the
+        // signed-write entry-point names. Held as plain string constants — this scan targets the SOURCE
+        // files below, never this test file itself, so their appearance here is not what's under test.
+        let forbidden = ["deliverBolus", "deliverExtendedBolus", "remoteDeliver", "perform(totalMu"]
+
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testFileURL
+            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()   // → .../ios
+            .deletingLastPathComponent()   // → repo root
+
+        // Scope (1): whole-file negative scan — both files are delivery-symbol-free today.
+        let wholeFileTargets = [
+            repoRoot.appendingPathComponent("Packages/faBolusCore/Sources/faBolusCore/EatingTrigger.swift"),
+            repoRoot.appendingPathComponent("ios/faBolus/Data/SmartAssist.swift"),
+        ]
+        for url in wholeFileTargets {
+            let contents = try String(contentsOf: url, encoding: .utf8)
+            for symbol in forbidden {
+                #expect(!contents.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in \(url.lastPathComponent)")
+            }
+        }
+
+        // Scope (2): function-body-scoped scan of AppModel.swift's three eating-nudge functions only.
+        // MUST NOT whole-file-scan AppModel.swift — deliverBolus/remoteDeliver are legitimately declared
+        // elsewhere in that file, which would be a guaranteed false positive.
+        let appModelURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel.swift")
+        let appModelSource = try String(contentsOf: appModelURL, encoding: .utf8)
+        let eatingNudgeFunctionSignatures = [
+            "func eatingNudgeActedOn(",
+            "func updateEatingNudge(",
+            "func dismissEatingNudge(",
+        ]
+        for signature in eatingNudgeFunctionSignatures {
+            let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: appModelSource)
+            for symbol in forbidden {
+                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in AppModel.swift's \(signature) body")
+            }
+        }
+    }
+
+    /// Locate a function by its declaration-line signature prefix (e.g. `"func foo("`) and return the
+    /// source slice from that line through its balanced closing brace. Scoping by signature (rather than a
+    /// hardcoded line range) means a future line-shift in the source file does not silently widen or
+    /// narrow the scanned region.
+    private static func balancedFunctionBody(signaturePrefix: String, in source: String) throws -> String {
+        let lines = source.components(separatedBy: "\n")
+        guard let startIdx = lines.firstIndex(where: { $0.contains(signaturePrefix) }) else {
+            throw SliceError.signatureNotFound(signaturePrefix)
+        }
+        var depth = 0
+        var opened = false
+        var collected: [String] = []
+        for line in lines[startIdx...] {
+            collected.append(line)
+            for ch in line {
+                if ch == "{" { depth += 1; opened = true }
+                else if ch == "}" { depth -= 1 }
+            }
+            if opened && depth <= 0 { break }
+        }
+        guard opened else { throw SliceError.unbalancedBraces(signaturePrefix) }
+        return collected.joined(separator: "\n")
+    }
+
+    private enum SliceError: Error, CustomStringConvertible {
+        case signatureNotFound(String)
+        case unbalancedBraces(String)
+        var description: String {
+            switch self {
+            case .signatureNotFound(let sig): return "Function signature not found while scanning: \(sig)"
+            case .unbalancedBraces(let sig): return "Could not find a balanced closing brace for: \(sig)"
+            }
+        }
+    }
 }
