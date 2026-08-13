@@ -87,9 +87,10 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 50 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// All 51 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
     /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
-    /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added). Order mirrors
+    /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
+    /// (999.2/D-01): `autoTempRate` added). Order mirrors
     /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -148,6 +149,13 @@ enum SettingsCatalog {
         .init("autoExerciseMode", .pump, from: .standard, backsUp: true),
         .init("autoSleepMode", .pump, from: .standard, backsUp: true),
         .init("modeReminders", .pump, from: .standard, backsUp: true),
+        // Phase 6 (06-01, 999.2/D-01): auto temp rate — unlike auto Exercise/Sleep mode (Standard-tier
+        // shipped features, L3 above), a temp rate is only reachable through the Advanced-control
+        // surface (`supportsTempBasal` behind `advancedControlEnabled`), so this row starts at
+        // `.advanced` like `advancedControlEnabled`/`autoSyncPumpTime`. Not command-adjacent (mirrors
+        // autoExerciseMode/autoSleepMode/modeReminders, which permit an automated pump write but are not
+        // in `commandAdjacentFlags` either) — default iCloud sync ON.
+        .init("autoTempRate", .pump, from: .advanced, backsUp: true),
         .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices

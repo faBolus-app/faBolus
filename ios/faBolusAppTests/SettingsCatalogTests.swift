@@ -24,8 +24,9 @@ struct SettingsCatalogTests {
         // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
         // Phase 5 (05-03, D-13/D-14): 48 → 49 (glucoseBadgeEnabled added).
         // Owner-requested "Show unit labels" toggle: 49 → 50 (showGlucoseUnitLabels added).
-        #expect(SettingsCatalog.descriptors.count == 50)
-        #expect(SettingsCatalog.byKey.count == 50)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 6 (06-01, 999.2/D-01): 50 → 51 (autoTempRate added).
+        #expect(SettingsCatalog.descriptors.count == 51)
+        #expect(SettingsCatalog.byKey.count == 51)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -43,7 +44,8 @@ struct SettingsCatalogTests {
         // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
         // Phase 5 (05-03): 44 → 45 (glucoseBadgeEnabled, unconditional).
         // Owner-requested toggle: 45 → 46 (showGlucoseUnitLabels, unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 46)                      // 42 unconditional + 4 conditional
+        // Phase 6 (06-01, 999.2/D-01): 46 → 47 (autoTempRate, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 47)                      // 43 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

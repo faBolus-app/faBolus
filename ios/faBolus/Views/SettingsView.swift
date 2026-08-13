@@ -186,7 +186,7 @@ enum SettingsIndex {
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
-        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation", category: .pump),
+        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
