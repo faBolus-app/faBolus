@@ -22,8 +22,9 @@ struct SettingsCatalogTests {
         // Phase 01-03 (task #93, SG3a): 44 → 45 (stackingGuardFrictionEnabled added).
         // Phase 04-01 (mmol/L display-unit support, D-03): 45 → 46 (glucoseDisplayUnit added).
         // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
-        #expect(SettingsCatalog.descriptors.count == 48)
-        #expect(SettingsCatalog.byKey.count == 48)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 5 (05-03, D-13/D-14): 48 → 49 (glucoseBadgeEnabled added).
+        #expect(SettingsCatalog.descriptors.count == 49)
+        #expect(SettingsCatalog.byKey.count == 49)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -39,7 +40,8 @@ struct SettingsCatalogTests {
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
         // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 44)                      // 40 unconditional + 4 conditional
+        // Phase 5 (05-03): 44 → 45 (glucoseBadgeEnabled, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 45)                      // 41 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

@@ -215,7 +215,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // It's also unnecessary — iOS itself downgrades a `.critical` notification to a normal one when the
         // app isn't entitled, so gating on the user's `criticalAlertsEnabled` alone is correct and degrades
         // gracefully at the OS level.
-        center.requestAuthorization(options: [.alert, .sound, .criticalAlert]) { _, _ in }
+        // Phase 5 (D-14, 05-03): `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon
+        // glucose badge, `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores
+        // every `setBadgeCount` call regardless of the user's opt-in.
+        center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)

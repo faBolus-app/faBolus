@@ -306,6 +306,17 @@ public final class AppSettings {
             GlucoseLiveActivityManager.refreshForSelectionChange()
         }
     }
+    /// Phase 5 (D-13/D-14, 05-03) — master opt-in for the app-icon glucose badge. **Default OFF**
+    /// (opt-in, matching every other device-capability switch in this file). The badge can show only a
+    /// bare number (no units/age/trend) and is set from `GlucoseBadge.apply(_:now:)`, which is itself a
+    /// pure function of freshness — never a frozen last value (D-13). `didSet` clears the app-icon
+    /// badge the instant this is toggled OFF, so a disabled badge never lingers showing a stale number.
+    public var glucoseBadgeEnabled: Bool {
+        didSet {
+            d.set(glucoseBadgeEnabled, forKey: "glucoseBadgeEnabled")
+            if !glucoseBadgeEnabled { GlucoseBadge.clear() }
+        }
+    }
     /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
     /// Mirrored to the watch. At least one is always kept.
     public var watchChartRanges: [Int] { didSet { d.set(watchChartRanges, forKey: "watchChartRanges") } }
@@ -562,6 +573,8 @@ public final class AppSettings {
         liveActivityFields = Self.restoreOrder(
             d.array(forKey: "liveActivityFields") as? [String] ?? Self.defaultLiveActivityFields,
             all: Self.laFieldItems)
+        // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
+        glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
             .filter { Self.chartRangeOptions.contains($0) }
         watchChartRanges = (storedRanges?.isEmpty ?? true) ? Self.chartRangeOptions : storedRanges!.sorted()
@@ -614,6 +627,7 @@ public final class AppSettings {
             "childModeEnabled": .bool(childModeEnabled),
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
+            "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
@@ -679,6 +693,7 @@ public final class AppSettings {
         if let v = b("childModeEnabled") { childModeEnabled = v }
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
+        if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()

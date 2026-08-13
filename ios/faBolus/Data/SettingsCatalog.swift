@@ -81,8 +81,9 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 48 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
-    /// `liveActivityFields` added). Order mirrors `AppSettings.swift` for reviewability.
+    /// All 49 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added). Order mirrors
+    /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -114,6 +115,9 @@ enum SettingsCatalog {
         // is unchanged), so both default to iCloud sync ON like glucoseDisplayUnit/pillsOrder.
         .init("liveActivityEnabled", .display, from: .standard, backsUp: true),
         .init("liveActivityFields", .display, from: .standard, backsUp: true),
+        // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
+        // command-adjacent, so it defaults to iCloud sync ON like liveActivityEnabled/pillsOrder.
+        .init("glucoseBadgeEnabled", .display, from: .standard, backsUp: true),
         // MARK: Watch/Garmin display (remotes)
         .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),
         .init("watchChartRanges", .remotes, from: .standard, backsUp: true),

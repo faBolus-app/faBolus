@@ -38,6 +38,8 @@ struct FirstLaunchDefaultsTests {
         // and its field selection falls back to the curated default subset, never an empty/garbage list.
         #expect(settings.liveActivityEnabled == false)
         #expect(settings.liveActivityFields == AppSettings.defaultLiveActivityFields)
+        // Phase 5 (05-03, D-13/D-14, SC-4): the app-icon glucose badge is opt-in — OFF on a fresh install.
+        #expect(settings.glucoseBadgeEnabled == false)
 
         // Remote-bolus passcode: route through the DEBUG in-memory backing (the app-hosted test target
         // can't write the Keychain) and assert nothing is required on a fresh install.
