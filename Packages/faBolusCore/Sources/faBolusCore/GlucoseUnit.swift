@@ -49,7 +49,14 @@ public enum GlucoseUnit: String, Codable, Sendable, CaseIterable {
         case .mgdl:
             return Int(text)
         case .mmol:
-            guard let v = Double(text) else { return nil }
+            // CR-04 gap closure: `.decimalPad` presents the device's locale decimal separator
+            // (comma in most mainland-Europe mmol/L locales), but `Double(text)` only ever
+            // accepts a period. Normalize comma → period before parsing so a correctly-typed
+            // entry is never silently dropped to `nil`. This widens ONLY the string→number
+            // acceptance; the reject-on-malformed contract (still `nil`, never a guessed `0`)
+            // is unchanged for genuinely non-numeric input.
+            let normalized = text.replacingOccurrences(of: ",", with: ".")
+            guard let v = Double(normalized) else { return nil }
             return Int((v * Self.mgdlPerMmol).rounded())
         }
     }
