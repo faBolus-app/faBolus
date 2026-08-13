@@ -58,11 +58,11 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
   inherited by every target the same way as `APP_BUNDLE_ID`. Never add a per-target version literal in
   `project.yml`. Bump `MARKETING_VERSION` on a release and add a `CHANGELOG.md` entry.
 - **Backend (PumpX2Kit) version-pinning contract** — the target is: annotated release tags, an explicit
-  version pin in `project.yml` (with a documented local-path override for dev), and a committed
-  `Package.resolved`. This is **currently DECLARED UNMET**: faBolus consumes PumpX2Kit by
-  `path: ../PumpX2Kit` because the backend's crypto target uses `.unsafeFlags` (which SwiftPM forbids in
-  a URL+version dependency) and the in-progress M1 driver relies on path-consumption. See BRANCHES.md
-  §1.3 for the reason and the current tag state — do not "satisfy" it by quietly leaving the local path.
+  version pin **or a pinned commit `revision:`** in `project.yml` (with a documented local-path override
+  for dev), and a committed `Package.resolved`. This is now **MET** (2026-08-13): faBolus consumes
+  PumpX2Kit by `url:`+`revision:` (a pinned commit SHA on PumpX2Kit `main`), with `FABOLUS_PUMPX2_LOCAL=1`
+  as the documented local-path override. See BRANCHES.md §1.3 for the reason, the pinned revision, and
+  the current tag state — including the recorded D2-on-main governance fact.
 - **Garmin ships in lockstep** with the app (same release, same quality bar), enforced by the existing
   branch-aware cross-repo CI. See BRANCHES.md §1.3.
 
