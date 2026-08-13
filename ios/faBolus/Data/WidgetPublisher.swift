@@ -62,6 +62,11 @@ enum WidgetPublisher {
         // Phase 5 (D-03) — the single BLE-driven choke point also drives the glucose Live Activity.
         // App-driven only (no APNs); see GlucoseLiveActivityManager.update(from:).
         GlucoseLiveActivityManager.update(from: snap)
+        // Phase 5 (D-13, 05-03) — the same choke point drives the opt-in app-icon badge. The opt-in
+        // gate + freshness live inside GlucoseBadge, so this stays a thin call; the arbiter timer
+        // re-runs refresh()->publish every ~20s, so the badge re-evaluates and clears to 0 as a
+        // reading ages past stale even with no new pump data.
+        GlucoseBadge.apply(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
         WidgetBolusStore.increment = AppSettings.shared.bolusIncrement

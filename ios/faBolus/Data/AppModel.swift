@@ -1283,6 +1283,10 @@ public final class AppModel {
             postSafety(.cgmDataLoss, severity: .warning, title: "CGM data lost",
                        body: "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
                        dedupeKey: Self.cgmDataLossKey)
+            // Phase 5 (D-13, 05-03): defensive clear — the app-icon badge zeroes the INSTANT a
+            // previously-fresh feed is detected as stale/absent, rather than waiting for the next
+            // WidgetPublisher.publish (the second of the two required D-13 call sites).
+            GlucoseBadge.clear()
         case .clear: withdrawNotifications([Self.cgmDataLossKey])
         case .none: break
         }
