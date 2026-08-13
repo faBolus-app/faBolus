@@ -87,8 +87,9 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 49 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
-    /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added). Order mirrors
+    /// All 50 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
+    /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added). Order mirrors
     /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -111,6 +112,11 @@ enum SettingsCatalog {
         // Phase 04-01 (mmol/L display-unit support, D-03): a display unit is NOT command-adjacent —
         // omitting syncsToICloud gives iCloud sync ON (SettingDescriptor.init default rule).
         .init("glucoseDisplayUnit", .display, from: .standard, backsUp: true),
+        // Owner request — hide/show the persistent unit CAPTION on ambient display surfaces. Like
+        // glucoseDisplayUnit, this is a display-format preference, NOT a per-device feature toggle
+        // (unlike liveActivityEnabled/glucoseBadgeEnabled below) — omitting syncsToICloud gives iCloud
+        // sync ON (SettingDescriptor.init default rule), matching glucoseDisplayUnit's reasoning.
+        .init("showGlucoseUnitLabels", .display, from: .standard, backsUp: true),
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
         .init("showStats", .display, from: .standard, backsUp: true),
