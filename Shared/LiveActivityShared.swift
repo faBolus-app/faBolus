@@ -114,6 +114,48 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.selectedFields = selectedFields
             self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
+                 reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
+                 controlIQEnabled, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
+                 hasSnoozeEligibleAlert
+        }
+
+        /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
+        /// fixing the IDENTICAL class of bug the team already found and fixed there (05-02's own
+        /// deviations): Swift's synthesized `Decodable` only tolerates a missing key for `Optional`-typed
+        /// properties, never for a non-`Optional` property just because it has an `init` default. Every one
+        /// of the non-`Optional` stored properties added across 05-02/05-04/05-05 goes through
+        /// `decodeIfPresent(...) ?? <the same default the memberwise init above declares>`, so a
+        /// legacy-shaped `ContentState` payload — e.g. an in-flight Live Activity started under an older
+        /// build, still running across an app update (ActivityKit round-trips `ContentState` across that
+        /// boundary) — decodes without throwing `DecodingError.keyNotFound` (CR-03, 05-06). `encode(to:)`
+        /// stays compiler-synthesized (unaffected by a custom `init(from:)`).
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(
+                glucose: try c.decodeIfPresent(Int.self, forKey: .glucose),
+                glucoseDate: try c.decodeIfPresent(Date.self, forKey: .glucoseDate),
+                trendArrow: try c.decodeIfPresent(String.self, forKey: .trendArrow) ?? "",
+                recentPoints: try c.decodeIfPresent([WidgetSnapshot.Point].self, forKey: .recentPoints) ?? [],
+                displayUnitToken: try c.decodeIfPresent(String.self, forKey: .displayUnitToken),
+                iobUnits: try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0,
+                iobDate: try c.decodeIfPresent(Date.self, forKey: .iobDate),
+                reservoirUnits: try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0,
+                batteryPercent: try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0,
+                basalRateUnitsPerHour: try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0,
+                deliverySuspended: try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false,
+                controlIQMode: try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0,
+                controlIQEnabled: try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false,
+                connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
+                updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
+                iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
+                pumpLinkStale: try c.decodeIfPresent(Bool.self, forKey: .pumpLinkStale) ?? false,
+                selectedFields: try c.decodeIfPresent([String].self, forKey: .selectedFields) ?? [],
+                hasSnoozeEligibleAlert: try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
+            )
+        }
     }
 
     /// Static attribute set — kept intentionally tiny (luka-slim, D-01/D-02). No per-Activity-instance
