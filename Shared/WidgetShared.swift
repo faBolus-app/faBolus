@@ -12,6 +12,44 @@ public enum WidgetGlucoseThresholds {
     public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
 }
 
+/// The widget island's mirror of `faBolusCore.GlucoseUnit` (Phase 04-03, mmol/L display-unit
+/// support). The widget/complication extension targets don't link faBolusCore (same reason as
+/// `WidgetGlucoseThresholds` above), so this carries the same two-case shape, the same 18.0182
+/// factor, and the same 1-decimal mmol format. The unit rides the App Group as a plain `String?`
+/// wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum directly (Pitfall
+/// 6: a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
+/// unrecognized token resolves to `.mgdl` (legacy-safe, matches D-03's mg/dL default).
+/// `WidgetGlucoseUnitMirrorTests` (app target, which links BOTH) pins this to the canonical
+/// `faBolusCore.GlucoseUnit` so the two can't drift silently (T-04-06).
+public enum WidgetGlucoseUnit: String {
+    case mgdl, mmol
+
+    /// mg/dL per mmol/L (D-05, locked) — mirrors `faBolusCore.GlucoseUnit.mgdlPerMmol` exactly;
+    /// pinned equal by the drift-guard test, not re-derived independently.
+    public static let mgdlPerMmol = 18.0182
+
+    /// Resolve the App-Group wire token ("mgdl"|"mmol") to a unit. `nil` or an unrecognized token
+    /// (e.g. a future third case from a newer phone build) falls back to `.mgdl` — behavior-
+    /// preserving, never a crash, never a silently-wrong conversion.
+    public init(wireToken: String?) {
+        self = wireToken.flatMap(WidgetGlucoseUnit.init(rawValue:)) ?? .mgdl
+    }
+
+    /// mg/dL → a display string in this unit. Identical shape/rounding to
+    /// `faBolusCore.GlucoseUnit.format(mgdl:)`: `.mgdl` is the plain integer, `.mmol` is ALWAYS
+    /// exactly 1 decimal.
+    public func format(mgdl: Int) -> String {
+        switch self {
+        case .mgdl: return "\(mgdl)"
+        case .mmol: return String(format: "%.1f", Double(mgdl) / Self.mgdlPerMmol)
+        }
+    }
+
+    /// The unit suffix shown next to a formatted value, same convention as the phone's
+    /// `StatusRingView.unitLabel`.
+    public var unitLabel: String { self == .mmol ? "mmol/L" : "mg/dL" }
+}
+
 /// Data shared from the app to its WidgetKit extension via an App Group. The app writes a
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
@@ -46,13 +84,19 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
     public var staleAfterSec: TimeInterval?   // grey after this age
     public var hideAfterSec: TimeInterval?    // hide ("--") after this age; nil = never hide
+    /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit` (Phase
+    /// 04-03). A wire token ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself (Pitfall 6). `nil` ⇒
+    /// mgdl — an older app version's snapshot (before this field existed) decodes fine via
+    /// `Codable`'s default-on-missing-key behavior and renders mg/dL, matching D-03's default.
+    public var displayUnit: String?
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
-                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil) {
+                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
+                displayUnit: String? = nil) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -61,6 +105,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.cgmActive = cgmActive; self.carbRatio = carbRatio; self.isf = isf
         self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
         self.staleAfterSec = staleAfterSec; self.hideAfterSec = hideAfterSec
+        self.displayUnit = displayUnit
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
