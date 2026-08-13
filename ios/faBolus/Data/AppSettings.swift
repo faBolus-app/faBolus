@@ -276,6 +276,24 @@ public final class AppSettings {
     public var watchDetailsOrder: [String] { didSet { d.set(watchDetailsOrder, forKey: "watchDetailsOrder") } }
     /// Which status pills show, and in what order, on the phone dashboard.
     public var pillsOrder: [String] { didSet { d.set(pillsOrder, forKey: "pillsOrder") } }
+    /// Phase 5 (D-15) — master opt-in for the ambient glucose Live Activity / Dynamic Island. **Default
+    /// OFF** (opt-in, not opt-out — matches every other device-capability switch in this file). The
+    /// manager AND-gates activity start on `liveActivityEnabled && ActivityAuthorizationInfo()
+    /// .areActivitiesEnabled` (`GlucoseLiveActivityManager.gateEnabled`); flipping this off ends any
+    /// running Activity. Mirroring `liveActivityFields` to the App Group + the immediate
+    /// `refreshForSelectionChange()` push happen in the `didSet` added in 05-04 Task 2 (not referenced
+    /// here — that function doesn't exist until Task 2 adds it, same tracer-sequencing discipline
+    /// `decideAction`'s opt-in composition followed in 05-01→05-04).
+    public var liveActivityEnabled: Bool { didSet { d.set(liveActivityEnabled, forKey: "liveActivityEnabled"); syncWidgetConfig() } }
+    /// Phase 5 (D-15/D-17a) — which Live Activity fields show, and in what order. Same reorder+hide
+    /// pattern as `pillsOrder`: `restoreOrder` drops unknown/duplicate ids, preserves stored order, and
+    /// falls back to the FULL LA vocabulary if the stored list is empty or absent — never leaves the
+    /// setting itself empty (same guarantee `pillsOrder` gives). The adaptive composer
+    /// (`LiveActivityComposer.compose`, 05-04 Task 2) still carries its own independent 0-field
+    /// empty-selection fallback as a defensive belt-and-suspenders for the App-Group mirror path
+    /// (`WidgetStore.liveActivityFields`), which is a separate nilable copy that can legitimately be
+    /// absent before the first `syncWidgetConfig()` call.
+    public var liveActivityFields: [String] { didSet { d.set(liveActivityFields, forKey: "liveActivityFields"); syncWidgetConfig() } }
     /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
     /// Mirrored to the watch. At least one is always kept.
     public var watchChartRanges: [Int] { didSet { d.set(watchChartRanges, forKey: "watchChartRanges") } }
@@ -319,6 +337,33 @@ public final class AppSettings {
     }
     /// Pills shown by default when the user hasn't customized (the original set).
     public static let defaultPills: [String] = ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ"]
+
+    /// Phase 5 (D-15/D-17a) — the full Live Activity field vocabulary, in the default clinical-salience
+    /// priority order (05-UI-SPEC.md Surface Inventory: glucose → IOB → connection-when-down →
+    /// basal/Control-IQ → reservoir → battery). Users may reorder via Settings; the adaptive composer
+    /// always walks the CURRENT (persisted) order, never this default order, once the user has customized.
+    /// "connection" is itself a selectable field — the composer shows it only when the pump link is
+    /// down/stale (never as a redundant "all fine" confirmation), so it is last by default rather than
+    /// third as the raw clinical-priority text reads.
+    public static let laFieldItems: [String] =
+        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "connection"]
+    public static func laFieldLabel(_ id: String) -> String {
+        switch id {
+        case "glucose": return "Glucose"
+        case "iob": return "Active insulin"
+        case "reservoir": return "Reservoir"
+        case "battery": return "Pump battery"
+        case "basal": return "Basal / Suspended"
+        case "controlIQ": return "Control-IQ"
+        case "connection": return "Connection / last sync"
+        default: return id
+        }
+    }
+    /// LA fields shown on a fresh install: glucose-led (D-15 — glucose is "the LA's reason to exist,"
+    /// pump-surface research §2c), plus IOB and basal as the strongest faBolus-differentiator pump
+    /// fields. Deliberately a SUBSET, not the full vocabulary — mirrors `defaultPills`'s "curated
+    /// starter set" precedent rather than `pillItems`'s "show everything" one.
+    public static let defaultLiveActivityFields: [String] = ["glucose", "iob", "basal"]
     /// The watch history-chart tap-through ranges available to enable.
     public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
 
@@ -341,6 +386,10 @@ public final class AppSettings {
         WidgetBolusStore.increment = bolusIncrement
         WidgetBolusStore.carbIncrement = carbIncrement
         WidgetBolusStore.defaultMode = defaultBolusMode.rawValue
+        // Phase 5 (D-15/D-17a): mirror the current field selection to the App Group so
+        // `GlucoseLiveActivityManager.makeContent` can bake it into `ContentState` — the extension's
+        // SwiftUI views never observe App-Group changes directly (pump-surface research §2b).
+        WidgetStore.liveActivityFields = liveActivityFields
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
@@ -495,6 +544,12 @@ public final class AppSettings {
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.
         pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String] ?? Self.defaultPills, all: Self.pillItems)
+        // SC-4 (fresh-install exit criterion): OFF by default; a not-yet-set install falls back to the
+        // curated glucose-led subset, sanitized the same way pillsOrder is.
+        liveActivityEnabled = (d.object(forKey: "liveActivityEnabled") as? Bool) ?? false
+        liveActivityFields = Self.restoreOrder(
+            d.array(forKey: "liveActivityFields") as? [String] ?? Self.defaultLiveActivityFields,
+            all: Self.laFieldItems)
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
             .filter { Self.chartRangeOptions.contains($0) }
         watchChartRanges = (storedRanges?.isEmpty ?? true) ? Self.chartRangeOptions : storedRanges!.sorted()
@@ -545,6 +600,8 @@ public final class AppSettings {
             "garminTargetApp": .string(garminTargetApp),
             "nightscoutUploadEnabled": .bool(nightscoutUploadEnabled),
             "childModeEnabled": .bool(childModeEnabled),
+            "liveActivityEnabled": .bool(liveActivityEnabled),
+            "liveActivityFields": .stringArray(liveActivityFields),
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
@@ -608,6 +665,8 @@ public final class AppSettings {
         if let v = s("garminTargetApp") { garminTargetApp = v }
         if let v = b("nightscoutUploadEnabled") { nightscoutUploadEnabled = v }
         if let v = b("childModeEnabled") { childModeEnabled = v }
+        if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
+        if let v = sa("liveActivityFields") { liveActivityFields = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()

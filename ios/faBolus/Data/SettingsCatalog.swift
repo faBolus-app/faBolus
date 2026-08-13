@@ -81,7 +81,8 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 46 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 48 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// `liveActivityFields` added). Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -108,6 +109,11 @@ enum SettingsCatalog {
         .init("showStats", .display, from: .standard, backsUp: true),
         .init("detailsOrder", .display, from: .standard, backsUp: true),
         .init("pillsOrder", .display, from: .standard, backsUp: true),
+        // Phase 5 (D-15/D-17a, 05-04): the ambient Live Activity opt-in + its per-field reorder+hide
+        // selection. Display-only — neither is command-adjacent (SettingsCatalog.commandAdjacentFlags
+        // is unchanged), so both default to iCloud sync ON like glucoseDisplayUnit/pillsOrder.
+        .init("liveActivityEnabled", .display, from: .standard, backsUp: true),
+        .init("liveActivityFields", .display, from: .standard, backsUp: true),
         // MARK: Watch/Garmin display (remotes)
         .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),
         .init("watchChartRanges", .remotes, from: .standard, backsUp: true),

@@ -34,6 +34,10 @@ struct FirstLaunchDefaultsTests {
         #expect(settings.garminBolusEnabled == false)
         #expect(settings.watchBolusEnabled == false)
         #expect(settings.autoSyncPumpTime == false)     // E2: no silent pump-clock write without opt-in
+        // Phase 5 (05-04, D-15, SC-4): the ambient Live Activity is opt-in — OFF on a fresh install —
+        // and its field selection falls back to the curated default subset, never an empty/garbage list.
+        #expect(settings.liveActivityEnabled == false)
+        #expect(settings.liveActivityFields == AppSettings.defaultLiveActivityFields)
 
         // Remote-bolus passcode: route through the DEBUG in-memory backing (the app-hosted test target
         // can't write the Keychain) and assert nothing is required on a fresh install.

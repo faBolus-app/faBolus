@@ -261,6 +261,26 @@ public enum WidgetStore {
         defaults?.set(data, forKey: key)
     }
 
+    /// Phase 5 (D-15/D-17a) — the Live Activity's current field-selection mirror, JSON-encoded ordered
+    /// `[String]`. Written by `AppSettings.syncWidgetConfig()`; read by
+    /// `GlucoseLiveActivityManager.makeContent` when baking the selection into `ContentState` (the
+    /// extension's SwiftUI views never observe App-Group changes directly — pump-surface research
+    /// §2b). `nil` when absent (a legacy install, or before the first `syncWidgetConfig()` call) — the
+    /// manager falls back to the full LA vocabulary rather than rendering nothing.
+    public static var liveActivityFields: [String]? {
+        get {
+            guard let data = defaults?.data(forKey: "liveActivityFields") else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            guard let newValue, let data = try? JSONEncoder().encode(newValue) else {
+                defaults?.removeObject(forKey: "liveActivityFields")
+                return
+            }
+            defaults?.set(data, forKey: "liveActivityFields")
+        }
+    }
+
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
     /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
     public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }

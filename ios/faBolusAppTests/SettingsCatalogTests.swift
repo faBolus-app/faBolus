@@ -16,13 +16,14 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly46UniqueKeys() {
+    @Test func descriptorsCoverExactly48UniqueKeys() {
         // P16 §3.2: 48 → 46 (smartAssistEnabled R6 + hypoAlertsEnabled R5 removed). P16 F2: 46 → 44
         // (basalScheduleByHour + basalScheduleSource removed with the dead display-only basal cache).
         // Phase 01-03 (task #93, SG3a): 44 → 45 (stackingGuardFrictionEnabled added).
         // Phase 04-01 (mmol/L display-unit support, D-03): 45 → 46 (glucoseDisplayUnit added).
-        #expect(SettingsCatalog.descriptors.count == 46)
-        #expect(SettingsCatalog.byKey.count == 46)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
+        #expect(SettingsCatalog.descriptors.count == 48)
+        #expect(SettingsCatalog.byKey.count == 48)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -37,7 +38,8 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 42)                      // 38 unconditional + 4 conditional
+        // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 44)                      // 40 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
