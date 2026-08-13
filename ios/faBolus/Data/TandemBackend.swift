@@ -1892,7 +1892,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         case let m as CarbEnteredHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs))
         case let m as BGHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: "\(m.bg) mg/dL")
+            // WR-02 gap closure (04-07): the Logbook tab is a mainline surface, not debug-only —
+            // route through the display-unit funnel like every other glucose display.
+            let bgUnit = AppSettings.shared.glucoseDisplayUnit
+            let bgStr = "\(bgUnit.format(mgdl: m.bg)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+            return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: bgStr)
         case let m as BasalRateChangeHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .basal, title: "Basal rate change", detail: u(m.commandBasalRate) + "/hr")
         case let m as TempRateActivatedHistoryLog:

@@ -21,6 +21,11 @@ struct BolusWidgetView: View {
     let snap: WidgetSnapshot
     var now: Date = Date()
 
+    /// Gap closure (04-07 / 04-VERIFICATION Gap #1): mirrors the exact pattern already used in
+    /// `GlucoseWidgetView`/`StatusWidgetView` — this contextual glucose number was the one widget
+    /// in the bundle still rendering `snap.glucose` raw, regardless of the display-unit setting.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
+
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -38,7 +43,7 @@ struct BolusWidgetView: View {
                 Image(systemName: "drop.fill").font(.system(size: 30)).foregroundStyle(.white)
                 Text("Bolus").font(.title3.weight(.bold)).foregroundStyle(.white)
                 if let g = snap.glucose, !WidgetUI.isStale(snap, now: now) {
-                    Text("\(g) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
+                    Text("\(unit.format(mgdl: g)) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

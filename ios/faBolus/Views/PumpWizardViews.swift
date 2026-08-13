@@ -666,10 +666,19 @@ struct SegmentFieldsEditor: View {
     var totalDailyInsulinUnits: Int = 0
 
     /// Phase 04-02 (D-10): the display-unit funnel the ISF/target Stepper LABELS route through.
-    /// `f.isf`/`f.target` and the Steppers' `in:`/`step:` bounds stay mg/dL `Double` — unchanged,
+    /// `f.isf`/`f.target` and the Steppers' `in:` bounds stay mg/dL `Double` — unchanged,
     /// unconverted (Pitfall 3; these values write to the pump profile) — only the rendered title
     /// text below changes.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// WR-04 gap closure (04-07): a 1 mg/dL step (≈0.055 mmol/L) is below the 1-decimal mmol
+    /// display's resolution, so ~45% of taps showed the exact same label as before the tap
+    /// (verified: `round(v/18.0182, 1)` duplicates across the full range at step 1). Widening the
+    /// STEP to 2 mg/dL in mmol mode eliminates every duplicate-label tap across both the ISF
+    /// (5...400) and target (70...180) ranges below, while the stored value/bounds stay mg/dL
+    /// `Double` unchanged — this only changes how far one tap moves, never what unit the pump
+    /// profile is written in (Pitfall 3).
+    private var isfTargetStep: Double { unit == .mmol ? 2 : 1 }
 
     /// "<value> mg/dL/U"/"mmol/L/U" — a whole-phrase catalog VARIANT selected by the active
     /// display unit (D-10; not a glued suffix).
@@ -725,11 +734,11 @@ struct SegmentFieldsEditor: View {
             header: { Text("Carb ratio") } footer: {
                 footer("carbRatio", advisory: TherapyConfirmations.carbRatioTddAdvisory(
                     carbRatioGramsPerUnit: f.carbRatio, totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text(isfLabel(Int(f.isf))) } }
+        Section { Stepper(value: $f.isf, in: 5...400, step: isfTargetStep) { Text(isfLabel(Int(f.isf))) } }
             header: { Text("Correction factor (ISF)") } footer: {
                 footer("isf", advisory: TherapyConfirmations.isfTddAdvisory(
                     isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text(glucoseLabel(Int(f.target))) } }
+        Section { Stepper(value: $f.target, in: 70...180, step: isfTargetStep) { Text(glucoseLabel(Int(f.target))) } }
             header: { Text("Target glucose") } footer: { badge("targetBg") }
     }
 }

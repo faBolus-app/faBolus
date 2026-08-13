@@ -50,7 +50,10 @@ struct WatchDetailsView: View {
         // (model.isf/model.targetBg) is never converted — this is display-only, matching the phone.
         case "isf":
             guard model.isf > 0 else { return "—" }
-            return "\(unit.format(mgdl: model.isf)) \(unit == .mmol ? "mmol/L·U⁻¹" : "mg/dL/U")"
+            // WR-05 gap closure (04-07): standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin
+            // convention) instead of "mmol/L·U⁻¹" — same unit, was two different renderings, and
+            // ⁻¹ risks not rendering cleanly at small watch font sizes.
+            return "\(unit.format(mgdl: model.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
         case "target":
             guard model.targetBg > 0 else { return "—" }
             return "\(unit.format(mgdl: model.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"

@@ -255,7 +255,9 @@ struct DisplaySettingsView: View {
                 }
                 .pickerStyle(.segmented)
             } header: { Text("Glucose unit") } footer: {
-                Text("Applies to the glucose reading, correction factor (ISF), and target — everywhere they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert.")
+                // WR-08 gap closure (04-07): narrowed from "everywhere" — the developer debug menu
+                // (reachable via a 7-tap gesture, not mainline UI) intentionally stays mg/dL-only.
+                Text("Applies to the glucose reading, correction factor (ISF), and target on every mainline screen where they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert.")
             }
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)

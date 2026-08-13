@@ -20,7 +20,9 @@ struct DataHistoryView: View {
             Section("Time in range (last 90 days)") {
                 if let s = stats, s.count > 0 {
                     LabeledContent("Time in range", value: "\(Int(s.timeInRangePct))%")
-                    LabeledContent("Average", value: "\(Int(s.mean)) mg/dL")
+                    // WR-01 gap closure (04-07): route through the display-unit funnel — was a
+                    // second, un-funneled "Average" glucose metric distinct from StatsCardView's.
+                    LabeledContent("Average", value: "\(settings.glucoseDisplayUnit.format(mgdl: Int(s.mean))) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")")
                     LabeledContent("GMI", value: String(format: "%.1f%%", s.gmi))
                     LabeledContent("Readings", value: "\(s.count)")
                 } else {

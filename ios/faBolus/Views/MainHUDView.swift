@@ -147,7 +147,9 @@ struct PumpDetailsCard: View {
         case "isf":
             guard snapshot.isf > 0 else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
-            return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L·U⁻¹" : "mg/dL/U")"
+            // WR-05 gap closure (04-07): standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin
+            // convention) instead of "mmol/L·U⁻¹" — same unit, was two different renderings.
+            return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
         case "target":
             guard snapshot.targetBg > 0 else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit

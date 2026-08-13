@@ -218,8 +218,12 @@ struct CgmCredentialsView: View {
                     let age = Int(max(0, Date().timeIntervalSince(s.date)))
                     let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
                     let stale = GlucoseFreshness.isStale(s.date) ? " · STALE" : ""
+                    // WR-03 gap closure (04-07): route through the display-unit funnel — reachable
+                    // from mainline Settings ("CGM credentials & testing"), not debug-gated.
+                    let bgUnit = AppSettings.shared.glucoseDisplayUnit
+                    let bgStr = "\(bgUnit.format(mgdl: s.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
                     result = SourceResult(id: id, name: name, status: .ok,
-                                          detail: "\(s.mgdl) mg/dL \(s.trend?.rawValue ?? "") · \(ageStr)\(stale)")
+                                          detail: "\(bgStr) \(s.trend?.rawValue ?? "") · \(ageStr)\(stale)")
                     break
                 }
                 // Surface a real connection error instead of a generic "no reading" warning.
