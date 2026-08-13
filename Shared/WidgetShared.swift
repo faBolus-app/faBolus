@@ -54,7 +54,12 @@ public enum WidgetGlucoseUnit: String {
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
 public struct WidgetSnapshot: Codable, Sendable, Equatable {
-    public struct Point: Codable, Sendable, Equatable {
+    // Hashable (Phase 5, D-06): Live Activity `ContentState` requires `Hashable`
+    // (`ActivityAttributes.ContentState` protocol constraint), and it carries `[Point]` verbatim
+    // (`Shared/LiveActivityShared.swift`'s `FaBolusGlucoseAttributes.ContentState.recentPoints`) —
+    // do NOT invent a second point type. Purely additive; `Date`/`Int` are both Hashable, so this
+    // doesn't change `Point`'s existing Equatable/Codable behavior.
+    public struct Point: Codable, Sendable, Equatable, Hashable {
         public var t: Date
         public var mgdl: Int
         public init(t: Date, mgdl: Int) { self.t = t; self.mgdl = mgdl }

@@ -227,10 +227,13 @@ targets:
         excludes:
           - direct-pump
         # <<< WATCH_DIRECT_PUMP_OFF
-      # WidgetBolusIntents belongs to the widget extensions only.
+      # WidgetBolusIntents belongs to the widget extensions only. LiveActivityShared (Phase 5) is
+      # iOS-only (D-01 puts the Live Activity in faBolusWidgets, an iOS app-extension) — ActivityKit
+      # isn't resolvable in this watchOS build, so it must not compile into the watch app at all.
       - path: Shared
         excludes:
           - WidgetBolusIntents.swift
+          - LiveActivityShared.swift
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # Bundle the eating model + manifest on the watch for the on-device path.
       - path: ios/faBolus/Models
@@ -352,6 +355,7 @@ targets:
     sources:
       - ios/faBolusWidgets
       - path: Shared/WidgetShared.swift
+      - path: Shared/LiveActivityShared.swift
       - path: Shared/WidgetBolusIntents.swift
     info:
       path: ios/faBolusWidgets/Info.plist
