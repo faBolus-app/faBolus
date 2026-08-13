@@ -104,6 +104,20 @@ private struct AlertRuleEditorView: View {
 
     private var eligibleKinds: [PumpAlertKind] { PumpAlertKind.allCases.filter { $0.isAutoRuleEligible } }
 
+    /// Phase 04-02 (D-10): the display-unit funnel these two Stepper LABELS route through. `belowValue`/
+    /// `aboveValue` and the Stepper's `in:`/`step:` bounds stay mg/dL `Int` — unchanged, unconverted
+    /// (Pitfall 3) — only the rendered title text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
+    /// display unit (D-10; not a glued suffix). `Localizable.xcstrings` carries both as siblings.
+    private func glucoseLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L"), value)
+            : String(format: String(localized: "%@ mg/dL"), value)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -141,9 +155,13 @@ private struct AlertRuleEditorView: View {
 
                 Section("Glucose condition") {
                     Toggle("Only when glucose is below", isOn: $useBelow)
-                    if useBelow { Stepper("Below \(belowValue) mg/dL", value: $belowValue, in: 40...400, step: 5) }
+                    if useBelow {
+                        Stepper(value: $belowValue, in: 40...400, step: 5) { Text("Below \(glucoseLabel(belowValue))") }
+                    }
                     Toggle("Only when glucose is above", isOn: $useAbove)
-                    if useAbove { Stepper("Above \(aboveValue) mg/dL", value: $aboveValue, in: 40...400, step: 5) }
+                    if useAbove {
+                        Stepper(value: $aboveValue, in: 40...400, step: 5) { Text("Above \(glucoseLabel(aboveValue))") }
+                    }
                 }
             }
             .navigationTitle("Rule")

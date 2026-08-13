@@ -402,6 +402,27 @@ struct RemindersAlertsView: View {
     @State private var busy = false
     @State private var unverified = UnverifiedFeatureGate()
 
+    /// Phase 04-02 (D-10): the display-unit funnel the CGM high/low alert Stepper LABELS route
+    /// through. `cgmHigh`/`cgmLow` and the Steppers' `in:`/`step:` bounds stay mg/dL `Double` —
+    /// unchanged, unconverted (Pitfall 3; these values write to the pump via
+    /// `model.setCgmHighLowAlert`) — only the rendered title text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "High/Low alert at <value> mg/dL"/"mmol/L" — whole-phrase catalog VARIANTS selected by the
+    /// active display unit (D-10).
+    private func highAlertLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "High alert at %@ mmol/L"), value)
+            : String(format: String(localized: "High alert at %@ mg/dL"), value)
+    }
+    private func lowAlertLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "Low alert at %@ mmol/L"), value)
+            : String(format: String(localized: "Low alert at %@ mg/dL"), value)
+    }
+
     var body: some View {
         Form {
             Section("Low insulin alert") {
@@ -427,9 +448,9 @@ struct RemindersAlertsView: View {
                 // alertType 0 = HIGH, 1 = LOW — matches the jwoglom reference's named constants
                 // (CgmHighLowAlertRequest.ALERT_TYPE_HIGH=0 / ALERT_TYPE_LOW=1). Still gated + warned
                 // because the reference has no captured BLE payload for this message (docs #1).
-                Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text("High alert at \(Int(cgmHigh)) mg/dL") }
+                Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text(highAlertLabel(Int(cgmHigh))) }
                 unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
-                Stepper(value: $cgmLow, in: 60...120, step: 5) { Text("Low alert at \(Int(cgmLow)) mg/dL") }
+                Stepper(value: $cgmLow, in: 60...120, step: 5) { Text(lowAlertLabel(Int(cgmLow))) }
                 unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
             } header: {
                 Text("CGM high / low alerts")
@@ -644,6 +665,30 @@ struct SegmentFieldsEditor: View {
     /// to surface a WARN-ONLY "unusual for your TDD" advisory below basal / carb ratio / ISF. 0 ⇒ no advisory.
     var totalDailyInsulinUnits: Int = 0
 
+    /// Phase 04-02 (D-10): the display-unit funnel the ISF/target Stepper LABELS route through.
+    /// `f.isf`/`f.target` and the Steppers' `in:`/`step:` bounds stay mg/dL `Double` — unchanged,
+    /// unconverted (Pitfall 3; these values write to the pump profile) — only the rendered title
+    /// text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "<value> mg/dL/U"/"mmol/L/U" — a whole-phrase catalog VARIANT selected by the active
+    /// display unit (D-10; not a glued suffix).
+    private func isfLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L/U"), value)
+            : String(format: String(localized: "%@ mg/dL/U"), value)
+    }
+
+    /// "<value> mg/dL"/"mmol/L" — a whole-phrase catalog VARIANT selected by the active display
+    /// unit (D-10; not a glued suffix).
+    private func glucoseLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L"), value)
+            : String(format: String(localized: "%@ mg/dL"), value)
+    }
+
     /// The origin badge for a field's Section footer — icon + `ClinicianTierAck.label`, no color dependency.
     @ViewBuilder private func badge(_ field: String) -> some View {
         if let prov = provenance?[field] {
@@ -680,11 +725,11 @@ struct SegmentFieldsEditor: View {
             header: { Text("Carb ratio") } footer: {
                 footer("carbRatio", advisory: TherapyConfirmations.carbRatioTddAdvisory(
                     carbRatioGramsPerUnit: f.carbRatio, totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
+        Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text(isfLabel(Int(f.isf))) } }
             header: { Text("Correction factor (ISF)") } footer: {
                 footer("isf", advisory: TherapyConfirmations.isfTddAdvisory(
                     isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
+        Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text(glucoseLabel(Int(f.target))) } }
             header: { Text("Target glucose") } footer: { badge("targetBg") }
     }
 }
