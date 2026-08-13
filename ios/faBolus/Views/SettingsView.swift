@@ -186,7 +186,7 @@ enum SettingsIndex {
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
-        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate", category: .pump),
+        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate profile activation", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
@@ -480,6 +480,7 @@ struct PumpSettingsView: View {
                 Toggle("Allow auto Exercise mode", isOn: $settings.autoExerciseMode)
                 Toggle("Allow auto Sleep mode", isOn: $settings.autoSleepMode)
                 Toggle("Allow auto temp rate", isOn: $settings.autoTempRate)
+                Toggle("Allow auto profile activation", isOn: $settings.autoProfileActivation)
                 Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
                 NavigationLink { ModeAutomationHelpView() } label: {
                     Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
