@@ -84,4 +84,22 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.alertId, 2)
         XCTAssertEqual(decoded.alertKind, 3)
     }
+
+    /// Phase 4 (mmol/L display-unit support, D-04/Pattern 2): the additive-optional
+    /// `glucoseDisplayUnit` wire token round-trips (JSON + dictionary), and its absence on a legacy
+    /// payload decodes to `nil` (⇒ consumers default to mgdl) WITHOUT touching `schemaVersion`.
+    func testGlucoseDisplayUnitRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.glucoseDisplayUnit = GlucoseUnit.mmol.wireToken
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.glucoseDisplayUnit, "mmol")
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.glucoseDisplayUnit, "mmol")
+
+        // Absent on a legacy/bare payload ⇒ nil (default mgdl), schemaVersion still 1.
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.glucoseDisplayUnit)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
 }
