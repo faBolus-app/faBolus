@@ -306,11 +306,14 @@ public final class AppSettings {
             GlucoseLiveActivityManager.refreshForSelectionChange()
         }
     }
-    /// Phase 5 (D-13/D-14, 05-03) — master opt-in for the app-icon glucose badge. **Default OFF**
-    /// (opt-in, matching every other device-capability switch in this file). The badge can show only a
-    /// bare number (no units/age/trend) and is set from `GlucoseBadge.apply(_:now:)`, which is itself a
-    /// pure function of freshness — never a frozen last value (D-13). `didSet` clears the app-icon
-    /// badge the instant this is toggled OFF, so a disabled badge never lingers showing a stale number.
+    /// Phase 5 (D-13/D-14, 05-03; UI reachability + unit-awareness closed in 05-06/WR-01/CR-01) —
+    /// master opt-in for the app-icon glucose badge. **Default OFF** (opt-in, matching every other
+    /// device-capability switch in this file). Reachable via the "Glucose badge" toggle in Display &
+    /// chart Settings. The badge can show only a bare number (no units/age/trend; in mmol/L it rounds
+    /// to the nearest whole number — `GlucoseBadge.value(for:now:)`'s CR-01 fix) and is set from
+    /// `GlucoseBadge.apply(_:now:)`, which is itself a pure function of freshness — never a frozen last
+    /// value (D-13). `didSet` clears the app-icon badge the instant this is toggled OFF, so a disabled
+    /// badge never lingers showing a stale number.
     public var glucoseBadgeEnabled: Bool {
         didSet {
             d.set(glucoseBadgeEnabled, forKey: "glucoseBadgeEnabled")

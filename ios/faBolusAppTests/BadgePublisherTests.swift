@@ -55,6 +55,43 @@ import faBolusCore
         #expect(GlucoseBadge.value(for: snap, now: entry) == 0)
     }
 
+    // MARK: - CR-01 gap closure (05-06) — value(for:now:) honors AppSettings.glucoseDisplayUnit
+
+    @Test func mgdlDisplayUnitReturnsTheRawIntegerUnconverted() {
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let snap = WidgetSnapshot(glucose: 124, glucoseDate: taken, staleAfterSec: 6 * 60, displayUnit: "mgdl")
+        #expect(GlucoseBadge.value(for: snap, now: taken) == 124)
+    }
+
+    @Test func nilDisplayUnitDefaultsToMgdlRawIntegerLikeEveryPriorRelease() {
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let snap = WidgetSnapshot(glucose: 124, glucoseDate: taken, staleAfterSec: 6 * 60, displayUnit: nil)
+        #expect(GlucoseBadge.value(for: snap, now: taken) == 124)
+    }
+
+    @Test func mmolDisplayUnitRoundsToNearestWholeMmolNeverTheRawMgdlInteger() {
+        // 124 mg/dL ≈ 6.88 mmol/L — rounds to 7, never the raw mg/dL 124 under an mmol display setting.
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let snap = WidgetSnapshot(glucose: 124, glucoseDate: taken, staleAfterSec: 6 * 60, displayUnit: "mmol")
+        #expect(GlucoseBadge.value(for: snap, now: taken) == 7)
+    }
+
+    @Test func mmolDisplayUnitRoundsDownWhenBelowTheHalfwayPoint() {
+        // 95 mg/dL ≈ 5.27 mmol/L — rounds DOWN to 5, proving this is a real nearest-integer round
+        // (`.rounded()`), not an always-ceiling/always-floor shortcut.
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let snap = WidgetSnapshot(glucose: 95, glucoseDate: taken, staleAfterSec: 6 * 60, displayUnit: "mmol")
+        #expect(GlucoseBadge.value(for: snap, now: taken) == 5)
+    }
+
+    @Test func mmolStaleReadingStillReturnsZeroNeverAConvertedStaleValue() {
+        // T1 mitigation (05-06 threat model): unit conversion must never resurrect a stale reading as
+        // "current" — the freshness gate runs strictly BEFORE the unit switch.
+        let taken = Date(timeIntervalSince1970: 1_000_000)
+        let snap = WidgetSnapshot(glucose: 124, glucoseDate: taken, staleAfterSec: 6 * 60, displayUnit: "mmol")
+        #expect(GlucoseBadge.value(for: snap, now: mins(10, after: taken)) == 0)
+    }
+
     // MARK: apply(_:now:setBadge:) — the opt-in gate
 
     @Test func optInOffNeverSetsTheBadge() {

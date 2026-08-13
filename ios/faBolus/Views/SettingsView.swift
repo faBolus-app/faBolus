@@ -295,6 +295,15 @@ struct DisplaySettingsView: View {
             } header: { Text("Live Activity") } footer: {
                 Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display.")
             }
+            // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
+            // default OFF, SettingsCatalog descriptor) but had no reachable UI — mirrors the "Live
+            // Activity" section above exactly. Copy is the D-14 plain-language caveat verbatim
+            // (05-UI-SPEC.md), plus a short note on the mmol rounding CR-01 introduced.
+            Section {
+                Toggle("Glucose badge", isOn: $settings.glucoseBadgeEnabled)
+            } header: { Text("Glucose badge") } footer: {
+                Text("Shows your current glucose number on the app icon. It can't show units, trend, or how old the reading is — it clears automatically whenever the reading goes stale, so it should never show an old number as current. In mmol/L, the badge rounds to the nearest whole number.")
+            }
         }
         .navigationTitle("Display & chart")
     }
