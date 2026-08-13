@@ -245,4 +245,43 @@ struct LiveActivityContentBuilderTests {
         let none = snap(glucoseDate: now, hasSnoozeEligibleAlert: false)
         #expect(GlucoseLiveActivityManager.makeContent(from: none, now: now).state.hasSnoozeEligibleAlert == false)
     }
+
+    // MARK: - CR-03 gap closure (05-06) — ContentState Codable back-compat
+
+    /// Mirrors `legacyWidgetSnapshotJSONWithoutPumpKeysDecodesWithDefaults` for `ContentState` — the
+    /// team already proved (05-02's own deviations) that Swift's synthesized `Decodable` does NOT
+    /// extend missing-key tolerance to non-`Optional` stored properties just because they have a
+    /// memberwise-`init` default, and fixed exactly that for `WidgetSnapshot` with a hand-written
+    /// `init(from:)`. `ContentState` picked up the IDENTICAL shape of risk across 05-02/05-04/05-05
+    /// (a dozen+ non-Optional properties added after the 05-01 tracer) without the same fix. A JSON
+    /// payload shaped like the tracer's original `ContentState` — predating every field 05-02+ added —
+    /// must decode successfully with the documented `init` defaults, never throw
+    /// `DecodingError.keyNotFound`. This is exactly the shape ActivityKit round-trips across an app
+    /// update while a Live Activity is still running (05-REVIEW.md CR-03).
+    @Test func legacyContentStateJSONMissingPostTracerFieldsDecodesWithDefaults() throws {
+        let legacyJSON = """
+        {"glucose":120,"glucoseDate":750000000,"trendArrow":"→","recentPoints":[],"displayUnitToken":null}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyJSON)
+        // Pre-existing tracer fields still decode correctly.
+        #expect(decoded.glucose == 120)
+        #expect(decoded.trendArrow == "→")
+        #expect(decoded.recentPoints == [])
+        #expect(decoded.displayUnitToken == nil)
+        // Every field added after the tracer (05-02/05-04/05-05) falls back to the SAME default the
+        // memberwise `init` already declares — never a thrown decode.
+        #expect(decoded.iobUnits == 0)
+        #expect(decoded.iobDate == nil)
+        #expect(decoded.reservoirUnits == 0)
+        #expect(decoded.batteryPercent == 0)
+        #expect(decoded.basalRateUnitsPerHour == 0)
+        #expect(decoded.deliverySuspended == false)
+        #expect(decoded.controlIQMode == 0)
+        #expect(decoded.controlIQEnabled == false)
+        #expect(decoded.connected == false)
+        #expect(decoded.iobStale == false)
+        #expect(decoded.pumpLinkStale == false)
+        #expect(decoded.selectedFields == [])
+        #expect(decoded.hasSnoozeEligibleAlert == false)
+    }
 }
