@@ -39,6 +39,7 @@ VALID = [
         "glucoseStaleMinutes": 6, "glucoseHideDelayMinutes": 0,
         "detailsOrder": ["iob", "reservoir", "cgm"], "watchChartRanges": [3, 6, 12, 24],
         "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
+        "glucoseDisplayUnit": "mmol",
         "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
         "garminBolusEnabled": False, "watchBolusEnabled": False, "bolusPasscodeRequired": False,
         "controllerVariant": "controlIQPro", "controlIQEnabled": True,
@@ -62,6 +63,7 @@ INVALID = [
     {"version": 2, "kind": "statusRead", "requestId": "b3"},                                  # bad const version
     {"version": 1, "kind": "statusRead", "requestId": "b4", "bgMgdl": "high"},                # wrong type
     {"version": 1, "kind": "statusRead", "requestId": "b4b", "controllerVariant": "controlIQPlus"}, # bad enum (frozen token is controlIQPro)
+    {"version": 1, "kind": "statusRead", "requestId": "b4c", "glucoseDisplayUnit": "mg/dL"},          # bad enum — wire token is "mgdl", not the display string
     {"version": 1, "kind": "bolusRequest", "requestId": "b5c", "bolusPasscode": 1234},         # C2: passcode must be a string, not a number
     {"version": 1, "kind": "bolusRequest", "requestId": "b5d", "carbsGrams": 30, "includeStaleBG": "yes"}, # Addendum B: include-stale intent must be a boolean, not a string
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties

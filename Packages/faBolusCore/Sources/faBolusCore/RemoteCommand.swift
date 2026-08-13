@@ -177,6 +177,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Read-only mode for the WATCH + GARMIN remotes: when true they hide their bolus screen/button and
     /// won't request a bolus (the host also refuses). Status/viewing stays. Mirrored (schema + Monkey C).
     public var remotesReadOnly: Bool?
+    /// Phase 4 (mmol/L display-unit support) — the phone's active glucose display-unit setting,
+    /// mirrored to remotes so they render mg/dL/mmol like the phone (statusRead reply). Wire token
+    /// ("mgdl" | "mmol", `GlucoseUnit.wireToken`), NEVER the raw enum — a wire enum gets a `wireToken`
+    /// (stable) *and* a `userMessage` (`CONVENTIONS.md:143`), same shape as `BolusBlockReason.wireToken`.
+    /// Absent ⇒ a legacy host/remote defaults to "mgdl" (behavior-preserving; matches D-03's mg/dL
+    /// default). Display-only — never crosses into `bgMgdl`/dosing fields, which stay mg/dL always.
+    /// Additive; auto-Codable, so the existing initializer stays untouched (the host sets it via
+    /// `cmd.glucoseDisplayUnit = …`), exactly like `clockAnalog`.
+    public var glucoseDisplayUnit: String? = nil
 
     // Advisory eating-detection (Phase 5). Not part of the safety-critical schema.
     public var eatingProb: Double? = nil       // eatingEvent: watch's on-device p(eating) ∈ [0,1]

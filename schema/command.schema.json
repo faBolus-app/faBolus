@@ -224,6 +224,11 @@
       "type": "boolean",
       "description": "Read-only mode for the Apple Watch + Garmin remotes (statusRead reply): when true they hide the bolus screen/button and won't request a bolus (the host also refuses)."
     },
+    "glucoseDisplayUnit": {
+      "type": "string",
+      "enum": ["mgdl", "mmol"],
+      "description": "statusRead reply — the phone's active glucose display-unit setting (Phase 4), mirrored so Apple Watch/Garmin render mg/dL/mmol like the phone. Display-only; bgMgdl and every dosing field stay mg/dL regardless. Absent ⇒ the remote defaults to mgdl (legacy-safe)."
+    },
     "canBolus": {
       "type": "boolean",
       "description": "statusRead reply — the host's authoritative 'may a remote start a bolus right now?' on the broadcast-safe axes: pump linked AND not mid-delivery AND remotes not read-only. A remote ANDs this with its own reachability + the entered amount's bounds. Lets a surface that can't parse `message` (Garmin, which otherwise substring-matched the localized connection string as load-bearing safety logic) gate on a semantic flag. Per-peer permission / capability / child gates stay host-enforced on the actual deliver. Absent ⇒ the remote falls back to judging from `message` + `remotesReadOnly` locally (additive/non-breaking)."

@@ -388,6 +388,10 @@ public final class AppModel {
         // the old on-watch tap toggle. Unconditional like garminComplicationDisplay ⇒ "absent" means a
         // legacy host; the Garmin app keeps its digital default until it parses this.
         cmd.clockAnalog = AppSettings.shared.garminClockAnalog
+        // Phase 4: mirror the phone's glucose display-unit setting to remotes as the frozen wire
+        // token (never the raw enum — Pitfall 6), so Watch/Garmin render mg/dL/mmol like the phone.
+        // Absent on a legacy remote ⇒ it defaults to mgdl (display-only; dose/wire glucose stays mg/dL).
+        cmd.glucoseDisplayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
