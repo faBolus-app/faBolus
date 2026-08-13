@@ -89,6 +89,12 @@
     "%@ mg/dL/U" : {
 
     },
+    "%@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"%@ mg/dL\", selected by the display-unit setting."
+    },
+    "%@ mmol/L/U" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"%@ mg/dL/U\" (ISF), selected by the display-unit setting."
+    },
     "%@ min" : {
 
     },
@@ -529,6 +535,9 @@
     "High alert at %@ mg/dL" : {
 
     },
+    "High alert at %@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"High alert at %@ mg/dL\", selected by the display-unit setting."
+    },
     "How much of faBolus is shown — Simple, Standard, or Advanced. Start simple; unlock more as you go." : {
 
     },
@@ -583,6 +592,9 @@
     "Low alert at %@ mg/dL" : {
 
     },
+    "Low alert at %@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"Low alert at %@ mg/dL\", selected by the display-unit setting."
+    },
     "Make “%@” the active profile? This changes your basal schedule." : {
 
     },
@@ -591,6 +603,9 @@
     },
     "mg/dL" : {
 
+    },
+    "mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the bare \"mg/dL\" unit label, selected by the display-unit setting."
     },
     "Mode" : {
       "comment" : "P16 F6 (N13) seed — mode section header and navigation title.",
@@ -1042,12 +1057,34 @@
         }
       }
     },
+    "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@." : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the mg/dL CGM-changed message, selected by the display-unit setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM changed while this dose was on screen. The new reading (%1$@ mmol/L) suggests %2$@ instead of %3$@."
+          }
+        }
+      }
+    },
     "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Your CGM reading (%1$@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%2$@), or cancel."
+          }
+        }
+      }
+    },
+    "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel." : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the mg/dL stale-CGM message, selected by the display-unit setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM reading (%1$@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%2$@), or cancel."
           }
         }
       }

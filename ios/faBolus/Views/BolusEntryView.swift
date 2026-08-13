@@ -139,6 +139,26 @@ struct BolusEntryView: View {
         unit == .mmol ? "Blood glucose, mmol/L" : "Blood glucose, mg/dL"
     }
 
+    /// Phase 04-02 (D-10): the two stale/CGM-changed reading messages — whole-phrase catalog
+    /// VARIANTS selected by the active display unit, not a glued suffix. `mgdl` stays the canonical
+    /// reading; only its formatted display value and the chosen catalog phrase change.
+    private func staleReadingMessage(mgdl: Int, carbsOnlyLabel: String) -> String {
+        let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
+        if settings.glucoseDisplayUnit == .mmol {
+            return String(format: String(localized: "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."), value, carbsOnlyLabel)
+        } else {
+            return String(format: String(localized: "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."), value, carbsOnlyLabel)
+        }
+    }
+    private func cgmChangedMessage(mgdl: Int, newLabel: String, oldLabel: String) -> String {
+        let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
+        if settings.glucoseDisplayUnit == .mmol {
+            return String(format: String(localized: "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@."), value, newLabel, oldLabel)
+        } else {
+            return String(format: String(localized: "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@."), value, newLabel, oldLabel)
+        }
+    }
+
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
     /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
@@ -617,12 +637,12 @@ struct BolusEntryView: View {
             if let u = cgmUpdate {
                 if u.newBG == -1 {
                     if let sbg = u.staleBG {
-                        Text("Your CGM reading (\(sbg) mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (\(String(format: "%.2f U", u.newUnits))), or cancel.")
+                        Text(staleReadingMessage(mgdl: sbg, carbsOnlyLabel: String(format: "%.2f U", u.newUnits)))
                     } else {
                         Text("No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel.")
                     }
                 } else {
-                    Text("Your CGM changed while this dose was on screen. The new reading (\(u.newBG) mg/dL) suggests \(String(format: "%.2f U", u.newUnits)) instead of \(String(format: "%.2f U", u.oldUnits)).")
+                    Text(cgmChangedMessage(mgdl: u.newBG, newLabel: String(format: "%.2f U", u.newUnits), oldLabel: String(format: "%.2f U", u.oldUnits)))
                 }
             }
         }
