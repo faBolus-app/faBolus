@@ -171,6 +171,7 @@ enum SettingsIndex {
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
         .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
+        .init(title: "Glucose unit", keywords: "mmol mg/dl mg dl unit display convert", category: .display),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -247,6 +248,15 @@ struct DisplaySettingsView: View {
     @Bindable var settings: AppSettings
     var body: some View {
         Form {
+            Section {
+                Picker("Glucose unit", selection: $settings.glucoseDisplayUnit) {
+                    Text("mg/dL").tag(GlucoseUnit.mgdl)
+                    Text("mmol/L").tag(GlucoseUnit.mmol)
+                }
+                .pickerStyle(.segmented)
+            } header: { Text("Glucose unit") } footer: {
+                Text("Applies to the glucose reading, correction factor (ISF), and target — everywhere they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert.")
+            }
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)

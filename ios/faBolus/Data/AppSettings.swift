@@ -24,6 +24,11 @@ public final class AppSettings {
     /// Chart series toggles. Glucose (left axis), the IOB line, and the bolus bars each toggle
     /// independently; IOB + bolus bars share the right (units) axis.
     public var showGlucoseAxis: Bool { didSet { d.set(showGlucoseAxis, forKey: "showGlucoseAxis") } }
+    /// Phase 04-01 (mmol/L display-unit support, D-03) — the glucose display-unit preference. mg/dL
+    /// `Int` stays canonical everywhere internally; this ONLY selects which unit surfaces render/parse
+    /// through (`GlucoseUnit.format`/`.parse`, faBolusCore). Default **mg/dL** (behavior-preserving for
+    /// existing users, D-03). `.display` category, `backsUp: true`, iCloud sync ON — see `SettingsCatalog`.
+    public var glucoseDisplayUnit: GlucoseUnit { didSet { d.set(glucoseDisplayUnit.rawValue, forKey: "glucoseDisplayUnit") } }
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
@@ -404,6 +409,9 @@ public final class AppSettings {
         watchBolusIncrement = max(0.05, (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05))
         watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
+        // D-03: default mg/dL (behavior-preserving); an unrecognized/absent stored token also falls
+        // back to mg/dL (fail-closed to the pre-existing display, never to an unexpected unit).
+        glucoseDisplayUnit = GlucoseUnit(rawValue: d.string(forKey: "glucoseDisplayUnit") ?? "mgdl") ?? .mgdl
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
@@ -500,6 +508,7 @@ public final class AppSettings {
             "watchBolusIncrement": .double(watchBolusIncrement),
             "watchCarbIncrement": .double(watchCarbIncrement),
             "showGlucoseAxis": .bool(showGlucoseAxis),
+            "glucoseDisplayUnit": .string(glucoseDisplayUnit.rawValue),
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
             "showStats": .bool(showStats),
@@ -560,6 +569,7 @@ public final class AppSettings {
         if let v = dbl("watchBolusIncrement") { watchBolusIncrement = v }
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
         if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
+        if let v = s("glucoseDisplayUnit"), let unit = GlucoseUnit(rawValue: v) { glucoseDisplayUnit = unit }
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
         if let v = b("showStats") { showStats = v }

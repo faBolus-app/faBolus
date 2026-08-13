@@ -140,8 +140,18 @@ struct PumpDetailsCard: View {
             guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
             return "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))"
         case "carbRatio": return snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—"
-        case "isf": return snapshot.isf > 0 ? "\(snapshot.isf) mg/dL/U" : "—"
-        case "target": return snapshot.targetBg > 0 ? "\(snapshot.targetBg) mg/dL" : "—"
+        // Phase 04-01 (D-10): ISF + target route through the GlucoseUnit funnel so mmol users see
+        // the correction factor and target in mmol/L too — mg/dL mode renders byte-identical to
+        // before. The pump / BolusMath keep receiving mg/dL Int regardless (D-09); only this label
+        // converts.
+        case "isf":
+            guard snapshot.isf > 0 else { return "—" }
+            let unit = AppSettings.shared.glucoseDisplayUnit
+            return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L·U⁻¹" : "mg/dL/U")"
+        case "target":
+            guard snapshot.targetBg > 0 else { return "—" }
+            let unit = AppSettings.shared.glucoseDisplayUnit
+            return "\(unit.format(mgdl: snapshot.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
         default: return nil
         }

@@ -16,6 +16,11 @@ struct StatusRingView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
     @ScaledMetric(relativeTo: .largeTitle) private var ringSize: CGFloat = 180
 
+    /// Phase 04-01 (D-10): the display-unit funnel this ring's glucose number + caption route
+    /// through. mg/dL mode renders byte-identical to before this phase.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+    private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
+
     var body: some View {
         ZStack {
             Circle()
@@ -44,14 +49,14 @@ struct StatusRingView: View {
         VStack(spacing: 2) {
             if let g = snapshot.glucose, present != .hidden {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(g)")
+                    Text(unit.format(mgdl: g))
                         .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                         .lineLimit(1).minimumScaleFactor(0.5)
                         .foregroundStyle(AppTheme.glucoseColor(g, stale: stale))
                     Text(snapshot.trend).font(.title2)
                         .foregroundStyle(stale ? AppTheme.stale : .primary)
                 }
-                Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                Text(unitLabel).font(.caption2).foregroundStyle(.secondary)
                 // F4 (A5) — non-color band channel (WCAG 1.4.1): when the number is shown in its band
                 // COLOR (fresh reading), also name the band with an icon + word, so it reads without
                 // relying on color. Not shown when stale — the number is grey then (no band color to
@@ -73,7 +78,7 @@ struct StatusRingView: View {
                 // No reading, or past the "hide" delay → show no value.
                 Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                Text(snapshot.glucose == nil ? "mg/dL" : "no recent CGM")
+                Text(snapshot.glucose == nil ? unitLabel : "no recent CGM")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text(snapshot.connection.rawValue)
@@ -116,7 +121,7 @@ struct StatusRingView: View {
         let present = GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
         var parts: [String] = []
         if let g = snapshot.glucose, present != .hidden {
-            parts.append("Glucose \(g) mg/dL")
+            parts.append("Glucose \(unit.format(mgdl: g)) \(unitLabel)")
             parts.append(snapshot.trend)
             // F4 (A5): speak the band word too when it's a live (band-colored) reading — the spoken
             // parallel of the on-screen band label, so the band never depends on color alone.

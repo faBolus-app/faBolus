@@ -81,7 +81,7 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 45 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 46 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -100,6 +100,9 @@ enum SettingsCatalog {
         .init("watchCarbIncrement", .remotes, from: .standard, backsUp: true),
         // MARK: Display & chart
         .init("showGlucoseAxis", .display, from: .standard, backsUp: true),
+        // Phase 04-01 (mmol/L display-unit support, D-03): a display unit is NOT command-adjacent —
+        // omitting syncsToICloud gives iCloud sync ON (SettingDescriptor.init default rule).
+        .init("glucoseDisplayUnit", .display, from: .standard, backsUp: true),
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
         .init("showStats", .display, from: .standard, backsUp: true),
