@@ -47,6 +47,8 @@ license token (§3.1 / plan Q4).
 |---|---|---|---|---|
 | XDripAppGroupSource.swift | JohanDegraeve/xdrip-client-swift (© 2016 Mark Wilson) | MIT | `ios/faBolus/Data/Sources/XDripAppGroupSource.swift` | Passive reader of xDrip's "Share to Loop" App-Group JSON |
 | LibreLinkUpSource.swift | community LibreLinkUp API — timoschlueter/nightscout-librelink-up (MIT) + libre-link-unofficial-api | MIT (API knowledge; independent Swift impl, no upstream code copied) | `ios/faBolus/Data/Sources/LibreLinkUpSource.swift` | Independent Swift client of the unofficial LibreLinkUp REST API |
+| GlucoseLiveActivity.swift | kylebshr/luka-ios (© 2024 Kyle Bashour) + LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolusWidgets/GlucoseLiveActivity.swift` | Dynamic Island region split + optional-arrow pattern (luka-ios) and the iOS-18 CarPlay `.small` availability-branch pattern (Loop) rebound to faBolus's own `WidgetSnapshot` projection; content faBolus-original (see 05-REFERENCE-COMPARISON.md §2/§5) |
+| GlucoseLiveActivityManager.swift | LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolus/Data/GlucoseLiveActivityManager.swift` | App-driven `Activity.update`/re-arm structure only — NOT Loop's APNs push-token flow (faBolus never uses APNs, D-04); see 05-REFERENCE-COMPARISON.md §5 |
 
 ## Optional / credential-gated (not committed, not in the open-source build)
 
