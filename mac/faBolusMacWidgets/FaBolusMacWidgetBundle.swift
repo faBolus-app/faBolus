@@ -86,6 +86,13 @@ struct MacGlucoseWidget: Widget {
 struct MacGlucoseView: View {
     let snap: WidgetSnapshot
     let now: Date
+    /// Phase 09.1 (D-04) — the classified band for the icon-only non-color channel (`systemSmall` is
+    /// compact, so only the icon shows — UI-SPEC #4). `nil` while stale/missing; the number is already
+    /// greyed then, no band color to duplicate.
+    private var band: GlucoseRange? {
+        guard !snap.isStale(asOf: now), let g = snap.glucose else { return nil }
+        return GlucoseRange.classify(g)
+    }
     var body: some View {
         let hidden = snap.isHidden(asOf: now)
         VStack(spacing: 4) {
@@ -96,6 +103,10 @@ struct MacGlucoseView: View {
                 if !hidden {
                     Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
                 }
+            }
+            if let band {
+                BandIndicator(band: band, showWord: false)
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             if let d = snap.glucoseDate {
                 Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live "5 min" age
@@ -129,6 +140,12 @@ struct MacStatusWidgetView: View {
         if DisplaySettings.showBattery { parts.append("\(snap.batteryPercent)%") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
+    /// Phase 09.1 (D-04) — the classified band for the icon+word non-color channel (`systemMedium` is
+    /// roomy, so the word always shows). `nil` while stale/missing; the number is already greyed then.
+    private var band: GlucoseRange? {
+        guard !snap.isStale(asOf: now), let g = snap.glucose else { return nil }
+        return GlucoseRange.classify(g)
+    }
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
@@ -138,6 +155,10 @@ struct MacStatusWidgetView: View {
                     if !snap.isHidden(asOf: now) {
                         Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
                     }
+                }
+                if let band {
+                    BandIndicator(band: band, showWord: true)
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 if let d = snap.glucoseDate {
                     Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live age

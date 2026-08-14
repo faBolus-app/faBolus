@@ -21,6 +21,14 @@ struct MacStatusView: View {
     // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
+    /// Phase 09.1 (D-04) — the classified band for the icon+word non-color channel. `nil` while
+    /// hidden/stale/missing (the number is already greyed/hidden then; no band color to duplicate,
+    /// mirroring `StatusRingView`/`WatchHUDView`).
+    private var band: GlucoseRange? {
+        guard !model.glucoseHidden, !model.isGlucoseStale, let g = model.glucose else { return nil }
+        return GlucoseRange.classify(g)
+    }
+
     var body: some View {
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -34,6 +42,11 @@ struct MacStatusView: View {
                     Text(model.trend).font(.system(size: 28))
                         .foregroundStyle(.secondary)
                 }
+            }
+            if let band {
+                // announcesOwnLabel: false — statusA11yLabel already speaks the band word below.
+                BandIndicator(band: band, showWord: true, announcesOwnLabel: false)
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             if let age = model.ageLabel {
                 Text(age).font(.caption).foregroundStyle(.secondary)
@@ -52,12 +65,16 @@ struct MacStatusView: View {
     }
 
     /// N12: spoken description of the Mac status block, including "stale" when de-emphasized.
+    /// Phase 09.1 (D-04): also speaks the band word for a fresh reading (mirrors
+    /// `StatusRingView.a11yLabel` / `WatchHUDView.glanceGlucoseLabel`) — `BandIndicator` above sets
+    /// `announcesOwnLabel: false` to avoid double-announcement.
     private var statusA11yLabel: String {
         var parts: [String] = []
         if model.glucoseHidden { parts.append("Glucose unavailable") }
         else {
             parts.append("Glucose \(model.displayGlucose)")
             parts.append(model.trend)
+            if let band { parts.append(band.shortLabel) }
         }
         if model.isGlucoseStale { parts.append("stale") }
         if let age = model.ageLabel { parts.append(age) }
