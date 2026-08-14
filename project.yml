@@ -368,9 +368,15 @@ targets:
       # D-01/D-02: this complication extension previously linked neither faBolus nor faBolusCore
       # (see Shared/WidgetShared.swift's WidgetGlucoseThresholds mirror comment). Adding
       # faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy — viable
-      # because faBolusCore has zero package dependencies of its own.
+      # because faBolusCore has zero package dependencies of its own. faBolusCore is declared
+      # DIRECTLY (not only transitively via faBolusDesign): GlucoseComplication.swift imports it and
+      # calls GlucoseRange.classify/.symbolName, and a watchOS app-extension does not link a
+      # dependency's transitive closure — those symbols must come from a direct product dep or the
+      # extension fails to link (faBolusCore.GlucoseRange.classify/symbolName undefined at Ld).
       - package: faBolusDesign
         product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: watch/faBolusWatchWidgets/Info.plist
       properties:
@@ -405,9 +411,14 @@ targets:
     dependencies:
       # D-01/D-02: this widget/Live Activity extension previously linked neither faBolus nor
       # faBolusCore. Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions
-      # policy — viable because faBolusCore has zero package dependencies of its own.
+      # policy — viable because faBolusCore has zero package dependencies of its own. faBolusCore is
+      # declared DIRECTLY (not only transitively via faBolusDesign): these widget sources import it
+      # and call GlucoseRange.classify/.symbolName, and an app-extension does not link a dependency's
+      # transitive closure — those symbols must come from a direct product dep or Ld fails.
       - package: faBolusDesign
         product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: ios/faBolusWidgets/Info.plist
       properties:
@@ -503,9 +514,14 @@ targets:
     dependencies:
       # D-01/D-02: this widget extension previously linked neither faBolusMac nor faBolusCore.
       # Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy —
-      # viable because faBolusCore has zero package dependencies of its own.
+      # viable because faBolusCore has zero package dependencies of its own. faBolusCore is declared
+      # DIRECTLY (not only transitively via faBolusDesign): FaBolusMacWidgetBundle.swift imports it
+      # and calls GlucoseRange.classify/.symbolName, and an app-extension does not link a dependency's
+      # transitive closure — those symbols must come from a direct product dep or Ld fails.
       - package: faBolusDesign
         product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: mac/faBolusMacWidgets/Info.plist
       properties:
