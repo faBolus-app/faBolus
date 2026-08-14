@@ -6,6 +6,16 @@ import faBolusDesign
 // advanced-control + Mobi + capability gate. Insulin-affecting steps use hold-to-confirm; all of
 // these must be bench-validated on saline before being relied on. Mirrors controlX2's flows.
 
+/// 09.2-02 (D-01, SC1): the wizard Exit affordance's invariant — it is NEVER gated on the pump-connection
+/// state, so a mid-procedure BLE drop can't strand the user on a fully-greyed screen with insulin
+/// suspended. This is a pure marker (mirrors the `reenterMatches` internal-for-test idiom in
+/// `BolusEntryView`) so the invariant is unit-assertable without instantiating a SwiftUI view;
+/// `CgmSessionView`/`CartridgeWizardView`'s Exit buttons carry no such condition and call only
+/// `dismiss()` (presentation-only, Option A).
+enum PumpWizardExit {
+    static let isAlwaysAvailable = true
+}
+
 /// Press-and-hold confirm for the highest-risk (insulin-affecting) steps — a deliberate gesture,
 /// not a single tap. Fills over `duration`, then fires once.
 struct HoldToConfirmButton: View {
@@ -52,6 +62,7 @@ struct HoldToConfirmButton: View {
 
 struct CgmSessionView: View {
     @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     enum Kind: String, CaseIterable, Identifiable { case g6 = "G6 / G5 / ONE", g7 = "G7 / ONE+"; var id: String { rawValue } }
     @State private var kind: Kind = .g7
     @State private var transmitterID = ""
@@ -120,6 +131,10 @@ struct CgmSessionView: View {
         }
         .navigationTitle("CGM Session")
         .disabled(!model.pumpReady)   // pump-required; blocked if it drops mid-session
+        // 09.2-02 (D-01, SC1): Exit is a SIBLING of the .disabled Form above, not inside its scope — nav-bar
+        // chrome stays tappable even when the Form greys out mid-session (a BLE drop). Presentation-only:
+        // dismiss() pops one level back to PumpControlView, which surfaces the deliverySuspended honesty.
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Exit") { dismiss() } } }
         .task { await model.refreshCgmSession() }
     }
 
@@ -133,6 +148,7 @@ struct CgmSessionView: View {
 
 struct CartridgeWizardView: View {
     @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     @State private var primeUnits: Double = 0.3
     @State private var busy = false
 
@@ -199,6 +215,10 @@ struct CartridgeWizardView: View {
         }
         .navigationTitle("Cartridge & Fill")
         .disabled(!model.pumpReady)
+        // 09.2-02 (D-01, SC1): same always-available Exit as CgmSessionView — a sibling of the .disabled
+        // Form above, not conditioned on pump connection, so a mid-fill BLE drop can't strand the user on
+        // a dead grey screen. dismiss() only; no delivery-path call.
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Exit") { dismiss() } } }
         .task { await model.refreshLoadStatus() }
     }
 
