@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 /// Blood glucose + trend arrow. Supports the Lock Screen accessory families (the row under the
 /// clock) and a Home Screen small tile. Tapping opens the app.
@@ -22,7 +24,13 @@ struct GlucoseWidgetView: View {
     /// (a widget renders ahead of time), so a fresh entry greys/hides at its stale/hide crossing entry.
     var now: Date = Date()
 
-    private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
+    /// Phase 09.1 (D-03): classifies via `faBolusCore.GlucoseRange.classify` and colors via
+    /// `faBolusDesign.AppTheme.glucoseColor(_:stale:)` — byte-identical to the deleted local switch
+    /// (stale, or an unknown/missing reading, greys exactly as before).
+    private var color: Color {
+        guard let g = snap.glucose else { return .gray }
+        return AppTheme.glucoseColor(g, stale: WidgetUI.isStale(snap, now: now))
+    }
     /// Phase 04-03: same fresh/stale/hidden logic as `WidgetUI.glucoseText(_:now:)`, but the
     /// numeric value renders through the `WidgetGlucoseUnit` mirror in the active display unit
     /// (nil `displayUnit` ⇒ mgdl) instead of a bare mg/dL `"\(g)"`.

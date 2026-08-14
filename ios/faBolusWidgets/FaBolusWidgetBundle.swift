@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 // FaBolus widgets: Lock Screen (accessory) + Home Screen views of pump state read from the
 // App Group, plus a tap-to-bolus shortcut that deep-links into the app's confirm flow. Widgets
@@ -81,15 +83,6 @@ struct FaBolusProvider: TimelineProvider {
 // MARK: - Shared UI helpers
 
 enum WidgetUI {
-    static func glucoseColor(_ category: Int) -> Color {
-        switch category {
-        case 0: return .red        // low
-        case 1: return .green      // in range
-        case 2: return .yellow     // high
-        case 3: return .orange     // urgent high
-        default: return .gray      // unknown
-        }
-    }
     static func glucoseText(_ snap: WidgetSnapshot) -> String { snap.displayGlucose }
     /// True when the reading is older than 6 minutes (hide the number).
     static func isStale(_ snap: WidgetSnapshot) -> Bool { snap.isGlucoseStale }
@@ -97,10 +90,11 @@ enum WidgetUI {
     // P10 (group A) — `now`-parameterized variants honoring the phone's PUBLISHED freshness policy,
     // evaluated at the widget entry's date (a widget renders ahead of time, so wall-clock `Date()` is
     // prep time, not display time). These mirror the Mac widget's helpers.
-    /// Color at `now`: greyed once stale, else by glucose range.
-    static func glucoseColor(_ snap: WidgetSnapshot, now: Date) -> Color {
-        snap.isStale(asOf: now) ? .gray : glucoseColor(snap.rangeCategory)
-    }
+    //
+    // Phase 09.1 (D-03): the band-color derivation itself moved to the call sites
+    // (`GlucoseWidgetView.color`, `StatusWidgetView.color`, `ActivityViewContext.glucoseColor`), which
+    // now classify via `faBolusCore.GlucoseRange.classify` and color via `faBolusDesign.AppTheme
+    // .glucoseColor(_:stale:)` directly — no local `Int`-category switch remains in this file.
     /// Glucose number at `now`: the value while fresh/stale, "--" once hidden past the policy.
     static func glucoseText(_ snap: WidgetSnapshot, now: Date) -> String {
         if snap.isHidden(asOf: now) { return "--" }
@@ -112,17 +106,10 @@ enum WidgetUI {
 
     // MARK: - Phase 5 pump-chip vocabulary (D-17/D-17a, 05-02)
     //
-    // The extension links neither the app target nor faBolusCore, so it can't import `AppTheme`
-    // (`ios/faBolus/Design/AppTheme.swift`) — these are literal RGB MIRRORS of the same tokens
-    // (`insulin`/`low`/`inRange`), not a re-import, per 05-UI-SPEC.md's "Pump-field chip tint
-    // vocabulary" and the plan's own instruction to use plain SwiftUI colors here (NOT app-side
-    // `AppTheme`). `FaBolusWidgetBundle.swift` compiles ONLY into the `faBolusWidgets` extension
-    // target (unlike `WidgetShared.swift`, which is shared with the app), so a cross-target
-    // drift-guard test isn't reachable from the app test target the way `WidgetGlucoseThresholds`
-    // is pinned — keep these in sync with `AppTheme` by inspection if that palette ever changes.
-    static let insulinTint = Color(red: 0.36, green: 0.42, blue: 0.90)   // == AppTheme.insulin
-    static let lowTint = Color(red: 0.90, green: 0.25, blue: 0.22)       // == AppTheme.low
-    static let inRangeTint = Color(red: 0.30, green: 0.78, blue: 0.36)   // == AppTheme.inRange
+    // Phase 09.1 (D-03): the extension now links faBolusCore transitively via faBolusDesign, so the
+    // three literal RGB mirrors that used to stand in for `AppTheme.insulin`/`.low`/`.inRange` are
+    // gone — chip tints below reference `AppTheme` directly (byte-identical by construction, no
+    // literals left to drift).
 
     /// A single pump-field chip: SF Symbol + tint + formatted value, MIRRORING
     /// `StatusPillsView.pillFor`'s iconography/formatting verbatim so the ambient surface and the
@@ -133,11 +120,11 @@ enum WidgetUI {
         let value: String
     }
 
-    /// IOB chip — `drop.fill`, greys to `lowTint` when `iobStale` (mirrors
+    /// IOB chip — `drop.fill`, greys to `AppTheme.low` when `iobStale` (mirrors
     /// `StatusPillsView.pillFor("iob")`'s `CalcInputFreshness`-driven grey exactly, via the
     /// APP-COMPUTED flag carried on `ContentState` — no local freshness re-derivation).
     static func iobChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
-        PumpChip(icon: "drop.fill", tint: state.iobStale ? lowTint : insulinTint,
+        PumpChip(icon: "drop.fill", tint: state.iobStale ? AppTheme.low : AppTheme.insulin,
                  value: String(format: "%.2f U", state.iobUnits))
     }
 
@@ -157,19 +144,19 @@ enum WidgetUI {
         case ...87: icon = "battery.75"
         default: icon = "battery.100"
         }
-        let tint = state.pumpLinkStale ? Color.gray : (state.batteryPercent <= 20 ? lowTint : .green)
+        let tint = state.pumpLinkStale ? Color.gray : (state.batteryPercent <= 20 ? AppTheme.low : .green)
         return PumpChip(icon: icon, tint: tint, value: "\(state.batteryPercent)%")
     }
 
     /// Basal/suspended chip — `waveform.path.ecg` (running) or `pause.circle.fill` (suspended),
     /// dateless: greys off `pumpLinkStale`. Suspension itself is ALWAYS shown as the salient
-    /// `lowTint`, never greyed further (mirrors `StatusPillsView.pillFor("basal")`). Value is the
-    /// EFFECTIVE U/hr, never an invented temp-rate percent.
+    /// `AppTheme.low`, never greyed further (mirrors `StatusPillsView.pillFor("basal")`). Value is
+    /// the EFFECTIVE U/hr, never an invented temp-rate percent.
     static func basalChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
         if state.deliverySuspended {
-            return PumpChip(icon: "pause.circle.fill", tint: lowTint, value: "Suspended")
+            return PumpChip(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended")
         }
-        return PumpChip(icon: "waveform.path.ecg", tint: state.pumpLinkStale ? .gray : insulinTint,
+        return PumpChip(icon: "waveform.path.ecg", tint: state.pumpLinkStale ? .gray : AppTheme.insulin,
                         value: String(format: "%.2f U/hr", state.basalRateUnitsPerHour))
     }
 
@@ -193,7 +180,7 @@ enum WidgetUI {
             default: value = "On"
             }
         }
-        let tint = state.pumpLinkStale ? Color.gray : (state.controlIQEnabled ? inRangeTint : .gray)
+        let tint = state.pumpLinkStale ? Color.gray : (state.controlIQEnabled ? AppTheme.inRange : .gray)
         return PumpChip(icon: icon, tint: tint, value: value)
     }
 
@@ -203,7 +190,7 @@ enum WidgetUI {
     /// this never renders while claiming "all fine".
     static func connectionChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
         if !state.connected {
-            return PumpChip(icon: "wifi.slash", tint: lowTint, value: "Disconnected")
+            return PumpChip(icon: "wifi.slash", tint: AppTheme.low, value: "Disconnected")
         }
         return PumpChip(icon: "antenna.radiowaves.left.and.right", tint: .gray, value: "Synced")
     }

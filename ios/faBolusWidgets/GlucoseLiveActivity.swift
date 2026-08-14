@@ -1,6 +1,8 @@
 import WidgetKit
 import SwiftUI
 import ActivityKit
+import faBolusCore
+import faBolusDesign
 
 // Portions adapted from luka-ios (github.com/kylebshr/luka-ios), MIT License.
 // Copyright (c) 2024 Kyle Bashour.
@@ -124,9 +126,18 @@ private extension ActivityViewContext<FaBolusGlucoseAttributes> {
         return unit.format(mgdl: g)
     }
     /// Greyed whenever OS-enforced `isStale`, else colored by the same clinical range every other
-    /// widget uses (`WidgetSnapshot.rangeCategory` + `WidgetUI.glucoseColor`).
+    /// widget uses. Phase 09.1 (D-03) — the audit CRITICAL LA site: classifies via
+    /// `faBolusCore.GlucoseRange.classify` and colors via `faBolusDesign.AppTheme
+    /// .glucoseColor(_:stale:)`, byte-identical to the deleted `WidgetUI.glucoseColor` switch (an
+    /// unknown/missing reading greys exactly as before).
     var glucoseColor: Color {
-        isStale ? .gray : WidgetUI.glucoseColor(WidgetSnapshot.rangeCategory(state.glucose))
+        guard let g = state.glucose else { return .gray }
+        return AppTheme.glucoseColor(g, stale: isStale)
+    }
+    /// The classified band (Phase 09.1, Task 2) for the redundant icon+word non-color channel — `nil`
+    /// when there is no reading to classify (mirrors `glucoseColor`'s grey-on-missing fallback).
+    var glucoseBand: GlucoseRange? {
+        state.glucose.map(GlucoseRange.classify)
     }
     /// C8 — never synthesized. "" whenever `isStale`, else the state's carried arrow verbatim
     /// (the state itself already suppressed it at publish time; this re-applies the SAME rule at

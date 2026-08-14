@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 /// Home Screen medium overview: glucose + trend + a sparkline, with Active Insulin, reservoir,
 /// and last bolus. Tapping opens the app.
@@ -19,7 +21,13 @@ struct StatusWidgetView: View {
     let snap: WidgetSnapshot
     /// Entry display date — staleness is evaluated against this, not wall-clock (see `GlucoseWidgetView`).
     var now: Date = Date()
-    private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
+    /// Phase 09.1 (D-03): classifies via `faBolusCore.GlucoseRange.classify` and colors via
+    /// `faBolusDesign.AppTheme.glucoseColor(_:stale:)` — byte-identical to the deleted local switch
+    /// (stale, or an unknown/missing reading, greys exactly as before).
+    private var color: Color {
+        guard let g = snap.glucose else { return .gray }
+        return AppTheme.glucoseColor(g, stale: WidgetUI.isStale(snap, now: now))
+    }
     /// Phase 04-03: resolve the active display unit from the snapshot (nil ⇒ mgdl) and render the
     /// glucose number through the `WidgetGlucoseUnit` mirror instead of the bare mg/dL "\(g)" text.
     private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
