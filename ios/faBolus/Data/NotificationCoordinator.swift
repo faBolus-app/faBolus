@@ -255,11 +255,21 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// UI-only: this cache is NEVER read by `post`'s `allowCritical` gate or by `NotificationBroker.decide`
     /// (D-05) — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
     private func refreshGrantState() async {
-        let settings = await center.notificationSettings()
+        // Swift 6 strict concurrency (CI's Xcode 16.4): `UNNotificationSettings` is non-Sendable, so
+        // awaiting `notificationSettings()` directly here would send it back onto this `@MainActor` type —
+        // rejected at build. Read it inside a `nonisolated` helper where the non-Sendable value never leaves
+        // its own isolation region; only the `Bool` crosses back to the main actor. Behavior is identical.
+        AppSettings.shared.criticalAlertGrantActive = await Self.fetchCriticalAlertGranted()
+    }
+
+    /// Read the OS critical-alert grant flag off the main actor (see `refreshGrantState`). `nonisolated` so
+    /// the non-Sendable `UNNotificationSettings` stays contained; returns only the Sendable `Bool`.
+    private nonisolated static func fetchCriticalAlertGranted() async -> Bool {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
         #if DEBUG
         print("NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
         #endif
-        AppSettings.shared.criticalAlertGrantActive = (settings.criticalAlertSetting == .enabled)
+        return settings.criticalAlertSetting == .enabled
     }
 
     /// Remove delivered + pending notifications for these dedupe keys — used when a safety condition
