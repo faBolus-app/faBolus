@@ -353,6 +353,10 @@ struct CgmSettingsView: View {
     var body: some View {
         Form {
             Section {
+                // 09.3-03 (D-05/SC3): intentional, documented exception to the unified Bool guardedToggle
+                // idiom — this picker is String/GlucoseSourceRegistry-backed, not an AppSettings Bool, so
+                // guardedToggle cannot type-check it (09.3-RESEARCH.md Open Question 1, Pitfall 3). Its
+                // own pending/lastCommitted/isReverting confirm-and-rollback shape below is left as-is.
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
@@ -526,10 +530,12 @@ struct PumpSettingsView: View {
             NavigationStack { BackupRestoreView(model: model) }
         }
         // P14 S12 (§2.2.3): STEP 2 — the unpair confirm, carrying the model-appropriate warning
-        // (Mobi ⇒ charging-base caveat). One funnel for both entry points.
-        .alert("Forget pairing?",
+        // (Mobi ⇒ charging-base caveat). One funnel for both entry points. Presented as a
+        // confirmationDialog (09.3-03, D-05/SC3) to match step 1's presentation above.
+        .confirmationDialog("Forget pairing?",
                isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
-                                    set: { if !$0, case .confirm = unpairStep { unpairStep = nil } })) {
+                                    set: { if !$0, case .confirm = unpairStep { unpairStep = nil } }),
+               titleVisibility: .visible) {
             Button("Forget pairing", role: .destructive) {
                 let repair = unpairStep?.repairAfter ?? false
                 unpairStep = nil
