@@ -158,6 +158,15 @@ import UserNotifications
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .cgmAlert, optedOut: true))
     }
 
+    /// D-03/D-04: the honest "pending Apple approval" status shows ONLY when the user opted in
+    /// (`criticalAlertsEnabled == true`) AND the OS grant is not active — the four-case truth table.
+    @Test func honestStatusShownOnlyWhenEnabledAndNotGranted() {
+        #expect(AlertRulesView.shouldShowHonestStatus(enabled: true, grantActive: false) == true)
+        #expect(AlertRulesView.shouldShowHonestStatus(enabled: true, grantActive: true) == false)
+        #expect(AlertRulesView.shouldShowHonestStatus(enabled: false, grantActive: false) == false)
+        #expect(AlertRulesView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []

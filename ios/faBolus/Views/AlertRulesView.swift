@@ -17,6 +17,12 @@ struct AlertRulesView: View {
                 set: { on in if on { showSuppressWarning = true } else { settings.suppressMirroredPumpAlarms = false } })
     }
 
+    /// D-03/D-04 (RED stub — flips to the real decision in the GREEN step of Task 1): whether the
+    /// honest "pending Apple approval" status should show. Returning a constant `false` here is
+    /// intentional for the RED commit — it makes the enabled+ungranted test case fail for real
+    /// (expects `true`, gets `false`) rather than failing to compile.
+    static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { false }
+
     var body: some View {
         Form {
             // §6/S8 B6: how faBolus's notifications are delivered — the Critical Alerts opt-in and the
