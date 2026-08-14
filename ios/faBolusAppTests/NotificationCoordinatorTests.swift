@@ -135,6 +135,12 @@ import UserNotifications
     /// it, and a safety category degrades gracefully to the normal level when not allowed. D-06: also
     /// asserts `.sound` alongside `.interruptionLevel` — the `.defaultCritical`/`.default` half of SC1/SC2
     /// that no test previously covered.
+    ///
+    /// CR-01: while the Critical-Alerts entitlement is pending, the "not allowed" degrade path for the
+    /// safety trio must still break through Focus/DND, or the shipped "time-sensitive delivery" copy in
+    /// AlertRulesView is a lie. So the degrade target is `.timeSensitive` (breaks through Focus), NOT
+    /// `.active` (silenced by Focus) — scoped to `neverSuppressible` categories only; a governed category
+    /// under the same "not allowed" conditions must stay at the untouched default.
     @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
@@ -142,14 +148,23 @@ import UserNotifications
         NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .critical)
         #expect(reqs.first?.content.sound == .defaultCritical)
-        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to normal.
+        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to .timeSensitive,
+        // which still breaks through Focus/DND (unlike .active) — CR-01. Sound stays .default: the special
+        // critical sound is reserved for the fully-granted .critical path above.
         reqs.removeAll()
         NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
-        #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
         #expect(reqs.first?.content.sound == .default)
         // A governed (suppressible) category never gets .critical, even when allowed.
         reqs.removeAll()
         NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.sound == .default)
+        // CR-01 scope check: a governed category with allowCritical:false (today's default caller shape)
+        // stays at the plain default — it must NOT pick up .timeSensitive just because it shares the
+        // "not allowed" branch with the safety trio above.
+        reqs.removeAll()
+        NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
         #expect(reqs.first?.content.sound == .default)
     }
