@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 import Charts
 
 /// History page: a modern glucose plot of the recent readings the phone sends (oldest→newest,
@@ -53,10 +54,10 @@ struct WatchChartView: View {
             } else {
                 Chart {
                     RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
-                        .foregroundStyle(.green.opacity(0.12))
+                        .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(points.indices, id: \.self) { idx in
                         PointMark(x: .value("t", points[idx].date), y: .value("bg", points[idx].mgdl))
-                            .foregroundStyle(watchGlucoseColor(points[idx].mgdl, stale: false))
+                            .foregroundStyle(AppTheme.glucoseColor(points[idx].mgdl, stale: false))
                             .symbolSize(10)
                     }
                 }

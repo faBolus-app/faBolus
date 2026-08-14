@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 /// Watch-face complication showing the latest glucose + trend, mirroring the Garmin complication.
 /// Reads the snapshot the watch app publishes to the App Group (WatchConnectivity → WidgetStore);
@@ -64,14 +66,6 @@ struct GlucoseComplication: Widget {
     }
 }
 
-private func color(_ snap: WidgetSnapshot, now: Date) -> Color {
-    guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
-    // Delegate the band split to the single WidgetSnapshot classifier (WidgetGlucoseThresholds bounds).
-    switch WidgetSnapshot.rangeCategory(g) {
-    case 0: return .red; case 1: return .green; case 2: return .yellow; default: return .orange
-    }
-}
-
 struct GlucoseComplicationView: View {
     @Environment(\.widgetFamily) private var family
     let snap: WidgetSnapshot
@@ -91,6 +85,20 @@ struct GlucoseComplicationView: View {
     }
     private var arrow: String { snap.isStale(asOf: now) ? "" : snap.trendArrow }
 
+    /// Band classification for the current snapshot (nil when unknown/invalid/stale) — feeds both the
+    /// glucose number's color and the icon-only BandIndicator. Classifies via `faBolusCore.GlucoseRange`
+    /// through `faBolusDesign.AppTheme` (D-03) instead of the old local color switch.
+    private var band: GlucoseRange? {
+        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return nil }
+        return GlucoseRange.classify(g)
+    }
+    /// Number color: gray when unknown/invalid/stale, else via faBolusDesign — byte-identical to the
+    /// deleted local switch for every input.
+    private var bandColor: Color {
+        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
+        return AppTheme.glucoseColor(g)
+    }
+
     var body: some View {
         switch family {
         case .accessoryInline:
@@ -98,12 +106,12 @@ struct GlucoseComplicationView: View {
         #if os(watchOS)
         case .accessoryCorner:
             Text(value).font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(color(snap, now: now))
+                .foregroundStyle(bandColor)
                 .widgetLabel { Text("Glucose \(value) \(arrow)") }
         #endif
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
+                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
                 VStack(alignment: .leading) {
                     Text(arrow.isEmpty ? "—" : arrow)
                     // Sample age (orange once stale), replacing a static "mg/dL" — so a stale relay is
@@ -120,7 +128,7 @@ struct GlucoseComplicationView: View {
             }
         default: // accessoryCircular
             VStack(spacing: 0) {
-                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
+                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
                 if !arrow.isEmpty { Text(arrow).font(.caption2) }
             }
         }

@@ -81,12 +81,4 @@ final class WatchModel: RemoteClientModel {
         trend = s.trend?.rawValue ?? ""
         publishSnapshot()
     }
-
-    /// modern band color for a glucose value (kept for the watch views' call sites).
-    static func color(_ mgdl: Int) -> Int { RemoteClientModel.band(mgdl) }
-}
-
-/// Shared glucose banding so the watch views color consistently.
-enum RemoteGlucose {
-    static func band(_ mgdl: Int) -> Int { RemoteClientModel.band(mgdl) }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Glance page: big glucose + trend (hidden when stale), a compact IOB/reservoir line, the
 /// iPhone-reachability state, and the Bolus button. Swipe for Chart / Details / Alerts.
@@ -24,12 +25,12 @@ struct WatchGlanceView: View {
                     let present = GlucoseFreshness.presentation(of: model.glucoseDate, now: ctx.date)
                     let stale = present == .stale
                     VStack(spacing: 8) {
-                        if model.glucose != nil, present != .hidden {
+                        if let g = model.glucose, present != .hidden {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text(displayGlucose)
                                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                                     .lineLimit(1).minimumScaleFactor(0.5)
-                                    .foregroundStyle(watchGlucoseColor(model.glucose, stale: stale))
+                                    .foregroundStyle(AppTheme.glucoseColor(g, stale: stale))
                                 Text(model.trend).font(.title2)
                                     .foregroundStyle(stale ? .gray : .primary)
                             }

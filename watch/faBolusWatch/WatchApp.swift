@@ -40,14 +40,3 @@ struct WatchRootView: View {
         .onAppear { model.requestStatus() }
     }
 }
-
-/// Shared modern glucose color.
-func watchGlucoseColor(_ mgdl: Int?, stale: Bool) -> Color {
-    guard let g = mgdl, !stale else { return .gray }
-    switch RemoteGlucose.band(g) {
-    case 0: return .red
-    case 1: return .green
-    case 2: return .yellow
-    default: return .orange
-    }
-}
