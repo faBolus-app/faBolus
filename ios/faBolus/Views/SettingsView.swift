@@ -277,7 +277,7 @@ struct DisplaySettingsView: View {
             Section {
                 Toggle("Show statistics card", isOn: $settings.showStats)
             } header: { Text("Statistics") } footer: {
-                Text("Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory. Off by default to keep the dashboard clean.")
+                Text(StatsCardCopy.footer + " Off by default to keep the dashboard clean.")
             }
             Section {
                 NavigationLink {
