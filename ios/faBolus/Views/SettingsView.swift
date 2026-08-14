@@ -225,8 +225,12 @@ struct BolusSettingsView: View {
             Section {
                 Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
                 Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
+                // 09.3-04 (D-02): plain Toggle, NOT guardedToggle — this only writes the existing
+                // stackingGuardFrictionEnabled key; BolusEntryView caps applied friction to .disclose when
+                // off (never blocks, never changes the dose). Not a suppress-style safety-reducing toggle.
+                Toggle("Extra confirmation on unusually large overrides", isOn: $settings.stackingGuardFrictionEnabled)
             } header: { Text("Bolus screen") } footer: {
-                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. Both off/hidden keep the screen simple.")
+                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. **Extra confirmation**: when an override looks unusually large, the bolus screen always shows a note about it; this switch controls whether an extra tap (or, for the largest overrides, re-typing the amount) is also required before delivering. Turning it off still shows the same note — it only skips the extra step. Both off/hidden keep the screen simple.")
             }
         }
         .navigationTitle("Bolus & entry")
