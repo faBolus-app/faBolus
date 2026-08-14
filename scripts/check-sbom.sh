@@ -18,7 +18,7 @@ for dir in Packages/*/; do
   fi
   # Vendored (non-first-party) packages must carry their upstream LICENSE.
   case "$name" in
-    faBolusCore|HistoryStore) : ;;   # first-party, covered by the repo LICENSE
+    faBolusCore|faBolusDesign|HistoryStore) : ;;   # first-party, covered by the repo LICENSE
     *)
       if [[ ! -f "$dir/LICENSE" && ! -f "$dir/LICENSE.md" && ! -f "$dir/LICENSE.txt" ]]; then
         echo "MISSING LICENSE: vendored package $name has no LICENSE file"; fail=1

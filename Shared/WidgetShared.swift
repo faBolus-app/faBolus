@@ -1,11 +1,12 @@
 import Foundation
 
-/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. The widget/complication extension
-/// targets deliberately do **not** link faBolusCore (they compile `WidgetShared.swift` directly for a
-/// lightweight binary), so the canonical constants aren't reachable there — this mirror carries the
-/// same values. `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH) asserts these equal
-/// the canonical `GlucoseThresholds`, so the two can't drift silently. See `GlucoseThresholds` for the
-/// clinical source (Battelino 2019 international TIR consensus, §13).
+/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. As of Phase 09.1 (D-01/D-02) the
+/// widget/complication extension targets DO transitively link `faBolusCore` via `faBolusDesign` (for
+/// the shared band-color tokens + `BandIndicator` primitive) — but this mirror is intentionally
+/// RETAINED rather than retired this phase, to keep the diff scoped to color/primitive routing (see
+/// the phase's scoped-out note). `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH)
+/// asserts these equal the canonical `GlucoseThresholds`, so the two can't drift silently. See
+/// `GlucoseThresholds` for the clinical source (Battelino 2019 international TIR consensus, §13).
 public enum WidgetGlucoseThresholds {
     public static let low = 70        // == GlucoseThresholds.low
     public static let high = 180      // == GlucoseThresholds.high
@@ -13,8 +14,9 @@ public enum WidgetGlucoseThresholds {
 }
 
 /// The widget island's mirror of `faBolusCore.GlucoseUnit` (Phase 04-03, mmol/L display-unit
-/// support). The widget/complication extension targets don't link faBolusCore (same reason as
-/// `WidgetGlucoseThresholds` above), so this carries the same two-case shape, the same 18.0182
+/// support). RETAINED as-is post-Phase-09.1 for the same reason as `WidgetGlucoseThresholds` above
+/// (the extensions now link faBolusCore transitively via faBolusDesign, but retiring this mirror is
+/// out of scope this phase), so this carries the same two-case shape, the same 18.0182
 /// factor, and the same 1-decimal mmol format. The unit rides the App Group as a plain `String?`
 /// wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum directly (Pitfall
 /// 6: a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
