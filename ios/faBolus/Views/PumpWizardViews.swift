@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 // Mobi control wizards (Plan A / A4). Reached from PumpControlView, so already behind the
 // advanced-control + Mobi + capability gate. Insulin-affecting steps use hold-to-confirm; all of

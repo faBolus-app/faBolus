@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// modern status ring around the current glucose reading + trend. The ring color reflects
 /// connection/activity state (NOT closed-loop status — FaBolus doesn't automate).
@@ -69,10 +70,9 @@ struct StatusRingView: View {
                 // duplicate). Hidden from VoiceOver (a11yLabel already speaks the band below).
                 if present == .fresh {
                     let band = GlucoseRange.classify(g)
-                    Label(band.shortLabel, systemImage: band.symbolName)
-                        .font(.caption2).labelStyle(.titleAndIcon)
+                    BandIndicator(band: band, announcesOwnLabel: false)
+                        .font(.caption2)
                         .foregroundStyle(AppTheme.glucoseColor(g))
-                        .accessibilityHidden(true)
                 }
                 if let d = snapshot.glucoseDate {
                     Text(GlucoseFreshness.ageLabel(for: d, now: now))

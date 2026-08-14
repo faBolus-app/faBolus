@@ -8,6 +8,9 @@ import faBolusCore
 /// audited for WCAG contrast in `docs/accessibility-contrast-audit.md`; their measured ratios are pinned
 /// by `WCAGContrastTests` (faBolusCore) + `AppThemeContrastAuditTests` (app). Do NOT recolor them without
 /// an owner/designer decision — a change fails those tests and must update the audit doc.
+///
+/// Promoted byte-identical from `ios/faBolus/Design/AppTheme.swift` (Phase 09.1, D-01/D-02/D-05) — every
+/// Color literal below is unchanged from the original app-target source.
 public enum AppTheme {
     public static let inRange = Color(red: 0.30, green: 0.78, blue: 0.36)   // green
     public static let high = Color(red: 0.98, green: 0.76, blue: 0.18)      // yellow

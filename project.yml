@@ -25,6 +25,11 @@ packages:
   faBolusCore:
     # Stable, pump/host-agnostic contracts + models (in-repo local package).
     path: Packages/faBolusCore
+  faBolusDesign:
+    # Shared presentation layer: §13 glucose-band color tokens + the icon+word band-encoding
+    # primitive (in-repo local package). Depends on faBolusCore for the single classifier/thresholds
+    # (D-01/D-02) — no cycle, since faBolusCore has zero package dependencies of its own.
+    path: Packages/faBolusDesign
   G7SensorKit:
     # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
     path: Packages/G7SensorKit
@@ -84,6 +89,8 @@ targets:
     dependencies:
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       - package: G7SensorKit
         product: G7SensorKit
       - package: DexcomG6Kit
@@ -272,6 +279,8 @@ targets:
       # Shared contracts (RemoteCommand/RemoteLink + models).
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
       - package: G7SensorKit
         product: G7SensorKit
@@ -355,6 +364,13 @@ targets:
     sources:
       - watch/faBolusWatchWidgets
       - path: Shared/WidgetShared.swift
+    dependencies:
+      # D-01/D-02: this complication extension previously linked neither faBolus nor faBolusCore
+      # (see Shared/WidgetShared.swift's WidgetGlucoseThresholds mirror comment). Adding
+      # faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy — viable
+      # because faBolusCore has zero package dependencies of its own.
+      - package: faBolusDesign
+        product: faBolusDesign
     info:
       path: watch/faBolusWatchWidgets/Info.plist
       properties:
@@ -386,6 +402,12 @@ targets:
       - path: Shared/LiveActivityShared.swift
       - path: Shared/LiveActivityIntents.swift
       - path: Shared/WidgetBolusIntents.swift
+    dependencies:
+      # D-01/D-02: this widget/Live Activity extension previously linked neither faBolus nor
+      # faBolusCore. Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions
+      # policy — viable because faBolusCore has zero package dependencies of its own.
+      - package: faBolusDesign
+        product: faBolusDesign
     info:
       path: ios/faBolusWidgets/Info.plist
       properties:
@@ -429,6 +451,8 @@ targets:
       # Contracts + models + the BLE transport. No PumpX2Kit/ConnectIQ — it's a remote.
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       # Embeds the macOS WidgetKit extension.
       - target: faBolusMacWidgets
         embed: true
@@ -476,6 +500,12 @@ targets:
       - path: Shared/WidgetShared.swift
       - path: Shared/WidgetBolusIntents.swift
       - path: Shared/DisplaySettings.swift
+    dependencies:
+      # D-01/D-02: this widget extension previously linked neither faBolusMac nor faBolusCore.
+      # Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy —
+      # viable because faBolusCore has zero package dependencies of its own.
+      - package: faBolusDesign
+        product: faBolusDesign
     info:
       path: mac/faBolusMacWidgets/Info.plist
       properties:
@@ -512,6 +542,8 @@ targets:
       - target: faBolus
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

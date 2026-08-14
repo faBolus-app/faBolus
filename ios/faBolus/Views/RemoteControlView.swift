@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// This iPhone acting as a **remote** for another phone's pump. Split into reusable pieces so it can
 /// drive either a single Settings screen or the whole app (see `RemoteRootView` / app-wide Remote

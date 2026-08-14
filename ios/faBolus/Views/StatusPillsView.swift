@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// modern HUD status row: Active Insulin (IOB), reservoir, battery, and CGM pills.
 /// (COB/"Active Carbs" was removed — the pump doesn't expose a carbs-on-board read.)
