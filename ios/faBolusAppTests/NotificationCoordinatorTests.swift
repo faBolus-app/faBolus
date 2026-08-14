@@ -132,21 +132,26 @@ import UserNotifications
 
     /// B6: the OS Critical Alert level is applied ONLY to the never-suppressible safety categories, and
     /// ONLY when the caller allows it (entitlement granted + user opted in). A governed category never gets
-    /// it, and a safety category degrades gracefully to the normal level when not allowed.
+    /// it, and a safety category degrades gracefully to the normal level when not allowed. D-06: also
+    /// asserts `.sound` alongside `.interruptionLevel` — the `.defaultCritical`/`.default` half of SC1/SC2
+    /// that no test previously covered.
     @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        // Safety category + allowed → .critical.
+        // Safety category + allowed → .critical / .defaultCritical.
         NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .critical)
+        #expect(reqs.first?.content.sound == .defaultCritical)
         // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to normal.
         reqs.removeAll()
         NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.sound == .default)
         // A governed (suppressible) category never gets .critical, even when allowed.
         reqs.removeAll()
         NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.sound == .default)
     }
 
     /// B6: the pump-alarm opt-out suppresses ONLY a pump ALARM the user opted out of — never a lower-
