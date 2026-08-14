@@ -11,10 +11,15 @@ struct AlertRulesView: View {
     @State private var showSuppressWarning = false
 
     /// §6/S8 B6: enabling the pump-alarm opt-out routes through a warning + explicit confirm; turning it
-    /// off is immediate. Cancel leaves the flag false, so the Toggle snaps back.
+    /// off is immediate. Cancel leaves the flag false, so the Toggle snaps back. Routed through the
+    /// shared `guardedToggle` factory (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings
+    /// toggle uses.
     private var suppressBinding: Binding<Bool> {
-        Binding(get: { settings.suppressMirroredPumpAlarms },
-                set: { on in if on { showSuppressWarning = true } else { settings.suppressMirroredPumpAlarms = false } })
+        guardedToggle(
+            get: { settings.suppressMirroredPumpAlarms },
+            set: { settings.suppressMirroredPumpAlarms = $0 },
+            requestConfirm: { showSuppressWarning = true }
+        )
     }
 
     /// D-03/D-04: whether the honest "pending Apple approval" status should show — true only when the
@@ -72,7 +77,8 @@ struct AlertRulesView: View {
         .sheet(item: $editing) { rule in
             AlertRuleEditorView(rule: rule) { updated in save(updated) }
         }
-        .alert("Silence pump alarms in the app?", isPresented: $showSuppressWarning) {
+        .confirmationDialog("Silence pump alarms in the app?", isPresented: $showSuppressWarning,
+                             titleVisibility: .visible) {
             Button("Silence in the app", role: .destructive) { settings.suppressMirroredPumpAlarms = true }
             Button("Cancel", role: .cancel) { }
         } message: {
