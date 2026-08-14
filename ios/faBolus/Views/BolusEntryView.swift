@@ -763,22 +763,46 @@ struct BolusEntryView: View {
             }
     }
 
+    /// The action the STANDARD confirm dialog's Deliver tap routes to for a given SG3a friction tier — a
+    /// PURE mapping extraction (09.2-01, D-02) mirroring the `reenterMatches` internal-for-test idiom below,
+    /// so the tier-to-action decision is unit-testable without instantiating the view. This is observability
+    /// only: it reproduces the exact mapping the `switch` in `handleStandardConfirm` already implemented,
+    /// never a coordinator/state-machine rewrite (D-02 forbids that).
+    enum StandardConfirmRoute { case reenter, confirmExtra, deliver }
+
+    /// `internal` (not `private`), same rationale as `reenterMatches`: `StackingGuardDeliverInvariantTests`
+    /// (`@testable import faBolus`) asserts all four mappings directly.
+    static func standardConfirmRoute(for friction: StackingGuard.Friction) -> StandardConfirmRoute {
+        switch friction {
+        case .reenter: return .reenter
+        case .confirmExtra: return .confirmExtra
+        case .disclose, .none: return .deliver
+        }
+    }
+
     /// SG3a: route the tap from the STANDARD confirm dialog through the friction tier ACTUALLY applied
     /// (`sg3aAppliedFriction` — capped to `.disclose` when `stackingGuardFrictionEnabled` is off). `units`
     /// is captured into `sgOriginalUnits` at THIS moment (audit C-04 "freeze once" idiom) so a field edit
     /// under a later dialog can't silently substitute a different dose into the re-type check. Neither
     /// `.confirmExtra` nor `.reenter` ever changes `units` itself — both gate the SAME dose through to the
     /// unchanged `attemptDeliver` path.
+    ///
+    /// 09.2-01 (D-02, SC2): the `.reenter`/`.confirmExtra` presentation flags flip inside
+    /// `DispatchQueue.main.async` — the SAME one-run-loop-yield deferral idiom already proven at the
+    /// `sgReenter` re-prompt above (`:748`) — so the next modal is requested AFTER the standard confirm
+    /// dialog's own dismissal transaction completes. This closes the SwiftUI "present a second modal from
+    /// inside another's dismissal" dead-tap (Deliver now responds on the FIRST tap at every tier). Presentation
+    /// TIMING only — `standardConfirmRoute(for:)` proves WHICH gate each tier reaches is unchanged.
     private func handleStandardConfirm() {
         sgOriginalUnits = units
-        switch sg3aAppliedFriction {
+        switch Self.standardConfirmRoute(for: sg3aAppliedFriction) {
         case .reenter:
             sgReenterText = ""
             sgReenterMismatch = false
-            sgReenter = true
+            DispatchQueue.main.async { self.sgReenter = true }
         case .confirmExtra:
-            sgConfirmExtra = true
-        case .disclose, .none:
+            DispatchQueue.main.async { self.sgConfirmExtra = true }
+        case .deliver:
             Task { await attemptDeliver(extended: false) }
         }
     }

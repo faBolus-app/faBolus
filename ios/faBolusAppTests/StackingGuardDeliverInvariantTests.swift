@@ -187,4 +187,17 @@ struct StackingGuardDeliverInvariantTests {
         #expect(!backend.deliveryOutcomeUnknown)
         _ = fake
     }
+
+    /// (h) 09.2-01 (D-02, SC2): `standardConfirmRoute(for:)` is a PURE mapping extracted from
+    /// `handleStandardConfirm`'s tier switch — proving each SG3a tier still routes to its OWN gate through
+    /// the deferred (`DispatchQueue.main.async`) presentation-timing fix. `.reenter`/`.confirmExtra` route to
+    /// their own escalated-friction dialogs; `.disclose`/`.none` both route straight to `.deliver` (the
+    /// standard confirm dialog's own Deliver call), matching the pre-existing `sg3aAppliedFriction` cap
+    /// (`stackingGuardFrictionEnabled == false` never escalates past `.disclose`).
+    @Test func standardConfirmRouteMapsEachSG3aTierToItsOwnGate() {
+        #expect(BolusEntryView.standardConfirmRoute(for: .reenter) == .reenter)
+        #expect(BolusEntryView.standardConfirmRoute(for: .confirmExtra) == .confirmExtra)
+        #expect(BolusEntryView.standardConfirmRoute(for: .disclose) == .deliver)
+        #expect(BolusEntryView.standardConfirmRoute(for: .none) == .deliver)
+    }
 }
