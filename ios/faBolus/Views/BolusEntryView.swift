@@ -303,6 +303,103 @@ struct BolusEntryView: View {
         return s
     }
 
+    /// A single bolus-screen warning/disclosure line (09.2-04, Fix 4/D-04), classified by whether its
+    /// underlying condition currently BLOCKS Deliver or is advisory-only — presentation only, never a
+    /// re-derivation of the block decision itself (see `rankedWarnings` below). `internal` (not `private`),
+    /// same rationale as `reenterMatches`/`standardConfirmRoute`: `BolusWarningRankingTests` (`@testable
+    /// import faBolus`) asserts the classification/ordering directly.
+    struct BolusWarning: Identifiable, Equatable {
+        enum Severity: Equatable { case blocking, advisory }
+        /// Presentation-only color band; NEVER what `rankedWarnings` sorts by (see `Severity`) — this is
+        /// exactly the RESEARCH Pitfall 4 trap: a grey (`.neutral`) blocker must still classify `.blocking`.
+        enum Tone: Equatable {
+            case danger, caution, neutral
+            /// `nil` for `.danger` preserves the overMax label's original un-set (ambient/body) font —
+            /// `.font(nil)` explicitly resets to the environment default, same visual result as no modifier.
+            var font: Font? {
+                switch self {
+                case .danger: return nil
+                case .caution: return .footnote
+                case .neutral: return .caption
+                }
+            }
+            var color: Color {
+                switch self {
+                case .danger: return AppTheme.low
+                case .caution: return .orange
+                case .neutral: return .secondary
+                }
+            }
+        }
+        let id: String
+        let text: String
+        let systemImage: String
+        let severity: Severity
+        let tone: Tone
+    }
+
+    /// PURE classification + ordering seam (09.2-04, D-04) extracted from the inline warning `if`-chain
+    /// that used to live at `:439-497` — mirrors the `reenterMatches`/`standardConfirmRoute` internal-for-
+    /// test idiom. Builds each warning from the SAME already-computed conditions that drive `canBolus`
+    /// (`overMax`, `model.bolusGate(...).reason`, `settings.childAllows`) — `BolusGate.evaluate` is never
+    /// called differently here, only its results are re-ordered on screen. Items are built in the EXACT
+    /// top-to-bottom source order they rendered before, classified BLOCKING (overMax, pumpNotLinked,
+    /// bolusInFlight, childBlocked) or ADVISORY (everything else), then a STABLE sort puts all `.blocking`
+    /// items first (source order preserved) followed by all `.advisory` items (source order preserved) —
+    /// this is presentation ORDER only; the SET of items and their content is unchanged, and NOTHING active
+    /// is ever dropped (RESEARCH Pitfall 4: a grey `.neutral`-tone blocker still classifies `.blocking`,
+    /// never demoted below an orange advisory just because it isn't red).
+    static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
+                                pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
+                                autoAmbient: String?, autoLockout: String?, sg1Message: String?,
+                                sg3aMessage: String?) -> [BolusWarning] {
+        var items: [BolusWarning] = []
+        if overMax {
+            items.append(BolusWarning(
+                id: "overMax", text: "Exceeds pump max of \(String(format: "%.1f", maxUnits)) U",
+                systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .danger))
+        }
+        if let sg2 = sg2Message {
+            items.append(BolusWarning(id: "sg2", text: sg2, systemImage: "exclamationmark.triangle",
+                                       severity: .advisory, tone: .caution))
+        }
+        if childBlocked {
+            items.append(BolusWarning(id: "childBlocked", text: "Bolus is disabled by child mode",
+                                       systemImage: "lock.fill", severity: .blocking, tone: .neutral))
+        }
+        if pumpNotLinked {
+            items.append(BolusWarning(id: "pumpNotLinked", text: BolusBlockReason.pumpNotLinked.userMessage,
+                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+        }
+        if bolusInFlight {
+            items.append(BolusWarning(id: "bolusInFlight", text: BolusBlockReason.bolusInFlight.userMessage,
+                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+        }
+        if let w = carbOverride {
+            items.append(BolusWarning(id: "carbOverride", text: w, systemImage: "pencil.and.outline",
+                                       severity: .advisory, tone: .caution))
+        }
+        if let ambient = autoAmbient {
+            items.append(BolusWarning(id: "autoAmbient", text: ambient, systemImage: "arrow.triangle.2.circlepath",
+                                       severity: .advisory, tone: .neutral))
+        }
+        if let lockout = autoLockout {
+            items.append(BolusWarning(id: "autoLockout", text: lockout, systemImage: "exclamationmark.triangle",
+                                       severity: .advisory, tone: .caution))
+        }
+        if let sg1 = sg1Message {
+            items.append(BolusWarning(id: "sg1", text: sg1, systemImage: "exclamationmark.triangle",
+                                       severity: .advisory, tone: .caution))
+        }
+        if let sg3a = sg3aMessage {
+            items.append(BolusWarning(id: "sg3a", text: sg3a, systemImage: "exclamationmark.triangle",
+                                       severity: .advisory, tone: .caution))
+        }
+        // Stable partition (Swift's `filter` preserves relative order): all `.blocking` first, then all
+        // `.advisory` — never re-sorted by tone/color, only by severity, per D-04.
+        return items.filter { $0.severity == .blocking } + items.filter { $0.severity == .advisory }
+    }
+
     var body: some View {
         withSG3aFriction(
             Group {
@@ -436,65 +533,31 @@ struct BolusEntryView: View {
                             .font(.caption)
                             .foregroundStyle(staleR ? .orange : .secondary)
                     }
-                    if overMax {
-                        Label("Exceeds pump max of \(String(format: "%.1f", maxUnits)) U", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(AppTheme.low)
-                    }
-                    // SG2 (Insulin Stacking Guard, task #93): max-bolus proximity DISCLOSURE only — same
-                    // "never inside a gate" contract as the SG1 line below. Anchored solely on the pump's
-                    // own op-115 maxBolusUnits (never a hardcoded cap); additional to the overMax label
-                    // above, not a replacement.
-                    if let sg2 = sg2Disclosure, let message = sg2.message {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange)
-                    }
-                    if !settings.childAllows(.bolus) {
-                        Label("Bolus is disabled by child mode", systemImage: "lock.fill")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    // Group D: the shared gate surfaces pump-link / in-flight reasons the button used to
-                    // grey silently (a disconnected or mid-delivery pump). overMax + child mode keep their
-                    // dedicated labels above; bounds are self-evident from the entry field.
-                    if let r = model.bolusGate(amount: units, minimum: 0.05).reason,
-                       r == .pumpNotLinked || r == .bolusInFlight {
-                        Label(r.userMessage, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    // Dose overridden away from the carb recommendation (advisory; carbs still logged).
-                    if let w = carbOverrideWarning {
-                        Label(w, systemImage: "pencil.and.outline")
-                            .font(.footnote).foregroundStyle(.orange)
-                    }
-                    // O3 (ambient) + S1 (lockout) auto-correction DISCLOSURE. Pure faBolusCore strings,
-                    // rendered unconditionally when applicable (Simple-mode floor, not user-disableable) —
-                    // NEVER inside a gate: they never block, change, or delay the dose. O3 is neutral
-                    // context; S1 is a mild caution shown only at high/rising glucose.
-                    if let ambient = autoCorrectionAmbient {
-                        Label(ambient, systemImage: "arrow.triangle.2.circlepath")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let lockout = autoCorrectionLockout {
-                        Label(lockout, systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange)
-                    }
-                    // SG1 (Insulin Stacking Guard, task #93): calc-override DISCLOSURE only — same
-                    // "never inside a gate" contract as the auto-correction lines above. NEVER touches
-                    // the Deliver button below.
-                    if let sg1 = sg1Disclosure, let message = sg1.message {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange)
-                    }
-                    // SG3a (Insulin Stacking Guard, task #93): escalating-friction DISCLOSURE line — same
-                    // "band" render as SG1/SG2 above. The message always shows when SG3a fires (even with
-                    // `stackingGuardFrictionEnabled` off — see `sg3aDisclosure`'s doc comment); the
-                    // ESCALATED confirm/re-type friction this can additionally require is wired at the
-                    // confirm seam below (`handleStandardConfirm`), never here. `.disclose`-tier reuses SG1's
-                    // exact message (see `StackingGuard.escalation`), so this line is suppressed when it
-                    // would be a verbatim duplicate of the SG1 label already shown above — only a
-                    // confirmExtra/reenter-tier message (which differs) renders as an additional line.
-                    if let sg3a = sg3aDisclosure, let message = sg3a.message, message != sg1Disclosure?.message {
-                        Label(message, systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange)
+                    // 09.2-04 (Fix 4/D-04): the DOSE-BLOCKING conditions (overMax, pumpNotLinked/
+                    // bolusInFlight, child-mode) must always be visually dominant — ranked ABOVE the
+                    // advisory-only disclosures below, never lost among them. `Self.rankedWarnings(...)`
+                    // classifies + reorders from the SAME already-computed conditions that drive
+                    // `canBolus`/the Deliver button's `.disabled(...)` below — presentation ORDER only,
+                    // the block SET and the dose are untouched (D-05). Each rendered Label is visually
+                    // byte-identical to its prior inline form (icon/color/font) — only on-screen ORDER
+                    // changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
+                    ForEach(Self.rankedWarnings(
+                        overMax: overMax, maxUnits: maxUnits,
+                        sg2Message: sg2Disclosure?.message,
+                        childBlocked: !settings.childAllows(.bolus),
+                        pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
+                        bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
+                        carbOverride: carbOverrideWarning,
+                        autoAmbient: autoCorrectionAmbient,
+                        autoLockout: autoCorrectionLockout,
+                        sg1Message: sg1Disclosure?.message,
+                        // Preserve the pre-existing sg3a==sg1 dedup guard: only a confirmExtra/reenter-tier
+                        // message (which differs from SG1's) renders as an additional line.
+                        sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil }
+                    )) { item in
+                        Label(item.text, systemImage: item.systemImage)
+                            .font(item.tone.font)
+                            .foregroundStyle(item.tone.color)
                     }
                     Button { confirming = true } label: {
                         HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
