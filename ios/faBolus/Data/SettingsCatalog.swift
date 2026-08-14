@@ -188,9 +188,12 @@ enum SettingsCatalog {
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
-        .init("eatingNudgesEnabled", .bolus, from: .advanced, backsUp: false),
-        .init("eatingTriggerConfig", .bolus, from: .advanced, backsUp: false),
-        .init("eatingLearnFromFeedback", .bolus, from: .advanced, backsUp: false),
+        // 09.3-05 (D-06): categorized .smartAssist, not .bolus — matches where the eating-nudge screen
+        // actually lives (SmartAssistSettingsView / EatingNudgeSettingsView), reconciling the
+        // catalog-category vs UI-location divergence. Bindings/tier/mode/backsUp unchanged.
+        .init("eatingNudgesEnabled", .smartAssist, from: .advanced, backsUp: false),
+        .init("eatingTriggerConfig", .smartAssist, from: .advanced, backsUp: false),
+        .init("eatingLearnFromFeedback", .smartAssist, from: .advanced, backsUp: false),
     ]
 
     /// Lookup by key.
