@@ -1,6 +1,8 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import faBolusCore
+import faBolusDesign
 
 // faBolus macOS widgets: desktop / Notification Center views of the pump state the Mac app relays
 // from the iPhone into the App Group, plus an interactive quick-bolus (macOS 14+). Widgets read the
@@ -45,24 +47,26 @@ struct MacWidgetProvider: TimelineProvider {
     private func current() -> MacWidgetEntry { MacWidgetEntry(date: Date(), snap: WidgetStore.load() ?? .placeholder) }
 }
 
-private enum MacWidgetUI {
-    static func glucoseColor(_ category: Int) -> Color {
-        switch category {
-        case 0: return .red; case 1: return .green; case 2: return .yellow; case 3: return .orange
-        default: return .gray
-        }
-    }
-    /// Color for the glucose number at `now`, honoring the phone's stale policy + "color by range".
-    static func glucoseColor(_ snap: WidgetSnapshot, now: Date) -> Color {
-        if snap.isStale(asOf: now) { return .secondary }
-        return DisplaySettings.widgetColorByRange ? glucoseColor(snap.rangeCategory) : .primary
-    }
-    /// Glucose number to show at `now`: value while fresh/stale (greyed via color), "--" when hidden.
-    static func glucoseText(_ snap: WidgetSnapshot, now: Date) -> String {
-        if snap.isHidden(asOf: now) { return "--" }
-        guard let g = snap.glucose, g > 0 else { return "--" }
-        return "\(g)"
-    }
+/// Color for the glucose number at `now`, honoring the phone's stale policy + "color by range".
+/// Phase 09.1 (D-03): classifies the raw `snap.glucose` Int directly via `faBolusCore.GlucoseRange
+/// .classify` and colors via `faBolusDesign.AppTheme.glucoseColor` — deletes the local `Int`-category
+/// switch. Classifies the raw value rather than converting the pre-computed `WidgetSnapshot
+/// .rangeCategory` sentinel back into a `GlucoseRange`: that mapping sends `rangeCategory`'s -1
+/// ("no reading") sentinel through a `default` arm to `.urgentHigh` — a real color regression from the
+/// deleted switch's `default: .gray` for the same input (the same pitfall 09.1-02 hit and fixed the
+/// same way for the iOS widgets). Preserves the exact stale→secondary / colorByRange-off→primary /
+/// nil-glucose→gray fallback order the deleted switch had.
+private func macWidgetGlucoseColor(_ snap: WidgetSnapshot, now: Date) -> Color {
+    if snap.isStale(asOf: now) { return .secondary }
+    guard DisplaySettings.widgetColorByRange else { return .primary }
+    guard let g = snap.glucose else { return .gray }
+    return AppTheme.glucoseColor(g)
+}
+/// Glucose number to show at `now`: value while fresh/stale (greyed via color), "--" when hidden.
+private func macWidgetGlucoseText(_ snap: WidgetSnapshot, now: Date) -> String {
+    if snap.isHidden(asOf: now) { return "--" }
+    guard let g = snap.glucose, g > 0 else { return "--" }
+    return "\(g)"
 }
 
 // MARK: - Glucose
@@ -86,9 +90,9 @@ struct MacGlucoseView: View {
         let hidden = snap.isHidden(asOf: now)
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(MacWidgetUI.glucoseText(snap, now: now))
+                Text(macWidgetGlucoseText(snap, now: now))
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(MacWidgetUI.glucoseColor(snap, now: now))
+                    .foregroundStyle(macWidgetGlucoseColor(snap, now: now))
                 if !hidden {
                     Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
                 }
@@ -129,8 +133,8 @@ struct MacStatusWidgetView: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(MacWidgetUI.glucoseText(snap, now: now)).font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(MacWidgetUI.glucoseColor(snap, now: now))
+                    Text(macWidgetGlucoseText(snap, now: now)).font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(macWidgetGlucoseColor(snap, now: now))
                     if !snap.isHidden(asOf: now) {
                         Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
                     }

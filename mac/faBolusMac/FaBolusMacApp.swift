@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import faBolusCore
+import faBolusDesign
 
 /// Menu-bar-only remote (no Dock icon / no main window — see `LSUIElement` in project.yml). Shows
 /// the current glucose in the menu bar; clicking opens a popover with status, quick bolus, alerts,
@@ -46,7 +47,11 @@ struct MenuBarLabel: View {
             if d.menuBarShowTrend { s += " \(model.trend)" }
             if d.menuBarShowDelta, let delta = model.deltaText { s += " \(delta)" }
             if d.menuBarShowIOB { s += String(format: " · %.1fU", model.iobUnits) }
-            let color: Color = (d.menuBarColorByRange && !model.isGlucoseStale) ? MacTheme.glucoseColor(g) : .primary
+            // Phase 09.1 (D-03): colors via `faBolusDesign.AppTheme.glucoseColor` (classifies via
+            // `faBolusCore.GlucoseRange.classify`) instead of the deleted `MacTheme` / shared
+            // `RemoteClientModel.band` indirection — `g` is already non-stale here (the `!isGlucoseStale`
+            // guard below), so no separate grey-when-stale branch is needed at this call site.
+            let color: Color = (d.menuBarColorByRange && !model.isGlucoseStale) ? AppTheme.glucoseColor(g) : .primary
             return Text(s).foregroundStyle(color)
         } else {
             return Text("—").foregroundStyle(.primary)

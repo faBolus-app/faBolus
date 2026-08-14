@@ -1,6 +1,17 @@
 import SwiftUI
 import Charts
 import faBolusCore
+import faBolusDesign
+
+/// Glucose color for the Mac app views: grey when stale or missing, else the `faBolusDesign.AppTheme`
+/// band color (classified via `faBolusCore.GlucoseRange.classify`, NOT the shared
+/// `RemoteClientModel.band` indirection — Phase 09.1 D-03). Replaces the deleted `MacTheme.glucoseColor`,
+/// preserving its exact grey-when-stale / grey-when-nil fallback order.
+private func macGlucoseColor(_ mgdl: Int?, stale: Bool) -> Color {
+    if stale { return .secondary }
+    guard let g = mgdl else { return .gray }
+    return AppTheme.glucoseColor(g)
+}
 
 // MARK: - Status (glucose + trend + pills)
 
@@ -18,7 +29,7 @@ struct MacStatusView: View {
                 Text(model.glucoseHidden ? "—" : model.displayGlucose)
                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                    .foregroundStyle(model.isGlucoseStale ? Color.secondary : MacTheme.glucoseColor(model.glucose))
+                    .foregroundStyle(macGlucoseColor(model.glucose, stale: model.isGlucoseStale))
                 if !model.glucoseHidden {
                     Text(model.trend).font(.system(size: 28))
                         .foregroundStyle(.secondary)
@@ -127,10 +138,10 @@ struct MacChartView: View {
             } else {
                 Chart {
                     RectangleMark(yStart: .value("lo", GlucoseThresholds.low), yEnd: .value("hi", GlucoseThresholds.high))
-                        .foregroundStyle(.green.opacity(0.12))
+                        .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(pts.indices, id: \.self) { i in
                         PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
-                            .foregroundStyle(MacTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
+                            .foregroundStyle(AppTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
                     }
                 }
                 .chartYScale(domain: 40...300)
