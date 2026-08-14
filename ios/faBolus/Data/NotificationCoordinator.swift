@@ -170,13 +170,22 @@ enum NotificationPoster {
         // §6/S8 B6: iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
         // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
         // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
-        // this can never over-escalate a routine or governed notification. Graceful degradation: when the
-        // entitlement isn't granted, `allowCritical` is false and this is exactly today's behavior.
+        // this can never over-escalate a routine or governed notification.
         if allowCritical && message.category.neverSuppressible {
             content.interruptionLevel = .critical
             content.sound = .defaultCritical
         } else {
             content.sound = .default
+            // CR-01: graceful degradation while the Critical-Alerts entitlement is pending (or the user
+            // hasn't opted in) — the safety trio still must break through Focus/DND, or the "time-sensitive
+            // delivery" promise in AlertRulesView is false. `.timeSensitive` does that without requiring the
+            // special-request Critical Alerts entitlement; it only needs the lightweight Time-Sensitive
+            // Notifications capability (see faBolus.entitlements). Scoped to `neverSuppressible` so a
+            // governed/suppressible category is never escalated. If the app ever lacked the Time-Sensitive
+            // capability, iOS silently downgrades this to `.active` — safe by default, never a crash.
+            if message.category.neverSuppressible {
+                content.interruptionLevel = .timeSensitive
+            }
         }
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
         // Stamp the broker category so the delegate can route a SNOOZE action (and attribute telemetry)

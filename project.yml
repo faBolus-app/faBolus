@@ -143,6 +143,16 @@ targets:
         # >>> DATA_PROTECTION (stripped by scripts/generate-project.sh unless FABOLUS_DATA_PROTECTION=1)
         com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
         # <<< DATA_PROTECTION
+        # >>> TIME_SENSITIVE (stripped by scripts/generate-project.sh unless FABOLUS_TIME_SENSITIVE=1)
+        # CR-01 (Phase 08): Time-Sensitive Notifications so the never-suppressible safety trio (pump
+        # disconnected / CGM data lost / unresolved bolus) breaks through Focus / Do Not Disturb via
+        # UNNotificationInterruptionLevel.timeSensitive while the special-request Critical Alerts entitlement
+        # (D-02, deliberately absent) is still pending — what NotificationPoster.post now sets and what
+        # AlertRulesView's "time-sensitive delivery" copy promises. Like Data Protection it needs the
+        # capability provisioned on the App ID to SIGN a device build, so it is stripped by default so an
+        # unmodified clone signs on a free account; enable on a provisioned account with FABOLUS_TIME_SENSITIVE=1.
+        com.apple.developer.usernotifications.time-sensitive: true
+        # <<< TIME_SENSITIVE
         # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
         # it needs the paid Apple Developer Program to enable the capability, so it's off by default
         # and the app builds/signs on a free account. To use it, uncomment the two keys below (and

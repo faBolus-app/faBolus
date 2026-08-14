@@ -82,6 +82,13 @@ ICLOUD="${FABOLUS_ICLOUD:-0}"
 # an unmodified clone signs. No-op on-device: the value is already iOS's default protection level. Enable
 # on a provisioned account with FABOLUS_DATA_PROTECTION=1 for release builds.
 DATA_PROTECTION="${FABOLUS_DATA_PROTECTION:-0}"
+# Time-Sensitive Notifications (CR-01/§6-B6) defaults OFF: com.apple.developer.usernotifications.time-sensitive
+# needs the Time Sensitive Notifications capability provisioned on the App ID (paid / portal-enabled account),
+# so automatic signing on an account without it fails to build the device app. When off, the tagged line is
+# stripped from the generated spec so xcodegen omits it from faBolus.entitlements — an unmodified clone signs.
+# No-op on the Simulator/CI build (the entitlement is inert). Enable on a provisioned account with
+# FABOLUS_TIME_SENSITIVE=1 so the never-suppressible safety trio actually breaks through Focus/DND on device.
+TIME_SENSITIVE="${FABOLUS_TIME_SENSITIVE:-0}"
 # PumpX2Kit backend pump-protocol stack. Default: consume by pinned revision (reproducible; §1.3
 # version-pin, D-01). FABOLUS_PUMPX2_LOCAL=1 swaps in the sibling path (../PumpX2Kit) for day-to-day
 # co-development (never for a build you keep — see project.yml comment on the PumpX2Kit package).
@@ -154,7 +161,15 @@ if [ "$DATA_PROTECTION" = 0 ]; then
   strip_block DATA_PROTECTION
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION PumpX2Local=$PUMPX2_LOCAL"
+if [ "$TIME_SENSITIVE" = 0 ]; then
+  # The time-sensitive entitlement is declared in project.yml under the faBolus target's
+  # entitlements.properties. Strip the tagged line BEFORE xcodegen runs so it never emits the entitlement —
+  # an account without the Time Sensitive Notifications capability can then sign the device app. NotificationPoster
+  # still sets .timeSensitive in code (iOS silently downgrades it to .active when the capability is absent).
+  strip_block TIME_SENSITIVE
+fi
+
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE PumpX2Local=$PUMPX2_LOCAL"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
@@ -166,6 +181,8 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
 [ "$DATA_PROTECTION" = 0 ] && echo "  → building WITHOUT the §13 Data Protection entitlement (needs the capability provisioned on the App ID; set FABOLUS_DATA_PROTECTION=1 to enable) — on-device protection unchanged (iOS default level)"
 [ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
+[ "$TIME_SENSITIVE" = 0 ] && echo "  → building WITHOUT the Time-Sensitive Notifications entitlement (needs the capability provisioned on the App ID; set FABOLUS_TIME_SENSITIVE=1 to enable) — .timeSensitive is set in code but iOS downgrades it to .active until the capability is provisioned"
+[ "$TIME_SENSITIVE" = 1 ] && echo "  → Time-Sensitive Notifications entitlement ON (FABOLUS_TIME_SENSITIVE=1) — the safety trio breaks through Focus/DND via .timeSensitive; requires the capability on App ID com.fabolus.app"
 
 xcodegen generate --spec "$SPEC"
 
