@@ -25,6 +25,37 @@ struct ModeAutomationHelpView: View {
                 step(3, "Second automation for **When Turning Off → Set Sleep Mode = Off**.")
             }
 
+            Section("Delay Sleep mode") {
+                Text("Want Sleep mode to switch on a little *after* your Sleep Focus starts?")
+                    .font(.callout)
+                Text("Option A — short delay (a few minutes)").font(.subheadline.bold())
+                step(1, "Automation → **Focus → Sleep → When Turning On → Run Immediately** (turn off *Ask Before Running*).")
+                step(2, "Add **Wait** (Scripting) and set the seconds, e.g. 300 = 5 min.")
+                step(3, "Add **Set Sleep Mode = On**.")
+                Label("iOS pauses the Wait step while your phone is locked, so delays longer than a few minutes may not fire. Keep this short, or use Option B below.", systemImage: "exclamationmark.triangle")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("Option B — fixed-time delay (reliable, recommended for longer delays)").font(.subheadline.bold())
+                step(1, "Automation → **Time of Day** → pick the time (e.g. 30 min after your usual bedtime), **Repeat Daily**, **Run Immediately** (*Ask Before Running* off).")
+                step(2, "Add **Set Sleep Mode = On**.")
+                Label("This is keyed to the clock, not the moment Sleep Focus starts, but runs reliably overnight. Pair either option with a matching wake-up automation running Set Sleep Mode = Off.", systemImage: "clock")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Label("Your Tandem Mobi / Control-IQ has its own on-pump Sleep schedule, set on the pump. faBolus does not read or reimplement that schedule — this Shortcuts automation is an alternative to it, not a copy. Use the pump's built-in Sleep schedule **or** this automation, not both, or the two can conflict.", systemImage: "info.circle")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+
+            Section("Build a one-tap macro") {
+                Text("Combine several faBolus actions into one shortcut and put it on your Home Screen or in the Shortcuts widget:")
+                    .font(.callout)
+                step(1, "Shortcuts → **+** (new shortcut).")
+                step(2, "Add **Set Exercise Mode = On**.")
+                step(3, "Add **Set Temp Rate** and choose a percent (0–250%) and duration (15 min–72h) — the same range the pump and the official Tandem Mobi app allow. faBolus doesn't narrow this further; your pump's own **Basal Limit** (Delivery Limits) is the ceiling, and the pump rejects a rate that would exceed it.")
+                step(4, "Name it (e.g. \"Going for a run\") → **Share → Add to Home Screen**, or add it to the **Shortcuts widget** / **Action Button** / **Back Tap**.")
+                Label("Tapping it applies both settings in the background — no confirmation, without opening the app — as long as you use fixed values and avoid *Ask Each Time* (which pauses to prompt).", systemImage: "bolt")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Label("Temp-rate options appear only on pumps/controllers that support them. Boluses are never available in Shortcuts.", systemImage: "hand.raised")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+
             Section {
                 Label("Auto-switching writes to the pump and works on **Tandem Mobi** only, with Advanced control enabled. On a t:slim X2 the action posts a reminder instead (enable reminders in the previous screen).", systemImage: "info.circle")
                     .font(.footnote).foregroundStyle(.secondary)
