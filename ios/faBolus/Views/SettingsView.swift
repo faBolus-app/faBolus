@@ -223,14 +223,6 @@ struct BolusSettingsView: View {
                 }
             } header: { Text("iPhone increments") } footer: { Text("Steps for the iPhone bolus screen and the Home-Screen widget.") }
             Section {
-                Picker("Unit increment", selection: $settings.watchBolusIncrement) {
-                    ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
-                }
-                Picker("Carb increment", selection: $settings.watchCarbIncrement) {
-                    ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
-                }
-            } header: { Text("Watch & Garmin increments") } footer: { Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone).") }
-            Section {
                 Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
                 Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
             } header: { Text("Bolus screen") } footer: {
