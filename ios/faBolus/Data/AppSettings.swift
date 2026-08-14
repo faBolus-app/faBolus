@@ -205,6 +205,15 @@ public final class AppSettings {
     /// a Mobi** (screenless — the phone is the primary annunciator) and OFF otherwise, until the user sets
     /// it explicitly. Local device pref: not backed up / iCloud-synced.
     public var criticalAlertsEnabled: Bool { didSet { d.set(criticalAlertsEnabled, forKey: "criticalAlertsEnabled") } }
+    /// D-03/D-04: an OS-DERIVED CACHE, not a user pref — whether `UNUserNotificationCenter`'s async
+    /// `notificationSettings().criticalAlertSetting` last reported `.enabled` (the entitlement is granted
+    /// AND the user authorized it). `NotificationCoordinator.refreshGrantState()` is the sole writer.
+    /// Defaults `false` so the app never over-claims critical delivery before the first OS query resolves.
+    /// Deliberately NOT persisted to `UserDefaults` and NOT part of any backup/applyBackup key list —
+    /// `@Observable` tracks it automatically for `AlertRulesView`'s honest-status read. UI-only: NEVER
+    /// consulted by `NotificationCoordinator.post`'s `allowCritical` gate or `NotificationBroker.decide`
+    /// (D-05 — the cache can never suppress the never-suppressible trio).
+    public var criticalAlertGrantActive: Bool = false
 
     /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
     /// off, the phone never advertises a BLE service, so there's no added attack surface or battery

@@ -17,11 +17,10 @@ struct AlertRulesView: View {
                 set: { on in if on { showSuppressWarning = true } else { settings.suppressMirroredPumpAlarms = false } })
     }
 
-    /// D-03/D-04 (RED stub — flips to the real decision in the GREEN step of Task 1): whether the
-    /// honest "pending Apple approval" status should show. Returning a constant `false` here is
-    /// intentional for the RED commit — it makes the enabled+ungranted test case fail for real
-    /// (expects `true`, gets `false`) rather than failing to compile.
-    static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { false }
+    /// D-03/D-04: whether the honest "pending Apple approval" status should show — true only when the
+    /// user opted into Critical Alerts AND the OS grant isn't active yet (nothing to disclose otherwise).
+    /// Pure so it's directly testable without driving the view or a real notification center.
+    static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
 
     var body: some View {
         Form {
@@ -30,6 +29,15 @@ struct AlertRulesView: View {
             // specific alerts by condition).
             Section {
                 Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
+                if Self.shouldShowHonestStatus(enabled: settings.criticalAlertsEnabled,
+                                               grantActive: settings.criticalAlertGrantActive) {
+                    // D-04: non-alarming — `.notSupported` is the expected everyday pre-approval state
+                    // (Pitfall 2), not an error. Secondary/caption styling, no warning treatment.
+                    Text("Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
+                        + "(pump disconnected, CGM data lost, unresolved bolus) currently use "
+                        + "time-sensitive delivery.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("Silence pump alarms in the app", isOn: suppressBinding)
             } header: { Text("Notification delivery") } footer: {
                 Text("Critical Alerts let faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")

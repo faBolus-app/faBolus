@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import UserNotifications
+import UIKit
 
 /// P9 §6 — the single owner of the local-notification path.
 ///
@@ -209,16 +210,22 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         center.delegate = self
         registerCategories()
         // B6: also request critical-alert permission. Harmless (a no-op) when the app lacks the
-        // critical-alerts entitlement. We deliberately DON'T read `getNotificationSettings` to gate the
-        // `.critical` level: that completion runs on a background queue, and a `@MainActor`-inferred closure
-        // there SIGTRAPs at launch under CI's Xcode 16.4 (the trap the `registerCategories` note documents).
-        // It's also unnecessary — iOS itself downgrades a `.critical` notification to a normal one when the
-        // app isn't entitled, so gating on the user's `criticalAlertsEnabled` alone is correct and degrades
-        // gracefully at the OS level.
+        // critical-alerts entitlement — iOS itself downgrades a `.critical` notification to a normal one
+        // when the app isn't entitled, so gating `NotificationPoster.post`'s content on the user's
+        // `criticalAlertsEnabled` alone (D-05) is correct and degrades gracefully at the OS level.
         // Phase 5 (D-14, 05-03): `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon
         // glucose badge, `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores
         // every `setBadgeCount` call regardless of the user's opt-in.
         center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
+        // D-03: query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
+        // `notificationSettings()` API — the older completion-handler form runs its block on a background
+        // queue, and a `@MainActor`-inferred closure there is the exact SIGTRAP CI's Xcode 16.4 hit at
+        // launch (see `registerCategories`'s note on the same hazard). The async form resumes on the
+        // calling (main) actor, so there is no background-thread/`@MainActor` mismatch.
+        Task { @MainActor [weak self] in await self?.refreshGrantState() }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor in await self?.refreshGrantState() } }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
@@ -227,6 +234,23 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
+    }
+
+    /// D-03: query the OS grant state via the modern async API and cache it for the honest-status UI
+    /// (`AlertRulesView`). Called from `init` and again on foreground so a user who flips OS notification
+    /// permissions in Settings sees the status update without relaunching. `.enabled` means the entitlement
+    /// is granted AND the user authorized critical alerts; any other value (`.notSupported`/`.disabled`) is
+    /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`) — see
+    /// 08-RESEARCH.md Open Question #1 on which exact value iOS reports pre-entitlement.
+    ///
+    /// UI-only: this cache is NEVER read by `post`'s `allowCritical` gate or by `NotificationBroker.decide`
+    /// (D-05) — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
+    private func refreshGrantState() async {
+        let settings = await center.notificationSettings()
+        #if DEBUG
+        print("NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
+        #endif
+        AppSettings.shared.criticalAlertGrantActive = (settings.criticalAlertSetting == .enabled)
     }
 
     /// Remove delivered + pending notifications for these dedupe keys — used when a safety condition
