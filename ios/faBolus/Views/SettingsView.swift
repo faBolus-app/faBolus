@@ -38,7 +38,11 @@ struct SettingsView: View {
             List {
                 if query.isEmpty {
                     Section {
-                        ForEach(SettingsCategory.allCases) { cat in
+                        // 09.3-05 (D-06): .smartAssist exists only so SettingsCatalog can categorize the
+                        // eating-nudge keys where their screen actually lives; it is filtered out of this
+                        // generic loop so the existing hand-placed Smart Assist row below (the sole entry
+                        // point, #if FABOLUS_NUDGE / #else disabled Label) never gets a duplicate.
+                        ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
                             }
@@ -123,12 +127,21 @@ struct SettingsView: View {
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
+        // 09.3-05 (D-06): this arm exists only to keep the switch exhaustive — .smartAssist is filtered
+        // out of the generic root-menu loop above, so this is never reached from that loop. The real,
+        // sole Smart Assist entry point stays the hand-placed NavigationLink/disabled-Label block above.
+        case .smartAssist:
+            #if FABOLUS_NUDGE
+            SmartAssistSettingsView(settings: settings)
+            #else
+            Text("Smart Assist — unavailable in this build")
+            #endif
         }
     }
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case bolus, display, cgm, alerts, pump, remotes, about
+    case bolus, display, cgm, alerts, pump, remotes, about, smartAssist
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -139,6 +152,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .pump: return "Pump & control"
         case .remotes: return "Remotes & devices"
         case .about: return "About & help"
+        case .smartAssist: return "Smart Assist"
         }
     }
     var icon: String {
@@ -150,6 +164,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
         case .about: return "info.circle"
+        case .smartAssist: return "sparkles"
         }
     }
 }
