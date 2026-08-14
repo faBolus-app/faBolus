@@ -50,7 +50,14 @@ struct ModeAutomationHelpView: View {
                 step(2, "Add **Set Exercise Mode = On**.")
                 step(3, "Add **Set Temp Rate** and choose a percent (0–250%) and duration (15 min–72h) — the same range the pump and the official Tandem Mobi app allow. faBolus doesn't narrow this further; your pump's own **Basal Limit** (Delivery Limits) is the ceiling, and the pump rejects a rate that would exceed it.")
                 step(4, "Name it (e.g. \"Going for a run\") → **Share → Add to Home Screen**, or add it to the **Shortcuts widget** / **Action Button** / **Back Tap**.")
-                Label("Tapping it applies both settings in the background — no confirmation, without opening the app — as long as you use fixed values and avoid *Ask Each Time* (which pauses to prompt).", systemImage: "bolt")
+                Label("Tapping it applies your **Set Exercise Mode** switch in the background — no confirmation, without opening the app — as long as you use fixed values and avoid *Ask Each Time* (which pauses to prompt).", systemImage: "bolt")
+                    .font(.footnote).foregroundStyle(.secondary)
+                // §13 / D-03: the Set-Temp-Rate disclosure below is insulin-affecting DRAFT copy, §13-pending —
+                // it must pass §13 clinical review before any experimental distribution (BRANCHES.md §13). Its
+                // job today is to state the build-inert truth: `TempRateAutomation.benchVerifiedDefault` ships
+                // `false`, so `SetTempRateIntent` refuses every headless run ("pending saline-bench validation")
+                // until the Phase-11 saline-bench flag flips. Display copy only — no gate depends on this string.
+                Label("**Set Temp Rate isn't active yet.** It's pending saline-bench validation and will decline every run until a future faBolus update enables it — the other actions in the macro still run.", systemImage: "hourglass")
                     .font(.footnote).foregroundStyle(.secondary)
                 Label("Temp-rate options appear only on pumps/controllers that support them. Boluses are never available in Shortcuts.", systemImage: "hand.raised")
                     .font(.footnote).foregroundStyle(.secondary)

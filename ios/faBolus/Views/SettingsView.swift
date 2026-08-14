@@ -501,7 +501,13 @@ struct PumpSettingsView: View {
                     Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
                 }
             } header: { Text("Activity & sleep automation") } footer: {
-                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default.")
+                // §13 / D-03: the "temp rate and profile activation aren't active yet" sentence below is
+                // insulin-affecting DRAFT copy, §13-pending — it must pass §13 clinical review before any
+                // experimental distribution (BRANCHES.md §13). It discloses the build-inert truth:
+                // `TempRateAutomation.benchVerifiedDefault` and `ProfileAutomation.profileBenchVerifiedDefault`
+                // ship `false`, so both intents refuse every headless run until the Phase-11 saline-bench flag
+                // flips. Display copy only — no gate depends on this string.
+                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. **Temp rate and profile activation aren't active yet** — those two actions are pending saline-bench validation and will decline every run until a future faBolus update enables them. All off by default.")
             }
             if BackendRegistry.enabled.count > 1 {
                 Section {
