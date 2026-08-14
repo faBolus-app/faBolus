@@ -583,22 +583,23 @@ struct RemotesSettingsView: View {
     /// §2.3: turning an enable ON routes through the one-time warning on first use (Confirm arms it +
     /// records the ack; Cancel leaves it off — the binding's `get` reads the real, still-false flag so the
     /// switch snaps back). A subsequent turn-on (already acknowledged, or after turning it off) arms
-    /// directly. Turning OFF is always immediate.
+    /// directly. Turning OFF is always immediate. Routed through the shared `guardedToggle` factory
+    /// (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings toggle uses.
     private var watchBolusBinding: Binding<Bool> {
-        Binding(get: { settings.watchBolusEnabled }, set: { on in
-            if on {
-                if settings.hasAcknowledgedWatchBolusWarning { settings.watchBolusEnabled = true }
-                else { showWatchBolusWarning = true }
-            } else { settings.watchBolusEnabled = false }
-        })
+        guardedToggle(
+            get: { settings.watchBolusEnabled },
+            set: { settings.watchBolusEnabled = $0 },
+            skipConfirmIf: { settings.hasAcknowledgedWatchBolusWarning },
+            requestConfirm: { showWatchBolusWarning = true }
+        )
     }
     private var garminBolusBinding: Binding<Bool> {
-        Binding(get: { settings.garminBolusEnabled }, set: { on in
-            if on {
-                if settings.hasAcknowledgedGarminBolusWarning { settings.garminBolusEnabled = true }
-                else { showGarminBolusWarning = true }
-            } else { settings.garminBolusEnabled = false }
-        })
+        guardedToggle(
+            get: { settings.garminBolusEnabled },
+            set: { settings.garminBolusEnabled = $0 },
+            skipConfirmIf: { settings.hasAcknowledgedGarminBolusWarning },
+            requestConfirm: { showGarminBolusWarning = true }
+        )
     }
     /// §2.3: the optional remote-only dose ceiling. The toggle arms it at the default cap; the picker edits
     /// the value. `nil` (off) ⇒ the pump's max alone governs remote boluses.
@@ -752,13 +753,15 @@ struct RemotesSettingsView: View {
         // §2.3: one-time warnings. Confirm arms the enable + records the ack; Cancel leaves it off. The
         // Apple Watch copy notes that wrist detection makes an accidental tap materially less likely than
         // on Garmin, but the enable is still explicit and off by default.
-        .alert("Allow bolusing from Apple Watch?", isPresented: $showWatchBolusWarning) {
+        .confirmationDialog("Allow bolusing from Apple Watch?", isPresented: $showWatchBolusWarning,
+                             titleVisibility: .visible) {
             Button("Allow bolusing") { settings.acknowledgeWatchBolusWarning(); settings.watchBolusEnabled = true }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This lets you deliver real insulin from your Apple Watch, right from your wrist. The Watch's wrist detection makes an accidental tap materially less likely than on Garmin, but you're still turning on insulin delivery — it stays off until you allow it here, and every bolus still needs your confirmation on the Watch. You can turn this off any time.")
         }
-        .alert("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning) {
+        .confirmationDialog("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning,
+                             titleVisibility: .visible) {
             Button("Allow bolusing") { settings.acknowledgeGarminBolusWarning(); settings.garminBolusEnabled = true }
             Button("Cancel", role: .cancel) { }
         } message: {
