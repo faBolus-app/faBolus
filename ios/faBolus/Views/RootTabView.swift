@@ -16,6 +16,15 @@ struct RootTabView: View {
         await model.autoReconnectIfNeeded()
     }
 
+    /// SC3 tab-strand guard (D-03, T-09.2-07/T-09.2-08). Only tag `1` (Bolus) is conditionally removed
+    /// from the TabView when `phoneReadOnly` is on (`:23-26` below) — tags 0/2/3/4 are always present.
+    /// Pure function so it's unit-testable without instantiating the TabView (mirrors the
+    /// `reenterMatches` static-for-test idiom in `BolusEntryView`). `internal` (not `private`) so
+    /// `RootTabSelectionGuardTests` (`@testable import faBolus`) can call it directly.
+    static func resolveSelection(current: Int, phoneReadOnly: Bool) -> Int {
+        (phoneReadOnly && current == 1) ? 0 : current
+    }
+
     var body: some View {
         TabView(selection: $selection) {
             DashboardView(model: model)
@@ -39,6 +48,10 @@ struct RootTabView: View {
         .onChange(of: model.openBolusRequested) { _, requested in
             // Widget deep link → Bolus tab (no-op in read-only, where the tab is hidden).
             if requested { if !settings.phoneReadOnly { selection = 1 }; model.openBolusRequested = false }
+        }
+        .onChange(of: settings.phoneReadOnly) { _, isReadOnly in
+            // SC3 (D-03): never strand the user on a tab the toggle just hid.
+            selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
         }
         .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
             Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
