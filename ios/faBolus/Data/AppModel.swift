@@ -19,10 +19,20 @@ public final class AppModel {
 
     // Persistent history (SwiftData) — write-through target for long-term glucose/bolus history; powers
     // time-in-range / future plotting and feeds the advisory tools. Optional so a store-init failure
-    // never breaks the app. See MIGRATION.md (Phase 2).
-    private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
-    private var lastGlucoseIngest = Date.distantPast
-    private var lastBolusIngest = Date.distantPast
+    // never breaks the app. See MIGRATION.md (Phase 2). `var` (not `let`) so `#if DEBUG`
+    // `setHistoryStoreForTesting` can substitute an in-memory store for test isolation; production never
+    // reassigns it after init.
+    private var history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    // Phase 09.7-01 (Pitfall 3 fix): identity-diff bookkeeping (this cycle's readings vs. what the LAST
+    // `persistNewHistory` call already wrote), NOT a forward-only date watermark. A forward watermark
+    // (`$0.date > lastGlucoseIngest`) silently dropped any gap-sync record dated OLDER than the
+    // watermark — exactly the interior/forward-gap records D-02 exists to fetch. Diffing against the
+    // previous snapshot's identity set lets an older record through (it wasn't in the last snapshot, so
+    // it's "new") while still not re-inserting the same already-ingested readings on every `refresh()`
+    // tick (`refresh()`/`persistNewHistory` fire far more often than history actually changes — a plain
+    // "always ingest everything" would re-write the same rows into SwiftData on every poll).
+    private var lastPersistedGlucoseKeys: Set<TimeInterval> = []
+    private var lastPersistedBolusKeys: Set<TimeInterval> = []
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
     @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
@@ -902,6 +912,10 @@ public final class AppModel {
     public var openBolusRequested = false
 
     /// Write only NEW readings/boluses into the persistent store (never re-insert the rolling buffer).
+    /// Phase 09.7-01 (Pitfall 3 fix): "new" is identity-diffed against the PREVIOUS call's snapshot, not
+    /// date-watermarked — a gap-sync record dated older than everything previously seen still reaches
+    /// `GlucoseHistoryStore` here (D-02), while an unchanged reading already written on the last call is
+    /// still skipped (no unbounded re-insert on every `refresh()` tick). See `lastPersistedGlucoseKeys`.
     private func persistNewHistory(provenance: GlucoseProvenance) {
         guard let history else { return }
         let sourceID: String
@@ -910,17 +924,35 @@ public final class AppModel {
         case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
         default:                    sourceID = "pump"; priority = 50    // pump-relayed
         }
-        let newGlucose = glucoseHistory.filter { $0.date > lastGlucoseIngest }
+        let glucoseKeys = Set(glucoseHistory.map(\.date.timeIntervalSince1970))
+        let newGlucose = glucoseHistory.filter { !lastPersistedGlucoseKeys.contains($0.date.timeIntervalSince1970) }
         if !newGlucose.isEmpty {
             history.ingestGlucose(newGlucose, sourceID: sourceID, priority: priority)
-            lastGlucoseIngest = newGlucose.map(\.date).max() ?? lastGlucoseIngest
         }
-        let newBoluses = bolusMarkers.filter { $0.date > lastBolusIngest }
+        lastPersistedGlucoseKeys = glucoseKeys
+
+        let bolusKeys = Set(bolusMarkers.map(\.date.timeIntervalSince1970))
+        let newBoluses = bolusMarkers.filter { !lastPersistedBolusKeys.contains($0.date.timeIntervalSince1970) }
         if !newBoluses.isEmpty {
             history.ingestBoluses(newBoluses, sourceID: "pump")
-            lastBolusIngest = newBoluses.map(\.date).max() ?? lastBolusIngest
         }
+        lastPersistedBolusKeys = bolusKeys
     }
+
+    #if DEBUG
+    /// Test seam: substitute the persistent history store (e.g. an in-memory `GlucoseHistoryStore`) so a
+    /// test can assert on `persistNewHistory`'s write-through without touching the real on-disk store or
+    /// leaking state across tests/suites. Production never calls this — `history` is set once at init.
+    func setHistoryStoreForTesting(_ store: GlucoseHistoryStore?) {
+        history = store
+        lastPersistedGlucoseKeys = []
+        lastPersistedBolusKeys = []
+    }
+    /// Test seam: read-through into the injected store, mirroring `storedStatistics`'s public read
+    /// pattern — lets a test assert a fetched (incl. gap-sync) history record actually reached the
+    /// persistent store (Pitfall 3 fix), not just the in-memory `glucoseHistory` buffer.
+    func storedGlucoseForTesting(in range: ClosedRange<Date>) -> [GlucoseReading] { history?.glucose(in: range) ?? [] }
+    #endif
 
     /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
     public func storedStatistics(days: Int = 90) -> GlucoseStatistics? {

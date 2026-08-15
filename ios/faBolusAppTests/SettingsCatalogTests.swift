@@ -26,6 +26,8 @@ struct SettingsCatalogTests {
         // Owner-requested "Show unit labels" toggle: 49 → 50 (showGlucoseUnitLabels added).
         // Phase 6 (06-01, 999.2/D-01): 50 → 51 (autoTempRate added).
         // Phase 6 (06-02, 999.2/D-02): 51 → 52 (autoProfileActivation added).
+        // Phase 09.7-01: historyCoverage (D-04) is intentionally NOT added here — see the NOTE in
+        // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
         #expect(SettingsCatalog.descriptors.count == 52)
         #expect(SettingsCatalog.byKey.count == 52)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)

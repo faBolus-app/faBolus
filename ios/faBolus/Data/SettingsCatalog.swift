@@ -188,6 +188,14 @@ enum SettingsCatalog {
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
+        // NOTE (Phase 09.7-01): `AppSettings.historyCoverage` (D-04, the gap-sync coverage-map bookkeeping)
+        // is deliberately NOT registered here — it has no UI surface at all (pure sync bookkeeping, never
+        // shown/edited), matching the existing precedent for other internal-only persisted properties
+        // (`criticalAlertGrantActive`, `stackingGuardNoticeAckAt`, `clinicianTierAckAt`, `therapyEditAckAt`
+        // — none of which are catalog rows either). Adding it here would fail
+        // `SettingsReachabilityGuardTests.everyNonExemptCatalogKeyIsReachableInViews` (SC2), which requires
+        // every non-debug-exempt catalog key to have a literal UI reference — correctly, since the catalog
+        // is for user-facing/backup-relevant settings, not arbitrary internal state.
         // 09.3-05 (D-06): categorized .smartAssist, not .bolus — matches where the eating-nudge screen
         // actually lives (SmartAssistSettingsView / EatingNudgeSettingsView), reconciling the
         // catalog-category vs UI-location divergence. Bindings/tier/mode/backsUp unchanged.

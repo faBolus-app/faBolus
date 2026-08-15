@@ -66,6 +66,17 @@ public final class AppSettings {
     /// so the default is unlimited; this only exists for users who prefer data-minimization.
     public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
 
+    /// Persisted pump history-log sequence coverage (D-04, Phase 09.7) — replaces the one-shot
+    /// `didBackfill` gate. `TandemBackend` reads this on every connect to compute exactly which
+    /// sequence windows are still missing (D-02), and writes back into it as gap-sync windows complete.
+    /// Derived/rebuildable local sync bookkeeping, not a user preference — persisted with
+    /// `eatingTriggerConfig`'s JSON-in-UserDefaults shape, but deliberately NOT a `SettingsCatalog` row
+    /// (no UI surface at all; see the NOTE in `SettingsCatalog.swift`) and never included in a settings
+    /// backup.
+    public var historyCoverage: HistoryCoverageMap {
+        didSet { if let data = try? JSONEncoder().encode(historyCoverage) { d.set(data, forKey: "historyCoverage") } }
+    }
+
     /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
     public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
@@ -547,6 +558,12 @@ public final class AppSettings {
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
+        if let data = d.data(forKey: "historyCoverage"),
+           let coverage = try? JSONDecoder().decode(HistoryCoverageMap.self, from: data) {
+            historyCoverage = coverage
+        } else {
+            historyCoverage = HistoryCoverageMap()
+        }
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         if let data = d.data(forKey: "eatingTriggerConfig"),

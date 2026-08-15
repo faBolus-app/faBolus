@@ -565,6 +565,11 @@ targets:
         product: faBolusCore
       - package: faBolusDesign
         product: faBolusDesign
+      # Phase 09.7-01: HistoryLogSyncTests injects an in-memory GlucoseHistoryStore directly (test
+      # isolation from the app's real on-disk store) — needs a direct module import, not just the
+      # transitive link the app target already has.
+      - package: HistoryStore
+        product: HistoryStore
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

@@ -311,10 +311,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
     private var pumpTimeAnchor: (pump: UInt32, phone: Date)?
 
-    // CGM history backfill: pages backward through the pump's history log (in 255-record pages)
-    // until it has enough CGM readings to fill the chart, then merges them. Paging is driven by
-    // a debounce timer (each page's stream ends when frames stop) rather than an exact record
-    // count, because sequence numbers can be non-contiguous. Re-runs on each connect.
+    // Gap-aware history-log sync (Phase 09.7, D-02/D-04 — replaces the one-shot, backward-only,
+    // once-ever-gated backfill this comment block used to describe): on every connect, reconciles
+    // the pump's reported `[firstSequenceNum, lastSequenceNum]` range against the persisted
+    // `AppSettings.historyCoverage` map and fetches ONLY the missing sequence windows — both the
+    // trailing/forward gap (records the pump logged during a disconnect) and any interior/non-sequential
+    // holes — bounded by `historyRetentionDays` (see `missingRanges`/`retentionFloorSequence`). Paging
+    // (255-record pages) and the debounce-based "page done" detection are UNCHANGED from the prior
+    // backfill (see `requestBackfillPage`/`scheduleBackfillTick` below); only WHICH windows get
+    // requested, and where the fetched coverage is recorded, changed.
     //
     // SIXTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #5 — the first
     // capture with per-read "read recv ←" instrumentation): with the bootstrap-order fix engaged,
@@ -331,7 +336,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     // made it unnecessary; `HistoryLogStatusRequest` is sent immediately again, exactly as before this
     // session, matching the vendored jwoglom/pumpx2-oracle reference's own history-log fetch timing
     // question being independent of the loop. See `.planning/debug/pump-pairing-loop.md` for the full trail.
-    private var didBackfill = false
+    //
+    // `historyStatusRequestedThisConnection` bounds `HistoryLogStatusRequest` to (at most) once per BLE
+    // connection lifetime (reset in `linkDroppedCleanup`, exactly like the flag it replaces) — NOT
+    // once-EVER like that prior flag. `applyTimeResponse`/the unsolicited `TimeSinceResetResponse`
+    // case below both fire on every SIGNED-flow timestamp refresh too (bolus delivery, alert dismiss,
+    // control commands — see their call sites), so without this per-connection latch a live bolus
+    // delivery would interject a `HistoryLogStatusRequest` read into the signed sequence's BLE traffic.
+    // The coverage map (not request cadence) is what fixes the disconnect-gap defect (D-02) — a fresh
+    // connection still gets exactly one status check, same as before; only the delta-vs-coverage-map
+    // computation that follows it is new.
+    private var historyStatusRequestedThisConnection = false
     /// Model detected from the BLE advertised name at discovery (Mobi advertises "…Mobi…"). This is
     /// the reliable, direct model signal — the API version does NOT cleanly separate the two (newer
     /// t:slim X2 firmware reports API >= 3.5). nil = name didn't identify it → fall back to API version.
@@ -369,13 +384,27 @@ public final class TandemBackend: NSObject, PumpBackend {
     // neutral HistoryEvents in finishBackfill (where the pump→phone date conversion lives).
     private var backfillEventLogs: [any HistoryLogEvent] = []
     public private(set) var historyEvents: [HistoryEvent] = []
-    private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page
-    private var backfillFirstSeq: UInt32 = 0    // oldest available sequence number
+    // Gap-window queue (D-02/D-04): `missingRanges(...)` (computed once per `HistoryLogStatusResponse`,
+    // see `beginGapSync`) produces the full ordered list of sequence ranges still missing; `pendingGapWindows`
+    // holds every window not yet started, and `currentGapWindow` is the one actively being paged —
+    // `backfillFirstSeq`/`backfillNextEnd` are that window's still-unfetched (narrowing) tail, paged
+    // backward exactly like the old single-walk backfill did (`requestBackfillPage`/`scheduleBackfillTick`
+    // reused verbatim as the paging + stream-end-debounce mechanics — Pitfall 2: this timer is NOT "burst
+    // safety pacing", it's how the code learns a page's stream has gone quiet).
+    private var pendingGapWindows: [ClosedRange<UInt32>] = []
+    private var currentGapWindow: ClosedRange<UInt32>?
+    private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page within currentGapWindow
+    private var backfillFirstSeq: UInt32 = 0    // lower bound of currentGapWindow
+    // T-09.7-02 (DoS/battery): total pages issued across the WHOLE gap sync (every window), not just the
+    // current window — reused directly as the hard iteration cap so a pathologically fragmented coverage
+    // map (many small held ranges → many small gap windows) still can't drive an unbounded re-fetch loop.
+    // When the cap trips mid-window, only the sub-range actually fetched is credited to the coverage map
+    // (see `creditCurrentWindowAndAdvance`) — the untouched remainder stays a real gap, resumable on the
+    // very next connect, never lost and never re-looped within this one.
     private var backfillPages = 0
     private var backfillTimer: Timer?
     private static let backfillPageSize = 255   // numberOfLogs is one byte
-    private static let backfillMaxPages = 20    // safety cap (~5100 records) — cover a full day
-    private static let backfillTargetReadings = 288  // ~24 h @ 5-min
+    private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
 
     // Bolus-in-progress tracking so the UI keeps a live cancel window + reports partial delivery.
     private var cancelRequested = false
@@ -429,6 +458,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     func injectAuthorizationFrameForTesting(_ frame: [UInt8]) {
         pumpClient(client, didReceiveFrame: frame, on: .authorization)
     }
+    /// Test seam: mirrors `injectStatusFrameForTesting`/`injectAuthorizationFrameForTesting` but for the
+    /// HISTORY_LOG characteristic — `HistoryLogStreamResponse` (op129) is the pump's ONLY reply
+    /// registered under `.historyLog` (`ResponseParser`'s dispatch is keyed by `(characteristic, opCode)`,
+    /// not opcode alone), so injecting it via `injectStatusFrameForTesting`'s hardcoded `.currentStatus`
+    /// would silently fail to parse (`unknownOpcode`) and never reach the gap-sync stream handler.
+    func injectHistoryLogFrameForTesting(_ frame: [UInt8]) {
+        pumpClient(client, didReceiveFrame: frame, on: .historyLog)
+    }
     #endif
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     /// Active IDP id from the last ProfileStatus read, to flag the active profile as IDPSettings arrive.
@@ -475,10 +512,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Apply the side-effects the old `didReceiveFrame` case did for a time response (the pump↔phone clock
-    /// anchor + one-shot history backfill), now that the awaited response is consumed by the coordinator.
+    /// anchor + the per-connection history-status check), now that the awaited response is consumed by
+    /// the coordinator.
     private func applyTimeResponse(_ m: TimeSinceResetResponse) {
         pumpTimeAnchor = (m.currentTime, Date())
-        if !didBackfill { didBackfill = true; try? client.send(HistoryLogStatusRequest()) }
+        if !historyStatusRequestedThisConnection {
+            historyStatusRequestedThisConnection = true
+            // `tx` (not `client`) — routes through `injectedTransport` under test (round-3 §6.1 seam),
+            // matching every other testable send site in this file (e.g. the remote-carb/BG entries
+            // above). `HistoryLogStatusRequest` is unsigned/unelevated: `.read`-risk, permitted under
+            // the connection's default `.readOnly` policy (D-06).
+            try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+        }
     }
 
     /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile). Bounded via
@@ -644,6 +689,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// direct EGV send sites). Lets a test prove those sends honour the `badOpcodes` guard exactly like
     /// every other status read.
     func simulatePredictiveBurstForTesting() { runPredictiveBurst() }
+
+    /// Phase 09.7-01 test seam: fires the gap-sync page-done debounce immediately, without waiting on a
+    /// real 2.5 s `Timer` — mirrors `simulateRecurringFastAndStaticReadTickForTesting`'s "synchronous
+    /// effect only" shape. A test calls this once per page/window boundary it wants to force.
+    func fireHistorySyncTickForTesting() { backfillPageDone() }
     #endif
 
     // MARK: - PumpDataSource
@@ -1755,22 +1805,97 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
-    /// Request one page of history (255 records) ending at `backfillNextEnd`, walking backward.
+    /// Pure gap computation (D-02, RESEARCH Pattern 1) — no BLE, directly unit-testable. Given the pump's
+    /// reported `[pumpFirst, pumpLast]` range, the retention floor (see `retentionFloorSequence`), and the
+    /// locally HELD coverage ranges, returns the ordered list of sequence ranges still missing: both a
+    /// trailing FORWARD gap (records logged since the last sync, incl. during a disconnect) and any
+    /// INTERIOR holes (past data held only non-sequentially). Generalizes cleanly over any number of held
+    /// ranges — subtracts each held range from the running remainder in turn.
+    static func missingRanges(pumpFirst: UInt32, pumpLast: UInt32, retentionFloor: UInt32,
+                              held: [ClosedRange<UInt32>]) -> [ClosedRange<UInt32>] {
+        let lower = max(pumpFirst, retentionFloor)
+        guard lower <= pumpLast else { return [] }
+        var missing: [ClosedRange<UInt32>] = [lower...pumpLast]
+        for h in held.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            missing = missing.flatMap { m -> [ClosedRange<UInt32>] in
+                guard h.overlaps(m) else { return [m] }
+                var pieces: [ClosedRange<UInt32>] = []
+                if m.lowerBound < h.lowerBound { pieces.append(m.lowerBound...(h.lowerBound - 1)) }
+                if m.upperBound > h.upperBound { pieces.append((h.upperBound + 1)...m.upperBound) }
+                return pieces
+            }
+        }
+        return missing
+    }
+
+    /// Retention-floor sequence for `missingRanges` (D-03). `historyRetentionDays == 0` means "keep
+    /// everything" (`AppSettings`'s own doc comment / default — Pitfall 1), so it must resolve to
+    /// `pumpFirst` (the full available range), never to a "now"/zero sentinel. For `> 0`, there is no
+    /// sequence↔date mapping available BEFORE any records are fetched (sequence numbers advance for
+    /// every logged event, not just CGM, at a rate this code can't know in advance) — so this
+    /// deliberately returns `pumpFirst` in both cases: a superset fetch (never under-fetches the
+    /// retention window, satisfying D-03), with the EXACT date boundary enforced by the existing
+    /// `AppModel.applyRetention` store-side pruning. This is the two-place retention design: a superset
+    /// fetch-floor estimate here + exact date pruning there (resolves RESEARCH Open Question #1 — first-
+    /// sync volume is treated as resumable via the coverage map, never precomputed).
+    static func retentionFloorSequence(pumpFirst: UInt32, pumpLast: UInt32, retentionDays: Int) -> UInt32 {
+        pumpFirst
+    }
+
+    /// Entry point for a gap-aware sync (D-02/D-04): compute the missing windows against the persisted
+    /// coverage map and, if any exist, start paging them. Replaces the old unconditional
+    /// `backfillFirstSeq...backfillNextEnd` full backward walk.
+    private func beginGapSync(pumpFirst: UInt32, pumpLast: UInt32) {
+        let held = AppSettings.shared.historyCoverage.ranges
+        let floor = Self.retentionFloorSequence(pumpFirst: pumpFirst, pumpLast: pumpLast,
+                                                retentionDays: AppSettings.shared.historyRetentionDays)
+        let windows = Self.missingRanges(pumpFirst: pumpFirst, pumpLast: pumpLast, retentionFloor: floor, held: held)
+        guard !windows.isEmpty else { return }
+        backfillActive = true
+        backfillBuffer.removeAll(keepingCapacity: true)
+        backfillBoluses.removeAll(keepingCapacity: true)
+        backfillEventLogs.removeAll(keepingCapacity: true)
+        backfillPages = 0
+        pendingGapWindows = windows
+        advanceToNextGapWindow()
+    }
+
+    /// Pop the next gap window off the queue and start paging it, or finish the sync if the queue is
+    /// empty or the safety cap (T-09.7-02) has already been reached.
+    private func advanceToNextGapWindow() {
+        guard !pendingGapWindows.isEmpty, backfillPages < Self.backfillMaxPages else {
+            finishBackfill(); return
+        }
+        let window = pendingGapWindows.removeFirst()
+        currentGapWindow = window
+        backfillFirstSeq = window.lowerBound
+        backfillNextEnd = window.upperBound
+        requestBackfillPage()
+    }
+
+    /// Request one page of the CURRENT gap window (255 records max), walking backward from
+    /// `backfillNextEnd` — unchanged paging shape from the prior single-walk backfill (RESEARCH Pattern
+    /// 2), just driven by the gap-window queue instead of one unconditional range.
     private func requestBackfillPage() {
         guard backfillNextEnd >= backfillFirstSeq, backfillPages < Self.backfillMaxPages else {
-            finishBackfill(); return
+            creditCurrentWindowAndAdvance(); return
         }
         let available = backfillNextEnd - backfillFirstSeq + 1
         let count = min(UInt32(Self.backfillPageSize), available)
-        guard count > 0 else { finishBackfill(); return }
+        guard count > 0 else { creditCurrentWindowAndAdvance(); return }
         let startLog = backfillNextEnd - (count - 1)
         backfillPages += 1
-        try? client.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)))
-        backfillNextEnd = startLog > 0 ? startLog - 1 : 0   // next (older) page
+        // `tx` (not `client`) — see `applyTimeResponse`'s doc comment on why the gap-sync path routes
+        // through the testable seam.
+        try? tx.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)),
+                     authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+        backfillNextEnd = startLog > 0 ? startLog - 1 : 0   // next (older) page within this window
         scheduleBackfillTick()
     }
 
-    /// Debounce: a page's stream has ended once ~1.5 s pass with no new frames.
+    /// Debounce: a page's stream has ended once ~2.5 s pass with no new frames (Pitfall 2: this is
+    /// stream-end DETECTION, not "burst safety pacing" — there is no explicit end-of-page marker in the
+    /// protocol, so silence is the only signal a page is done).
     private func scheduleBackfillTick() {
         backfillTimer?.invalidate()
         backfillTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
@@ -1779,12 +1904,33 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     private func backfillPageDone() {
-        // Keep paging backward until we have enough CGM readings or run out of history.
-        if backfillBuffer.count < Self.backfillTargetReadings && backfillNextEnd >= backfillFirstSeq {
+        if backfillNextEnd >= backfillFirstSeq, backfillPages < Self.backfillMaxPages {
             requestBackfillPage()
         } else {
-            finishBackfill()
+            creditCurrentWindowAndAdvance()
         }
+    }
+
+    /// Record into the persisted coverage map exactly the sub-range of `currentGapWindow` that was
+    /// actually fetched this pass (D-04), then move on to the next queued window (or finish the sync).
+    /// `backfillNextEnd` narrows down to the first NOT-yet-fetched sequence as pages complete, so
+    /// `(backfillNextEnd fully consumed ? window.lowerBound : backfillNextEnd + 1)...window.upperBound`
+    /// is exactly what landed in the buffers below — crediting only that slice means a safety-cap trip
+    /// mid-window still leaves a real, resumable gap for the next connect (never silently marked covered,
+    /// never re-looped within this one — T-09.7-02).
+    private func creditCurrentWindowAndAdvance() {
+        if let window = currentGapWindow {
+            if backfillNextEnd < backfillFirstSeq {
+                AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage.inserting(window)
+            } else if backfillNextEnd < window.upperBound {
+                AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage
+                    .inserting((backfillNextEnd + 1)...window.upperBound)
+            }
+            // else: zero pages were ever issued for this window (cap already tripped before it started) —
+            // nothing fetched, nothing to credit.
+        }
+        currentGapWindow = nil
+        advanceToNextGapWindow()
     }
 
     /// Merge the buffered CGM history into the chart. Places each reading at its TRUE pump-clock
@@ -1794,6 +1940,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func finishBackfill() {
         backfillTimer?.invalidate(); backfillTimer = nil
         backfillActive = false
+        pendingGapWindows.removeAll(); currentGapWindow = nil
         defer { backfillBuffer.removeAll(keepingCapacity: false); backfillBoluses.removeAll(keepingCapacity: false) }
         let now = Date()
         // The pump logs time as local wall-clock. Adding the 2008 epoch treats it as UTC, which
@@ -1999,10 +2146,14 @@ extension TandemBackend: PumpBLEClientDelegate {
         if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
         // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
         failPumpWaiters(BolusError.notConnected)
-        // Re-backfill on the next connect so the gap from this disconnect gets filled.
-        didBackfill = false; backfillActive = false
+        // Re-check history status on the next connect (D-02: a fresh connect always re-syncs against the
+        // persisted coverage map). Only TRANSIENT in-flight walk state resets here — `AppSettings
+        // .historyCoverage` (the persisted coverage map) is deliberately NOT cleared, so the next connect
+        // resumes from where this one left off instead of re-walking from scratch (D-04).
+        historyStatusRequestedThisConnection = false; backfillActive = false
         backfillTimer?.invalidate(); backfillTimer = nil
         backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+        pendingGapWindows.removeAll(); currentGapWindow = nil
         detectedIsMobi = nil   // re-detect the model on the next connect
         pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
         // FIFTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #4 direct log
@@ -2261,17 +2412,13 @@ extension TandemBackend: PumpBLEClientDelegate {
             // PX-08: awaited time responses are consumed by the coordinator (side-effects applied in
             // `applyTimeResponse`); this handles any unsolicited time frame.
             pumpTimeAnchor = (m.currentTime, Date())
-            if !didBackfill { didBackfill = true; try? client.send(HistoryLogStatusRequest()) }
+            if !historyStatusRequestedThisConnection {
+                historyStatusRequestedThisConnection = true
+                try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            }
         case let m as HistoryLogStatusResponse:
             guard !backfillActive, m.numEntries > 0 else { break }
-            backfillActive = true
-            backfillBuffer.removeAll(keepingCapacity: true)
-            backfillBoluses.removeAll(keepingCapacity: true)
-            backfillEventLogs.removeAll(keepingCapacity: true)
-            backfillFirstSeq = m.firstSequenceNum
-            backfillNextEnd = m.lastSequenceNum
-            backfillPages = 0
-            requestBackfillPage()
+            beginGapSync(pumpFirst: m.firstSequenceNum, pumpLast: m.lastSequenceNum)
         case let m as HistoryLogStreamResponse:
             guard backfillActive else { break }
             for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
