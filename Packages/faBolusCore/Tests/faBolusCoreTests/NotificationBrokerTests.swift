@@ -35,6 +35,12 @@ import Foundation
         #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"])
     }
 
+    @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
+        // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; the other 7
+        // (incl. all three trio categories) are app-generated.
+        #expect(Set(C.allCases.filter { $0.isPumpSourced }.map(\.rawValue)) == ["pumpAlert"])
+    }
+
     @Test func bolusDeliveryFailedIsGovernedNotASafetyCategory() {
         // §6 `lastError` Tier-2: a FAILED / BLOCKED delivery notification. The owner decided it is
         // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON, can be disabled, and can be
@@ -240,6 +246,10 @@ import Foundation
         #expect(s2 == state)
         let cfg = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420, minIntervalSeconds: 300)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
+        // Non-default allowCriticalBreakthrough round-trips too (D-04 field).
+        let cfg2 = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420,
+                                      minIntervalSeconds: 300, allowCriticalBreakthrough: false)
+        #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
     }
