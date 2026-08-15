@@ -507,16 +507,15 @@ struct RemindersAlertsView: View {
 
 // MARK: - Sleep schedule (native pump Sleep schedule)
 
-/// The pump's own native Sleep-schedule viewer (Phase 09.10). D-04: the READ is universal — this
-/// screen is reachable on ANY connected pump model (see `PumpControlView`'s ungated NavigationLink),
-/// never gated by `PumpCapabilities.supportsSleepScheduleWrite`. This plan (09.10-01) proves the READ
-/// round-trip only: every field renders as plain read-only text, on every pump. The write controls
-/// (DatePicker/Toggle/day-chips/Save, gated behind `UnverifiedFeatureGate`) land in 09.10-02 inside
-/// the `model.capabilities.supportsSleepScheduleWrite` seam in `slotRow(_:)` below — on Mobi that
-/// branch becomes editable; on t:slim it stays exactly this read-only rendering (D-04: "read-only
-/// where applicable"), so the write slots in without a structural change to this view.
+/// The pump's own native Sleep-schedule viewer + editor (Phase 09.10). D-04: the READ is universal —
+/// this screen is reachable on ANY connected pump model (see `PumpControlView`'s ungated
+/// NavigationLink), never gated by `PumpCapabilities.supportsSleepScheduleWrite`. The WRITE (09.10-02)
+/// is gated: on Mobi (`supportsSleepScheduleWrite == true`) `slotRow(_:)` renders an editable
+/// `SleepScheduleSlotEditRow`; on t:slim it stays permanently read-only (D-04: "read-only where
+/// applicable").
 struct SleepScheduleView: View {
     @Bindable var model: AppModel
+    @State private var unverified = UnverifiedFeatureGate()
 
     private var slots: [PumpSleepScheduleSlot] { model.snapshot.sleepSchedules }
     /// Defensive backstop (RESEARCH Open Question 2 / Assumption A3, UI-SPEC "Empty state (defensive
@@ -527,6 +526,10 @@ struct SleepScheduleView: View {
         slots.isEmpty
             || slots.allSatisfy { !$0.enabled && $0.activeDays == 0 && $0.startMinute == 0 && $0.endMinute == 0 }
     }
+    /// UI-SPEC "Empty state heading/body" — distinct from `looksUnavailable` above: every slot decoded
+    /// fine, but the user (or a fresh pump) simply has no slot turned on. Mobi gets a CTA-pointing
+    /// footer; t:slim (no write available) gets a plainer "nothing is set" footer.
+    private var allSlotsDisabled: Bool { !looksUnavailable && slots.allSatisfy { !$0.enabled } }
     /// Slots 0-1 are the pump's own user-facing "Sleep Schedule 1/2" (RESEARCH addendum 2026-08-15
     /// Item 5: upstream captures annotate slots 2-3 "Not visible in UI"); slots 2-3 are decoded but
     /// surfaced de-emphasized. The wire decode still reads all 4 physical slots.
@@ -541,11 +544,23 @@ struct SleepScheduleView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             } else {
+                if allSlotsDisabled {
+                    Section {
+                        Text(model.capabilities.supportsSleepScheduleWrite
+                             ? "No sleep-schedule slots are turned on."
+                             : "No sleep schedule is set on this pump.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        if model.capabilities.supportsSleepScheduleWrite {
+                            Text("Turn on a slot below, set its time window and active days, then Save.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 ForEach(primarySlots) { slot in
                     Section("Sleep Schedule \(slot.slot + 1)") { slotRow(slot) }
                 }
                 if !additionalSlots.isEmpty {
-                    Section("Additional (not shown on the pump)") {
+                    Section("Additional slots (not shown on the pump)") {
                         ForEach(additionalSlots) { slot in slotRow(slot) }
                     }
                 }
@@ -555,42 +570,127 @@ struct SleepScheduleView: View {
         .navigationTitle("Sleep schedule")
         .disabled(!model.pumpReady)
         .task { await model.refreshSleepSchedule() }
+        .unverifiedFeatureGate(unverified)
     }
 
-    /// One slot's fields. On Mobi (`model.capabilities.supportsSleepScheduleWrite`), 09.10-02 replaces
-    /// this branch's contents with editable controls; every rendered slot is independent of its
-    /// neighbors' `enabled` state, so a mixed enabled/disabled read needs no special-case branch.
+    /// One slot's fields. On Mobi (`model.capabilities.supportsSleepScheduleWrite`) this renders the
+    /// editable write row; every rendered slot is independent of its neighbors' `enabled` state, so a
+    /// mixed enabled/disabled read needs no special-case branch.
     @ViewBuilder
     private func slotRow(_ slot: PumpSleepScheduleSlot) -> some View {
         if model.capabilities.supportsSleepScheduleWrite {
-            // Write seam (09.10-02 lands DatePicker/Toggle/day-chips/Save here). Read-only for now —
-            // this plan proves the READ only, never a pump write.
-            readOnlyFields(slot)
+            SleepScheduleSlotEditRow(model: model, slot: slot, unverified: unverified)
         } else {
             // t:slim (and any non-write-capable backend): read-only, permanently — D-04.
             readOnlyFields(slot)
         }
     }
 
-    /// Plain-text rendering shared by both branches above (UI-SPEC: "every field rendered as plain
-    /// Text, NO DatePicker/Toggle/Save button" on the read-only side).
+    /// Plain-text rendering (UI-SPEC: "every field rendered as plain Text, NO DatePicker/Toggle/Save
+    /// button" on the read-only side).
     @ViewBuilder
     private func readOnlyFields(_ slot: PumpSleepScheduleSlot) -> some View {
         Text(slot.enabled ? "Enabled" : "Disabled")
-        Text("Start: \(minuteOfDayString(slot.startMinute))")
-        Text("End: \(minuteOfDayString(slot.endMinute))")
-        Text("Days: \(activeDaysString(slot.activeDays))")
+        Text("Start: \(Self.minuteOfDayString(slot.startMinute))")
+        Text("End: \(Self.minuteOfDayString(slot.endMinute))")
+        Text("Days: \(Self.activeDaysString(slot.activeDays))")
     }
 
-    private func minuteOfDayString(_ minute: Int) -> String {
+    static func minuteOfDayString(_ minute: Int) -> String {
         String(format: "%02d:%02d", minute / 60, minute % 60)
     }
 
     /// CONFIRMED bit ordering (RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1)…Sunday=bit6(64).
-    private func activeDaysString(_ bits: Int) -> String {
+    static func activeDaysString(_ bits: Int) -> String {
         let letters = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         let selected = (0..<7).filter { bits & (1 << $0) != 0 }.map { letters[$0] }
         return selected.isEmpty ? "No days selected" : selected.joined(separator: " ")
+    }
+}
+
+/// Editable Mobi write row for one Sleep-schedule slot (Phase 09.10-02). Local `@State` mirrors
+/// `ControlIQSettingsView`'s load-once-then-edit shape: seeded from the read `slot` on first appear,
+/// then edited independently until Save. `unverified` is the SHARED gate instance from the parent
+/// `SleepScheduleView` (an `@Observable` class — passed by reference, so `.request(...)` here arms the
+/// same modal the parent's `.unverifiedFeatureGate(unverified)` renders).
+private struct SleepScheduleSlotEditRow: View {
+    @Bindable var model: AppModel
+    let slot: PumpSleepScheduleSlot
+    let unverified: UnverifiedFeatureGate
+
+    @State private var startDate = Date()
+    @State private var endDate = Date()
+    /// CONFIRMED bit ordering (RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1)…Sunday=bit6(64).
+    /// Each element is a day-bit index 0...6, mapped deterministically regardless of chip display order.
+    @State private var selectedDays: Set<Int> = []
+    @State private var enabled = false
+    @State private var loaded = false
+    @State private var busy = false
+
+    private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]   // Mon...Sun, matches the bit order
+
+    private var activeDaysBitmask: Int { selectedDays.reduce(0) { $0 | (1 << $1) } }
+
+    var body: some View {
+        DatePicker("Start", selection: $startDate, displayedComponents: .hourAndMinute)
+        DatePicker("End", selection: $endDate, displayedComponents: .hourAndMinute)
+        dayChipRow
+        if selectedDays.isEmpty {
+            Text("No days selected — this schedule won't run on any day.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        Toggle("Enabled", isOn: $enabled)
+        Button {
+            unverified.request("The Sleep-schedule write (flag semantics + slots 1–3 unconfirmed on a real Mobi)") {
+                busy = true
+                Task {
+                    await model.setSleepSchedule(slot: slot.slot, enabled: enabled, activeDays: activeDaysBitmask,
+                                                 startMinute: Self.minuteOfDay(startDate), endMinute: Self.minuteOfDay(endDate))
+                    busy = false
+                }
+            }
+        } label: {
+            Label("Save Sleep Schedule \(slot.slot + 1)", systemImage: "checkmark.circle").font(.subheadline)
+        }
+        .disabled(busy)
+        .onAppear {
+            guard !loaded else { return }
+            startDate = Self.dateFromMinuteOfDay(slot.startMinute)
+            endDate = Self.dateFromMinuteOfDay(slot.endMinute)
+            selectedDays = Set((0..<7).filter { slot.activeDays & (1 << $0) != 0 })
+            enabled = slot.enabled
+            loaded = true
+        }
+    }
+
+    /// The 7-day toggle-chip row — the one genuinely new visual element this phase needs, anchored on
+    /// `ModeAutomationHelpView.step()`'s numbered circle-badge idiom (small filled/outlined `Circle`s).
+    /// Each chip maps DETERMINISTICALLY to its confirmed `activeDays` wire bit (Monday=bit0…Sunday=bit6).
+    private var dayChipRow: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<7, id: \.self) { bit in
+                let isSelected = selectedDays.contains(bit)
+                Button {
+                    if isSelected { selectedDays.remove(bit) } else { selectedDays.insert(bit) }
+                } label: {
+                    Text(Self.dayLetters[bit])
+                        .font(.caption.bold())
+                        .foregroundStyle(isSelected ? .white : .primary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(isSelected ? Color.indigo : Color.clear))
+                        .overlay(Circle().strokeBorder(isSelected ? Color.clear : Color.secondary, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private static func minuteOfDay(_ date: Date) -> Int {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+    private static func dateFromMinuteOfDay(_ minute: Int) -> Date {
+        Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: Date()) ?? Date()
     }
 }
 

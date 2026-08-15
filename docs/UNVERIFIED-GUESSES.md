@@ -98,5 +98,28 @@ feature is untested and "will likely not work" before they run — not just the 
 - Marked experimental in the CGM source picker; a passive G6 read may never connect (G6 needs an
   authenticated session). Prefer Dexcom Share or the xDrip App Group. See `docs/operate/cgm-failover.md`.
 
+## 6. Mobi native Sleep-schedule write (`SetSleepScheduleRequest.flag`) — Phase 09.10
+- **Narrowed (not removed):** the write's `activeDays` day-of-week bitmask is now **CONFIRMED** —
+  Monday=bit0(1), Tuesday=2, Wednesday=4, Thursday=8, Friday=16, Saturday=32, Sunday=bit6(64) — fixed by
+  upstream `MultiDay.java` and corroborated by two human-labeled real captures (`0x1F`="M Tu W Th F",
+  `0x20`="Sat", `127`="Su-Sa"). This is **not a guess**.
+- **`flag`'s VALUE is pinned to the captured golden 3** — faBolus now sends `flag: 3`, the value
+  jwoglom's `SetSleepScheduleRequestTest` captures from the real Tandem app (both the enable AND the
+  disable of slot 0 assert `flag == 3`), replacing the old placeholder `1`.
+- **Still unverified: `flag`'s SEMANTIC meaning**, and whether the captured slot-0 write generalizes to
+  slots 1-3 — no write to any slot other than 0 has ever been captured. Slots 2-3 aren't even visible on
+  the pump's own UI (RESEARCH addendum 2026-08-15 Item 5), so a write to them is doubly unconfirmed.
+- **Where:** `ios/faBolus/Data/TandemBackend.swift` (`setSleepSchedule`); UI in
+  `ios/faBolus/Views/PumpWizardViews.swift` (`SleepScheduleView` / `SleepScheduleSlotEditRow`), Mobi-only
+  (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the upstream `SetSleepScheduleRequest`/
+  `SetSleepScheduleResponse` `MOBI_ONLY`/`MOBI_API_V3_5` device-scope annotation.
+- **Risk:** mode-only, non-insulin (L7 — the write is `.settings`-risk, structurally incapable of
+  reaching the dose/delivery path; see `SleepScheduleWriteBoundaryTests`). Worst case: the schedule
+  doesn't take, or a slot behaves unexpectedly.
+- **Gated:** behind the blocking untested-feature modal (`UnverifiedFeatureGate`) on every Save button.
+- **Verify (Phase-11 bench):** set a distinctive schedule on each of the 4 slots from the app, then read
+  it back directly on the pump's own touchscreen and confirm every slot (including 2-3) took the exact
+  value written — this is the confirmation step that resolves `flag`'s semantics.
+
 ---
 Remove an entry once it's been confirmed on hardware.
