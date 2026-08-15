@@ -503,6 +503,28 @@ struct AppModelBehaviorTests {
         }
     }
 
+    #if FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+    /// D-02 (Phase 09.5, experimental-only): the CIQ-off precondition in `AppModel.setTempBasal` is
+    /// compiled OUT under `FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL`, so a temp rate while Control-IQ is ON
+    /// reaches the backend instead of being refused pre-flight. This is the counterpart to
+    /// `inverseControlIQPreconditionsRefusedAtFunnel` above (which pins the DEFAULT-build refusal and
+    /// MUST stay unmodified) — this test pins the OVERTURNED behavior, compiled only in the experimental
+    /// build (never in the default build or CI, which always builds with the flag off).
+    @Test func inverseControlIQPreconditionOverturnedUnderExperimentalFlag() async {
+        try? await withCleanSettings {
+            let (m, backend, _) = await makeModel(connected: true)   // MockBackend defaults Control-IQ ON
+            AppSettings.shared.advancedControlEnabled = true
+
+            // Temp rate while Control-IQ is ON → the CIQ-off refusal does NOT fire; the write reaches
+            // the backend funnel (MockBackend's write counter increments, lastError is not the
+            // tempRateBlockReason value).
+            await m.setTempBasal(percent: 120, durationMinutes: 30)
+            #expect(m.lastError != ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: true))
+            #expect(backend.tempRateWriteCount == 1)
+        }
+    }
+    #endif
+
     /// P14 S11 (§2.1(7)): the Control-IQ CONFIG compatibility pre-flight, AT THE FUNNEL.
     /// - A Mobi (remotely configurable) is NOT blocked — even though its `controllerVariant` is still
     ///   `.none` here (the MockBackend reads no feature bits, exactly like a real Mobi before `staticRead`

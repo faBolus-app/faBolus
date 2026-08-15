@@ -75,6 +75,13 @@ DIRECT_PUMP="${FABOLUS_WATCH_DIRECT_PUMP:-0}"
 # entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
 # unmodified clone signs on a free account. Enable on a paid account with FABOLUS_ICLOUD=1.
 ICLOUD="${FABOLUS_ICLOUD:-0}"
+# Phase 09.5 D-02: the experimental Control-IQ+ temp-rate overturn (see AppModel.swift setTempBasal).
+# Defaults OFF: the `#if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` precondition compiles into every normal
+# build (default/shipping behavior byte-identical — CIQ-off is still required to set a temp rate). When
+# off, the compile flag is dropped from the generated spec so the experimental overturn compiles out
+# entirely. Enable ONLY for a deliberate local/bench build with FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1 —
+# never for a build a real user runs, and never in CI.
+TEMPRATE_CIQ_EXPERIMENTAL="${FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL:-0}"
 # Data Protection (§13/F1) at-rest entitlement defaults OFF: com.apple.developer.default-data-protection
 # needs the Data Protection capability provisioned on the App ID (paid / portal-enabled account), so
 # automatic signing on an account without it fails to build the device app. When off, the tagged line is
@@ -152,6 +159,9 @@ if [ "$ICLOUD" = 0 ]; then
   strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
   drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
 fi
+if [ "$TEMPRATE_CIQ_EXPERIMENTAL" = 0 ]; then
+  drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL   # drop the compile flag → the CIQ-off precondition stays enforced
+fi
 if [ "$DATA_PROTECTION" = 0 ]; then
   # The default-data-protection entitlement is declared in project.yml under entitlements.properties for
   # BOTH iOS targets (faBolus + faBolusWidgets); xcodegen writes it into the generated .entitlements
@@ -169,7 +179,7 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE PumpX2Local=$PUMPX2_LOCAL"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE PumpX2Local=$PUMPX2_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
@@ -183,6 +193,8 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
 [ "$TIME_SENSITIVE" = 0 ] && echo "  → building WITHOUT the Time-Sensitive Notifications entitlement (needs the capability provisioned on the App ID; set FABOLUS_TIME_SENSITIVE=1 to enable) — .timeSensitive is set in code but iOS downgrades it to .active until the capability is provisioned"
 [ "$TIME_SENSITIVE" = 1 ] && echo "  → Time-Sensitive Notifications entitlement ON (FABOLUS_TIME_SENSITIVE=1) — the safety trio breaks through Focus/DND via .timeSensitive; requires the capability on App ID com.fabolus.app"
+[ "$TEMPRATE_CIQ_EXPERIMENTAL" = 0 ] && echo "  → building WITHOUT the D-02 experimental Control-IQ+ temp-rate overturn (default — CIQ-off is still required to set a temp rate)"
+[ "$TEMPRATE_CIQ_EXPERIMENTAL" = 1 ] && echo "  → ⚠️  D-02 EXPERIMENTAL Control-IQ+ temp-rate overturn ON (FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1) — a temp rate can now be set while Control-IQ+ is on, UNVERIFIED until the Phase-11 saline bench. Local/bench builds only."
 
 xcodegen generate --spec "$SPEC"
 

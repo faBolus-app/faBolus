@@ -236,10 +236,15 @@ targets:
       configs:
         # generate-project.sh drops FABOLUS_ICLOUD unless FABOLUS_ICLOUD=1 (default OFF → the no-op iCloud
         # stub compiles and the app signs on a free account).
+        # generate-project.sh also drops FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL unless
+        # FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1 (default OFF). Phase 09.5 D-02: current Tandem docs say a
+        # temp rate can be set while Control-IQ+ is ON, but the repo's LOCKED constraint says the pump
+        # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
+        # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # It also embeds the glucose complication extension (faBolusWatchWidgets) as a target dependency now
@@ -566,6 +571,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).appTests
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_ALLOWED: NO
+        # This test target does NOT inherit the faBolus app target's SWIFT_ACTIVE_COMPILATION_CONDITIONS
+        # (each target's compile conditions are independent in xcodegen) — so the D-02 experimental-only
+        # regression test (AppModelBehaviorTests.swift, `#if FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL`) needs its
+        # own copy of the flag here to compile in under the same opt-in. Dropped by the same
+        # generate-project.sh `drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` default-OFF strip (scoped to
+        # every SWIFT_ACTIVE_COMPILATION_CONDITIONS line in the spec, not just the app target's).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
 
 schemes:
   # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
