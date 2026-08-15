@@ -79,6 +79,52 @@ struct PumpCapabilitiesDeriveTests {
         #expect(PumpCapabilities.mobiAdvanced.supportsTempBasal)   // gate open: capability present
     }
 
+    // MARK: - supportsSleepScheduleWrite: a NEW dedicated Mobi-only write-gate capability
+    // (Phase 09.10 D-01/D-04) — deliberately NOT folded into supportsControlIQSettings; the read
+    // (PumpBackend.refreshSleepSchedule / PumpSnapshot.sleepSchedules) is universal/ungated and is
+    // proven separately at the UI layer, never behind this flag.
+
+    @Test func supportsSleepScheduleWriteDefaultsFalse() {
+        #expect(PumpCapabilities().supportsSleepScheduleWrite == false)
+    }
+
+    @Test func mobiAdvancedSupportsSleepScheduleWrite() {
+        #expect(PumpCapabilities.mobiAdvanced.supportsSleepScheduleWrite == true)
+    }
+
+    @Test func deriveMobiWithBleControlSupportsSleepScheduleWrite() {
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                blePumpControlSupported: true)
+        #expect(PumpCapabilities.derive(isMobi: true, features: f).supportsSleepScheduleWrite)
+    }
+
+    @Test func deriveTslimNeverSupportsSleepScheduleWrite() {
+        // t:slim: no schedule write, even with the identical (rich) feature bitmask a Mobi would have.
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                blePumpControlSupported: true)
+        #expect(!PumpCapabilities.derive(isMobi: false, features: f).supportsSleepScheduleWrite)
+    }
+
+    @Test func deriveNoBleControlNarrowsOffSleepScheduleWrite() {
+        // Narrowed off with the rest of advanced control when the pump can't be BLE-controlled at all.
+        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
+                                blePumpControlSupported: false)
+        #expect(!PumpCapabilities.derive(isMobi: true, features: f).supportsSleepScheduleWrite)
+    }
+
+    // MARK: - PumpSleepScheduleSlot: neutral 5-field projection (decode-boundary discipline)
+
+    @Test func pumpSleepScheduleSlotRoundTripsAndIdMatchesSlot() {
+        let a = PumpSleepScheduleSlot(slot: 2, enabled: true, activeDays: 0x1F,
+                                       startMinute: 1320, endMinute: 360)
+        let b = PumpSleepScheduleSlot(slot: 2, enabled: true, activeDays: 0x1F,
+                                       startMinute: 1320, endMinute: 360)
+        #expect(a == b)
+        #expect(a.id == a.slot)
+        #expect(a.slot == 2 && a.enabled && a.activeDays == 0x1F
+                && a.startMinute == 1320 && a.endMinute == 360)
+    }
+
     // MARK: - Never-widen invariant (the core safety property)
 
     @Test func featuresCanNeverWidenBeyondTheModelPreset() {
