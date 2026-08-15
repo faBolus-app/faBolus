@@ -727,6 +727,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
     /// diagnostics section — mirrors `badOpcodesForTesting` exactly (additive, internal, no new
     /// `client.send`/re-derivation; Pitfall 2). Consumed by `AppModel.badOpcodesForDiagnostics`.
+    /// D-01 (Part A, formalized Task 2): this diagnostics surface — like `BLESessionLog.record` and
+    /// `DebugMenuView`'s export-write path — is permanent first-class, never a debug-only aid;
+    /// `DiagnosticsGatingGuardTests` pins that no compilation gate wraps it.
     var badOpcodesForDiagnostics: Set<UInt8> { badOpcodes }
     /// SEVENTH fix cycle test seam: run one predictive-burst kick (the second and third of the three
     /// direct EGV send sites). Lets a test prove those sends honour the `badOpcodes` guard exactly like
