@@ -113,4 +113,56 @@ struct BLESessionLogTests {
         #expect(spans.count == 1)
         #expect(spans[0].end.timeIntervalSince(spans[0].start) == 10)
     }
+
+    // MARK: - D-02b (09.6-02): ring buffer's presence in the export projection
+
+    /// `DebugMenuView.bleSessionLogExportLines` — the exact `[BLE session log]` line-builder that feeds
+    /// `diagnosticsText` (extracted to a pure, testable static so the export contents can be asserted
+    /// without instantiating the View, mirroring `CapabilityDiagnostics.section`). Every recorded entry
+    /// (well under capacity) must appear in the export projection — not silently dropped.
+    @Test func exportProjectionContainsEntriesUpToCapacity() {
+        let (log, _) = makeLog(enabled: true, capacity: 5)
+        let t0 = Date(timeIntervalSince1970: 5_000_000)
+        for i in 0..<5 {
+            log.record(.disconnect, detail: "d\(i)", at: t0.addingTimeInterval(Double(i)))
+        }
+        #expect(log.entries.count == 5)
+        let block = DebugMenuView.bleSessionLogExportLines(entries: log.entries, capacity: log.capacity)
+        for i in 0..<5 {
+            #expect(block.contains("d\(i)"), "entry d\(i) missing from the export projection")
+        }
+    }
+
+    /// A full ring buffer (more events recorded than `capacity`) keeps exactly the `capacity`
+    /// most-recent entries in the export projection — the oldest are dropped, never all of it (never
+    /// zero), matching `boundedToCapacityDroppingOldest`'s ring semantics.
+    @Test func exportProjectionKeepsMostRecentCapacityEntriesWhenOverCapacity() {
+        let (log, _) = makeLog(enabled: true, capacity: 3)
+        let t0 = Date(timeIntervalSince1970: 6_000_000)
+        for i in 0..<10 {
+            log.record(.disconnect, detail: "d\(i)", at: t0.addingTimeInterval(Double(i)))
+        }
+        #expect(log.entries.count == 3)
+
+        let block = DebugMenuView.bleSessionLogExportLines(entries: log.entries, capacity: log.capacity)
+        #expect(block.contains("d7"))
+        #expect(block.contains("d8"))
+        #expect(block.contains("d9"))
+        #expect(!block.contains("d0"))
+        #expect(!block.contains("d6"))
+    }
+
+    /// The opt-in being off means `record` never appended anything (already pinned by
+    /// `disabledByDefaultIsNoOp`) — the export projection for an empty buffer renders the shared
+    /// empty-state line, never a blank/absent section.
+    @Test func exportProjectionEmptyStateWhenOptInIsOff() {
+        let (log, _) = makeLog(enabled: false, capacity: 100)
+        log.record(.connect)
+        log.record(.disconnect, detail: "btOff")
+        #expect(log.entries.isEmpty)
+
+        let block = DebugMenuView.bleSessionLogExportLines(entries: log.entries, capacity: log.capacity)
+        #expect(block.contains("[BLE session log]"))
+        #expect(block.contains("—"))
+    }
 }
