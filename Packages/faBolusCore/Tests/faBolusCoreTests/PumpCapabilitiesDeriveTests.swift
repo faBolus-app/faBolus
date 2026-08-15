@@ -67,6 +67,18 @@ struct PumpCapabilitiesDeriveTests {
         #expect(caps.supportsControlIQSettings)    // untouched
     }
 
+    // MARK: - Temp-rate gate: capability, never a pump-model check (Phase 09.5 D-01/D-04)
+
+    /// The temp-rate surfacing gate (`PumpControlView.swift:72`, `TempRateAutomation.swift:78`) reads
+    /// `PumpCapabilities.supportsTempBasal` — a DERIVED capability, never a hardcoded pump-model/`isMobi`
+    /// check. Proven in both directions: a capability set with `supportsTempBasal == false` (`.full`,
+    /// the t:slim-style floor) reports the gate CLOSED, while one with `supportsTempBasal == true`
+    /// (`.mobiAdvanced`, the connected MockBackend's preset) reports it OPEN.
+    @Test func tempRateGateKeysOnCapabilityNotPumpModel() {
+        #expect(!PumpCapabilities.full.supportsTempBasal)          // gate closed: no temp-rate capability
+        #expect(PumpCapabilities.mobiAdvanced.supportsTempBasal)   // gate open: capability present
+    }
+
     // MARK: - Never-widen invariant (the core safety property)
 
     @Test func featuresCanNeverWidenBeyondTheModelPreset() {
