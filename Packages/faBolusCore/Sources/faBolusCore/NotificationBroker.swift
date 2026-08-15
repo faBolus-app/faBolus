@@ -104,12 +104,27 @@ public enum NotificationBroker {
         public var quietStartMinuteOfDay: Int
         public var quietEndMinuteOfDay: Int
         public var minIntervalSeconds: TimeInterval
+        /// Per-category critical break-through tuning (D-04, Phase 8.1). When `true` (default), a
+        /// `.critical`-severity message for this category bypasses enable/snooze/quiet-hours/rate-limit
+        /// exactly as it does today. When `false`, a critical message for this category honors normal
+        /// governance instead of bypassing it. Defaults to `true` so shipping this field changes zero
+        /// existing delivery behavior.
+        ///
+        /// **Future-field warning:** no `CategorySettings` blob was ever persisted before this phase, so a
+        /// bare `= true` default is safe on FIRST ship (there is no old blob to be incompatible with). Any
+        /// field added to this struct AFTER this phase ships must use the `Optional`-typed-property idiom
+        /// instead (mirror `State.snoozedUntil`), because Swift's synthesized `Decodable` only tolerates a
+        /// missing key for `Optional`-typed properties, not a non-optional one with a memberwise-init
+        /// default (see the 05-02 `WidgetSnapshot` incident) — decoding an already-persisted pre-this-field
+        /// blob would otherwise fail the whole decode.
+        public var allowCriticalBreakthrough: Bool
         public init(enabled: Bool, quietStartMinuteOfDay: Int = 0, quietEndMinuteOfDay: Int = 0,
-                    minIntervalSeconds: TimeInterval = 0) {
+                    minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true) {
             self.enabled = enabled
             self.quietStartMinuteOfDay = quietStartMinuteOfDay
             self.quietEndMinuteOfDay = quietEndMinuteOfDay
             self.minIntervalSeconds = minIntervalSeconds
+            self.allowCriticalBreakthrough = allowCriticalBreakthrough
         }
         /// The default governance for a category (respecting its `defaultEnabled`).
         public static func defaults(for category: Category) -> CategorySettings {
@@ -229,7 +244,7 @@ public enum NotificationBroker {
         // one-notification-per-episode: an ACTIVE alarm the pump re-raises every poll does not spam
         // (re-notification is driven by `forgetEpisode`, not by re-delivering here). Only the
         // user/budget suppressions below are skipped for it.
-        let critical = message.severity == .critical
+        let critical = message.severity == .critical && cfg.allowCriticalBreakthrough
 
         if !critical, !cfg.enabled { return suppress(.categoryDisabled) }
 

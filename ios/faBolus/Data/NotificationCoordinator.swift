@@ -29,8 +29,13 @@ final class NotificationRuntime {
     private let store: UserDefaults
     static let stateKey = "notificationBroker.state.v1"
     static let telemetryKey = "notificationBroker.telemetry.v1"
+    /// Per-category `NotificationBroker.CategorySettings` (Phase 8.1) — previously in-memory-only (see
+    /// RESEARCH.md Critical Correction); now App-Group-persisted like `state`/`telemetry` so a preference the
+    /// user sets survives a relaunch and is honored by every out-of-process poster.
+    static let settingsKey = "notificationBroker.settings.v1"
     private let stateKey = NotificationRuntime.stateKey
     private let telemetryKey = NotificationRuntime.telemetryKey
+    private let settingsKey = NotificationRuntime.settingsKey
     /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
     /// out-of-process mode-reminder intent honors the same choice the main app made.
     static let telemetryEnabledKey = "notificationBroker.telemetryEnabled"
@@ -48,8 +53,13 @@ final class NotificationRuntime {
         let store = store ?? .standard
         self.store = store
         self.budget = budget
-        self.settings = settings ?? Dictionary(uniqueKeysWithValues:
-            NotificationBroker.Category.allCases.map { ($0, .defaults(for: $0)) })
+        // The explicit `settings:` parameter always wins (tests inject via it); otherwise load whatever is
+        // persisted, filling any category the blob doesn't yet cover with its default (Pattern 2 growth).
+        if let settings {
+            self.settings = settings
+        } else {
+            self.settings = Self.loadSettings(store, NotificationRuntime.settingsKey)
+        }
         if let data = store.data(forKey: stateKey),
            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
             self.state = decoded
@@ -101,6 +111,37 @@ final class NotificationRuntime {
         return decoded
     }
 
+    /// Load the persisted per-category settings blob (keyed by `Category.rawValue`, mirroring
+    /// `loadTelemetry`), falling back to `.defaults(for:)` for every category the blob is missing (a
+    /// fresh install, or a category added after the blob was first written) — every category is always
+    /// present in the returned dictionary.
+    private static func loadSettings(_ store: UserDefaults, _ key: String) -> [NotificationBroker.Category: NotificationBroker.CategorySettings] {
+        var merged = Dictionary(uniqueKeysWithValues:
+            NotificationBroker.Category.allCases.map { ($0, NotificationBroker.CategorySettings.defaults(for: $0)) })
+        guard let data = store.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategorySettings].self, from: data)
+        else { return merged }
+        for (raw, cfg) in decoded {
+            guard let category = NotificationBroker.Category(rawValue: raw) else { continue }
+            merged[category] = cfg
+        }
+        return merged
+    }
+
+    /// Mutate one category's settings and persist immediately (App-Group-backed) so a fresh
+    /// `NotificationRuntime(store:)` construction — including a sibling out-of-process poster
+    /// (`ModeAutomation`/`ProfileAutomation`/`TempRateAutomation`/the widget snooze intent) — honors it on
+    /// its next `evaluate`. The UI (Plan 02) writes through this.
+    func updateSettings(_ cfg: NotificationBroker.CategorySettings, for category: NotificationBroker.Category) {
+        settings[category] = cfg
+        persistSettings()
+    }
+
+    private func persistSettings() {
+        let keyed = Dictionary(uniqueKeysWithValues: settings.map { ($0.key.rawValue, $0.value) })
+        if let data = try? JSONEncoder().encode(keyed) { store.set(data, forKey: settingsKey) }
+    }
+
     /// Run the broker on `message` at `now`, persist the advanced state, and return the decision.
     func evaluate(_ message: NotificationBroker.Message, now: Date) -> NotificationBroker.Decision {
         // Re-read the store first: a sibling process (a mode-reminder intent) may have advanced the
@@ -108,6 +149,12 @@ final class NotificationRuntime {
         if let data = store.data(forKey: stateKey),
            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
             state = decoded
+        }
+        // Re-read settings ONLY when a blob actually exists, so a test (or a caller) that constructed this
+        // runtime with an explicit `settings:` on an empty store is never silently clobbered back to
+        // defaults — while a genuine cross-process settings edit (the UI, in another process) is honored.
+        if store.data(forKey: settingsKey) != nil {
+            settings = Self.loadSettings(store, settingsKey)
         }
         let decision = NotificationBroker.decide(message, settings: settings, state: state,
                                                  budget: budget, now: now)
