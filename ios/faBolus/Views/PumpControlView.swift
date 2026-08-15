@@ -81,7 +81,16 @@ struct PumpControlView: View {
                     Picker("Duration", selection: $tempDurationMin) {
                         ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
                     }
-                    Button { ask("Set temp basal?", "\(Int(tempPercent))% for \(tempDurationMin) min. \(ciq) must be off.", destructive: true) {
+                    Button {
+                        // D-02 (Phase 09.5): the experimental build no longer enforces the CIQ-off
+                        // precondition (AppModel.setTempBasal), so its confirm copy must not assert one
+                        // it no longer requires — the #if here mirrors the one there exactly.
+                        #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+                        let confirmBody = "\(Int(tempPercent))% for \(tempDurationMin) min. \(ciq) must be off."
+                        #else
+                        let confirmBody = "\(Int(tempPercent))% for \(tempDurationMin) min."
+                        #endif
+                        ask("Set temp basal?", confirmBody, destructive: true) {
                         await model.setTempBasal(percent: Int(tempPercent), durationMinutes: tempDurationMin) } }
                         label: { Label("Start temp basal", systemImage: "timer") }
                     Button(role: .destructive) { ask("Stop temp basal?", "Return to the scheduled basal rate.", destructive: false) { await model.stopTempBasal() } }

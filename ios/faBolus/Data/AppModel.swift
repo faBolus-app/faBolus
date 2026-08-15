@@ -1595,9 +1595,15 @@ public final class AppModel {
         // P13c-4 inverse precondition: a temp rate requires Control-IQ OFF (the controller owns basal
         // while running, so the pump rejects a temp rate). Refuse pre-flight with a plain reason rather
         // than issue a write the pump will bounce.
+        //
+        // D-02 (Phase 09.5, owner-directed 2026-08-14): current Tandem Control-IQ+ docs say a temp rate
+        // CAN be set while Control-IQ+ is on. EXPERIMENTAL-ONLY until the Phase-11 saline bench confirms
+        // it — the default/shipping build keeps this precondition unchanged (HARD INVARIANT).
+        #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         if let reason = ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
             lastError = reason; return
         }
+        #endif
         await runControl(.setTempBasal) { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
     }
     public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
