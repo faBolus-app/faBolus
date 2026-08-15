@@ -535,9 +535,22 @@ struct SleepScheduleView: View {
     /// surfaced de-emphasized. The wire decode still reads all 4 physical slots.
     private var primarySlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot < 2 }.sorted { $0.slot < $1.slot } }
     private var additionalSlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot >= 2 }.sorted { $0.slot < $1.slot } }
+    /// D-03 (non-blocking conflict disclosure): fires only when BOTH mechanisms are active — the
+    /// Shortcuts Sleep-Focus automation (`AppSettings.shared.autoSleepMode`) AND at least one read
+    /// slot from the pump's own native schedule is `enabled`. Display-only — never toggles either
+    /// mechanism (T-09.10-08).
+    private var showsConflictDisclosure: Bool {
+        AppSettings.shared.autoSleepMode && slots.contains { $0.enabled }
+    }
 
     var body: some View {
         Form {
+            if showsConflictDisclosure {
+                Section {
+                    Label("Both the pump's native Sleep schedule and the Shortcuts Sleep-Focus automation are turned on. They don't coordinate with each other — the last one to run wins. Use whichever you prefer, not both, or turn one off below.", systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             if looksUnavailable {
                 Section {
                     Text("Sleep schedule unavailable — this pump didn't return schedule data. Check the Sleep schedule directly on the pump.")
