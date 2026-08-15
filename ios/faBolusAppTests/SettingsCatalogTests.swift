@@ -28,8 +28,9 @@ struct SettingsCatalogTests {
         // Phase 6 (06-02, 999.2/D-02): 51 → 52 (autoProfileActivation added).
         // Phase 09.7-01: historyCoverage (D-04) is intentionally NOT added here — see the NOTE in
         // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
-        #expect(SettingsCatalog.descriptors.count == 52)
-        #expect(SettingsCatalog.byKey.count == 52)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
+        #expect(SettingsCatalog.descriptors.count == 53)
+        #expect(SettingsCatalog.byKey.count == 53)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }

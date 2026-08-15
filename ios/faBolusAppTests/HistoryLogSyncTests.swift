@@ -209,4 +209,59 @@ struct HistoryLogSyncTests {
             #expect(pageCount <= 20, "a pathological coverage map must never exceed the safety cap (got \(pageCount) requests)")
         }
     }
+
+    // MARK: - Plan 02 (D-01/D-05): auto-sync toggle gate + manual "Sync now" trigger
+
+    /// Save + restore `AppSettings.shared.historySyncEnabled` around a test, mirroring
+    /// `withCleanCoverage`'s save/defer-restore idiom for the shared settings singleton.
+    private func withHistorySyncEnabled(_ enabled: Bool, _ body: () throws -> Void) rethrows {
+        let saved = AppSettings.shared.historySyncEnabled
+        defer { AppSettings.shared.historySyncEnabled = saved }
+        AppSettings.shared.historySyncEnabled = enabled
+        try body()
+    }
+
+    /// D-01: the AUTOMATIC on-connect gap-sync check (`HistoryLogStatusRequest`) must be suppressed
+    /// entirely while `historySyncEnabled == false`, and must still run once it's `true` (a regression
+    /// guard on Plan 01's on-connect behavior now that it's gated).
+    @Test func autoSyncGateSuppressesOnConnect() {
+        withCleanCoverage {
+            withHistorySyncEnabled(false) {
+                let (backendOff, fakeOff) = makeBackend()
+                backendOff.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+                #expect(!fakeOff.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                        "the on-connect auto-sync check must be suppressed while the toggle is off")
+            }
+            withHistorySyncEnabled(true) {
+                let (backendOn, fakeOn) = makeBackend()
+                backendOn.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+                #expect(fakeOn.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                        "the on-connect check must still run once the toggle is enabled (Plan 01 regression)")
+            }
+        }
+    }
+
+    /// UI-SPEC assumption 2: "Sync now" (`AppModel.syncHistoryNow()`) stays available and functional
+    /// even when the auto-sync toggle is OFF — the toggle only gates the AUTOMATIC on-connect trigger,
+    /// never the user's explicit manual request. Drives the response through to confirm the manual path
+    /// reaches the same gap-sync entry point as the on-connect flow (a real `HistoryLogRequest` fetch),
+    /// not just an inert status read.
+    @Test func syncNowTriggersGapSyncRegardlessOfToggle() {
+        withCleanCoverage {
+            withHistorySyncEnabled(false) {
+                let (backend, fake) = makeBackend()
+                let model = AppModel(source: backend)
+                backend.applyClientState(.ready)   // "Sync now" requires an already-connected pump
+
+                model.syncHistoryNow()
+                #expect(fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                        "\"Sync now\" must issue the gap-sync status check even while auto-sync is disabled")
+
+                backend.injectStatusFrameForTesting(
+                    FakePumpTransport.historyLogStatus(numEntries: 50, firstSequenceNum: 1, lastSequenceNum: 50))
+                #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
+                        "the manual trigger's response must still drive the gap-window fetch, disabled toggle notwithstanding")
+            }
+        }
+    }
 }

@@ -112,6 +112,11 @@ public final class AppModel {
     }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
+    /// D-05 (Phase 09.7-02): mirrors `TandemBackend.historySyncState` for the "Pump history sync" UI
+    /// section in `DataHistoryView`. Concrete-Tandem-only (mirrored in `refresh()` via `source as?
+    /// TandemBackend`, the established `onCommandLatency` pattern) — stays `.idle(lastSynced: nil)` on
+    /// `MockBackend`, which has no gap-sync of its own.
+    public private(set) var historySyncState: HistorySyncState = .idle(lastSynced: nil)
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
@@ -1131,6 +1136,21 @@ public final class AppModel {
         history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
     }
 
+    /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
+    /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
+    /// assumption 2). Concrete-Tandem-only (`source as? TandemBackend`, the `onCommandLatency` pattern);
+    /// a no-op on `MockBackend`.
+    public func syncHistoryNow() {
+        (source as? TandemBackend)?.triggerManualHistorySync()
+    }
+
+    /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync. Non-destructive — only
+    /// what was actually fetched is credited to the persisted coverage map, so the rest stays a real,
+    /// resumable gap for the next connect or a later "Sync now".
+    public func stopHistorySync() {
+        (source as? TandemBackend)?.cancelHistorySync()
+    }
+
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) {
@@ -1344,6 +1364,7 @@ public final class AppModel {
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
+        if let backend = source as? TandemBackend { historySyncState = backend.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug

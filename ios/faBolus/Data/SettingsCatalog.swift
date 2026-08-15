@@ -188,6 +188,10 @@ enum SettingsCatalog {
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
+        // Phase 09.7-02 (D-01): auto-sync toggle, surfaced in the same DataHistoryView "Pump history
+        // sync" section as the retention picker above. Device-local sync preference, not backup/
+        // iCloud-relevant — same reasoning as `historyRetentionDays`.
+        .init("historySyncEnabled", .about, from: .advanced, backsUp: false),
         // NOTE (Phase 09.7-01): `AppSettings.historyCoverage` (D-04, the gap-sync coverage-map bookkeeping)
         // is deliberately NOT registered here — it has no UI surface at all (pure sync bookkeeping, never
         // shown/edited), matching the existing precedent for other internal-only persisted properties

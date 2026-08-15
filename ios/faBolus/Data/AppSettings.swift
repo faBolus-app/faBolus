@@ -66,6 +66,22 @@ public final class AppSettings {
     /// so the default is unlimited; this only exists for users who prefer data-minimization.
     public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
 
+    /// Auto-sync pump history on connect (D-01, Phase 09.7-02). **Default ON** — the gap-aware sync
+    /// (`TandemBackend`, Plan 01) runs automatically on every connect unless disabled here. Turning this
+    /// OFF only suppresses the AUTOMATIC on-connect check; the "Sync now" manual trigger in
+    /// `DataHistoryView` always runs the same gap-sync entry point regardless of this setting (UI-SPEC
+    /// resolved assumption 2). Reachable in Data & History; a `SettingsCatalog` row, `backsUp: false`
+    /// like `historyRetentionDays` (a device-local sync preference, not backup/iCloud-relevant).
+    public var historySyncEnabled: Bool { didSet { d.set(historySyncEnabled, forKey: "historySyncEnabled") } }
+
+    /// Last time a pump-history gap-sync completed (D-05, Phase 09.7-02) — feeds the "Last synced" row
+    /// in `DataHistoryView`. Durable per-install marker, NOT a `SettingsCatalog` row (pure sync
+    /// bookkeeping, mirrors `historyCoverage`'s own precedent) and never included in a settings backup.
+    /// `nil` ⇒ never synced ("Never" / "Not synced yet").
+    public var historyLastSyncedAt: Date? {
+        didSet { d.set(historyLastSyncedAt?.timeIntervalSince1970 ?? 0, forKey: "historyLastSyncedAt") }
+    }
+
     /// Persisted pump history-log sequence coverage (D-04, Phase 09.7) — replaces the one-shot
     /// `didBackfill` gate. `TandemBackend` reads this on every connect to compute exactly which
     /// sequence windows are still missing (D-02), and writes back into it as gap-sync windows complete.
@@ -558,6 +574,10 @@ public final class AppSettings {
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
+        // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
+        historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
+        let hsAck = d.double(forKey: "historyLastSyncedAt")   // 0 (absent) ⇒ never synced
+        historyLastSyncedAt = hsAck > 0 ? Date(timeIntervalSince1970: hsAck) : nil
         if let data = d.data(forKey: "historyCoverage"),
            let coverage = try? JSONDecoder().decode(HistoryCoverageMap.self, from: data) {
             historyCoverage = coverage

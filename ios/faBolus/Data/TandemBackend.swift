@@ -6,6 +6,24 @@ import PumpX2Auth
 import PumpX2BLE
 import os
 
+/// Observable sync state for the "Pump history sync" UI section (D-01/D-05, Phase 09.7-02).
+/// `TandemBackend`-concrete only (mirrors the `onCommandLatency`/`onWillRetryReconnect` pattern — the
+/// `PumpBackend` protocol stays clean); `AppModel.refresh()` mirrors it via `source as? TandemBackend`.
+public enum HistorySyncState: Equatable {
+    /// No sync currently active. `lastSynced` is `nil` before the first-ever sync ("Not synced yet" /
+    /// "Never"), or the timestamp of the last completed check (including a check that found nothing
+    /// missing — a confirmed-up-to-date connect is still a completed sync, D-05).
+    case idle(lastSynced: Date?)
+    /// A gap-fetch is actively paging. The UI's hybrid progress model (UI-SPEC assumption 1) only shows
+    /// this visibly for a long-running sync; a fast routine check settles back to `.idle` unnoticed.
+    case syncing
+    /// The link dropped mid-sync (UI-SPEC "partial/interrupted" state) — benign and resumable, since the
+    /// persisted coverage map (D-04) credits only what was actually fetched. NOT styled as an error.
+    case paused
+    /// A genuine unexpected failure (e.g. an unparseable history-log frame) — the only case styled red.
+    case error(String)
+}
+
 /// Real pump data source over `PumpX2Kit`'s Core Bluetooth transport: scan → connect → JPAKE
 /// pair → poll status; and a signed bolus flow (permission → initiate → status) matching the
 /// signed delivery path. Read-only by default; `deliverBolus` briefly
@@ -50,6 +68,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+    /// D-05 (Phase 09.7-02): the gap-sync's current state for the "Pump history sync" UI section.
+    /// Initialized from the persisted `historyLastSyncedAt` so a fresh app launch shows the real last-
+    /// synced time rather than always reading "Never" until the next connect.
+    public private(set) var historySyncState: HistorySyncState = .idle(lastSynced: AppSettings.shared.historyLastSyncedAt)
     public var onChange: (@MainActor () -> Void)?
     /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
@@ -518,6 +540,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         pumpTimeAnchor = (m.currentTime, Date())
         if !historyStatusRequestedThisConnection {
             historyStatusRequestedThisConnection = true
+            // D-01 (Phase 09.7-02): the AUTOMATIC on-connect check is gated on the user's toggle —
+            // `triggerManualHistorySync` (the "Sync now" affordance) bypasses this gate entirely and
+            // stays available regardless (UI-SPEC assumption 2).
+            guard AppSettings.shared.historySyncEnabled else { return }
             // `tx` (not `client`) — routes through `injectedTransport` under test (round-3 §6.1 seam),
             // matching every other testable send site in this file (e.g. the remote-carb/BG entries
             // above). `HistoryLogStatusRequest` is unsigned/unelevated: `.read`-risk, permitted under
@@ -1850,7 +1876,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         let floor = Self.retentionFloorSequence(pumpFirst: pumpFirst, pumpLast: pumpLast,
                                                 retentionDays: AppSettings.shared.historyRetentionDays)
         let windows = Self.missingRanges(pumpFirst: pumpFirst, pumpLast: pumpLast, retentionFloor: floor, held: held)
-        guard !windows.isEmpty else { return }
+        guard !windows.isEmpty else {
+            // D-05: already fully synced against the pump's reported range — a check that confirms
+            // nothing was missing is still a completed sync (the UI-SPEC hybrid design's "silent
+            // routine gap-fill" case), not a stuck `.syncing` spinner with nothing left to advance it.
+            AppSettings.shared.historyLastSyncedAt = Date()
+            historySyncState = .idle(lastSynced: AppSettings.shared.historyLastSyncedAt)
+            return
+        }
+        historySyncState = .syncing
         backfillActive = true
         backfillBuffer.removeAll(keepingCapacity: true)
         backfillBoluses.removeAll(keepingCapacity: true)
@@ -1912,25 +1946,61 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Record into the persisted coverage map exactly the sub-range of `currentGapWindow` that was
-    /// actually fetched this pass (D-04), then move on to the next queued window (or finish the sync).
-    /// `backfillNextEnd` narrows down to the first NOT-yet-fetched sequence as pages complete, so
-    /// `(backfillNextEnd fully consumed ? window.lowerBound : backfillNextEnd + 1)...window.upperBound`
-    /// is exactly what landed in the buffers below — crediting only that slice means a safety-cap trip
-    /// mid-window still leaves a real, resumable gap for the next connect (never silently marked covered,
+    /// actually fetched so far (D-04). `backfillNextEnd` narrows down to the first NOT-yet-fetched
+    /// sequence as pages complete, so `(backfillNextEnd fully consumed ? window.lowerBound :
+    /// backfillNextEnd + 1)...window.upperBound` is exactly what landed in the buffers below — crediting
+    /// only that slice means a safety-cap trip (or a user-initiated cancel, `cancelHistorySync`) mid-
+    /// window still leaves a real, resumable gap for the next connect (never silently marked covered,
     /// never re-looped within this one — T-09.7-02).
-    private func creditCurrentWindowAndAdvance() {
-        if let window = currentGapWindow {
-            if backfillNextEnd < backfillFirstSeq {
-                AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage.inserting(window)
-            } else if backfillNextEnd < window.upperBound {
-                AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage
-                    .inserting((backfillNextEnd + 1)...window.upperBound)
-            }
-            // else: zero pages were ever issued for this window (cap already tripped before it started) —
-            // nothing fetched, nothing to credit.
+    private func creditCurrentWindow() {
+        guard let window = currentGapWindow else { return }
+        if backfillNextEnd < backfillFirstSeq {
+            AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage.inserting(window)
+        } else if backfillNextEnd < window.upperBound {
+            AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage
+                .inserting((backfillNextEnd + 1)...window.upperBound)
         }
+        // else: zero pages were ever issued for this window (cap already tripped before it started) —
+        // nothing fetched, nothing to credit.
+    }
+
+    /// Credit the current window (see `creditCurrentWindow`), then move on to the next queued window
+    /// (or finish the sync).
+    private func creditCurrentWindowAndAdvance() {
+        creditCurrentWindow()
         currentGapWindow = nil
         advanceToNextGapWindow()
+    }
+
+    /// Manual "Sync now" trigger (D-05, UI-SPEC assumption 2): runs the SAME gap-sync entry point as the
+    /// on-connect check, regardless of `AppSettings.historySyncEnabled` — the toggle only gates the
+    /// AUTOMATIC on-connect trigger, not an explicit user request. Requires the pump to already be
+    /// connected (mirrors `refreshGlucoseNow`'s `guard snapshot.connection == .connected` precondition —
+    /// there's no live BLE link to query the pump's history status over otherwise); a sync already in
+    /// progress is a no-op rather than restarting mid-fetch. Sets `.syncing` optimistically so the "Sync
+    /// now" busy state shows immediately rather than waiting for the round-trip response — the
+    /// `HistoryLogStatusResponse` handler resolves it back to `.idle` if the pump reports nothing at all.
+    public func triggerManualHistorySync() {
+        guard snapshot.connection == .connected, !backfillActive else { return }
+        historySyncState = .syncing
+        try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+        onChange?()
+    }
+
+    /// "Stop syncing" (D-05, UI-SPEC): user-initiated abort of an in-progress gap sync. Non-destructive —
+    /// only the sub-range of the current window actually fetched is credited to the persisted coverage
+    /// map (`creditCurrentWindow`, same T-09.7-02 invariant as a safety-cap trip); the untouched
+    /// remainder and every still-pending window stay real, resumable gaps for the next connect or a
+    /// later "Sync now", never falsely marked covered.
+    public func cancelHistorySync() {
+        guard backfillActive else { return }
+        backfillTimer?.invalidate(); backfillTimer = nil
+        creditCurrentWindow()
+        backfillActive = false
+        pendingGapWindows.removeAll(); currentGapWindow = nil
+        backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+        historySyncState = .paused
+        onChange?()
     }
 
     /// Merge the buffered CGM history into the chart. Places each reading at its TRUE pump-clock
@@ -2007,6 +2077,10 @@ public final class TandemBackend: NSObject, PumpBackend {
             if events.count > 500 { events.removeLast(events.count - 500) }
             historyEvents = events
         }
+        // D-05: a completed gap sync (whether or not this pass actually fetched new records — see the
+        // safety-cap partial-credit path above) is a successful sync for "Last synced" purposes.
+        AppSettings.shared.historyLastSyncedAt = Date()
+        historySyncState = .idle(lastSynced: AppSettings.shared.historyLastSyncedAt)
         onChange?()
     }
 
@@ -2146,6 +2220,10 @@ extension TandemBackend: PumpBLEClientDelegate {
         if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
         // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
         failPumpWaiters(BolusError.notConnected)
+        // D-05 (UI-SPEC partial/interrupted state): a sync mid-flight when the link drops is a benign,
+        // resumable pause — the persisted coverage map guarantees the next connect resumes correctly —
+        // never a red error. `.syncing` is the only in-progress state this can interrupt.
+        if case .syncing = historySyncState { historySyncState = .paused }
         // Re-check history status on the next connect (D-02: a fresh connect always re-syncs against the
         // persisted coverage map). Only TRANSIENT in-flight walk state resets here — `AppSettings
         // .historyCoverage` (the persisted coverage map) is deliberately NOT cleared, so the next connect
@@ -2313,7 +2391,21 @@ extension TandemBackend: PumpBLEClientDelegate {
         } else {
             Self.pairingLog.log("read recv ← empty frame")
         }
-        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else { return }
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else {
+            // D-05: a genuinely unparseable frame on the history-log characteristic while a gap sync is
+            // active is the "genuine sync failure" UI-SPEC state (red, distinct from the benign
+            // `.paused` disconnect case) — surfaced rather than silently dropped. The persisted coverage
+            // map is untouched, so a retry ("Sync now") or the next connect resumes correctly.
+            if ch == .historyLog, backfillActive {
+                backfillTimer?.invalidate(); backfillTimer = nil
+                backfillActive = false
+                pendingGapWindows.removeAll(); currentGapWindow = nil
+                backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+                historySyncState = .error("Sync error — try again, or check the pump connection.")
+                onChange?()
+            }
+            return
+        }
         switch parsed.message {
         case let m as ControlIQIOBResponse:
             snapshot.iobUnits = m.iobUnits
@@ -2414,10 +2506,21 @@ extension TandemBackend: PumpBLEClientDelegate {
             pumpTimeAnchor = (m.currentTime, Date())
             if !historyStatusRequestedThisConnection {
                 historyStatusRequestedThisConnection = true
-                try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+                // D-01: same auto-sync gate as `applyTimeResponse` — this handles an UNSOLICITED time
+                // frame, but the toggle governs both paths identically.
+                if AppSettings.shared.historySyncEnabled {
+                    try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+                }
             }
         case let m as HistoryLogStatusResponse:
-            guard !backfillActive, m.numEntries > 0 else { break }
+            guard !backfillActive else { break }
+            guard m.numEntries > 0 else {
+                // D-05: resolve an optimistic `.syncing` (set by `triggerManualHistorySync` before this
+                // response landed) back to idle when the pump reports nothing at all yet — otherwise a
+                // manual "Sync now" against a brand-new pump would leave the busy spinner stuck forever.
+                if case .syncing = historySyncState { historySyncState = .idle(lastSynced: AppSettings.shared.historyLastSyncedAt) }
+                break
+            }
             beginGapSync(pumpFirst: m.firstSequenceNum, pumpLast: m.lastSequenceNum)
         case let m as HistoryLogStreamResponse:
             guard backfillActive else { break }
