@@ -64,10 +64,11 @@ fire. Keep this short, or use Option B.
 This is keyed to the clock, not the moment Sleep Focus starts, but runs reliably overnight. Pair
 either option with a matching wake-up automation running **Set Sleep Mode = Off**.
 
-Your Tandem Mobi / Control-IQ has its **own on-pump Sleep schedule**, set on the pump. faBolus does
-not read or reimplement that schedule — this Shortcuts automation is an **alternative** to it, not
-a copy. Use the pump's built-in Sleep schedule **or** this automation, not both, or the two can
-conflict.
+Your Tandem Mobi / Control-IQ has its **own on-pump Sleep schedule**. On **Mobi**, faBolus is its
+editor — read and set it from **Pump Control → Sleep schedule** (the Mobi has no on-pump way to
+set this). On **t:slim X2**, set it on the pump's own touchscreen; faBolus only displays it here,
+read-only. Use the pump's Sleep schedule **or** this Shortcuts automation, not both — running both
+can conflict.
 
 ## Build a one-tap macro
 
