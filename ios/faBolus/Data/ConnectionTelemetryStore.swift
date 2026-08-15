@@ -80,15 +80,41 @@ final class ConnectionTelemetryStore {
     /// `"\(domain)#\(code) \(description)"`. Returns `nil` if `d` doesn't match that shape (no `#`, or
     /// the segment right after `#` isn't a run of digits), so callers fall through to the generic
     /// "error" bucket rather than mis-bucketing arbitrary free text that happens to contain a `#`.
+    ///
+    /// D-02c (09.6-02): for `CBErrorDomain` specifically, append the human-readable label from
+    /// `cbErrorLabels` when the extracted code is a known key (0–18) — e.g.
+    /// "CBErrorDomain#7 → Peripheral disconnected". Any other domain, or a code outside 0–18, falls
+    /// through unchanged to the raw `domain#code` token (fail-closed, V5 input validation) — never
+    /// crashes, never emits unbounded text.
     private static func domainCodeToken(from d: String) -> String? {
         guard let hashIndex = d.firstIndex(of: "#") else { return nil }
+        let domain = d[d.startIndex..<hashIndex]
         let afterHash = d.index(after: hashIndex)
         guard afterHash < d.endIndex else { return nil }
         let codeEnd = d[afterHash...].firstIndex(of: " ") ?? d.endIndex
         let codeSubstring = d[afterHash..<codeEnd]
         guard !codeSubstring.isEmpty, codeSubstring.allSatisfy(\.isNumber) else { return nil }
-        return String(d[d.startIndex..<codeEnd])
+        let token = String(d[d.startIndex..<codeEnd])
+        guard domain == "CBErrorDomain", let code = Int(codeSubstring), let label = cbErrorLabels[code] else {
+            return token
+        }
+        return "\(token) → \(label)"
     }
+
+    /// `CBError.Code` raw-value table (0–18), verified via 09.6-RESEARCH.md's Code Examples (a
+    /// .NET/MAUI binding mirror of Apple's CoreBluetooth CBError header, cross-checked against this
+    /// project's own on-device `CBErrorDomain#7` capture — matches `peripheralDisconnected`). Additive
+    /// only: `domainCodeToken(from:)` falls back to the raw token for any code not present here.
+    private static let cbErrorLabels: [Int: String] = [
+        0: "Unknown", 1: "Invalid parameters", 2: "Invalid handle", 3: "Not connected",
+        4: "Out of space", 5: "Operation cancelled", 6: "Connection timeout",
+        7: "Peripheral disconnected", 8: "UUID not allowed", 9: "Already advertising",
+        10: "Connection failed", 11: "Connection limit reached", 12: "Unknown device",
+        13: "Operation not supported", 14: "Peer removed pairing information",
+        15: "Encryption timed out", 16: "Too many LE paired devices",
+        17: "LE GATT exceeded background notification limit",
+        18: "LE GATT near background notification limit",
+    ]
 
     private func bump(_ mutate: (inout ConnectionTelemetry) -> Void) {
         guard enabled else { return }
