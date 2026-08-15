@@ -729,6 +729,7 @@ struct AppModelBehaviorTests {
             ("setControlIQ",        { await $0.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40) }, ctl),
             ("setMaxBolus",         { await $0.setMaxBolus(units: 10) }, ctl),
             ("setMaxBasal",         { await $0.setMaxBasal(unitsPerHour: 3) }, ctl),
+            ("setSleepSchedule",    { await $0.setSleepSchedule(slot: 0, enabled: true, activeDays: 1, startMinute: 1320, endMinute: 360) }, ctl),
         ]
         // R3-F / P14 S6: these entries must equal the declared ack-gated set EXACTLY — a new `.unverifiedAck`
         // case added to `GatedPumpWrite` (or one removed here) fails this, so the test and the authoritative

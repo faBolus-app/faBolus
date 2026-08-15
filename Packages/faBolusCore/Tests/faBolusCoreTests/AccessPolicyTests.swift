@@ -161,6 +161,18 @@ import Testing
         #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noTimeSync).reason == .capabilityUnavailable)
     }
 
+    /// Phase 09.10: `setSleepSchedule` declares its own dedicated capability (`supportsSleepScheduleWrite`)
+    /// rather than the coarse advanced-control set — a t:slim-shaped capability context (no sleep-schedule
+    /// write) denies it on phoneUI even with the advanced opt-in + a fresh ack, while a Mobi-shaped
+    /// context (`.mobiAdvanced`) allows it. This is the funnel-level enforcement of the write's Mobi-only
+    /// device scope (mirrors the pump protocol's own MOBI_ONLY/minApi annotation).
+    @Test func setSleepScheduleNeedsItsOwnDedicatedCapability() {
+        var noWriteCap = openCtx(); noWriteCap.capabilities = .full   // t:slim: no supportsSleepScheduleWrite
+        #expect(P.evaluate(.setSleepSchedule, surface: .phoneUI, context: noWriteCap).reason == .capabilityUnavailable)
+        let mobi = openCtx()   // .mobiAdvanced has supportsSleepScheduleWrite == true
+        #expect(P.evaluate(.setSleepSchedule, surface: .phoneUI, context: mobi).allowed)
+    }
+
     @Test func unverifiedAckGatesExactlyTheAckSet() {
         var noAck = openCtx(); noAck.hasRecentUnverifiedAck = false
         for a in A.allCases where a.gate == .unverifiedAck {

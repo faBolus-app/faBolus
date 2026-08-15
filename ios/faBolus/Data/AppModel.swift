@@ -1940,6 +1940,25 @@ public final class AppModel {
     // Sleep schedule — universal/unsigned read (Phase 09.10 D-04): ungated passthrough, no
     // runControl/runGatedTherapy wrapper. The write (09.10-02) will route through runGatedTherapy.
     public func refreshSleepSchedule() async { await source.refreshSleepSchedule(); refresh() }
+    /// Write one native Sleep-schedule slot (Phase 09.10 D-04) — the Mobi editor for a pump with no
+    /// on-pump way to set this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy`
+    /// (child-mode + phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
+    /// `supportsSleepScheduleWrite` capability, all via the single P8 evaluator). `op` is the RAW backend
+    /// write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
+    ///
+    /// `sendControl` is fire-and-forget (doesn't itself inspect the ack status — see `TandemBackend`'s
+    /// `ChangeTimeDateRequest` note), so after the write completes this consumes the concrete-Tandem-only
+    /// `sleepScheduleWriteError` one-shot sink (mirrors `onCommandLatency`/`historySyncState`) to surface
+    /// a pump-rejected write (`SetSleepScheduleResponse.status != 0`) via `lastError`.
+    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
+        await runGatedTherapy(.setSleepSchedule) {
+            try await self.source.setSleepSchedule(slot: slot, enabled: enabled, activeDays: activeDays,
+                                                    startMinute: startMinute, endMinute: endMinute)
+        }
+        if let backend = source as? TandemBackend, let err = backend.consumeSleepScheduleWriteError() {
+            lastError = err
+        }
+    }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
     // FB-06 / P8: switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the

@@ -72,6 +72,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Initialized from the persisted `historyLastSyncedAt` so a fresh app launch shows the real last-
     /// synced time rather than always reading "Never" until the next connect.
     public private(set) var historySyncState: HistorySyncState = .idle(lastSynced: AppSettings.shared.historyLastSyncedAt)
+    /// Phase 09.10 D-04: the most recent Sleep-schedule write rejection (`SetSleepScheduleResponse.status
+    /// != 0`), set in `didReceiveFrame`. `sendControl` is fire-and-forget over BLE and doesn't itself
+    /// inspect the ack status (see the `ChangeTimeDateRequest` note above), so `AppModel.setSleepSchedule`
+    /// consumes this one-shot via `consumeSleepScheduleWriteError()` right after the write completes,
+    /// mirroring the `onCommandLatency`/`historySyncState` concrete-Tandem-only sink pattern.
+    private(set) var sleepScheduleWriteError: String?
+    /// One-shot consume: returns the pending write-rejection message (if any) and clears it, so a stale
+    /// rejection can never re-surface on a later, unrelated refresh.
+    func consumeSleepScheduleWriteError() -> String? {
+        defer { sleepScheduleWriteError = nil }
+        return sleepScheduleWriteError
+    }
     public var onChange: (@MainActor () -> Void)?
     /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
@@ -1461,6 +1473,29 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
+    /// Write one native Sleep-schedule slot (Phase 09.10 D-04, Mobi-only by capability — gated at the
+    /// `GatedPumpWrite.setSleepSchedule` funnel, not here). L7 mode-only: `delivery: false` — see
+    /// `SetSleepScheduleRequest.props` (signed, `.control`, `modifiesInsulinDelivery` unset) →
+    /// `operationRisk == .settings`, never `.delivery` (proven by `SleepScheduleWriteBoundaryTests`).
+    ///
+    /// Upstream scopes this opcode Mobi-only: `SetSleepScheduleRequest.java` / `SetSleepScheduleResponse.java`
+    /// are annotated `supportedDevices=MOBI_ONLY, minApi=MOBI_API_V3_5` — identical to `SetTempRateRequest`.
+    /// The Swift port merely dropped those `MessageProps` annotation fields; the app-side capability gate
+    /// (`PumpCapabilities.supportsSleepScheduleWrite`) mirrors that device scope instead.
+    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
+        let start = max(0, min(startMinute, 1439))
+        let end = max(0, min(endMinute, 1439))
+        let scheduleBytes = Bytes.combine([enabled ? 1 : 0, UInt8(activeDays & 0xFF)],
+                                          Bytes.firstTwoBytesLittleEndian(start),
+                                          Bytes.firstTwoBytesLittleEndian(end))
+        // `flag: 3` is the value observed in jwoglom's captured Tandem-app writes (upstream
+        // `SetSleepScheduleRequestTest`, 2024-03-28 "Live Humans iPhone" capture; BOTH the enable and the
+        // disable of slot 0 assert `flag == 3`) — NOT the old placeholder `1`. Its semantic meaning is
+        // still undocumented, but 3 is the golden-capture value to replicate byte-for-byte (RESEARCH
+        // addendum 2026-08-15 Item 2).
+        try await sendControl(SetSleepScheduleRequest(slot: slot, schedule: scheduleBytes, flag: 3), delivery: false)
+    }
+
     // Profiles (IDP). Switch/rename/delete change the active basal profile → insulin-affecting.
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
@@ -2447,6 +2482,11 @@ extension TandemBackend: PumpBLEClientDelegate {
                 PumpSleepScheduleSlot(slot: i, enabled: s.enabled, activeDays: s.activeDays,
                                       startMinute: s.startTime, endMinute: s.endTime)
             }
+        case let m as SetSleepScheduleResponse:
+            // Write ack (Phase 09.10 D-04). No optimistic mutation of `snapshot.sleepSchedules` — a
+            // follow-up `refreshSleepSchedule()` reflects the actual pump state, mirroring `setControlIQ`.
+            // Copy fixed by UI-SPEC's Copywriting Contract; consumed one-shot by `AppModel.setSleepSchedule`.
+            if m.status != 0 { sleepScheduleWriteError = "The pump rejected the sleep-schedule change (status \(m.status))." }
         case let m as ProfileStatusResponse:
             profileActiveIdpId = m.activeIdpId
             snapshot.profiles = []

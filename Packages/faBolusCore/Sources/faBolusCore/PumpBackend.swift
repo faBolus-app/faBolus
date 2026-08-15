@@ -164,6 +164,13 @@ public protocol PumpBackend: AnyObject {
     /// read (Phase 09.10 D-04) — NOT capability-gated; sendable and harmless on any connected pump
     /// model regardless of `PumpCapabilities.supportsSleepScheduleWrite`.
     func refreshSleepSchedule() async
+    /// Write one native Sleep-schedule slot (Phase 09.10 D-04). Mobi-only by capability
+    /// (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the pump protocol's own MOBI_ONLY device
+    /// scope. Mode-only (L7): the underlying wire write is `.settings` risk, never `.delivery` — this
+    /// call never reaches the dose/delivery path. `activeDays` is the CONFIRMED upstream `MultiDay` bit
+    /// mask (Monday=bit0(1)…Sunday=bit6(64)); `startMinute`/`endMinute` are minute-of-day, clamped to
+    /// 0...1439 by the implementation.
+    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
     // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
@@ -277,6 +284,7 @@ public extension PumpBackend {
     func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws { throw ControlError.notSupported }
+    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws { throw ControlError.notSupported }
     func refreshControlIQSettings() async {}
     func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws { throw ControlError.notSupported }

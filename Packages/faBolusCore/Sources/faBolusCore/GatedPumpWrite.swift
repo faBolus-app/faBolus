@@ -27,6 +27,10 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     case createProfile, setActiveProfile, renameProfile, deleteProfile
     case addProfileSegment, modifyProfileSegment, deleteProfileSegment, setCgmHighLowAlert
     case setControlIQ, setMaxBolus, setMaxBasal
+    // Phase 09.10: the Mobi native Sleep-schedule WRITE. `flag`'s semantic meaning is undocumented and
+    // only slot-0 writes were ever captured (slots 1-3 unobserved), so this stays ack-gated like the
+    // other unverified-hardware writes above, even though it is NOT itself insulin-affecting (L7).
+    case setSleepSchedule
 
     // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting / operational
     // writes (suspend/resume, temp basal, modes, cartridge/fill, CGM session, clock, alert reminders).
@@ -59,7 +63,10 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
              // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
              // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
              // S8's refinement; here they gain the same coverage the IDP writes have.)
-             .setControlIQ, .setMaxBolus, .setMaxBasal:
+             .setControlIQ, .setMaxBolus, .setMaxBasal,
+             // Phase 09.10: setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
+             // it needs the same one-shot untested-feature ack as the other unverified writes above.
+             .setSleepSchedule:
             return .unverifiedAck
         case .suspendDelivery, .resumeDelivery, .setTempBasal, .stopTempBasal, .setMode, .playFindMyPump,
              .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
@@ -132,6 +139,12 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     /// path. Delivery and the child-only pair require no capability (Gate 5 stays a no-op for them).
     public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
         if self == .syncTimeToNow { return caps.supportsTimeSync }
+        // Phase 09.10: the write's Mobi-only gate MIRRORS the pump protocol's own device scope — upstream
+        // `SetSleepScheduleRequest.java`/`SetSleepScheduleResponse.java` are annotated
+        // `supportedDevices=MOBI_ONLY, minApi=MOBI_API_V3_5`, identical to `SetTempRateRequest.java`. The
+        // Swift port merely dropped those `MessageProps` annotation fields; this per-action arm is the
+        // app-side equivalent, keyed on its own dedicated capability (not the coarse advanced-control set).
+        if self == .setSleepSchedule { return caps.supportsSleepScheduleWrite }
         switch gate {
         case .controlInterlock, .unverifiedAck: return caps.supportsAnyAdvancedControl
         case .ledgeredDelivery, .childOnly: return true

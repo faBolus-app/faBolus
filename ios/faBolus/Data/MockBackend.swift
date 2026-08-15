@@ -333,6 +333,23 @@ public final class MockBackend: PumpBackend {
     public func refreshControlIQSettings() async {
         if snapshot.controlIQWeightLbs == 0 { snapshot.controlIQWeightLbs = 160; snapshot.controlIQTotalDailyInsulin = 45; onChange?() }
     }
+    /// Phase 09.10 D-04: mirrors `setControlIQ` — counted via `controlWriteCount` (the P14 S6
+    /// therapy-defining-write counter `everyTherapyWriteEntryPointIsCentrallyGated` asserts against),
+    /// clamps minute-of-day to 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates
+    /// (or appends) the written slot in `snapshot.sleepSchedules` so a UI round-trip reflects the write.
+    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
+        controlWriteCount += 1
+        let start = max(0, min(startMinute, 1439))
+        let end = max(0, min(endMinute, 1439))
+        let written = PumpSleepScheduleSlot(slot: slot, enabled: enabled, activeDays: activeDays,
+                                            startMinute: start, endMinute: end)
+        if let idx = snapshot.sleepSchedules.firstIndex(where: { $0.slot == slot }) {
+            snapshot.sleepSchedules[idx] = written
+        } else {
+            snapshot.sleepSchedules.append(written)
+        }
+        onChange?()
+    }
     public func refreshSleepSchedule() async {
         if snapshot.sleepSchedules.isEmpty {
             // Representative sample data so the simulator shows a populated read (slot 0 = the
