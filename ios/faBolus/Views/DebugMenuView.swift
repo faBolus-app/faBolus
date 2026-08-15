@@ -276,6 +276,13 @@ struct DebugMenuView: View {
                 spanIndex += 1
             }
         }
+        // Task 1 (TRACER, Part B-a, D-02a): [Capability/opcode] — reads already-cached backend state
+        // only (model.capabilities / model.badOpcodesForDiagnostics), gated on the SAME shareDiagnostics
+        // opt-in as every section above. No new BLE traffic, no new toggle (Pitfall 2/3).
+        lines.append(CapabilityDiagnostics.section(
+            capabilities: model.capabilities,
+            badOpcodes: model.badOpcodesForDiagnostics,
+            enabled: shareDiagnostics))
         return lines.joined(separator: "\n")
     }
 }

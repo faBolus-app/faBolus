@@ -150,6 +150,13 @@ public final class AppModel {
     /// The active backend's capabilities, so the UI can hide unsupported features.
     public var capabilities: PumpCapabilities { source.capabilities }
 
+    /// Part B-a (Phase 09.6-01, D-02a): opcodes the connected pump has rejected this connection-
+    /// lifetime, for the `[Capability/opcode]` diagnostics section. `TandemBackend`-concrete only
+    /// (mirrors the `source as? TandemBackend` pattern already used for `onCommandLatency`/
+    /// `historySyncState` above) — a non-Tandem backend (mocks, tests) simply reports no rejected
+    /// opcodes rather than crashing the diagnostics read-out.
+    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? TandemBackend)?.badOpcodesForDiagnostics ?? [] }
+
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
     /// the old single-assignment closure allowed exactly one observer.

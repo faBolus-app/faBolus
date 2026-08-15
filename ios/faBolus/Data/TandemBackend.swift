@@ -723,6 +723,11 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { badOpcodes }
+
+    /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
+    /// diagnostics section — mirrors `badOpcodesForTesting` exactly (additive, internal, no new
+    /// `client.send`/re-derivation; Pitfall 2). Consumed by `AppModel.badOpcodesForDiagnostics`.
+    var badOpcodesForDiagnostics: Set<UInt8> { badOpcodes }
     /// SEVENTH fix cycle test seam: run one predictive-burst kick (the second and third of the three
     /// direct EGV send sites). Lets a test prove those sends honour the `badOpcodes` guard exactly like
     /// every other status read.
