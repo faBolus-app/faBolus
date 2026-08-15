@@ -7,46 +7,9 @@ import faBolusCore
 struct AlertRulesView: View {
     @Bindable var settings: AppSettings
     @State private var editing: AlertRule?
-    /// §6/S8 B6: the opt-out is safety-reducing, so enabling it is gated behind this warning + confirm.
-    @State private var showSuppressWarning = false
-
-    /// §6/S8 B6: enabling the pump-alarm opt-out routes through a warning + explicit confirm; turning it
-    /// off is immediate. Cancel leaves the flag false, so the Toggle snaps back. Routed through the
-    /// shared `guardedToggle` factory (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings
-    /// toggle uses.
-    private var suppressBinding: Binding<Bool> {
-        guardedToggle(
-            get: { settings.suppressMirroredPumpAlarms },
-            set: { settings.suppressMirroredPumpAlarms = $0 },
-            requestConfirm: { showSuppressWarning = true }
-        )
-    }
-
-    /// D-03/D-04: whether the honest "pending Apple approval" status should show — true only when the
-    /// user opted into Critical Alerts AND the OS grant isn't active yet (nothing to disclose otherwise).
-    /// Pure so it's directly testable without driving the view or a real notification center.
-    static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
 
     var body: some View {
         Form {
-            // §6/S8 B6: how faBolus's notifications are delivered — the Critical Alerts opt-in and the
-            // pump-alarm re-notification opt-out. Distinct from the auto-RULES below (which snooze/clear
-            // specific alerts by condition).
-            Section {
-                Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
-                if Self.shouldShowHonestStatus(enabled: settings.criticalAlertsEnabled,
-                                               grantActive: settings.criticalAlertGrantActive) {
-                    // D-04: non-alarming — `.notSupported` is the expected everyday pre-approval state
-                    // (Pitfall 2), not an error. Secondary/caption styling, no warning treatment.
-                    Text("Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
-                        + "(pump disconnected, CGM data lost, unresolved bolus) currently use "
-                        + "time-sensitive delivery.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Toggle("Silence pump alarms in the app", isOn: suppressBinding)
-            } header: { Text("Notification delivery") } footer: {
-                Text("Critical Alerts let faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
-            }
             Section {
                 if settings.alertRules.isEmpty {
                     Text("No rules yet. Add one to automatically snooze or clear alerts that meet conditions you choose (e.g. quiet CGM highs overnight).")
@@ -76,13 +39,6 @@ struct AlertRulesView: View {
         .navigationTitle("Alert rules")
         .sheet(item: $editing) { rule in
             AlertRuleEditorView(rule: rule) { updated in save(updated) }
-        }
-        .confirmationDialog("Silence pump alarms in the app?", isPresented: $showSuppressWarning,
-                             titleVisibility: .visible) {
-            Button("Silence in the app", role: .destructive) { settings.suppressMirroredPumpAlarms = true }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected.")
         }
     }
 

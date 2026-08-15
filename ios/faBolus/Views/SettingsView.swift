@@ -124,6 +124,7 @@ struct SettingsView: View {
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
         case .alerts:  AlertRulesView(settings: settings)
+        case .notifications: NotificationSettingsView(settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
@@ -141,7 +142,9 @@ struct SettingsView: View {
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case bolus, display, cgm, alerts, pump, remotes, about, smartAssist
+    // 08.1-02 (D-06): `.notifications` renders in the normal unfiltered root loop below — there is no
+    // compile-time gate on it (unlike `.smartAssist`, which IS filtered — see the loop's own comment).
+    case bolus, display, cgm, alerts, notifications, pump, remotes, about, smartAssist
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -149,6 +152,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .display: return "Display & chart"
         case .cgm: return "CGM & failover"
         case .alerts: return "Alert rules"
+        case .notifications: return "Notifications"
         case .pump: return "Pump & control"
         case .remotes: return "Remotes & devices"
         case .about: return "About & help"
@@ -161,6 +165,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .display: return "chart.xyaxis.line"
         case .cgm: return "sensor.tag.radiowaves.forward.fill"
         case .alerts: return "bell.badge.fill"
+        // Distinct from `.alerts`'s icon (D-06) — this screen is the pump/app notification-delivery
+        // controls, not the auto-snooze/dismiss rule editor.
+        case .notifications: return "bell.and.waves.left.and.right"
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
         case .about: return "info.circle"
@@ -199,6 +206,7 @@ enum SettingsIndex {
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
+        .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
         .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate profile activation", category: .pump),
