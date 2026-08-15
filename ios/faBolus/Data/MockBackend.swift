@@ -333,6 +333,21 @@ public final class MockBackend: PumpBackend {
     public func refreshControlIQSettings() async {
         if snapshot.controlIQWeightLbs == 0 { snapshot.controlIQWeightLbs = 160; snapshot.controlIQTotalDailyInsulin = 45; onChange?() }
     }
+    public func refreshSleepSchedule() async {
+        if snapshot.sleepSchedules.isEmpty {
+            // Representative sample data so the simulator shows a populated read (slot 0 = the
+            // pump's user-facing "Sleep Schedule 1", enabled; the rest sample the mixed/partial state).
+            snapshot.sleepSchedules = [
+                PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 0x1F,
+                                      startMinute: 22 * 60, endMinute: 6 * 60),
+                PumpSleepScheduleSlot(slot: 1, enabled: false, activeDays: 0x60,
+                                      startMinute: 23 * 60, endMinute: 7 * 60),
+                PumpSleepScheduleSlot(slot: 2, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0),
+                PumpSleepScheduleSlot(slot: 3, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0),
+            ]
+            onChange?()
+        }
+    }
     public func refreshProfiles() async {
         if snapshot.profiles.isEmpty {
             snapshot.profiles = [PumpProfileInfo(idpId: 1, name: "Default", active: true),

@@ -505,7 +505,95 @@ struct RemindersAlertsView: View {
     }
 }
 
-// MARK: - Profile create + segment editor
+// MARK: - Sleep schedule (native pump Sleep schedule)
+
+/// The pump's own native Sleep-schedule viewer (Phase 09.10). D-04: the READ is universal — this
+/// screen is reachable on ANY connected pump model (see `PumpControlView`'s ungated NavigationLink),
+/// never gated by `PumpCapabilities.supportsSleepScheduleWrite`. This plan (09.10-01) proves the READ
+/// round-trip only: every field renders as plain read-only text, on every pump. The write controls
+/// (DatePicker/Toggle/day-chips/Save, gated behind `UnverifiedFeatureGate`) land in 09.10-02 inside
+/// the `model.capabilities.supportsSleepScheduleWrite` seam in `slotRow(_:)` below — on Mobi that
+/// branch becomes editable; on t:slim it stays exactly this read-only rendering (D-04: "read-only
+/// where applicable"), so the write slots in without a structural change to this view.
+struct SleepScheduleView: View {
+    @Bindable var model: AppModel
+
+    private var slots: [PumpSleepScheduleSlot] { model.snapshot.sleepSchedules }
+    /// Defensive backstop (RESEARCH Open Question 2 / Assumption A3, UI-SPEC "Empty state (defensive
+    /// all-zero decode)"): a pump that never answers, or answers all-zero/garbage, must show the
+    /// explicit "unavailable" row — never 4 blank/zeroed slots that could be mistaken for a real,
+    /// legitimately-configured empty schedule.
+    private var looksUnavailable: Bool {
+        slots.isEmpty
+            || slots.allSatisfy { !$0.enabled && $0.activeDays == 0 && $0.startMinute == 0 && $0.endMinute == 0 }
+    }
+    /// Slots 0-1 are the pump's own user-facing "Sleep Schedule 1/2" (RESEARCH addendum 2026-08-15
+    /// Item 5: upstream captures annotate slots 2-3 "Not visible in UI"); slots 2-3 are decoded but
+    /// surfaced de-emphasized. The wire decode still reads all 4 physical slots.
+    private var primarySlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot < 2 }.sorted { $0.slot < $1.slot } }
+    private var additionalSlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot >= 2 }.sorted { $0.slot < $1.slot } }
+
+    var body: some View {
+        Form {
+            if looksUnavailable {
+                Section {
+                    Text("Sleep schedule unavailable — this pump didn't return schedule data. Check the Sleep schedule directly on the pump.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(primarySlots) { slot in
+                    Section("Sleep Schedule \(slot.slot + 1)") { slotRow(slot) }
+                }
+                if !additionalSlots.isEmpty {
+                    Section("Additional (not shown on the pump)") {
+                        ForEach(additionalSlots) { slot in slotRow(slot) }
+                    }
+                }
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Sleep schedule")
+        .disabled(!model.pumpReady)
+        .task { await model.refreshSleepSchedule() }
+    }
+
+    /// One slot's fields. On Mobi (`model.capabilities.supportsSleepScheduleWrite`), 09.10-02 replaces
+    /// this branch's contents with editable controls; every rendered slot is independent of its
+    /// neighbors' `enabled` state, so a mixed enabled/disabled read needs no special-case branch.
+    @ViewBuilder
+    private func slotRow(_ slot: PumpSleepScheduleSlot) -> some View {
+        if model.capabilities.supportsSleepScheduleWrite {
+            // Write seam (09.10-02 lands DatePicker/Toggle/day-chips/Save here). Read-only for now —
+            // this plan proves the READ only, never a pump write.
+            readOnlyFields(slot)
+        } else {
+            // t:slim (and any non-write-capable backend): read-only, permanently — D-04.
+            readOnlyFields(slot)
+        }
+    }
+
+    /// Plain-text rendering shared by both branches above (UI-SPEC: "every field rendered as plain
+    /// Text, NO DatePicker/Toggle/Save button" on the read-only side).
+    @ViewBuilder
+    private func readOnlyFields(_ slot: PumpSleepScheduleSlot) -> some View {
+        Text(slot.enabled ? "Enabled" : "Disabled")
+        Text("Start: \(minuteOfDayString(slot.startMinute))")
+        Text("End: \(minuteOfDayString(slot.endMinute))")
+        Text("Days: \(activeDaysString(slot.activeDays))")
+    }
+
+    private func minuteOfDayString(_ minute: Int) -> String {
+        String(format: "%02d:%02d", minute / 60, minute % 60)
+    }
+
+    /// CONFIRMED bit ordering (RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1)…Sunday=bit6(64).
+    private func activeDaysString(_ bits: Int) -> String {
+        let letters = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        let selected = (0..<7).filter { bits & (1 << $0) != 0 }.map { letters[$0] }
+        return selected.isEmpty ? "No days selected" : selected.joined(separator: " ")
+    }
+}
+
 
 /// Editable fields for one profile time-segment (reused by create + add/edit segment).
 struct SegmentFields {

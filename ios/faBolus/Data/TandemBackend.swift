@@ -1453,6 +1453,14 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
+    // Sleep schedule — universal/unsigned read (Phase 09.10 D-04), NOT capability-gated. Mirrors
+    // refreshControlIQSettings() exactly; the reply is handled in didReceiveFrame.
+    public func refreshSleepSchedule() async {
+        guard snapshot.connection == .connected else { return }
+        try? client.send(ControlIQSleepScheduleRequest())
+        try? await Task.sleep(nanoseconds: 600_000_000)
+    }
+
     // Profiles (IDP). Switch/rename/delete change the active basal profile → insulin-affecting.
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
@@ -2432,6 +2440,13 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.controlIQEnabled = m.closedLoopEnabled
             snapshot.controlIQWeightLbs = m.weight
             snapshot.controlIQTotalDailyInsulin = m.totalDailyInsulin
+        case let m as ControlIQSleepScheduleResponse:
+            // Universal read (Phase 09.10 D-04) — decode-boundary projection into faBolusCore's
+            // neutral PumpSleepScheduleSlot; PumpX2Kit's SleepSchedule never crosses this boundary.
+            snapshot.sleepSchedules = m.schedules.enumerated().map { i, s in
+                PumpSleepScheduleSlot(slot: i, enabled: s.enabled, activeDays: s.activeDays,
+                                      startMinute: s.startTime, endMinute: s.endTime)
+            }
         case let m as ProfileStatusResponse:
             profileActiveIdpId = m.activeIdpId
             snapshot.profiles = []

@@ -114,6 +114,16 @@ struct PumpControlView: View {
                 }
             }
 
+            // Phase 09.10 D-04 / RESEARCH Pitfall 2: the READ is universal — this NavigationLink is
+            // deliberately UNGATED (no `if caps.supportsX`), a sibling of the ungated "Pump" section
+            // below, reachable on any connected pump (Mobi or t:slim) whenever pumpReady. Only
+            // SleepScheduleView's INTERNAL write controls branch on `caps.supportsSleepScheduleWrite`.
+            Section("Sleep schedule") {
+                NavigationLink { SleepScheduleView(model: model) } label: {
+                    Label("Sleep schedule", systemImage: "moon.zzz.fill")
+                }
+            }
+
             if caps.supportsCgmSession {
                 Section("CGM sensor") {
                     NavigationLink { CgmSessionView(model: model) } label: {

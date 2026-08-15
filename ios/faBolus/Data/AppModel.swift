@@ -1937,6 +1937,9 @@ public final class AppModel {
         recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
+    // Sleep schedule — universal/unsigned read (Phase 09.10 D-04): ungated passthrough, no
+    // runControl/runGatedTherapy wrapper. The write (09.10-02) will route through runGatedTherapy.
+    public func refreshSleepSchedule() async { await source.refreshSleepSchedule(); refresh() }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
     // FB-06 / P8: switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the
