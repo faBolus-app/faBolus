@@ -160,6 +160,10 @@ public protocol PumpBackend: AnyObject {
     // Control-IQ settings (non-insulin config; changes closed-loop behavior).
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
     func refreshControlIQSettings() async
+    /// Read the pump's native Sleep-schedule slots into `snapshot.sleepSchedules`. Universal/unsigned
+    /// read (Phase 09.10 D-04) — NOT capability-gated; sendable and harmless on any connected pump
+    /// model regardless of `PumpCapabilities.supportsSleepScheduleWrite`.
+    func refreshSleepSchedule() async
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
     // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
@@ -274,6 +278,7 @@ public extension PumpBackend {
     func syncTimeToNow() async throws { throw ControlError.notSupported }
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws { throw ControlError.notSupported }
     func refreshControlIQSettings() async {}
+    func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws { throw ControlError.notSupported }
     func refreshProfiles() async {}
     func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }

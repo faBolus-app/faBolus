@@ -198,6 +198,10 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var profiles: [PumpProfileInfo] = []
     /// Time-segments of the profile currently being viewed/edited (from IDPSegment reads).
     public var viewedProfileSegments: [PumpProfileSegment] = []
+    /// The pump's own native Sleep-schedule slots (from ControlIQSleepScheduleResponse), for the
+    /// read-only/editor screen. Universal read — populated regardless of pump model (Phase 09.10
+    /// D-04); empty until `PumpBackend.refreshSleepSchedule()` has been called and answered.
+    public var sleepSchedules: [PumpSleepScheduleSlot] = []
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -323,6 +327,14 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsTimeSync: Bool
     public var supportsSounds: Bool
     public var supportsReminders: Bool
+    /// Dedicated write-gate for the pump's native Sleep-schedule editor (Phase 09.10 D-01/D-04).
+    /// Mobi-only — the Mobi has no on-pump way to set its Sleep schedule, so faBolus is its editor;
+    /// t:slim keeps its own on-pump controls and gets NO write from faBolus. Deliberately its own
+    /// boolean rather than reusing `supportsControlIQSettings` (which gates the unrelated CIQ
+    /// enabled/weight/TDI screen) — every other Mobi-only advanced area already gets its own flag.
+    /// The READ (`PumpBackend.refreshSleepSchedule`/`PumpSnapshot.sleepSchedules`) is universal and
+    /// NEVER gated by this flag (RESEARCH Pitfall 2) — only the write UI checks it.
+    public var supportsSleepScheduleWrite: Bool
 
     public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
                 supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
@@ -333,7 +345,7 @@ public struct PumpCapabilities: Sendable, Equatable {
                 supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
                 supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
                 supportsTimeSync: Bool = false, supportsSounds: Bool = false,
-                supportsReminders: Bool = false) {
+                supportsReminders: Bool = false, supportsSleepScheduleWrite: Bool = false) {
         self.supportsSounds = supportsSounds; self.supportsReminders = supportsReminders
         self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
         self.supportsAlertClear = supportsAlertClear
@@ -345,6 +357,7 @@ public struct PumpCapabilities: Sendable, Equatable {
         self.supportsControlIQSettings = supportsControlIQSettings; self.supportsCgmSession = supportsCgmSession
         self.supportsCartridgeFill = supportsCartridgeFill; self.supportsLimits = supportsLimits
         self.supportsTimeSync = supportsTimeSync
+        self.supportsSleepScheduleWrite = supportsSleepScheduleWrite
     }
     public static let full = PumpCapabilities()
 
@@ -353,7 +366,8 @@ public struct PumpCapabilities: Sendable, Equatable {
         supportsSuspendResume: true, supportsTempBasal: true, supportsModes: true,
         supportsProfiles: true, supportsControlIQSettings: true, supportsCgmSession: true,
         supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true,
-        supportsReminders: true)   // supportsSounds intentionally off — see deferral note
+        supportsReminders: true,   // supportsSounds intentionally off — see deferral note
+        supportsSleepScheduleWrite: true)
 
     /// True if any advanced-control capability is available (gates the Pump Control entry).
     public var supportsAnyAdvancedControl: Bool {
@@ -475,12 +489,41 @@ extension PumpCapabilities {
             caps.supportsControlIQSettings = false; caps.supportsCgmSession = false
             caps.supportsCartridgeFill = false; caps.supportsLimits = false
             caps.supportsTimeSync = false; caps.supportsSounds = false; caps.supportsReminders = false
+            caps.supportsSleepScheduleWrite = false
             return caps
         }
         // Narrow the two capabilities the V1 bitmask speaks to directly (AND with the preset floor).
         caps.supportsControlIQSettings = caps.supportsControlIQSettings && f.controlIQSupported
         caps.supportsLimits = caps.supportsLimits && f.basalLimitSupported
         return caps
+    }
+}
+
+/// A backend-neutral projection of one of the pump's 4 native Sleep-schedule slots (from
+/// `ControlIQSleepScheduleResponse`, PumpX2Kit's `SleepSchedule`), projected at the driver's decode
+/// boundary so faBolusCore never depends on the PumpX2 message layer (P13's decode-boundary
+/// discipline — see `PumpFeatureBits` above). PumpX2Kit's `SleepSchedule` type never crosses into
+/// faBolusCore.
+///
+/// Read is universal (Phase 09.10 D-04) — this type is populated for ANY connected pump model, not
+/// gated by `PumpCapabilities.supportsSleepScheduleWrite` (which governs only the WRITE UI).
+public struct PumpSleepScheduleSlot: Sendable, Equatable, Identifiable {
+    public var id: Int { slot }
+    /// 0-3, matches the pump's 4-slot wire layout. Only slots 0-1 are visible on the pump's own UI
+    /// as "Sleep Schedule 1/2" (RESEARCH addendum 2026-08-15 Item 5); slots 2-3 are decoded but not
+    /// shown on the pump itself.
+    public var slot: Int
+    public var enabled: Bool
+    /// Raw day-of-week bitmask. CONFIRMED ordering (upstream MultiDay.java + two labeled real
+    /// captures, RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1), Tuesday=2, Wednesday=4,
+    /// Thursday=8, Friday=16, Saturday=32, Sunday=bit6(64); all 7 days = 127.
+    public var activeDays: Int
+    /// Minutes-of-day, 0-1439.
+    public var startMinute: Int
+    public var endMinute: Int
+    public init(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) {
+        self.slot = slot; self.enabled = enabled; self.activeDays = activeDays
+        self.startMinute = startMinute; self.endMinute = endMinute
     }
 }
 
