@@ -129,6 +129,15 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// re-check — an `.alarm` must never be offered (or receive) a snooze affordance.
     public var hasSnoozeEligibleAlert: Bool
 
+    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready status, mirrored from
+    /// `PumpSnapshot.cartridgeReadyForBolus` via `WidgetPublisher.makeSnapshot`. Additive, mirroring
+    /// `deliverySuspended`: default **true** ("ready") is the SAFE display default for a legacy
+    /// widget-extension binary that predates this field — absent must never render as a false
+    /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent (absent = no
+    /// signal, treated here as the non-alarming default rather than an alarming one, since a widget
+    /// can only show one boolean state, not a third "unknown").
+    public var cartridgeReady: Bool
+
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
@@ -137,7 +146,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
                 staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
                 displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
                 deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
-                hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
+                hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
+                cartridgeReady: Bool = true) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -152,6 +162,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.controlIQEnabled = controlIQEnabled
         self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         self.showUnitLabel = showUnitLabel
+        self.cartridgeReady = cartridgeReady
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -159,7 +170,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
              lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
              targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
              basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
-             showUnitLabel
+             showUnitLabel, cartridgeReady
     }
 
     /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
@@ -200,6 +211,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
         // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
         showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
+        // Phase 09.9-04 (D-05): a legacy snapshot missing the key ⇒ true (safe "ready" default) — an
+        // older widget extension binary never shows a false cartridge-not-ready scare.
+        cartridgeReady = try c.decodeIfPresent(Bool.self, forKey: .cartridgeReady) ?? true
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.

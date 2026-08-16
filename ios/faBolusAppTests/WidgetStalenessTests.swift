@@ -80,4 +80,40 @@ import faBolusCore
         #expect(snap.staleAfterSec == 420.0)   // was nil before P10 (silent 6-min fallback)
         #expect(snap.hideAfterSec == 1200.0)
     }
+
+    // MARK: - Phase 09.9-04 (D-05): WidgetSnapshot.cartridgeReady
+
+    /// `makeSnapshot` maps the single `cartridgeReadyForBolus` predicate straight through — no bespoke
+    /// per-surface pump read. `MockBackend`'s default snapshot is idle (loadState 6) ⇒ ready.
+    @Test func makeSnapshotMapsCartridgeReadyFromTheSinglePredicate() {
+        var pump = MockBackend().snapshot
+        pump.cartridgeLoadState = 6   // idle ⇒ ready
+        let ready = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                 staleAfterSec: 5 * 60, hideAfterSec: nil)
+        #expect(ready.cartridgeReady == true)
+
+        pump.cartridgeLoadState = 1   // LOAD_CARTRIDGE ⇒ not ready
+        let notReady = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                    staleAfterSec: 5 * 60, hideAfterSec: nil)
+        #expect(notReady.cartridgeReady == false)
+    }
+
+    /// A legacy App-Group payload written before this field existed decodes with `cartridgeReady ==
+    /// true` (the safe "ready" default) — an older widget-extension binary must never render a false
+    /// "cartridge not ready" scare from a missing key. An explicit `false` round-trips unchanged.
+    @Test func cartridgeReadyDecodesToSafeDefaultOnLegacyPayloadAndRoundTripsExplicitFalse() throws {
+        // Simulate a pre-Phase-09.9-04 payload: encode a snapshot, then strip the key before decoding.
+        let snap = WidgetSnapshot(glucose: 120)
+        var obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snap)) as! [String: Any]
+        obj.removeValue(forKey: "cartridgeReady")
+        let legacyData = try JSONSerialization.data(withJSONObject: obj)
+        let decodedLegacy = try JSONDecoder().decode(WidgetSnapshot.self, from: legacyData)
+        #expect(decodedLegacy.cartridgeReady == true)
+
+        // Explicit false round-trips.
+        var notReady = WidgetSnapshot(glucose: 120)
+        notReady.cartridgeReady = false
+        let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: JSONEncoder().encode(notReady))
+        #expect(decoded.cartridgeReady == false)
+    }
 }

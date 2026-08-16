@@ -58,7 +58,10 @@ enum WidgetPublisher {
             hasSnoozeEligibleAlert: hasSnoozeEligibleAlert,
             // Owner-requested toggle — stamped straight from the setting so the widget/complication/
             // Live Activity gate their persistent unit CAPTION the same way the phone does.
-            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels)
+            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels,
+            // Phase 09.9-04 (D-05) — the single snapshot predicate, mirrored straight to the widget so
+            // it can show cartridge state without a bespoke per-surface pump read.
+            cartridgeReady: s.cartridgeReadyForBolus)
     }
 
     @MainActor
