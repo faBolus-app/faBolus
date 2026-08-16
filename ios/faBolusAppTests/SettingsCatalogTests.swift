@@ -12,7 +12,11 @@ struct SettingsCatalogTests {
     /// The four backup keys `backupSnapshot()` emits only when their value is present (two optionals — an
     /// int and the §2.3 remote-bolus ceiling double — and two JSON blobs). Everything else is unconditional.
     /// Declared here so the drift guard can tolerate their absence on a fresh `AppSettings` without weakening it.
-    private let conditionalBackupKeys: Set<String> = ["glucoseHideDelayMinutes", "remoteBolusCeiling", "alertRules", "childAllowed"]
+    private let conditionalBackupKeys: Set<String> = [
+        "glucoseHideDelayMinutes", "remoteBolusCeiling", "alertRules", "childAllowed",
+        // Phase 09.13-02 (D-05): the small-screen plot override pair — emitted only when non-nil.
+        "glucosePlotFloorSmall", "glucosePlotCeilingSmall",
+    ]
 
     // MARK: Coverage
 
@@ -30,8 +34,9 @@ struct SettingsCatalogTests {
         // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
         // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
         // Phase 09.13-01 (D-01/D-02/D-04): 53 → 55 (glucosePlotFloor + glucosePlotCeiling added).
-        #expect(SettingsCatalog.descriptors.count == 55)
-        #expect(SettingsCatalog.byKey.count == 55)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 09.13-02 (D-05): 55 → 57 (glucosePlotFloorSmall + glucosePlotCeilingSmall added).
+        #expect(SettingsCatalog.descriptors.count == 57)
+        #expect(SettingsCatalog.byKey.count == 57)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -53,7 +58,8 @@ struct SettingsCatalogTests {
         // Phase 6 (06-02, 999.2/D-02): 47 → 48 (autoProfileActivation, unconditional).
         // Phase 09.7-02 (D-01): historySyncEnabled is NOT backed up (device-local), no count change here.
         // Phase 09.13-01 (D-01/D-02/D-04): 48 → 50 (glucosePlotFloor + glucosePlotCeiling, both unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 50)                      // 46 unconditional + 4 conditional
+        // Phase 09.13-02 (D-05): 50 → 52 (glucosePlotFloorSmall + glucosePlotCeilingSmall, both conditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 52)                      // 46 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -289,5 +295,98 @@ struct SettingsCatalogTests {
         let fresh = AppSettings(defaults: defaults)
         #expect(AppSettings.glucosePlotCeilingOptions.contains(fresh.glucosePlotCeiling))
         #expect(fresh.glucosePlotFloor < fresh.glucosePlotCeiling)
+    }
+
+    // MARK: Phase 09.13-02 (glucose plot height customization, D-05) — small-screen override registration
+
+    /// D-05: `.remotes` category (like `watchChartRanges`), `backsUp: true`, for BOTH override keys.
+    @Test func glucosePlotSmallOverrideIsRegisteredInRemotesWithBacksUpTrue() {
+        for key in ["glucosePlotFloorSmall", "glucosePlotCeilingSmall"] {
+            let d = SettingsCatalog.byKey[key]
+            #expect(d != nil, "\(key) missing from the catalog")
+            #expect(d?.category == .remotes)
+            #expect(d?.backsUp == true)
+            #expect(!SettingsCatalog.commandAdjacentFlags.contains(key))
+        }
+    }
+
+    /// D-05: fresh install ⇒ both nil ("Same as phone"); setting to nil removes the persisted key; the
+    /// pair persists across a re-init of `AppSettings` over the SAME backing store.
+    @Test @MainActor func glucosePlotSmallOverrideDefaultsToNilAndRoundTripsAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.glucosePlotSmallOverride.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucosePlotFloorSmall == nil)      // D-05 default: Same as phone
+        #expect(fresh.glucosePlotCeilingSmall == nil)
+
+        fresh.glucosePlotFloorSmall = 50
+        fresh.glucosePlotCeilingSmall = 400
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.glucosePlotFloorSmall == 50)
+        #expect(reloaded.glucosePlotCeilingSmall == 400)
+
+        reloaded.glucosePlotFloorSmall = nil
+        reloaded.glucosePlotCeilingSmall = nil
+        #expect(defaults.object(forKey: "glucosePlotFloorSmall") == nil)   // key removed, not just nulled
+        #expect(defaults.object(forKey: "glucosePlotCeilingSmall") == nil)
+        let afterClear = AppSettings(defaults: defaults)
+        #expect(afterClear.glucosePlotFloorSmall == nil)
+        #expect(afterClear.glucosePlotCeilingSmall == nil)
+    }
+
+    /// D-05/D-10: a legacy/corrupt out-of-set stored override snaps to a safe in-set pair (via
+    /// `GlucosePlotScale.resolve`), same guarantee as the shared bounds.
+    @Test @MainActor func glucosePlotSmallOverrideSnapsOutOfSetStoredValueAtInit() {
+        let suiteName = "SettingsCatalogTests.glucosePlotSmallOverrideSnap.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(320, forKey: "glucosePlotFloorSmall")     // legacy out-of-set value
+        defaults.set(320, forKey: "glucosePlotCeilingSmall")
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucosePlotFloorSmall != nil)
+        #expect(fresh.glucosePlotCeilingSmall != nil)
+        #expect(AppSettings.glucosePlotFloorOptions.contains(fresh.glucosePlotFloorSmall!))
+        #expect(AppSettings.glucosePlotCeilingOptions.contains(fresh.glucosePlotCeilingSmall!))
+        #expect(fresh.glucosePlotFloorSmall! < fresh.glucosePlotCeilingSmall!)
+    }
+
+    /// D-05: the pair is treated as ONE unit — only one of the two keys present on disk (a partial/
+    /// corrupt state) is treated as absent (Same as phone), never a half-applied override.
+    @Test @MainActor func glucosePlotSmallOverridePartialStoredStateIsTreatedAsAbsent() {
+        let suiteName = "SettingsCatalogTests.glucosePlotSmallOverridePartial.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(50, forKey: "glucosePlotFloorSmall")   // only the floor half persisted
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucosePlotFloorSmall == nil)
+        #expect(fresh.glucosePlotCeilingSmall == nil)
+    }
+
+    /// D-05: `backupSnapshot` emits the override pair ONLY when both are set (conditional, like
+    /// `remoteBolusCeiling`); the round-trip preserves a set override.
+    @Test @MainActor func glucosePlotSmallOverrideBackupIsConditionalAndRoundTrips() {
+        let suiteName = "SettingsCatalogTests.glucosePlotSmallOverrideBackup.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let s = AppSettings(defaults: defaults)
+
+        let offSnapshot = s.backupSnapshot()
+        #expect(offSnapshot["glucosePlotFloorSmall"] == nil)
+        #expect(offSnapshot["glucosePlotCeilingSmall"] == nil)
+
+        s.glucosePlotFloorSmall = 50
+        s.glucosePlotCeilingSmall = 400
+        let onSnapshot = s.backupSnapshot()
+        #expect(onSnapshot["glucosePlotFloorSmall"] == .int(50))
+        #expect(onSnapshot["glucosePlotCeilingSmall"] == .int(400))
+
+        let s2 = AppSettings(defaults: defaults)
+        s2.applyBackup(onSnapshot)
+        #expect(s2.glucosePlotFloorSmall == 50)
+        #expect(s2.glucosePlotCeilingSmall == 400)
     }
 }
