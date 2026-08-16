@@ -321,6 +321,14 @@ public enum BolusError: Error, LocalizedError {
     /// — dosing is physically impossible. Thrown BEFORE any signed frame is written; never a delivered
     /// value, never a mutation of delivery state (fail-closed, C4 oracle never reports success for this).
     case noCartridge(String)
+    /// Phase 09.9 D-02: the pump refused a real delivery attempt (nack) while the app's own
+    /// last-known `reservoirUnits` reading was below the requested total. This is a distinct,
+    /// more specific case than the generic `.pumpRejected` — but the wire protocol has no
+    /// insulin-specific nack code (RESEARCH Pitfall 2: `BolusPermissionResponse`/
+    /// `InitiateBolusResponse` are exhaustive with no reservoir signal), so the cause MUST be
+    /// worded as an inference from the app's own reading, never a pump-confirmed fact. A clean
+    /// pre-initiate failure in the existing FB-02 taxonomy (never indeterminate, never delivered).
+    case possiblyOutOfInsulin(reservoirUnits: Double, nackDetail: String)
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to a pump."
@@ -330,6 +338,8 @@ public enum BolusError: Error, LocalizedError {
         case .indeterminate(let r): return "Bolus outcome unknown — verify on the pump: \(r)."
         case .unverifiedInputs(let r): return "Pump settings not verified: \(r)."
         case .noCartridge(let r): return "Cartridge not loaded: \(r)."
+        case .possiblyOutOfInsulin(let reservoirUnits, let nackDetail):
+            return "Pump refused the bolus (\(nackDetail)); last known reservoir was \(reservoirUnits) u — this may be due to insufficient insulin."
         }
     }
     /// True for an outcome that must block new deliveries until reconciled (FB-02).
