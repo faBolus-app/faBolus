@@ -1120,6 +1120,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         await acquirePumpTx()
         defer { releasePumpTx() }
         initiateWritten = false   // FB-02: reset per transaction; set true once the initiate is on the wire
+        // Phase 09.9 D-02: snapshot the last-known reservoir reading BEFORE the attempt, so a later nack
+        // can be compared against the reading that was current when the bolus was requested — never a
+        // value this same attempt might have mutated.
+        let reservoirBeforeAttempt = snapshot.reservoirUnits
 
         // Fresh signing timestamp (the pump validates the HMAC against its clock). PX-08: awaited via the
         // transaction coordinator — a timeout/disconnect here is a clean *pre-initiate* failure (nothing
@@ -1142,7 +1146,15 @@ public final class TandemBackend: NSObject, PumpBackend {
                                            deadline: 8, signed: true, serialized: true)
         guard perm.granted else {
             snapshot.connection = .connected; onChange?()
-            throw BolusError.pumpRejected("permission not granted (nack \(perm.nackReasonId))")
+            let detail = "permission not granted (nack \(perm.nackReasonId))"
+            // Phase 09.9 D-02: nackReasonId 1 == INVALID_PUMPING_STATE — the closest signal the wire has
+            // to an insulin-related refusal (RESEARCH Pitfall 2: no insulin-specific nack code exists).
+            // Only treat it as a possible out-of-insulin refusal when the app's OWN last-known reservoir
+            // reading was already below the requested total — never over-claim against an ample reading.
+            if perm.nackReasonId == 1 && reservoirBeforeAttempt < units {
+                throw BolusError.possiblyOutOfInsulin(reservoirUnits: reservoirBeforeAttempt, nackDetail: detail)
+            }
+            throw BolusError.pumpRejected(detail)
         }
         currentBolusId = perm.bolusId
         // Round-3 §5: the pump assigned this id and NO initiate has been written yet. Durably record it
@@ -1237,7 +1249,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard ini.accepted else {
             // Authoritative, matching NACK → clean failure (nothing is delivering).
             snapshot.connection = .connected; onChange?()
-            throw BolusError.pumpRejected("initiate not accepted (status \(ini.status))")
+            let detail = "initiate not accepted (status \(ini.status))"
+            // Phase 09.9 D-02: InitiateBolusResponse carries no insulin-specific status either (RESEARCH
+            // Pitfall 2) — same reservoir-based inference rule as the permission-nack site above.
+            if reservoirBeforeAttempt < units {
+                throw BolusError.possiblyOutOfInsulin(reservoirUnits: reservoirBeforeAttempt, nackDetail: detail)
+            }
+            throw BolusError.pumpRejected(detail)
         }
 
         // Accepted ≠ delivered. Poll for an AUTHORITATIVE terminal — the pump reporting THIS bolus id is
