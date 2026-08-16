@@ -733,6 +733,14 @@ public final class AppModel {
     /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
     private var glucoseSource: GlucoseSource?
 
+    /// Phase 09.6-03 (D-03.2): the currently-configured failover source's `(id, status)`, for
+    /// `CgmArbiterDiagnostics` — read-only, reads `glucoseSource`'s already-tracked `status` and
+    /// never re-probes/reconnects it. Empty when no failover source is selected.
+    public var glucoseSourceDiagnosticsInfo: [(id: String, status: GlucoseSourceStatus)] {
+        guard let glucoseSource else { return [] }
+        return [(id: glucoseSource.id, status: glucoseSource.status)]
+    }
+
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
         get { source.pairingCode } set { source.pairingCode = newValue }

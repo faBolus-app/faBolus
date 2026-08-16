@@ -298,6 +298,12 @@ struct DebugMenuView: View {
             capabilities: model.capabilities,
             badOpcodes: model.badOpcodesForDiagnostics,
             enabled: shareDiagnostics))
+        // Task 1 (Part C-2, D-03.2): [CGM arbiter] — reads the SAME already-arbitrated provenance
+        // the live "via <source>" badge uses; never re-runs GlucoseArbiter.merge.
+        lines.append(CgmArbiterDiagnostics.section(
+            provenance: model.glucoseProvenance,
+            sourceStatuses: model.glucoseSourceDiagnosticsInfo,
+            enabled: shareDiagnostics))
         return lines.joined(separator: "\n")
     }
 }
