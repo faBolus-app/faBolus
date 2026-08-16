@@ -359,4 +359,54 @@ import Testing
             }
         }
     }
+
+    // MARK: - insufficientReservoir (09.9-02, D-01): non-blocking over-request disclosure, anchored
+    // solely on the pump's OWN reservoirUnits read — never a hardcoded threshold.
+
+    @Test func insufficientReservoirFiresWhenEnteredExceedsAValidReservoirReading() {
+        let cases: [(entered: Double, reservoir: Double)] = [(5.0, 3.0), (1.0, 0.0), (25.0, 24.99)]
+        for c in cases {
+            let d = StackingGuard.insufficientReservoir(enteredUnits: c.entered, reservoirUnits: c.reservoir)
+            #expect(d.friction == .disclose, "entered \(c.entered) > reservoir \(c.reservoir) must fire")
+            #expect(d.message != nil)
+        }
+    }
+
+    @Test func insufficientReservoirMessageNamesBothEnteredAndReservoirUnits() {
+        let d = StackingGuard.insufficientReservoir(enteredUnits: 5.0, reservoirUnits: 3.0)
+        #expect(d.friction == .disclose)
+        #expect(d.message?.contains("5") == true)
+        #expect(d.message?.contains("3") == true)
+    }
+
+    @Test func insufficientReservoirBoundaryExactlyEqualNeverFires() {
+        let d = StackingGuard.insufficientReservoir(enteredUnits: 3.0, reservoirUnits: 3.0)
+        #expect(d == .none)
+    }
+
+    @Test func insufficientReservoirBelowReservoirNeverFires() {
+        let cases: [(entered: Double, reservoir: Double)] = [(0.0, 1.0), (1.0, 3.0), (2.99, 3.0)]
+        for c in cases {
+            let d = StackingGuard.insufficientReservoir(enteredUnits: c.entered, reservoirUnits: c.reservoir)
+            #expect(d == .none, "entered \(c.entered) <= reservoir \(c.reservoir) must not fire")
+        }
+    }
+
+    @Test func insufficientReservoirNeverFiresOnInvalidNegativeReservoir() {
+        let invalidReservoirValues: [Double] = [-0.01, -1.0, -25.0]
+        let enteredValues: [Double] = [0.0, 1.0, 5.0, 80.0]
+        for reservoir in invalidReservoirValues {
+            for entered in enteredValues {
+                let d = StackingGuard.insufficientReservoir(enteredUnits: entered, reservoirUnits: reservoir)
+                #expect(d == .none, "invalid reservoir \(reservoir) must never fire regardless of entered \(entered)")
+            }
+        }
+    }
+
+    @Test func insufficientReservoirZeroReservoirIsAValidReadingAndCanFire() {
+        // reservoirUnits == 0 is a VALID (empty) reading, distinct from an invalid negative/unread value —
+        // any positive entered amount against a truly empty reservoir must still disclose.
+        let d = StackingGuard.insufficientReservoir(enteredUnits: 1.0, reservoirUnits: 0.0)
+        #expect(d.friction == .disclose)
+    }
 }
