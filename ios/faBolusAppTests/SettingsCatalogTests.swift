@@ -29,8 +29,9 @@ struct SettingsCatalogTests {
         // Phase 09.7-01: historyCoverage (D-04) is intentionally NOT added here — see the NOTE in
         // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
         // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
-        #expect(SettingsCatalog.descriptors.count == 53)
-        #expect(SettingsCatalog.byKey.count == 53)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 09.13-01 (D-01/D-02/D-04): 53 → 55 (glucosePlotFloor + glucosePlotCeiling added).
+        #expect(SettingsCatalog.descriptors.count == 55)
+        #expect(SettingsCatalog.byKey.count == 55)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -50,7 +51,9 @@ struct SettingsCatalogTests {
         // Owner-requested toggle: 45 → 46 (showGlucoseUnitLabels, unconditional).
         // Phase 6 (06-01, 999.2/D-01): 46 → 47 (autoTempRate, unconditional).
         // Phase 6 (06-02, 999.2/D-02): 47 → 48 (autoProfileActivation, unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 48)                      // 44 unconditional + 4 conditional
+        // Phase 09.7-02 (D-01): historySyncEnabled is NOT backed up (device-local), no count change here.
+        // Phase 09.13-01 (D-01/D-02/D-04): 48 → 50 (glucosePlotFloor + glucosePlotCeiling, both unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 50)                      // 46 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -239,5 +242,52 @@ struct SettingsCatalogTests {
         fresh.showGlucoseUnitLabels = true
         let reloaded = AppSettings(defaults: defaults)
         #expect(reloaded.showGlucoseUnitLabels == true)   // persisted across re-init
+    }
+
+    // MARK: Phase 09.13-01 (glucose plot height customization, D-01/D-02/D-04) — bound registration
+
+    /// D-04: `.display` category, `backsUp: true` with iCloud ON (a display-format preference, NOT
+    /// command-adjacent — same class as `glucoseDisplayUnit`), for BOTH the floor and ceiling keys.
+    @Test func glucosePlotBoundsAreRegisteredInDisplayWithICloudSyncOn() {
+        for key in ["glucosePlotFloor", "glucosePlotCeiling"] {
+            let d = SettingsCatalog.byKey[key]
+            #expect(d != nil, "\(key) missing from the catalog")
+            #expect(d?.category == .display)
+            #expect(d?.backsUp == true)
+            #expect(d?.syncsToICloud == true)
+            #expect(!SettingsCatalog.commandAdjacentFlags.contains(key))
+        }
+        #expect(SettingsCatalog.backedUpKeys.isSuperset(of: ["glucosePlotFloor", "glucosePlotCeiling"]))
+    }
+
+    /// D-01: defaults floor 40 / ceiling 300 on a fresh install; both persist across a re-init of
+    /// `AppSettings` over the SAME backing store.
+    @Test @MainActor func glucosePlotBoundsDefaultAndRoundTripAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.glucosePlotBounds.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucosePlotFloor == 40)      // D-01 default
+        #expect(fresh.glucosePlotCeiling == 300)   // D-01 default
+
+        fresh.glucosePlotFloor = 50
+        fresh.glucosePlotCeiling = 400
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.glucosePlotFloor == 50)
+        #expect(reloaded.glucosePlotCeiling == 400)
+    }
+
+    /// D-01/D-10: a legacy/corrupt out-of-set stored ceiling snaps to a safe in-set option (via
+    /// `GlucosePlotScale.resolve`) rather than surfacing an invalid value in the UI.
+    @Test @MainActor func glucosePlotBoundsSnapOutOfSetStoredValueAtInit() {
+        let suiteName = "SettingsCatalogTests.glucosePlotBoundsSnap.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(320, forKey: "glucosePlotCeiling")   // legacy out-of-set value
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(AppSettings.glucosePlotCeilingOptions.contains(fresh.glucosePlotCeiling))
+        #expect(fresh.glucosePlotFloor < fresh.glucosePlotCeiling)
     }
 }

@@ -87,11 +87,12 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 52 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// All 54 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
     /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
     /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
     /// (999.2/D-01): `autoTempRate` added; 51 → 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation`
-    /// added). Order mirrors
+    /// added; 52 → 54, Phase 09.13-01 (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added).
+    /// Order mirrors
     /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -121,6 +122,11 @@ enum SettingsCatalog {
         .init("showGlucoseUnitLabels", .display, from: .standard, backsUp: true),
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
+        // Phase 09.13 (D-01/D-04): glucose plot Y-axis floor/ceiling presets — a display-format
+        // preference like `glucoseDisplayUnit`, NOT command-adjacent — omitting syncsToICloud gives
+        // iCloud sync ON (SettingDescriptor.init default rule).
+        .init("glucosePlotFloor", .display, from: .standard, backsUp: true),
+        .init("glucosePlotCeiling", .display, from: .standard, backsUp: true),
         .init("showStats", .display, from: .standard, backsUp: true),
         .init("detailsOrder", .display, from: .standard, backsUp: true),
         .init("pillsOrder", .display, from: .standard, backsUp: true),

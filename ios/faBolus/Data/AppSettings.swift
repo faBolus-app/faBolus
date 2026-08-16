@@ -58,6 +58,20 @@ public final class AppSettings {
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
+    /// Glucose plot Y-axis **ceiling**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
+    /// `.display`/`backsUp: true` (same class as `glucoseDisplayUnit`) — see `SettingsCatalog`. The
+    /// resolved-at-init pair always satisfies `floor < ceiling` via `GlucosePlotScale.resolve`
+    /// (never assigned directly with an unresolved raw value from a Picker binding elsewhere).
+    public var glucosePlotCeiling: Int { didSet { d.set(glucosePlotCeiling, forKey: "glucosePlotCeiling") } }
+    /// Glucose plot Y-axis **floor**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
+    /// `.display`/`backsUp: true`. Capped at 50 by `GlucosePlotScale.floorOptions` so the §13
+    /// `veryLow` (54) reference line always stays on-chart (D-02/D-10).
+    public var glucosePlotFloor: Int { didSet { d.set(glucosePlotFloor, forKey: "glucosePlotFloor") } }
+    /// Re-exposed option sets for the Settings UI — pinned to `GlucosePlotScale` so no second
+    /// literal preset list ever exists (D-02).
+    public static let glucosePlotFloorOptions: [Int] = GlucosePlotScale.floorOptions
+    public static let glucosePlotCeilingOptions: [Int] = GlucosePlotScale.ceilingOptions
+
     /// Show the opt-in **Statistics** card on the dashboard (Time-in-Range, GMI, mean, CV over the
     /// in-memory ~24 h history). **Default OFF** so regular use stays clean. See [[GlucoseStatistics]].
     public var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
@@ -572,6 +586,13 @@ public final class AppSettings {
         showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
+        // D-01/D-02/D-10: an absent/out-of-set stored bound (or a legacy/corrupt value) snaps to a
+        // safe in-set pair via the single shared faBolusCore math — never assigned raw.
+        let plotBounds = GlucosePlotScale.resolve(
+            storedFloor: d.object(forKey: "glucosePlotFloor") as? Int,
+            storedCeiling: d.object(forKey: "glucosePlotCeiling") as? Int)
+        glucosePlotFloor = plotBounds.floor
+        glucosePlotCeiling = plotBounds.ceiling
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
@@ -690,6 +711,8 @@ public final class AppSettings {
             "showGlucoseUnitLabels": .bool(showGlucoseUnitLabels),
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
+            "glucosePlotFloor": .int(glucosePlotFloor),
+            "glucosePlotCeiling": .int(glucosePlotCeiling),
             "showStats": .bool(showStats),
             "detailsOrder": .stringArray(detailsOrder),
             "watchDetailsOrder": .stringArray(watchDetailsOrder),
@@ -757,6 +780,8 @@ public final class AppSettings {
         if let v = b("showGlucoseUnitLabels") { showGlucoseUnitLabels = v }
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
+        if let v = i("glucosePlotFloor") { glucosePlotFloor = v }
+        if let v = i("glucosePlotCeiling") { glucosePlotCeiling = v }
         if let v = b("showStats") { showStats = v }
         if let v = sa("detailsOrder") { detailsOrder = v }
         if let v = sa("watchDetailsOrder") { watchDetailsOrder = v }

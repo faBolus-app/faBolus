@@ -300,6 +300,18 @@ struct DisplaySettingsView: View {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
+                // Phase 09.13-01 (D-01/D-02/D-03): discrete preset pickers for the plot Y-axis
+                // ceiling + floor, unit-aware via GlucosePlotScale.boundLabel — no free-numeric entry.
+                Picker("Plot ceiling", selection: $settings.glucosePlotCeiling) {
+                    ForEach(AppSettings.glucosePlotCeilingOptions, id: \.self) { opt in
+                        Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                    }
+                }
+                Picker("Plot floor", selection: $settings.glucosePlotFloor) {
+                    ForEach(AppSettings.glucosePlotFloorOptions, id: \.self) { opt in
+                        Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                    }
+                }
             }
             Section {
                 Toggle("Show statistics card", isOn: $settings.showStats)
