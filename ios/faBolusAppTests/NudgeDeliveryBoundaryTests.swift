@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// **MUST-NOT-REACH boundary (phase #92, faBolusNudge delivery-path boundary).** Proves the INVERSE of

@@ -65,9 +65,13 @@ packages:
     # .define, the version-pin prerequisite) squash-cherry-picked in the same commit as D2
     # (experimental BLE txId correlation, opt-in/fail-closed, unused by faBolus) — an accepted §1.4
     # deviation, owner-confirmed 2026-08-13 (pin-current-main), reconciled in 03-03/BRANCHES.md.
-    # Repo renamed PumpX2Kit -> TandemKit 2026-08-15 (Phase 09.12-01); this is the SAME commit,
-    # resolved via GitHub's rename redirect — the revision SHA is byte-identical, not re-pinned.
-    revision: 6efdd43d767c34a0d298ac52fbbd2cd77a6d192a
+    # Repo renamed PumpX2Kit -> TandemKit 2026-08-15 (Phase 09.12-01); Phase 09.12-01's package-name
+    # rename kept the SAME revision (byte-identical, resolved via GitHub's rename redirect). This
+    # pin was advanced by Phase 09.12-02's product/target rename (PumpX2Messages/Auth/BLE ->
+    # TandemMessages/Auth/BLE), which changed the products faBolus requests by name — a
+    # revision bump was REQUIRED here (not optional), since the old pinned commit's Package.swift
+    # still declares the pre-rename product names.
+    revision: 1a09dba67de2d45f2f26f408dccb4bccb9749e6c
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
@@ -112,11 +116,11 @@ targets:
         product: ModelCatalogKit
       # <<< NUDGE
       - package: TandemKit
-        product: PumpX2Messages
+        product: TandemMessages
       - package: TandemKit
-        product: PumpX2Auth
+        product: TandemAuth
       - package: TandemKit
-        product: PumpX2BLE
+        product: TandemBLE
       # >>> GARMIN (stripped by scripts/generate-project.sh when the SDK is absent)
       - package: ConnectIQ
         product: ConnectIQ
@@ -296,11 +300,11 @@ targets:
       # ONLY direct-pump/WatchPumpClient.swift imports these, so with the flag off the watch app
       # does not link the pump BLE stack at all.
       - package: TandemKit
-        product: PumpX2Messages
+        product: TandemMessages
       - package: TandemKit
-        product: PumpX2Auth
+        product: TandemAuth
       - package: TandemKit
-        product: PumpX2BLE
+        product: TandemBLE
       # <<< WATCH_DIRECT_PUMP
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # On-device eating detector (EatingDetectionKit) + its model catalog. Needs HealthKit (below).

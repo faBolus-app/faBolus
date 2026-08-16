@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
+import TandemMessages
 @testable import faBolus
 
 /// P14 S9. The absolute 25 U max-bolus cap is a HARD block enforced at the funnel AND in every backend

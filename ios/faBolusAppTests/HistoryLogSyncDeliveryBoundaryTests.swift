@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// **MUST-NOT-REACH boundary (Phase 09.7-01, D-06).** Proves the gap-aware history-log sync — the

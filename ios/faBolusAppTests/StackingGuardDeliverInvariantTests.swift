@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// **MUST-NOT-BLOCK invariant (task #93, Insulin Stacking Guard).** Proves the safety spine of the whole

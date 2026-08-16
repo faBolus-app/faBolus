@@ -1,7 +1,7 @@
 import Testing
 import Foundation
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// E8 regression. The pump's `HomeScreenMirrorResponse` trend icon is the AUTHORITATIVE arrow — including

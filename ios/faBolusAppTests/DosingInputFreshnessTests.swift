@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// DIF-core (dosing-input freshness): the fail-closed core that forces a fresh op-115 (CR/ISF/target) +

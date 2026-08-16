@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-import PumpX2BLE
+import TandemBLE
 @testable import faBolus
 
 /// `.planning/debug/pump-pairing-loop.md` instrumentation cycle: the app-side os.Logger channel

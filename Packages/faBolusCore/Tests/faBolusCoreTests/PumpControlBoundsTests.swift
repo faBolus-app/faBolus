@@ -3,7 +3,7 @@ import Testing
 
 /// P13c-5: pump-control bounds + the extended-bolus capability. Pins the values and the clamps; the
 /// mirror's equality with the kit's own firmware constants is pinned separately by the app-target
-/// drift guard (`PumpControlBoundsMirrorTests`, which can see PumpX2Messages).
+/// drift guard (`PumpControlBoundsMirrorTests`, which can see TandemMessages).
 struct PumpControlBoundsTests {
 
     @Test func tempRateBoundsAreSaneAndOrdered() {

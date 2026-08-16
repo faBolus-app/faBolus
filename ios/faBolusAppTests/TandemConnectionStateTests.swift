@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-import PumpX2BLE
+import TandemBLE
 import faBolusCore
 @testable import faBolus
 

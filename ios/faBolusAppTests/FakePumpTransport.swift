@@ -1,6 +1,6 @@
 import Foundation
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// Round-3 §6.1 deterministic fake transport for driving the REAL `TandemBackend.perform` flow with no

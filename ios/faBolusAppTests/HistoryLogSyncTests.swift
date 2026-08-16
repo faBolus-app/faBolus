@@ -2,8 +2,8 @@ import Testing
 import Foundation
 import faBolusCore
 import HistoryStore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// Phase 09.7-01 (D-02/D-03/D-04 + Pitfall 3 fix). Replaces the one-shot, backward-only,

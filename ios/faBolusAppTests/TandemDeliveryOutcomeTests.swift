@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// Round-3 §4: the REAL `TandemBackend.perform` delivery flow, behind the deterministic `FakePumpTransport`

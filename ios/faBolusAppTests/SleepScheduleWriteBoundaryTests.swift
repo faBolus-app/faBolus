@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// **MUST-NOT-REACH boundary (Phase 09.10, T-09.10-03).** Proves the L7 mode-only invariant for the Mobi

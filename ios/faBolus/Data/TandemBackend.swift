@@ -1,9 +1,9 @@
 import Foundation
 import faBolusCore
 import CoreBluetooth
-import PumpX2Messages
-import PumpX2Auth
-import PumpX2BLE
+import TandemMessages
+import TandemAuth
+import TandemBLE
 import os
 
 /// Observable sync state for the "Pump history sync" UI section (D-01/D-05, Phase 09.7-02).
@@ -32,7 +32,7 @@ public enum HistorySyncState: Equatable {
 /// Runs on a physical device only (the Simulator has no Bluetooth).
 @MainActor
 public final class TandemBackend: NSObject, PumpBackend {
-    /// Same subsystem/category as `PumpX2BLE`'s `bleLog` (Phase 01.1) — declared separately here
+    /// Same subsystem/category as `TandemBLE`'s `bleLog` (Phase 01.1) — declared separately here
     /// because that constant is `private` to the kit module — so a single `log show --predicate
     /// 'subsystem == "com.fabolus.app" AND category == "ble"'` surfaces both the kit's connect/
     /// disconnect/reconnect events AND the app-layer pairing events below on one merged timeline.

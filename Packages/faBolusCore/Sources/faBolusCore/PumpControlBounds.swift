@@ -8,7 +8,7 @@ import Foundation
 /// canonically in PumpX2Kit's request types (`SetTempRateRequest`, `InitiateBolusRequest`). faBolusCore
 /// stays free of the PumpX2 message layer, so — like `WidgetGlucoseThresholds` and `PumpFeatureBits` —
 /// these are a **mirror**, and an app-target drift test (`PumpControlBoundsMirrorTests`, which links both
-/// faBolusCore and PumpX2Messages) pins the mirror equal to the kit constants so the two can't diverge.
+/// faBolusCore and TandemMessages) pins the mirror equal to the kit constants so the two can't diverge.
 ///
 /// These are pump-firmware **limits**, not therapy parameters: they bound what a control write may
 /// request, they don't recommend a value.

@@ -2,9 +2,9 @@ import Foundation
 import faBolusCore
 import Observation
 import CoreBluetooth
-import PumpX2BLE
-import PumpX2Auth
-import PumpX2Messages
+import TandemBLE
+import TandemAuth
+import TandemMessages
 
 /// Phase 1 of the independent (direct-to-pump) watch: connect to the pump over the **watch's own**
 /// Bluetooth and run the **full JPAKE pairing** with a 6-digit code entered on the watch, storing
