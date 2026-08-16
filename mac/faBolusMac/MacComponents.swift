@@ -279,7 +279,7 @@ struct MacBolusEntryView: View {
     /// stay silent (the button simply stays disabled). Exhaustive so a new reason can't be dropped.
     private var blockMessage: String? {
         switch gate.reason {
-        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied, .noCartridge:
             return gate.reason?.userMessage
         case .belowMinimum, .aboveMax, .none:
             return nil
