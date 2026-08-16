@@ -7,7 +7,7 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
 ## Safety invariants — do not violate
 - Insulin path is layered: **UI confirm/hold → backend clamp** (`Interlocks.absoluteMaxUnits` = 25 U,
   min 0.05 U) **→ `WritePolicy` interlock** (`.readOnly` default) **→ signed message** flagged
-  `modifiesInsulinDelivery`, byte-verified against the PumpX2Kit oracle. Never add a delivery path that
+  `modifiesInsulinDelivery`, byte-verified against the TandemKit oracle. Never add a delivery path that
   bypasses any layer.
 - All action gating happens in **`AppModel`** (`childBlocked` for child mode; `PeerRemoteHost`/
   `RemotePermission` for remote peers). Add gates there, not scattered in views.
@@ -47,7 +47,7 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
 ## Git / workflow
 - Follow the user's branching (feature branches; merge to `main` when asked). Don't push or commit
   unless asked. End commit messages with the required `Co-Authored-By` trailer.
-- Sibling repos: `../PumpX2Kit` (pump protocol — change message bytes there, with an oracle test) and
+- Sibling repos: `../TandemKit` (pump protocol — change message bytes there, with an oracle test) and
   `../faBolusGarmin` (Garmin remote). Keep the `RemoteCommand` schema in sync across them.
 
 ## Versioning & governance (§1.3 / §1.4)
@@ -57,10 +57,10 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
 - **App version is single-sourced in `Config.xcconfig`** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`),
   inherited by every target the same way as `APP_BUNDLE_ID`. Never add a per-target version literal in
   `project.yml`. Bump `MARKETING_VERSION` on a release and add a `CHANGELOG.md` entry.
-- **Backend (PumpX2Kit) version-pinning contract** — the target is: annotated release tags, an explicit
+- **Backend (TandemKit) version-pinning contract** — the target is: annotated release tags, an explicit
   version pin **or a pinned commit `revision:`** in `project.yml` (with a documented local-path override
   for dev), and a committed `Package.resolved`. This is now **MET** (2026-08-13): faBolus consumes
-  PumpX2Kit by `url:`+`revision:` (a pinned commit SHA on PumpX2Kit `main`), with `FABOLUS_PUMPX2_LOCAL=1`
+  TandemKit by `url:`+`revision:` (a pinned commit SHA on TandemKit `main`), with `FABOLUS_TANDEM_LOCAL=1`
   as the documented local-path override. See BRANCHES.md §1.3 for the reason, the pinned revision, and
   the current tag state — including the recorded D2-on-main governance fact.
 - **Garmin ships in lockstep** with the app (same release, same quality bar), enforced by the existing

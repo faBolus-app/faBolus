@@ -15,7 +15,7 @@ without forking. Everything else is a plugin behind one of these.
 │   • RemoteLink         (Sources/faBolusCore/RemoteLink.swift)      — transport (WatchConnectivity)
 ├ BackendRegistry  (ios/faBolus/Data/BackendRegistry.swift)   — compile-time backend manifest (app-side)
 ├ Backends  (conform to PumpBackend)          ── swap the pump
-│   • TandemBackend (ios/faBolus/Data/TandemBackend.swift, wraps PumpX2Kit)  ← reference
+│   • TandemBackend (ios/faBolus/Data/TandemBackend.swift, wraps TandemKit)  ← reference
 │   • MockBackend   (ios/faBolus/Data/MockBackend.swift)                     ← copy this to start a new backend
 ├ Hosts  (answer the remote protocol)         ── who drives the pump for a remote
 │   • faBolus (AppModel + PhoneRemoteHost/GarminRemoteBridge)  ← reference host
@@ -25,15 +25,15 @@ without forking. Everything else is a plugin behind one of these.
 ```
 
 `faBolusCore` holds only the stable contracts and platform-neutral models — no UI, no pump library,
-no `import` of PumpX2Kit. The app, the Apple Watch target, and every backend depend on it; that's
+no `import` of TandemKit. The app, the Apple Watch target, and every backend depend on it; that's
 what keeps the two seams below stable while implementations churn.
 
 ## Seam 1 — `PumpBackend` (support a different pump)
 The app talks only to `PumpBackend`, never to a pump library. A backend supplies a live
 `PumpSnapshot` + histories, delivers/cancels boluses, computes recommendations, and reports
 `activeNotifications` as neutral `PumpAlert`s. It also declares `PumpCapabilities` so the one UI
-adapts (hide carbs mode / cancel / alerts / pairing when unsupported). PumpX2Kit is just the engine
-behind `TandemBackend`; the app has **no** `import PumpX2Messages`.
+adapts (hide carbs mode / cancel / alerts / pairing when unsupported). TandemKit is just the engine
+behind `TandemBackend`; the app has **no** `import TandemMessages`.
 
 Backends are registered in `BackendRegistry.enabled` — a **compile-time manifest** (iOS has no
 dynamic plugins, so every backend is compiled in and selected at runtime; the default per build is
@@ -53,7 +53,7 @@ clamp. The remote's 1-2-3 / hold confirm is a *second* factor, not the only one.
 ## Repos
 - **faBolus** (this repo) — the app, Apple Watch remote, iPhone widgets, backends, `faBolusCore`,
   and the contract.
-- **PumpX2Kit** — the Tandem protocol/auth/BLE engine (a package `TandemBackend` wraps).
+- **TandemKit** — the Tandem protocol/auth/BLE engine (a package `TandemBackend` wraps).
 - **faBolusGarmin** — the Garmin remote (host-agnostic; consumes the contract schema).
 
 ## Where to extend it (open contributions)

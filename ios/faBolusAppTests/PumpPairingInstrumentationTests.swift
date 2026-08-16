@@ -292,7 +292,7 @@ struct PumpEgvPollTests {
 /// loop for a SILENT one: the link holds, but CGM data never appears.
 ///
 /// Trend-arrow correctness for the V1 decode (which read `trendRate` UNSIGNED, so every FALLING trend
-/// would have rendered as RAPIDLY RISING) is pinned at the message level in PumpX2Kit's
+/// would have rendered as RAPIDLY RISING) is pinned at the message level in TandemKit's
 /// `TrendProvenanceTests.v1TrendRateIsSigned` / `.v1MatchesV2ForEveryBandAndSentinel`; the app-level
 /// derived-arrow fallback is gated behind `snapshot.trend.isEmpty`, which a cold-start snapshot
 /// (defaulting to `GlucoseTrend.flat`) never satisfies, so it is not assertable from here.

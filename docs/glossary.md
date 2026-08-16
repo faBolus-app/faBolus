@@ -39,6 +39,6 @@ LLM) reading the code.
 - **WritePolicy** — the transport interlock (`.readOnly` / `.allowNonDelivery` / `.allowDelivery`) that
   blocks insulin-affecting messages unless explicitly permitted.
 - **Oracle** — the reference Java implementation the Swift pump messages are tested byte-exact against
-  (in `PumpX2Kit`).
+  (in `TandemKit`).
 - **RemoteCommand** — the small JSON contract every remote uses to talk to the host
   (`schema/command.schema.json`).

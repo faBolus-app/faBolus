@@ -5,7 +5,7 @@ import Foundation
 /// actually accepts.
 ///
 /// **§13 — every bound names its source.** These mirror the limits the pump firmware enforces, as encoded
-/// canonically in PumpX2Kit's request types (`SetTempRateRequest`, `InitiateBolusRequest`). faBolusCore
+/// canonically in TandemKit's request types (`SetTempRateRequest`, `InitiateBolusRequest`). faBolusCore
 /// stays free of the PumpX2 message layer, so — like `WidgetGlucoseThresholds` and `PumpFeatureBits` —
 /// these are a **mirror**, and an app-target drift test (`PumpControlBoundsMirrorTests`, which links both
 /// faBolusCore and TandemMessages) pins the mirror equal to the kit constants so the two can't diverge.

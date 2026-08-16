@@ -1,7 +1,7 @@
 # Apple Watch remote
 
 A modern remote at parity with the phone and Garmin. **The watch never touches the pump** —
-PumpX2Kit runs on the iPhone, and the watch relays commands over WatchConnectivity. To install
+TandemKit runs on the iPhone, and the watch relays commands over WatchConnectivity. To install
 it, see [Add the Apple Watch app](../build/apple-watch-build.md).
 
 !!! note "The watch app is an optional build"

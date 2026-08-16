@@ -12,7 +12,7 @@ pointing and clicking.
 ## Step 1 — Download the code {#download}
 
 The app comes in two parts that must sit next to each other: **faBolus** (the app) and
-**PumpX2Kit** (a helper library it's built on). The easiest way to download both — and everything
+**TandemKit** (a helper library it's built on). The easiest way to download both — and everything
 they need — is **GitHub Desktop**, a free app from GitHub.
 
 !!! info "What's GitHub? What's a repository?"
@@ -28,10 +28,10 @@ they need — is **GitHub Desktop**, a free app from GitHub.
 <ol class="cx2-steps">
 <li>Download <strong>GitHub Desktop</strong> from <a href="https://desktop.github.com/">desktop.github.com</a> and open it. (You can sign in with a free GitHub account, or skip sign-in — either works for downloading.)</li>
 <li>In the menu bar: <strong>File → Clone Repository…</strong> → click the <strong>URL</strong> tab.</li>
-<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>faBolus</code> inside your <strong>Documents</strong> — for example <code>~/Documents/faBolus/PumpX2Kit</code>:
+<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>faBolus</code> inside your <strong>Documents</strong> — for example <code>~/Documents/faBolus/TandemKit</code>:
 <div></div>
 ```
-https://github.com/faBolus-app/PumpX2Kit
+https://github.com/faBolus-app/TandemKit
 ```
 Click <strong>Clone</strong> and wait for it to finish.</li>
 <li>Do it again for the second project: <strong>File → Clone Repository…</strong> → <strong>URL</strong>, and this time paste:
@@ -44,7 +44,7 @@ Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>
 
 <div class="cx2-check" markdown>
 **Success looks like:** inside **Documents → faBolus** you now have two folders:
-**PumpX2Kit** and **faBolus**, side by side.
+**TandemKit** and **faBolus**, side by side.
 </div>
 
 ??? note "Advanced: prefer the Terminal? (optional)"
@@ -53,7 +53,7 @@ Save it right next to the first one — <code>~/Documents/faBolus/faBolus</code>
 
     ```sh
     mkdir -p ~/Documents/faBolus && cd ~/Documents/faBolus
-    git clone --recurse-submodules https://github.com/faBolus-app/PumpX2Kit.git
+    git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
     git clone https://github.com/faBolus-app/faBolus.git
     ```
 

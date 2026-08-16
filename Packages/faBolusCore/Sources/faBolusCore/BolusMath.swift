@@ -3,7 +3,7 @@ import Foundation
 /// The single, canonical bolus-dose calculator for faBolus.
 ///
 /// This is a faithful Swift port of the vendored Tandem oracle `BolusCalculator.parse()`
-/// (PumpX2Kit `vendor/pumpx2-oracle/.../calculator/BolusCalculator.java`). It replaces four
+/// (TandemKit `vendor/pumpx2-oracle/.../calculator/BolusCalculator.java`). It replaces four
 /// divergent formulas that previously lived in `TandemBackend`, `RemoteClientModel`, the Garmin
 /// `AppState`, and `MockBackend`. The most important behavior it fixes (audit C-01): a **below-target**
 /// BG correction is kept **signed** and only the *total* is floored at zero — so a low glucose reduces

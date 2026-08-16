@@ -69,7 +69,7 @@ See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).
 ## Under the hood (for the curious)
 
 ??? info "The signed delivery sequence"
-    Via PumpX2Kit: `BolusPermissionRequest` → *(carb bolus only)* best-effort `RemoteCarbEntryRequest`
+    Via TandemKit: `BolusPermissionRequest` → *(carb bolus only)* best-effort `RemoteCarbEntryRequest`
     + `RemoteBgEntryRequest` to record the carbs/BG on the pump → `InitiateBolusRequest` (signed and
     insulin-delivery-gated; also carries `bolusCarbs`/`bolusBG` inline) → status polling until the bolus
     finishes or is cancelled → `LastBolusStatus` for the delivered amount. The carb/BG records are

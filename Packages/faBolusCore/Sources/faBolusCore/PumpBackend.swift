@@ -1,7 +1,7 @@
 import Foundation
 
 /// The **pump backend** interface — the stable seam between the faBolus UI and any pump. A backend
-/// (TandemBackend/PumpX2Kit, MockBackend, or a community backend) conforms to this; the app depends
+/// (TandemBackend/TandemKit, MockBackend, or a community backend) conforms to this; the app depends
 /// only on this protocol + the neutral models, never on a specific pump library. Async streaming of
 /// snapshots keeps the HUD reactive.
 ///

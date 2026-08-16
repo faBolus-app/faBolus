@@ -187,7 +187,7 @@ final class FakePumpTransport: PumpTransport {
     // MARK: - History-log frame builders (Phase 09.7-01 — gap-aware sync)
 
     /// op-59 `HistoryLogStatusResponse` (12 bytes: numEntries/firstSequenceNum/lastSequenceNum, all
-    /// little-endian `UInt32`, per `PumpX2Kit`'s `HistoryLog.swift`).
+    /// little-endian `UInt32`, per `TandemKit`'s `HistoryLog.swift`).
     static func historyLogStatus(numEntries: UInt32, firstSequenceNum: UInt32, lastSequenceNum: UInt32) -> [UInt8] {
         frame(opCode: HistoryLogStatusResponse.props.opCode,
               cargo: Bytes.toUint32(numEntries) + Bytes.toUint32(firstSequenceNum) + Bytes.toUint32(lastSequenceNum),

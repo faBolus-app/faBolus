@@ -26,7 +26,7 @@ import faBolusCore
 ///
 /// **D-03a assumption/threat (firmware-version gap — do NOT overturn here):** current Tandem
 /// Control-IQ+ docs say a temp rate CAN be set while Control-IQ+ is ON, but the repo's LOCKED constraint
-/// (`.planning/intel/constraints.md:29`, from PumpX2Kit `TempRateRequests.swift`) says the pump rejects
+/// (`.planning/intel/constraints.md:29`, from TandemKit `TempRateRequests.swift`) says the pump rejects
 /// temp-rate-while-CIQ-on. `AppModel.setTempBasal` already encodes the locked constraint as a pre-flight
 /// refusal (`ControlIQPrecondition.tempRateBlockReason`) — this module does NOT add its own CIQ-off gate
 /// (that would re-hardcode the locked constraint at a new layer and pre-empt the Phase-11 bench). It

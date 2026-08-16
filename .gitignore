@@ -35,6 +35,6 @@ project.generated.yml
 *.mlmodelc
 
 # §1.3 version-pin: track the root-level canonical Package.resolved so every clone/CI run resolves
-# the exact pinned PumpX2Kit + faBolusNudge/LoopAlgorithm graph (D-04). Only negates the root copy —
+# the exact pinned TandemKit + faBolusNudge/LoopAlgorithm graph (D-04). Only negates the root copy —
 # it cannot and must not reach the generated copy under the still-excluded *.xcodeproj/ tree.
 !/Package.resolved

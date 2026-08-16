@@ -29,9 +29,9 @@ Format per row: component · version/revision · SPDX license · source · how f
 
 | Component | Version | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| PumpX2Kit | `../PumpX2Kit` | MIT | github.com/faBolus-app/PumpX2Kit | Tandem BLE protocol / auth / messages |
+| TandemKit | `../TandemKit` | MIT | github.com/faBolus-app/TandemKit | Tandem BLE protocol / auth / messages |
 
-PumpX2Kit in turn vendors (see its own `NOTICE`):
+TandemKit in turn vendors (see its own `NOTICE`):
 
 | Component | Upstream | License (SPDX) | Usage |
 |---|---|---|---|

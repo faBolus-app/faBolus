@@ -6,7 +6,7 @@ import WatchKit
 /// phone↔remote command handling over `RemoteLink`) that adds the watch's direct-CGM failover:
 /// when the iPhone is out of range the watch reads glucose itself, phone-independent — a Dexcom
 /// G7/ONE+ over BLE, and/or xDrip4iOS via Apple Health (synced from the phone). The watch never
-/// touches the pump (PumpX2Kit runs on the phone).
+/// touches the pump (TandemKit runs on the phone).
 @MainActor
 final class WatchModel: RemoteClientModel {
     /// Direct sources reuse the shared implementations; started only while unreachable, to save power.

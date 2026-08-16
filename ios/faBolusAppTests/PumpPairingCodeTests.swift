@@ -2,7 +2,7 @@ import Testing
 @testable import faBolus
 
 /// The app's pump-pairing-code validation + automatic scheme selection (6-digit JPAKE vs legacy V1
-/// 16-char). The pairing MECHANICS are proven in PumpX2Kit; this pins the app-layer contract the
+/// 16-char). The pairing MECHANICS are proven in TandemKit; this pins the app-layer contract the
 /// pairing UI relies on — that both code formats are accepted and routed to the right handshake.
 @Suite struct PumpPairingCodeTests {
     @Test func acceptsSixDigitAsJpake() {

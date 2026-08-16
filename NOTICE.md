@@ -14,8 +14,8 @@ It is built on the Tandem pump Bluetooth protocol as reverse-engineered by the
 independent reimplementation for iPhone / Apple Watch / Garmin; it is **not** a fork of, affiliated
 with, or endorsed by pumpX2/controlX2.
 
-The protocol/auth/Bluetooth core lives in the separate **PumpX2Kit** package, which vendors
-**Mbed TLS** (Apache-2.0 OR GPL-2.0) for its EC-JPAKE implementation — see PumpX2Kit's own `NOTICE`
+The protocol/auth/Bluetooth core lives in the separate **TandemKit** package, which vendors
+**Mbed TLS** (Apache-2.0 OR GPL-2.0) for its EC-JPAKE implementation — see TandemKit's own `NOTICE`
 for that attribution.
 
 ## G7SensorKit (Dexcom G7 / ONE+ decoding)

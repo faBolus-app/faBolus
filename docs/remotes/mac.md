@@ -1,7 +1,7 @@
 # Mac menu-bar remote
 
 A menu-bar-only Mac app that mirrors the phone and lets you bolus from your desktop. **The Mac
-never touches the pump** — like the Apple Watch and Garmin, it's a thin remote: PumpX2Kit runs on
+never touches the pump** — like the Apple Watch and Garmin, it's a thin remote: TandemKit runs on
 the iPhone, and the Mac relays confirmed commands to it. To build it, see
 [Build it yourself](../build/index.md) and pick the **faBolusMac** target.
 

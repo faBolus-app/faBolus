@@ -24,7 +24,7 @@ public enum HistorySyncState: Equatable {
     case error(String)
 }
 
-/// Real pump data source over `PumpX2Kit`'s Core Bluetooth transport: scan → connect → JPAKE
+/// Real pump data source over `TandemKit`'s Core Bluetooth transport: scan → connect → JPAKE
 /// pair → poll status; and a signed bolus flow (permission → initiate → status) matching the
 /// signed delivery path. Read-only by default; `deliverBolus` briefly
 /// raises the write policy to `.allowDelivery` for the signed sequence only.
@@ -45,7 +45,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// outcome token — never the pairing code, derived secret, `centralChallenge`, or any frame/cargo
     /// bytes (all `.public` here are non-sensitive integers or fixed enum-like tokens, per D-08).
     private static let pairingLog = Logger(subsystem: "com.fabolus.app", category: "ble")
-    /// Tandem (via PumpX2Kit) supports the full bolus/status feature set. Advanced control
+    /// Tandem (via TandemKit) supports the full bolus/status feature set. Advanced control
     /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
     /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
     /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
@@ -282,7 +282,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     // for the full 1.5s (no drop) — but the loop PERSISTED: the pump dropped the link ~315ms after
     // the very FIRST post-settle READ (`ControlIQIOBRequest`, op108 — `fastRead()`'s first message),
     // refuting settle-TIMING as the (sole) fix. Grounded directly in the vendored jwoglom/pumpX2
-    // reference (`PumpX2Kit/vendor/pumpx2-oracle/androidLib/src/main/java/com/jwoglom/pumpx2/pump/
+    // reference (`TandemKit/vendor/pumpx2-oracle/androidLib/src/main/java/com/jwoglom/pumpx2/pump/
     // bluetooth/TandemPump.java`, method `onPumpConnected`, and `TandemBluetoothHandler.java`'s
     // `PumpChallengeResponse`/JPAKE-success branches, which both call `internalOnPumpConnected` →
     // `tandemPump.onPumpConnected` the INSTANT auth succeeds — the exact same trigger point as this
@@ -445,7 +445,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public private(set) var lastBolusCancelled = false
 
     // PX-08: the signed request/response flow (time, permission, initiate, current/last bolus status) is
-    // now owned by the PumpX2Kit transaction coordinator via `client.sendAwaitingResponse` (see
+    // now owned by the TandemKit transaction coordinator via `client.sendAwaitingResponse` (see
     // `awaitResponse`), not hand-rolled continuation slots. The coordinator correlates by
     // (characteristic, opcode), bounds each with a deadline, and is failed-closed by the client on every
     // disconnect / transport error — so a lost reply can neither hang a bolus nor leave the write policy
@@ -1644,7 +1644,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// so this is a deliberate override, not an oversight. The reference never sends V2 anywhere
     /// itself; its own automatic qualifying-event re-fetch (`QualifyingEvent.java`) uses V1
     /// (`CurrentEGVGuiDataRequest`) exclusively. V1 and V2 carry byte-identical cargo semantics (see
-    /// PumpX2Kit's `CurrentEGVGuiDataResponse`/`CurrentEgvGuiDataV2Response` doc comments), so using V1
+    /// TandemKit's `CurrentEGVGuiDataResponse`/`CurrentEgvGuiDataV2Response` doc comments), so using V1
     /// unconditionally costs no data on any pump generation — and it's what the owner's on-device
     /// re-capture confirmed holds the link on the API-2.5 pump. An earlier fix cycle here gated V2 vs
     /// V1 by a `>= 3` major-API-version heuristic; that threshold was never reference- or
@@ -2135,7 +2135,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         onChange?()
     }
 
-    /// Maps a PumpX2Kit typed history-log event to a neutral `HistoryEvent` for the Logbook.
+    /// Maps a TandemKit typed history-log event to a neutral `HistoryEvent` for the Logbook.
     /// Returns nil to skip high-frequency / non-user-facing records (e.g. raw CGM samples — those
     /// are shown on the chart, not the logbook). A curated set of the user-meaningful families.
     static func neutralEvent(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
@@ -2485,7 +2485,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.controlIQTotalDailyInsulin = m.totalDailyInsulin
         case let m as ControlIQSleepScheduleResponse:
             // Universal read (Phase 09.10 D-04) — decode-boundary projection into faBolusCore's
-            // neutral PumpSleepScheduleSlot; PumpX2Kit's SleepSchedule never crosses this boundary.
+            // neutral PumpSleepScheduleSlot; TandemKit's SleepSchedule never crosses this boundary.
             snapshot.sleepSchedules = m.schedules.enumerated().map { i, s in
                 PumpSleepScheduleSlot(slot: i, enabled: s.enabled, activeDays: s.activeDays,
                                       startMinute: s.startTime, endMinute: s.endTime)

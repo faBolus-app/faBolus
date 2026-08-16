@@ -37,14 +37,14 @@ When the project gets updates, refresh your copy with **GitHub Desktop** — no 
 
 <ol class="cx2-steps">
 <li>Open <strong>GitHub Desktop</strong>.</li>
-<li>Pick <strong>PumpX2Kit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
+<li>Pick <strong>TandemKit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
 <li>Do the same for <strong>faBolus</strong>.</li>
 <li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>./scripts/generate-project.sh</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
 </ol>
 
 ??? note "Advanced: update from the Terminal (optional)"
     ```sh
-    cd ~/Documents/faBolus/PumpX2Kit && git pull --recurse-submodules
+    cd ~/Documents/faBolus/TandemKit && git pull --recurse-submodules
     cd ~/Documents/faBolus/faBolus && git pull
     ./scripts/generate-project.sh
     open faBolus.xcodeproj

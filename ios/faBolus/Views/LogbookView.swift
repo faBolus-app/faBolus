@@ -1,7 +1,7 @@
 import SwiftUI
 import faBolusCore
 
-/// Logbook (Workstream B2): the pump's on-device history-log events, decoded by PumpX2Kit's
+/// Logbook (Workstream B2): the pump's on-device history-log events, decoded by TandemKit's
 /// HistoryLogParser and mapped to neutral `HistoryEvent`s. Read-only. Grouped by day, newest first.
 struct LogbookView: View {
     @Bindable var model: AppModel

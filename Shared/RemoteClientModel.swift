@@ -5,7 +5,7 @@ import WidgetKit
 
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
 /// (Apple Watch over `RemoteLink`, Mac/iPhone over `BLELink`). It is a *dumb remote*: it never touches the
-/// pump (PumpX2Kit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
+/// pump (TandemKit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
 /// status the phone echoes back, and publishes the latest glucose/pump state to the App Group for
 /// this device's widgets/complication.
 ///

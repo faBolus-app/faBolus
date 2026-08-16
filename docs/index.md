@@ -120,14 +120,14 @@ faBolus is built on an open protocol core, and the Garmin watch app lives in its
 
 | Repository | What it is |
 | --- | --- |
-| **[PumpX2Kit](https://github.com/faBolus-app/PumpX2Kit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
-| **[faBolus](https://github.com/faBolus-app/faBolus)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes PumpX2Kit. |
+| **[TandemKit](https://github.com/faBolus-app/TandemKit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
+| **[faBolus](https://github.com/faBolus-app/faBolus)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes TandemKit. |
 | **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
 
 !!! quote "Built on pumpX2 — thank you, James Woglom"
     faBolus stands on the shoulders of **[pumpX2](https://github.com/jwoglom/pumpx2)** by James
     Woglom ([@jwoglom](https://github.com/jwoglom)). His reverse-engineering of the Tandem pump's
-    Bluetooth protocol is the foundation of this entire project — `PumpX2Kit` is a Swift port of
+    Bluetooth protocol is the foundation of this entire project — `TandemKit` is a Swift port of
     that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not
     exist without it.** The project also draws on the wider
     **[LoopKit](https://github.com/LoopKit)** / **Loop** ecosystem for parts of its visual design

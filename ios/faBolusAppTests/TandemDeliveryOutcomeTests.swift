@@ -181,7 +181,7 @@ struct TandemDeliveryOutcomeTests {
     private var cancelOp: UInt8 { CancelBolusRequest.props.opCode }
 
     /// These pin the deliberate round-3 design: the live path carries NO verified pump-cancellation
-    /// semantics (a booked bench follow-up — `PumpX2Kit/PINNED.md`), so `lastBolusCancelled` is never set
+    /// semantics (a booked bench follow-up — `TandemKit/PINNED.md`), so `lastBolusCancelled` is never set
     /// true. A cancel racing completion must therefore NEVER fabricate a terminal and NEVER invent a
     /// "cancelled" label: the reported outcome is the pump's AUTHORITATIVE delivered amount, or indeterminate.
 

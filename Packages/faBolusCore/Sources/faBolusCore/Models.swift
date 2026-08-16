@@ -500,9 +500,9 @@ extension PumpCapabilities {
 }
 
 /// A backend-neutral projection of one of the pump's 4 native Sleep-schedule slots (from
-/// `ControlIQSleepScheduleResponse`, PumpX2Kit's `SleepSchedule`), projected at the driver's decode
+/// `ControlIQSleepScheduleResponse`, TandemKit's `SleepSchedule`), projected at the driver's decode
 /// boundary so faBolusCore never depends on the PumpX2 message layer (P13's decode-boundary
-/// discipline — see `PumpFeatureBits` above). PumpX2Kit's `SleepSchedule` type never crosses into
+/// discipline — see `PumpFeatureBits` above). TandemKit's `SleepSchedule` type never crosses into
 /// faBolusCore.
 ///
 /// Read is universal (Phase 09.10 D-04) — this type is populated for ANY connected pump model, not

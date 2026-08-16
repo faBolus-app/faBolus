@@ -72,7 +72,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 - Refresh the mkdocs site for all of the above (tabs/settings, IOB overlay, Siri, Garmin config).
 - Add a **Building & installing** guide: toolchain (Xcode + XcodeGen, Connect IQ SDK, JDK for the
   oracle), signing/team + App Group capability, `xcodebuild`/`devicectl` device install, building
-  and beta-uploading the Garmin `.iq`, and running PumpX2Kit tests against the oracle.
+  and beta-uploading the Garmin `.iq`, and running TandemKit tests against the oracle.
 
 ## Deferred / notes
 - Apple Watch full parity (history plot, details screen) if wanted.

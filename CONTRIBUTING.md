@@ -25,7 +25,7 @@ until that review lands. The delivery disposition is **NO-GO for real insulin de
    `dismissNotification`, pairing, and `onChange`.
 3. Declare **`PumpCapabilities`** honestly — the UI hides features you don't support.
 4. Put your pump's protocol/BLE engine in its **own package** and depend on it from your backend
-   module only (like `TandemBackend` → PumpX2Kit).
+   module only (like `TandemBackend` → TandemKit).
 5. Register it: append one `BackendDescriptor` to `BackendRegistry.enabled`
    (`ios/faBolus/Data/BackendRegistry.swift`). That's the whole wiring — the Settings picker and the
    app pick it up automatically.
@@ -58,7 +58,7 @@ restate it.
 - **App version** lives once in `Config.xcconfig` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`) and
   is inherited by every target — do not add per-target version literals in `project.yml`. Bump it on a
   release and add a `CHANGELOG.md` (Keep a Changelog) entry.
-- **Backend pin.** The contract is: PumpX2Kit released under annotated tags, apps pinned to an explicit
+- **Backend pin.** The contract is: TandemKit released under annotated tags, apps pinned to an explicit
   version **or a pinned commit `revision:`** (with a documented local-path override for development),
   and a committed `Package.resolved`. This is now **MET**, via a `url:`+`revision:` pinned revision
   (2026-08-13) rather than the exact-version tag originally envisioned. See `BRANCHES.md` §1.3 for the
@@ -73,7 +73,7 @@ restate it.
   and the `PumpBackend` conformance harness — a good template for your own backend's tests).
 - If you touched the contract, run `scripts/check-schema-drift.sh` (also enforced in CI) and update
   the Monkey C mirror in faBolusGarmin.
-- For pump-protocol work in PumpX2Kit, its own `scripts/test.sh` (oracle parity) must be green.
+- For pump-protocol work in TandemKit, its own `scripts/test.sh` (oracle parity) must be green.
 - Note anything hardware-tested vs. only compiled.
 
 CI (`.github/workflows/ci.yml`) runs the drift check and `faBolusCore` tests on every PR, so these

@@ -13,7 +13,7 @@ runs the safety interlocks, and does the actual delivery.
 flowchart LR
     Pump[("Insulin pump\n(currently Tandem t:slim X2 / Mobi)")]
     CGM[("CGM\n(optional direct failover)")]
-    Phone["iPhone app\n(owns BLE, runs PumpX2Kit,\nconfirms every bolus)"]
+    Phone["iPhone app\n(owns BLE, runs TandemKit,\nconfirms every bolus)"]
     Watch["Apple Watch\nremote"]
     Garmin["Garmin\nwatch / Edge remote"]
     Widgets["Lock/Home\nwidgets + Siri"]
@@ -33,12 +33,12 @@ place of a fresh pump reading.
 ## The repositories
 
 ```
-PumpX2Kit  (Swift package — build once, reuse everywhere)
-├── PumpX2Messages   framing, opcodes, request/response models, packetization, CRC/HMAC
-├── PumpX2Auth       legacy pairing + EC-JPAKE (mbedTLS), per-command signing
-└── PumpX2BLE        Core Bluetooth central (iOS + watchOS)
+TandemKit  (Swift package — build once, reuse everywhere)
+├── TandemMessages   framing, opcodes, request/response models, packetization, CRC/HMAC
+├── TandemAuth       legacy pairing + EC-JPAKE (mbedTLS), per-command signing
+└── TandemBLE        Core Bluetooth central (iOS + watchOS)
 
-faBolus  (this repo, consumes PumpX2Kit via SPM)
+faBolus  (this repo, consumes TandemKit via SPM)
 ├── Packages/faBolusCore/  contracts + models (RemoteCommand, RemoteLink, PumpBackend, GlucoseSource, GlucoseArbiter)
 ├── Packages/G7SensorKit/  Dexcom G7/ONE+ BLE decoders (vendored from LoopKit, MIT; LoopKit-free)
 ├── Packages/DexcomG6Kit/   Dexcom G5/G6/ONE passive BLE decoders (vendored from LoopKit/CGMBLEKit, MIT)
@@ -63,13 +63,13 @@ faBolusGarmin  (separate repo)
 
 ## Who owns the pump
 
-The iPhone owns the single Bluetooth control connection and runs **PumpX2Kit**. Remotes (Apple
+The iPhone owns the single Bluetooth control connection and runs **TandemKit**. Remotes (Apple
 Watch, Garmin, and the Mac) are thin clients that send commands to the phone; the phone runs the confirm
-interlock and delivers. A standalone Apple Watch that runs PumpX2Kit on-watch (no phone) is
+interlock and delivers. A standalone Apple Watch that runs TandemKit on-watch (no phone) is
 designed but not built.
 
 **The pump link always wins (§5.5).** Serving a remote never touches the pump connection: the iPhone's
-CoreBluetooth link to the pump lives in PumpX2Kit's `PumpBLEClient`, while every remote is served through
+CoreBluetooth link to the pump lives in TandemKit's `PumpBLEClient`, while every remote is served through
 a *separate* peer/WatchConnectivity/Garmin path into `AppModel` — so a busy or reconnecting remote can't
 starve, drop, or delay the pump link. This is structural, not a setting.
 
@@ -111,7 +111,7 @@ what keeps the watch, Garmin, and phone from drifting apart.
 
 ## Byte-exact protocol
 
-Every outgoing pump message in PumpX2Kit is asserted **byte-for-byte equal** to the pumpX2
+Every outgoing pump message in TandemKit is asserted **byte-for-byte equal** to the pumpX2
 `cliparser` oracle in tests, and CI re-runs this on every push. A scheduled CI job watches for
 upstream protocol drift. This is what makes a hand-ported dosing protocol trustworthy — see the
-[PumpX2Kit](https://github.com/faBolus-app/PumpX2Kit) repo.
+[TandemKit](https://github.com/faBolus-app/TandemKit) repo.

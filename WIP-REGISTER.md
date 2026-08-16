@@ -23,7 +23,7 @@ close-out, 2026-08-07).
 
 | # | Item | State | Disp. | Note |
 |---|---|---|---|---|
-| 1 | ~~`remediation/audit-round3-2026-07-24` — 3 commits ahead of `main`, unmerged~~ | **RESOLVED (P85 / V3-P3)** | Round-3 auditor remediation (v3 deliverables 6/7) landed via the PumpX2Kit→faBolus→Garmin merge chain — `git branch --merged origin/main` lists the branch, so it is fully contained in `main`. The stale local pointer may be deleted. |
+| 1 | ~~`remediation/audit-round3-2026-07-24` — 3 commits ahead of `main`, unmerged~~ | **RESOLVED (P85 / V3-P3)** | Round-3 auditor remediation (v3 deliverables 6/7) landed via the TandemKit→faBolus→Garmin merge chain — `git branch --merged origin/main` lists the branch, so it is fully contained in `main`. The stale local pointer may be deleted. |
 | 2 | `8c34223` R3-C — durable acknowledged bolus-ID | code complete, **tests absent** | **F** | Deliverable 7. Blocks nothing else, but must not be called done. |
 | 3 | `remediation/audit-2026-07` | local-only, 0 ahead, fully merged | **A** | Stale pointer. Delete after `deprecated` is tagged (its content is in `main`). |
 | 4 | local `main` has no upstream configured | identical to `origin/main` | **F** | Fix during §1 restructuring (`git branch -u`). |
@@ -72,7 +72,7 @@ close-out, 2026-08-07).
 
 | # | Item | Disp. | Note |
 |---|---|---|---|
-| 30 | ~~`watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch, reachable from `WatchApp.swift:24`~~ **RESOLVED 2026-08-04** | **RESOLVED** | Was: a second pump-connection holder bypassing the `PumpBackend` seam, shipping and user-visible, in direct conflict with v3 C9. Owner decision: **hide behind a default-off build flag**, matching `faBolusGarmin/direct-pump/`. Done — the five files moved to `watch/faBolusWatch/direct-pump/` (see its `STATUS.md`), excluded from the target unless `FABOLUS_WATCH_DIRECT_PUMP=1`, with the `PumpX2Messages`/`Auth`/`BLE` deps dropped alongside. `WatchPumpClient.swift` was the only watch file importing those, so a shipping watch build now **links no pump BLE stack at all** — verified in the generated project, and both flag states compile. |
+| 30 | ~~`watch/faBolusWatch/WatchPumpClient.swift` + `WatchDirectView.swift` — Phase-1 direct-to-pump watch, reachable from `WatchApp.swift:24`~~ **RESOLVED 2026-08-04** | **RESOLVED** | Was: a second pump-connection holder bypassing the `PumpBackend` seam, shipping and user-visible, in direct conflict with v3 C9. Owner decision: **hide behind a default-off build flag**, matching `faBolusGarmin/direct-pump/`. Done — the five files moved to `watch/faBolusWatch/direct-pump/` (see its `STATUS.md`), excluded from the target unless `FABOLUS_WATCH_DIRECT_PUMP=1`, with the `TandemMessages`/`Auth`/`BLE` deps dropped alongside. `WatchPumpClient.swift` was the only watch file importing those, so a shipping watch build now **links no pump BLE stack at all** — verified in the generated project, and both flag states compile. |
 | 31 | `watch/README.md:13-14` standalone phone-less watch build "designed but not built … paused" | **R** | Same decision as 30. |
 | 32 | ~~`ICloudSync.swift:41-46` — the live implementation in every build is an empty stub~~ | **RESOLVED (P14 S5)** | Resolved with item 23 via the `FABOLUS_ICLOUD` gate: default OFF compiles the no-op stub (so a free-account clone signs); `FABOLUS_ICLOUD=1` compiles the real KV store. The stub is now the deliberate free-account path, not dead code. |
 
