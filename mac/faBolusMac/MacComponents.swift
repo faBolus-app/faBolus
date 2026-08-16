@@ -157,11 +157,19 @@ struct MacChartView: View {
                     RectangleMark(yStart: .value("lo", GlucoseThresholds.low), yEnd: .value("hi", GlucoseThresholds.high))
                         .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(pts.indices, id: \.self) { i in
-                        PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
+                        // D-08: symmetric clamp using the PHONE-scoped shared bounds (D-07) — the
+                        // point's color still classifies off the TRUE unclamped reading.
+                        let plottedY = GlucosePlotScale.clamp(pts[i].mgdl, floor: model.glucosePlotFloor,
+                                                              ceiling: model.glucosePlotCeiling)
+                        PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", plottedY))
                             .foregroundStyle(AppTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
                     }
                 }
-                .chartYScale(domain: 40...300)
+                // D-07 CRITICAL: the Mac is in the PHONE group — it reads the shared
+                // glucosePlotFloor/Ceiling getters directly, NEVER smallScreenFloor/Ceiling and NEVER
+                // anything derived from model.chartRanges (that channel is the tap-through time-range
+                // mirror, a different concept — do not repeat the watchChartRanges conflation here).
+                .chartYScale(domain: model.glucosePlotFloor...model.glucosePlotCeiling)
                 .chartYAxis { AxisMarks(values: [GlucoseThresholds.low, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) }
                 .chartXAxis(.hidden)
                 .frame(height: 90)
