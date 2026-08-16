@@ -29,16 +29,23 @@ struct GlucoseChartView: View {
     private var visibleIOB: [IOBSample] { iob.filter { $0.date >= start } }
     private var visibleBoluses: [BolusMarker] { boluses.filter { $0.date >= start } }
 
-    // Glucose plot domain (left axis). IOB/bolus (units) are scaled into this domain and labeled
-    // on the right axis. The units scale autoscales to the visible window.
-    private let gLo = 40.0, gHi = 300.0
+    // Glucose plot domain (left axis), Phase 09.13-01 (D-01): user-configurable via
+    // AppSettings.shared.glucosePlotFloor/Ceiling, resolved through GlucosePlotScale at
+    // AppSettings init so this is always a safe in-set pair — no hardcoded 40/300 literal remains
+    // here. IOB/bolus (units) are scaled into this domain and labeled on the right axis via the
+    // SAME shared math (D-09), so both bounds always drive both the scale and the label recovery.
+    private var gLo: Double { Double(AppSettings.shared.glucosePlotFloor) }
+    private var gHi: Double { Double(AppSettings.shared.glucosePlotCeiling) }
     private var iobMax: Double {
         // Autoscale the right axis to only the unit series that are actually shown.
         let iobPeak = showIOB ? (visibleIOB.map(\.iob).max() ?? 0) : 0
         let bolusPeak = showBolusBars ? (visibleBoluses.map(\.units).max() ?? 0) : 0
         return max(4, (max(iobPeak, bolusPeak) * 1.1).rounded(.up))
     }
-    private func scaleUnits(_ u: Double) -> Double { gLo + (u / iobMax) * (gHi - gLo) }
+    private func scaleUnits(_ u: Double) -> Double {
+        GlucosePlotScale.scaleUnits(u, unitMax: iobMax, floor: AppSettings.shared.glucosePlotFloor,
+                                     ceiling: AppSettings.shared.glucosePlotCeiling)
+    }
 
     var body: some View {
         Chart {
@@ -46,7 +53,12 @@ struct GlucoseChartView: View {
                 RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
                     .foregroundStyle(AppTheme.inRange.opacity(0.12))
                 ForEach(visible) { r in
-                    PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
+                    // D-08: symmetric clamp — an out-of-range reading pins to the visible top/bottom
+                    // edge instead of being clipped out of the plot by chartYScale's domain. Display
+                    // only: r.mgdl itself (used for the point's color below) is never altered.
+                    let plottedY = GlucosePlotScale.clamp(r.mgdl, floor: AppSettings.shared.glucosePlotFloor,
+                                                           ceiling: AppSettings.shared.glucosePlotCeiling)
+                    PointMark(x: .value("Time", r.date), y: .value("Glucose", plottedY))
                         .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
                 }
             }
@@ -78,7 +90,12 @@ struct GlucoseChartView: View {
                 AxisMarks(position: .trailing, values: [scaleUnits(0), scaleUnits(iobMax / 2), scaleUnits(iobMax)]) { value in
                     AxisValueLabel {
                         if let p = value.as(Double.self) {
-                            Text(String(format: "%.1f", (p - gLo) / (gHi - gLo) * iobMax))
+                            // D-09: recovery reads BOTH bounds via the same shared math scaleUnits used,
+                            // so the right-axis label stays correct at every floor/ceiling combo.
+                            let recovered = GlucosePlotScale.recoverUnits(
+                                p, unitMax: iobMax, floor: AppSettings.shared.glucosePlotFloor,
+                                ceiling: AppSettings.shared.glucosePlotCeiling)
+                            Text(String(format: "%.1f", recovered))
                         }
                     }
                 }
