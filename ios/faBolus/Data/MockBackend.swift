@@ -226,6 +226,11 @@ public final class MockBackend: PumpBackend {
                                      carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
+        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        guard snapshot.cartridgeReadyForBolus else {
+            throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
+        }
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
         // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
@@ -254,6 +259,11 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
+        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        guard snapshot.cartridgeReadyForBolus else {
+            throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
+        }
         lastDeliver = (units, carbsGrams, bgMgdl, iobUnits)   // FB-04 spy: exactly what the caller passed
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.

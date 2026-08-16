@@ -680,6 +680,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// private outside this file. Used to recreate the never-read-op-115 window that the new fail-closed
     /// guard in `validateDeliver` blocks on.
     func setTherapyParamsDateForTesting(_ date: Date?) { snapshot.therapyParamsDate = date }
+    /// Test-only (Phase 09.9 D-01): directly set the raw `cartridgeLoadState`, since `snapshot`'s setter
+    /// is private outside this file. Used to recreate a mid change/load/prime-tubing state that the
+    /// no-cartridge fail-closed guard in `validateDeliver` blocks on.
+    func setCartridgeLoadStateForTesting(_ state: Int) { snapshot.cartridgeLoadState = state }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a
@@ -1047,6 +1051,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard total.isFinite, total >= 0 else { throw BolusError.pumpRejected("invalid dose") }
         guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
             throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
+        }
+        // Phase 09.9 D-01: cartridge is mid change/load/prime-tubing — dosing is physically impossible.
+        // Fail-closed BEFORE any signed frame is written; single source of truth is
+        // `cartridgeReadyForBolus` (never re-declare the {0,1,2} loading-state set here).
+        guard snapshot.cartridgeReadyForBolus else {
+            throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
         }
     }
 
@@ -1676,7 +1686,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func fastRead() {
         for r: Message in [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
                            InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           HomeScreenMirrorRequest()] {
+                           HomeScreenMirrorRequest(), LoadStatusRequest()] {
             sendStatusRead(r)
         }
     }

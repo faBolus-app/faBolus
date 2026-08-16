@@ -57,7 +57,7 @@ struct WatchBolusView: View {
     /// only label, so a dose already in flight is now explained too. Exhaustive by design.
     private var blockMessage: String? {
         switch gate.reason {
-        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied, .noCartridge:
             return gate.reason?.userMessage
         case .belowMinimum, .aboveMax, .none:
             return nil
