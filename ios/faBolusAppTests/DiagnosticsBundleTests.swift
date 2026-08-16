@@ -1,4 +1,5 @@
 import Testing
+import faBolusCore
 @testable import faBolus
 
 /// Phase 09.6-06 (Task 1, Part C-1, D-03.1): behavior pins for the pure `DiagnosticsBundle`
@@ -55,5 +56,37 @@ struct DiagnosticsBundleTests {
         let result1 = DiagnosticsBundle.build(sections: sections)
         let result2 = DiagnosticsBundle.build(sections: sections)
         #expect(result1 == result2)
+    }
+
+    // MARK: - Phase 09.6-07 (D-03.1, D-04): [Watch self] — the ninth (final) surface
+
+    /// A present watch-diagnostics body flows through the bundle exactly like every other section.
+    @Test func buildIncludesWatchSelfSectionWithPresentBody() {
+        let section = WatchSelfDiagnostics.phoneSection(
+            body: "Phone reachable: yes\nDirect-CGM failover: idle", enabled: true)
+        let result = DiagnosticsBundle.build(sections: [section])
+
+        #expect(result.contains("[Watch self]"))
+        #expect(result.contains("Phone reachable: yes"))
+    }
+
+    /// No reply has arrived yet (opt-in on) ⇒ the explicit placeholder, never an omitted header
+    /// (Pitfall 4) — matching every other Part C section's empty state.
+    @Test func buildIncludesWatchSelfSectionPlaceholderWhenNoReplyYet() {
+        let section = WatchSelfDiagnostics.phoneSection(body: nil, enabled: true)
+        let result = DiagnosticsBundle.build(sections: [section])
+
+        #expect(result.contains("[Watch self]"))
+        #expect(result.contains("— (not currently reachable)"))
+    }
+
+    /// Opt-in off ⇒ header + the shared opt-in prompt, never a leaked body even if one were supplied.
+    @Test func buildIncludesWatchSelfSectionOptInPromptWhenDisabled() {
+        let section = WatchSelfDiagnostics.phoneSection(body: "should never leak", enabled: false)
+        let result = DiagnosticsBundle.build(sections: [section])
+
+        #expect(result.contains("[Watch self]"))
+        #expect(result.contains("Share local diagnostics"))
+        #expect(!result.contains("should never leak"))
     }
 }
