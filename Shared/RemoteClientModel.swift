@@ -46,6 +46,23 @@ class RemoteClientModel {
     // Customization mirrored from the phone.
     var detailsOrder: [String] = ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"]
     var chartRanges: [Int] = [3, 6, 12, 24]
+    /// Phase 09.13 (glucose plot height customization, D-06/D-07) — the SHARED/phone-scoped glucose-plot
+    /// Y-axis bounds, canonical mg/dL. **This is the channel the Mac reads** (the phone group). CRITICAL
+    /// D-07: never routed from `watchChartRanges`/`chartRanges` (the time-range mirror above) — that
+    /// would repeat the exact conflation this phase's threat model calls out (T-09.13-05). Defaults
+    /// preserve today's hardcoded view via `GlucosePlotScale`.
+    var glucosePlotFloor: Int = GlucosePlotScale.defaultFloor
+    var glucosePlotCeiling: Int = GlucosePlotScale.defaultCeiling
+    /// The optional small-screen (Apple Watch + Garmin) OVERRIDE, canonical mg/dL. `nil` for either ⇒
+    /// no override on the wire ⇒ `smallScreenFloor`/`smallScreenCeiling` below fall back to the shared
+    /// bounds above. Never read by the Mac (D-07) — only `smallScreenFloor`/`smallScreenCeiling` are.
+    var glucosePlotFloorSmall: Int?
+    var glucosePlotCeilingSmall: Int?
+    /// The Watch/Garmin-facing resolved bound: the override when present, else the shared/phone bound.
+    /// D-07: this is a SEPARATE channel from `glucosePlotFloor`/`glucosePlotCeiling` — the Mac must keep
+    /// reading those directly, never these.
+    var smallScreenFloor: Int { glucosePlotFloorSmall ?? glucosePlotFloor }
+    var smallScreenCeiling: Int { glucosePlotCeilingSmall ?? glucosePlotCeiling }
     /// Read-only mode pushed from the phone (watch/Garmin view-only): hide the bolus affordance.
     var readOnly: Bool = false
     /// P13 capability channel: whether the pump honors a REMOTE alert dismissal (Mobi yes, t:slim no).
@@ -271,6 +288,27 @@ class RemoteClientModel {
             if let m = cmd.bolusMode { defaultMode = m }
             if let d = cmd.detailsOrder, !d.isEmpty { detailsOrder = d }
             if let r = cmd.watchChartRanges, !r.isEmpty { chartRanges = r }
+            // Phase 09.13-02 (D-06/D-07, threat T-09.13-05): parse the SHARED/phone-scoped bounds when
+            // BOTH halves are present (sanitized via GlucosePlotScale.resolve — never assigned raw);
+            // absent leaves the property at its `GlucosePlotScale.default*` value (legacy-safe). These
+            // are a channel entirely separate from `watchChartRanges`/`chartRanges` above — the Mac
+            // reads `glucosePlotFloor`/`glucosePlotCeiling` directly and must never see the override.
+            if let f = cmd.glucosePlotFloor, let c = cmd.glucosePlotCeiling {
+                let resolved = GlucosePlotScale.resolve(storedFloor: f, storedCeiling: c)
+                glucosePlotFloor = resolved.floor
+                glucosePlotCeiling = resolved.ceiling
+            }
+            // The optional small-screen override — parsed independently of the shared bounds above, and
+            // NEVER folded into them. Only a fully-present pair counts (mirrors AppSettings' one-unit
+            // treatment); a partial pair is treated as absent.
+            if let fs = cmd.glucosePlotFloorSmall, let cs = cmd.glucosePlotCeilingSmall {
+                let resolvedSmall = GlucosePlotScale.resolve(storedFloor: fs, storedCeiling: cs)
+                glucosePlotFloorSmall = resolvedSmall.floor
+                glucosePlotCeilingSmall = resolvedSmall.ceiling
+            } else {
+                glucosePlotFloorSmall = nil
+                glucosePlotCeilingSmall = nil
+            }
             if let msg = cmd.message { connection = msg }
             // Recover from a lost/late terminal echo: once the phone has reported bolusing and then
             // reports it's no longer bolusing, the bolus is done even if the delivered/cancelled echo

@@ -415,6 +415,16 @@ public final class AppModel {
         // token (never the raw enum — Pitfall 6), so Watch/Garmin render mg/dL/mmol like the phone.
         // Absent on a legacy remote ⇒ it defaults to mgdl (display-only; dose/wire glucose stays mg/dL).
         cmd.glucoseDisplayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
+        // Phase 09.13 (D-06/D-07): the SHARED/phone-scoped glucose-plot Y-axis bounds — emitted
+        // UNCONDITIONALLY on every statusRead (the phone group, iPhone + Mac, reads these; "absent" can
+        // only mean a legacy host). The optional small-screen (Watch + Garmin) OVERRIDE is emitted only
+        // when the AppSettings pair is non-nil, leaving the wire field absent otherwise (D-05) — the
+        // shared client's `smallScreenFloor`/`smallScreenCeiling` getters fall back to these shared
+        // values when the override is absent.
+        cmd.glucosePlotFloor = AppSettings.shared.glucosePlotFloor
+        cmd.glucosePlotCeiling = AppSettings.shared.glucosePlotCeiling
+        cmd.glucosePlotFloorSmall = AppSettings.shared.glucosePlotFloorSmall
+        cmd.glucosePlotCeilingSmall = AppSettings.shared.glucosePlotCeilingSmall
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
