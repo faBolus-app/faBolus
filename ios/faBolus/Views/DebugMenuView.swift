@@ -264,46 +264,17 @@ struct DebugMenuView: View {
     }
 
     /// Plain-text snapshot of everything the console surfaces, for the clipboard-only export.
+    ///
+    /// Phase 09.6-06 (Task 1, Part C-1, D-03.1): the preamble ("faBolus diagnostics…" + "Generated:")
+    /// stays a plain document header; every surface below it is now assembled as an ordered array of
+    /// already-formatted `[Bracket]` section strings and joined by the pure `DiagnosticsBundle.build`
+    /// aggregator — this method itself no longer builds any section's line content directly (that
+    /// responsibility moved to `DiagnosticsBundle`'s helpers or each Part C wrapper type). ShareLink
+    /// and `writeDiagnosticsExportFile` below still consume this SAME string — no second export path.
     private var diagnosticsText: String {
-        var lines: [String] = ["faBolus diagnostics (local-only, never uploaded)"]
-        lines.append("Generated: \(Date().formatted(date: .abbreviated, time: .standard))")
-        lines.append("")
-        lines.append("[Pump identity]")
-        lines.append("Model: \(model.snapshot.pumpModelName.isEmpty ? "—" : model.snapshot.pumpModelName)")
-        lines.append("Software: \(model.snapshot.softwareVersion.isEmpty ? "—" : model.snapshot.softwareVersion)")
-        lines.append("Is Mobi: \(model.snapshot.isMobi ? "yes" : "no")")
-        lines.append("Connection: \(model.snapshot.connection.rawValue)")
-        lines.append("")
         let t = model.connectionTelemetry.snapshot
-        lines.append("[Connection telemetry]")
-        lines.append("Connects: \(t.connectCount)")
-        lines.append("Total uptime: \(Self.formatUptime(t.totalUptimeSeconds))")
-        for (k, v) in t.disconnects.sorted(by: { $0.key < $1.key }) { lines.append("Disconnect \(k): \(v)") }
-        for (k, v) in t.reconcile.sorted(by: { $0.key < $1.key }) { lines.append("Reconcile \(k): \(v)") }
-        lines.append("")
-        lines.append("[Notification telemetry]")
         let notif = NotificationRuntime().telemetry
-        if notif.isEmpty { lines.append("—") }
-        for (cat, c) in notif.sorted(by: { $0.key < $1.key }) {
-            lines.append("\(cat): delivered \(c.delivered), dismissed \(c.dismissed), acted \(c.actedUpon)")
-        }
-        // D-02b (09.6-02): pure extracted line-builder — proves (via BLESessionLogTests) that the
-        // ring buffer's entries reach this export up to capacity, not silently dropped.
-        lines.append(Self.bleSessionLogExportLines(
-            entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity))
-        // Task 1 (TRACER, Part B-a, D-02a): [Capability/opcode] — reads already-cached backend state
-        // only (model.capabilities / model.badOpcodesForDiagnostics), gated on the SAME shareDiagnostics
-        // opt-in as every section above. No new BLE traffic, no new toggle (Pitfall 2/3).
-        lines.append(CapabilityDiagnostics.section(
-            capabilities: model.capabilities,
-            badOpcodes: model.badOpcodesForDiagnostics,
-            enabled: shareDiagnostics))
-        // Task 1 (Part C-2, D-03.2): [CGM arbiter] — reads the SAME already-arbitrated provenance
-        // the live "via <source>" badge uses; never re-runs GlucoseArbiter.merge.
-        lines.append(CgmArbiterDiagnostics.section(
-            provenance: model.glucoseProvenance,
-            sourceStatuses: model.glucoseSourceDiagnosticsInfo,
-            enabled: shareDiagnostics))
+
         // Task 2 (Part C-4b, D-03.4): [Remote role] — reads MacPairingCoordinator's already-tracked
         // paired-peer/connection/policy state directly; never re-derives the handshake or grant logic.
         let pairing = MacPairingCoordinator.shared
@@ -313,7 +284,7 @@ struct DebugMenuView: View {
                 connected: pairing.connected && pairing.connectedName == $0.name,
                 policy: pairing.policy(for: $0.id))
         }
-        lines.append(RemoteRoleDiagnostics.section(role: "host", peers: peers, enabled: shareDiagnostics))
+
         // Task 1 (Part C-4a, D-03.4): [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send
         // queue/watchdog/device-connection state via its `.shared` app-wide reference; never issues a
         // new ConnectIQ send. `state` is nil (renders the explicit unreachable empty state) when no
@@ -327,18 +298,57 @@ struct DebugMenuView: View {
                 deviceConnected: bridge.deviceConnectedForDiagnostics,
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
-        lines.append(GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics))
+
         // Task 1 (Part C-3a, D-03.3): [Watch WC] — reads PhoneRemoteHost's already-tracked
         // WatchConnectivity state via its `.shared` app-wide reference; never issues a new WC
         // round-trip. Falls back to `false`/`0` if the host hasn't been constructed yet (e.g. before
         // App.swift's `.task` runs) — the section then renders "Reachable: no" like any genuinely
         // unreachable watch, never a crash or an omitted header.
         let wcHost = PhoneRemoteHost.shared
-        lines.append(WCDiagnostics.section(
-            reachable: wcHost?.reachableForDiagnostics ?? false,
-            sent: wcHost?.sentCountForDiagnostics ?? 0,
-            undeliverable: wcHost?.undeliverableCountForDiagnostics ?? 0,
-            enabled: shareDiagnostics))
-        return lines.joined(separator: "\n")
+
+        let sections: [String] = [
+            // Extracted verbatim from the prior inline blocks (D-01/P12 §5.2.8/P9) — always present,
+            // no opt-in gate.
+            DiagnosticsBundle.pumpIdentitySection(
+                modelName: model.snapshot.pumpModelName,
+                softwareVersion: model.snapshot.softwareVersion,
+                isMobi: model.snapshot.isMobi,
+                connection: model.snapshot.connection.rawValue),
+            DiagnosticsBundle.connectionTelemetrySection(
+                connectCount: t.connectCount,
+                totalUptimeFormatted: Self.formatUptime(t.totalUptimeSeconds),
+                disconnects: t.disconnects.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) },
+                reconcile: t.reconcile.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) }),
+            DiagnosticsBundle.notificationTelemetrySection(
+                counts: notif.sorted(by: { $0.key < $1.key }).map {
+                    (category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed, actedUpon: $0.value.actedUpon)
+                }),
+            // D-02b (09.6-02): pure extracted line-builder — proves (via BLESessionLogTests) that the
+            // ring buffer's entries reach this export up to capacity, not silently dropped.
+            Self.bleSessionLogExportLines(entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity),
+            // Task 1 (TRACER, Part B-a, D-02a): [Capability/opcode] — reads already-cached backend
+            // state only, gated on the SAME shareDiagnostics opt-in as every section here.
+            CapabilityDiagnostics.section(
+                capabilities: model.capabilities,
+                badOpcodes: model.badOpcodesForDiagnostics,
+                enabled: shareDiagnostics),
+            // Task 1 (Part C-2, D-03.2): [CGM arbiter] — reads the SAME already-arbitrated provenance
+            // the live "via <source>" badge uses; never re-runs GlucoseArbiter.merge.
+            CgmArbiterDiagnostics.section(
+                provenance: model.glucoseProvenance,
+                sourceStatuses: model.glucoseSourceDiagnosticsInfo,
+                enabled: shareDiagnostics),
+            RemoteRoleDiagnostics.section(role: "host", peers: peers, enabled: shareDiagnostics),
+            GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
+            WCDiagnostics.section(
+                reachable: wcHost?.reachableForDiagnostics ?? false,
+                sent: wcHost?.sentCountForDiagnostics ?? 0,
+                undeliverable: wcHost?.undeliverableCountForDiagnostics ?? 0,
+                enabled: shareDiagnostics),
+        ]
+
+        let preamble = "faBolus diagnostics (local-only, never uploaded)\n"
+            + "Generated: \(Date().formatted(date: .abbreviated, time: .standard))"
+        return preamble + "\n" + DiagnosticsBundle.build(sections: sections)
     }
 }
