@@ -63,3 +63,28 @@ enum BolusConfirmation {
         return BolusSuccessBanner(primary: primary, secondary: secondary)
     }
 }
+
+/// The transient toast itself — a `checkmark.circle.fill` in plain `Color.green` (NOT
+/// `AppTheme.inRange`, see the file-level note above) plus a `.headline` primary line and a
+/// `.subheadline` secondary line, wrapped in the `thinMaterial` rounded-card idiom copied verbatim
+/// from `MainHUDView.swift:40-63`. This view owns no delivery state — it only renders the strings it's
+/// given (D-08).
+struct BolusSuccessBannerView: View {
+    let banner: BolusSuccessBanner
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.green)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(banner.primary).font(.headline)
+                Text(banner.secondary).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding().frame(maxWidth: .infinity)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+    }
+}

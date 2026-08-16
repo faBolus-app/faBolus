@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import faBolusCore
 import faBolusDesign
 
@@ -21,6 +22,11 @@ struct BolusEntryView: View {
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
+    // Phase 09.4 D-04/D-05/D-06: the transient, truthful bolus-success confirmation. Set ONLY from the
+    // model's ALREADY-resolved outcome (`deliverFrozen` for the sync path, the `.onChange(of:
+    // model.pendingApproval)` handler below for the async remote-approval path) — this view never
+    // computes a delivery outcome itself (D-08).
+    @State private var successBanner: BolusSuccessBanner?
     @State private var showReasoning = false
     // Extended (combo) bolus
     @State private var extendedOn = false
@@ -601,6 +607,17 @@ struct BolusEntryView: View {
                 }
             }
         }
+        // Phase 09.4 D-06: a floating top toast, NOT a Form Section — it never permanently consumes
+        // Form space. `.overlay` (not a sibling in a ZStack) so it draws above the Form without
+        // affecting its layout.
+        .overlay(alignment: .top) {
+            if let banner = successBanner {
+                BolusSuccessBannerView(banner: banner)
+                    .padding(.horizontal)
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
         // N12 (Dynamic Type): scale up to the largest accessibility text size.
@@ -646,6 +663,17 @@ struct BolusEntryView: View {
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
         .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
+        // Phase 09.4 D-05: the async remote-approval resolution. A staged bolus (`pendingApproval !=
+        // nil`) resolves LATER via `resolveRemoteApproval` — approved (→ actually delivers, `lastError
+        // == nil`) or rejected/timed-out (→ `lastError` set). Only a non-nil→nil transition is a
+        // resolution; `oldValue` still carries the resolved request's units (the request that JUST
+        // stopped being pending), so the truthful confirmation uses the SAME frozen amount that was
+        // staged — never a false "delivered" at the initial staging moment, never on rejection/timeout.
+        .onChange(of: model.pendingApproval) { oldValue, newValue in
+            guard let resolved = oldValue, newValue == nil else { return }
+            let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
+            present(BolusConfirmation.banner(for: signal, units: resolved.units))
+        }
         // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
         // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
         // actually aging (>90 s); otherwise the app-wide predictive poll has already refreshed it, so
@@ -1103,7 +1131,39 @@ struct BolusEntryView: View {
             await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         }
         delivering = false
+        // Phase 09.4 D-04/D-06: the sync-path confirmation, computed from the model's ALREADY-updated
+        // state right after the delivery call returns. `deliverBolus`/`deliverExtendedBolus` return
+        // having staged a `pendingApproval` for the child-mode reverse-approval path — that resolves
+        // LATER, via the `.onChange(of: model.pendingApproval)` handler above, not here (D-05).
+        let extended: BolusConfirmation.ExtendedDetail? = f.extendedNow.map {
+            BolusConfirmation.ExtendedDetail(nowUnits: $0, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
+        }
+        present(BolusConfirmation.banner(for: confirmationSignal(), units: f.units, extended: extended))
         finishDelivery()
+    }
+
+    /// The outcome `Signal` for a JUST-COMPLETED delivery attempt, read from the model's own
+    /// already-updated state — a pure read, never a delivery decision (D-08).
+    private func confirmationSignal() -> BolusConfirmation.Signal {
+        if model.pendingApproval != nil { return .staged }
+        return model.lastError == nil ? .delivered : .failed
+    }
+
+    /// Present `banner` (if non-nil — `.staged`/`.failed` never call this with a value) as the floating
+    /// top toast, post the accessibility backstop announcement, and auto-dismiss after ~4s (extended to
+    /// ~6s while VoiceOver is running, so a user whose focus is elsewhere doesn't miss a short-lived
+    /// toast — 09.4-UI-SPEC "accessibility (transient content)").
+    private func present(_ banner: BolusSuccessBanner?) {
+        guard let banner else { return }
+        withAnimation(.easeInOut) { successBanner = banner }
+        AccessibilityNotification.Announcement("\(banner.primary), \(banner.secondary)").post()
+        let dwellSeconds: UInt64 = UIAccessibility.isVoiceOverRunning ? 6 : 4
+        Task {
+            try? await Task.sleep(nanoseconds: dwellSeconds * 1_000_000_000)
+            if successBanner == banner {
+                withAnimation(.easeInOut) { successBanner = nil }
+            }
+        }
     }
 
     private func finishDelivery() {

@@ -23,23 +23,35 @@ struct BolusSuccessBannerDriftGuardTests {
         return nil
     }
 
+    /// Strip `//`-style line comments (including `///` doc comments) — this file's OWN doc comments
+    /// legitimately name `AppTheme.inRange` in prose (explaining what must never appear in CODE), so an
+    /// unstripped scan of `checkmarkUsesPlainColorGreen`'s negative-assertion twin would false-positive
+    /// on that prose. Same technique as `BandDriftGuardTests.stripLineComments`.
+    private static func stripLineComments(_ source: String) -> String {
+        source.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            if let idx = line.range(of: "//") { return String(line[..<idx.lowerBound]) }
+            return String(line)
+        }.joined(separator: "\n")
+    }
+
     private static func bannerSource() throws -> String {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
         let url = repoRoot.appendingPathComponent("ios/faBolus/Views/BolusSuccessBanner.swift")
-        return try String(contentsOf: url, encoding: .utf8)
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        return Self.stripLineComments(raw)
     }
 
     @Test func checkmarkUsesPlainColorGreen() throws {
         let source = try Self.bannerSource()
         #expect(source.contains("Color.green"),
-                "BolusSuccessBanner.swift's checkmark must use plain Color.green")
+                "BolusSuccessBanner.swift's checkmark must use plain Color.green (outside comments)")
     }
 
     @Test func noReferenceToClinicalInRangeBandToken() throws {
         let source = try Self.bannerSource()
         #expect(!source.contains("AppTheme.inRange"),
-                "BolusSuccessBanner.swift must not reference the §13-locked AppTheme.inRange band token (semantic collision)")
+                "BolusSuccessBanner.swift must not reference the §13-locked AppTheme.inRange band token in code (semantic collision)")
     }
 
     @Test func fileResolutionActuallyFoundTheRepoRoot() {
