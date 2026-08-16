@@ -211,6 +211,15 @@ struct BolusEntryView: View {
         let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
+    /// Out-of-insulin over-request disclosure (09.9-02, D-01): fires when the entered dose exceeds the
+    /// pump's OWN reported reservoir remaining (`snapshot.reservoirUnits`) — never a hardcoded threshold.
+    /// Pure `faBolusCore` disclosure; NEVER gates, clamps, resizes, or delays delivery — same "disclosure
+    /// only" contract as `sg1Disclosure`/`sg2Disclosure` above. The pump is the physical enforcer of what it
+    /// can actually deliver; this only tells the user honestly what it reported.
+    private var insufficientReservoirDisclosure: StackingGuard.Disclosure? {
+        let disclosure = StackingGuard.insufficientReservoir(enteredUnits: units, reservoirUnits: model.snapshot.reservoirUnits)
+        return disclosure.friction == .none ? nil : disclosure
+    }
     /// SG3a: the escalating-friction disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's
     /// OWN op-115 target/max (never a hardcoded clinical constant) and NEVER gates, changes, or delays
     /// delivery on its own; the escalated CONFIRM/RE-TYPE steps below are UI wiring layered on top of this
@@ -352,7 +361,7 @@ struct BolusEntryView: View {
     static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
                                 pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
                                 autoAmbient: String?, autoLockout: String?, sg1Message: String?,
-                                sg3aMessage: String?) -> [BolusWarning] {
+                                sg3aMessage: String?, insufficientReservoirMessage: String? = nil) -> [BolusWarning] {
         var items: [BolusWarning] = []
         if overMax {
             items.append(BolusWarning(
@@ -394,6 +403,10 @@ struct BolusEntryView: View {
         if let sg3a = sg3aMessage {
             items.append(BolusWarning(id: "sg3a", text: sg3a, systemImage: "exclamationmark.triangle",
                                        severity: .advisory, tone: .caution))
+        }
+        if let insufficientReservoir = insufficientReservoirMessage {
+            items.append(BolusWarning(id: "insufficientReservoir", text: insufficientReservoir,
+                                       systemImage: "exclamationmark.triangle", severity: .advisory, tone: .caution))
         }
         // Stable partition (Swift's `filter` preserves relative order): all `.blocking` first, then all
         // `.advisory` — never re-sorted by tone/color, only by severity, per D-04.
@@ -553,7 +566,8 @@ struct BolusEntryView: View {
                         sg1Message: sg1Disclosure?.message,
                         // Preserve the pre-existing sg3a==sg1 dedup guard: only a confirmExtra/reenter-tier
                         // message (which differs from SG1's) renders as an additional line.
-                        sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil }
+                        sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil },
+                        insufficientReservoirMessage: insufficientReservoirDisclosure?.message
                     )) { item in
                         Label(item.text, systemImage: item.systemImage)
                             .font(item.tone.font)
