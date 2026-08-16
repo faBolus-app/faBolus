@@ -19,6 +19,15 @@ struct DashboardView: View {
                     // and Garmin setup live in the Settings tab now (not the toolbar).
                     StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
+                    // Phase 09.4 (D-03): the persistent "no dead dashboard" re-entry — shown whenever
+                    // there's no stored pairing, right after the status ring (first actionable content,
+                    // no scroll). Unlike the eating-nudge/low-power cards below, this has NO dismiss
+                    // control (`xmark.circle.fill`) — it must persist until `hasStoredPairing` becomes
+                    // true, since it's the phase's literal "no dead dashboard" guarantee (ROADMAP SC1).
+                    if !model.hasStoredPairing {
+                        NoPumpConnectedCard(model: model)
+                    }
+
                     if let eating = model.eatingNudge {
                         HStack {
                             // Tapping = "yes, I'm eating" → open Bolus + teach the on-device personalizer.
@@ -121,6 +130,37 @@ struct DashboardView: View {
         }
         // N12 (Dynamic Type): let the dashboard scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
+    }
+}
+
+/// Phase 09.4 (D-03) — the dashboard's persistent empty-state re-entry, shown whenever
+/// `!model.hasStoredPairing`. This is the actual "no dead dashboard" guarantee (ROADMAP SC1): both skip
+/// routes on the first-run `ConnectPumpOnboardingView` (D-01) leave a skipper here, always able to open
+/// the SAME existing `PairingSheet`. Deliberately has NO dismiss control — it persists until a pump is
+/// paired, unlike the neighboring eating-nudge/low-power cards.
+private struct NoPumpConnectedCard: View {
+    @Bindable var model: AppModel
+    @State private var showPairing = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.title2).foregroundStyle(.secondary)
+            Text("No pump connected").font(.headline)
+            Text("Connect your pump to see glucose and give a bolus.")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                showPairing = true
+            } label: {
+                Text("Connect a pump").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding().frame(maxWidth: .infinity)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+        .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
     }
 }
 
