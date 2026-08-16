@@ -314,6 +314,20 @@ struct DebugMenuView: View {
                 policy: pairing.policy(for: $0.id))
         }
         lines.append(RemoteRoleDiagnostics.section(role: "host", peers: peers, enabled: shareDiagnostics))
+        // Task 1 (Part C-4a, D-03.4): [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send
+        // queue/watchdog/device-connection state via its `.shared` app-wide reference; never issues a
+        // new ConnectIQ send. `state` is nil (renders the explicit unreachable empty state) when no
+        // Garmin device has ever been selected/paired.
+        let garminState: GarminDiagnostics.BridgeState? = {
+            guard let bridge = GarminRemoteBridge.shared, bridge.hasDevice else { return nil }
+            return GarminDiagnostics.BridgeState(
+                queueDepth: bridge.queueDepthForDiagnostics,
+                lastSendOutcome: bridge.lastSendOutcomeForDiagnostics,
+                watchdogFires: bridge.sendWatchdogFireCountForDiagnostics,
+                deviceConnected: bridge.deviceConnectedForDiagnostics,
+                deviceName: bridge.deviceNameForDiagnostics)
+        }()
+        lines.append(GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics))
         return lines.joined(separator: "\n")
     }
 }

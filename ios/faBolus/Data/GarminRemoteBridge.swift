@@ -37,6 +37,13 @@ final class GarminRemoteBridge: NSObject {
     }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 
+    /// 09.6-04 (Part C-4a, D-03.4): weak app-wide reference so `DebugMenuView` can read this bridge's
+    /// already-tracked messaging state for `[Garmin CIQ]` diagnostics without threading a new
+    /// parameter through `DebugMenuView`'s init (its declared call site in `SettingsView.swift` is
+    /// out of this plan's scope, same constraint 09.6-03 documented for the Mac/remote-role side).
+    /// Set once, in `init`, mirroring the app's other `.shared` singletons (e.g. `MacPairingCoordinator`).
+    static weak var shared: GarminRemoteBridge?
+
     private weak var model: AppModel?
     private var device: IQDevice?
     private var app: IQApp?
@@ -62,9 +69,17 @@ final class GarminRemoteBridge: NSObject {
     private static let sendTimeout: TimeInterval = 8
     private static let maxSendAttempts = 3
 
+    // 09.6-04 (Part C-4a, D-03.4): read-only, additive diagnostics state — no new send path. The
+    // last completed send's outcome (mapped from ConnectIQ's `IQSendMessageResult` onto the
+    // ConnectIQ-free `GarminDiagnostics.SendOutcome` vocabulary right here, at the one place this
+    // file already imports ConnectIQ) and how many times the send-watchdog has fired this session.
+    private(set) var lastSendOutcomeForDiagnostics: GarminDiagnostics.SendOutcome = .none
+    private(set) var sendWatchdogFireCountForDiagnostics = 0
+
     init(model: AppModel) {
         self.model = model
         super.init()
+        Self.shared = self
         ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil)
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
@@ -78,6 +93,25 @@ final class GarminRemoteBridge: NSObject {
     }
 
     var hasDevice: Bool { device != nil }
+
+    /// 09.6-04: total outstanding messages this bridge is holding (the in-flight send, if any, plus
+    /// the queued command echoes plus a pending coalesced status push) — read directly from the
+    /// already-tracked queue state, never recomputed or re-derived.
+    var queueDepthForDiagnostics: Int {
+        echoQueue.count + (pendingStatus == nil ? 0 : 1) + (inFlight == nil ? 0 : 1)
+    }
+
+    /// 09.6-04: this bridge's paired device's live ConnectIQ connection status, or `false` when no
+    /// device is paired at all (callers should check `hasDevice` first to distinguish "never paired"
+    /// from "paired but disconnected").
+    var deviceConnectedForDiagnostics: Bool {
+        guard let device else { return false }
+        return ConnectIQ.sharedInstance().getDeviceStatus(device) == .connected
+    }
+
+    /// 09.6-04: the paired device's raw name, if known — redaction happens at `GarminDiagnostics`'s
+    /// rendering boundary, never here; this accessor exists only to hand that raw value across.
+    var deviceNameForDiagnostics: String? { device?.friendlyName ?? device?.modelName }
 
     /// Opens Garmin Connect Mobile so the user can pick which paired device runs the remote.
     func selectDevice() {
@@ -153,10 +187,14 @@ final class GarminRemoteBridge: NSObject {
         sendGeneration &+= 1
         let gen = sendGeneration
         armSendWatchdog(generation: gen)
-        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil) { [weak self] _ in
+        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil) { [weak self] result in
             Task { @MainActor in
                 guard let self, gen == self.sendGeneration else { return }   // watchdog already superseded this send
                 self.sendWatchdog?.invalidate(); self.sendWatchdog = nil
+                // 09.6-04: decode ConnectIQ's raw result onto the neutral, ConnectIQ-free
+                // GarminDiagnostics.SendOutcome vocabulary right at this boundary — no raw
+                // IQSendMessageResult ever crosses into GarminDiagnostics.
+                self.lastSendOutcomeForDiagnostics = (result == .success) ? .delivered : .failed
                 self.inFlight = nil
                 self.sendInFlight = false
                 self.pump()   // drain the next queued message (echo first, else the latest status)
@@ -182,6 +220,8 @@ final class GarminRemoteBridge: NSObject {
         sendGeneration &+= 1
         sendWatchdog = nil
         sendInFlight = false
+        lastSendOutcomeForDiagnostics = .timedOut
+        sendWatchdogFireCountForDiagnostics += 1
         if var f = inFlight {
             f.attempts += 1
             inFlight = f.attempts < Self.maxSendAttempts ? f : nil   // bounded re-attempt; else drop
@@ -270,8 +310,20 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
 /// (`init(model:)` + `handleOpenURL(_:)`) so nothing else changes.
 @MainActor
 final class GarminRemoteBridge {
-    init(model: AppModel) { model.garminStatus = nil }
+    /// 09.6-04: mirrors the `#if GARMIN` variant's `.shared` + diagnostics read surface so
+    /// `GarminDiagnostics`/`DebugMenuView` compile and behave sensibly (unreachable empty state)
+    /// in a build without the Connect IQ SDK.
+    static weak var shared: GarminRemoteBridge?
+
+    init(model: AppModel) { model.garminStatus = nil; Self.shared = self }
     func handleOpenURL(_ url: URL) {}
+
+    var hasDevice: Bool { false }
+    var queueDepthForDiagnostics: Int { 0 }
+    var lastSendOutcomeForDiagnostics: GarminDiagnostics.SendOutcome { .none }
+    var sendWatchdogFireCountForDiagnostics: Int { 0 }
+    var deviceConnectedForDiagnostics: Bool { false }
+    var deviceNameForDiagnostics: String? { nil }
 }
 
 #endif
