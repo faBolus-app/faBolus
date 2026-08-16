@@ -266,6 +266,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// "pumpNotLinked" | "bolusInFlight" | "accessDenied"), so a remote can show WHY its bolus affordance
     /// is disabled. Absent when `canBolus` is true or absent. Swift-only additive field, mirrored.
     public var bolusBlockReason: String? = nil
+    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready status (`PumpSnapshot.cartridgeReadyForBolus`),
+    /// pushed on every `statusRead` reply so watch/Garmin/Mac can show cartridge state even when no
+    /// bolus is being attempted — a first-class DISPLAY signal, distinct from `canBolus`/
+    /// `bolusBlockReason` (which only surface the block AT bolus-attempt time). Phone is authoritative;
+    /// this rides the existing status mirror, mirroring `canBolus` exactly: Swift-only additive-optional
+    /// field, set post-init (the existing memberwise initializer stays untouched). Absent ⇒ a legacy
+    /// remote/host that predates the field ⇒ NO SIGNAL, never a false "not ready" — a remote must only
+    /// treat an explicit `false` as "cartridge not ready", never fabricate one from a missing key.
+    public var cartridgeReady: Bool? = nil
     /// P13 capability channel — whether the pump firmware honors a REMOTE alert dismissal
     /// (`PumpCapabilities.supportsRemoteAlertDismiss`). t:slim X2 silently rejects it (dismiss only
     /// snoozes locally); Mobi clears it on the pump. Lets a remote label its alert action "Clear" vs

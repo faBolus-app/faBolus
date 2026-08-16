@@ -143,4 +143,33 @@ final class RemoteCommandTests: XCTestCase {
             XCTAssertEqual(error as? RemoteCommand.ValidationError, .oversizedString("diagnosticsText"))
         }
     }
+
+    // MARK: - Phase 09.9-04 (D-05): cartridge-ready DISPLAY signal
+
+    /// The additive-optional `cartridgeReady` field round-trips (JSON + dictionary) both when true and
+    /// when explicitly false, and never touches `schemaVersion` — mirrors `canBolus` exactly.
+    func testCartridgeReadyRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.cartridgeReady = true
+        var decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.cartridgeReady, true)
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        var back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.cartridgeReady, true)
+
+        // An explicit false (cartridge mid change/load/prime) round-trips too — never dropped/coerced.
+        cmd.cartridgeReady = false
+        decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.cartridgeReady, false)
+        back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.cartridgeReady, false)
+    }
+
+    /// A legacy/bare payload without the `cartridgeReady` key decodes to `nil` — NO SIGNAL, never a
+    /// fabricated "not ready" that could mislead a remote into showing a false block.
+    func testCartridgeReadyAbsentOnLegacyPayloadDecodesToNil() throws {
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.cartridgeReady)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
 }

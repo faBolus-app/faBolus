@@ -431,6 +431,10 @@ public final class AppModel {
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         cmd.canBolus = avail.canBolus
         cmd.bolusBlockReason = avail.reason?.wireToken
+        // Phase 09.9-04 (D-05): the pump's cartridge-ready DISPLAY status, distinct from canBolus (which
+        // only reflects the block at bolus-attempt time) — lets a remote show cartridge state even when
+        // not attempting a bolus. Single source of truth: PumpSnapshot.cartridgeReadyForBolus.
+        cmd.cartridgeReady = s.cartridgeReadyForBolus
         // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
         // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
         // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a
