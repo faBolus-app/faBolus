@@ -72,6 +72,25 @@ public final class AppSettings {
     public static let glucosePlotFloorOptions: [Int] = GlucosePlotScale.floorOptions
     public static let glucosePlotCeilingOptions: [Int] = GlucosePlotScale.ceilingOptions
 
+    /// Optional Watch/Garmin plot Y-axis **override** (Phase 09.13-02, D-05). Treated as ONE unit — the
+    /// UI clears/sets both together; `nil` means "Same as phone" for BOTH bounds, not per-bound. When
+    /// set, always snapped in-set via `GlucosePlotScale.resolve` (never assigned raw). `.remotes`,
+    /// `backsUp: true` (same category as `watchChartRanges`), canonical mg/dL. Never iCloud-relevant
+    /// beyond the normal `.remotes` default (this is a display preference, not command-adjacent).
+    public var glucosePlotCeilingSmall: Int? {
+        didSet {
+            if let v = glucosePlotCeilingSmall { d.set(v, forKey: "glucosePlotCeilingSmall") }
+            else { d.removeObject(forKey: "glucosePlotCeilingSmall") }
+        }
+    }
+    /// See `glucosePlotCeilingSmall` — the paired floor half of the same override unit.
+    public var glucosePlotFloorSmall: Int? {
+        didSet {
+            if let v = glucosePlotFloorSmall { d.set(v, forKey: "glucosePlotFloorSmall") }
+            else { d.removeObject(forKey: "glucosePlotFloorSmall") }
+        }
+    }
+
     /// Show the opt-in **Statistics** card on the dashboard (Time-in-Range, GMI, mean, CV over the
     /// in-memory ~24 h history). **Default OFF** so regular use stays clean. See [[GlucoseStatistics]].
     public var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
@@ -593,6 +612,19 @@ public final class AppSettings {
             storedCeiling: d.object(forKey: "glucosePlotCeiling") as? Int)
         glucosePlotFloor = plotBounds.floor
         glucosePlotCeiling = plotBounds.ceiling
+        // D-05: the pair is ONE unit — only treat it as "on" when BOTH halves are present on disk; a
+        // partial/corrupt state (only one half persisted) falls back to nil ("Same as phone") rather
+        // than a half-applied override. A present pair still snaps through the same shared math so a
+        // legacy/out-of-set override value can never surface as an invalid Picker selection.
+        if let sf = d.object(forKey: "glucosePlotFloorSmall") as? Int,
+           let sc = d.object(forKey: "glucosePlotCeilingSmall") as? Int {
+            let smallBounds = GlucosePlotScale.resolve(storedFloor: sf, storedCeiling: sc)
+            glucosePlotFloorSmall = smallBounds.floor
+            glucosePlotCeilingSmall = smallBounds.ceiling
+        } else {
+            glucosePlotFloorSmall = nil
+            glucosePlotCeilingSmall = nil
+        }
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
@@ -747,6 +779,9 @@ public final class AppSettings {
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
         if let ceiling = remoteBolusCeiling { m["remoteBolusCeiling"] = .double(ceiling) }
+        // D-05: the small-screen override pair — emitted only when set (nil ⇒ Same as phone ⇒ omitted).
+        if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
+        if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
         if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
         // Emit a canonical (sorted) encoding of the in-memory set rather than the raw persisted bytes, so the
         // snapshot for a given set of features is byte-identical regardless of process hash-seed or persist
@@ -782,6 +817,13 @@ public final class AppSettings {
         if let v = b("showBolusBars") { showBolusBars = v }
         if let v = i("glucosePlotFloor") { glucosePlotFloor = v }
         if let v = i("glucosePlotCeiling") { glucosePlotCeiling = v }
+        // D-05: only apply the override when BOTH halves are present in the backup (same one-unit
+        // treatment as init); a backup missing one half leaves the current override unchanged, per
+        // applyBackup's documented "absent keys are left unchanged" contract.
+        if let f = i("glucosePlotFloorSmall"), let c = i("glucosePlotCeilingSmall") {
+            glucosePlotFloorSmall = f
+            glucosePlotCeilingSmall = c
+        }
         if let v = b("showStats") { showStats = v }
         if let v = sa("detailsOrder") { detailsOrder = v }
         if let v = sa("watchDetailsOrder") { watchDetailsOrder = v }

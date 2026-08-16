@@ -654,6 +654,34 @@ struct RemotesSettingsView: View {
         Binding(get: { settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling },
                 set: { settings.remoteBolusCeiling = $0 })
     }
+    /// Phase 09.13-02 (D-05): the optional Watch/Garmin plot Y-axis override, treated as ONE unit — the
+    /// on/off state IS the Picker's first-row selection ("Same as phone" vs "Custom"), not a separate
+    /// `Toggle`. Turning it on snaps the pair via `GlucosePlotScale.resolve` (seeded from the phone's
+    /// current bounds when no prior override exists); turning it off clears BOTH keys back to nil.
+    private var smallPlotOverrideOn: Binding<Bool> {
+        Binding(
+            get: { settings.glucosePlotFloorSmall != nil },
+            set: { on in
+                if on {
+                    let resolved = GlucosePlotScale.resolve(
+                        storedFloor: settings.glucosePlotFloorSmall ?? settings.glucosePlotFloor,
+                        storedCeiling: settings.glucosePlotCeilingSmall ?? settings.glucosePlotCeiling)
+                    settings.glucosePlotFloorSmall = resolved.floor
+                    settings.glucosePlotCeilingSmall = resolved.ceiling
+                } else {
+                    settings.glucosePlotFloorSmall = nil
+                    settings.glucosePlotCeilingSmall = nil
+                }
+            })
+    }
+    private var smallPlotFloorValue: Binding<Int> {
+        Binding(get: { settings.glucosePlotFloorSmall ?? settings.glucosePlotFloor },
+                set: { settings.glucosePlotFloorSmall = $0 })
+    }
+    private var smallPlotCeilingValue: Binding<Int> {
+        Binding(get: { settings.glucosePlotCeilingSmall ?? settings.glucosePlotCeiling },
+                set: { settings.glucosePlotCeilingSmall = $0 })
+    }
 
     var body: some View {
         Form {
@@ -749,8 +777,27 @@ struct RemotesSettingsView: View {
                 NavigationLink { WatchChartRangesView(settings: settings) } label: {
                     LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
                 }
+                // Phase 09.13-02 (D-05): optional small-screen plot Y-axis override — one Picker whose
+                // first row IS "Same as phone" (no separate boolean toggle); the two dependent Pickers
+                // below only appear once "Custom" is selected, mirroring the remoteBolusCeiling reveal.
+                Picker("Watch/Garmin plot range", selection: smallPlotOverrideOn) {
+                    Text("Same as phone").tag(false)
+                    Text("Custom").tag(true)
+                }
+                if settings.glucosePlotFloorSmall != nil {
+                    Picker("Plot ceiling", selection: smallPlotCeilingValue) {
+                        ForEach(AppSettings.glucosePlotCeilingOptions, id: \.self) { opt in
+                            Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                        }
+                    }
+                    Picker("Plot floor", selection: smallPlotFloorValue) {
+                        ForEach(AppSettings.glucosePlotFloorOptions, id: \.self) { opt in
+                            Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                        }
+                    }
+                }
             } header: { Text("Watch display") } footer: {
-                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. Mirrored to the remotes on the next update.")
+                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. \"Watch/Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. Mirrored to the remotes on the next update.")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
