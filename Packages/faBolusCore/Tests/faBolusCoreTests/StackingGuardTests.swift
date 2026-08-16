@@ -4,7 +4,10 @@ import Testing
 /// Exhaustive matrix for SG1 (`StackingGuard.calcOverride`) — mirrors `CalcInputGateTests`' nested-loop
 /// exhaustive style. Each row pins a safety property; a future edit that reintroduces a false-positive,
 /// false-negative, structural, or forbidden-phrase hole fails here rather than shipping.
-@Suite struct StackingGuardTests {
+// `.serialized`: the escalation-boundary tests mutate process-global OSAllocatedUnfairLock-backed
+// statics (`confirmExtraOverrideRatio`/`reenterOverrideRatio`); Swift Testing's default concurrent
+// scheduling otherwise races them against sibling rows (flaky reds). Mirrors StackingGuardNoticeAckTests.
+@Suite(.serialized) struct StackingGuardTests {
 
     private let target = 120   // arbitrary pump-reported op-115 target for these rows
 
