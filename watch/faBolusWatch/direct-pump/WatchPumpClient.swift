@@ -21,6 +21,19 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     var pairState: PairState = .idle
     var isPaired: Bool { WatchPairingStore.hasAnyPairing }
 
+    /// Phase 09.6-05 (Part C-3b, D-03.3, bench-only): read-only status accessor for `WatchDebugView`
+    /// — a short, human-readable rendering of `pairState`. Additive (a computed property, not a new
+    /// control-path `func`); calling it never touches BLE, the pump, or `client`/`coordinator`.
+    var statusForDiagnostics: String {
+        switch pairState {
+        case .idle: return isPaired ? "Idle (paired, not connected)" : "Idle (not paired)"
+        case .connecting: return "Connecting…"
+        case .pairing: return "Pairing…"
+        case .paired: return "Paired"
+        case .failed(let msg): return "Failed: \(msg)"
+        }
+    }
+
     /// Valid iff a 6-digit (JPAKE) OR 16-char (legacy V1) code — mirrors the phone's `PumpPairingCode`.
     static func isValidPairingCode(_ code: String) -> Bool {
         (try? PairingAuth.processPairingCode(code, type: .short6Char)) != nil ||
