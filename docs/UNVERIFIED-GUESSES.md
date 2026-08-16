@@ -121,5 +121,33 @@ feature is untested and "will likely not work" before they run — not just the 
   it back directly on the pump's own touchscreen and confirm every slot (including 2-3) took the exact
   value written — this is the confirmation step that resolves `flag`'s semantics.
 
+## 7. `CurrentActiveIdpValuesResponse.currentTargetBg` byte-4 decode — Phase 09.8-04 (D-07)
+- **Capture-backed, NOT oracle-backed, NOT bench-confirmed.** The TandemKit port decodes the pump's
+  active-IDP target BG as `Bytes.readShort(raw, 4)` (fixed in 09.8-04 from the buggy `Int(raw[5])`, which
+  decoded the real capture as 0). Ground truth is the real hardware capture `7017000073002c012800` (present
+  in upstream's own test suite, cited in `gh pr diff 102 --repo jwoglom/pumpx2`) which decodes to
+  `currentTargetBg == 115` at byte 4, independently re-derived by Codex (HIGH confidence for the observed
+  10-byte layout). **This fix landed WITHOUT clean cliparser-oracle backing** — the pinned oracle is itself
+  DEFECTIVE for this field (its `buildCargo` writes targetBg at byte 5, padding at byte 4; the OPPOSITE of
+  the real wire), so the capture is the substitute ground truth (owner-acknowledged deviation from the
+  no-unbacked-change rule, OWNER-DECISIONS.md 2026-08-16).
+- **Residual device + software-version variance:** byte-4 is confirmed only on the primary pinned pump
+  (`t:slim X2 · Control-IQ+ 7.10.2`). An unverified decompiled-Mobi rationale reads targetBg at byte 5, and
+  the layout may differ by **t:slim SOFTWARE VERSION** as well as by pump family (t:slim vs Mobi). If a
+  genuine byte-5 variant is captured, decoding must become variant-aware keyed on `(pump family, firmware
+  version)`.
+- **Where:** `TandemKit/Sources/TandemMessages/Responses/Responses.swift`
+  (`CurrentActiveIdpValuesResponse.currentTargetBg`). **No live faBolus consumer today** — a grep for
+  `currentTargetBg` in faBolus returns 0 hits, so no `UnverifiedFeatureGate` modal is wired now.
+- **Risk:** dose-path-adjacent (the pump's bolus-calculator target BG feeds, or will feed, faBolus's
+  StackingGuard above-target comparison). A wrong offset silently misreports therapy state.
+- **GATING RULE:** ANY future consumer that feeds `currentTargetBg` into the StackingGuard above-target
+  comparison (or any dosing decision) MUST gate on this entry with a blocking untested-feature modal
+  (mirroring entries 1/2/6 via `ios/faBolus/Views/UnverifiedFeatureGate.swift`) until the Phase-11 bench
+  confirms byte-4 per (pump family, firmware version). Do NOT rely on this value for real insulin before then.
+- **Verify (Phase-11 saline bench):** TandemKit `docs/BENCH-SESSION-PLAN.md` **Objective 4** — set a known
+  IDP target on the pump, read `CurrentActiveIdpValuesResponse`, and confirm byte 4 carries it on BOTH pump
+  families and across more than one t:slim software version; confirm no genuine byte-5 variant exists.
+
 ---
 Remove an entry once it's been confirmed on hardware.
