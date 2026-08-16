@@ -78,4 +78,27 @@ import Testing
             #expect(a.hasRequiredCapability(in: .full), "\(a.rawValue) must never require a capability")
         }
     }
+
+    /// Phase 2 (Pitfall 3 / Open Question 1): `.setMaxBolus`/`.setMaxBasal` are the two limit-set writes —
+    /// they must require the DEDICATED `supportsLimits` capability, not the coarser
+    /// `supportsAnyAdvancedControl` set. A capability set that has SOME advanced control (e.g. Control-IQ
+    /// settings) but NOT the basal/bolus-limit feature bit must deny both; a set WITH `supportsLimits` must
+    /// allow both. The rest of the `.unverifiedAck` set (e.g. `.setControlIQ`) is untouched by this
+    /// tightening, per `hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet` above.
+    @Test func setMaxBolusRequiresSupportsLimits() {
+        let advancedButNoLimits = PumpCapabilities(supportsControlIQSettings: true, supportsLimits: false)
+        #expect(advancedButNoLimits.supportsAnyAdvancedControl)   // sanity: the coarse check WOULD pass
+        for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
+            #expect(!a.hasRequiredCapability(in: advancedButNoLimits),
+                    "\(a.rawValue) must deny when supportsLimits is false, even with other advanced control present")
+        }
+        let withLimits = PumpCapabilities(supportsLimits: true)
+        for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
+            #expect(a.hasRequiredCapability(in: withLimits),
+                    "\(a.rawValue) must allow when supportsLimits is true")
+        }
+        // .mobiAdvanced already carries supportsLimits: true — stays allowed (no shipped-path regression).
+        #expect(GatedPumpWrite.setMaxBolus.hasRequiredCapability(in: .mobiAdvanced))
+        #expect(GatedPumpWrite.setMaxBasal.hasRequiredCapability(in: .mobiAdvanced))
+    }
 }
