@@ -5,6 +5,7 @@ import faBolusCore
 /// Phase 09.6-03 (Task 2, Part C-4b, D-03.4): behavior pins for the `[Remote role]` diagnostics
 /// section — fabricated role/peer inputs only (no live BLE/`MacPairingCoordinator` instantiation
 /// required), matching the plan's "inject the host/peer state as plain values" direction.
+@MainActor
 struct RemoteRoleDiagnosticsTests {
     @Test func hostWithGrantedAndPendingPeerRendersRoleAndPerPeerLines() {
         let granted = RemoteRoleDiagnostics.PeerInfo(

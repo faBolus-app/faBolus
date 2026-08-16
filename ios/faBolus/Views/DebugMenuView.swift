@@ -304,6 +304,16 @@ struct DebugMenuView: View {
             provenance: model.glucoseProvenance,
             sourceStatuses: model.glucoseSourceDiagnosticsInfo,
             enabled: shareDiagnostics))
+        // Task 2 (Part C-4b, D-03.4): [Remote role] — reads MacPairingCoordinator's already-tracked
+        // paired-peer/connection/policy state directly; never re-derives the handshake or grant logic.
+        let pairing = MacPairingCoordinator.shared
+        let peers = pairing.pairedMacs.map {
+            RemoteRoleDiagnostics.PeerInfo(
+                displayName: $0.name,
+                connected: pairing.connected && pairing.connectedName == $0.name,
+                policy: pairing.policy(for: $0.id))
+        }
+        lines.append(RemoteRoleDiagnostics.section(role: "host", peers: peers, enabled: shareDiagnostics))
         return lines.joined(separator: "\n")
     }
 }
