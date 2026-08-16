@@ -1,9 +1,41 @@
 import SwiftUI
 import AVFoundation
+import faBolusDesign
 
 /// A minimal camera QR scanner. Calls `onScan` once with the first decoded string, then stops.
 /// Requires `NSCameraUsageDescription`. Used by the remote to scan the host's pairing QR.
-struct QRScannerView: UIViewControllerRepresentable {
+///
+/// Branches on this device's own camera authorization/availability (Phase 09.4, D-09) instead of
+/// silently falling back to a black screen: `.denied`/`.restricted` and "no camera hardware" both
+/// render the shared `CameraPermissionFallbackView`; `.authorized`/`.notDetermined` render the real
+/// scanner (the `.notDetermined` case lets `QRScannerRepresentable`'s own AVFoundation session trigger
+/// the system permission prompt exactly as before). Supplies no Cancel/dismiss chrome of its own — the
+/// call site's `NavigationStack` toolbar Cancel (`RemoteControlView.swift`) still owns dismissal.
+struct QRScannerView: View {
+    let onScan: (String) -> Void
+
+    var body: some View {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .denied, .restricted:
+            CameraPermissionFallbackView(state: .denied) {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+        default:
+            if AVCaptureDevice.default(for: .video) == nil {
+                CameraPermissionFallbackView(state: .noCamera)
+            } else {
+                QRScannerRepresentable(onScan: onScan)
+            }
+        }
+    }
+}
+
+/// The actual camera-capture representable — behavior byte-identical to the pre-09.4-03
+/// `QRScannerView`, just renamed so the SwiftUI wrapper above can branch to either it or the shared
+/// permission-fallback view.
+struct QRScannerRepresentable: UIViewControllerRepresentable {
     let onScan: (String) -> Void
 
     func makeUIViewController(context: Context) -> ScannerVC {
