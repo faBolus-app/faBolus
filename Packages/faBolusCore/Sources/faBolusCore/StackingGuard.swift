@@ -123,6 +123,29 @@ public enum StackingGuard {
                           message: "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U.")
     }
 
+    // MARK: - insufficientReservoir: out-of-insulin over-request disclosure (D-01)
+
+    /// **Out-of-insulin over-request disclosure** (09.9-02, D-01) — discloses when the entered dose exceeds
+    /// the pump's OWN reported reservoir remaining (`snapshot.reservoirUnits`, a direct
+    /// `InsulinStatusResponse.currentInsulinAmount` read) — never a hardcoded threshold. Purely informational,
+    /// a sibling of `maxBolusProximity`: it never gates, clamps, resizes, or delays the Deliver button (see
+    /// `StackingGuardDeliverInvariantTests`). The pump is the physical enforcer of what it can actually
+    /// deliver; clamping the number here would be a silent dose decision, against Stacking-Guard philosophy.
+    ///
+    /// Fires (`.disclose`) when `reservoirUnits >= 0` (a valid pump reading — `0` is a legitimate "empty"
+    /// reservoir, distinct from an unread/invalid negative value) AND `enteredUnits > reservoirUnits` (strictly
+    /// above — the exact-match boundary does NOT fire, mirroring `maxBolusProximity`'s own boundary
+    /// convention but on the opposite side: here the pump can still deliver exactly what remains).
+    ///
+    /// Does NOT fire (`.none`) when `enteredUnits <= reservoirUnits`, or when `reservoirUnits < 0` (no valid
+    /// pump reading — never disclose against an unread/invalid anchor).
+    public static func insufficientReservoir(enteredUnits: Double, reservoirUnits: Double) -> Disclosure {
+        guard reservoirUnits >= 0 else { return .none }
+        guard enteredUnits > reservoirUnits else { return .none }
+        return Disclosure(friction: .disclose,
+                          message: "You're entering \(Self.formatUnits(enteredUnits)) U — more than the \(Self.formatUnits(reservoirUnits)) U reported remaining in the pump's reservoir. The pump may refuse or short-deliver this dose.")
+    }
+
     // MARK: - SG3a: escalating friction (SG1 override magnitude + SG2 max-proximity)
 
     // Thread-safe backing (mirrors `CalcInputFreshness`'s `OSAllocatedUnfairLock` idiom): set at launch
