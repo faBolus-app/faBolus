@@ -103,6 +103,42 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
 
+    // MARK: - Phase 09.13-02 (glucose plot height customization, D-06/D-07) — plot bound wire fields
+
+    /// D-06: all four additive-optional plot-bound Int fields round-trip (JSON + dictionary); an
+    /// encode without setting them omits all four keys, and decoding that bare payload yields nil for
+    /// all four (legacy-safe), WITHOUT touching `schemaVersion`.
+    func testGlucosePlotBoundsRoundTripAndOmitWhenAbsent() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.glucosePlotFloor = 40
+        cmd.glucosePlotCeiling = 300
+        cmd.glucosePlotFloorSmall = 50
+        cmd.glucosePlotCeilingSmall = 400
+        let encoded = try cmd.encoded()
+        let decoded = try RemoteCommand.decode(encoded)
+        XCTAssertEqual(decoded.glucosePlotFloor, 40)
+        XCTAssertEqual(decoded.glucosePlotCeiling, 300)
+        XCTAssertEqual(decoded.glucosePlotFloorSmall, 50)
+        XCTAssertEqual(decoded.glucosePlotCeilingSmall, 400)
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.glucosePlotFloor, 40)
+        XCTAssertEqual(back.glucosePlotCeilingSmall, 400)
+
+        // Not set ⇒ omitted from the wire entirely (byte-compatible with a pre-09.13 peer).
+        let bareEncoded = try RemoteCommand(kind: .statusRead).encoded()
+        let bareJSON = String(data: bareEncoded, encoding: .utf8) ?? ""
+        for key in ["glucosePlotFloor", "glucosePlotCeiling", "glucosePlotFloorSmall", "glucosePlotCeilingSmall"] {
+            XCTAssertFalse(bareJSON.contains(key), "\(key) must be omitted from the wire when unset")
+        }
+        let bare = try RemoteCommand.decode(bareEncoded)
+        XCTAssertNil(bare.glucosePlotFloor)
+        XCTAssertNil(bare.glucosePlotCeiling)
+        XCTAssertNil(bare.glucosePlotFloorSmall)
+        XCTAssertNil(bare.glucosePlotCeilingSmall)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
+
     // MARK: - Phase 09.6-07 (D-03.1, D-04): watch-diagnostics-over-WC `.diagnosticsRead`
 
     /// `.diagnosticsRead` must be provably delivery-inert: never a pump-mutating command, never

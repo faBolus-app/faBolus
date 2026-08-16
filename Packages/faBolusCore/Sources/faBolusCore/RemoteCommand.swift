@@ -197,6 +197,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// `cmd.glucoseDisplayUnit = …`), exactly like `clockAnalog`.
     public var glucoseDisplayUnit: String? = nil
 
+    // Phase 09.13 (glucose plot height customization, D-06) — glucose-plot Y-axis bounds, canonical
+    // mg/dL, statusRead-reply only, display-only (D-11: never crosses into bgMgdl/dosing, which stay
+    // mg/dL always). `glucosePlotFloor`/`glucosePlotCeiling` are the SHARED/phone-scoped bounds — the
+    // phone group (iPhone + Mac) reads these (D-07). Absent ⇒ a legacy host/remote falls back to the
+    // surface's built-in default (matches `glucoseDisplayUnit`'s absent-default pattern). Additive;
+    // auto-Codable, so the existing memberwise initializer stays untouched (the host sets these via
+    // `cmd.glucosePlotFloor = …`), exactly like `clockAnalog`/`glucoseDisplayUnit`.
+    public var glucosePlotFloor: Int? = nil
+    public var glucosePlotCeiling: Int? = nil
+    /// The optional small-screen (Apple Watch + Garmin) OVERRIDE, canonical mg/dL — the small-screen
+    /// group reads these when present. Absent ⇒ a legacy host/remote follows the shared bounds above
+    /// (D-05/D-06/D-07). Never authorizes anything; excluded from `mutatesPumpState`/
+    /// `isFreshnessSensitive` (D-11).
+    public var glucosePlotFloorSmall: Int? = nil
+    public var glucosePlotCeilingSmall: Int? = nil
+
     // Advisory eating-detection (Phase 5). Not part of the safety-critical schema.
     public var eatingProb: Double? = nil       // eatingEvent: watch's on-device p(eating) ∈ [0,1]
     public var eatingSensingOn: Bool? = nil    // status push: should the watch run wrist eating-sensing?
@@ -503,6 +519,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         if let e = therapyEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("therapyEpochSec")
         }
+        // Phase 09.13-02 (D-06/D-11, threat T-09.13-04): a plausible mg/dL display-integer bound —
+        // absent is fine (⇒ the receiver's own default/shared fallback), but a present value outside a
+        // sane display range is nonsense and must fail closed, never trap. These are display-only Y-axis
+        // bounds, never dose inputs, so the range is generous (not `bgMgdl`'s clinical 0–2000).
+        func intRange(_ name: String, _ v: Int?, _ lo: Int, _ hi: Int) throws {
+            if let v, v < lo || v > hi { throw ValidationError.outOfRange(name) }
+        }
+        try intRange("glucosePlotFloor", glucosePlotFloor, 1, 1000)
+        try intRange("glucosePlotCeiling", glucosePlotCeiling, 1, 1000)
+        try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
+        try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
 
         // String length caps.
         let strings: [(String, String?)] = [

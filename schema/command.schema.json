@@ -229,6 +229,30 @@
       "enum": ["mgdl", "mmol"],
       "description": "statusRead reply — the phone's active glucose display-unit setting (Phase 4), mirrored so Apple Watch/Garmin render mg/dL/mmol like the phone. Display-only; bgMgdl and every dosing field stay mg/dL regardless. Absent ⇒ the remote defaults to mgdl (legacy-safe)."
     },
+    "glucosePlotFloor": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "statusRead reply — the phone's glucose-plot Y-axis floor, canonical mg/dL (Phase 09.13). Shared/phone-scoped: the phone group (iPhone + Mac) reads this. Display-only, never crosses into bgMgdl/dosing. Absent ⇒ the remote's built-in default."
+    },
+    "glucosePlotCeiling": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "statusRead reply — the phone's glucose-plot Y-axis ceiling, canonical mg/dL (Phase 09.13). Shared/phone-scoped: the phone group (iPhone + Mac) reads this. Display-only, never crosses into bgMgdl/dosing. Absent ⇒ the remote's built-in default."
+    },
+    "glucosePlotFloorSmall": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "statusRead reply — the optional small-screen (Apple Watch + Garmin) glucose-plot Y-axis floor OVERRIDE, canonical mg/dL (Phase 09.13, D-05). Read by the small-screen group only. Display-only. Absent ⇒ the small screens follow the shared glucosePlotFloor above."
+    },
+    "glucosePlotCeilingSmall": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "statusRead reply — the optional small-screen (Apple Watch + Garmin) glucose-plot Y-axis ceiling OVERRIDE, canonical mg/dL (Phase 09.13, D-05). Read by the small-screen group only. Display-only. Absent ⇒ the small screens follow the shared glucosePlotCeiling above."
+    },
     "canBolus": {
       "type": "boolean",
       "description": "statusRead reply — the host's authoritative 'may a remote start a bolus right now?' on the broadcast-safe axes: pump linked AND not mid-delivery AND remotes not read-only. A remote ANDs this with its own reachability + the entered amount's bounds. Lets a surface that can't parse `message` (Garmin, which otherwise substring-matched the localized connection string as load-bearing safety logic) gate on a semantic flag. Per-peer permission / capability / child gates stay host-enforced on the actual deliver. Absent ⇒ the remote falls back to judging from `message` + `remotesReadOnly` locally (additive/non-breaking)."
