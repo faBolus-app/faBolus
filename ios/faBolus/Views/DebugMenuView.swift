@@ -217,6 +217,35 @@ struct DebugMenuView: View {
         return "\(sec)s"
     }
 
+    /// D-02b (09.6-02): pure `[BLE session log]` diagnostics-text line-builder — extracted verbatim
+    /// from `diagnosticsText`'s prior inline block (mirrors `CapabilityDiagnostics.section`'s pure-
+    /// builder shape) so the ring buffer's presence in the export — up to `capacity`, oldest dropped
+    /// first — is unit-testable (`BLESessionLogTests`) without instantiating this View. Reads nothing
+    /// beyond its parameters: `entries` already reflects whatever `BLESessionLog` recorded (empty
+    /// whenever the shared opt-in was off, since `BLESessionLog.record` no-ops then).
+    static func bleSessionLogExportLines(entries: [BLESessionLog.Entry], capacity: Int) -> String {
+        var lines: [String] = ["", "[BLE session log] (in-memory, last \(capacity))"]
+        guard !entries.isEmpty else {
+            lines.append("—")
+            return lines.joined(separator: "\n")
+        }
+        // D-04: per-connect durations from the pure helper — matched back onto the disconnect line
+        // that closed each span (spans and entries are both chronological, so a positional walk
+        // suffices; no pairing logic is re-derived here).
+        let spans = BLESessionLog.connectDurations(from: entries)
+        var spanIndex = 0
+        for e in entries {
+            let ts = e.at.formatted(date: .omitted, time: .standard)
+            lines.append("\(ts) \(e.kind.rawValue)\(e.detail.isEmpty ? "" : " · \(e.detail)")")
+            if e.kind == .disconnect, spanIndex < spans.count, spans[spanIndex].end == e.at {
+                let duration = spans[spanIndex].end.timeIntervalSince(spans[spanIndex].start)
+                lines.append("  connected for \(Self.formatUptime(duration))")
+                spanIndex += 1
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// D-01a/D-09/D-10 — best-effort write of `diagnosticsText` verbatim to a FIXED filename in the app's
     /// OWN Documents directory (no date/timestamp in the name, so `xcrun devicectl device copy from` has a
     /// stable, predictable path to pull with zero on-device UI). `.completeFileProtectionUntilFirstUserAuthentication`
@@ -258,24 +287,10 @@ struct DebugMenuView: View {
         for (cat, c) in notif.sorted(by: { $0.key < $1.key }) {
             lines.append("\(cat): delivered \(c.delivered), dismissed \(c.dismissed), acted \(c.actedUpon)")
         }
-        lines.append("")
-        lines.append("[BLE session log] (in-memory, last \(model.bleSessionLog.capacity))")
-        let entries = model.bleSessionLog.entries
-        if entries.isEmpty { lines.append("—") }
-        // D-04: per-connect durations from the pure helper — matched back onto the disconnect line that
-        // closed each span (spans and entries are both chronological, so a positional walk suffices; no
-        // pairing logic is re-derived here).
-        let spans = BLESessionLog.connectDurations(from: entries)
-        var spanIndex = 0
-        for e in entries {
-            let ts = e.at.formatted(date: .omitted, time: .standard)
-            lines.append("\(ts) \(e.kind.rawValue)\(e.detail.isEmpty ? "" : " · \(e.detail)")")
-            if e.kind == .disconnect, spanIndex < spans.count, spans[spanIndex].end == e.at {
-                let duration = spans[spanIndex].end.timeIntervalSince(spans[spanIndex].start)
-                lines.append("  connected for \(Self.formatUptime(duration))")
-                spanIndex += 1
-            }
-        }
+        // D-02b (09.6-02): pure extracted line-builder — proves (via BLESessionLogTests) that the
+        // ring buffer's entries reach this export up to capacity, not silently dropped.
+        lines.append(Self.bleSessionLogExportLines(
+            entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity))
         // Task 1 (TRACER, Part B-a, D-02a): [Capability/opcode] — reads already-cached backend state
         // only (model.capabilities / model.badOpcodesForDiagnostics), gated on the SAME shareDiagnostics
         // opt-in as every section above. No new BLE traffic, no new toggle (Pitfall 2/3).
