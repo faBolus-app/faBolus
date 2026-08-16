@@ -29,6 +29,11 @@ public final class PhoneRemoteHost {
     /// never re-derived.
     var reachableForDiagnostics: Bool { link.isReachable }
 
+    /// Phase 09.6-07 (D-03.1, D-04): the watch's OWN diagnostics text, set ONLY by the `.diagnosticsRead`
+    /// case in `handle(_:)` below — a pure text store, nothing else. Read by `DebugMenuView` for the
+    /// `[Watch self]` section. `nil` until a reply has ever arrived (renders the placeholder there).
+    private(set) var lastWatchDiagnosticsText: String?
+
     public init(model: AppModel) {
         self.model = model
         Self.shared = self
@@ -52,7 +57,10 @@ public final class PhoneRemoteHost {
         link.send(cmd)
     }
 
-    private func handle(_ cmd: RemoteCommand) {
+    /// Not `private` so `WatchDiagnosticsOverWCTests` (`@testable import faBolus`) can drive a
+    /// simulated end-to-end round-trip without a live WatchConnectivity session — still internal,
+    /// never part of the public API surface.
+    func handle(_ cmd: RemoteCommand) {
         guard let model else { return }
         // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
         // a bolus/resume/approval applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds
@@ -96,6 +104,13 @@ public final class PhoneRemoteHost {
         case .eatingEvent:
             // Apple Watch on-device detector relayed a p(eating) — feed the fusion engine. Advisory.
             if let p = cmd.eatingProb { model.ingestWatchEatingEvent(prob: p) }
+        case .diagnosticsRead:
+            // Phase 09.6-07 (D-03.1, D-04): the watch's OWN diagnostics-text REPLY. This entire case
+            // body is a pure text store — no dose/delivery/model call, no Task launch, no status
+            // re-push (`RemoteDiagnosticsScopeGuardTests` source-scans this exact region dose-free).
+            // A bare REQUEST (no text set — never actually arrives here since only the phone sends
+            // requests) leaves the store untouched rather than clobbering it with nil.
+            if let text = cmd.diagnosticsText { lastWatchDiagnosticsText = text }
         case .suspendPump:
             guard !AppSettings.shared.remotesReadOnly else { return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
@@ -105,5 +120,12 @@ public final class PhoneRemoteHost {
         default:
             break
         }
+    }
+
+    /// Phase 09.6-07 (D-03.1): ask the watch for its OWN diagnostics text — a bare, non-mutating
+    /// `.diagnosticsRead` request (no `diagnosticsText` set). The watch's `WatchModel` replies with a
+    /// second `.diagnosticsRead` carrying the text, handled above.
+    func requestWatchDiagnostics() {
+        sendTracked(RemoteCommand(kind: .diagnosticsRead))
     }
 }

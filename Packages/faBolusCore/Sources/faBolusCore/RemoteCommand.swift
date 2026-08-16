@@ -7,7 +7,7 @@ import Foundation
 public struct RemoteCommand: Codable, Equatable, Sendable {
     public static let schemaVersion = 1
 
-    public enum Kind: String, Codable, Sendable {
+    public enum Kind: String, Codable, Sendable, CaseIterable {
         case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead, dismissAlert
         /// Remote advanced-control requests (suspend/resume). The phone re-confirms on-device and
         /// only honors them when advanced control is enabled for a Mobi.
@@ -32,6 +32,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// routine status push (battery). Advisory only — never doses; not safety-critical.
         case eatingEvent
 
+        /// Phase 09.6-07 (D-03.1, D-04): read-only request/reply for the watch's OWN diagnostics text,
+        /// requested by the phone and replied by the watch over the SAME `RemoteCommand`/`RemoteLink`
+        /// channel (WatchConnectivity). A bare command (no `diagnosticsText` set) is the phone's
+        /// REQUEST; a command with `diagnosticsText` set is the watch's REPLY — distinguished the same
+        /// way `statusRead` is request-vs-reply, just in the reverse direction (phone asks, watch
+        /// answers). Carries TEXT ONLY — never a dose/delivery input — and is Swift-only (like
+        /// `eatingEvent`): not part of the shared `command.schema.json` / Garmin Monkey C mirror, since
+        /// only the Apple Watch answers it.
+        case diagnosticsRead
+
         /// True for commands that cause — or authorize — a **write to the pump**.
         ///
         /// These must never be queued for later opportunistic delivery. A queued bolus that lands
@@ -47,7 +57,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
                  .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
                 return true
-            case .bolusStatus, .statusRead, .eatingEvent,
+            case .bolusStatus, .statusRead, .eatingEvent, .diagnosticsRead,
                  .authHello, .authChallenge, .authProof, .authResult:
                 return false
             }
@@ -322,6 +332,14 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var iobEpochSec: Int? = nil
     public var therapyEpochSec: Int? = nil
 
+    /// Phase 09.6-07 (D-03.1, D-04) — the watch's OWN diagnostics text, present only on a
+    /// `.diagnosticsRead` REPLY (nil on the bare REQUEST). Redacted at the watch before it is ever
+    /// set (any device/peer name becomes a `watch-XXXX` token; no therapy/glucose value) — see
+    /// `WatchSelfDiagnostics.watchBody`. Read-only observability; never consulted by any dose/delivery
+    /// path. Swift-only additive field (set post-init), like `eatingProb`/`glucoseDisplayUnit` — not
+    /// part of the shared JSON schema or the Garmin Monkey C mirror.
+    public var diagnosticsText: String? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -483,6 +501,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
             ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
             ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
+            ("diagnosticsText", diagnosticsText),
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }

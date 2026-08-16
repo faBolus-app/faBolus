@@ -40,6 +40,21 @@ final class WatchModel: RemoteClientModel {
 
     override func handle(_ cmd: RemoteCommand) {
         super.handle(cmd)
+        // Phase 09.6-07 (D-03.1, D-04): a bare `.diagnosticsRead` REQUEST (no `diagnosticsText` set)
+        // asks this watch to reply with its OWN redacted diagnostics text. Reply once with a
+        // `.diagnosticsRead` carrying the text and return — never touches the pump/dose path (pure
+        // text compose + `link.send`, mirroring the `eatingEvent` outbound precedent above).
+        if cmd.kind == .diagnosticsRead, cmd.diagnosticsText == nil {
+            var benchStatus: String?
+            #if FABOLUS_WATCH_DIRECT_PUMP
+            benchStatus = WatchPumpClient.shared?.statusForDiagnostics
+            #endif
+            var reply = RemoteCommand(kind: .diagnosticsRead)
+            reply.diagnosticsText = WatchSelfDiagnostics.watchBody(
+                reachable: reachable, directCgmActive: !reachable, benchPumpStatus: benchStatus)
+            link.send(reply)
+            return
+        }
         guard cmd.kind == .statusRead else { return }
         // Phase 4: adopt the phone's active display-unit token (Pitfall 6 — a frozen String, never
         // the raw enum, on the wire). Unknown/garbage token or an absent field (legacy host) ⇒
