@@ -73,6 +73,11 @@ struct DosingInputFreshnessTests {
     /// carbs-only off the assumed CR (10 g/U) since op-115 never landed.
     @Test func recommendBolusFailsClosedWhenFreshCalcInputsUnavailable() async {
         let (b, _) = makeBackend()
+        // Phase 2 (D-07/Pitfall 1): `TandemBackend(testTransport:)` now defaults `therapyParamsDate` to
+        // "just read" (so the new fail-closed delivery guard doesn't block every pre-existing delivery
+        // test). This test specifically characterizes the never-read-op-115 window, so it must explicitly
+        // recreate that window rather than relying on the init's default.
+        b.setTherapyParamsDateForTesting(nil)
         let rec = await b.recommendBolus(carbsGrams: 30, bgMgdl: 120)
         #expect(rec.inputsVerified == false)          // BLOCKED (DIF-core interim, pre DIF-ux)
         #expect(rec.iobStale)                         // op-109 never arrived → stale

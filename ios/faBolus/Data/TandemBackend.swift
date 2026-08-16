@@ -668,9 +668,18 @@ public final class TandemBackend: NSObject, PumpBackend {
         super.init()
         self.authenticationKey = authKey
         self.snapshot.connection = .connected
+        // Phase 2 (D-07/Pitfall 1): default this test-double to "op-115 already read" — mirrors the
+        // connection/auth default-to-ready precedent above — so the new fail-closed freshness guard in
+        // `validateDeliver` doesn't block every pre-existing delivery test that never scripts an op-115
+        // reply. Tests that specifically want the unread window use `setTherapyParamsDateForTesting(nil)`.
+        self.snapshot.therapyParamsDate = Date()
     }
     /// Test-only: flip the connection state to simulate a mid-delivery link drop.
     func setConnectionForTesting(_ c: PumpConnectionState) { snapshot.connection = c }
+    /// Test-only (Phase 2): directly set/clear the op-115 freshness stamp, since `snapshot`'s setter is
+    /// private outside this file. Used to recreate the never-read-op-115 window that the new fail-closed
+    /// guard in `validateDeliver` blocks on.
+    func setTherapyParamsDateForTesting(_ date: Date?) { snapshot.therapyParamsDate = date }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a
@@ -1024,6 +1033,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
+        // Phase 2 (D-01/D-02/D-03, SC1): fail-closed until the pump's OWN configured max-bolus (op-115)
+        // has been read at least once. Before this guard, an unread `maxBolusUnits` silently fell back to
+        // `PumpSnapshot`'s permissive 25 U default — the absolute ceiling, not necessarily the pump's real
+        // configured max. Gated ONLY on "never read" (`== nil`), never on staleness (read-but-old); a
+        // stale-but-once-read value still bounds the max-bound guard below (D-02 — staleness is the
+        // calculator path's job, not this one).
+        guard snapshot.therapyParamsDate != nil else {
+            throw BolusError.pumpRejected("waiting to read the pump's max bolus — try again in a moment")
+        }
         // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap
         // (audit A-07). The max clamp only bounds the upper end.
         guard total.isFinite, total >= 0 else { throw BolusError.pumpRejected("invalid dose") }

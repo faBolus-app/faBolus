@@ -48,4 +48,31 @@ struct MaxBolusClampTests {
         #expect(sent?.cargo == SetMaxBolusLimitRequest(maxBolusMilliunits: 25000).cargo,
                 "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
     }
+
+    // MARK: - Phase 2 (D-01/D-02/D-03): fail-closed unread-op-115 freshness gate
+
+    /// The core Phase-2 fix (SC1): a manual units bolus attempted while `therapyParamsDate == nil`
+    /// (op-115 has never been read) must be fail-closed — thrown as `BolusError.pumpRejected`, BEFORE
+    /// any delivery bytes are constructed (`validateDeliver` runs first thing inside `deliverBolus`,
+    /// ahead of any `perform`/BLE write). Without the guard, the permissive 25 U default
+    /// (`PumpSnapshot.maxBolusUnits`) would silently stand in as the operative bound for a real pump
+    /// whose actual configured max might be lower.
+    @Test func manualDeliverBlocksWhileMaxBolusUnread() async throws {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.setTherapyParamsDateForTesting(nil)     // recreate the never-read-op-115 window
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        do {
+            _ = try await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            Issue.record("expected deliverBolus to throw BolusError.pumpRejected while op-115 is unread")
+        } catch let error as BolusError {
+            guard case .pumpRejected = error else {
+                Issue.record("expected .pumpRejected, got \(error)")
+                return
+            }
+        }
+        // No delivery write should have gone out — the guard fires before `perform` sends anything.
+        #expect(fake.lastSent(InitiateBolusRequest.props.opCode) == nil,
+                "no delivery bytes may be constructed while op-115 is unread")
+    }
 }
