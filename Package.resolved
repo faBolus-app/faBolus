@@ -17,9 +17,9 @@
       }
     },
     {
-      "identity" : "pumpx2kit",
+      "identity" : "tandemkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/faBolus-app/PumpX2Kit.git",
+      "location" : "https://github.com/faBolus-app/TandemKit.git",
       "state" : {
         "revision" : "6efdd43d767c34a0d298ac52fbbd2cd77a6d192a"
       }
