@@ -241,4 +241,70 @@ struct TandemDeliveryOutcomeTests {
         #expect(delivered == 2.0)                 // cancel write failed → dose proceeded → authoritative full
         #expect(b.lastBolusCancelled == false)
     }
+
+    // MARK: - Phase 09.9 D-01 — no-cartridge hard block (fail-closed, never a signed frame)
+
+    /// `validateDeliver` is the shared pre-flight choke point, called BEFORE permission/initiate are
+    /// ever requested — so a no-cartridge refusal must write ZERO frames (not even the permission ask).
+    @Test func noCartridgeRefusesBeforeAnySignedFrameIsWritten() async {
+        let (b, fake) = make()
+        b.setCartridgeLoadStateForTesting(0)   // CHANGE_CARTRIDGE — mid loading-state triad
+        let e = await capture { try await deliver(b) }
+        guard case .noCartridge? = e as? BolusError else {
+            Issue.record("expected BolusError.noCartridge, got \(String(describing: e))")
+            return
+        }
+        #expect(fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
+                "no permission request may be sent for a refused no-cartridge attempt")
+        #expect(fake.initiateWriteCount == 0, "no initiate request may be sent for a refused no-cartridge attempt")
+        #expect(!b.deliveryOutcomeUnknown)     // a clean refusal, never an indeterminate block
+    }
+
+    /// Each of the three loading states in the {0,1,2} gate set refuses; the idle/unknown default (6)
+    /// allows (proving the predicate, not just one literal value, drives the guard).
+    @Test func noCartridgeGateSetMatchesAllThreeLoadingStatesAndAllowsIdle() async {
+        for loadingState in [0, 1, 2] {
+            let (b, fake) = make()
+            b.setCartridgeLoadStateForTesting(loadingState)
+            let e = await capture { try await deliver(b) }
+            guard case .noCartridge? = e as? BolusError else {
+                Issue.record("loadState \(loadingState) expected BolusError.noCartridge, got \(String(describing: e))")
+                continue
+            }
+            #expect(fake.initiateWriteCount == 0)
+        }
+        // Idle/unknown default (6) — no fastRead has landed yet — must NOT block.
+        let (b2, fake2) = make()
+        b2.setCartridgeLoadStateForTesting(6)
+        fake2.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake2.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake2.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
+        let delivered = try? await deliver(b2)
+        #expect(delivered == 2.0)
+    }
+
+    /// D-01 (safety, C4 oracle): a refused no-cartridge attempt must not merely throw the right error —
+    /// it must leave delivery state byte-unchanged (no delivered value ever recorded).
+    @Test func noCartridgeRefusalRecordsNothingAsDelivered() async {
+        let (b, fake) = make()
+        b.setCartridgeLoadStateForTesting(1)   // LOAD_CARTRIDGE
+        let before = (lastBolusUnits: b.snapshot.lastBolusUnits, iobUnits: b.snapshot.iobUnits)
+        _ = await capture { try await deliver(b) }
+        #expect(b.snapshot.lastBolusUnits == before.lastBolusUnits)
+        #expect(b.snapshot.iobUnits == before.iobUnits)
+        #expect(fake.initiateWriteCount == 0)
+    }
+
+    /// Freshness (RESEARCH Pitfall 1): `LoadStatusRequest` must be part of the routine fast-poll tier
+    /// (`fastRead()`), not only the on-demand wizard refresh — proven behaviorally via the
+    /// `onReadDispatchedForTesting` seam (mirrors `PumpPairingInstrumentationTests`' technique) so the
+    /// gate reads a value the pump actually keeps current during normal operation.
+    @Test func loadStatusRequestIsPartOfTheRoutineFastPollTier() {
+        let (b, _) = make()
+        var dispatchedTypeNames: [String] = []
+        b.onReadDispatchedForTesting = { typeName, _ in dispatchedTypeNames.append(typeName) }
+        b.simulateRecurringFastAndStaticReadTickForTesting()
+        #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
+                "fastRead() must include LoadStatusRequest so cartridgeLoadState never goes permanently stale")
+    }
 }
