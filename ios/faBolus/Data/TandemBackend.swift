@@ -684,6 +684,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// is private outside this file. Used to recreate a mid change/load/prime-tubing state that the
     /// no-cartridge fail-closed guard in `validateDeliver` blocks on.
     func setCartridgeLoadStateForTesting(_ state: Int) { snapshot.cartridgeLoadState = state }
+    /// Test-only (Phase 09.9 D-02): directly set the last-known `reservoirUnits` reading, since
+    /// `snapshot`'s setter is private outside this file. Used to recreate the "last known reading was
+    /// below the requested total" precondition that the `.possiblyOutOfInsulin` nack enrichment reads.
+    func setReservoirUnitsForTesting(_ units: Double) { snapshot.reservoirUnits = units }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a

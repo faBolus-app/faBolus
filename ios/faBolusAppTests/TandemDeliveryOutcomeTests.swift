@@ -30,6 +30,16 @@ struct TandemDeliveryOutcomeTests {
     private func deliver(_ b: TandemBackend, _ u: Double = 2.0) async throws -> Double {
         try await b.deliverBolus(units: u, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
     }
+    /// Like `make()` but leaves the permission response unscripted, so a test can script a specific
+    /// permission nack (`make()` pre-scripts an auto-grant, which a later `.script(...)` call would only
+    /// queue BEHIND — never replace).
+    private func makeAwaitingPermission(poll: TimeInterval = 1.2) -> (TandemBackend, FakePumpTransport) {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.deliveryPollTimeoutOverride = poll
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        return (backend, fake)
+    }
     private func indeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
     private func capture(_ op: () async throws -> Double) async -> Error? {
         do { _ = try await op(); return nil } catch { return error }
@@ -306,5 +316,57 @@ struct TandemDeliveryOutcomeTests {
         b.simulateRecurringFastAndStaticReadTickForTesting()
         #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
                 "fastRead() must include LoadStatusRequest so cartridgeLoadState never goes permanently stale")
+    }
+
+    // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)
+
+    /// BolusPermissionResponse nack site: a real INVALID_PUMPING_STATE nack (reasonId 1) while the
+    /// app's last-known reservoir reading was below the requested total must surface the specific
+    /// `.possiblyOutOfInsulin` case, never the generic `.pumpRejected` — and must not reach initiate.
+    @Test func permissionNackWithLowReservoirIsPossiblyOutOfInsulin() async {
+        let (b, fake) = makeAwaitingPermission()
+        b.setReservoirUnitsForTesting(0.4)
+        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionDenied(nack: 1)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .possiblyOutOfInsulin(let reservoirUnits, _)? = e as? BolusError else {
+            Issue.record("expected BolusError.possiblyOutOfInsulin, got \(String(describing: e))")
+            return
+        }
+        #expect(reservoirUnits == 0.4)
+        #expect(fake.initiateWriteCount == 0, "a permission nack must never reach the initiate write")
+        #expect(!indeterminate(e))          // clean pre-initiate failure, not FB-02 indeterminate
+        #expect(!b.deliveryOutcomeUnknown)  // never blocked
+    }
+
+    /// InitiateBolusResponse non-accept site: the same low-reservoir inference applies to the
+    /// initiate-nack path, not only the permission-nack path.
+    @Test func initiateNackWithLowReservoirIsPossiblyOutOfInsulin() async {
+        let (b, fake) = make()
+        b.setReservoirUnitsForTesting(0.4)
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .possiblyOutOfInsulin(let reservoirUnits, _)? = e as? BolusError else {
+            Issue.record("expected BolusError.possiblyOutOfInsulin, got \(String(describing: e))")
+            return
+        }
+        #expect(reservoirUnits == 0.4)
+        #expect(!indeterminate(e))
+        #expect(!b.deliveryOutcomeUnknown)
+        #expect(fake.initiateWriteCount == 1)   // the initiate DID go out at this site — still a clean failure
+    }
+
+    /// Control (no over-claim): the SAME nack reason fires while the reservoir reading was ample — the
+    /// inference must not fire when there's no evidence for it. Stays the generic `.pumpRejected`.
+    @Test func permissionNackWithAmpleReservoirStaysGenericPumpRejected() async {
+        let (b, fake) = makeAwaitingPermission()
+        b.setReservoirUnitsForTesting(10.0)
+        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionDenied(nack: 1)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .pumpRejected? = e as? BolusError else {
+            Issue.record("expected generic BolusError.pumpRejected when reservoir is ample, got \(String(describing: e))")
+            return
+        }
+        #expect(!indeterminate(e))
+        #expect(fake.initiateWriteCount == 0)
     }
 }
