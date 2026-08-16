@@ -317,6 +317,10 @@ public enum BolusError: Error, LocalizedError {
     case indeterminate(String)
     /// FB-01: the dose was computed from unverified/assumed pump settings and cannot be auto-delivered.
     case unverifiedInputs(String)
+    /// Phase 09.9 D-01: the cartridge is mid change/load/prime-tubing (`!PumpSnapshot.cartridgeReadyForBolus`)
+    /// — dosing is physically impossible. Thrown BEFORE any signed frame is written; never a delivered
+    /// value, never a mutation of delivery state (fail-closed, C4 oracle never reports success for this).
+    case noCartridge(String)
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to a pump."
@@ -325,6 +329,7 @@ public enum BolusError: Error, LocalizedError {
         case .pumpRejected(let r): return "Pump rejected the bolus: \(r)."
         case .indeterminate(let r): return "Bolus outcome unknown — verify on the pump: \(r)."
         case .unverifiedInputs(let r): return "Pump settings not verified: \(r)."
+        case .noCartridge(let r): return "Cartridge not loaded: \(r)."
         }
     }
     /// True for an outcome that must block new deliveries until reconciled (FB-02).

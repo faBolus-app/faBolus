@@ -191,6 +191,15 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// tubing, 3 prime cannula, 4 prime nudge, 5 invalid, 6 unknown.
     public var cartridgeLoadState: Int = 6
     public var cartridgeLoadActive: Bool = false
+    /// The single source of truth for "is the cartridge in a state where a bolus can be attempted?"
+    /// (Phase 09.9 D-01). `false` while `cartridgeLoadState` is CHANGE_CARTRIDGE(0) / LOAD_CARTRIDGE(1) /
+    /// PRIME_TUBING(2) — Tandem's own `getIsInLoadingState()` triad. PRIME_CANNULA(3)/PRIME_NUDGE(4) are
+    /// deliberately NOT blocked this phase (whether the pump itself refuses a bolus during 3/4 is a
+    /// Phase-11 bench-verification item). The idle/unknown default (6) allows, so a bolus is never
+    /// blocked purely because the state hasn't been read yet. Every guard (BolusGate, TandemBackend,
+    /// MockBackend) reads THIS property — the `{0,1,2}` set must never be re-declared at a call site.
+    public var cartridgeReadyForBolus: Bool { !Self.cartridgeLoadingStates.contains(cartridgeLoadState) }
+    private static let cartridgeLoadingStates: Set<Int> = [0, 1, 2]
     /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
     public var controlIQWeightLbs: Int = 0
     public var controlIQTotalDailyInsulin: Int = 0
