@@ -28,11 +28,16 @@ final class ModeStore {
     private(set) var earnedMode: AppMode
     /// Whether the first-run mode onboarding has been shown (so it appears exactly once).
     private(set) var hasCompletedOnboarding: Bool
+    /// Phase 09.4 (D-01): whether the first-run "Connect your pump" step has been shown (so it appears
+    /// exactly once, mirroring `hasCompletedOnboarding` above). Gated in `RootContainerView` alongside
+    /// `!model.hasStoredPairing` so it never reappears once a pump is paired.
+    private(set) var hasCompletedPumpOnboarding: Bool
 
     private let d: UserDefaults
     private let settings: AppSettings
     private static let earnedKey = "modeEarned"
     private static let onboardedKey = "modeOnboarded"
+    private static let pumpOnboardedKey = "pumpConnectOnboarded"
 
     /// The active mode — read through `AppSettings` so the evaluator has a single source of truth.
     var activeMode: AppMode { settings.appMode }
@@ -41,6 +46,7 @@ final class ModeStore {
         self.d = defaults
         self.settings = settings
         hasCompletedOnboarding = d.object(forKey: Self.onboardedKey) as? Bool ?? false
+        hasCompletedPumpOnboarding = d.object(forKey: Self.pumpOnboardedKey) as? Bool ?? false
         if let raw = d.string(forKey: Self.earnedKey), let m = AppMode(rawValue: raw) {
             // Returning user: keep the earned ceiling and clamp the (possibly stale/over-high) persisted
             // active mode down to it, so a lowered ceiling can never leave a higher mode active.
@@ -83,6 +89,14 @@ final class ModeStore {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         d.set(true, forKey: Self.onboardedKey)
+    }
+
+    /// Phase 09.4 (D-01): mark the first-run "Connect your pump" step shown — mirrors `completeOnboarding()`
+    /// exactly. Called from any of the step's three exits (connect / demo pump / skip), so all three
+    /// dismiss the step equally (no confirmation, no extra tap).
+    func completePumpOnboarding() {
+        hasCompletedPumpOnboarding = true
+        d.set(true, forKey: Self.pumpOnboardedKey)
     }
 
     private func raise(to mode: AppMode) {
