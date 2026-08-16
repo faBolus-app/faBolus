@@ -1,6 +1,142 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "—" : {
+
+    },
+    "“%@” was paired with a 6-digit code, so it stays view-only. To let it control the pump, forget it and re-pair by scanning the QR code." : {
+
+    },
+    "“Remote confirms” lets the device deliver after confirming on its own screen; “I approve on this phone” makes each bolus wait for your OK here." : {
+
+    },
+    "**Advisory only** — never blocks or changes a dose. Eating nudges suggest a bolus when a meal looks likely. Off by default. Retrospective insights are under Data & History." : {
+
+    },
+    "**Advisory only** — reminds you to bolus when you're likely eating. Never doses, never blocks. Off by default." : {
+
+    },
+    "**Bolusing from the Apple Watch and Garmin is off by default.** Turn on a switch above to let that device deliver a bolus — you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Watch/Garmin bolus can be, on top of your pump's max bolus; the iPhone is never affected. **Read-only** overrides everything: while on, the Watch and Garmin show pump + CGM data only and can't deliver, whatever the switches above say. The iPhone is always unaffected — this is separate from the phone's own read-only mode." : {
+
+    },
+    "**Mark stale**: after this long, a reading is greyed and no longer auto-fills a correction. **Hide**: how long after that to keep showing the greyed value before it becomes “–”." : {
+
+    },
+    "**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. Both off/hidden keep the screen simple." : {
+
+    },
+    "**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default." : {
+
+    },
+    "%@" : {
+
+    },
+    "%@ · %@ U/hr" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@ U/hr"
+          }
+        }
+      }
+    },
+    "%@ · ≈%@/day" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · ≈%2$@/day"
+          }
+        }
+      }
+    },
+    "%@ → %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "%@ g" : {
+
+    },
+    "%@ g/U" : {
+
+    },
+    "%@ h without interaction" : {
+
+    },
+    "%@ is asking to deliver %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is asking to deliver %2$@."
+          }
+        }
+      }
+    },
+    "%@ lb" : {
+
+    },
+    "%@ mg/dL" : {
+
+    },
+    "%@ mg/dL/U" : {
+
+    },
+    "%@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"%@ mg/dL\", selected by the display-unit setting."
+    },
+    "%@ mmol/L/U" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"%@ mg/dL/U\" (ISF), selected by the display-unit setting."
+    },
+    "%@ min" : {
+
+    },
+    "%@ min (%@ h)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ min (%2$@ h)"
+          }
+        }
+      }
+    },
+    "%@ now, %@ over %@. Min 0.40 U total." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ now, %2$@ over %3$@. Min 0.40 U total."
+          }
+        }
+      }
+    },
+    "%@ now, then %@ over %@. faBolus is experimental and not FDA-cleared." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ now, then %2$@ over %3$@. faBolus is experimental and not FDA-cleared."
+          }
+        }
+      }
+    },
+    "%@ U" : {
+
+    },
+    "%@ U/day" : {
+
+    },
+    "%@ U/hr" : {
+
+    },
     "%@: %@ You can switch down anytime; switching up needs the setup step below." : {
       "comment" : "P16 F6 (N13) seed — mode picker footer. First %@ = active mode title, second %@ = its description.",
       "extractionState" : "manual",
@@ -12,6 +148,61 @@
           }
         }
       }
+    },
+    "%@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
+          }
+        }
+      }
+    },
+    "%@h" : {
+
+    },
+    "⚠️ %@ has NOT been verified on a real pump and will likely not work — it may do nothing or behave unexpectedly. It's a best-guess implementation from the protocol, not confirmed on hardware.\n\nOnly continue if you understand the risk and are watching the pump to confirm what actually happened." : {
+
+    },
+    "⚠️ The direct-BLE Dexcom source is experimental and has NOT been verified — a passive read likely will NOT connect (the sensor needs an authenticated session). Prefer Dexcom Share or the xDrip App Group. See docs/operate/cgm-failover.md." : {
+
+    },
+    "⚠️ The high/low alert-type mapping now matches the jwoglom reference (0 = high, 1 = low), but it is **not yet confirmed against a captured pump payload** — after setting, check on the pump that the intended threshold actually changed. See docs/UNVERIFIED-GUESSES.md." : {
+
+    },
+    "A CGM alert like “high glucose” is condition-based: the pump keeps re-raising it while the reading is actually high, so it can’t be cleared on the pump until glucose comes back in range. Clearing here snoozes it on your phone." : {
+
+    },
+    "A complete reset: deletes everything above **plus** your saved logins (pump pairing, PIN, and CGM credentials) and **unpairs the pump**. Your app preferences (modes, toggles) are kept. This can't be undone — export first. Like the delete above, it's refused while a bolus is unresolved." : {
+
+    },
+    "A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**." : {
+
+    },
+    "A remote requested to %@ insulin delivery. Confirm on the phone to proceed." : {
+
+    },
+    "A window like 22:00–07:00 wraps past midnight." : {
+
+    },
+    "Active" : {
+
+    },
+    "Active insulin (IOB)" : {
+
+    },
+    "Active insulin (IOB) · %@" : {
+
+    },
+    "Activity & sleep automation" : {
+
+    },
+    "Adapts the wrist threshold from your responses (and fine-tunes the model on-device when supported). Acting on a nudge = a real meal; dismissing it = a false alert. Everything stays on your device." : {
+
+    },
+    "Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory. Off by default to keep the dashboard clean." : {
+
     },
     "Adds suspend/resume, activity (Sleep/Exercise) modes, and display customization." : {
       "comment" : "P16 F6 (N13) seed — Standard mode description.",
@@ -37,6 +228,12 @@
         }
       }
     },
+    "Adds Time-in-Range, GMI, average, and variability over the last ~24 h to the remote dashboard." : {
+
+    },
+    "Advanced control" : {
+
+    },
     "Advanced mode exposes temp basal, profiles, Control-IQ settings, and pump limits — these change therapy. Only continue if you understand them." : {
       "comment" : "P16 F6 (N13) seed — expert opt-out alert body.",
       "extractionState" : "manual",
@@ -48,6 +245,60 @@
           }
         }
       }
+    },
+    "After %@ min" : {
+
+    },
+    "Alert at %@ U" : {
+
+    },
+    "Alerts on the host pump show here." : {
+
+    },
+    "Allowed while locked" : {
+
+    },
+    "An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app." : {
+
+    },
+    "Apple Watch" : {
+
+    },
+    "Apply to this pump" : {
+
+    },
+    "Back up" : {
+
+    },
+    "Backend" : {
+
+    },
+    "Backups are a `.json` file — save it to iCloud Drive or Files, and it stays in your own iCloud, never on our servers." : {
+
+    },
+    "Basal rate" : {
+
+    },
+    "Beta (faBolus Beta)" : {
+
+    },
+    "BLE session log (last %@)" : {
+
+    },
+    "Blocked actions no-op with a note on whichever device tried them — including the watch and Garmin." : {
+
+    },
+    "Bolus %@" : {
+
+    },
+    "Bolus confirmation" : {
+
+    },
+    "Bolus entry" : {
+
+    },
+    "Bolus screen" : {
+
     },
     "Cancel" : {
       "comment" : "P16 F6 (N13) seed — dialog/alert cancel button.",
@@ -61,6 +312,54 @@
         }
       }
     },
+    "Carb ratio" : {
+
+    },
+    "Carbs" : {
+
+    },
+    "CGM finds meal, wrist confirms" : {
+
+    },
+    "CGM high / low alerts" : {
+
+    },
+    "CGM only" : {
+
+    },
+    "Child mode is on. Enter the PIN to change settings." : {
+
+    },
+    "Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers." : {
+
+    },
+    "Choose a 4-digit passcode. You'll enter it on your Garmin watch to confirm a bolus. It's stored only as a salted hash on this phone — never sent to the watch." : {
+
+    },
+    "Choose what this device may do. View only shows status but can't deliver boluses or change the pump — you can change this anytime under Paired remotes." : {
+
+    },
+    "Choose what to save. **Pump settings** need a connected pump%@. **Credentials & pairing** adds your CGM logins and the pump PIN to the file — leave off unless you need a full restore, and then encrypt it below." : {
+
+    },
+    "Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)" : {
+
+    },
+    "Confirm" : {
+
+    },
+    "Confirm to deliver." : {
+
+    },
+    "Connect" : {
+
+    },
+    "Connecting…" : {
+
+    },
+    "Connection telemetry" : {
+
+    },
     "Continue to %@ mode?" : {
       "comment" : "P16 F6 (N13) seed — unlock confirmation dialog title. %@ = next mode title.",
       "extractionState" : "manual",
@@ -72,6 +371,34 @@
           }
         }
       }
+    },
+    "Controlling" : {
+
+    },
+    "Correction factor (ISF)" : {
+
+    },
+    "CR %@ g/U · ISF %@ · Target %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "CR %1$@ g/U · ISF %2$@ · Target %3$@"
+          }
+        }
+      }
+    },
+    "Creates a new profile with one time-segment starting at midnight. Add more segments after. ⚠️ Experimental: the field masks (idpStatusId, bitmasks) now match the captured reference vectors, but the **end-to-end pump write is unproven** — verify every value on the pump. Insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md." : {
+
+    },
+    "Creates the profiles above and sets Control-IQ + max bolus on the connected Mobi. Experimental — verify against your prescription." : {
+
+    },
+    "Credentials save automatically. **Test** pulls a live reading from the fallback source you've selected above, so you can confirm just that one works. Direct-BLE sources (Dexcom G7/G6) need the sensor nearby and can take up to ~30 s." : {
+
+    },
+    "Critical Alerts let faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected." : {
+
     },
     "Current mode" : {
       "comment" : "P16 F6 (N13) seed — mode picker label.",
@@ -85,6 +412,81 @@
         }
       }
     },
+    "Current: %@" : {
+
+    },
+    "Customize" : {
+
+    },
+    "Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. Mirrored to the remotes on the next update." : {
+
+    },
+    "Default entry mode and increments for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same settings as under Bolus & entry." : {
+
+    },
+    "Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Apple Watch and Garmin bolus screens." : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete “%@”? This can't be undone." : {
+
+    },
+    "Delivering %@…" : {
+
+    },
+    "Developer — Garmin remote" : {
+
+    },
+    "Dexcom G5 / G6 / ONE (direct — experimental)" : {
+
+    },
+    "Dexcom Share (last resort)" : {
+
+    },
+    "Diagnostics" : {
+
+    },
+    "Each segment sets basal, carb ratio, ISF, and target from its start time until the next. ⚠️ Experimental: segment writes send the capture-aligned changed-fields mask (idpStatusId 31 for create/modify, 0 for delete), but the **end-to-end pump write is unproven** — verify the result on the pump. Editing the basal schedule is insulin-affecting — bench-validate on saline. See docs/UNVERIFIED-GUESSES.md." : {
+
+    },
+    "Encryption" : {
+
+    },
+    "Enter this code on the remote" : {
+
+    },
+    "Every %@ days" : {
+
+    },
+    "Every therapy-setting change is recorded with its origin and time. This log stays on this device. Revert re-applies the previous value to the pump — it asks for confirmation and needs a live pump connection." : {
+
+    },
+    "Every therapy-setting change, with its origin and time — stays on this device." : {
+
+    },
+    "Experimental and often unreliable: a G6 only talks to its authenticated app and allows few Bluetooth connections, so this passive read may never connect. For a dependable backup, prefer **Dexcom Share** (above) or **xDrip4iOS via the App Group**. Keep the official Dexcom app running — faBolus reads passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it from the connected pump." : {
+
+    },
+    "Export" : {
+
+    },
+    "Extended bolus %@" : {
+
+    },
+    "faBolus exposes two Shortcuts actions — **Set Exercise Mode** and **Set Sleep Mode** — that you drop into an automation. iOS can't create the automation for you, so set it up once in the **Shortcuts** app." : {
+
+    },
+    "faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again." : {
+
+    },
+    "faBolus is experimental and not FDA-cleared. This delivers on the other phone's pump." : {
+
+    },
+    "faBolus keeps your glucose, insulin and carb history on this device to power stats, charts, and retrospective insights — about **1 MB per month**, so keeping everything is fine. This control is only if you prefer to auto-delete older data." : {
+
+    },
     "faBolus starts in **Simple mode** — the essentials: see your glucose and give a bolus. As you get comfortable you can unlock more, one step at a time, in **Settings → Mode**." : {
       "comment" : "P16 F6 (N13) seed — first-run onboarding body (Markdown emphasis).",
       "extractionState" : "manual",
@@ -96,6 +498,48 @@
           }
         }
       }
+    },
+    "faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected." : {
+
+    },
+    "FreeStyle Libre 2/3 — LibreLinkUp" : {
+
+    },
+    "Full reset" : {
+
+    },
+    "g" : {
+
+    },
+    "g carbs" : {
+
+    },
+    "Garmin bolus passcode" : {
+
+    },
+    "Garmin can't trigger this automatically (Connect IQ has no activity-start event for a background app, and Garmin doesn't integrate with Apple Shortcuts). Switch modes from the pump, or from **Pump Control** in faBolus." : {
+
+    },
+    "Garmin remote" : {
+
+    },
+    "Glucose failover" : {
+
+    },
+    "Glucose staleness" : {
+
+    },
+    "Hidden" : {
+
+    },
+    "High alert at %@ mg/dL" : {
+
+    },
+    "High alert at %@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"High alert at %@ mg/dL\", selected by the display-unit setting."
+    },
+    "How much of faBolus is shown — Simple, Standard, or Advanced. Start simple; unlock more as you go." : {
+
     },
     "I already know pump control — unlock Advanced" : {
       "comment" : "P16 F6 (N13) seed — expert opt-out button.",
@@ -109,6 +553,12 @@
         }
       }
     },
+    "In-memory only — connect/disconnect edges since launch, forgotten on restart. Never uploaded." : {
+
+    },
+    "iPhone increments" : {
+
+    },
     "Just the essentials: glucose and bolus." : {
       "comment" : "P16 F6 (N13) seed — Simple mode description.",
       "extractionState" : "manual",
@@ -120,6 +570,42 @@
           }
         }
       }
+    },
+    "Learns the coarse places you eat (on-device) and skips nudges elsewhere. Needs a few meals to learn first — %@ place(s) learned. Never gates until then." : {
+
+    },
+    "Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (with permission) deliver boluses — even when this phone is locked. Each device's permissions (view-only vs. control) are set when you pair it and editable under **Pair a remote → the device**. Pairing is authenticated and end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected.)" : {
+
+    },
+    "Limits" : {
+
+    },
+    "Limits & Control-IQ" : {
+
+    },
+    "Loading segments…" : {
+
+    },
+    "Longer = more confident / fewer false alerts, but a later nudge (less useful for pre-bolusing)." : {
+
+    },
+    "Low alert at %@ mg/dL" : {
+
+    },
+    "Low alert at %@ mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of \"Low alert at %@ mg/dL\", selected by the display-unit setting."
+    },
+    "Make “%@” the active profile? This changes your basal schedule." : {
+
+    },
+    "Max basal" : {
+
+    },
+    "mg/dL" : {
+
+    },
+    "mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the bare \"mg/dL\" unit label, selected by the display-unit setting."
     },
     "Mode" : {
       "comment" : "P16 F6 (N13) seed — mode section header and navigation title.",
@@ -133,6 +619,172 @@
         }
       }
     },
+    "Nightscout (any CGM)" : {
+
+    },
+    "Nightscout upload" : {
+
+    },
+    "No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (%@) or cancel." : {
+
+    },
+    "No profiles loaded yet." : {
+
+    },
+    "No rules yet. Add one to automatically snooze or clear alerts that meet conditions you choose (e.g. quiet CGM highs overnight)." : {
+
+    },
+    "No setting changes recorded yet." : {
+
+    },
+    "No stored history yet — it fills in as glucose comes in." : {
+
+    },
+    "None (pump only)" : {
+
+    },
+    "Notification delivery" : {
+
+    },
+    "Notification telemetry" : {
+
+    },
+    "Off" : {
+
+    },
+    "Official (faBolus)" : {
+
+    },
+    "On = the child may do it. Off = blocked. Insulin-affecting actions are off by default." : {
+
+    },
+    "On the host phone: Settings → Remotes & devices → Remote access → turn on “Allow remote devices”, then Pair a remote → QR. Scan it here. The host controls what this phone may do." : {
+
+    },
+    "On the pump: Options → Device Settings → Bluetooth → Pair Device (Mobi: on the charging pad, press the pump button twice; its PIN is behind the cartridge). Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nOn a Tandem Mobi the PIN never changes, so after connecting faBolus offers to save it and skip re-typing. To pair a different pump, edit the code above or Clear saved PIN." : {
+
+    },
+    "Opens faBolus.org." : {
+
+    },
+    "Optional. When set, delivering a bolus from your Garmin watch asks for this **4-digit passcode instead of** the tap-to-confirm — a stronger check for a watch with no wrist detection. The code is verified on this phone (stored only as a salted hash); the watch never stores it. Wrong entries slow down with a soft lockout that resets itself — never a permanent lock. You can change or remove it here anytime. The Apple Watch doesn't use a passcode: its wrist detection already confirms you're wearing it." : {
+
+    },
+    "Outside US" : {
+
+    },
+    "Over %@ · %@ readings · CV ≤ 36%% is a common stability target" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Over %1$@ · %2$@ readings · CV ≤ 36%% is a common stability target"
+          }
+        }
+      }
+    },
+    "Pair a remote" : {
+
+    },
+    "Pair the faBolus Mac app or a parent's iPhone — it shows status and can send boluses your phone delivers. QR is recommended (higher-entropy, just scan it); a typed code works if the remote has no camera. Only a remote you pair can connect." : {
+
+    },
+    "Pair the faBolus Mac app or a parent's iPhone to view status and send boluses. First-time pairing needs a one-time code or QR scan; the host grants each remote its own permissions." : {
+
+    },
+    "Pair with the host phone" : {
+
+    },
+    "Paired remotes" : {
+
+    },
+    "Parent approval" : {
+
+    },
+    "Passwords don't match." : {
+
+    },
+    "Per-category counts: delivered (d), dismissed (x), acted-upon (a). Local-only, never uploaded." : {
+
+    },
+    "Permanently deletes all on-device health data — glucose/insulin/carb history, the settings change log, the bolus delivery audit trail, and local diagnostics. **Your pump pairing and saved logins are kept, and your pump/CGM are not touched.** If a bolus is in progress or unconfirmed, deletion is refused until it's resolved." : {
+
+    },
+    "Permanently deletes all stored glucose/insulin/carb history from this device. Your pump and CGM are not affected." : {
+
+    },
+    "Personalization (on-device)" : {
+
+    },
+    "Pick a fallback source above, then test it here. Credentials save automatically." : {
+
+    },
+    "Prime amount: %@ U" : {
+
+    },
+    "Profiles" : {
+
+    },
+    "Pump alerts and alarms will appear here." : {
+
+    },
+    "Pump clock" : {
+
+    },
+    "Pump history loads after connecting. Boluses, carbs, basal changes, alerts, and cartridge events appear here." : {
+
+    },
+    "Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to your Nightscout site. **Off by default — this sends your health data off-device.** Set the site URL, token, and (optional) API secret under **CGM credentials & testing**." : {
+
+    },
+    "Rate: %@%% of basal" : {
+
+    },
+    "Read-only diagnostics." : {
+
+    },
+    "Remote — commands run on the host phone, which decides what's allowed." : {
+
+    },
+    "Remote access" : {
+
+    },
+    "Remote dashboard" : {
+
+    },
+    "Remotes" : {
+
+    },
+    "Removes the pairing with %@. Scan its QR again to reconnect." : {
+
+    },
+    "Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md)." : {
+
+    },
+    "Requires %@ to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings." : {
+
+    },
+    "Restore" : {
+
+    },
+    "Rules" : {
+
+    },
+    "Rules are checked top to bottom; the first match wins. **Alarms and malfunctions are never auto-dismissed or auto-snoozed** for safety." : {
+
+    },
+    "Safety" : {
+
+    },
+    "Saves everything faBolus keeps on this device — your glucose, insulin and carb history, the settings change log, and the bolus delivery audit trail — as a single **`.json`** file you can save to Files or iCloud Drive. It never leaves the device except to the file you choose; faBolus has no servers." : {
+
+    },
+    "Scan this on the remote (Mac or parent iPhone)" : {
+
+    },
+    "Searching… make sure the host phone has remote access enabled and is nearby." : {
+
+    },
     "Set up %@ mode…" : {
       "comment" : "P16 F6 (N13) seed — guided next-step unlock button. %@ = next mode title.",
       "extractionState" : "manual",
@@ -144,6 +796,24 @@
           }
         }
       }
+    },
+    "Sets a PIN and locks this device for a child: insulin delivery and settings changes are blocked unless you allow them below. You'll need the PIN to change these or turn it off." : {
+
+    },
+    "Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST)." : {
+
+    },
+    "Settings are locked" : {
+
+    },
+    "Shown (top → bottom)" : {
+
+    },
+    "Shown on watch (top → bottom)" : {
+
+    },
+    "Siri (read-only)" : {
+
     },
     "Skips the guided steps and switches straight to Advanced. Only if you already understand these features." : {
       "comment" : "P16 F6 (N13) seed — expert opt-out footer.",
@@ -168,6 +838,124 @@
           }
         }
       }
+    },
+    "Statistics" : {
+
+    },
+    "Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone)." : {
+
+    },
+    "Steps for the iPhone bolus screen and the Home-Screen widget." : {
+
+    },
+    "Stopping ends the current sensor session on the pump." : {
+
+    },
+    "Storage" : {
+
+    },
+    "Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation." : {
+
+    },
+    "Swiping up on the watch moves down this list. Swipe a row left to hide it — at least one screen must stay shown." : {
+
+    },
+    "Tap a device to set what it can do (view-only vs. control) or to forget it." : {
+
+    },
+    "Tap a profile to view/edit its time segments. Swipe to switch (changes your basal schedule), rename, or delete. The active profile can't be deleted." : {
+
+    },
+    "Tap to show a screen on the watch." : {
+
+    },
+    "Tapping the watch history chart cycles through the enabled ranges. At least one must stay enabled." : {
+
+    },
+    "Target glucose" : {
+
+    },
+    "The G7/ONE+ pairing code is on the sensor applicator." : {
+
+    },
+    "The screen shown when the Garmin app launches (from the shown screens)." : {
+
+    },
+    "The sensor code is on the applicator/box. Enter 0000 to join an already-running session. “Read” fills the transmitter ID from the pump." : {
+
+    },
+    "These are the pump's safety ceilings. The bolus screen still caps at the pump's max bolus." : {
+
+    },
+    "These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus." : {
+
+    },
+    "This backup" : {
+
+    },
+    "This backup is password-protected. Enter the password you set when you created it." : {
+
+    },
+    "This build was compiled **without the Garmin Connect IQ SDK**, so the Garmin remote can't be enabled. To use a Garmin watch, install the Connect IQ SDK and rebuild (see the README / scripts/generate-project.sh)." : {
+
+    },
+    "This build was compiled without the Apple Watch app (FABOLUS_WATCH=0), so nothing installs to a paired watch. Rebuild with the watch enabled (the default) to use it — see scripts/generate-project.sh." : {
+
+    },
+    "This changes %@ on your pump back to %@. It's recorded as a new change and can itself be reverted." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This changes %1$@ on your pump back to %2$@. It's recorded as a new change and can itself be reverted."
+          }
+        }
+      }
+    },
+    "This deletes all on-device health data AND your saved logins (pump pairing, PIN, CGM credentials), and unpairs the pump. %@ Your app preferences are kept. This can't be undone — export first. Refused while a bolus is unresolved." : {
+
+    },
+    "This device was paired with a 6-digit code, so it stays view-only (it can see status but can't deliver boluses or change the pump). To let it control the pump, forget it and re-pair by scanning the QR code." : {
+
+    },
+    "This lets you deliver real insulin from your Apple Watch, right from your wrist. The Watch's wrist detection makes an accidental tap materially less likely than on Garmin, but you're still turning on insulin delivery — it stays off until you allow it here, and every bolus still needs your confirmation on the Watch. You can turn this off any time." : {
+
+    },
+    "This lets you deliver real insulin from your Garmin watch. A Garmin has no wrist detection, so take extra care that a bolus is never started by an accidental button press — it stays off until you allow it here, and every bolus still needs your confirmation on the watch. You can turn this off any time." : {
+
+    },
+    "This looks like a Tandem Mobi — its PIN doesn't change. faBolus can save it so you don't re-type it next time you connect. You can change or clear it later on the Connect screen." : {
+
+    },
+    "This permanently deletes all on-device health data (history, settings change log, bolus audit trail, diagnostics). Your pump pairing and saved logins are kept. This can't be undone — export first if you want a copy." : {
+
+    },
+    "This pump is different from the one faBolus last used, so its therapy values were refreshed automatically. Reset pump-specific app settings too — Control-IQ automation, pump time-sync, alert rules, and the therapy change history — back to defaults? Your display preferences and CGM setup are kept either way." : {
+
+    },
+    "This pump model (t:slim X2) doesn’t allow dismissing notifications from a phone — Tandem’s own app disables it too. “Snooze” silences the alert here in faBolus; you’ll still need to clear it on the pump." : {
+
+    },
+    "Time of day" : {
+
+    },
+    "Time segments" : {
+
+    },
+    "Turn off (PIN required)" : {
+
+    },
+    "Turning %@ off stops automatic basal adjustments. Weight and total daily insulin are used by the algorithm." : {
+
+    },
+    "Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)" : {
+
+    },
+    "U" : {
+
+    },
+    "Units" : {
+
     },
     "Unlock %@" : {
       "comment" : "P16 F6 (N13) seed — confirmation dialog unlock button. %@ = next mode title.",
@@ -205,6 +993,27 @@
         }
       }
     },
+    "US" : {
+
+    },
+    "Use this phone for its own pump, or turn the whole app into a remote for another phone's pump. Switching is instant and your pairing is remembered." : {
+
+    },
+    "Waiting for remote approval of %@…" : {
+
+    },
+    "Watch & Garmin bolusing" : {
+
+    },
+    "Watch & Garmin increments" : {
+
+    },
+    "Watch display" : {
+
+    },
+    "Watch/Garmin bolus" : {
+
+    },
     "Welcome to faBolus" : {
       "comment" : "P16 F6 (N13) seed — first-run onboarding title.",
       "extractionState" : "manual",
@@ -216,6 +1025,75 @@
           }
         }
       }
+    },
+    "When on, a bolus started on this phone waits for a paired parent device (Mac or iPhone) to approve it — it isn't delivered until then, and is cancelled if no one responds within a minute. Requires **Remotes & devices → Allow remote devices** to be on and a parent device paired." : {
+
+    },
+    "When read-only, “%@” can see status but can't deliver boluses or change the pump." : {
+
+    },
+    "Which published Garmin app the phone pairs with. After changing, re-run “Set up Garmin remote” (Settings → Watch & Garmin) or reopen the app for it to take effect. Beta = the original app id; Official = the second store copy." : {
+
+    },
+    "Which pump this build talks to. Takes effect after you reopen the app." : {
+
+    },
+    "Wrist + CGM (both, always on)" : {
+
+    },
+    "Wrist only" : {
+
+    },
+    "Wrist or CGM (either)" : {
+
+    },
+    "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM changed while this dose was on screen. The new reading (%1$@ mg/dL) suggests %2$@ instead of %3$@."
+          }
+        }
+      }
+    },
+    "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@." : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the mg/dL CGM-changed message, selected by the display-unit setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM changed while this dose was on screen. The new reading (%1$@ mmol/L) suggests %2$@ instead of %3$@."
+          }
+        }
+      }
+    },
+    "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM reading (%1$@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%2$@), or cancel."
+          }
+        }
+      }
+    },
+    "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel." : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the mg/dL stale-CGM message, selected by the display-unit setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM reading (%1$@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%2$@), or cancel."
+          }
+        }
+      }
+    },
+    "Your Dexcom account with Share enabled and uploading. Cloud-only and unreliable — a last-resort feed for G6." : {
+
+    },
+    "Your LibreLinkUp follower account (share from the LibreLink app). Region is auto-detected on first login if left blank." : {
+
     }
   },
   "version" : "1.0"

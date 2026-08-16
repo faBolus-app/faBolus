@@ -61,7 +61,11 @@ struct GlucoseQueryIntent: AppIntent {
         let trend = SiriFormat.trendWord(s.trendArrow)
         let trendPhrase = trend.isEmpty ? "" : " and \(trend)"
         let age = SiriFormat.age(s.glucoseDate)
-        return .result(dialog: "Your glucose is \(g)\(trendPhrase), \(age).")
+        // 04-08 gap closure (SC1): this spoken dialog was still a bare mg/dL Int, same class of gap
+        // already fixed in ShortcutsIntents.swift's GetGlucoseValueIntent — mirror that fix here.
+        let unit = await AppSettings.shared.glucoseDisplayUnit
+        let spoken = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+        return .result(dialog: "Your glucose is \(spoken)\(trendPhrase), \(age).")
     }
 }
 
@@ -91,7 +95,10 @@ struct PumpStatusIntent: AppIntent {
         var parts: [String] = []
         if let g = s.glucose, !s.isGlucoseStale {
             let trend = SiriFormat.trendWord(s.trendArrow)
-            parts.append(trend.isEmpty ? "Glucose \(g)" : "Glucose \(g) and \(trend)")
+            // 04-08 gap closure (SC1): same bare-mg/dL spoken-dialog gap as GlucoseQueryIntent above.
+            let unit = await AppSettings.shared.glucoseDisplayUnit
+            let spoken = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            parts.append(trend.isEmpty ? "Glucose \(spoken)" : "Glucose \(spoken) and \(trend)")
         }
         parts.append(s.iobUnits > 0 ? "\(SiriFormat.units(s.iobUnits)) on board" : "no insulin on board")
         if s.reservoirUnits > 0 { parts.append("reservoir \(Int(s.reservoirUnits)) units") }

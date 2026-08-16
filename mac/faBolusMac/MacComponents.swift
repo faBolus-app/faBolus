@@ -1,6 +1,17 @@
 import SwiftUI
 import Charts
 import faBolusCore
+import faBolusDesign
+
+/// Glucose color for the Mac app views: grey when stale or missing, else the `faBolusDesign.AppTheme`
+/// band color (classified via `faBolusCore.GlucoseRange.classify`, NOT the shared
+/// `RemoteClientModel.band` indirection — Phase 09.1 D-03). Replaces the deleted `MacTheme.glucoseColor`,
+/// preserving its exact grey-when-stale / grey-when-nil fallback order.
+private func macGlucoseColor(_ mgdl: Int?, stale: Bool) -> Color {
+    if stale { return .secondary }
+    guard let g = mgdl else { return .gray }
+    return AppTheme.glucoseColor(g)
+}
 
 // MARK: - Status (glucose + trend + pills)
 
@@ -10,6 +21,14 @@ struct MacStatusView: View {
     // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
+    /// Phase 09.1 (D-04) — the classified band for the icon+word non-color channel. `nil` while
+    /// hidden/stale/missing (the number is already greyed/hidden then; no band color to duplicate,
+    /// mirroring `StatusRingView`/`WatchHUDView`).
+    private var band: GlucoseRange? {
+        guard !model.glucoseHidden, !model.isGlucoseStale, let g = model.glucose else { return nil }
+        return GlucoseRange.classify(g)
+    }
+
     var body: some View {
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -18,11 +37,16 @@ struct MacStatusView: View {
                 Text(model.glucoseHidden ? "—" : model.displayGlucose)
                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                    .foregroundStyle(model.isGlucoseStale ? Color.secondary : MacTheme.glucoseColor(model.glucose))
+                    .foregroundStyle(macGlucoseColor(model.glucose, stale: model.isGlucoseStale))
                 if !model.glucoseHidden {
                     Text(model.trend).font(.system(size: 28))
                         .foregroundStyle(.secondary)
                 }
+            }
+            if let band {
+                // announcesOwnLabel: false — statusA11yLabel already speaks the band word below.
+                BandIndicator(band: band, showWord: true, announcesOwnLabel: false)
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             if let age = model.ageLabel {
                 Text(age).font(.caption).foregroundStyle(.secondary)
@@ -41,12 +65,16 @@ struct MacStatusView: View {
     }
 
     /// N12: spoken description of the Mac status block, including "stale" when de-emphasized.
+    /// Phase 09.1 (D-04): also speaks the band word for a fresh reading (mirrors
+    /// `StatusRingView.a11yLabel` / `WatchHUDView.glanceGlucoseLabel`) — `BandIndicator` above sets
+    /// `announcesOwnLabel: false` to avoid double-announcement.
     private var statusA11yLabel: String {
         var parts: [String] = []
         if model.glucoseHidden { parts.append("Glucose unavailable") }
         else {
             parts.append("Glucose \(model.displayGlucose)")
             parts.append(model.trend)
+            if let band { parts.append(band.shortLabel) }
         }
         if model.isGlucoseStale { parts.append("stale") }
         if let age = model.ageLabel { parts.append(age) }
@@ -127,10 +155,10 @@ struct MacChartView: View {
             } else {
                 Chart {
                     RectangleMark(yStart: .value("lo", GlucoseThresholds.low), yEnd: .value("hi", GlucoseThresholds.high))
-                        .foregroundStyle(.green.opacity(0.12))
+                        .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(pts.indices, id: \.self) { i in
                         PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
-                            .foregroundStyle(MacTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
+                            .foregroundStyle(AppTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
                     }
                 }
                 .chartYScale(domain: 40...300)
@@ -251,7 +279,7 @@ struct MacBolusEntryView: View {
     /// stay silent (the button simply stays disabled). Exhaustive so a new reason can't be dropped.
     private var blockMessage: String? {
         switch gate.reason {
-        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied, .noCartridge:
             return gate.reason?.userMessage
         case .belowMinimum, .aboveMax, .none:
             return nil

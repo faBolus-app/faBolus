@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 /// Home Screen medium overview: glucose + trend + a sparkline, with Active Insulin, reservoir,
 /// and last bolus. Tapping opens the app.
@@ -19,24 +21,51 @@ struct StatusWidgetView: View {
     let snap: WidgetSnapshot
     /// Entry display date — staleness is evaluated against this, not wall-clock (see `GlucoseWidgetView`).
     var now: Date = Date()
-    private var color: Color { WidgetUI.glucoseColor(snap, now: now) }
+    /// Phase 09.1 (D-03): classifies via `faBolusCore.GlucoseRange.classify` and colors via
+    /// `faBolusDesign.AppTheme.glucoseColor(_:stale:)` — byte-identical to the deleted local switch
+    /// (stale, or an unknown/missing reading, greys exactly as before).
+    private var color: Color {
+        guard let g = snap.glucose else { return .gray }
+        return AppTheme.glucoseColor(g, stale: WidgetUI.isStale(snap, now: now))
+    }
+    /// Phase 04-03: resolve the active display unit from the snapshot (nil ⇒ mgdl) and render the
+    /// glucose number through the `WidgetGlucoseUnit` mirror instead of the bare mg/dL "\(g)" text.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
+    private var bg: String {
+        if snap.isHidden(asOf: now) { return "--" }
+        guard let g = snap.glucose, g > 0 else { return "--" }
+        return unit.format(mgdl: g)
+    }
+    /// Phase 09.1 (D-04) — the classified band for the redundant icon+word non-color channel (this
+    /// family is roomy — `systemMedium` — so the word always shows). `nil` while stale/unknown (the
+    /// number is already greyed then; no band color to duplicate, mirroring `StatusRingView`).
+    private var band: GlucoseRange? {
+        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose else { return nil }
+        return GlucoseRange.classify(g)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(WidgetUI.glucoseText(snap, now: now))
+                    Text(bg)
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
                     Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
                 }
-                // The SAMPLE age (orange once stale), replacing a static "mg/dL" label — so a stale relay
+                if let band {
+                    BandIndicator(band: band, showWord: true)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                // The SAMPLE age (orange once stale), replacing a static unit label — so a stale relay
                 // is visible on the overview, not silently shown as current (group A / C7).
                 if let d = snap.glucoseDate {
                     Text(d, style: .relative).font(.caption2)
                         .foregroundStyle(WidgetUI.isStale(snap, now: now) ? .orange : .secondary)
-                } else {
-                    Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                } else if snap.showUnitLabel {
+                    // Owner-requested toggle: this fallback caption (no reading yet, so no age to
+                    // show) is the only persistent unit caption this tile renders.
+                    Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                 }
                 Sparkline(points: snap.recentPoints).frame(height: 34).padding(.top, 2)
             }

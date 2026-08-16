@@ -5,7 +5,7 @@ import WidgetKit
 
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
 /// (Apple Watch over `RemoteLink`, Mac/iPhone over `BLELink`). It is a *dumb remote*: it never touches the
-/// pump (PumpX2Kit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
+/// pump (TandemKit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
 /// status the phone echoes back, and publishes the latest glucose/pump state to the App Group for
 /// this device's widgets/complication.
 ///
@@ -445,11 +445,5 @@ class RemoteClientModel {
     /// the bolus screen so the estimate is off the newest value.
     func requestStatus(forceGlucose: Bool) {
         var c = RemoteCommand(kind: .statusRead); c.forceGlucose = forceGlucose; link.send(c)
-    }
-
-    /// modern band color index for a glucose value (0 low, 1 in-range, 2 high, 3 urgent-high).
-    /// Delegates to the single `GlucoseRange` classifier (`GlucoseThresholds` bounds) — no re-hardcoded switch.
-    nonisolated static func band(_ mgdl: Int) -> Int {
-        GlucoseRange.classify(mgdl).index
     }
 }

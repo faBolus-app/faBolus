@@ -72,7 +72,7 @@ while BG is genuinely still high) are re-raised by the pump every poll.
 - Refresh the mkdocs site for all of the above (tabs/settings, IOB overlay, Siri, Garmin config).
 - Add a **Building & installing** guide: toolchain (Xcode + XcodeGen, Connect IQ SDK, JDK for the
   oracle), signing/team + App Group capability, `xcodebuild`/`devicectl` device install, building
-  and beta-uploading the Garmin `.iq`, and running PumpX2Kit tests against the oracle.
+  and beta-uploading the Garmin `.iq`, and running TandemKit tests against the oracle.
 
 ## Deferred / notes
 - Apple Watch full parity (history plot, details screen) if wanted.
@@ -119,7 +119,7 @@ quick toggle. Ties into the existing untested **Phase-1 direct-pump** scaffold
 (`watch/faBolusWatch/WatchPumpClient.swift`, `WatchDirectView.swift`). Work required:
 1. **Phase 2 watch backend** — port `TandemBackend`'s tiered polling + signed
    `deliverBolus`/`cancelBolus`/`dismissNotification` + snapshot building into `WatchPumpClient`
-   (the `PumpX2BLE`/`PumpX2Auth`/`PumpX2Messages` libs already run on watchOS unchanged).
+   (the `TandemBLE`/`TandemAuth`/`TandemMessages` libs already run on watchOS unchanged).
 2. **Reverse the relay** — the watch becomes the `statusCommand` producer / `remoteDeliver`
    executor / echo source; iOS becomes a `RemoteClientModel` consumer. `RemoteLink`
    (WatchConnectivity) has no host/remote role today (cf. `PeerLink.Role`) — add one.

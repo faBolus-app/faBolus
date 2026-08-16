@@ -1,22 +1,67 @@
 import Foundation
 
-/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. The widget/complication extension
-/// targets deliberately do **not** link faBolusCore (they compile `WidgetShared.swift` directly for a
-/// lightweight binary), so the canonical constants aren't reachable there — this mirror carries the
-/// same values. `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH) asserts these equal
-/// the canonical `GlucoseThresholds`, so the two can't drift silently. See `GlucoseThresholds` for the
-/// clinical source (Battelino 2019 international TIR consensus, §13).
+/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. As of Phase 09.1 (D-01/D-02) the
+/// widget/complication extension targets DO transitively link `faBolusCore` via `faBolusDesign` (for
+/// the shared band-color tokens + `BandIndicator` primitive) — but this mirror is intentionally
+/// RETAINED rather than retired this phase, to keep the diff scoped to color/primitive routing (see
+/// the phase's scoped-out note). `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH)
+/// asserts these equal the canonical `GlucoseThresholds`, so the two can't drift silently. See
+/// `GlucoseThresholds` for the clinical source (Battelino 2019 international TIR consensus, §13).
 public enum WidgetGlucoseThresholds {
     public static let low = 70        // == GlucoseThresholds.low
     public static let high = 180      // == GlucoseThresholds.high
     public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
 }
 
+/// The widget island's mirror of `faBolusCore.GlucoseUnit` (Phase 04-03, mmol/L display-unit
+/// support). RETAINED as-is post-Phase-09.1 for the same reason as `WidgetGlucoseThresholds` above
+/// (the extensions now link faBolusCore transitively via faBolusDesign, but retiring this mirror is
+/// out of scope this phase), so this carries the same two-case shape, the same 18.0182
+/// factor, and the same 1-decimal mmol format. The unit rides the App Group as a plain `String?`
+/// wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum directly (Pitfall
+/// 6: a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
+/// unrecognized token resolves to `.mgdl` (legacy-safe, matches D-03's mg/dL default).
+/// `WidgetGlucoseUnitMirrorTests` (app target, which links BOTH) pins this to the canonical
+/// `faBolusCore.GlucoseUnit` so the two can't drift silently (T-04-06).
+public enum WidgetGlucoseUnit: String {
+    case mgdl, mmol
+
+    /// mg/dL per mmol/L (D-05, locked) — mirrors `faBolusCore.GlucoseUnit.mgdlPerMmol` exactly;
+    /// pinned equal by the drift-guard test, not re-derived independently.
+    public static let mgdlPerMmol = 18.0182
+
+    /// Resolve the App-Group wire token ("mgdl"|"mmol") to a unit. `nil` or an unrecognized token
+    /// (e.g. a future third case from a newer phone build) falls back to `.mgdl` — behavior-
+    /// preserving, never a crash, never a silently-wrong conversion.
+    public init(wireToken: String?) {
+        self = wireToken.flatMap(WidgetGlucoseUnit.init(rawValue:)) ?? .mgdl
+    }
+
+    /// mg/dL → a display string in this unit. Identical shape/rounding to
+    /// `faBolusCore.GlucoseUnit.format(mgdl:)`: `.mgdl` is the plain integer, `.mmol` is ALWAYS
+    /// exactly 1 decimal.
+    public func format(mgdl: Int) -> String {
+        switch self {
+        case .mgdl: return "\(mgdl)"
+        case .mmol: return String(format: "%.1f", Double(mgdl) / Self.mgdlPerMmol)
+        }
+    }
+
+    /// The unit suffix shown next to a formatted value, same convention as the phone's
+    /// `StatusRingView.unitLabel`.
+    public var unitLabel: String { self == .mmol ? "mmol/L" : "mg/dL" }
+}
+
 /// Data shared from the app to its WidgetKit extension via an App Group. The app writes a
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
 public struct WidgetSnapshot: Codable, Sendable, Equatable {
-    public struct Point: Codable, Sendable, Equatable {
+    // Hashable (Phase 5, D-06): Live Activity `ContentState` requires `Hashable`
+    // (`ActivityAttributes.ContentState` protocol constraint), and it carries `[Point]` verbatim
+    // (`Shared/LiveActivityShared.swift`'s `FaBolusGlucoseAttributes.ContentState.recentPoints`) —
+    // do NOT invent a second point type. Purely additive; `Date`/`Int` are both Hashable, so this
+    // doesn't change `Point`'s existing Equatable/Codable behavior.
+    public struct Point: Codable, Sendable, Equatable, Hashable {
         public var t: Date
         public var mgdl: Int
         public init(t: Date, mgdl: Int) { self.t = t; self.mgdl = mgdl }
@@ -46,13 +91,63 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
     public var staleAfterSec: TimeInterval?   // grey after this age
     public var hideAfterSec: TimeInterval?    // hide ("--") after this age; nil = never hide
+    /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit` (Phase
+    /// 04-03). A wire token ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself (Pitfall 6). `nil` ⇒
+    /// mgdl — an older app version's snapshot (before this field existed) decodes fine via
+    /// `Codable`'s default-on-missing-key behavior and renders mg/dL, matching D-03's default.
+    public var displayUnit: String?
+
+    /// Owner-requested "Show unit labels" toggle, mirrored from `AppSettings.showGlucoseUnitLabels`.
+    /// Additive-optional: `nil`/missing-key on a legacy snapshot decodes to **false** (labels hidden),
+    /// matching the setting's own default-OFF — a widget built before this field existed never starts
+    /// showing a caption it wasn't told to. Gates ONLY the persistent mg/dL·mmol/L CAPTION on the
+    /// widget/complication/Live Activity ambient surfaces; the glucose number itself is unaffected.
+    public var showUnitLabel: Bool
+
+    // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields the Live
+    // Activity projects alongside glucose. All additive-optional, defaulted below AND in the
+    // custom `init(from:)` decoder (see Codable conformance) so an old JSON snapshot missing every
+    // one of these still decodes. `iobDate` is the op-109 stamp IOB greys/ages off (mirrors
+    // `PumpSnapshot.iobDate`); the other four are dateless — the Live Activity greys them as a
+    // single cluster off link/last-sync freshness, never their own timestamp (there isn't one).
+    /// When `iobUnits` was last received from the pump (op-109). `nil` ⇒ unknown age ⇒ always stale.
+    public var iobDate: Date?
+    /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
+    public var basalRateUnitsPerHour: Double
+    /// Whether basal delivery is currently suspended.
+    public var deliverySuspended: Bool
+    /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
+    public var controlIQMode: Int
+    /// Whether Control-IQ automation is enabled.
+    public var controlIQEnabled: Bool
+    /// Phase 5 (D-18, 05-05) — true when at least one currently-active pump alert is snooze-eligible
+    /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
+    /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
+    /// the same "app computes the gate, the extension/intent only reads it" pattern as
+    /// `iobStale`/`pumpLinkStale` (D-17, §13 Rule 1). Gates BOTH the Live Activity's "Snooze" button
+    /// visibility and, independently, `LiveActivityIntentBridge.snoozeAlertIfSafe`'s own runtime
+    /// re-check — an `.alarm` must never be offered (or receive) a snooze affordance.
+    public var hasSnoozeEligibleAlert: Bool
+
+    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready status, mirrored from
+    /// `PumpSnapshot.cartridgeReadyForBolus` via `WidgetPublisher.makeSnapshot`. Additive, mirroring
+    /// `deliverySuspended`: default **true** ("ready") is the SAFE display default for a legacy
+    /// widget-extension binary that predates this field — absent must never render as a false
+    /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent (absent = no
+    /// signal, treated here as the non-alarming default rather than an alarming one, since a widget
+    /// can only show one boolean state, not a third "unknown").
+    public var cartridgeReady: Bool
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
                 reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
-                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil) {
+                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
+                displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
+                deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
+                hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
+                cartridgeReady: Bool = true) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
         self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
@@ -61,6 +156,64 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.cgmActive = cgmActive; self.carbRatio = carbRatio; self.isf = isf
         self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
         self.staleAfterSec = staleAfterSec; self.hideAfterSec = hideAfterSec
+        self.displayUnit = displayUnit
+        self.iobDate = iobDate; self.basalRateUnitsPerHour = basalRateUnitsPerHour
+        self.deliverySuspended = deliverySuspended; self.controlIQMode = controlIQMode
+        self.controlIQEnabled = controlIQEnabled
+        self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
+        self.showUnitLabel = showUnitLabel
+        self.cartridgeReady = cartridgeReady
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
+             lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
+             targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
+             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
+             showUnitLabel, cartridgeReady
+    }
+
+    /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
+    /// falls back to its `init` default on a missing key — proven necessary because Swift's
+    /// synthesized `Decodable` only auto-tolerates a missing key for `Optional`-typed properties; a
+    /// non-optional stored property (e.g. `basalRateUnitsPerHour: Double`) throws `keyNotFound` on a
+    /// legacy payload despite having a default in the memberwise `init` above. This keeps the additive-
+    /// optional wire contract for the Phase 5 pump fields (and every earlier field) actually true.
+    /// `encode(to:)` stays compiler-synthesized (unaffected by a custom `init(from:)`).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        glucose = try c.decodeIfPresent(Int.self, forKey: .glucose)
+        glucoseDate = try c.decodeIfPresent(Date.self, forKey: .glucoseDate)
+        trendArrow = try c.decodeIfPresent(String.self, forKey: .trendArrow) ?? ""
+        iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
+        reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
+        batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
+        lastBolusUnits = try c.decodeIfPresent(Double.self, forKey: .lastBolusUnits)
+        lastBolusDate = try c.decodeIfPresent(Date.self, forKey: .lastBolusDate)
+        connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        recentPoints = try c.decodeIfPresent([Point].self, forKey: .recentPoints) ?? []
+        activeAlerts = try c.decodeIfPresent([String].self, forKey: .activeAlerts) ?? []
+        cgmActive = try c.decodeIfPresent(Bool.self, forKey: .cgmActive) ?? false
+        carbRatio = try c.decodeIfPresent(Double.self, forKey: .carbRatio) ?? 0
+        isf = try c.decodeIfPresent(Int.self, forKey: .isf) ?? 0
+        targetBg = try c.decodeIfPresent(Int.self, forKey: .targetBg) ?? 0
+        maxBolusUnits = try c.decodeIfPresent(Double.self, forKey: .maxBolusUnits) ?? 0
+        staleAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .staleAfterSec)
+        hideAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .hideAfterSec)
+        displayUnit = try c.decodeIfPresent(String.self, forKey: .displayUnit)
+        iobDate = try c.decodeIfPresent(Date.self, forKey: .iobDate)
+        basalRateUnitsPerHour = try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0
+        deliverySuspended = try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false
+        controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
+        controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
+        hasSnoozeEligibleAlert = try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
+        // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
+        // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
+        showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
+        // Phase 09.9-04 (D-05): a legacy snapshot missing the key ⇒ true (safe "ready" default) — an
+        // older widget extension binary never shows a false cartridge-not-ready scare.
+        cartridgeReady = try c.decodeIfPresent(Bool.self, forKey: .cartridgeReady) ?? true
     }
 
     /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
@@ -145,6 +298,26 @@ public enum WidgetStore {
     public static func save(_ s: WidgetSnapshot) {
         guard let data = try? JSONEncoder().encode(s) else { return }
         defaults?.set(data, forKey: key)
+    }
+
+    /// Phase 5 (D-15/D-17a) — the Live Activity's current field-selection mirror, JSON-encoded ordered
+    /// `[String]`. Written by `AppSettings.syncWidgetConfig()`; read by
+    /// `GlucoseLiveActivityManager.makeContent` when baking the selection into `ContentState` (the
+    /// extension's SwiftUI views never observe App-Group changes directly — pump-surface research
+    /// §2b). `nil` when absent (a legacy install, or before the first `syncWidgetConfig()` call) — the
+    /// manager falls back to the full LA vocabulary rather than rendering nothing.
+    public static var liveActivityFields: [String]? {
+        get {
+            guard let data = defaults?.data(forKey: "liveActivityFields") else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            guard let newValue, let data = try? JSONEncoder().encode(newValue) else {
+                defaults?.removeObject(forKey: "liveActivityFields")
+                return
+            }
+            defaults?.set(data, forKey: "liveActivityFields")
+        }
     }
 
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and

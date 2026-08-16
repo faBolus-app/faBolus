@@ -10,6 +10,21 @@ struct StatsCardView: View {
 
     private var stats: GlucoseStatistics { GlucoseStatistics(readings: history) }
 
+    /// Phase 04-02 (D-10): the display-unit funnel the "Avg" metric routes through. `s.mean` stays
+    /// computed in mg/dL (unchanged); only its displayed string converts.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
+    /// display unit (D-10; not a glued suffix). `Localizable.xcstrings` carries both as siblings.
+    /// Owner-requested toggle: bare value (no unit phrase) when labels are hidden.
+    private func glucoseLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        guard AppSettings.shared.showGlucoseUnitLabels else { return value }
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L"), value)
+            : String(format: String(localized: "%@ mg/dL"), value)
+    }
+
     var body: some View {
         if history.count >= 2 {
             let s = stats
@@ -19,7 +34,7 @@ struct StatsCardView: View {
                     HStack {
                         metric("Time in range", "\(pct(s.timeInRangePct))", .green)
                         Divider()
-                        metric("Avg", "\(Int(s.mean.rounded())) mg/dL", .primary)
+                        metric("Avg", glucoseLabel(Int(s.mean.rounded())), .primary)
                         Divider()
                         metric("GMI", String(format: "%.1f%%", s.gmi), .primary)
                         Divider()

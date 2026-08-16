@@ -114,7 +114,7 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
 }
 
 // CoreBluetooth delegate callbacks run on `queue: .main`, so `MainActor.assumeIsolated` hops into the
-// main actor to touch our state — matching PumpX2BLE's `PumpBLEClient`.
+// main actor to touch our state — matching TandemBLE's `PumpBLEClient`.
 extension DexcomG7BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {

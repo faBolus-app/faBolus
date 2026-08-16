@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import faBolusCore
+import faBolusDesign
 
 /// Watch-face complication showing the latest glucose + trend, mirroring the Garmin complication.
 /// Reads the snapshot the watch app publishes to the App Group (WatchConnectivity → WidgetStore);
@@ -64,42 +66,64 @@ struct GlucoseComplication: Widget {
     }
 }
 
-private func color(_ snap: WidgetSnapshot, now: Date) -> Color {
-    guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
-    // Delegate the band split to the single WidgetSnapshot classifier (WidgetGlucoseThresholds bounds).
-    switch WidgetSnapshot.rangeCategory(g) {
-    case 0: return .red; case 1: return .green; case 2: return .yellow; default: return .orange
-    }
-}
-
 struct GlucoseComplicationView: View {
     @Environment(\.widgetFamily) private var family
     let snap: WidgetSnapshot
     /// Entry display date — staleness is evaluated against this, not wall-clock (see the iOS widgets).
     var now: Date = Date()
 
+    /// Phase 04-03: resolve the active display unit from the snapshot (nil ⇒ mgdl). This
+    /// complication shows a bare number with no unit label today; the VALUE still converts via the
+    /// mirror so it matches the phone even though no suffix is shown.
+    private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
     // P10 (group A): honor the published freshness policy at the entry date (grey once stale, "--" once
     // hidden), consistent with the iOS + Mac widgets — instead of the old 6-min wall-clock hardcode.
     private var value: String {
         if snap.isHidden(asOf: now) { return "--" }
         guard let g = snap.glucose, g > 0 else { return "--" }
-        return "\(g)"
+        return unit.format(mgdl: g)
     }
     private var arrow: String { snap.isStale(asOf: now) ? "" : snap.trendArrow }
+
+    /// Band classification for the current snapshot (nil when unknown/invalid/stale) — feeds both the
+    /// glucose number's color and the icon-only BandIndicator. Classifies via `faBolusCore.GlucoseRange`
+    /// through `faBolusDesign.AppTheme` (D-03) instead of the old local color switch.
+    private var band: GlucoseRange? {
+        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return nil }
+        return GlucoseRange.classify(g)
+    }
+    /// Number color: gray when unknown/invalid/stale, else via faBolusDesign — byte-identical to the
+    /// deleted local switch for every input.
+    private var bandColor: Color {
+        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
+        return AppTheme.glucoseColor(g)
+    }
 
     var body: some View {
         switch family {
         case .accessoryInline:
-            Text("\(value) \(arrow)")
+            // The single line the system places under the clock — only one leading glyph fits, so
+            // the band's own symbol (icon-only backstop, UI-SPEC #4) replaces the generic drop icon
+            // instead of adding a second element this family can't render (mirrors the iOS Home/Lock
+            // Screen widget's accessoryInline, 09.1-02).
+            Label("\(value) \(arrow)", systemImage: band?.symbolName ?? "drop.fill")
         #if os(watchOS)
         case .accessoryCorner:
+            // Extremely tight face (a single glyph in the ring's corner) — no room for a second
+            // composed view; the number's own band color remains the sole cue here (UI-SPEC #4).
             Text(value).font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(color(snap, now: now))
+                .foregroundStyle(bandColor)
                 .widgetLabel { Text("Glucose \(value) \(arrow)") }
         #endif
         case .accessoryRectangular:
+            // Has room for a small icon — the non-color channel MUST survive on this family
+            // (UI-SPEC #4).
             HStack(spacing: 6) {
-                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
+                if let band {
+                    BandIndicator(band: band, showWord: false)
+                        .font(.title3)
+                }
+                Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
                 VStack(alignment: .leading) {
                     Text(arrow.isEmpty ? "—" : arrow)
                     // Sample age (orange once stale), replacing a static "mg/dL" — so a stale relay is
@@ -107,15 +131,23 @@ struct GlucoseComplicationView: View {
                     if let d = snap.glucoseDate {
                         Text(d, style: .relative).font(.caption2)
                             .foregroundStyle(snap.isStale(asOf: now) ? .orange : .secondary)
-                    } else {
-                        Text("mg/dL").font(.caption2).foregroundStyle(.secondary)
+                    } else if snap.showUnitLabel {
+                        // Owner-requested toggle: this fallback caption (no reading yet, so no age to
+                        // show) is the only persistent unit caption this complication renders.
+                        Text(unit.unitLabel).font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }
         default: // accessoryCircular
             VStack(spacing: 0) {
-                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(color(snap, now: now))
-                if !arrow.isEmpty { Text(arrow).font(.caption2) }
+                Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
+                HStack(spacing: 2) {
+                    if let band {
+                        BandIndicator(band: band, showWord: false)
+                            .font(.system(size: 9))
+                    }
+                    if !arrow.isEmpty { Text(arrow).font(.caption2) }
+                }
             }
         }
     }

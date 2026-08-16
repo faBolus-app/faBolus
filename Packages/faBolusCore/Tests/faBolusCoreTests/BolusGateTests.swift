@@ -5,9 +5,11 @@ import Testing
 struct BolusGateTests {
 
     private func gate(reachable: Bool = true, linked: Bool = true, inFlight: Bool = false,
+                      cartridgeReady: Bool = true,
                       amount: Double = 2.0, minimum: Double = 0.05, maximum: Double = 25,
                       access: AccessPolicy.AccessDecision = .allow) -> (canBolus: Bool, reason: BolusBlockReason?) {
         BolusGate.evaluate(reachable: reachable, linked: linked, bolusInFlight: inFlight,
+                           cartridgeReady: cartridgeReady,
                            amount: amount, minimum: minimum, maximum: maximum, access: access)
     }
 
@@ -21,26 +23,31 @@ struct BolusGateTests {
         #expect(gate(reachable: false).reason == .remoteUnreachable)
         #expect(gate(linked: false).reason == .pumpNotLinked)
         #expect(gate(inFlight: true).reason == .bolusInFlight)
+        #expect(gate(cartridgeReady: false).reason == .noCartridge)
         #expect(gate(access: .deny(.remotesReadOnly)).reason == .accessDenied(.remotesReadOnly))
         #expect(gate(amount: 0).reason == .belowMinimum(0.05))
         #expect(gate(amount: 99).reason == .aboveMax(25))
-        for r in [gate(reachable: false), gate(linked: false), gate(inFlight: true),
+        for r in [gate(reachable: false), gate(linked: false), gate(inFlight: true), gate(cartridgeReady: false),
                   gate(access: .deny(.remotesReadOnly)), gate(amount: 0), gate(amount: 99)] {
             #expect(!r.canBolus)
         }
     }
 
     /// Fail-safe precedence: the earliest (most fundamental) blocker wins when several are true at once.
-    @Test func precedenceIsUnreachableThenLinkThenInFlightThenAccessThenBounds() {
+    @Test func precedenceIsUnreachableThenLinkThenInFlightThenNoCartridgeThenAccessThenBounds() {
         // Everything wrong at once → unreachable dominates.
-        #expect(gate(reachable: false, linked: false, inFlight: true,
+        #expect(gate(reachable: false, linked: false, inFlight: true, cartridgeReady: false,
                      amount: 99, access: .deny(.childLocked(.bolus))).reason == .remoteUnreachable)
-        // Reachable but link down + in-flight + denied + over-max → link dominates.
-        #expect(gate(linked: false, inFlight: true, amount: 99,
+        // Reachable but link down + in-flight + no-cartridge + denied + over-max → link dominates.
+        #expect(gate(linked: false, inFlight: true, cartridgeReady: false, amount: 99,
                      access: .deny(.childLocked(.bolus))).reason == .pumpNotLinked)
-        // Linked but in-flight + denied + over-max → in-flight dominates.
-        #expect(gate(inFlight: true, amount: 99, access: .deny(.childLocked(.bolus))).reason == .bolusInFlight)
-        // Access denial beats a bounds problem.
+        // Linked but in-flight + no-cartridge + denied + over-max → in-flight dominates.
+        #expect(gate(inFlight: true, cartridgeReady: false, amount: 99,
+                     access: .deny(.childLocked(.bolus))).reason == .bolusInFlight)
+        // In-flight resolved but no-cartridge + denied + over-max → no-cartridge dominates.
+        #expect(gate(cartridgeReady: false, amount: 99,
+                     access: .deny(.childLocked(.bolus))).reason == .noCartridge)
+        // Cartridge ready but denied + over-max → access denial beats a bounds problem.
         #expect(gate(amount: 99, access: .deny(.childLocked(.bolus))).reason == .accessDenied(.childLocked(.bolus)))
     }
 

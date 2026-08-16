@@ -47,13 +47,24 @@ struct PumpControlView: View {
             }
 
             if caps.supportsSuspendResume {
-                Section("Insulin delivery") {
+                Section {
                     if model.snapshot.deliverySuspended {
                         Button { ask("Resume insulin?", "Insulin delivery will resume at the active basal rate.", destructive: false) { await model.resumeDelivery() } }
                             label: { Label("Resume insulin", systemImage: "play.fill") }
                     } else {
                         Button(role: .destructive) { ask("Suspend insulin?", "All insulin delivery (basal + \(ciq)) stops until you resume.", destructive: true) { await model.suspendDelivery() } }
                             label: { Label("Suspend insulin", systemImage: "pause.fill") }
+                    }
+                } header: {
+                    Text("Insulin delivery")
+                } footer: {
+                    // 09.2-02 (D-01/D-05, SC1): the honest recovery guidance a wizard Exit lands on — reuses
+                    // the existing shared `deliverySuspended` snapshot field (already surfaced at
+                    // StatusPillsView/widgets/Live Activity). Presentation copy only: no delivery-path call,
+                    // no change to the suspend/resume button logic above.
+                    if model.snapshot.deliverySuspended {
+                        Text("Insulin delivery is suspended. Finish the cartridge change or tubing/cannula fill, or reconnect to the pump, then resume above.")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -70,7 +81,16 @@ struct PumpControlView: View {
                     Picker("Duration", selection: $tempDurationMin) {
                         ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
                     }
-                    Button { ask("Set temp basal?", "\(Int(tempPercent))% for \(tempDurationMin) min. \(ciq) must be off.", destructive: true) {
+                    Button {
+                        // D-02 (Phase 09.5): the experimental build no longer enforces the CIQ-off
+                        // precondition (AppModel.setTempBasal), so its confirm copy must not assert one
+                        // it no longer requires — the #if here mirrors the one there exactly.
+                        #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+                        let confirmBody = "\(Int(tempPercent))% for \(tempDurationMin) min. \(ciq) must be off."
+                        #else
+                        let confirmBody = "\(Int(tempPercent))% for \(tempDurationMin) min."
+                        #endif
+                        ask("Set temp basal?", confirmBody, destructive: true) {
                         await model.setTempBasal(percent: Int(tempPercent), durationMinutes: tempDurationMin) } }
                         label: { Label("Start temp basal", systemImage: "timer") }
                     Button(role: .destructive) { ask("Stop temp basal?", "Return to the scheduled basal rate.", destructive: false) { await model.stopTempBasal() } }
@@ -91,6 +111,16 @@ struct PumpControlView: View {
                         label: { Label("Exercise", systemImage: "figure.run") }
                 } header: { Text("Mode") } footer: {
                     Text("Requires \(ciq) to be on. Available on Mobi. Can also be automated — see Activity & sleep automation in Settings.")
+                }
+            }
+
+            // Phase 09.10 D-04 / RESEARCH Pitfall 2: the READ is universal — this NavigationLink is
+            // deliberately UNGATED (no `if caps.supportsX`), a sibling of the ungated "Pump" section
+            // below, reachable on any connected pump (Mobi or t:slim) whenever pumpReady. Only
+            // SleepScheduleView's INTERNAL write controls branch on `caps.supportsSleepScheduleWrite`.
+            Section("Sleep schedule") {
+                NavigationLink { SleepScheduleView(model: model) } label: {
+                    Label("Sleep schedule", systemImage: "moon.zzz.fill")
                 }
             }
 

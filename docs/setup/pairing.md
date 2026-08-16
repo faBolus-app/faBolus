@@ -103,7 +103,7 @@ reconnects with **no code**, so the new-code step only appears when you bounce b
 ## Under the hood (for the curious)
 
 ??? info "What the handshake actually does"
-    - **6-digit:** an **EC-JPAKE** handshake (secp256r1 / SHA-256, via mbedTLS in PumpX2Kit) —
+    - **6-digit:** an **EC-JPAKE** handshake (secp256r1 / SHA-256, via mbedTLS in TandemKit) —
       rounds 1–2 plus derive, then Tandem's session-key / key-confirmation rounds 3–4. The
       derived key is `authKey = HKDF(serverNonce, derivedSecret)`, which signs subsequent
       commands.

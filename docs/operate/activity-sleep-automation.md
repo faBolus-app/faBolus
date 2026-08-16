@@ -42,6 +42,53 @@ iOS won't let an app create a personal automation for you, so build it in the **
 
 This covers both **Apple Watch workouts** (via the Workout automation) and iPhone **Sleep Focus**.
 
+## Delay Sleep mode
+
+Want Sleep mode to switch on a little *after* your Sleep Focus starts?
+
+**Option A — short delay (a few minutes)**
+
+1. Automation → **Focus → Sleep → When Turning On → Run Immediately** (turn off *Ask Before Running*).
+2. Add **Wait** (Scripting) and set the seconds, e.g. 300 = 5 min.
+3. Add **Set Sleep Mode = On**.
+
+iOS pauses the Wait step while your phone is locked, so delays longer than a few minutes may not
+fire. Keep this short, or use Option B.
+
+**Option B — fixed-time delay (reliable, recommended for longer delays)**
+
+1. Automation → **Time of Day** → pick the time (e.g. 30 min after your usual bedtime),
+   **Repeat Daily**, **Run Immediately** (*Ask Before Running* off).
+2. Add **Set Sleep Mode = On**.
+
+This is keyed to the clock, not the moment Sleep Focus starts, but runs reliably overnight. Pair
+either option with a matching wake-up automation running **Set Sleep Mode = Off**.
+
+Your Tandem Mobi / Control-IQ has its **own on-pump Sleep schedule**. On **Mobi**, faBolus is its
+editor — read and set it from **Pump Control → Sleep schedule** (the Mobi has no on-pump way to
+set this). On **t:slim X2**, set it on the pump's own touchscreen; faBolus only displays it here,
+read-only. Use the pump's Sleep schedule **or** this Shortcuts automation, not both — running both
+can conflict.
+
+## Build a one-tap macro
+
+Combine several faBolus actions into one shortcut and put it on your Home Screen or in the
+Shortcuts widget:
+
+1. Shortcuts → **+** (new shortcut).
+2. Add **Set Exercise Mode = On**.
+3. Add **Set Temp Rate** and choose a percent (0–250%) and duration (15 min–72h) — the same range
+   the pump and the official Tandem Mobi app allow. faBolus doesn't narrow this further; your
+   pump's own **Basal Limit** (Delivery Limits) is the ceiling, and the pump rejects a rate that
+   would exceed it.
+4. Name it (e.g. "Going for a run") → **Share → Add to Home Screen**, or add it to the
+   **Shortcuts widget** / **Action Button** / **Back Tap**.
+
+Tapping it applies both settings in the background — no confirmation, without opening the app —
+as long as you use fixed values and avoid *Ask Each Time* (which pauses to prompt). Temp-rate
+options appear only on pumps/controllers that support them. **Boluses are never available in
+Shortcuts.**
+
 ## Garmin
 
 A Garmin can't trigger this automatically: a backgrounded Connect IQ app gets no "activity started"

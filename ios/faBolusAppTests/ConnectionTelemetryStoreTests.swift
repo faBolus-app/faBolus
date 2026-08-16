@@ -67,16 +67,64 @@ struct ConnectionTelemetryStoreTests {
     /// `"\(domain)#\(code) \(description)"` format) must bucket on its `domain#code` prefix instead of
     /// collapsing into the generic "error" token; the four pre-existing string-matched inputs above are
     /// unaffected (re-asserted here so a regression in the fallback ordering fails loudly).
+    /// D-02c (09.6-02): the token now also carries the human label (e.g. "→ Connection timeout") — see
+    /// `cbErrorCodesRenderHumanLabels` below for the full 0–18 table.
     @Test func reasonTokenBucketsCBErrorDomainCodeInsteadOfGenericError() {
         let token = ConnectionTelemetryStore.reasonToken(
             from: "CBErrorDomain#6 The connection has timed out unexpectedly.")
         #expect(token != "error")
-        #expect(token == "CBErrorDomain#6")
+        #expect(token == "CBErrorDomain#6 → Connection timeout")
         // Pre-existing branches still win over the new fallback (unchanged behavior).
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is off") == "btOff")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings") == "unauthorized")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth unavailable on this device") == "unsupported")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is resetting…") == "resetting")
+    }
+
+    // MARK: - Part B-c (D-02c): CBError code → human-label decode, failing closed
+
+    /// The verified 0–18 `CBError.Code` table (09.6-RESEARCH.md Code Examples, cross-checked against
+    /// this project's own on-device `CBErrorDomain#7` capture). Every one of the 19 codes must render
+    /// its exact human label appended onto the existing `domain#code` token.
+    @Test func cbErrorCodesRenderHumanLabels() {
+        let expected: [Int: String] = [
+            0: "Unknown", 1: "Invalid parameters", 2: "Invalid handle", 3: "Not connected",
+            4: "Out of space", 5: "Operation cancelled", 6: "Connection timeout",
+            7: "Peripheral disconnected", 8: "UUID not allowed", 9: "Already advertising",
+            10: "Connection failed", 11: "Connection limit reached", 12: "Unknown device",
+            13: "Operation not supported", 14: "Peer removed pairing information",
+            15: "Encryption timed out", 16: "Too many LE paired devices",
+            17: "LE GATT exceeded background notification limit",
+            18: "LE GATT near background notification limit",
+        ]
+        #expect(expected.count == 19)
+        for (code, label) in expected {
+            let token = ConnectionTelemetryStore.reasonToken(
+                from: "CBErrorDomain#\(code) some raw CoreBluetooth description.")
+            #expect(token == "CBErrorDomain#\(code) → \(label)", "code \(code) mismatched: \(token)")
+        }
+    }
+
+    /// A code outside the verified 0–18 range must fail closed to the existing raw `domain#code` token —
+    /// never crash, never fabricate a label, never emit unbounded text (V5 input validation).
+    @Test func cbErrorOutOfRangeCodeFallsBackToRawToken() {
+        let token = ConnectionTelemetryStore.reasonToken(from: "CBErrorDomain#42 Some undocumented future code.")
+        #expect(token == "CBErrorDomain#42")
+    }
+
+    /// An unparseable detail (a `#` present but no digit run after it) still falls through to the
+    /// existing generic "error" bucket — unaffected by the new label table.
+    @Test func cbErrorUnparseableDetailFallsBackToGenericError() {
+        let token = ConnectionTelemetryStore.reasonToken(from: "Some free text with # but no code after it")
+        #expect(token == "error")
+    }
+
+    /// The label is only attached for `CBErrorDomain` — a `domain#code` shape from any other domain
+    /// (e.g. a bridged POSIX/NSURLError) renders its raw token unchanged, even for a code that happens
+    /// to collide with a CBError code number.
+    @Test func cbErrorLabelDoesNotApplyToNonCBErrorDomains() {
+        let token = ConnectionTelemetryStore.reasonToken(from: "NSPOSIXErrorDomain#7 Some other domain's error.")
+        #expect(token == "NSPOSIXErrorDomain#7")
     }
 
     // MARK: - B3a: command-latency dimension

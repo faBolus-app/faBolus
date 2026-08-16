@@ -38,7 +38,11 @@ struct SettingsView: View {
             List {
                 if query.isEmpty {
                     Section {
-                        ForEach(SettingsCategory.allCases) { cat in
+                        // 09.3-05 (D-06): .smartAssist exists only so SettingsCatalog can categorize the
+                        // eating-nudge keys where their screen actually lives; it is filtered out of this
+                        // generic loop so the existing hand-placed Smart Assist row below (the sole entry
+                        // point, #if FABOLUS_NUDGE / #else disabled Label) never gets a duplicate.
+                        ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
                             }
@@ -120,15 +124,27 @@ struct SettingsView: View {
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
         case .alerts:  AlertRulesView(settings: settings)
+        case .notifications: NotificationSettingsView(settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
+        // 09.3-05 (D-06): this arm exists only to keep the switch exhaustive — .smartAssist is filtered
+        // out of the generic root-menu loop above, so this is never reached from that loop. The real,
+        // sole Smart Assist entry point stays the hand-placed NavigationLink/disabled-Label block above.
+        case .smartAssist:
+            #if FABOLUS_NUDGE
+            SmartAssistSettingsView(settings: settings)
+            #else
+            Text("Smart Assist — unavailable in this build")
+            #endif
         }
     }
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case bolus, display, cgm, alerts, pump, remotes, about
+    // 08.1-02 (D-06): `.notifications` renders in the normal unfiltered root loop below — there is no
+    // compile-time gate on it (unlike `.smartAssist`, which IS filtered — see the loop's own comment).
+    case bolus, display, cgm, alerts, notifications, pump, remotes, about, smartAssist
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -136,9 +152,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .display: return "Display & chart"
         case .cgm: return "CGM & failover"
         case .alerts: return "Alert rules"
+        case .notifications: return "Notifications"
         case .pump: return "Pump & control"
         case .remotes: return "Remotes & devices"
         case .about: return "About & help"
+        case .smartAssist: return "Smart Assist"
         }
     }
     var icon: String {
@@ -147,9 +165,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .display: return "chart.xyaxis.line"
         case .cgm: return "sensor.tag.radiowaves.forward.fill"
         case .alerts: return "bell.badge.fill"
+        // Distinct from `.alerts`'s icon (D-06) — this screen is the pump/app notification-delivery
+        // controls, not the auto-snooze/dismiss rule editor.
+        case .notifications: return "bell.and.waves.left.and.right"
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
         case .about: return "info.circle"
+        case .smartAssist: return "sparkles"
         }
     }
 }
@@ -171,6 +193,7 @@ enum SettingsIndex {
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
         .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
+        .init(title: "Glucose unit", keywords: "mmol mg/dl mg dl unit display convert show unit labels caption", category: .display),
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -183,9 +206,10 @@ enum SettingsIndex {
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
+        .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
-        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation", category: .pump),
+        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate profile activation", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
@@ -222,18 +246,14 @@ struct BolusSettingsView: View {
                 }
             } header: { Text("iPhone increments") } footer: { Text("Steps for the iPhone bolus screen and the Home-Screen widget.") }
             Section {
-                Picker("Unit increment", selection: $settings.watchBolusIncrement) {
-                    ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
-                }
-                Picker("Carb increment", selection: $settings.watchCarbIncrement) {
-                    ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
-                }
-            } header: { Text("Watch & Garmin increments") } footer: { Text("Steps for the Apple Watch and Garmin bolus screens (independent of the iPhone).") }
-            Section {
                 Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
                 Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
+                // 09.3-04 (D-02): plain Toggle, NOT guardedToggle — this only writes the existing
+                // stackingGuardFrictionEnabled key; BolusEntryView caps applied friction to .disclose when
+                // off (never blocks, never changes the dose). Not a suppress-style safety-reducing toggle.
+                Toggle("Extra confirmation on unusually large overrides", isOn: $settings.stackingGuardFrictionEnabled)
             } header: { Text("Bolus screen") } footer: {
-                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. Both off/hidden keep the screen simple.")
+                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. **Extra confirmation**: when an override looks unusually large, the bolus screen always shows a note about it; this switch controls whether an extra tap (or, for the largest overrides, re-typing the amount) is also required before delivering. Turning it off still shows the same note — it only skips the extra step. Both off/hidden keep the screen simple.")
             }
         }
         .navigationTitle("Bolus & entry")
@@ -245,8 +265,37 @@ struct BolusSettingsView: View {
 struct DisplaySettingsView: View {
     let model: AppModel
     @Bindable var settings: AppSettings
+    @State private var showBadgeMmolWarning = false
+
+    /// WR-01/CR-01: enabling the glucose badge while the display unit is mmol requires an explicit
+    /// confirm (the badge rounds to a whole number in mmol); enabling in mg/dL, or turning it off, is
+    /// always immediate. Routed through the shared `guardedToggle` factory (09.3-01, D-05/SC3) — the one
+    /// idiom every confirm-gated settings toggle uses.
+    private var glucoseBadgeBinding: Binding<Bool> {
+        guardedToggle(
+            get: { settings.glucoseBadgeEnabled },
+            set: { settings.glucoseBadgeEnabled = $0 },
+            skipConfirmIf: { settings.glucoseDisplayUnit != .mmol },
+            requestConfirm: { showBadgeMmolWarning = true }
+        )
+    }
     var body: some View {
         Form {
+            Section {
+                Picker("Glucose unit", selection: $settings.glucoseDisplayUnit) {
+                    Text("mg/dL").tag(GlucoseUnit.mgdl)
+                    Text("mmol/L").tag(GlucoseUnit.mmol)
+                }
+                .pickerStyle(.segmented)
+                // Owner request: hides/shows the persistent mg/dL·mmol/L CAPTION on ambient display
+                // surfaces only. Default OFF. Dose prompts, VoiceOver, config/setup screens, and this
+                // picker are never affected — see `AppSettings.showGlucoseUnitLabels`.
+                Toggle("Show unit labels", isOn: $settings.showGlucoseUnitLabels)
+            } header: { Text("Glucose unit") } footer: {
+                // WR-08 gap closure (04-07): narrowed from "everywhere" — the developer debug menu
+                // (reachable via a 7-tap gesture, not mainline UI) intentionally stays mg/dL-only.
+                Text("Applies to the glucose reading, correction factor (ISF), and target on every mainline screen where they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert. \"Show unit labels\" shows or hides the mg/dL/mmol/L caption on glucose readouts, widgets, and the chart — dose prompts, VoiceOver, and this picker always show the unit regardless.")
+            }
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
@@ -255,7 +304,7 @@ struct DisplaySettingsView: View {
             Section {
                 Toggle("Show statistics card", isOn: $settings.showStats)
             } header: { Text("Statistics") } footer: {
-                Text("Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory. Off by default to keep the dashboard clean.")
+                Text(StatsCardCopy.footer + " Off by default to keep the dashboard clean.")
             }
             Section {
                 NavigationLink {
@@ -270,6 +319,34 @@ struct DisplaySettingsView: View {
                 } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
             } header: { Text("Customize") } footer: {
                 Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
+            }
+            Section {
+                Toggle("Live Activity", isOn: $settings.liveActivityEnabled)
+                if settings.liveActivityEnabled {
+                    NavigationLink {
+                        CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
+                                          label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
+                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.")
+                    } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
+                }
+            } header: { Text("Live Activity") } footer: {
+                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display.")
+            }
+            // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
+            // default OFF, SettingsCatalog descriptor) but had no reachable UI — mirrors the "Live
+            // Activity" section above exactly. Copy is the D-14 plain-language caveat verbatim
+            // (05-UI-SPEC.md), plus a short note on the mmol rounding CR-01 introduced.
+            Section {
+                Toggle("Glucose badge", isOn: glucoseBadgeBinding)
+            } header: { Text("Glucose badge") } footer: {
+                Text("Shows your current glucose number on the app icon. It can't show units, trend, or how old the reading is — it clears automatically whenever the reading goes stale, so it should never show an old number as current. In mmol/L, the badge rounds to the nearest whole number.")
+            }
+            .confirmationDialog("Glucose badge rounds in mmol/L", isPresented: $showBadgeMmolWarning,
+                                 titleVisibility: .visible) {
+                Button("Enable") { settings.glucoseBadgeEnabled = true }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The app-icon badge can only show a whole number, so in mmol/L your glucose will be shown ROUNDED to the nearest whole number (e.g. 5.5 shows as 6).")
             }
         }
         .navigationTitle("Display & chart")
@@ -295,6 +372,10 @@ struct CgmSettingsView: View {
     var body: some View {
         Form {
             Section {
+                // 09.3-03 (D-05/SC3): intentional, documented exception to the unified Bool guardedToggle
+                // idiom — this picker is String/GlucoseSourceRegistry-backed, not an AppSettings Bool, so
+                // guardedToggle cannot type-check it (09.3-RESEARCH.md Open Question 1, Pitfall 3). Its
+                // own pending/lastCommitted/isReverting confirm-and-rollback shape below is left as-is.
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
@@ -421,12 +502,20 @@ struct PumpSettingsView: View {
             Section {
                 Toggle("Allow auto Exercise mode", isOn: $settings.autoExerciseMode)
                 Toggle("Allow auto Sleep mode", isOn: $settings.autoSleepMode)
+                Toggle("Allow auto temp rate", isOn: $settings.autoTempRate)
+                Toggle("Allow auto profile activation", isOn: $settings.autoProfileActivation)
                 Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
                 NavigationLink { ModeAutomationHelpView() } label: {
                     Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
                 }
             } header: { Text("Activity & sleep automation") } footer: {
-                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. All off by default.")
+                // §13 / D-03: the "temp rate and profile activation aren't active yet" sentence below is
+                // insulin-affecting DRAFT copy, §13-pending — it must pass §13 clinical review before any
+                // experimental distribution (BRANCHES.md §13). It discloses the build-inert truth:
+                // `TempRateAutomation.benchVerifiedDefault` and `ProfileAutomation.profileBenchVerifiedDefault`
+                // ship `false`, so both intents refuse every headless run until the Phase-11 saline-bench flag
+                // flips. Display copy only — no gate depends on this string.
+                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. **Temp rate and profile activation aren't active yet** — those two actions are pending saline-bench validation and will decline every run until a future faBolus update enables them. All off by default.")
             }
             if BackendRegistry.enabled.count > 1 {
                 Section {
@@ -466,10 +555,12 @@ struct PumpSettingsView: View {
             NavigationStack { BackupRestoreView(model: model) }
         }
         // P14 S12 (§2.2.3): STEP 2 — the unpair confirm, carrying the model-appropriate warning
-        // (Mobi ⇒ charging-base caveat). One funnel for both entry points.
-        .alert("Forget pairing?",
+        // (Mobi ⇒ charging-base caveat). One funnel for both entry points. Presented as a
+        // confirmationDialog (09.3-03, D-05/SC3) to match step 1's presentation above.
+        .confirmationDialog("Forget pairing?",
                isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
-                                    set: { if !$0, case .confirm = unpairStep { unpairStep = nil } })) {
+                                    set: { if !$0, case .confirm = unpairStep { unpairStep = nil } }),
+               titleVisibility: .visible) {
             Button("Forget pairing", role: .destructive) {
                 let repair = unpairStep?.repairAfter ?? false
                 unpairStep = nil
@@ -523,22 +614,23 @@ struct RemotesSettingsView: View {
     /// §2.3: turning an enable ON routes through the one-time warning on first use (Confirm arms it +
     /// records the ack; Cancel leaves it off — the binding's `get` reads the real, still-false flag so the
     /// switch snaps back). A subsequent turn-on (already acknowledged, or after turning it off) arms
-    /// directly. Turning OFF is always immediate.
+    /// directly. Turning OFF is always immediate. Routed through the shared `guardedToggle` factory
+    /// (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings toggle uses.
     private var watchBolusBinding: Binding<Bool> {
-        Binding(get: { settings.watchBolusEnabled }, set: { on in
-            if on {
-                if settings.hasAcknowledgedWatchBolusWarning { settings.watchBolusEnabled = true }
-                else { showWatchBolusWarning = true }
-            } else { settings.watchBolusEnabled = false }
-        })
+        guardedToggle(
+            get: { settings.watchBolusEnabled },
+            set: { settings.watchBolusEnabled = $0 },
+            skipConfirmIf: { settings.hasAcknowledgedWatchBolusWarning },
+            requestConfirm: { showWatchBolusWarning = true }
+        )
     }
     private var garminBolusBinding: Binding<Bool> {
-        Binding(get: { settings.garminBolusEnabled }, set: { on in
-            if on {
-                if settings.hasAcknowledgedGarminBolusWarning { settings.garminBolusEnabled = true }
-                else { showGarminBolusWarning = true }
-            } else { settings.garminBolusEnabled = false }
-        })
+        guardedToggle(
+            get: { settings.garminBolusEnabled },
+            set: { settings.garminBolusEnabled = $0 },
+            skipConfirmIf: { settings.hasAcknowledgedGarminBolusWarning },
+            requestConfirm: { showGarminBolusWarning = true }
+        )
     }
     /// §2.3: the optional remote-only dose ceiling. The toggle arms it at the default cap; the picker edits
     /// the value. `nil` (off) ⇒ the pump's max alone governs remote boluses.
@@ -692,13 +784,15 @@ struct RemotesSettingsView: View {
         // §2.3: one-time warnings. Confirm arms the enable + records the ack; Cancel leaves it off. The
         // Apple Watch copy notes that wrist detection makes an accidental tap materially less likely than
         // on Garmin, but the enable is still explicit and off by default.
-        .alert("Allow bolusing from Apple Watch?", isPresented: $showWatchBolusWarning) {
+        .confirmationDialog("Allow bolusing from Apple Watch?", isPresented: $showWatchBolusWarning,
+                             titleVisibility: .visible) {
             Button("Allow bolusing") { settings.acknowledgeWatchBolusWarning(); settings.watchBolusEnabled = true }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This lets you deliver real insulin from your Apple Watch, right from your wrist. The Watch's wrist detection makes an accidental tap materially less likely than on Garmin, but you're still turning on insulin delivery — it stays off until you allow it here, and every bolus still needs your confirmation on the Watch. You can turn this off any time.")
         }
-        .alert("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning) {
+        .confirmationDialog("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning,
+                             titleVisibility: .visible) {
             Button("Allow bolusing") { settings.acknowledgeGarminBolusWarning(); settings.garminBolusEnabled = true }
             Button("Cancel", role: .cancel) { }
         } message: {

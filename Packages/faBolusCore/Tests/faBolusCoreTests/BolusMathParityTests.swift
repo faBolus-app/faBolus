@@ -5,7 +5,7 @@ import CryptoKit
 /// Byte-for-byte parity of `BolusMath` against the vendored Tandem oracle `BolusCalculator.parse()`.
 ///
 /// The fixtures in `Fixtures/bolus_oracle_fixtures.jsonl` were captured by running the **actual**
-/// `BolusCalculator.java` (PumpX2Kit `vendor/pumpx2-oracle`, compiled bytecode) over a grid of inputs
+/// `BolusCalculator.java` (TandemKit `vendor/pumpx2-oracle`, compiled bytecode) over a grid of inputs
 /// that spans every branch of `parse()`: carbs / no carbs × BG below / at / above target × IOB below /
 /// equal / above the correction × zero and floor boundaries, plus profile variations (carb ratio, ISF,
 /// target) and sanity-failure edges (invalid carb ratio, ISF ≤ 0, target out of [40,400]). Each row is

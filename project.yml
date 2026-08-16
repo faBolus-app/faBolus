@@ -25,6 +25,11 @@ packages:
   faBolusCore:
     # Stable, pump/host-agnostic contracts + models (in-repo local package).
     path: Packages/faBolusCore
+  faBolusDesign:
+    # Shared presentation layer: §13 glucose-band color tokens + the icon+word band-encoding
+    # primitive (in-repo local package). Depends on faBolusCore for the single classifier/thresholds
+    # (D-01/D-02) — no cycle, since faBolusCore has zero package dependencies of its own.
+    path: Packages/faBolusDesign
   G7SensorKit:
     # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
     path: Packages/G7SensorKit
@@ -47,9 +52,27 @@ packages:
     url: https://github.com/faBolus-app/faBolusNudge.git
     revision: c3d1e2284249e1667c8c17f37eeecb28c605d4a5
   # <<< NUDGE
-  PumpX2Kit:
-    # Local path to Repo 1. Pin to a released version once PumpX2Kit tags v0.1.0.
-    path: ../PumpX2Kit
+  TandemKit:
+    # Backend pump-protocol stack (Repo 1). §1.3 version-pin (revision form, D-01 owner override of
+    # the exactVersion approach RUNBOOK/SC1 describe). FABOLUS_TANDEM_LOCAL=1 swaps to the sibling
+    # path for co-dev/offline/worktree builds (mirrors the existing NUDGE/GARMIN fenced blocks).
+    # >>> TANDEM_LOCAL (generate-project.sh KEEPS this block ONLY when FABOLUS_TANDEM_LOCAL=1)
+    path: ../TandemKit
+    # <<< TANDEM_LOCAL
+    # >>> TANDEM_PINNED (generate-project.sh strips this block when FABOLUS_TANDEM_LOCAL=1)
+    url: https://github.com/faBolus-app/TandemKit.git
+    # origin/main tip at pin time (2026-08-13, PR #16, CI green): carries D3 (crypto .unsafeFlags →
+    # .define, the version-pin prerequisite) squash-cherry-picked in the same commit as D2
+    # (experimental BLE txId correlation, opt-in/fail-closed, unused by faBolus) — an accepted §1.4
+    # deviation, owner-confirmed 2026-08-13 (pin-current-main), reconciled in 03-03/BRANCHES.md.
+    # Repo renamed PumpX2Kit -> TandemKit 2026-08-15 (Phase 09.12-01); Phase 09.12-01's package-name
+    # rename kept the SAME revision (byte-identical, resolved via GitHub's rename redirect). This
+    # pin was advanced by Phase 09.12-02's product/target rename (PumpX2Messages/Auth/BLE ->
+    # TandemMessages/Auth/BLE), which changed the products faBolus requests by name — a
+    # revision bump was REQUIRED here (not optional), since the old pinned commit's Package.swift
+    # still declares the pre-rename product names.
+    revision: 1a09dba67de2d45f2f26f408dccb4bccb9749e6c
+    # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
     # Garmin Connect IQ Mobile SDK for iOS (binary xcframework). Not committed (Garmin
@@ -58,7 +81,7 @@ packages:
   # <<< GARMIN
 
 targets:
-  # iOS host app — owns the pump connection (PumpX2Kit) and the main HUD.
+  # iOS host app — owns the pump connection (TandemKit) and the main HUD.
   faBolus:
     type: application
     platform: iOS
@@ -72,6 +95,8 @@ targets:
     dependencies:
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       - package: G7SensorKit
         product: G7SensorKit
       - package: DexcomG6Kit
@@ -90,12 +115,12 @@ targets:
       - package: faBolusNudge
         product: ModelCatalogKit
       # <<< NUDGE
-      - package: PumpX2Kit
-        product: PumpX2Messages
-      - package: PumpX2Kit
-        product: PumpX2Auth
-      - package: PumpX2Kit
-        product: PumpX2BLE
+      - package: TandemKit
+        product: TandemMessages
+      - package: TandemKit
+        product: TandemAuth
+      - package: TandemKit
+        product: TandemBLE
       # >>> GARMIN (stripped by scripts/generate-project.sh when the SDK is absent)
       - package: ConnectIQ
         product: ConnectIQ
@@ -131,6 +156,16 @@ targets:
         # >>> DATA_PROTECTION (stripped by scripts/generate-project.sh unless FABOLUS_DATA_PROTECTION=1)
         com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
         # <<< DATA_PROTECTION
+        # >>> TIME_SENSITIVE (stripped by scripts/generate-project.sh unless FABOLUS_TIME_SENSITIVE=1)
+        # CR-01 (Phase 08): Time-Sensitive Notifications so the never-suppressible safety trio (pump
+        # disconnected / CGM data lost / unresolved bolus) breaks through Focus / Do Not Disturb via
+        # UNNotificationInterruptionLevel.timeSensitive while the special-request Critical Alerts entitlement
+        # (D-02, deliberately absent) is still pending — what NotificationPoster.post now sets and what
+        # AlertRulesView's "time-sensitive delivery" copy promises. Like Data Protection it needs the
+        # capability provisioned on the App ID to SIGN a device build, so it is stripped by default so an
+        # unmodified clone signs on a free account; enable on a provisioned account with FABOLUS_TIME_SENSITIVE=1.
+        com.apple.developer.usernotifications.time-sensitive: true
+        # <<< TIME_SENSITIVE
         # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
         # it needs the paid Apple Developer Program to enable the capability, so it's off by default
         # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
@@ -180,6 +215,10 @@ targets:
         # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
         UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
         UILaunchScreen: {}
+        # Phase 5 (D-04) — the ONLY addition this Live Activity needs: app-driven Activity.update()
+        # off the existing bluetooth-central background mode above. NO aps-environment entitlement,
+        # NO push; entitlements stay App-Groups-only.
+        NSSupportsLiveActivities: true
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.
         LSApplicationQueriesSchemes: [gcm-ciq]
@@ -203,10 +242,15 @@ targets:
       configs:
         # generate-project.sh drops FABOLUS_ICLOUD unless FABOLUS_ICLOUD=1 (default OFF → the no-op iCloud
         # stub compiles and the app signs on a free account).
+        # generate-project.sh also drops FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL unless
+        # FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1 (default OFF). Phase 09.5 D-02: current Tandem docs say a
+        # temp rate can be set while Control-IQ+ is ON, but the repo's LOCKED constraint says the pump
+        # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
+        # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # It also embeds the glucose complication extension (faBolusWatchWidgets) as a target dependency now
@@ -223,14 +267,19 @@ targets:
         # bypasses the PumpBackend seam, and pairing it evicts the phone's pairing. Excluded from
         # shipping builds — the same posture as faBolusGarmin's direct-pump/. See its STATUS.md.
         # Excluding the directory also removes the watch's ONLY link to the pump BLE stack (the
-        # PumpX2Kit deps below), so a shipping watch build cannot hold a pump connection at all.
+        # TandemKit deps below), so a shipping watch build cannot hold a pump connection at all.
         excludes:
           - direct-pump
         # <<< WATCH_DIRECT_PUMP_OFF
-      # WidgetBolusIntents belongs to the widget extensions only.
+      # WidgetBolusIntents belongs to the widget extensions only. LiveActivityShared/LiveActivityIntents
+      # (Phase 5) are iOS-only (D-01 puts the Live Activity in faBolusWidgets, an iOS app-extension) —
+      # ActivityKit isn't resolvable in this watchOS build, and the LA intents exist to drive an
+      # iOS-only surface, so neither must compile into the watch app.
       - path: Shared
         excludes:
           - WidgetBolusIntents.swift
+          - LiveActivityShared.swift
+          - LiveActivityIntents.swift
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # Bundle the eating model + manifest on the watch for the on-device path.
       - path: ios/faBolus/Models
@@ -241,19 +290,21 @@ targets:
       # Shared contracts (RemoteCommand/RemoteLink + models).
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
       - package: G7SensorKit
         product: G7SensorKit
       # >>> WATCH_DIRECT_PUMP (stripped unless FABOLUS_WATCH_DIRECT_PUMP=1 — C9, bench only)
-      # Direct-to-pump support (independent watch, Phase 1: pairing). PumpX2Kit builds for watchOS.
+      # Direct-to-pump support (independent watch, Phase 1: pairing). TandemKit builds for watchOS.
       # ONLY direct-pump/WatchPumpClient.swift imports these, so with the flag off the watch app
       # does not link the pump BLE stack at all.
-      - package: PumpX2Kit
-        product: PumpX2Messages
-      - package: PumpX2Kit
-        product: PumpX2Auth
-      - package: PumpX2Kit
-        product: PumpX2BLE
+      - package: TandemKit
+        product: TandemMessages
+      - package: TandemKit
+        product: TandemAuth
+      - package: TandemKit
+        product: TandemBLE
       # <<< WATCH_DIRECT_PUMP
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # On-device eating detector (EatingDetectionKit) + its model catalog. Needs HealthKit (below).
@@ -324,6 +375,19 @@ targets:
     sources:
       - watch/faBolusWatchWidgets
       - path: Shared/WidgetShared.swift
+    dependencies:
+      # D-01/D-02: this complication extension previously linked neither faBolus nor faBolusCore
+      # (see Shared/WidgetShared.swift's WidgetGlucoseThresholds mirror comment). Adding
+      # faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy — viable
+      # because faBolusCore has zero package dependencies of its own. faBolusCore is declared
+      # DIRECTLY (not only transitively via faBolusDesign): GlucoseComplication.swift imports it and
+      # calls GlucoseRange.classify/.symbolName, and a watchOS app-extension does not link a
+      # dependency's transitive closure — those symbols must come from a direct product dep or the
+      # extension fails to link (faBolusCore.GlucoseRange.classify/symbolName undefined at Ld).
+      - package: faBolusDesign
+        product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: watch/faBolusWatchWidgets/Info.plist
       properties:
@@ -352,7 +416,20 @@ targets:
     sources:
       - ios/faBolusWidgets
       - path: Shared/WidgetShared.swift
+      - path: Shared/LiveActivityShared.swift
+      - path: Shared/LiveActivityIntents.swift
       - path: Shared/WidgetBolusIntents.swift
+    dependencies:
+      # D-01/D-02: this widget/Live Activity extension previously linked neither faBolus nor
+      # faBolusCore. Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions
+      # policy — viable because faBolusCore has zero package dependencies of its own. faBolusCore is
+      # declared DIRECTLY (not only transitively via faBolusDesign): these widget sources import it
+      # and call GlucoseRange.classify/.symbolName, and an app-extension does not link a dependency's
+      # transitive closure — those symbols must come from a direct product dep or Ld fails.
+      - package: faBolusDesign
+        product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: ios/faBolusWidgets/Info.plist
       properties:
@@ -393,9 +470,11 @@ targets:
       - path: Shared/WidgetShared.swift
       - path: Shared/DisplaySettings.swift
     dependencies:
-      # Contracts + models + the BLE transport. No PumpX2Kit/ConnectIQ — it's a remote.
+      # Contracts + models + the BLE transport. No TandemKit/ConnectIQ — it's a remote.
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
       # Embeds the macOS WidgetKit extension.
       - target: faBolusMacWidgets
         embed: true
@@ -443,6 +522,17 @@ targets:
       - path: Shared/WidgetShared.swift
       - path: Shared/WidgetBolusIntents.swift
       - path: Shared/DisplaySettings.swift
+    dependencies:
+      # D-01/D-02: this widget extension previously linked neither faBolusMac nor faBolusCore.
+      # Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy —
+      # viable because faBolusCore has zero package dependencies of its own. faBolusCore is declared
+      # DIRECTLY (not only transitively via faBolusDesign): FaBolusMacWidgetBundle.swift imports it
+      # and calls GlucoseRange.classify/.symbolName, and an app-extension does not link a dependency's
+      # transitive closure — those symbols must come from a direct product dep or Ld fails.
+      - package: faBolusDesign
+        product: faBolusDesign
+      - package: faBolusCore
+        product: faBolusCore
     info:
       path: mac/faBolusMacWidgets/Info.plist
       properties:
@@ -479,12 +569,26 @@ targets:
       - target: faBolus
       - package: faBolusCore
         product: faBolusCore
+      - package: faBolusDesign
+        product: faBolusDesign
+      # Phase 09.7-01: HistoryLogSyncTests injects an in-memory GlucoseHistoryStore directly (test
+      # isolation from the app's real on-disk store) — needs a direct module import, not just the
+      # transitive link the app target already has.
+      - package: HistoryStore
+        product: HistoryStore
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).appTests
         SWIFT_VERSION: "6.0"
         CODE_SIGNING_ALLOWED: NO
+        # This test target does NOT inherit the faBolus app target's SWIFT_ACTIVE_COMPILATION_CONDITIONS
+        # (each target's compile conditions are independent in xcodegen) — so the D-02 experimental-only
+        # regression test (AppModelBehaviorTests.swift, `#if FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL`) needs its
+        # own copy of the flag here to compile in under the same opt-in. Dropped by the same
+        # generate-project.sh `drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` default-OFF strip (scoped to
+        # every SWIFT_ACTIVE_COMPILATION_CONDITIONS line in the spec, not just the app target's).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
 
 schemes:
   # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the

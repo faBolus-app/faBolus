@@ -1,5 +1,5 @@
 import Foundation
-import PumpX2Auth
+import TandemAuth
 
 /// Validation + scheme detection for a Tandem pump pairing code entered in the UI.
 ///
@@ -8,7 +8,7 @@ import PumpX2Auth
 /// pairing). The app auto-selects the pairing scheme from the code the user typed — there is no
 /// firmware toggle: enter whatever the pump shows and the right handshake (JPAKE vs legacy V1) runs.
 ///
-/// This wraps `PumpX2Auth.PairingAuth` so SwiftUI views don't depend on the pump library directly.
+/// This wraps `TandemAuth.PairingAuth` so SwiftUI views don't depend on the pump library directly.
 enum PumpPairingCode {
     /// True when `code` is a usable pump pairing code (a valid 6-digit OR a valid 16-char code).
     static func isValid(_ code: String) -> Bool {

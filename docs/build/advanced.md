@@ -15,7 +15,7 @@ Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest o
 - *Optional:* the **Connect IQ Mobile SDK for iOS**, placed where `project.yml`'s `ConnectIQ`
   package points (default `../../vendor/connectiq-companion-app-sdk-ios-1.8.0`). Only needed for the
   Garmin remote — if it's absent, `generate-project.sh` auto-detects that and builds without Garmin.
-- **JDK 21** — `brew install openjdk@21` — only for PumpX2Kit's oracle tests.
+- **JDK 21** — `brew install openjdk@21` — only for TandemKit's oracle tests.
 - *Optional:* for the Garmin watch app, the **Connect IQ device SDK** + a developer key (see
   [Build the Garmin remote](garmin-build.md)).
 
@@ -23,17 +23,17 @@ Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest o
 
 ```sh
 mkdir -p ~/faBolus && cd ~/faBolus
-git clone --recurse-submodules https://github.com/faBolus-app/PumpX2Kit.git
+git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
 git clone https://github.com/faBolus-app/faBolus.git
 ```
 
-`faBolus` consumes `PumpX2Kit` via a local SPM path (`../PumpX2Kit`), so keep them side by
+`faBolus` consumes `TandemKit` via a local SPM path (`../TandemKit`), so keep them side by
 side.
 
-## PumpX2Kit (core + byte-exact oracle tests)
+## TandemKit (core + byte-exact oracle tests)
 
 ```sh
-cd ~/faBolus/PumpX2Kit
+cd ~/faBolus/TandemKit
 git submodule update --init            # vendors the pumpX2 oracle + mbedTLS
 ./scripts/test.sh                      # builds the cliparser JAR + runs byte-exact tests
 ```

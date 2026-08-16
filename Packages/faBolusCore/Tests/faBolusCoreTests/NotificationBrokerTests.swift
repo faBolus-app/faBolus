@@ -35,6 +35,12 @@ import Foundation
         #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"])
     }
 
+    @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
+        // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; the other 7
+        // (incl. all three trio categories) are app-generated.
+        #expect(Set(C.allCases.filter { $0.isPumpSourced }.map(\.rawValue)) == ["pumpAlert"])
+    }
+
     @Test func bolusDeliveryFailedIsGovernedNotASafetyCategory() {
         // §6 `lastError` Tier-2: a FAILED / BLOCKED delivery notification. The owner decided it is
         // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON, can be disabled, and can be
@@ -55,10 +61,11 @@ import Foundation
     }
 
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
-        // Maximally hostile config for EVERY category: disabled, all-day quiet, huge rate-limit.
+        // Maximally hostile config for EVERY category: disabled, all-day quiet, huge rate-limit, AND
+        // break-through OFF — proving the new toggle has zero effect on the never-suppressible trio (D-05).
         let settings = Dictionary(uniqueKeysWithValues: C.allCases.map {
             ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
-                                    minIntervalSeconds: 99_999))
+                                    minIntervalSeconds: 99_999, allowCriticalBreakthrough: false))
         })
         // Day already blown past a zero budget.
         let state = B.State(dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999, mealDeliveredToday: 999)
@@ -197,6 +204,28 @@ import Foundation
         #expect(!B.decide(warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal).deliver)
     }
 
+    @Test func breakThroughToggleGatesTheCriticalBypassBothDirections() {
+        // D-04: with break-through OFF, a CRITICAL `.pumpAlert` in a hostile (disabled) config honors
+        // normal governance instead of bypassing it — it is suppressed exactly like a non-critical message.
+        let hostileState = B.State(lastDeliveredAt: ["pumpAlert": at(3, 0)],
+                                   dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
+        let budget = B.Budget(dailyTotal: 0)
+        let settingsOff: [C: B.CategorySettings] = [.pumpAlert: B.CategorySettings(
+            enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999,
+            allowCriticalBreakthrough: false)]
+        let off = B.decide(criticalAlarm(), settings: settingsOff, state: hostileState, budget: budget,
+                           now: at(3, 30), calendar: cal)
+        #expect(!off.deliver, "break-through OFF must make a critical pumpAlert honor normal governance")
+        #expect(off.reason == .categoryDisabled)
+        // Same hostile config but break-through ON preserves today's bypass behavior unchanged.
+        let settingsOn: [C: B.CategorySettings] = [.pumpAlert: B.CategorySettings(
+            enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999,
+            allowCriticalBreakthrough: true)]
+        let on = B.decide(criticalAlarm(), settings: settingsOn, state: hostileState, budget: budget,
+                          now: at(3, 30), calendar: cal)
+        #expect(on.deliver, "break-through ON must preserve today's critical-bypass behavior")
+    }
+
     @Test func criticalAlarmStillHonorsOneNotificationPerEpisode() {
         // The nuance vs a neverSuppressible category: a critical governed alarm is NOT re-delivered every
         // poll. The pump re-raises an ACTIVE alarm each cycle; re-notification is driven by forgetEpisode
@@ -217,6 +246,10 @@ import Foundation
         #expect(s2 == state)
         let cfg = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420, minIntervalSeconds: 300)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
+        // Non-default allowCriticalBreakthrough round-trips too (D-04 field).
+        let cfg2 = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420,
+                                      minIntervalSeconds: 300, allowCriticalBreakthrough: false)
+        #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
     }

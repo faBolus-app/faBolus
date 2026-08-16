@@ -10,8 +10,19 @@ struct RootTabView: View {
     @State private var selection = 0
 
     private func autoReconnectIfNeeded() async {
-        guard model.hasStoredPairing, model.snapshot.connection == .disconnected else { return }
-        await model.connect()
+        // Guard now lives on AppModel (D-18, 05-05) so the Live Activity's Refresh intent can reuse
+        // the exact same seam via `LiveActivityIntentBridge.reconnect` — see `AppModel
+        // .autoReconnectIfNeeded()`'s doc comment.
+        await model.autoReconnectIfNeeded()
+    }
+
+    /// SC3 tab-strand guard (D-03, T-09.2-07/T-09.2-08). Only tag `1` (Bolus) is conditionally removed
+    /// from the TabView when `phoneReadOnly` is on (`:23-26` below) — tags 0/2/3/4 are always present.
+    /// Pure function so it's unit-testable without instantiating the TabView (mirrors the
+    /// `reenterMatches` static-for-test idiom in `BolusEntryView`). `internal` (not `private`) so
+    /// `RootTabSelectionGuardTests` (`@testable import faBolus`) can call it directly.
+    static func resolveSelection(current: Int, phoneReadOnly: Bool) -> Int {
+        (phoneReadOnly && current == 1) ? 0 : current
     }
 
     var body: some View {
@@ -38,6 +49,10 @@ struct RootTabView: View {
             // Widget deep link → Bolus tab (no-op in read-only, where the tab is hidden).
             if requested { if !settings.phoneReadOnly { selection = 1 }; model.openBolusRequested = false }
         }
+        .onChange(of: settings.phoneReadOnly) { _, isReadOnly in
+            // SC3 (D-03): never strand the user on a tab the toggle just hid.
+            selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
+        }
         .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
             Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
                 Task { await model.confirmRemoteBolus() }
@@ -49,8 +64,14 @@ struct RootTabView: View {
                 var parts = [String(format: "A remote requested %.2f U.", p.units)]
                 if let c = p.carbsGrams, c > 0 { parts.append(String(format: "Carbs: %.0f g.", c)) }
                 if let bg = p.bgMgdl {
+                    // CR-01 gap closure (04-07): route through the display-unit funnel — this
+                    // dialog is the highest-stakes confirm flow in the app (approving a
+                    // remote-triggered insulin delivery); the audit BG figure must match every
+                    // other glucose number the user sees, not stay a bare mg/dL literal.
+                    let unit = settings.glucoseDisplayUnit
+                    let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
                     let age = p.bgDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
-                    parts.append(age != nil ? "BG: \(bg) mg/dL (\(age!) min ago)." : "BG: \(bg) mg/dL.")
+                    parts.append(age != nil ? "BG: \(bgStr) (\(age!) min ago)." : "BG: \(bgStr).")
                 } else if let c = p.carbsGrams, c > 0 {
                     parts.append("No fresh CGM — carbs only, no correction.")
                 }

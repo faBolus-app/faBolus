@@ -64,6 +64,41 @@ import UserNotifications
         #expect(rt2.state.deliveredToday == 1)
     }
 
+    @Test func settingsPersistAcrossARuntimeRestart() {
+        let store = isolatedStore(#function)
+        let rt1 = NotificationRuntime(store: store)
+        var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
+        cfg.enabled = false
+        cfg.allowCriticalBreakthrough = false
+        rt1.updateSettings(cfg, for: .pumpAlert)
+        // A fresh runtime on the same store (a relaunch, or a sibling out-of-process poster) sees it.
+        let rt2 = NotificationRuntime(store: store)
+        #expect(rt2.settings[.pumpAlert]?.enabled == false)
+        #expect(rt2.settings[.pumpAlert]?.allowCriticalBreakthrough == false)
+    }
+
+    @Test func breakThroughOffPersistsAndIsHonoredByThePosterAcrossARuntimeRestart() {
+        // End-to-end tracer: model -> persistence -> decide, proven through the real poster (D-04).
+        let store = isolatedStore(#function)
+        let rt1 = NotificationRuntime(store: store)
+        var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
+        // Otherwise-enabled config (enabled stays true) — only quiet-hours + break-through change, so the
+        // suppression below is provably caused by the break-through toggle unmasking quiet-hours governance.
+        cfg.quietStartMinuteOfDay = 0
+        cfg.quietEndMinuteOfDay = 1439
+        cfg.allowCriticalBreakthrough = false
+        rt1.updateSettings(cfg, for: .pumpAlert)
+        let rt2 = NotificationRuntime(store: store)
+        let critical = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b",
+                                 dedupeKey: "occ2")
+        let d = NotificationPoster.post(critical, runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(!d.deliver && d.reason == .quietHours,
+               "persisted break-through OFF is honored by a fresh runtime + the real poster")
+        // A trio post on rt2 still delivers, unaffected by the pumpAlert-only settings mutation.
+        let trio = NotificationPoster.post(msg(.pumpDisconnect, key: "trio1"), runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(trio.deliver)
+    }
+
     @Test func onePerEpisodeThenForgetReEnables() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         #expect(NotificationPoster.post(msg(.pumpAlert, key: "ep"), runtime: rt, now: at(9, 0)) { _ in }.deliver)
@@ -132,21 +167,41 @@ import UserNotifications
 
     /// B6: the OS Critical Alert level is applied ONLY to the never-suppressible safety categories, and
     /// ONLY when the caller allows it (entitlement granted + user opted in). A governed category never gets
-    /// it, and a safety category degrades gracefully to the normal level when not allowed.
+    /// it, and a safety category degrades gracefully to the normal level when not allowed. D-06: also
+    /// asserts `.sound` alongside `.interruptionLevel` — the `.defaultCritical`/`.default` half of SC1/SC2
+    /// that no test previously covered.
+    ///
+    /// CR-01: while the Critical-Alerts entitlement is pending, the "not allowed" degrade path for the
+    /// safety trio must still break through Focus/DND, or the shipped "time-sensitive delivery" copy in
+    /// AlertRulesView is a lie. So the degrade target is `.timeSensitive` (breaks through Focus), NOT
+    /// `.active` (silenced by Focus) — scoped to `neverSuppressible` categories only; a governed category
+    /// under the same "not allowed" conditions must stay at the untouched default.
     @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        // Safety category + allowed → .critical.
+        // Safety category + allowed → .critical / .defaultCritical.
         NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .critical)
-        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to normal.
+        #expect(reqs.first?.content.sound == .defaultCritical)
+        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to .timeSensitive,
+        // which still breaks through Focus/DND (unlike .active) — CR-01. Sound stays .default: the special
+        // critical sound is reserved for the fully-granted .critical path above.
         reqs.removeAll()
         NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
-        #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
+        #expect(reqs.first?.content.sound == .default)
         // A governed (suppressible) category never gets .critical, even when allowed.
         reqs.removeAll()
         NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.sound == .default)
+        // CR-01 scope check: a governed category with allowCritical:false (today's default caller shape)
+        // stays at the plain default — it must NOT pick up .timeSensitive just because it shares the
+        // "not allowed" branch with the safety trio above.
+        reqs.removeAll()
+        NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .active)
+        #expect(reqs.first?.content.sound == .default)
     }
 
     /// B6: the pump-alarm opt-out suppresses ONLY a pump ALARM the user opted out of — never a lower-
@@ -156,6 +211,17 @@ import UserNotifications
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: false))
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alert, optedOut: true))
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .cgmAlert, optedOut: true))
+    }
+
+    /// D-03/D-04: the honest "pending Apple approval" status shows ONLY when the user opted in
+    /// (`criticalAlertsEnabled == true`) AND the OS grant is not active — the four-case truth table.
+    /// 08.1-02 (D-07): `shouldShowHonestStatus` relocated from `AlertRulesView` to
+    /// `NotificationSettingsView` along with the toggle it gates — this pin follows the move.
+    @Test func honestStatusShownOnlyWhenEnabledAndNotGranted() {
+        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: false) == true)
+        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: true) == false)
+        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: false) == false)
+        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
     }
 
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {

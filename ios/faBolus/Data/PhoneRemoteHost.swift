@@ -12,31 +12,68 @@ public final class PhoneRemoteHost {
     private let link = RemoteLink()
     private weak var model: AppModel?
 
+    /// Phase 09.6-05 (Part C-3a, D-03.3): app-wide weak reference so `WCDiagnostics`/`DebugMenuView`
+    /// can read this host's already-tracked WatchConnectivity state without an init-signature
+    /// change — mirrors `GarminRemoteBridge.shared`'s 09.6-04 precedent: `App.swift` constructs this
+    /// instance-scoped `@State`, and `DebugMenuView`'s declared `files_modified` doesn't include
+    /// `App.swift`, so a live reference can't be threaded through an init parameter without an
+    /// out-of-scope call-site change.
+    static weak var shared: PhoneRemoteHost?
+
+    /// Read-only diagnostics counters (Phase 09.6-05, D-03.3) — how many outbound sends this host has
+    /// attempted, and how many the transport reported undeliverable via `onUndeliverable`. Purely
+    /// observational: neither counter gates any send decision or gets reset except by app relaunch.
+    private(set) var sentCountForDiagnostics = 0
+    private(set) var undeliverableCountForDiagnostics = 0
+    /// The transport's live reachability (`RemoteLink.isReachable`, WCSession-backed) — read directly,
+    /// never re-derived.
+    var reachableForDiagnostics: Bool { link.isReachable }
+
+    /// Phase 09.6-07 (D-03.1, D-04): the watch's OWN diagnostics text, set ONLY by the `.diagnosticsRead`
+    /// case in `handle(_:)` below — a pure text store, nothing else. Read by `DebugMenuView` for the
+    /// `[Watch self]` section. `nil` until a reply has ever arrived (renders the placeholder there).
+    private(set) var lastWatchDiagnosticsText: String?
+
     public init(model: AppModel) {
         self.model = model
+        Self.shared = self
         link.onReceive = { [weak self] cmd in self?.handle(cmd) }
-        model.addRemoteEcho { [weak self] cmd in self?.link.send(cmd) }
+        // Read-only diagnostics accessor (Phase 09.6-05): the existing `onUndeliverable` seam already
+        // fires exactly when a pump-mutating send couldn't be handed to the peer (RemoteSendDisposition,
+        // never a new WC round-trip) — just counted here, never acted on differently than before.
+        link.onUndeliverable = { [weak self] _ in self?.undeliverableCountForDiagnostics += 1 }
+        model.addRemoteEcho { [weak self] cmd in self?.sendTracked(cmd) }
         // Proactively push status (with history for the watch chart) when pump data changes.
         model.addStatusListener { [weak self] _ in
             guard let self, let m = self.model else { return }
-            self.link.send(m.statusCommand(includeHistory: true))
+            self.sendTracked(m.statusCommand(includeHistory: true))
         }
     }
 
-    private func handle(_ cmd: RemoteCommand) {
+    /// Every outbound send from this host funnels through here so `sentCountForDiagnostics` reflects
+    /// every attempt — a thin counting wrapper around `link.send`, no behavior change.
+    private func sendTracked(_ cmd: RemoteCommand) {
+        sentCountForDiagnostics += 1
+        link.send(cmd)
+    }
+
+    /// Not `private` so `WatchDiagnosticsOverWCTests` (`@testable import faBolus`) can drive a
+    /// simulated end-to-end round-trip without a live WatchConnectivity session — still internal,
+    /// never part of the public API surface.
+    func handle(_ cmd: RemoteCommand) {
         guard let model else { return }
         // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
         // a bolus/resume/approval applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds
         // are gated (see RemoteCommandFreshness); a late cancel/suspend is still honored (safe direction).
         if RemoteCommandFreshness.isStale(cmd) {
-            link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+            sendTracked(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
                                     status: .failed, message: RemoteCommandFreshness.rejectionMessage))
             return
         }
         switch cmd.kind {
         case .bolusRequest:
             guard !AppSettings.shared.remotesReadOnly else {
-                link.send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
+                sendTracked(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
                                         status: .failed, message: "Read-only mode"))
                 return
             }
@@ -56,17 +93,24 @@ public final class PhoneRemoteHost {
             Task { await model.cancelBolus(from: .appleWatch, peerId: "watch") }
         case .dismissAlert:
             if let id = cmd.alertId, let k = cmd.alertKind {
-                Task { await model.dismissAlert(id: id, kind: k, from: .appleWatch, peerId: "watch"); self.link.send(model.statusCommand(includeHistory: true)) }
+                Task { await model.dismissAlert(id: id, kind: k, from: .appleWatch, peerId: "watch"); self.sendTracked(model.statusCommand(includeHistory: true)) }
             }
         case .statusRead:
             if cmd.forceGlucose == true {
-                Task { await model.refreshGlucoseNow(); self.link.send(model.statusCommand(includeHistory: true)) }
+                Task { await model.refreshGlucoseNow(); self.sendTracked(model.statusCommand(includeHistory: true)) }
             } else {
-                link.send(model.statusCommand(includeHistory: true))
+                sendTracked(model.statusCommand(includeHistory: true))
             }
         case .eatingEvent:
             // Apple Watch on-device detector relayed a p(eating) — feed the fusion engine. Advisory.
             if let p = cmd.eatingProb { model.ingestWatchEatingEvent(prob: p) }
+        case .diagnosticsRead:
+            // Phase 09.6-07 (D-03.1, D-04): the watch's OWN diagnostics-text REPLY. This entire case
+            // body is a pure text store — no dose/delivery/model call, no Task launch, no status
+            // re-push (`RemoteDiagnosticsScopeGuardTests` source-scans this exact region dose-free).
+            // A bare REQUEST (no text set — never actually arrives here since only the phone sends
+            // requests) leaves the store untouched rather than clobbering it with nil.
+            if let text = cmd.diagnosticsText { lastWatchDiagnosticsText = text }
         case .suspendPump:
             guard !AppSettings.shared.remotesReadOnly else { return }
             model.requestRemoteControl(requestId: cmd.requestId, action: .suspend)
@@ -76,5 +120,12 @@ public final class PhoneRemoteHost {
         default:
             break
         }
+    }
+
+    /// Phase 09.6-07 (D-03.1): ask the watch for its OWN diagnostics text — a bare, non-mutating
+    /// `.diagnosticsRead` request (no `diagnosticsText` set). The watch's `WatchModel` replies with a
+    /// second `.diagnosticsRead` carrying the text, handled above.
+    func requestWatchDiagnostics() {
+        sendTracked(RemoteCommand(kind: .diagnosticsRead))
     }
 }

@@ -2,7 +2,7 @@
 
 A Connect IQ (Monkey C) companion, currently supporting the **Garmin Venu 3S**. It's a **thin
 remote**: it messages the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm
-interlock and delivers through PumpX2Kit. To build and install it, see
+interlock and delivers through TandemKit. To build and install it, see
 [Build the Garmin remote](../build/garmin-build.md).
 
 !!! note "Garmin support is an optional build"

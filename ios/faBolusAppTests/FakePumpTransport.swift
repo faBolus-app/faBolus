@@ -1,6 +1,6 @@
 import Foundation
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// Round-3 §6.1 deterministic fake transport for driving the REAL `TandemBackend.perform` flow with no
@@ -182,5 +182,55 @@ final class FakePumpTransport: PumpTransport {
         let cr = Bytes.toUint32(carbRatioMilliGramsPerUnit); for i in 0..<4 { c[14 + i] = cr[i] }  // carbRatio
         let mb = le2(maxBolusMilliunits); c[18] = mb[0]; c[19] = mb[1]                        // maxBolusAmount
         return frame(opCode: BolusCalcDataSnapshotResponse.props.opCode, cargo: c, signed: false)
+    }
+
+    // MARK: - History-log frame builders (Phase 09.7-01 — gap-aware sync)
+
+    /// op-59 `HistoryLogStatusResponse` (12 bytes: numEntries/firstSequenceNum/lastSequenceNum, all
+    /// little-endian `UInt32`, per `TandemKit`'s `HistoryLog.swift`).
+    static func historyLogStatus(numEntries: UInt32, firstSequenceNum: UInt32, lastSequenceNum: UInt32) -> [UInt8] {
+        frame(opCode: HistoryLogStatusResponse.props.opCode,
+              cargo: Bytes.toUint32(numEntries) + Bytes.toUint32(firstSequenceNum) + Bytes.toUint32(lastSequenceNum),
+              signed: false)
+    }
+
+    /// One 26-byte history-log CGM (EGV) record, matching `HistoryLog.parseCgmRecord`'s layout exactly:
+    /// typeId = short@0 (masked 0x0FFF; default 256 = Dexcom G6, one of `HistoryLog.cgmTypeIds`),
+    /// pumpTimeSec = uint32@2, sequenceNum = uint32@6, glucoseMgdl = short@16.
+    static func cgmHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32, mgdl: Int, typeId: Int = 256) -> [UInt8] {
+        var r = [UInt8](repeating: 0, count: 26)
+        let t = le2(typeId); r[0] = t[0]; r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
+        let g = le2(mgdl); r[16] = g[0]; r[17] = g[1]
+        return r
+    }
+
+    /// One 26-byte history-log completed-bolus record, matching `HistoryLog.parseBolusRecord`'s layout
+    /// exactly: typeId = short@0 (`HistoryLog.bolusCompletedTypeId` = 20), pumpTimeSec = uint32@2,
+    /// sequenceNum = uint32@6, iob = float@14, deliveredUnits = float@18.
+    static func bolusHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32,
+                                   deliveredUnits: Double, iobUnits: Double) -> [UInt8] {
+        var r = [UInt8](repeating: 0, count: 26)
+        let t = le2(20); r[0] = t[0]; r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
+        let iobB = Bytes.toFloat(Float(iobUnits)); for i in 0..<4 { r[14 + i] = iobB[i] }
+        let dv = Bytes.toFloat(Float(deliveredUnits)); for i in 0..<4 { r[18 + i] = dv[i] }
+        return r
+    }
+
+    /// op-129 `HistoryLogStreamResponse` (variable size, streamed): cargo is
+    /// `[numberOfHistoryLogs, streamId, record0(26)…recordN(26)]`. Builds one frame carrying every CGM +
+    /// bolus record supplied (`events` accepts pre-built raw 26-byte records for any other record type a
+    /// test needs — e.g. an unrecognized/`UnknownHistoryLog` typeId — and defaults to none).
+    static func historyLogStream(cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] = [],
+                                 bolusRecords: [(seq: UInt32, pumpTimeSec: UInt32, delivered: Double, iob: Double)] = [],
+                                 events: [[UInt8]] = [], streamId: Int = 0) -> [UInt8] {
+        var records: [[UInt8]] = cgmReadings.map { cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl) }
+        records += bolusRecords.map { bolusHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered, iobUnits: $0.iob) }
+        records += events
+        let cargo: [UInt8] = [UInt8(records.count), UInt8(streamId)] + records.flatMap { $0 }
+        return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
     }
 }

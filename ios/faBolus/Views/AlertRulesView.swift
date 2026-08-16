@@ -7,27 +7,9 @@ import faBolusCore
 struct AlertRulesView: View {
     @Bindable var settings: AppSettings
     @State private var editing: AlertRule?
-    /// §6/S8 B6: the opt-out is safety-reducing, so enabling it is gated behind this warning + confirm.
-    @State private var showSuppressWarning = false
-
-    /// §6/S8 B6: enabling the pump-alarm opt-out routes through a warning + explicit confirm; turning it
-    /// off is immediate. Cancel leaves the flag false, so the Toggle snaps back.
-    private var suppressBinding: Binding<Bool> {
-        Binding(get: { settings.suppressMirroredPumpAlarms },
-                set: { on in if on { showSuppressWarning = true } else { settings.suppressMirroredPumpAlarms = false } })
-    }
 
     var body: some View {
         Form {
-            // §6/S8 B6: how faBolus's notifications are delivered — the Critical Alerts opt-in and the
-            // pump-alarm re-notification opt-out. Distinct from the auto-RULES below (which snooze/clear
-            // specific alerts by condition).
-            Section {
-                Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
-                Toggle("Silence pump alarms in the app", isOn: suppressBinding)
-            } header: { Text("Notification delivery") } footer: {
-                Text("Critical Alerts let faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
-            }
             Section {
                 if settings.alertRules.isEmpty {
                     Text("No rules yet. Add one to automatically snooze or clear alerts that meet conditions you choose (e.g. quiet CGM highs overnight).")
@@ -57,12 +39,6 @@ struct AlertRulesView: View {
         .navigationTitle("Alert rules")
         .sheet(item: $editing) { rule in
             AlertRuleEditorView(rule: rule) { updated in save(updated) }
-        }
-        .alert("Silence pump alarms in the app?", isPresented: $showSuppressWarning) {
-            Button("Silence in the app", role: .destructive) { settings.suppressMirroredPumpAlarms = true }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected.")
         }
     }
 
@@ -104,6 +80,20 @@ private struct AlertRuleEditorView: View {
 
     private var eligibleKinds: [PumpAlertKind] { PumpAlertKind.allCases.filter { $0.isAutoRuleEligible } }
 
+    /// Phase 04-02 (D-10): the display-unit funnel these two Stepper LABELS route through. `belowValue`/
+    /// `aboveValue` and the Stepper's `in:`/`step:` bounds stay mg/dL `Int` — unchanged, unconverted
+    /// (Pitfall 3) — only the rendered title text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
+    /// display unit (D-10; not a glued suffix). `Localizable.xcstrings` carries both as siblings.
+    private func glucoseLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L"), value)
+            : String(format: String(localized: "%@ mg/dL"), value)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -141,9 +131,13 @@ private struct AlertRuleEditorView: View {
 
                 Section("Glucose condition") {
                     Toggle("Only when glucose is below", isOn: $useBelow)
-                    if useBelow { Stepper("Below \(belowValue) mg/dL", value: $belowValue, in: 40...400, step: 5) }
+                    if useBelow {
+                        Stepper(value: $belowValue, in: 40...400, step: 5) { Text("Below \(glucoseLabel(belowValue))") }
+                    }
                     Toggle("Only when glucose is above", isOn: $useAbove)
-                    if useAbove { Stepper("Above \(aboveValue) mg/dL", value: $aboveValue, in: 40...400, step: 5) }
+                    if useAbove {
+                        Stepper(value: $aboveValue, in: 40...400, step: 5) { Text("Above \(glucoseLabel(aboveValue))") }
+                    }
                 }
             }
             .navigationTitle("Rule")

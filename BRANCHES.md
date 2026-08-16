@@ -1,6 +1,6 @@
 # Branch model, promotion, and the experimental gate
 
-This governs all three code repos — **faBolus**, **PumpX2Kit**, **faBolusGarmin** — which move in
+This governs all three code repos — **faBolus**, **TandemKit**, **faBolusGarmin** — which move in
 lockstep (§1.3). `faBolus-internal` is private and single-branch and is not covered here.
 
 Written per §1.1–§1.4 and §13 of the v3 handoff. It is deliberately in the repo root beside
@@ -76,10 +76,10 @@ travels with the branch rather than being lost.
 
 ## Cross-repo CI is branch-aware (§1.2)
 
-The three repos build against each other (faBolus consumes PumpX2Kit as a local package; faBolusGarmin
+The three repos build against each other (faBolus consumes TandemKit as a local package; faBolusGarmin
 validates against faBolus's schema). CI checks out the sibling at the branch **matching** the branch
 under test, falling back to `main` when no same-named counterpart exists — so an `experimental` faBolus
-builds against `experimental` PumpX2Kit. The resolver logs the resolved ref **and its SHA**, because the
+builds against `experimental` TandemKit. The resolver logs the resolved ref **and its SHA**, because the
 one dangerous failure is a silent fallback that greens a mismatch. See each repo's
 `.github/workflows/ci.yml` (`resolve-refs` in faBolus; the inline `fbref` step in faBolusGarmin).
 
@@ -104,45 +104,65 @@ Bump `MARKETING_VERSION` on a release and record it in `CHANGELOG.md`. Current: 
 
 ### Backend version-pinning contract — the TARGET state
 
-The intended contract for the backend dependency (PumpX2Kit) is:
+The intended contract for the backend dependency (TandemKit) is:
 
-1. PumpX2Kit is released under **annotated** tags (`git tag -a`), so a tag carries its own message and
+1. TandemKit is released under **annotated** tags (`git tag -a`), so a tag carries its own message and
    date and is a first-class object, not a bare pointer.
-2. Apps pin the backend by an **explicit version** (SwiftPM `url:` + version range/exact), not an
-   unversioned local path — so a build is reproducible and a rollback to `safe-baseline`/`deprecated`
-   is meaningful for the pump-protocol stack, with a **documented local-path override** for day-to-day
-   development against an unreleased backend.
+2. Apps pin the backend by an **explicit version or a pinned commit `revision:`** (SwiftPM `url:` +
+   version range/exact, or `url:` + `revision:`), not an unversioned local path — so a build is
+   reproducible and a rollback to `safe-baseline`/`deprecated` is meaningful for the pump-protocol
+   stack, with a **documented local-path override** for day-to-day development against an unreleased
+   backend.
 3. The resolved graph is captured in a **committed `Package.resolved`** so CI and every clone build the
    same backend revision.
 
-### Backend version-pinning — DECLARED UNMET (current state)
+### Backend version-pinning — MET (current state, pinned revision, 2026-08-13)
 
-This contract is **not yet met**, and per the plan it is **declared unmet here rather than silently
-satisfied by the local path.** faBolus continues to consume the backend by path
-(`project.yml`: `PumpX2Kit: path: ../PumpX2Kit`). Reasons:
+This contract is now **MET**, via a **pinned revision** (D-01/D-01a) rather than the exact-version pin
+originally envisioned. faBolus consumes the backend by `url:` + `revision:` — a pinned commit SHA on
+TandemKit `main` — with a `FABOLUS_TANDEM_LOCAL=1` local-path override for day-to-day development
+against an unreleased backend (`project.yml`, `scripts/generate-project.sh`).
 
-- **SwiftPM forbids a URL+version dependency on a package that uses `.unsafeFlags`.** PumpX2Kit's crypto
-  target (`CMbedTLSJPAKE`, used by the `PumpX2Auth`/`PumpX2BLE` products faBolus consumes) sets
-  `.unsafeFlags([...])` at `Package.swift:37`. Removing it is a real vendoring refactor (rehoming
-  `../../vendor/mbedtls` header escapes and 13 committed mbedtls symlinks into the package tree) guarded
-  by the EC-JPAKE oracle-parity tests that pump **pairing** depends on — not a one-line change.
-- The **in-progress M1 driver** (`feat/m1-tandem-pumpmanager`, `integrations/PumpX2LoopKit`, task #99)
-  currently **depends on consuming PumpX2Kit by path** for the same crypto reason, so removing the
-  local path mid-M1 would be a two-front change to the same crypto target.
+- **The stated SwiftPM `.unsafeFlags` blocker is retired.** TandemKit's crypto target
+  (`CMbedTLSJPAKE`, used by the `TandemAuth`/`TandemBLE` products faBolus consumes) now sets
+  `.define` instead of `.unsafeFlags` at `Package.swift:37` (D3, commit `7ec57c6`), landed on `main`
+  via PR #16. The feared 13-symlink `../../vendor/mbedtls` vendoring refactor proved unnecessary — the
+  fix was a one-line `.unsafeFlags` → `.define` swap. (A **pinned revision** is also exempt from
+  SwiftPM's URL+version/`.unsafeFlags` restriction at the SwiftPM level regardless — that restriction
+  applies to version-range/exact pins, not `revision:` pins — but the D3 fix landed anyway as part of
+  the same change.)
+- **Governance fact, recorded rather than papered over:** PR #16's squash merge carried **D2**
+  (`d128eed`, experimental BLE txId correlation) onto TandemKit `main` in the same commit as D3 — D2
+  did not independently clear the §1.4 promotion gate above. The owner's **pin-current-main** decision
+  (2026-08-13, recorded in `.planning/phases/03-pumpx2kit-version-pin/03-01-SUMMARY.md`) accepts this:
+  D2 is opt-in/fail-closed (`correlationMode` defaults to `opcodeFIFO`, `internal(set)`, only elevated
+  by `setPumpFamily(.tslim)`, which faBolus never calls) and was squash-cherry-picked such that no
+  `main` SHA exists with D3 but not D2. faBolus's revision pin therefore formally consumes D2's code
+  even though faBolus never exercises the elevated path. **D2's own §1.4 promotion status remains the
+  owner's separate concern — this pin does not retroactively promote it**, and this fact is not to be
+  silently corrected away in a future edit of this document.
+- Pinned revision: `6efdd43d767c34a0d298ac52fbbd2cd77a6d192a` (TandemKit `main` tip as of 2026-08-13;
+  verified CI-green — sbom-provenance + build-and-test — and `TandemAuthTests` oracle byte-parity green
+  at that exact commit).
+- The **in-progress M1 driver** (`feat/m1-tandem-pumpmanager`, `integrations/TandemLoopKit`, task #99)
+  is no longer constrained to the local path for the crypto reason — it can consume TandemKit via the
+  pin, or `FABOLUS_TANDEM_LOCAL=1` for local iteration, same as the app target.
 
-**Current tag state (PumpX2Kit)**, recorded so it is not re-discovered — *do not create or modify these
+**Current tag state (TandemKit)**, recorded so it is not re-discovered — *do not create or modify these
 tags as part of this contract*:
 
 | Tag | Type | Note |
 |---|---|---|
 | `v0.1.0` | **annotated** | first-class tag object |
 | `v0.2.0` | **lightweight** | bare commit pointer — should be re-cut annotated as a cleanup |
-| `v0.3.0` | *(absent)* | would be the vendored-crypto release that unblocks the URL+version pin |
+| `v0.3.0` | *(absent, reserved — NOT cut)* | D-01b: superseded by a revision pin instead; a revision pin needs no tag, so `v0.3.0` stays reserved for a possible future exact-version release |
 
-There is **no committed `Package.resolved`** in any repo (it is gitignored; only the ephemeral copy
-inside the generated `.xcodeproj` exists). Meeting the contract is tracked as a standing item; it does
-not change any shipped delivery/dosing/alerting behavior when it lands (it is dependency-resolution
-metadata).
+faBolus now commits a canonical, root-level `Package.resolved` (restored into the generated project by
+`scripts/generate-project.sh` after each `xcodegen generate`), locking `tandemkit` at the pinned
+revision above alongside the existing `fabolusnudge`/`loopalgorithm` pins. This closes contract clause 3.
+The TandemKit repo's own resolved file stays gitignored by design (TandemKit has no cross-repo package
+dependencies of its own to lock). Committing this file does not change any shipped delivery/dosing/
+alerting behavior — it is dependency-resolution metadata only.
 
 ### Garmin moves in lockstep with the app
 

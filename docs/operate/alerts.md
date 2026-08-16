@@ -73,3 +73,32 @@ same and, on pumps that allow remote dismiss, also clears it on the pump.
 !!! warning "Alarms are never auto-handled"
     For safety, **alarms and malfunctions** — the pump's most severe notifications — are never
     auto-snoozed or auto-dismissed, no matter what rules you set.
+
+## Critical Alerts — current status
+
+faBolus requests Apple's **Critical Alerts** capability so its never-suppressible safety trio —
+pump disconnected, CGM data lost, unresolved bolus — can break through Do Not Disturb and the
+ringer switch. That capability requires a special Apple-issued entitlement
+(`com.apple.developer.usernotifications.critical-alerts`), which faBolus does **not** currently
+hold.
+
+!!! note "Pending Apple approval — this is expected, not an error"
+    Until Apple grants the entitlement, faBolus **degrades gracefully**: the safety trio is still
+    delivered every time (that guarantee never depends on the entitlement), just as
+    **time-sensitive** notifications rather than true Critical Alerts. Under **Settings → Alert
+    rules**, the "Use Critical Alerts" toggle shows an honest status line — "Critical Alerts
+    aren't active yet — pending Apple approval" — for as long as this is the case. This is the
+    normal, everyday pre-approval state and can persist for months; it is not a bug.
+
+**How to flip it on once Apple grants the entitlement:** add
+`com.apple.developer.usernotifications.critical-alerts` (Boolean `true`) to
+`ios/faBolus/faBolus.entitlements` and regenerate the app's **provisioning profile** with the
+granted entitlement. No code change is required — the `.critical`/`.defaultCritical` delivery
+path already gates purely on the user's own "Use Critical Alerts" setting, and iOS activates true
+break-through delivery for an entitled app automatically. The honest-status notice clears itself
+once the app's cached grant state reflects the new entitlement.
+
+**Tracking:** filing the Apple approval request is an owner action, tracked in
+`.planning/todos/pending/2026-08-13-file-apple-critical-alerts-entitlement-request.md`. Real
+Do-Not-Disturb break-through behavior can only be verified on a device after Apple grants the
+entitlement — it cannot be exercised in CI or the Simulator.

@@ -6,10 +6,10 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 ## Building the app
 
 ??? question "Build fails right after downloading — missing `mbedtls` files"
-    PumpX2Kit's crypto submodule wasn't fetched. Run:
+    TandemKit's crypto submodule wasn't fetched. Run:
 
     ```sh
-    cd ~/faBolus/PumpX2Kit && git submodule update --init --recursive
+    cd ~/faBolus/TandemKit && git submodule update --init --recursive
     ```
 
 ??? question "Xcode can't find the ConnectIQ package"

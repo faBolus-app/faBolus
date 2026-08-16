@@ -226,6 +226,11 @@ public final class MockBackend: PumpBackend {
                                      carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
+        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        guard snapshot.cartridgeReadyForBolus else {
+            throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
+        }
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
         // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
@@ -254,6 +259,11 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
+        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
+        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        guard snapshot.cartridgeReadyForBolus else {
+            throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
+        }
         lastDeliver = (units, carbsGrams, bgMgdl, iobUnits)   // FB-04 spy: exactly what the caller passed
         // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
@@ -283,7 +293,11 @@ public final class MockBackend: PumpBackend {
     // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
     public func suspendDelivery() async throws { snapshot.deliverySuspended = true; onChange?() }
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
-    public func setTempBasal(percent: Int, durationMinutes: Int) async throws { onChange?() }
+    /// 06-01: counts temp-rate writes that reach the backend, so `TempRateAutomationTests` can prove
+    /// an out-of-range/inert headless request never touches the pump (count stays 0) while an in-range
+    /// one passed through by `TempRateAutomation` does (count == 1) — mirrors `idpWriteCount`/`controlWriteCount`.
+    public private(set) var tempRateWriteCount = 0
+    public func setTempBasal(percent: Int, durationMinutes: Int) async throws { tempRateWriteCount += 1; onChange?() }
     public func stopTempBasal() async throws { onChange?() }
     public func setMode(_ command: ModeCommand) async throws {
         // Translate the typed command to the reported activity STATE the UI reads from controlIQMode
@@ -328,6 +342,38 @@ public final class MockBackend: PumpBackend {
     }
     public func refreshControlIQSettings() async {
         if snapshot.controlIQWeightLbs == 0 { snapshot.controlIQWeightLbs = 160; snapshot.controlIQTotalDailyInsulin = 45; onChange?() }
+    }
+    /// Phase 09.10 D-04: mirrors `setControlIQ` — counted via `controlWriteCount` (the P14 S6
+    /// therapy-defining-write counter `everyTherapyWriteEntryPointIsCentrallyGated` asserts against),
+    /// clamps minute-of-day to 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates
+    /// (or appends) the written slot in `snapshot.sleepSchedules` so a UI round-trip reflects the write.
+    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
+        controlWriteCount += 1
+        let start = max(0, min(startMinute, 1439))
+        let end = max(0, min(endMinute, 1439))
+        let written = PumpSleepScheduleSlot(slot: slot, enabled: enabled, activeDays: activeDays,
+                                            startMinute: start, endMinute: end)
+        if let idx = snapshot.sleepSchedules.firstIndex(where: { $0.slot == slot }) {
+            snapshot.sleepSchedules[idx] = written
+        } else {
+            snapshot.sleepSchedules.append(written)
+        }
+        onChange?()
+    }
+    public func refreshSleepSchedule() async {
+        if snapshot.sleepSchedules.isEmpty {
+            // Representative sample data so the simulator shows a populated read (slot 0 = the
+            // pump's user-facing "Sleep Schedule 1", enabled; the rest sample the mixed/partial state).
+            snapshot.sleepSchedules = [
+                PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 0x1F,
+                                      startMinute: 22 * 60, endMinute: 6 * 60),
+                PumpSleepScheduleSlot(slot: 1, enabled: false, activeDays: 0x60,
+                                      startMinute: 23 * 60, endMinute: 7 * 60),
+                PumpSleepScheduleSlot(slot: 2, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0),
+                PumpSleepScheduleSlot(slot: 3, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0),
+            ]
+            onChange?()
+        }
     }
     public func refreshProfiles() async {
         if snapshot.profiles.isEmpty {

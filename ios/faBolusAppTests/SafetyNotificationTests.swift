@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
+import TandemMessages
 @testable import faBolus
 
 /// P9 step 4 — the three never-suppressible §6 safety notifications synthesized from their detection

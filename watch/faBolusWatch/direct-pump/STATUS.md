@@ -29,7 +29,7 @@ path never touches the seam the capability channel is threaded through.
 `scripts/generate-project.sh` defaults `FABOLUS_WATCH_DIRECT_PUMP=0`, which:
 
 - excludes this directory from the `faBolusWatch` target's sources, and
-- drops the `PumpX2Messages` / `PumpX2Auth` / `PumpX2BLE` dependencies.
+- drops the `TandemMessages` / `TandemAuth` / `TandemBLE` dependencies.
 
 `WatchPumpClient.swift` is the **only** file on the watch that imports those, so with the flag off the
 watch app does not link the pump BLE stack at all. That is a stronger property than hiding a page: a

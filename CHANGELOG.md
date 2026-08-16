@@ -21,7 +21,7 @@ markers rather than releases, and are listed under Unreleased until a version is
   **never** surface a suggested rescue-carbohydrate amount for treating a low. It scans the app +
   faBolusCore sources on every `swift test` run and fails if such an API/string is reintroduced.
 - **§1.3 versioning + cross-repo contract** documented in `BRANCHES.md`: app-version single-sourcing,
-  the backend (PumpX2Kit) version-pinning contract, the Garmin lockstep clause, an
+  the backend (TandemKit) version-pinning contract, the Garmin lockstep clause, an
   app × faBolusGarmin × `RemoteCommand` schema **compatibility matrix**, and the published **minimum
   Garmin device set** (`venu3s` hardware-validated; the `manifest.xml` `iq:products` build-target set).
   Cross-referenced from `AGENTS.md` and `CONTRIBUTING.md`.
@@ -53,8 +53,8 @@ insulin**) is unchanged.
   Retrospective **Insights** (time-in-range, recurring patterns) are unaffected and remain.
 
 ### Declared unmet
-- **Backend version-pinning is declared UNMET** (§1.3): faBolus still consumes PumpX2Kit by
-  `path: ../PumpX2Kit` because the backend's crypto target uses `.unsafeFlags`, which SwiftPM forbids in
+- **Backend version-pinning is declared UNMET** (§1.3): faBolus still consumes TandemKit by
+  `path: ../TandemKit` because the backend's crypto target uses `.unsafeFlags`, which SwiftPM forbids in
   a URL+version dependency, and the in-progress M1 driver depends on path-consumption. Declared here per
   the plan rather than silently satisfied by the local path. See `BRANCHES.md` §1.3.
 

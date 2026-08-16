@@ -18,7 +18,7 @@ authenticated (one-time QR/code) and **end-to-end encrypted**, opt-in and off by
 per-remote permissions, a read-only mode, and optional reverse approval. It's proximity-range
 (Bluetooth), not internet-distance. See [docs/remotes/phone-remote.md](docs/remotes/phone-remote.md).
 
-**Today it supports one pump:** the Tandem **t:slim X2 / Mobi** (via [`PumpX2Kit`](../PumpX2Kit)).
+**Today it supports one pump:** the Tandem **t:slim X2 / Mobi** (via [`TandemKit`](../TandemKit)).
 The app talks only to a backend interface, so support for other pumps can be added as new backends
 **without forking** — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -109,7 +109,7 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
 
 - The iOS app, widgets, Apple Watch app, watch complication, and the Mac menu-bar app + its widgets
   are all targets of one Xcode project (`faBolus.xcodeproj`), generated from `project.yml` with
-  [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `PumpX2Kit` via SPM.
+  [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `TandemKit` via SPM.
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
   **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
@@ -121,7 +121,7 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
 Full walkthrough: [docs/build](docs/build/index.md). In short:
 
 ```sh
-git clone --recurse-submodules https://github.com/faBolus-app/PumpX2Kit.git
+git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
 git clone https://github.com/faBolus-app/faBolus.git
 cd faBolus
 ./scripts/generate-project.sh      # generates faBolus.xcodeproj (auto-detects the Garmin SDK)
@@ -153,7 +153,7 @@ The **Garmin** eating path (phone-side inference) needs none of this and works o
 
 ## Status
 
-The protocol/BLE/auth core ([`PumpX2Kit`](../PumpX2Kit)) supports read-only monitoring, JPAKE
+The protocol/BLE/auth core ([`TandemKit`](../TandemKit)) supports read-only monitoring, JPAKE
 pairing, and a signed bolus path validated on hardware. This app layer is under active
 development on top of it.
 
@@ -161,7 +161,7 @@ development on top of it.
 
 faBolus is built on **[pumpX2](https://github.com/jwoglom/pumpx2)** by **James Woglom
 ([@jwoglom](https://github.com/jwoglom))**. His reverse-engineering of the Tandem pump's Bluetooth
-protocol is the foundation of this entire project — [`PumpX2Kit`](../PumpX2Kit) is a Swift port of
+protocol is the foundation of this entire project — [`TandemKit`](../TandemKit) is a Swift port of
 that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not exist
 without it.** (faBolus is an independent reimplementation — not a fork of, affiliated with, or
 endorsed by pumpX2/controlX2.)

@@ -50,11 +50,23 @@ public enum TherapyConfirmations {
     /// double-check prompt when the entered value is wildly off for the pump's TDD, else `nil` — and `nil`
     /// ALSO covers TDD-unknown (TDD comes only from a configured Control-IQ; 0 ⇒ can't compute). WARN-ONLY:
     /// the caller shows this as a passive advisory; it never blocks, clamps, or resizes the edit.
-    public static func isfTddAdvisory(isfMgdlPerUnit: Int, totalDailyInsulinUnits: Int) -> String? {
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the returned advisory text (04-08 gap closure,
+    ///   SC1). `TherapyConfirmations` is a `faBolusCore` type and must stay app-independent — it cannot
+    ///   read `AppSettings.shared` — so the caller (`PumpWizardViews`) passes the unit through.
+    ///   Defaults to `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording)
+    ///   is byte-identical to before this parameter was added. `isfMgdlPerUnit`/`expected` stay mg/dL
+    ///   `Int`/`Double` throughout the "1800 rule" math — only the rendered text changes.
+    public static func isfTddAdvisory(isfMgdlPerUnit: Int, totalDailyInsulinUnits: Int, unit: GlucoseUnit = .mgdl) -> String? {
         guard totalDailyInsulinUnits > 0 else { return nil }
         let expected = 1800.0 / Double(totalDailyInsulinUnits)
         guard isFarFromRule(Double(isfMgdlPerUnit), expected: expected) else { return nil }
-        return "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(Int(expected.rounded())) mg/dL per unit is typical (the “1800 rule”). \(isfMgdlPerUnit) mg/dL per unit is unusual — double-check."
+        let expectedMgdl = Int(expected.rounded())
+        switch unit {
+        case .mgdl:
+            return "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(expectedMgdl) mg/dL per unit is typical (the “1800 rule”). \(isfMgdlPerUnit) mg/dL per unit is unusual — double-check."
+        case .mmol:
+            return "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(unit.format(mgdl: expectedMgdl)) mmol/L per unit is typical (the “1800 rule”). \(unit.format(mgdl: isfMgdlPerUnit)) mmol/L per unit is unusual — double-check."
+        }
     }
 
     /// **Carb ratio (ICR) advisory** vs the "500 rule" (ICR ≈ 500 / TDD, grams per unit). Same warn-only,

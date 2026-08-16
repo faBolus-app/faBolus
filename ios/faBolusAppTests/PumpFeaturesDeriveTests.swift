@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-import PumpX2Messages
+import TandemMessages
 import faBolusCore
 @testable import faBolus
 

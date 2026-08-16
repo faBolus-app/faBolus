@@ -43,6 +43,19 @@ struct FaBolusApp: App {
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
+                    // D-18 (05-05): install the Live Activity intents' in-process hooks — see
+                    // `Shared/LiveActivityIntents.swift`'s file-level note on why that file can't
+                    // import AppModel directly (it also compiles into the faBolusWidgets extension).
+                    LiveActivityIntentBridge.reconnect = { [weak model] in await model?.autoReconnectIfNeeded() }
+                    // WR-02 (05-06): the action gate now reads the SAME `AppModel.snoozeGateAllows`
+                    // predicate as the button's visibility gate (`hasSnoozeEligibleAlert`, computed in
+                    // `AppModel.refresh()`) — previously this used a subtly different "none is .alarm"
+                    // check while visibility used "at least one is non-.alarm", so a button could render
+                    // and then dead-tap when an alarm and a snoozeable alert were both active at once.
+                    LiveActivityIntentBridge.snoozeAlertIfSafe = { [weak model] in
+                        guard let model, AppModel.snoozeGateAllows(model.activeNotifications) else { return }
+                        NotificationRuntime().snooze(.pumpAlert, until: Date().addingTimeInterval(NotificationCoordinator.snoozeSeconds))
+                    }
                     ICloudSettingsSync.shared.start()   // optional; no-op unless built with FABOLUS_ICLOUD
                     AppSettings.shared.syncWidgetConfig()
                     model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag

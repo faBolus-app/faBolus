@@ -6,11 +6,13 @@ import Foundation
 /// are explicit sRGB literals — the exact ratios documented in `docs/accessibility-contrast-audit.md`
 /// are asserted here too, so the doc can't silently drift from the numbers a reader would compute.
 ///
-/// The `AppTheme` band colors live in the iOS app target (SwiftUI `Color`), which this pure-logic
-/// package can't import. The four RGB tuples below are copied from `ios/faBolus/Design/AppTheme.swift`
-/// with a MUST-MATCH note there; the app-target test `AppThemeContrastAuditTests` resolves the LIVE
-/// `AppTheme` colors and re-derives these same ratios, so a recolor of the (§13-locked) tokens fails
-/// that test and forces both this pin and the doc to be revisited.
+/// The `AppTheme` band colors live in the `faBolusDesign` package (SwiftUI `Color`), which this
+/// pure-logic package still can't import — that would create the faBolusDesign<->faBolusCore cycle
+/// D-02 forbids (faBolusDesign depends ON faBolusCore, never the reverse). The four RGB tuples below
+/// are copied from `Packages/faBolusDesign/Sources/faBolusDesign/AppTheme.swift` with a MUST-MATCH
+/// note there; the app-target test `AppThemeContrastAuditTests` resolves the LIVE `AppTheme` colors
+/// and re-derives these same ratios, so a recolor of the (§13-locked) tokens fails that test and
+/// forces both this pin and the doc to be revisited.
 ///
 /// Background assumption: the colored glucose number sits on the system background — pure white
 /// (#FFFFFF) in light mode, pure black (#000000) in dark mode.

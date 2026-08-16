@@ -52,6 +52,19 @@ struct BolusGateHostFeedTests {
         }
     }
 
+    /// Phase 09.9 D-01: the phone bolus affordance inherits the no-cartridge hard block through the
+    /// existing `cartridgeReadyForBolus` → `BolusGate.evaluate(cartridgeReady:)` wire — no per-surface code.
+    @Test func midCartridgeChangeReportsNoCartridge() async {
+        await withClean {
+            let (model, backend) = makeModel()
+            await backend.connect()
+            try? await backend.enterChangeCartridgeMode()   // sets cartridgeLoadState = 0 (CHANGE_CARTRIDGE)
+            let g = model.bolusGate(amount: 2.0, minimum: 0.05)
+            #expect(!g.canBolus)
+            #expect(g.reason == .noCartridge)
+        }
+    }
+
     // MARK: P12 increment 4 — statusCommand emits the semantic bolus availability over the wire
 
     @Test func statusCommandEmitsCanBolusWhenConnected() async {
@@ -81,6 +94,19 @@ struct BolusGateHostFeedTests {
             let cmd = model.statusCommand(includeHistory: false)
             #expect(cmd.canBolus == false)
             #expect(cmd.bolusBlockReason == "accessDenied")
+        }
+    }
+
+    /// Phase 09.9 D-01/D-05: the no-cartridge block propagates to every remote (watch/Garmin/Mac) through
+    /// the existing `cmd.canBolus`/`cmd.bolusBlockReason` wire — no bespoke per-surface build.
+    @Test func statusCommandEmitsNoCartridgeWhenCartridgeIsLoading() async {
+        await withClean {
+            let (model, backend) = makeModel()
+            await backend.connect()
+            try? await backend.enterChangeCartridgeMode()   // sets cartridgeLoadState = 0 (CHANGE_CARTRIDGE)
+            let cmd = model.statusCommand(includeHistory: false)
+            #expect(cmd.canBolus == false)
+            #expect(cmd.bolusBlockReason == "noCartridge")
         }
     }
 

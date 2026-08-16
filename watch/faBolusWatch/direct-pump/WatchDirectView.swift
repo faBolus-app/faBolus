@@ -4,8 +4,15 @@ import faBolusCore
 /// "Direct" page: pair the watch straight to the pump (independent of the iPhone). Phase 1 —
 /// pairing only; status + delivery over the direct link come in Phase 2. Because the pump keeps
 /// one pairing at a time, pairing the watch evicts the phone (it must re-pair to use the pump).
+///
+/// `pump` is injected (not owned) as of Phase 09.6-05: `WatchRootView` now holds the single
+/// `WatchPumpClient` instance and hands it to both this view and the new read-only `WatchDebugView`,
+/// so the bench diagnostics screen observes the SAME live connection this view controls rather than
+/// a second, always-idle client (two independently-constructed clients would either desync the
+/// diagnostics from reality or, if either called a control-path method, open a second BLE
+/// connection — exactly what D-04/C9 forbid).
 struct WatchDirectView: View {
-    @State private var pump = WatchPumpClient()
+    @Bindable var pump: WatchPumpClient
     @State private var showPairing = false
 
     var body: some View {

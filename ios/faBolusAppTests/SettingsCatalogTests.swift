@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// P14 Slice 1 drift guards. The catalog (`SettingsCatalog.descriptors`) is the single source of truth
-/// for the 44 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
+/// for the 45 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
 struct SettingsCatalogTests {
@@ -16,11 +16,21 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly44UniqueKeys() {
+    @Test func descriptorsCoverExactly48UniqueKeys() {
         // P16 §3.2: 48 → 46 (smartAssistEnabled R6 + hypoAlertsEnabled R5 removed). P16 F2: 46 → 44
         // (basalScheduleByHour + basalScheduleSource removed with the dead display-only basal cache).
-        #expect(SettingsCatalog.descriptors.count == 44)
-        #expect(SettingsCatalog.byKey.count == 44)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 01-03 (task #93, SG3a): 44 → 45 (stackingGuardFrictionEnabled added).
+        // Phase 04-01 (mmol/L display-unit support, D-03): 45 → 46 (glucoseDisplayUnit added).
+        // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
+        // Phase 5 (05-03, D-13/D-14): 48 → 49 (glucoseBadgeEnabled added).
+        // Owner-requested "Show unit labels" toggle: 49 → 50 (showGlucoseUnitLabels added).
+        // Phase 6 (06-01, 999.2/D-01): 50 → 51 (autoTempRate added).
+        // Phase 6 (06-02, 999.2/D-02): 51 → 52 (autoProfileActivation added).
+        // Phase 09.7-01: historyCoverage (D-04) is intentionally NOT added here — see the NOTE in
+        // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
+        // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
+        #expect(SettingsCatalog.descriptors.count == 53)
+        #expect(SettingsCatalog.byKey.count == 53)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -35,7 +45,12 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 40)                      // 36 unconditional + 4 conditional
+        // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
+        // Phase 5 (05-03): 44 → 45 (glucoseBadgeEnabled, unconditional).
+        // Owner-requested toggle: 45 → 46 (showGlucoseUnitLabels, unconditional).
+        // Phase 6 (06-01, 999.2/D-01): 46 → 47 (autoTempRate, unconditional).
+        // Phase 6 (06-02, 999.2/D-02): 47 → 48 (autoProfileActivation, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 48)                      // 44 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -126,9 +141,103 @@ struct SettingsCatalogTests {
     // MARK: Tier axis (S1 state)
 
     @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 44 keys is an app/display/remote preference the user owns. The `.clinician` /
+        // Every one of the 45 keys is an app/display/remote preference the user owns. The `.clinician` /
         // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
         // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
+    }
+
+    // MARK: Phase 01-03 (task #93, SG3a) — the escalating-friction disable toggle's registration
+
+    /// The SG3a escalating-friction disable toggle must be a `.user`-tier row visible from Simple minimum
+    /// mode (never `.clinician`/`.fixed`) — it only gates a UI friction-tier presentation choice, not a
+    /// therapy parameter.
+    @Test func stackingGuardFrictionEnabledIsRegisteredAtUserTierFromSimple() {
+        let d = SettingsCatalog.byKey["stackingGuardFrictionEnabled"]
+        #expect(d != nil, "stackingGuardFrictionEnabled missing from the catalog")
+        #expect(d?.tier == .user)
+        #expect(d?.isVisible(in: .simple) == true)
+        #expect(d?.backsUp == true)
+    }
+
+    // MARK: Ambient-surface flags are per-device (never iCloud-synced)
+
+    /// The three ambient always-on-screen opt-ins — `liveActivityEnabled`, `liveActivityFields`,
+    /// `glucoseBadgeEnabled` — must stay per-device: enabling the Live Activity or the glucose badge on
+    /// one iPhone must never silently switch it on for the same owner on another device. They still back
+    /// up (a restore is an explicit user action) and are not command-adjacent — this is a distinct
+    /// exclusion reason from C5, so it's asserted independently of `commandAdjacentFlags`.
+    @Test func ambientSurfaceFlagsAreBackedUpButNeverICloudSynced() {
+        let ambientSurfaceFlags: Set<String> = [
+            "liveActivityEnabled", "liveActivityFields", "glucoseBadgeEnabled",
+        ]
+        let synced = SettingsCatalog.iCloudSyncedKeys
+        #expect(synced.isDisjoint(with: ambientSurfaceFlags))
+        for flag in ambientSurfaceFlags {
+            let d = SettingsCatalog.byKey[flag]
+            #expect(d != nil, "ambient-surface flag \(flag) missing from catalog")
+            #expect(d?.backsUp == true, "\(flag) must still back up (local persistence unaffected)")
+            #expect(d?.syncsToICloud == false, "\(flag) must not ride iCloud settings sync")
+            #expect(!SettingsCatalog.commandAdjacentFlags.contains(flag),
+                     "\(flag) is excluded for ambient-surface reasons, not C5 command-adjacency")
+        }
+    }
+
+    // MARK: Phase 04-01 (mmol/L display-unit support, D-03) — the glucoseDisplayUnit setting's registration
+
+    /// D-03: `.display` category, `backsUp: true` with iCloud ON (a display unit is NOT command-adjacent).
+    @Test func glucoseDisplayUnitIsRegisteredInDisplayWithICloudSyncOn() {
+        let d = SettingsCatalog.byKey["glucoseDisplayUnit"]
+        #expect(d != nil, "glucoseDisplayUnit missing from the catalog")
+        #expect(d?.category == .display)
+        #expect(d?.backsUp == true)
+        #expect(d?.syncsToICloud == true)
+        #expect(!SettingsCatalog.commandAdjacentFlags.contains("glucoseDisplayUnit"))
+    }
+
+    /// D-03: default = mg/dL (behavior-preserving for existing users) on a fresh install, and the setting
+    /// round-trips across a re-init of `AppSettings` over the SAME backing store (persists, doesn't just
+    /// live in memory).
+    @Test @MainActor func glucoseDisplayUnitDefaultsToMgdlAndRoundTripsAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.glucoseDisplayUnit == .mgdl)   // D-03: behavior-preserving default
+
+        fresh.glucoseDisplayUnit = .mmol
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.glucoseDisplayUnit == .mmol)   // persisted across re-init
+    }
+
+    // MARK: Owner-requested "Show unit labels" toggle — the setting's registration
+
+    /// Registered `.display`, `backsUp: true`, iCloud ON (a display-format preference, mirroring
+    /// `glucoseDisplayUnit`'s reasoning — NOT a per-device ambient-surface toggle like
+    /// `liveActivityEnabled`/`glucoseBadgeEnabled`, so it is deliberately excluded from
+    /// `ambientSurfaceFlags` above).
+    @Test func showGlucoseUnitLabelsIsRegisteredInDisplayWithICloudSyncOn() {
+        let d = SettingsCatalog.byKey["showGlucoseUnitLabels"]
+        #expect(d != nil, "showGlucoseUnitLabels missing from the catalog")
+        #expect(d?.category == .display)
+        #expect(d?.backsUp == true)
+        #expect(d?.syncsToICloud == true)
+        #expect(!SettingsCatalog.commandAdjacentFlags.contains("showGlucoseUnitLabels"))
+    }
+
+    /// Default OFF (owner request) on a fresh install, and round-trips across a re-init of
+    /// `AppSettings` over the SAME backing store.
+    @Test @MainActor func showGlucoseUnitLabelsDefaultsToOffAndRoundTripsAcrossReinit() {
+        let suiteName = "SettingsCatalogTests.showGlucoseUnitLabels.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.showGlucoseUnitLabels == false)   // default OFF
+
+        fresh.showGlucoseUnitLabels = true
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.showGlucoseUnitLabels == true)   // persisted across re-init
     }
 }

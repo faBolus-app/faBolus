@@ -14,6 +14,12 @@ struct FaBolusWatchApp: App {
 struct WatchRootView: View {
     @Bindable var model: WatchModel
     @State private var showBolus = false
+    // Phase 09.6-05 (Part C-3b): the single WatchPumpClient instance, lifted here so both
+    // WatchDirectView (control) and WatchDebugView (read-only diagnostics) observe the SAME live
+    // connection rather than two independent, desynced clients.
+    #if FABOLUS_WATCH_DIRECT_PUMP
+    @State private var directPump = WatchPumpClient()
+    #endif
 
     var body: some View {
         TabView {
@@ -26,7 +32,8 @@ struct WatchRootView: View {
             // excluded from shipping builds — see watch/faBolusWatch/direct-pump/STATUS.md.
             // Enable with FABOLUS_WATCH_DIRECT_PUMP=1 ./scripts/generate-project.sh (bench only).
             #if FABOLUS_WATCH_DIRECT_PUMP
-            WatchDirectView()
+            WatchDirectView(pump: directPump)
+            WatchDebugView(pump: directPump)
             #endif
         }
         .tabViewStyle(.page)
@@ -38,16 +45,5 @@ struct WatchRootView: View {
             WatchBolusView(model: model)
         }
         .onAppear { model.requestStatus() }
-    }
-}
-
-/// Shared modern glucose color.
-func watchGlucoseColor(_ mgdl: Int?, stale: Bool) -> Color {
-    guard let g = mgdl, !stale else { return .gray }
-    switch RemoteGlucose.band(g) {
-    case 0: return .red
-    case 1: return .green
-    case 2: return .yellow
-    default: return .orange
     }
 }

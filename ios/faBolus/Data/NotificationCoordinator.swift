@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import UserNotifications
+import UIKit
 
 /// P9 §6 — the single owner of the local-notification path.
 ///
@@ -28,8 +29,13 @@ final class NotificationRuntime {
     private let store: UserDefaults
     static let stateKey = "notificationBroker.state.v1"
     static let telemetryKey = "notificationBroker.telemetry.v1"
+    /// Per-category `NotificationBroker.CategorySettings` (Phase 8.1) — previously in-memory-only (see
+    /// RESEARCH.md Critical Correction); now App-Group-persisted like `state`/`telemetry` so a preference the
+    /// user sets survives a relaunch and is honored by every out-of-process poster.
+    static let settingsKey = "notificationBroker.settings.v1"
     private let stateKey = NotificationRuntime.stateKey
     private let telemetryKey = NotificationRuntime.telemetryKey
+    private let settingsKey = NotificationRuntime.settingsKey
     /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
     /// out-of-process mode-reminder intent honors the same choice the main app made.
     static let telemetryEnabledKey = "notificationBroker.telemetryEnabled"
@@ -47,8 +53,13 @@ final class NotificationRuntime {
         let store = store ?? .standard
         self.store = store
         self.budget = budget
-        self.settings = settings ?? Dictionary(uniqueKeysWithValues:
-            NotificationBroker.Category.allCases.map { ($0, .defaults(for: $0)) })
+        // The explicit `settings:` parameter always wins (tests inject via it); otherwise load whatever is
+        // persisted, filling any category the blob doesn't yet cover with its default (Pattern 2 growth).
+        if let settings {
+            self.settings = settings
+        } else {
+            self.settings = Self.loadSettings(store, NotificationRuntime.settingsKey)
+        }
         if let data = store.data(forKey: stateKey),
            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
             self.state = decoded
@@ -100,6 +111,37 @@ final class NotificationRuntime {
         return decoded
     }
 
+    /// Load the persisted per-category settings blob (keyed by `Category.rawValue`, mirroring
+    /// `loadTelemetry`), falling back to `.defaults(for:)` for every category the blob is missing (a
+    /// fresh install, or a category added after the blob was first written) — every category is always
+    /// present in the returned dictionary.
+    private static func loadSettings(_ store: UserDefaults, _ key: String) -> [NotificationBroker.Category: NotificationBroker.CategorySettings] {
+        var merged = Dictionary(uniqueKeysWithValues:
+            NotificationBroker.Category.allCases.map { ($0, NotificationBroker.CategorySettings.defaults(for: $0)) })
+        guard let data = store.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategorySettings].self, from: data)
+        else { return merged }
+        for (raw, cfg) in decoded {
+            guard let category = NotificationBroker.Category(rawValue: raw) else { continue }
+            merged[category] = cfg
+        }
+        return merged
+    }
+
+    /// Mutate one category's settings and persist immediately (App-Group-backed) so a fresh
+    /// `NotificationRuntime(store:)` construction — including a sibling out-of-process poster
+    /// (`ModeAutomation`/`ProfileAutomation`/`TempRateAutomation`/the widget snooze intent) — honors it on
+    /// its next `evaluate`. The UI (Plan 02) writes through this.
+    func updateSettings(_ cfg: NotificationBroker.CategorySettings, for category: NotificationBroker.Category) {
+        settings[category] = cfg
+        persistSettings()
+    }
+
+    private func persistSettings() {
+        let keyed = Dictionary(uniqueKeysWithValues: settings.map { ($0.key.rawValue, $0.value) })
+        if let data = try? JSONEncoder().encode(keyed) { store.set(data, forKey: settingsKey) }
+    }
+
     /// Run the broker on `message` at `now`, persist the advanced state, and return the decision.
     func evaluate(_ message: NotificationBroker.Message, now: Date) -> NotificationBroker.Decision {
         // Re-read the store first: a sibling process (a mode-reminder intent) may have advanced the
@@ -107,6 +149,12 @@ final class NotificationRuntime {
         if let data = store.data(forKey: stateKey),
            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
             state = decoded
+        }
+        // Re-read settings ONLY when a blob actually exists, so a test (or a caller) that constructed this
+        // runtime with an explicit `settings:` on an empty store is never silently clobbered back to
+        // defaults — while a genuine cross-process settings edit (the UI, in another process) is honored.
+        if store.data(forKey: settingsKey) != nil {
+            settings = Self.loadSettings(store, settingsKey)
         }
         let decision = NotificationBroker.decide(message, settings: settings, state: state,
                                                  budget: budget, now: now)
@@ -169,13 +217,22 @@ enum NotificationPoster {
         // §6/S8 B6: iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
         // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
         // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
-        // this can never over-escalate a routine or governed notification. Graceful degradation: when the
-        // entitlement isn't granted, `allowCritical` is false and this is exactly today's behavior.
+        // this can never over-escalate a routine or governed notification.
         if allowCritical && message.category.neverSuppressible {
             content.interruptionLevel = .critical
             content.sound = .defaultCritical
         } else {
             content.sound = .default
+            // CR-01: graceful degradation while the Critical-Alerts entitlement is pending (or the user
+            // hasn't opted in) — the safety trio still must break through Focus/DND, or the "time-sensitive
+            // delivery" promise in AlertRulesView is false. `.timeSensitive` does that without requiring the
+            // special-request Critical Alerts entitlement; it only needs the lightweight Time-Sensitive
+            // Notifications capability (see faBolus.entitlements). Scoped to `neverSuppressible` so a
+            // governed/suppressible category is never escalated. If the app ever lacked the Time-Sensitive
+            // capability, iOS silently downgrades this to `.active` — safe by default, never a crash.
+            if message.category.neverSuppressible {
+                content.interruptionLevel = .timeSensitive
+            }
         }
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
         // Stamp the broker category so the delegate can route a SNOOZE action (and attribute telemetry)
@@ -209,13 +266,22 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         center.delegate = self
         registerCategories()
         // B6: also request critical-alert permission. Harmless (a no-op) when the app lacks the
-        // critical-alerts entitlement. We deliberately DON'T read `getNotificationSettings` to gate the
-        // `.critical` level: that completion runs on a background queue, and a `@MainActor`-inferred closure
-        // there SIGTRAPs at launch under CI's Xcode 16.4 (the trap the `registerCategories` note documents).
-        // It's also unnecessary — iOS itself downgrades a `.critical` notification to a normal one when the
-        // app isn't entitled, so gating on the user's `criticalAlertsEnabled` alone is correct and degrades
-        // gracefully at the OS level.
-        center.requestAuthorization(options: [.alert, .sound, .criticalAlert]) { _, _ in }
+        // critical-alerts entitlement — iOS itself downgrades a `.critical` notification to a normal one
+        // when the app isn't entitled, so gating `NotificationPoster.post`'s content on the user's
+        // `criticalAlertsEnabled` alone (D-05) is correct and degrades gracefully at the OS level.
+        // Phase 5 (D-14, 05-03): `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon
+        // glucose badge, `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores
+        // every `setBadgeCount` call regardless of the user's opt-in.
+        center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
+        // D-03: query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
+        // `notificationSettings()` API — the older completion-handler form runs its block on a background
+        // queue, and a `@MainActor`-inferred closure there is the exact SIGTRAP CI's Xcode 16.4 hit at
+        // launch (see `registerCategories`'s note on the same hazard). The async form resumes on the
+        // calling (main) actor, so there is no background-thread/`@MainActor` mismatch.
+        Task { @MainActor [weak self] in await self?.refreshGrantState() }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in Task { @MainActor in await self?.refreshGrantState() } }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
@@ -224,6 +290,33 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
+    }
+
+    /// D-03: query the OS grant state via the modern async API and cache it for the honest-status UI
+    /// (`AlertRulesView`). Called from `init` and again on foreground so a user who flips OS notification
+    /// permissions in Settings sees the status update without relaunching. `.enabled` means the entitlement
+    /// is granted AND the user authorized critical alerts; any other value (`.notSupported`/`.disabled`) is
+    /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`) — see
+    /// 08-RESEARCH.md Open Question #1 on which exact value iOS reports pre-entitlement.
+    ///
+    /// UI-only: this cache is NEVER read by `post`'s `allowCritical` gate or by `NotificationBroker.decide`
+    /// (D-05) — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
+    private func refreshGrantState() async {
+        // Swift 6 strict concurrency (CI's Xcode 16.4): `UNNotificationSettings` is non-Sendable, so
+        // awaiting `notificationSettings()` directly here would send it back onto this `@MainActor` type —
+        // rejected at build. Read it inside a `nonisolated` helper where the non-Sendable value never leaves
+        // its own isolation region; only the `Bool` crosses back to the main actor. Behavior is identical.
+        AppSettings.shared.criticalAlertGrantActive = await Self.fetchCriticalAlertGranted()
+    }
+
+    /// Read the OS critical-alert grant flag off the main actor (see `refreshGrantState`). `nonisolated` so
+    /// the non-Sendable `UNNotificationSettings` stays contained; returns only the Sendable `Bool`.
+    private nonisolated static func fetchCriticalAlertGranted() async -> Bool {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        #if DEBUG
+        print("NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
+        #endif
+        return settings.criticalAlertSetting == .enabled
     }
 
     /// Remove delivered + pending notifications for these dedupe keys — used when a safety condition

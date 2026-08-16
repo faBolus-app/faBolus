@@ -1,6 +1,6 @@
 import Foundation
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 
 /// The subset of `PumpBLEClient` that TandemBackend's **signed / delivery** flow depends on, factored out
 /// as a seam so that flow can be exercised behind a deterministic fake with no CoreBluetooth hardware

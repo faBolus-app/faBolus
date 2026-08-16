@@ -84,4 +84,92 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.alertId, 2)
         XCTAssertEqual(decoded.alertKind, 3)
     }
+
+    /// Phase 4 (mmol/L display-unit support, D-04/Pattern 2): the additive-optional
+    /// `glucoseDisplayUnit` wire token round-trips (JSON + dictionary), and its absence on a legacy
+    /// payload decodes to `nil` (⇒ consumers default to mgdl) WITHOUT touching `schemaVersion`.
+    func testGlucoseDisplayUnitRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.glucoseDisplayUnit = GlucoseUnit.mmol.wireToken
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.glucoseDisplayUnit, "mmol")
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.glucoseDisplayUnit, "mmol")
+
+        // Absent on a legacy/bare payload ⇒ nil (default mgdl), schemaVersion still 1.
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.glucoseDisplayUnit)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
+
+    // MARK: - Phase 09.6-07 (D-03.1, D-04): watch-diagnostics-over-WC `.diagnosticsRead`
+
+    /// `.diagnosticsRead` must be provably delivery-inert: never a pump-mutating command, never
+    /// freshness-gated (it carries no dose input, so late arrival is harmless).
+    func testDiagnosticsReadIsDeliveryInert() {
+        XCTAssertFalse(RemoteCommand.Kind.diagnosticsRead.mutatesPumpState)
+        XCTAssertFalse(RemoteCommand.Kind.diagnosticsRead.isFreshnessSensitive)
+    }
+
+    /// A `.diagnosticsRead` REPLY (diagnosticsText set) round-trips losslessly over both wire shapes
+    /// (JSON Data and the [String:Any] dictionary WatchConnectivity/Garmin actually transport), and
+    /// `schemaVersion` stays unchanged — Swift-only additive field, exactly like `eatingProb`.
+    func testDiagnosticsReadRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .diagnosticsRead)
+        cmd.diagnosticsText = "Phone reachable: yes\nDirect-CGM failover: idle"
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.diagnosticsText, cmd.diagnosticsText)
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.diagnosticsText, cmd.diagnosticsText)
+    }
+
+    /// A bare `.diagnosticsRead` REQUEST (the phone's ask) carries no `diagnosticsText` — decoding a
+    /// legacy/bare payload must yield `nil`, never a crash or a fabricated empty string.
+    func testDiagnosticsReadBareRequestDecodesWithNilText() throws {
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .diagnosticsRead).encoded())
+        XCTAssertNil(bare.diagnosticsText)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
+
+    /// `diagnosticsText` is subject to the SAME length cap every other string field uses — an
+    /// oversized value must fail `validate()` on the untrusted decode path, not silently truncate or
+    /// pass through.
+    func testDiagnosticsReadOversizedTextFailsValidation() {
+        var cmd = RemoteCommand(kind: .diagnosticsRead)
+        cmd.diagnosticsText = String(repeating: "x", count: RemoteCommand.maxStringLength + 1)
+        XCTAssertThrowsError(try cmd.validate()) { error in
+            XCTAssertEqual(error as? RemoteCommand.ValidationError, .oversizedString("diagnosticsText"))
+        }
+    }
+
+    // MARK: - Phase 09.9-04 (D-05): cartridge-ready DISPLAY signal
+
+    /// The additive-optional `cartridgeReady` field round-trips (JSON + dictionary) both when true and
+    /// when explicitly false, and never touches `schemaVersion` — mirrors `canBolus` exactly.
+    func testCartridgeReadyRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.cartridgeReady = true
+        var decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.cartridgeReady, true)
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        var back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.cartridgeReady, true)
+
+        // An explicit false (cartridge mid change/load/prime) round-trips too — never dropped/coerced.
+        cmd.cartridgeReady = false
+        decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.cartridgeReady, false)
+        back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.cartridgeReady, false)
+    }
+
+    /// A legacy/bare payload without the `cartridgeReady` key decodes to `nil` — NO SIGNAL, never a
+    /// fabricated "not ready" that could mislead a remote into showing a false block.
+    func testCartridgeReadyAbsentOnLegacyPayloadDecodesToNil() throws {
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.cartridgeReady)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
 }

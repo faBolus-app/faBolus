@@ -19,10 +19,20 @@ public final class AppModel {
 
     // Persistent history (SwiftData) — write-through target for long-term glucose/bolus history; powers
     // time-in-range / future plotting and feeds the advisory tools. Optional so a store-init failure
-    // never breaks the app. See MIGRATION.md (Phase 2).
-    private let history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
-    private var lastGlucoseIngest = Date.distantPast
-    private var lastBolusIngest = Date.distantPast
+    // never breaks the app. See MIGRATION.md (Phase 2). `var` (not `let`) so `#if DEBUG`
+    // `setHistoryStoreForTesting` can substitute an in-memory store for test isolation; production never
+    // reassigns it after init.
+    private var history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    // Phase 09.7-01 (Pitfall 3 fix): identity-diff bookkeeping (this cycle's readings vs. what the LAST
+    // `persistNewHistory` call already wrote), NOT a forward-only date watermark. A forward watermark
+    // (`$0.date > lastGlucoseIngest`) silently dropped any gap-sync record dated OLDER than the
+    // watermark — exactly the interior/forward-gap records D-02 exists to fetch. Diffing against the
+    // previous snapshot's identity set lets an older record through (it wasn't in the last snapshot, so
+    // it's "new") while still not re-inserting the same already-ingested readings on every `refresh()`
+    // tick (`refresh()`/`persistNewHistory` fire far more often than history actually changes — a plain
+    // "always ingest everything" would re-write the same rows into SwiftData on every poll).
+    private var lastPersistedGlucoseKeys: Set<TimeInterval> = []
+    private var lastPersistedBolusKeys: Set<TimeInterval> = []
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
     @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
@@ -102,6 +112,11 @@ public final class AppModel {
     }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
+    /// D-05 (Phase 09.7-02): mirrors `TandemBackend.historySyncState` for the "Pump history sync" UI
+    /// section in `DataHistoryView`. Concrete-Tandem-only (mirrored in `refresh()` via `source as?
+    /// TandemBackend`, the established `onCommandLatency` pattern) — stays `.idle(lastSynced: nil)` on
+    /// `MockBackend`, which has no gap-sync of its own.
+    public private(set) var historySyncState: HistorySyncState = .idle(lastSynced: nil)
     public private(set) var alertDebug: String = ""
     public var lastError: String?
 
@@ -134,6 +149,13 @@ public final class AppModel {
 
     /// The active backend's capabilities, so the UI can hide unsupported features.
     public var capabilities: PumpCapabilities { source.capabilities }
+
+    /// Part B-a (Phase 09.6-01, D-02a): opcodes the connected pump has rejected this connection-
+    /// lifetime, for the `[Capability/opcode]` diagnostics section. `TandemBackend`-concrete only
+    /// (mirrors the `source as? TandemBackend` pattern already used for `onCommandLatency`/
+    /// `historySyncState` above) — a non-Tandem backend (mocks, tests) simply reports no rejected
+    /// opcodes rather than crashing the diagnostics read-out.
+    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? TandemBackend)?.badOpcodesForDiagnostics ?? [] }
 
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
@@ -285,6 +307,7 @@ public final class AppModel {
     /// on top. Staleness is intentionally not a factor here (it only nils the correction auto-fill).
     func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
         BolusGate.evaluate(reachable: true, linked: snapshot.isLinked, bolusInFlight: snapshot.bolusInFlight,
+                           cartridgeReady: snapshot.cartridgeReadyForBolus,
                            amount: amount, minimum: minimum, maximum: snapshot.maxBolusUnits,
                            access: accessDecision(.deliverBolus, from: .phoneUI))
     }
@@ -388,6 +411,10 @@ public final class AppModel {
         // the old on-watch tap toggle. Unconditional like garminComplicationDisplay ⇒ "absent" means a
         // legacy host; the Garmin app keeps its digital default until it parses this.
         cmd.clockAnalog = AppSettings.shared.garminClockAnalog
+        // Phase 4: mirror the phone's glucose display-unit setting to remotes as the frozen wire
+        // token (never the raw enum — Pitfall 6), so Watch/Garmin render mg/dL/mmol like the phone.
+        // Absent on a legacy remote ⇒ it defaults to mgdl (display-only; dose/wire glucose stays mg/dL).
+        cmd.glucoseDisplayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
@@ -399,10 +426,15 @@ public final class AppModel {
         // the string, so this is additive.
         let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
+                                       cartridgeReady: s.cartridgeReadyForBolus,
                                        amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         cmd.canBolus = avail.canBolus
         cmd.bolusBlockReason = avail.reason?.wireToken
+        // Phase 09.9-04 (D-05): the pump's cartridge-ready DISPLAY status, distinct from canBolus (which
+        // only reflects the block at bolus-attempt time) — lets a remote show cartridge state even when
+        // not attempting a bolus. Single source of truth: PumpSnapshot.cartridgeReadyForBolus.
+        cmd.cartridgeReady = s.cartridgeReadyForBolus
         // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
         // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
         // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a
@@ -707,6 +739,14 @@ public final class AppModel {
     /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
     private var glucoseSource: GlucoseSource?
 
+    /// Phase 09.6-03 (D-03.2): the currently-configured failover source's `(id, status)`, for
+    /// `CgmArbiterDiagnostics` — read-only, reads `glucoseSource`'s already-tracked `status` and
+    /// never re-probes/reconnects it. Empty when no failover source is selected.
+    public var glucoseSourceDiagnosticsInfo: [(id: String, status: GlucoseSourceStatus)] {
+        guard let glucoseSource else { return [] }
+        return [(id: glucoseSource.id, status: glucoseSource.status)]
+    }
+
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
         get { source.pairingCode } set { source.pairingCode = newValue }
@@ -898,6 +938,10 @@ public final class AppModel {
     public var openBolusRequested = false
 
     /// Write only NEW readings/boluses into the persistent store (never re-insert the rolling buffer).
+    /// Phase 09.7-01 (Pitfall 3 fix): "new" is identity-diffed against the PREVIOUS call's snapshot, not
+    /// date-watermarked — a gap-sync record dated older than everything previously seen still reaches
+    /// `GlucoseHistoryStore` here (D-02), while an unchanged reading already written on the last call is
+    /// still skipped (no unbounded re-insert on every `refresh()` tick). See `lastPersistedGlucoseKeys`.
     private func persistNewHistory(provenance: GlucoseProvenance) {
         guard let history else { return }
         let sourceID: String
@@ -906,17 +950,35 @@ public final class AppModel {
         case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
         default:                    sourceID = "pump"; priority = 50    // pump-relayed
         }
-        let newGlucose = glucoseHistory.filter { $0.date > lastGlucoseIngest }
+        let glucoseKeys = Set(glucoseHistory.map(\.date.timeIntervalSince1970))
+        let newGlucose = glucoseHistory.filter { !lastPersistedGlucoseKeys.contains($0.date.timeIntervalSince1970) }
         if !newGlucose.isEmpty {
             history.ingestGlucose(newGlucose, sourceID: sourceID, priority: priority)
-            lastGlucoseIngest = newGlucose.map(\.date).max() ?? lastGlucoseIngest
         }
-        let newBoluses = bolusMarkers.filter { $0.date > lastBolusIngest }
+        lastPersistedGlucoseKeys = glucoseKeys
+
+        let bolusKeys = Set(bolusMarkers.map(\.date.timeIntervalSince1970))
+        let newBoluses = bolusMarkers.filter { !lastPersistedBolusKeys.contains($0.date.timeIntervalSince1970) }
         if !newBoluses.isEmpty {
             history.ingestBoluses(newBoluses, sourceID: "pump")
-            lastBolusIngest = newBoluses.map(\.date).max() ?? lastBolusIngest
         }
+        lastPersistedBolusKeys = bolusKeys
     }
+
+    #if DEBUG
+    /// Test seam: substitute the persistent history store (e.g. an in-memory `GlucoseHistoryStore`) so a
+    /// test can assert on `persistNewHistory`'s write-through without touching the real on-disk store or
+    /// leaking state across tests/suites. Production never calls this — `history` is set once at init.
+    func setHistoryStoreForTesting(_ store: GlucoseHistoryStore?) {
+        history = store
+        lastPersistedGlucoseKeys = []
+        lastPersistedBolusKeys = []
+    }
+    /// Test seam: read-through into the injected store, mirroring `storedStatistics`'s public read
+    /// pattern — lets a test assert a fetched (incl. gap-sync) history record actually reached the
+    /// persistent store (Pitfall 3 fix), not just the in-memory `glucoseHistory` buffer.
+    func storedGlucoseForTesting(in range: ClosedRange<Date>) -> [GlucoseReading] { history?.glucose(in: range) ?? [] }
+    #endif
 
     /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
     public func storedStatistics(days: Int = 90) -> GlucoseStatistics? {
@@ -1095,6 +1157,21 @@ public final class AppModel {
         history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
     }
 
+    /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
+    /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
+    /// assumption 2). Concrete-Tandem-only (`source as? TandemBackend`, the `onCommandLatency` pattern);
+    /// a no-op on `MockBackend`.
+    public func syncHistoryNow() {
+        (source as? TandemBackend)?.triggerManualHistorySync()
+    }
+
+    /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync. Non-destructive — only
+    /// what was actually fetched is credited to the persisted coverage map, so the rest stays a real,
+    /// resumable gap for the next connect or a later "Sync now".
+    public func stopHistorySync() {
+        (source as? TandemBackend)?.cancelHistorySync()
+    }
+
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) {
@@ -1106,7 +1183,7 @@ public final class AppModel {
     public func therapyInsights() -> [TherapyInsightItem] {
         let range = Date().addingTimeInterval(-90 * 86400)...Date()
         let cgm = history?.glucose(in: range) ?? glucoseHistory
-        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [])
+        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [], unit: AppSettings.shared.glucoseDisplayUnit)
             .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
     }
 
@@ -1232,6 +1309,22 @@ public final class AppModel {
         eatingLocation.reset()
     }
 
+    /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate.
+    /// Both the Live Activity's Snooze button VISIBILITY (baked into `hasSnoozeEligibleAlert` below,
+    /// which feeds `ContentState.hasSnoozeEligibleAlert`) and the button's ACTION gate
+    /// (`LiveActivityIntentBridge.snoozeAlertIfSafe`, installed in `App.swift`) must read exactly this
+    /// predicate — previously the visibility gate was "at least one non-`.alarm` alert is active"
+    /// while the action gate was "none of the active alerts is `.alarm`", which silently diverge the
+    /// moment an `.alarm` AND a snoozeable alert are active at the same time: the button would render
+    /// (visibility passed) but tapping it would no-op (action refused) — a dead tap with no error, no
+    /// toast (ActivityKit has no in-place toast mechanism here). True only when there's at least one
+    /// active alert AND none of them is `.alarm` (an `.alarm` blocks snoozing entirely — mirrors
+    /// `AlertRuleEngine`'s own "never match alarms" rule). Pure — no `AppModel` state read beyond the
+    /// alerts array handed in, so it's independently unit-testable off any `[PumpAlert]` fixture.
+    nonisolated static func snoozeGateAllows(_ alerts: [PumpAlert]) -> Bool {
+        !alerts.isEmpty && !alerts.contains(where: { !$0.kind.isAutoRuleEligible })
+    }
+
     private func refresh() {
         // B4: on a fresh connect to a DIFFERENT pump, clear the previous pump's derived config off the
         // backend snapshot BEFORE the merge below reads it, so a stale max-bolus / therapy param / profile
@@ -1279,6 +1372,10 @@ public final class AppModel {
             postSafety(.cgmDataLoss, severity: .warning, title: "CGM data lost",
                        body: "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
                        dedupeKey: Self.cgmDataLossKey)
+            // Phase 5 (D-13, 05-03): defensive clear — the app-icon badge zeroes the INSTANT a
+            // previously-fresh feed is detected as stale/absent, rather than waiting for the next
+            // WidgetPublisher.publish (the second of the two required D-13 call sites).
+            GlucoseBadge.clear()
         case .clear: withdrawNotifications([Self.cgmDataLossKey])
         case .none: break
         }
@@ -1288,12 +1385,21 @@ public final class AppModel {
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
+        if let backend = source as? TandemBackend { historySyncState = backend.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
         let widgetLock = widgetBolusLock   // A-05: same evaluator delivery routes through
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title },
-                                bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason)
+                                bolusLocked: widgetLock.locked, bolusLockReason: widgetLock.reason,
+                                // Phase 5 (D-18, 05-05): the Live Activity's Snooze button/intent gate —
+                                // computed HERE (the only place `PumpAlertKind` is available alongside
+                                // the wire snapshot) so neither the extension nor the LA intent ever
+                                // re-derives "is this an alarm" from a titles-only alert list.
+                                // WR-02 (05-06): routes through `Self.snoozeGateAllows` — the SAME
+                                // predicate the action gate in `App.swift` uses — so the button's
+                                // visibility can never promise an action the bridge will actually refuse.
+                                hasSnoozeEligibleAlert: Self.snoozeGateAllows(activeNotifications))
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
@@ -1311,6 +1417,16 @@ public final class AppModel {
 
     public func connect() async { await source.connect(); refresh() }
     public func disconnect() { source.disconnect(); refresh() }
+
+    /// Reconnect the pump link if a pairing exists and it's currently disconnected — pure link
+    /// maintenance, never a dose. Promoted here (from a private `RootTabView` helper of the exact
+    /// same name/guard) so the Live Activity's "Refresh" `LiveActivityIntent` can call the SAME seam
+    /// via `LiveActivityIntentBridge.reconnect` (D-18, 05-05) instead of re-implementing the guard —
+    /// `RootTabView` now delegates to this method too, so there is still exactly one implementation.
+    public func autoReconnectIfNeeded() async {
+        guard hasStoredPairing, snapshot.connection == .disconnected else { return }
+        await connect()
+    }
 
     /// `allowStaleIob` / `allowStaleTherapy` are the DIF-ux warned host-owner overrides, defaulted OFF so
     /// every existing caller — and, critically, `resolveRemoteDose` (remotes) — keeps recomputing with NO
@@ -1553,9 +1669,15 @@ public final class AppModel {
         // P13c-4 inverse precondition: a temp rate requires Control-IQ OFF (the controller owns basal
         // while running, so the pump rejects a temp rate). Refuse pre-flight with a plain reason rather
         // than issue a write the pump will bounce.
+        //
+        // D-02 (Phase 09.5, owner-directed 2026-08-14): current Tandem Control-IQ+ docs say a temp rate
+        // CAN be set while Control-IQ+ is on. EXPERIMENTAL-ONLY until the Phase-11 saline bench confirms
+        // it — the default/shipping build keeps this precondition unchanged (HARD INVARIANT).
+        #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         if let reason = ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
             lastError = reason; return
         }
+        #endif
         await runControl(.setTempBasal) { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
     }
     public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
@@ -1836,6 +1958,28 @@ public final class AppModel {
         recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
+    // Sleep schedule — universal/unsigned read (Phase 09.10 D-04): ungated passthrough, no
+    // runControl/runGatedTherapy wrapper. The write (09.10-02) will route through runGatedTherapy.
+    public func refreshSleepSchedule() async { await source.refreshSleepSchedule(); refresh() }
+    /// Write one native Sleep-schedule slot (Phase 09.10 D-04) — the Mobi editor for a pump with no
+    /// on-pump way to set this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy`
+    /// (child-mode + phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
+    /// `supportsSleepScheduleWrite` capability, all via the single P8 evaluator). `op` is the RAW backend
+    /// write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
+    ///
+    /// `sendControl` is fire-and-forget (doesn't itself inspect the ack status — see `TandemBackend`'s
+    /// `ChangeTimeDateRequest` note), so after the write completes this consumes the concrete-Tandem-only
+    /// `sleepScheduleWriteError` one-shot sink (mirrors `onCommandLatency`/`historySyncState`) to surface
+    /// a pump-rejected write (`SetSleepScheduleResponse.status != 0`) via `lastError`.
+    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
+        await runGatedTherapy(.setSleepSchedule) {
+            try await self.source.setSleepSchedule(slot: slot, enabled: enabled, activeDays: activeDays,
+                                                    startMinute: startMinute, endMinute: endMinute)
+        }
+        if let backend = source as? TandemBackend, let err = backend.consumeSleepScheduleWriteError() {
+            lastError = err
+        }
+    }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
     // FB-06 / P8: switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the

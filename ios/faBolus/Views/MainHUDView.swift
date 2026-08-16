@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Dashboard tab: modern glucose chart + status ring + HUD pills, then a scrollable details
 /// section with everything sourced from the pump. Connection lives in the toolbar.
@@ -140,8 +141,24 @@ struct PumpDetailsCard: View {
             guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
             return "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))"
         case "carbRatio": return snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—"
-        case "isf": return snapshot.isf > 0 ? "\(snapshot.isf) mg/dL/U" : "—"
-        case "target": return snapshot.targetBg > 0 ? "\(snapshot.targetBg) mg/dL" : "—"
+        // Phase 04-01 (D-10): ISF + target route through the GlucoseUnit funnel so mmol users see
+        // the correction factor and target in mmol/L too — mg/dL mode renders byte-identical to
+        // before. The pump / BolusMath keep receiving mg/dL Int regardless (D-09); only this label
+        // converts.
+        case "isf":
+            guard snapshot.isf > 0 else { return "—" }
+            let unit = AppSettings.shared.glucoseDisplayUnit
+            // WR-05 gap closure (04-07): standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin
+            // convention) instead of "mmol/L·U⁻¹" — same unit, was two different renderings.
+            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.isf) }
+            return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
+        case "target":
+            guard snapshot.targetBg > 0 else { return "—" }
+            let unit = AppSettings.shared.glucoseDisplayUnit
+            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.targetBg) }
+            return "\(unit.format(mgdl: snapshot.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
         default: return nil
         }

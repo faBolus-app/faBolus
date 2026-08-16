@@ -6,11 +6,18 @@ import WatchKit
 /// phone↔remote command handling over `RemoteLink`) that adds the watch's direct-CGM failover:
 /// when the iPhone is out of range the watch reads glucose itself, phone-independent — a Dexcom
 /// G7/ONE+ over BLE, and/or xDrip4iOS via Apple Health (synced from the phone). The watch never
-/// touches the pump (PumpX2Kit runs on the phone).
+/// touches the pump (TandemKit runs on the phone).
 @MainActor
 final class WatchModel: RemoteClientModel {
     /// Direct sources reuse the shared implementations; started only while unreachable, to save power.
     private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
+
+    /// Phase 4 (mmol/L display-unit support) — the phone's active glucose display-unit setting,
+    /// mirrored from the statusRead reply's `glucoseDisplayUnit` wire token. Watch-only (not on the
+    /// shared `RemoteClientModel` base, so the Mac remote — out of this phase's scope, CONTEXT.md
+    /// Open Question #1 — is untouched). Absent/unrecognized token ⇒ `.mgdl` (fail-closed default;
+    /// display-only, never affects dosing).
+    var glucoseDisplayUnit: GlucoseUnit = .mgdl
 
     #if FABOLUS_ONWATCH_EATING
     /// On-device eating detector (flag-gated; needs the paid HealthKit entitlement). Relays p(eating)
@@ -31,16 +38,37 @@ final class WatchModel: RemoteClientModel {
         #endif
     }
 
-    #if FABOLUS_ONWATCH_EATING
-    /// The phone drives when the watch senses (battery): the routine status push carries
-    /// `eatingSensingOn`. Start/stop the on-device detector accordingly.
     override func handle(_ cmd: RemoteCommand) {
         super.handle(cmd)
-        if cmd.kind == .statusRead, let on = cmd.eatingSensingOn {
+        // Phase 09.6-07 (D-03.1, D-04): a bare `.diagnosticsRead` REQUEST (no `diagnosticsText` set)
+        // asks this watch to reply with its OWN redacted diagnostics text. Reply once with a
+        // `.diagnosticsRead` carrying the text and return — never touches the pump/dose path (pure
+        // text compose + `link.send`, mirroring the `eatingEvent` outbound precedent above).
+        if cmd.kind == .diagnosticsRead, cmd.diagnosticsText == nil {
+            var benchStatus: String?
+            #if FABOLUS_WATCH_DIRECT_PUMP
+            benchStatus = WatchPumpClient.shared?.statusForDiagnostics
+            #endif
+            var reply = RemoteCommand(kind: .diagnosticsRead)
+            reply.diagnosticsText = WatchSelfDiagnostics.watchBody(
+                reachable: reachable, directCgmActive: !reachable, benchPumpStatus: benchStatus)
+            link.send(reply)
+            return
+        }
+        guard cmd.kind == .statusRead else { return }
+        // Phase 4: adopt the phone's active display-unit token (Pitfall 6 — a frozen String, never
+        // the raw enum, on the wire). Unknown/garbage token or an absent field (legacy host) ⇒
+        // `.mgdl`, never a crash — matches the fail-closed handling of `controllerVariant`/
+        // `bolusBlockReason` elsewhere in this class.
+        if let u = cmd.glucoseDisplayUnit { glucoseDisplayUnit = GlucoseUnit(rawValue: u) ?? .mgdl }
+        #if FABOLUS_ONWATCH_EATING
+        // The phone drives when the watch senses (battery): the routine status push carries
+        // `eatingSensingOn`. Start/stop the on-device detector accordingly.
+        if let on = cmd.eatingSensingOn {
             if on { eatingSensor?.start() } else { eatingSensor?.stop() }
         }
+        #endif
     }
-    #endif
 
     override func reachabilityDidChange(_ r: Bool) {
         super.reachabilityDidChange(r)
@@ -68,12 +96,4 @@ final class WatchModel: RemoteClientModel {
         trend = s.trend?.rawValue ?? ""
         publishSnapshot()
     }
-
-    /// modern band color for a glucose value (kept for the watch views' call sites).
-    static func color(_ mgdl: Int) -> Int { RemoteClientModel.band(mgdl) }
-}
-
-/// Shared glucose banding so the watch views color consistently.
-enum RemoteGlucose {
-    static func band(_ mgdl: Int) -> Int { RemoteClientModel.band(mgdl) }
 }

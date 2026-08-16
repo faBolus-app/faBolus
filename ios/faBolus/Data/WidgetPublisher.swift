@@ -14,8 +14,10 @@ enum WidgetPublisher {
     /// mapping — including P10's freshness policy — is unit-testable without the shared store or a
     /// racing sibling test. `staleAfterSec`/`hideAfterSec` are passed in (from `GlucoseFreshness` at the
     /// call site) so the test can pin them deterministically.
+    @MainActor
     static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
-                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?) -> WidgetSnapshot {
+                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
+                             hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
         let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         return WidgetSnapshot(
             glucose: s.glucose,
@@ -38,15 +40,46 @@ enum WidgetPublisher {
             // P10 (group A): carry the phone's freshness policy so the iOS widgets grey/hide off the
             // SAMPLE age exactly like the app + the Mac widget — instead of silently falling back to the
             // 6-min hardcode regardless of the user's setting (the iOS staleness defect).
-            staleAfterSec: staleAfterSec, hideAfterSec: hideAfterSec)
+            staleAfterSec: staleAfterSec, hideAfterSec: hideAfterSec,
+            // Phase 04-03: the active display unit, as the wire token ("mgdl"|"mmol") — never
+            // GlucoseUnit itself (Pitfall 6). The widget/complication island resolves it via the
+            // WidgetGlucoseUnit mirror; nil (impossible here, but legacy-safe) ⇒ mgdl.
+            displayUnit: AppSettings.shared.glucoseDisplayUnit.wireToken,
+            // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields, mapped
+            // straight from PumpSnapshot alongside the existing iobUnits/reservoirUnits mapping above.
+            iobDate: s.iobDate,
+            basalRateUnitsPerHour: s.basalRateUnitsPerHour,
+            deliverySuspended: s.deliverySuspended,
+            controlIQMode: s.controlIQMode,
+            controlIQEnabled: s.controlIQEnabled,
+            // Phase 5 (D-18, 05-05) — app-computed snooze-eligibility gate (see the field's own doc
+            // comment on `WidgetSnapshot`); passed in from the caller, which has `PumpAlertKind` on
+            // `activeNotifications` (this function only receives bare `alerts: [String]` titles).
+            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert,
+            // Owner-requested toggle — stamped straight from the setting so the widget/complication/
+            // Live Activity gate their persistent unit CAPTION the same way the phone does.
+            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels,
+            // Phase 09.9-04 (D-05) — the single snapshot predicate, mirrored straight to the widget so
+            // it can show cartridge state without a bespoke per-surface pump read.
+            cartridgeReady: s.cartridgeReadyForBolus)
     }
 
     @MainActor
     static func publish(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
-                        bolusLocked: Bool = false, bolusLockReason: String = "") {
+                        bolusLocked: Bool = false, bolusLockReason: String = "",
+                        hasSnoozeEligibleAlert: Bool = false) {
         let snap = makeSnapshot(s, history: history, alerts: alerts,
-                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter)
+                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
+                                hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
+        // Phase 5 (D-03) — the single BLE-driven choke point also drives the glucose Live Activity.
+        // App-driven only (no APNs); see GlucoseLiveActivityManager.update(from:).
+        GlucoseLiveActivityManager.update(from: snap)
+        // Phase 5 (D-13, 05-03) — the same choke point drives the opt-in app-icon badge. The opt-in
+        // gate + freshness live inside GlucoseBadge, so this stays a thin call; the arbiter timer
+        // re-runs refresh()->publish every ~20s, so the badge re-evaluates and clears to 0 as a
+        // reading ages past stale even with no new pump data.
+        GlucoseBadge.apply(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
         WidgetBolusStore.increment = AppSettings.shared.bolusIncrement
@@ -87,5 +120,32 @@ enum WidgetPublisher {
         WidgetBolusStore.bolusLocked = locked
         WidgetBolusStore.bolusLockReason = locked ? reason : ""
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
+    }
+
+    /// Phase 04-03: re-stamp `displayUnit` on the most recently published snapshot and reload the
+    /// widget timelines immediately — like `publishBolusLock`, this needs no `PumpSnapshot` (the
+    /// setting toggle isn't a pump event), so it patches the App-Group value already on disk rather
+    /// than waiting for the next `publish(_:)` from a pump update. Called from `AppSettings
+    /// .glucoseDisplayUnit`'s `didSet`. Uses the SAME WidgetSnapshot vehicle every glucose render
+    /// already reads (Pattern 3) — never `syncWidgetConfig()`, which is the unrelated bolus-increment
+    /// channel. A no-op if nothing has been published yet (the next real publish carries the unit).
+    @MainActor
+    static func republishDisplayUnit() {
+        guard var snap = WidgetStore.load() else { return }
+        snap.displayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
+        WidgetStore.save(snap)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Owner-requested toggle: re-stamp `showUnitLabel` on the most recently published snapshot and
+    /// reload the widget timelines immediately — same idiom as `republishDisplayUnit()` above, called
+    /// from `AppSettings.showGlucoseUnitLabels`'s `didSet`. A no-op if nothing has been published yet
+    /// (the next real publish carries the flag).
+    @MainActor
+    static func republishShowUnitLabel() {
+        guard var snap = WidgetStore.load() else { return }
+        snap.showUnitLabel = AppSettings.shared.showGlucoseUnitLabels
+        WidgetStore.save(snap)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }

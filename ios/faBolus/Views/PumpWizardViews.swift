@@ -1,9 +1,20 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 // Mobi control wizards (Plan A / A4). Reached from PumpControlView, so already behind the
 // advanced-control + Mobi + capability gate. Insulin-affecting steps use hold-to-confirm; all of
 // these must be bench-validated on saline before being relied on. Mirrors controlX2's flows.
+
+/// 09.2-02 (D-01, SC1): the wizard Exit affordance's invariant — it is NEVER gated on the pump-connection
+/// state, so a mid-procedure BLE drop can't strand the user on a fully-greyed screen with insulin
+/// suspended. This is a pure marker (mirrors the `reenterMatches` internal-for-test idiom in
+/// `BolusEntryView`) so the invariant is unit-assertable without instantiating a SwiftUI view;
+/// `CgmSessionView`/`CartridgeWizardView`'s Exit buttons carry no such condition and call only
+/// `dismiss()` (presentation-only, Option A).
+enum PumpWizardExit {
+    static let isAlwaysAvailable = true
+}
 
 /// Press-and-hold confirm for the highest-risk (insulin-affecting) steps — a deliberate gesture,
 /// not a single tap. Fills over `duration`, then fires once.
@@ -51,6 +62,7 @@ struct HoldToConfirmButton: View {
 
 struct CgmSessionView: View {
     @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     enum Kind: String, CaseIterable, Identifiable { case g6 = "G6 / G5 / ONE", g7 = "G7 / ONE+"; var id: String { rawValue } }
     @State private var kind: Kind = .g7
     @State private var transmitterID = ""
@@ -119,6 +131,10 @@ struct CgmSessionView: View {
         }
         .navigationTitle("CGM Session")
         .disabled(!model.pumpReady)   // pump-required; blocked if it drops mid-session
+        // 09.2-02 (D-01, SC1): Exit is a SIBLING of the .disabled Form above, not inside its scope — nav-bar
+        // chrome stays tappable even when the Form greys out mid-session (a BLE drop). Presentation-only:
+        // dismiss() pops one level back to PumpControlView, which surfaces the deliverySuspended honesty.
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Exit") { dismiss() } } }
         .task { await model.refreshCgmSession() }
     }
 
@@ -132,6 +148,7 @@ struct CgmSessionView: View {
 
 struct CartridgeWizardView: View {
     @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     @State private var primeUnits: Double = 0.3
     @State private var busy = false
 
@@ -198,6 +215,10 @@ struct CartridgeWizardView: View {
         }
         .navigationTitle("Cartridge & Fill")
         .disabled(!model.pumpReady)
+        // 09.2-02 (D-01, SC1): same always-available Exit as CgmSessionView — a sibling of the .disabled
+        // Form above, not conditioned on pump connection, so a mid-fill BLE drop can't strand the user on
+        // a dead grey screen. dismiss() only; no delivery-path call.
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Exit") { dismiss() } } }
         .task { await model.refreshLoadStatus() }
     }
 
@@ -402,6 +423,27 @@ struct RemindersAlertsView: View {
     @State private var busy = false
     @State private var unverified = UnverifiedFeatureGate()
 
+    /// Phase 04-02 (D-10): the display-unit funnel the CGM high/low alert Stepper LABELS route
+    /// through. `cgmHigh`/`cgmLow` and the Steppers' `in:`/`step:` bounds stay mg/dL `Double` —
+    /// unchanged, unconverted (Pitfall 3; these values write to the pump via
+    /// `model.setCgmHighLowAlert`) — only the rendered title text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// "High/Low alert at <value> mg/dL"/"mmol/L" — whole-phrase catalog VARIANTS selected by the
+    /// active display unit (D-10).
+    private func highAlertLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "High alert at %@ mmol/L"), value)
+            : String(format: String(localized: "High alert at %@ mg/dL"), value)
+    }
+    private func lowAlertLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "Low alert at %@ mmol/L"), value)
+            : String(format: String(localized: "Low alert at %@ mg/dL"), value)
+    }
+
     var body: some View {
         Form {
             Section("Low insulin alert") {
@@ -427,9 +469,9 @@ struct RemindersAlertsView: View {
                 // alertType 0 = HIGH, 1 = LOW — matches the jwoglom reference's named constants
                 // (CgmHighLowAlertRequest.ALERT_TYPE_HIGH=0 / ALERT_TYPE_LOW=1). Still gated + warned
                 // because the reference has no captured BLE payload for this message (docs #1).
-                Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text("High alert at \(Int(cgmHigh)) mg/dL") }
+                Stepper(value: $cgmHigh, in: 120...300, step: 5) { Text(highAlertLabel(Int(cgmHigh))) }
                 unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 0, thresholdMgdl: Int(cgmHigh), repeatMinutes: 0, enabled: true) }
-                Stepper(value: $cgmLow, in: 60...120, step: 5) { Text("Low alert at \(Int(cgmLow)) mg/dL") }
+                Stepper(value: $cgmLow, in: 60...120, step: 5) { Text(lowAlertLabel(Int(cgmLow))) }
                 unverifiedSetButton("The CGM high/low alert-type mapping") { await model.setCgmHighLowAlert(alertType: 1, thresholdMgdl: Int(cgmLow), repeatMinutes: 0, enabled: true) }
             } header: {
                 Text("CGM high / low alerts")
@@ -463,7 +505,208 @@ struct RemindersAlertsView: View {
     }
 }
 
-// MARK: - Profile create + segment editor
+// MARK: - Sleep schedule (native pump Sleep schedule)
+
+/// The pump's own native Sleep-schedule viewer + editor (Phase 09.10). D-04: the READ is universal —
+/// this screen is reachable on ANY connected pump model (see `PumpControlView`'s ungated
+/// NavigationLink), never gated by `PumpCapabilities.supportsSleepScheduleWrite`. The WRITE (09.10-02)
+/// is gated: on Mobi (`supportsSleepScheduleWrite == true`) `slotRow(_:)` renders an editable
+/// `SleepScheduleSlotEditRow`; on t:slim it stays permanently read-only (D-04: "read-only where
+/// applicable").
+struct SleepScheduleView: View {
+    @Bindable var model: AppModel
+    @State private var unverified = UnverifiedFeatureGate()
+
+    private var slots: [PumpSleepScheduleSlot] { model.snapshot.sleepSchedules }
+    /// Defensive backstop (RESEARCH Open Question 2 / Assumption A3, UI-SPEC "Empty state (defensive
+    /// all-zero decode)"): a pump that never answers, or answers all-zero/garbage, must show the
+    /// explicit "unavailable" row — never 4 blank/zeroed slots that could be mistaken for a real,
+    /// legitimately-configured empty schedule.
+    private var looksUnavailable: Bool {
+        slots.isEmpty
+            || slots.allSatisfy { !$0.enabled && $0.activeDays == 0 && $0.startMinute == 0 && $0.endMinute == 0 }
+    }
+    /// UI-SPEC "Empty state heading/body" — distinct from `looksUnavailable` above: every slot decoded
+    /// fine, but the user (or a fresh pump) simply has no slot turned on. Mobi gets a CTA-pointing
+    /// footer; t:slim (no write available) gets a plainer "nothing is set" footer.
+    private var allSlotsDisabled: Bool { !looksUnavailable && slots.allSatisfy { !$0.enabled } }
+    /// Slots 0-1 are the pump's own user-facing "Sleep Schedule 1/2" (RESEARCH addendum 2026-08-15
+    /// Item 5: upstream captures annotate slots 2-3 "Not visible in UI"); slots 2-3 are decoded but
+    /// surfaced de-emphasized. The wire decode still reads all 4 physical slots.
+    private var primarySlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot < 2 }.sorted { $0.slot < $1.slot } }
+    private var additionalSlots: [PumpSleepScheduleSlot] { slots.filter { $0.slot >= 2 }.sorted { $0.slot < $1.slot } }
+    /// D-03 (non-blocking conflict disclosure): fires only when BOTH mechanisms are active — the
+    /// Shortcuts Sleep-Focus automation (`AppSettings.shared.autoSleepMode`) AND at least one read
+    /// slot from the pump's own native schedule is `enabled`. Display-only — never toggles either
+    /// mechanism (T-09.10-08).
+    private var showsConflictDisclosure: Bool {
+        AppSettings.shared.autoSleepMode && slots.contains { $0.enabled }
+    }
+
+    var body: some View {
+        Form {
+            if showsConflictDisclosure {
+                Section {
+                    Label("Both the pump's native Sleep schedule and the Shortcuts Sleep-Focus automation are turned on. They don't coordinate with each other — the last one to run wins. Use whichever you prefer, not both, or turn one off below.", systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if looksUnavailable {
+                Section {
+                    Text("Sleep schedule unavailable — this pump didn't return schedule data. Check the Sleep schedule directly on the pump.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } else {
+                if allSlotsDisabled {
+                    Section {
+                        Text(model.capabilities.supportsSleepScheduleWrite
+                             ? "No sleep-schedule slots are turned on."
+                             : "No sleep schedule is set on this pump.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        if model.capabilities.supportsSleepScheduleWrite {
+                            Text("Turn on a slot below, set its time window and active days, then Save.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                ForEach(primarySlots) { slot in
+                    Section("Sleep Schedule \(slot.slot + 1)") { slotRow(slot) }
+                }
+                if !additionalSlots.isEmpty {
+                    Section("Additional slots (not shown on the pump)") {
+                        ForEach(additionalSlots) { slot in slotRow(slot) }
+                    }
+                }
+            }
+            if let err = model.lastError { Section { Text(err).font(.footnote).foregroundStyle(.red) } }
+        }
+        .navigationTitle("Sleep schedule")
+        .disabled(!model.pumpReady)
+        .task { await model.refreshSleepSchedule() }
+        .unverifiedFeatureGate(unverified)
+    }
+
+    /// One slot's fields. On Mobi (`model.capabilities.supportsSleepScheduleWrite`) this renders the
+    /// editable write row; every rendered slot is independent of its neighbors' `enabled` state, so a
+    /// mixed enabled/disabled read needs no special-case branch.
+    @ViewBuilder
+    private func slotRow(_ slot: PumpSleepScheduleSlot) -> some View {
+        if model.capabilities.supportsSleepScheduleWrite {
+            SleepScheduleSlotEditRow(model: model, slot: slot, unverified: unverified)
+        } else {
+            // t:slim (and any non-write-capable backend): read-only, permanently — D-04.
+            readOnlyFields(slot)
+        }
+    }
+
+    /// Plain-text rendering (UI-SPEC: "every field rendered as plain Text, NO DatePicker/Toggle/Save
+    /// button" on the read-only side).
+    @ViewBuilder
+    private func readOnlyFields(_ slot: PumpSleepScheduleSlot) -> some View {
+        Text(slot.enabled ? "Enabled" : "Disabled")
+        Text("Start: \(Self.minuteOfDayString(slot.startMinute))")
+        Text("End: \(Self.minuteOfDayString(slot.endMinute))")
+        Text("Days: \(Self.activeDaysString(slot.activeDays))")
+    }
+
+    static func minuteOfDayString(_ minute: Int) -> String {
+        String(format: "%02d:%02d", minute / 60, minute % 60)
+    }
+
+    /// CONFIRMED bit ordering (RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1)…Sunday=bit6(64).
+    static func activeDaysString(_ bits: Int) -> String {
+        let letters = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        let selected = (0..<7).filter { bits & (1 << $0) != 0 }.map { letters[$0] }
+        return selected.isEmpty ? "No days selected" : selected.joined(separator: " ")
+    }
+}
+
+/// Editable Mobi write row for one Sleep-schedule slot (Phase 09.10-02). Local `@State` mirrors
+/// `ControlIQSettingsView`'s load-once-then-edit shape: seeded from the read `slot` on first appear,
+/// then edited independently until Save. `unverified` is the SHARED gate instance from the parent
+/// `SleepScheduleView` (an `@Observable` class — passed by reference, so `.request(...)` here arms the
+/// same modal the parent's `.unverifiedFeatureGate(unverified)` renders).
+private struct SleepScheduleSlotEditRow: View {
+    @Bindable var model: AppModel
+    let slot: PumpSleepScheduleSlot
+    let unverified: UnverifiedFeatureGate
+
+    @State private var startDate = Date()
+    @State private var endDate = Date()
+    /// CONFIRMED bit ordering (RESEARCH addendum 2026-08-15 Item 2): Monday=bit0(1)…Sunday=bit6(64).
+    /// Each element is a day-bit index 0...6, mapped deterministically regardless of chip display order.
+    @State private var selectedDays: Set<Int> = []
+    @State private var enabled = false
+    @State private var loaded = false
+    @State private var busy = false
+
+    private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]   // Mon...Sun, matches the bit order
+
+    private var activeDaysBitmask: Int { selectedDays.reduce(0) { $0 | (1 << $1) } }
+
+    var body: some View {
+        DatePicker("Start", selection: $startDate, displayedComponents: .hourAndMinute)
+        DatePicker("End", selection: $endDate, displayedComponents: .hourAndMinute)
+        dayChipRow
+        if selectedDays.isEmpty {
+            Text("No days selected — this schedule won't run on any day.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        Toggle("Enabled", isOn: $enabled)
+        Button {
+            unverified.request("The Sleep-schedule write (flag semantics + slots 1–3 unconfirmed on a real Mobi)") {
+                busy = true
+                Task {
+                    await model.setSleepSchedule(slot: slot.slot, enabled: enabled, activeDays: activeDaysBitmask,
+                                                 startMinute: Self.minuteOfDay(startDate), endMinute: Self.minuteOfDay(endDate))
+                    busy = false
+                }
+            }
+        } label: {
+            Label("Save Sleep Schedule \(slot.slot + 1)", systemImage: "checkmark.circle").font(.subheadline)
+        }
+        .disabled(busy)
+        .onAppear {
+            guard !loaded else { return }
+            startDate = Self.dateFromMinuteOfDay(slot.startMinute)
+            endDate = Self.dateFromMinuteOfDay(slot.endMinute)
+            selectedDays = Set((0..<7).filter { slot.activeDays & (1 << $0) != 0 })
+            enabled = slot.enabled
+            loaded = true
+        }
+    }
+
+    /// The 7-day toggle-chip row — the one genuinely new visual element this phase needs, anchored on
+    /// `ModeAutomationHelpView.step()`'s numbered circle-badge idiom (small filled/outlined `Circle`s).
+    /// Each chip maps DETERMINISTICALLY to its confirmed `activeDays` wire bit (Monday=bit0…Sunday=bit6).
+    private var dayChipRow: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<7, id: \.self) { bit in
+                let isSelected = selectedDays.contains(bit)
+                Button {
+                    if isSelected { selectedDays.remove(bit) } else { selectedDays.insert(bit) }
+                } label: {
+                    Text(Self.dayLetters[bit])
+                        .font(.caption.bold())
+                        .foregroundStyle(isSelected ? .white : .primary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(isSelected ? Color.indigo : Color.clear))
+                        .overlay(Circle().strokeBorder(isSelected ? Color.clear : Color.secondary, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private static func minuteOfDay(_ date: Date) -> Int {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+    private static func dateFromMinuteOfDay(_ minute: Int) -> Date {
+        Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: Date()) ?? Date()
+    }
+}
+
 
 /// Editable fields for one profile time-segment (reused by create + add/edit segment).
 struct SegmentFields {
@@ -644,6 +887,39 @@ struct SegmentFieldsEditor: View {
     /// to surface a WARN-ONLY "unusual for your TDD" advisory below basal / carb ratio / ISF. 0 ⇒ no advisory.
     var totalDailyInsulinUnits: Int = 0
 
+    /// Phase 04-02 (D-10): the display-unit funnel the ISF/target Stepper LABELS route through.
+    /// `f.isf`/`f.target` and the Steppers' `in:` bounds stay mg/dL `Double` — unchanged,
+    /// unconverted (Pitfall 3; these values write to the pump profile) — only the rendered title
+    /// text below changes.
+    private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
+
+    /// WR-04 gap closure (04-07): a 1 mg/dL step (≈0.055 mmol/L) is below the 1-decimal mmol
+    /// display's resolution, so ~45% of taps showed the exact same label as before the tap
+    /// (verified: `round(v/18.0182, 1)` duplicates across the full range at step 1). Widening the
+    /// STEP to 2 mg/dL in mmol mode eliminates every duplicate-label tap across both the ISF
+    /// (5...400) and target (70...180) ranges below, while the stored value/bounds stay mg/dL
+    /// `Double` unchanged — this only changes how far one tap moves, never what unit the pump
+    /// profile is written in (Pitfall 3).
+    private var isfTargetStep: Double { unit == .mmol ? 2 : 1 }
+
+    /// "<value> mg/dL/U"/"mmol/L/U" — a whole-phrase catalog VARIANT selected by the active
+    /// display unit (D-10; not a glued suffix).
+    private func isfLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L/U"), value)
+            : String(format: String(localized: "%@ mg/dL/U"), value)
+    }
+
+    /// "<value> mg/dL"/"mmol/L" — a whole-phrase catalog VARIANT selected by the active display
+    /// unit (D-10; not a glued suffix).
+    private func glucoseLabel(_ mgdl: Int) -> String {
+        let value = unit.format(mgdl: mgdl)
+        return unit == .mmol
+            ? String(format: String(localized: "%@ mmol/L"), value)
+            : String(format: String(localized: "%@ mg/dL"), value)
+    }
+
     /// The origin badge for a field's Section footer — icon + `ClinicianTierAck.label`, no color dependency.
     @ViewBuilder private func badge(_ field: String) -> some View {
         if let prov = provenance?[field] {
@@ -680,11 +956,11 @@ struct SegmentFieldsEditor: View {
             header: { Text("Carb ratio") } footer: {
                 footer("carbRatio", advisory: TherapyConfirmations.carbRatioTddAdvisory(
                     carbRatioGramsPerUnit: f.carbRatio, totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.isf, in: 5...400, step: 1) { Text("\(Int(f.isf)) mg/dL/U") } }
+        Section { Stepper(value: $f.isf, in: 5...400, step: isfTargetStep) { Text(isfLabel(Int(f.isf))) } }
             header: { Text("Correction factor (ISF)") } footer: {
                 footer("isf", advisory: TherapyConfirmations.isfTddAdvisory(
-                    isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits)) }
-        Section { Stepper(value: $f.target, in: 70...180, step: 1) { Text("\(Int(f.target)) mg/dL") } }
+                    isfMgdlPerUnit: Int(f.isf), totalDailyInsulinUnits: totalDailyInsulinUnits, unit: unit)) }
+        Section { Stepper(value: $f.target, in: 70...180, step: isfTargetStep) { Text(glucoseLabel(Int(f.target))) } }
             header: { Text("Target glucose") } footer: { badge("targetBg") }
     }
 }

@@ -35,7 +35,12 @@ struct SettingDescriptor: Identifiable {
     let backsUp: Bool
     /// True iff the key rides the iCloud KV settings sync (S5). Invariant: implies `backsUp` (iCloud only
     /// syncs `SettingsBackup.appSettingsSnapshot()`), and is forced **false** for the command-adjacent
-    /// flags so settings sync can never carry a safety/command decision to another device (C5).
+    /// flags so settings sync can never carry a safety/command decision to another device (C5). Also
+    /// forced **false** for the ambient ("ephemeral surface") ones — `liveActivityEnabled`,
+    /// `liveActivityFields`, `glucoseBadgeEnabled` — for a different reason: those opt into an
+    /// always-on-screen surface (Lock Screen Live Activity, home-screen badge), and turning that on is a
+    /// per-device decision the owner does not want silently propagated to a device where they never
+    /// opted in.
     let syncsToICloud: Bool
     /// Optional search metadata. Populated `nil` in S1 — the `SettingsIndex` fold is deferred to a later
     /// slice because its rows are category-grouped, not 1:1 with keys, and need a curated overlay (C4).
@@ -52,7 +57,8 @@ struct SettingDescriptor: Identifiable {
         self.tier = tier
         self.modes = Set(AppMode.allCases.filter { $0 >= minMode })
         self.backsUp = backsUp
-        // Default: a backed-up key syncs. The five command-adjacent flags pass `false` explicitly.
+        // Default: a backed-up key syncs. The five command-adjacent flags plus the three device-local
+        // ambient-surface flags pass `false` explicitly.
         self.syncsToICloud = (syncsToICloud ?? backsUp) && backsUp
         self.searchTitle = searchTitle
         self.searchKeywords = searchKeywords
@@ -81,7 +87,12 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 44 persisted `AppSettings` keys. Order mirrors `AppSettings.swift` for reviewability.
+    /// All 52 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
+    /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
+    /// (999.2/D-01): `autoTempRate` added; 51 → 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation`
+    /// added). Order mirrors
+    /// `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -91,17 +102,40 @@ enum SettingsCatalog {
         .init("carbIncrement", .bolus, from: .simple, backsUp: true),
         .init("extendedBolusEnabled", .bolus, from: .advanced, backsUp: true),
         .init("showBolusReasoning", .bolus, from: .standard, backsUp: true),
+        // Insulin Stacking Guard SG3a escalating-friction disable (task #93). .user tier, Simple minimum
+        // mode — a Simple bolus toggle exactly like the other rows in this section.
+        .init("stackingGuardFrictionEnabled", .bolus, from: .simple, backsUp: true),
         // MARK: Watch / Garmin entry (remotes)
         .init("watchDefaultBolusMode", .remotes, from: .standard, backsUp: true),
         .init("watchBolusIncrement", .remotes, from: .standard, backsUp: true),
         .init("watchCarbIncrement", .remotes, from: .standard, backsUp: true),
         // MARK: Display & chart
         .init("showGlucoseAxis", .display, from: .standard, backsUp: true),
+        // Phase 04-01 (mmol/L display-unit support, D-03): a display unit is NOT command-adjacent —
+        // omitting syncsToICloud gives iCloud sync ON (SettingDescriptor.init default rule).
+        .init("glucoseDisplayUnit", .display, from: .standard, backsUp: true),
+        // Owner request — hide/show the persistent unit CAPTION on ambient display surfaces. Like
+        // glucoseDisplayUnit, this is a display-format preference, NOT a per-device feature toggle
+        // (unlike liveActivityEnabled/glucoseBadgeEnabled below) — omitting syncsToICloud gives iCloud
+        // sync ON (SettingDescriptor.init default rule), matching glucoseDisplayUnit's reasoning.
+        .init("showGlucoseUnitLabels", .display, from: .standard, backsUp: true),
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
         .init("showStats", .display, from: .standard, backsUp: true),
         .init("detailsOrder", .display, from: .standard, backsUp: true),
         .init("pillsOrder", .display, from: .standard, backsUp: true),
+        // Phase 5 (D-15/D-17a, 05-04): the ambient Live Activity opt-in + its per-field reorder+hide
+        // selection. Display-only — neither is command-adjacent (SettingsCatalog.commandAdjacentFlags
+        // is unchanged) — but each opts into an always-visible on-device surface (Lock Screen Live
+        // Activity), so `syncsToICloud: false` keeps that opt-in per-device: enabling it on one iPhone
+        // must not silently switch it on for the owner on another device.
+        .init("liveActivityEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityFields", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
+        // command-adjacent — but the same per-device ambient-surface reasoning as liveActivityEnabled
+        // applies (a home-screen badge on one device should not silently light up on another), so it is
+        // also excluded from iCloud sync.
+        .init("glucoseBadgeEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // MARK: Watch/Garmin display (remotes)
         .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),
         .init("watchChartRanges", .remotes, from: .standard, backsUp: true),
@@ -116,6 +150,18 @@ enum SettingsCatalog {
         .init("autoExerciseMode", .pump, from: .standard, backsUp: true),
         .init("autoSleepMode", .pump, from: .standard, backsUp: true),
         .init("modeReminders", .pump, from: .standard, backsUp: true),
+        // Phase 6 (06-01, 999.2/D-01): auto temp rate — unlike auto Exercise/Sleep mode (Standard-tier
+        // shipped features, L3 above), a temp rate is only reachable through the Advanced-control
+        // surface (`supportsTempBasal` behind `advancedControlEnabled`), so this row starts at
+        // `.advanced` like `advancedControlEnabled`/`autoSyncPumpTime`. Not command-adjacent (mirrors
+        // autoExerciseMode/autoSleepMode/modeReminders, which permit an automated pump write but are not
+        // in `commandAdjacentFlags` either) — default iCloud sync ON.
+        .init("autoTempRate", .pump, from: .advanced, backsUp: true),
+        // Phase 6 (06-02, 999.2/D-02): auto profile activation — same reasoning as autoTempRate:
+        // only reachable through the Advanced-control surface (`supportsProfiles`), so `.advanced`
+        // minimum. Not command-adjacent (the `.unverifiedAck` gate, not iCloud sync, is what keeps a
+        // headless macro from ever completing this write) — default iCloud sync ON.
+        .init("autoProfileActivation", .pump, from: .advanced, backsUp: true),
         .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices
@@ -142,9 +188,24 @@ enum SettingsCatalog {
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
-        .init("eatingNudgesEnabled", .bolus, from: .advanced, backsUp: false),
-        .init("eatingTriggerConfig", .bolus, from: .advanced, backsUp: false),
-        .init("eatingLearnFromFeedback", .bolus, from: .advanced, backsUp: false),
+        // Phase 09.7-02 (D-01): auto-sync toggle, surfaced in the same DataHistoryView "Pump history
+        // sync" section as the retention picker above. Device-local sync preference, not backup/
+        // iCloud-relevant — same reasoning as `historyRetentionDays`.
+        .init("historySyncEnabled", .about, from: .advanced, backsUp: false),
+        // NOTE (Phase 09.7-01): `AppSettings.historyCoverage` (D-04, the gap-sync coverage-map bookkeeping)
+        // is deliberately NOT registered here — it has no UI surface at all (pure sync bookkeeping, never
+        // shown/edited), matching the existing precedent for other internal-only persisted properties
+        // (`criticalAlertGrantActive`, `stackingGuardNoticeAckAt`, `clinicianTierAckAt`, `therapyEditAckAt`
+        // — none of which are catalog rows either). Adding it here would fail
+        // `SettingsReachabilityGuardTests.everyNonExemptCatalogKeyIsReachableInViews` (SC2), which requires
+        // every non-debug-exempt catalog key to have a literal UI reference — correctly, since the catalog
+        // is for user-facing/backup-relevant settings, not arbitrary internal state.
+        // 09.3-05 (D-06): categorized .smartAssist, not .bolus — matches where the eating-nudge screen
+        // actually lives (SmartAssistSettingsView / EatingNudgeSettingsView), reconciling the
+        // catalog-category vs UI-location divergence. Bindings/tier/mode/backsUp unchanged.
+        .init("eatingNudgesEnabled", .smartAssist, from: .advanced, backsUp: false),
+        .init("eatingTriggerConfig", .smartAssist, from: .advanced, backsUp: false),
+        .init("eatingLearnFromFeedback", .smartAssist, from: .advanced, backsUp: false),
     ]
 
     /// Lookup by key.

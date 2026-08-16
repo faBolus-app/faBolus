@@ -2,9 +2,9 @@ import Foundation
 import faBolusCore
 import Observation
 import CoreBluetooth
-import PumpX2BLE
-import PumpX2Auth
-import PumpX2Messages
+import TandemBLE
+import TandemAuth
+import TandemMessages
 
 /// Phase 1 of the independent (direct-to-pump) watch: connect to the pump over the **watch's own**
 /// Bluetooth and run the **full JPAKE pairing** with a 6-digit code entered on the watch, storing
@@ -21,6 +21,27 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     var pairState: PairState = .idle
     var isPaired: Bool { WatchPairingStore.hasAnyPairing }
 
+    /// Phase 09.6-07 (D-03.1, bench-only): app-wide weak reference so `WatchModel` can read this
+    /// client's already-tracked `statusForDiagnostics` when replying to a `.diagnosticsRead` request,
+    /// without threading it through `WatchModel`'s init — mirrors `PhoneRemoteHost.shared` /
+    /// `GarminRemoteBridge.shared`'s precedent. Set once, by this class's own init (the sole instance
+    /// is `WatchRootView`'s `@State private var directPump`). Read-only from `WatchModel`'s
+    /// perspective — no control-path exposure.
+    static weak var shared: WatchPumpClient?
+
+    /// Phase 09.6-05 (Part C-3b, D-03.3, bench-only): read-only status accessor for `WatchDebugView`
+    /// — a short, human-readable rendering of `pairState`. Additive (a computed property, not a new
+    /// control-path `func`); calling it never touches BLE, the pump, or `client`/`coordinator`.
+    var statusForDiagnostics: String {
+        switch pairState {
+        case .idle: return isPaired ? "Idle (paired, not connected)" : "Idle (not paired)"
+        case .connecting: return "Connecting…"
+        case .pairing: return "Pairing…"
+        case .paired: return "Paired"
+        case .failed(let msg): return "Failed: \(msg)"
+        }
+    }
+
     /// Valid iff a 6-digit (JPAKE) OR 16-char (legacy V1) code — mirrors the phone's `PumpPairingCode`.
     static func isValidPairingCode(_ code: String) -> Bool {
         (try? PairingAuth.processPairingCode(code, type: .short6Char)) != nil ||
@@ -31,6 +52,8 @@ final class WatchPumpClient: PumpBLEClientDelegate {
     private var coordinator: (any PairingCoordinating)?
     private var pairingCode = ""
     private var authenticationKey: [UInt8] = []
+
+    init() { Self.shared = self }
 
     /// Begin a fresh pairing with the code shown on the pump. Scans → connects → JPAKE.
     func pair(code: String) {

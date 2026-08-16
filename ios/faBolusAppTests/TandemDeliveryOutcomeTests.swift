@@ -1,8 +1,8 @@
 import Testing
 import Foundation
 import faBolusCore
-import PumpX2Messages
-import PumpX2BLE
+import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// Round-3 §4: the REAL `TandemBackend.perform` delivery flow, behind the deterministic `FakePumpTransport`
@@ -29,6 +29,16 @@ struct TandemDeliveryOutcomeTests {
     }
     private func deliver(_ b: TandemBackend, _ u: Double = 2.0) async throws -> Double {
         try await b.deliverBolus(units: u, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+    }
+    /// Like `make()` but leaves the permission response unscripted, so a test can script a specific
+    /// permission nack (`make()` pre-scripts an auto-grant, which a later `.script(...)` call would only
+    /// queue BEHIND — never replace).
+    private func makeAwaitingPermission(poll: TimeInterval = 1.2) -> (TandemBackend, FakePumpTransport) {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.deliveryPollTimeoutOverride = poll
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        return (backend, fake)
     }
     private func indeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
     private func capture(_ op: () async throws -> Double) async -> Error? {
@@ -181,7 +191,7 @@ struct TandemDeliveryOutcomeTests {
     private var cancelOp: UInt8 { CancelBolusRequest.props.opCode }
 
     /// These pin the deliberate round-3 design: the live path carries NO verified pump-cancellation
-    /// semantics (a booked bench follow-up — `PumpX2Kit/PINNED.md`), so `lastBolusCancelled` is never set
+    /// semantics (a booked bench follow-up — `TandemKit/PINNED.md`), so `lastBolusCancelled` is never set
     /// true. A cancel racing completion must therefore NEVER fabricate a terminal and NEVER invent a
     /// "cancelled" label: the reported outcome is the pump's AUTHORITATIVE delivered amount, or indeterminate.
 
@@ -240,5 +250,123 @@ struct TandemDeliveryOutcomeTests {
         let delivered = try await deliver(b, 2.0)
         #expect(delivered == 2.0)                 // cancel write failed → dose proceeded → authoritative full
         #expect(b.lastBolusCancelled == false)
+    }
+
+    // MARK: - Phase 09.9 D-01 — no-cartridge hard block (fail-closed, never a signed frame)
+
+    /// `validateDeliver` is the shared pre-flight choke point, called BEFORE permission/initiate are
+    /// ever requested — so a no-cartridge refusal must write ZERO frames (not even the permission ask).
+    @Test func noCartridgeRefusesBeforeAnySignedFrameIsWritten() async {
+        let (b, fake) = make()
+        b.setCartridgeLoadStateForTesting(0)   // CHANGE_CARTRIDGE — mid loading-state triad
+        let e = await capture { try await deliver(b) }
+        guard case .noCartridge? = e as? BolusError else {
+            Issue.record("expected BolusError.noCartridge, got \(String(describing: e))")
+            return
+        }
+        #expect(fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
+                "no permission request may be sent for a refused no-cartridge attempt")
+        #expect(fake.initiateWriteCount == 0, "no initiate request may be sent for a refused no-cartridge attempt")
+        #expect(!b.deliveryOutcomeUnknown)     // a clean refusal, never an indeterminate block
+    }
+
+    /// Each of the three loading states in the {0,1,2} gate set refuses; the idle/unknown default (6)
+    /// allows (proving the predicate, not just one literal value, drives the guard).
+    @Test func noCartridgeGateSetMatchesAllThreeLoadingStatesAndAllowsIdle() async {
+        for loadingState in [0, 1, 2] {
+            let (b, fake) = make()
+            b.setCartridgeLoadStateForTesting(loadingState)
+            let e = await capture { try await deliver(b) }
+            guard case .noCartridge? = e as? BolusError else {
+                Issue.record("loadState \(loadingState) expected BolusError.noCartridge, got \(String(describing: e))")
+                continue
+            }
+            #expect(fake.initiateWriteCount == 0)
+        }
+        // Idle/unknown default (6) — no fastRead has landed yet — must NOT block.
+        let (b2, fake2) = make()
+        b2.setCartridgeLoadStateForTesting(6)
+        fake2.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+        fake2.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake2.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
+        let delivered = try? await deliver(b2)
+        #expect(delivered == 2.0)
+    }
+
+    /// D-01 (safety, C4 oracle): a refused no-cartridge attempt must not merely throw the right error —
+    /// it must leave delivery state byte-unchanged (no delivered value ever recorded).
+    @Test func noCartridgeRefusalRecordsNothingAsDelivered() async {
+        let (b, fake) = make()
+        b.setCartridgeLoadStateForTesting(1)   // LOAD_CARTRIDGE
+        let before = (lastBolusUnits: b.snapshot.lastBolusUnits, iobUnits: b.snapshot.iobUnits)
+        _ = await capture { try await deliver(b) }
+        #expect(b.snapshot.lastBolusUnits == before.lastBolusUnits)
+        #expect(b.snapshot.iobUnits == before.iobUnits)
+        #expect(fake.initiateWriteCount == 0)
+    }
+
+    /// Freshness (RESEARCH Pitfall 1): `LoadStatusRequest` must be part of the routine fast-poll tier
+    /// (`fastRead()`), not only the on-demand wizard refresh — proven behaviorally via the
+    /// `onReadDispatchedForTesting` seam (mirrors `PumpPairingInstrumentationTests`' technique) so the
+    /// gate reads a value the pump actually keeps current during normal operation.
+    @Test func loadStatusRequestIsPartOfTheRoutineFastPollTier() {
+        let (b, _) = make()
+        var dispatchedTypeNames: [String] = []
+        b.onReadDispatchedForTesting = { typeName, _ in dispatchedTypeNames.append(typeName) }
+        b.simulateRecurringFastAndStaticReadTickForTesting()
+        #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
+                "fastRead() must include LoadStatusRequest so cartridgeLoadState never goes permanently stale")
+    }
+
+    // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)
+
+    /// BolusPermissionResponse nack site: a real INVALID_PUMPING_STATE nack (reasonId 1) while the
+    /// app's last-known reservoir reading was below the requested total must surface the specific
+    /// `.possiblyOutOfInsulin` case, never the generic `.pumpRejected` — and must not reach initiate.
+    @Test func permissionNackWithLowReservoirIsPossiblyOutOfInsulin() async {
+        let (b, fake) = makeAwaitingPermission()
+        b.setReservoirUnitsForTesting(0.4)
+        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionDenied(nack: 1)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .possiblyOutOfInsulin(let reservoirUnits, _)? = e as? BolusError else {
+            Issue.record("expected BolusError.possiblyOutOfInsulin, got \(String(describing: e))")
+            return
+        }
+        #expect(reservoirUnits == 0.4)
+        #expect(fake.initiateWriteCount == 0, "a permission nack must never reach the initiate write")
+        #expect(!indeterminate(e))          // clean pre-initiate failure, not FB-02 indeterminate
+        #expect(!b.deliveryOutcomeUnknown)  // never blocked
+    }
+
+    /// InitiateBolusResponse non-accept site: the same low-reservoir inference applies to the
+    /// initiate-nack path, not only the permission-nack path.
+    @Test func initiateNackWithLowReservoirIsPossiblyOutOfInsulin() async {
+        let (b, fake) = make()
+        b.setReservoirUnitsForTesting(0.4)
+        fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .possiblyOutOfInsulin(let reservoirUnits, _)? = e as? BolusError else {
+            Issue.record("expected BolusError.possiblyOutOfInsulin, got \(String(describing: e))")
+            return
+        }
+        #expect(reservoirUnits == 0.4)
+        #expect(!indeterminate(e))
+        #expect(!b.deliveryOutcomeUnknown)
+        #expect(fake.initiateWriteCount == 1)   // the initiate DID go out at this site — still a clean failure
+    }
+
+    /// Control (no over-claim): the SAME nack reason fires while the reservoir reading was ample — the
+    /// inference must not fire when there's no evidence for it. Stays the generic `.pumpRejected`.
+    @Test func permissionNackWithAmpleReservoirStaysGenericPumpRejected() async {
+        let (b, fake) = makeAwaitingPermission()
+        b.setReservoirUnitsForTesting(10.0)
+        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionDenied(nack: 1)))
+        let e = await capture { try await deliver(b, 2.0) }
+        guard case .pumpRejected? = e as? BolusError else {
+            Issue.record("expected generic BolusError.pumpRejected when reservoir is ample, got \(String(describing: e))")
+            return
+        }
+        #expect(!indeterminate(e))
+        #expect(fake.initiateWriteCount == 0)
     }
 }

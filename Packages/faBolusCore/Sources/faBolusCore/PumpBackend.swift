@@ -1,7 +1,7 @@
 import Foundation
 
 /// The **pump backend** interface — the stable seam between the faBolus UI and any pump. A backend
-/// (TandemBackend/PumpX2Kit, MockBackend, or a community backend) conforms to this; the app depends
+/// (TandemBackend/TandemKit, MockBackend, or a community backend) conforms to this; the app depends
 /// only on this protocol + the neutral models, never on a specific pump library. Async streaming of
 /// snapshots keeps the HUD reactive.
 ///
@@ -160,6 +160,17 @@ public protocol PumpBackend: AnyObject {
     // Control-IQ settings (non-insulin config; changes closed-loop behavior).
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
     func refreshControlIQSettings() async
+    /// Read the pump's native Sleep-schedule slots into `snapshot.sleepSchedules`. Universal/unsigned
+    /// read (Phase 09.10 D-04) — NOT capability-gated; sendable and harmless on any connected pump
+    /// model regardless of `PumpCapabilities.supportsSleepScheduleWrite`.
+    func refreshSleepSchedule() async
+    /// Write one native Sleep-schedule slot (Phase 09.10 D-04). Mobi-only by capability
+    /// (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the pump protocol's own MOBI_ONLY device
+    /// scope. Mode-only (L7): the underlying wire write is `.settings` risk, never `.delivery` — this
+    /// call never reaches the dose/delivery path. `activeDays` is the CONFIRMED upstream `MultiDay` bit
+    /// mask (Monday=bit0(1)…Sunday=bit6(64)); `startMinute`/`endMinute` are minute-of-day, clamped to
+    /// 0...1439 by the implementation.
+    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
     // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
@@ -273,7 +284,9 @@ public extension PumpBackend {
     func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws { throw ControlError.notSupported }
+    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws { throw ControlError.notSupported }
     func refreshControlIQSettings() async {}
+    func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws { throw ControlError.notSupported }
     func refreshProfiles() async {}
     func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
@@ -304,6 +317,18 @@ public enum BolusError: Error, LocalizedError {
     case indeterminate(String)
     /// FB-01: the dose was computed from unverified/assumed pump settings and cannot be auto-delivered.
     case unverifiedInputs(String)
+    /// Phase 09.9 D-01: the cartridge is mid change/load/prime-tubing (`!PumpSnapshot.cartridgeReadyForBolus`)
+    /// — dosing is physically impossible. Thrown BEFORE any signed frame is written; never a delivered
+    /// value, never a mutation of delivery state (fail-closed, C4 oracle never reports success for this).
+    case noCartridge(String)
+    /// Phase 09.9 D-02: the pump refused a real delivery attempt (nack) while the app's own
+    /// last-known `reservoirUnits` reading was below the requested total. This is a distinct,
+    /// more specific case than the generic `.pumpRejected` — but the wire protocol has no
+    /// insulin-specific nack code (RESEARCH Pitfall 2: `BolusPermissionResponse`/
+    /// `InitiateBolusResponse` are exhaustive with no reservoir signal), so the cause MUST be
+    /// worded as an inference from the app's own reading, never a pump-confirmed fact. A clean
+    /// pre-initiate failure in the existing FB-02 taxonomy (never indeterminate, never delivered).
+    case possiblyOutOfInsulin(reservoirUnits: Double, nackDetail: String)
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to a pump."
@@ -312,6 +337,9 @@ public enum BolusError: Error, LocalizedError {
         case .pumpRejected(let r): return "Pump rejected the bolus: \(r)."
         case .indeterminate(let r): return "Bolus outcome unknown — verify on the pump: \(r)."
         case .unverifiedInputs(let r): return "Pump settings not verified: \(r)."
+        case .noCartridge(let r): return "Cartridge not loaded: \(r)."
+        case .possiblyOutOfInsulin(let reservoirUnits, let nackDetail):
+            return "Pump refused the bolus (\(nackDetail)); last known reservoir was \(reservoirUnits) u — this may be due to insufficient insulin."
         }
     }
     /// True for an outcome that must block new deliveries until reconciled (FB-02).

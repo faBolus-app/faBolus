@@ -69,6 +69,26 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertEqual(d.id, "stub")
         _ = d.make()   // builds without throwing
     }
+
+    /// Phase 09.9 D-02: `.possiblyOutOfInsulin`'s message must be honest about being an INFERENCE
+    /// from the app's own last-known reservoir reading — the wire protocol has no insulin-specific
+    /// nack code (RESEARCH Pitfall 2), so the copy must never claim the pump reported being out of
+    /// insulin. It must also remain a clean (non-indeterminate) failure.
+    func testPossiblyOutOfInsulinErrorDescriptionIsHonestInference() {
+        let error = BolusError.possiblyOutOfInsulin(reservoirUnits: 0.4, nackDetail: "nackReasonId=1")
+        let description = error.errorDescription ?? ""
+        XCTAssertTrue(description.contains("0.4"), "expected the reservoir figure in the message: \(description)")
+        XCTAssertTrue(description.contains("nackReasonId=1"), "expected the raw nack detail in the message: \(description)")
+        XCTAssertTrue(
+            description.contains("may be due to") || description.contains("may be"),
+            "expected a hedging inference qualifier, not an assertion of fact: \(description)"
+        )
+        XCTAssertFalse(
+            description.localizedCaseInsensitiveContains("pump reported"),
+            "must never claim the pump reported being out of insulin: \(description)"
+        )
+        XCTAssertFalse(error.isIndeterminate, ".possiblyOutOfInsulin is a clean failure, not indeterminate")
+    }
 }
 
 /// Small async throwing assertion helper (XCTAssertThrowsError has no async overload).

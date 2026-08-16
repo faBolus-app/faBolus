@@ -52,4 +52,40 @@ final class PatternInsightsTests: XCTestCase {
         XCTAssertLessThanOrEqual(cgm.count, 100)
         XCTAssertTrue(PatternInsights().insights(cgm: cgm).isEmpty)
     }
+
+    // MARK: - 04-08 gap closure (SC1): the unit param must be display-unit-correct AND leave the
+    // pre-existing default (.mgdl) text byte-identical to before this plan.
+
+    func testDefaultUnitParamIsMgdlAndTextUnchanged() {
+        // No `unit:` argument at all — confirms the default-parameter call-site compatibility promise
+        // (Task 1's "default .mgdl to preserve call-site compatibility" instruction).
+        let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)
+        let out = PatternInsights().insights(cgm: cgm)
+        let low = out.first { $0.title.hasPrefix("Recurring lows") }
+        XCTAssertTrue(low?.detail.contains("70 mg/dL") ?? false,
+                      "unconverted default must still render the bare mg/dL literal exactly as before")
+    }
+
+    func testMmolUnitConvertsRecurringLowDetail() {
+        let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)
+        let out = PatternInsights().insights(cgm: cgm, unit: .mmol)
+        let low = out.first { $0.title.hasPrefix("Recurring lows") }
+        XCTAssertNotNil(low)
+        XCTAssertFalse(low?.detail.contains("mg/dL") ?? true, "mmol mode must never leak an mg/dL label")
+        XCTAssertTrue(low?.detail.contains("mmol/L") ?? false)
+        // 70 mg/dL == 3.9 mmol/L at 1-decimal precision (GlucoseUnit.format).
+        XCTAssertTrue(low?.detail.contains("3.9 mmol/L") ?? false, "70 mg/dL must render as 3.9 mmol/L via the funnel")
+    }
+
+    func testMmolUnitConvertsHighAndTirRangeDetail() {
+        let cgm = series(days: 4, stepMinutes: 5, lowHour: nil)
+        let out = PatternInsights().insights(cgm: cgm, unit: .mmol)
+        let tir = out.first { $0.title.hasPrefix("Time in range:") }
+        XCTAssertNotNil(tir)
+        XCTAssertFalse(tir?.detail.contains("mg/dL") ?? true)
+        // 70–180 mg/dL range == 3.9–10.0 mmol/L.
+        XCTAssertTrue(tir?.detail.contains("3.9") ?? false)
+        XCTAssertTrue(tir?.detail.contains("10.0") ?? false)
+        XCTAssertTrue(tir?.detail.contains("mmol/L") ?? false)
+    }
 }

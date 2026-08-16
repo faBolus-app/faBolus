@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Glance page: big glucose + trend (hidden when stale), a compact IOB/reservoir line, the
 /// iPhone-reachability state, and the Bolus button. Swipe for Chart / Details / Alerts.
@@ -9,6 +10,13 @@ struct WatchGlanceView: View {
     // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
+    /// Phase 4 (mmol/L display-unit support) — the unit mirrored from the phone's statusRead reply
+    /// (`WatchModel.glucoseDisplayUnit`). The watch links `faBolusCore` directly, so this renders
+    /// through the canonical `GlucoseUnit` funnel (no widget-style mirror needed here).
+    private var unit: GlucoseUnit { model.glucoseDisplayUnit }
+    private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
+    private var displayGlucose: String { model.glucose.map { unit.format(mgdl: $0) } ?? "—" }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
@@ -17,23 +25,31 @@ struct WatchGlanceView: View {
                     let present = GlucoseFreshness.presentation(of: model.glucoseDate, now: ctx.date)
                     let stale = present == .stale
                     VStack(spacing: 8) {
-                        if model.glucose != nil, present != .hidden {
+                        if let g = model.glucose, present != .hidden {
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text(model.displayGlucose)
+                                Text(displayGlucose)
                                     .font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                                     .lineLimit(1).minimumScaleFactor(0.5)
-                                    .foregroundStyle(watchGlucoseColor(model.glucose, stale: stale))
+                                    .foregroundStyle(AppTheme.glucoseColor(g, stale: stale))
                                 Text(model.trend).font(.title2)
                                     .foregroundStyle(stale ? .gray : .primary)
                             }
-                            Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? "mg/dL")
+                            // Icon+word non-color band channel (WCAG 1.4.1), fresh readings only — the
+                            // number is grey when stale, no band color to duplicate. Hidden from
+                            // VoiceOver: glanceGlucoseLabel already speaks the band word (see below).
+                            if present == .fresh {
+                                BandIndicator(band: GlucoseRange.classify(g), announcesOwnLabel: false)
+                                    .font(.caption2)
+                                    .foregroundStyle(AppTheme.glucoseColor(g))
+                            }
+                            Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? unitLabel)
                                 .font(.caption2)
                                 .fontWeight(stale ? .semibold : .regular)
                                 .foregroundStyle(stale ? .orange : .secondary)
                         } else {
                             Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                                 .lineLimit(1).minimumScaleFactor(0.5)
-                            Text(model.glucose == nil ? "mg/dL" : "no recent CGM")
+                            Text(model.glucose == nil ? unitLabel : "no recent CGM")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -83,10 +99,14 @@ struct WatchGlanceView: View {
     /// N12: spoken description of the glance glucose block, including "stale" when de-emphasized.
     private func glanceGlucoseLabel(now: Date) -> String {
         let present = GlucoseFreshness.presentation(of: model.glucoseDate, now: now)
-        guard model.glucose != nil, present != .hidden else {
+        guard let g = model.glucose, present != .hidden else {
             return model.glucose == nil ? "Glucose unavailable" : "No recent CGM"
         }
-        var parts = ["Glucose \(model.displayGlucose)", model.trend]
+        var parts = ["Glucose \(displayGlucose) \(unitLabel)", model.trend]
+        // F4 (A5): speak the band word too when it's a live (band-colored) reading — the spoken
+        // parallel of the on-screen BandIndicator, so the band never depends on color alone (mirrors
+        // StatusRingView.a11yLabel, 09.1-01).
+        if present == .fresh { parts.append(GlucoseRange.classify(g).shortLabel) }
         if present == .stale { parts.append("stale") }
         if let d = model.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
         return parts.joined(separator: ", ")

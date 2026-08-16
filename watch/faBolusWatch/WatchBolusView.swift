@@ -25,6 +25,13 @@ struct WatchBolusView: View {
     private var step: Double { isCarbs ? model.carbIncrement : model.bolusIncrement }
     private var maxAmount: Double { isCarbs ? 200 : max(model.maxBolusUnits, 0.05) }
     private var amountLabel: String { isCarbs ? "\(Int(amount)) g" : String(format: "%.2f U", amount) }
+    /// Phase 4 (mmol/L display-unit support) — this screen has NO glucose-entry field (carbs/units
+    /// only, adjusted by the crown), so there is no `Int(bg)`-style parse boundary to fix here
+    /// (Task 3 N/A per the plan's own escape hatch). It DOES render the phone's current glucose
+    /// reading (view-only, `model.glucose`) — that render routes through the received unit, matching
+    /// the plan's must_haves truth ("bolus entry" renders in the received unit) and WatchHUDView/
+    /// WatchDetailsView's treatment.
+    private var unit: GlucoseUnit { model.glucoseDisplayUnit }
     /// In carbs mode, the units the phone would deliver (like the Garmin/Mac preview).
     private var estUnits: Double? { (isCarbs && amount > 0) ? model.estimatedUnits(forCarbs: amount) : nil }
 
@@ -50,7 +57,7 @@ struct WatchBolusView: View {
     /// only label, so a dose already in flight is now explained too. Exhaustive by design.
     private var blockMessage: String? {
         switch gate.reason {
-        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied:
+        case .pumpNotLinked, .bolusInFlight, .remoteUnreachable, .accessDenied, .noCartridge:
             return gate.reason?.userMessage
         case .belowMinimum, .aboveMax, .none:
             return nil
@@ -83,7 +90,7 @@ struct WatchBolusView: View {
                 // than an old value passing for current. Value greyed + age orange once stale.
                 if let g = model.glucose, !model.glucoseHidden {
                     HStack(spacing: 4) {
-                        Text("\(g)").fontWeight(.semibold)
+                        Text(unit.format(mgdl: g)).fontWeight(.semibold)
                         if !model.isGlucoseStale { Text(model.trend) }
                         if let age = model.ageLabel {
                             Text("· \(age)").foregroundStyle(model.isGlucoseStale ? .orange : .secondary)
@@ -203,9 +210,9 @@ struct WatchBolusView: View {
     /// added back, so this is insulin-increasing vs carbs-only).
     private func includeStaleLabel(_ g: Int) -> String {
         if let u = model.estimatedUnits(forCarbs: amount, includeStaleBG: true) {
-            return "Include \(g) → " + String(format: "%.2f U", u)
+            return "Include \(unit.format(mgdl: g)) → " + String(format: "%.2f U", u)
         }
-        return "Include \(g) mg/dL"
+        return "Include \(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
     }
     /// The carbs-only button label: the correction dropped (today's silent behavior, now acknowledged).
     private var carbsOnlyLabel: String {
@@ -218,7 +225,14 @@ struct WatchBolusView: View {
     /// when the reading has no source timestamp (still stale, but no age to name).
     private var staleMessage: String {
         if let g = model.glucose, let d = model.glucoseDate {
-            return StaleBolusPrompt.warningMessage(glucoseMgdl: g, glucoseDate: d)
+            // Gap closure (04-07, own-sweep finding beyond 04-VERIFICATION/04-REVIEW): the shared
+            // `StaleBolusPrompt.warningMessage` bakes in a bare " mg/dL" literal (correct for the
+            // intentionally-unconverted Mac target, which also calls it) — the Watch has its own
+            // unit-aware `unit`/`GlucoseUnit.format`, so build the identical wording locally
+            // instead, matching every other converted surface on this screen.
+            let value = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            return "Your CGM reading (\(value)) is \(GlucoseFreshness.ageLabel(for: d, now: Date())) "
+                + "and was left out of this dose. Include it in the correction, bolus for carbs only, or cancel?"
         }
         return "Your CGM reading is stale and was left out of this dose. Include it, bolus for carbs only, or cancel."
     }
@@ -260,7 +274,7 @@ struct WatchBolusView: View {
 
     /// N12: spoken description of the bolus-screen glucose line, with "stale" when de-emphasized.
     private func bolusGlucoseLabel(_ g: Int) -> String {
-        var parts = ["Glucose \(g)"]
+        var parts = ["Glucose \(unit.format(mgdl: g))"]
         if !model.isGlucoseStale { parts.append(model.trend) } else { parts.append("stale") }
         if let age = model.ageLabel { parts.append(age) }
         return parts.joined(separator: ", ")

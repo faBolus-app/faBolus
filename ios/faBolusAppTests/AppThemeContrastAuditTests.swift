@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import faBolusCore
+import faBolusDesign
 @testable import faBolus
 
 /// P16 F4 / N12 — anti-drift pin for the accessibility contrast audit (`docs/accessibility-contrast-audit.md`).
