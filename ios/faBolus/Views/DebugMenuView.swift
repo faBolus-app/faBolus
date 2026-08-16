@@ -328,6 +328,17 @@ struct DebugMenuView: View {
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
         lines.append(GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics))
+        // Task 1 (Part C-3a, D-03.3): [Watch WC] — reads PhoneRemoteHost's already-tracked
+        // WatchConnectivity state via its `.shared` app-wide reference; never issues a new WC
+        // round-trip. Falls back to `false`/`0` if the host hasn't been constructed yet (e.g. before
+        // App.swift's `.task` runs) — the section then renders "Reachable: no" like any genuinely
+        // unreachable watch, never a crash or an omitted header.
+        let wcHost = PhoneRemoteHost.shared
+        lines.append(WCDiagnostics.section(
+            reachable: wcHost?.reachableForDiagnostics ?? false,
+            sent: wcHost?.sentCountForDiagnostics ?? 0,
+            undeliverable: wcHost?.undeliverableCountForDiagnostics ?? 0,
+            enabled: shareDiagnostics))
         return lines.joined(separator: "\n")
     }
 }
