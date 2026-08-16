@@ -307,6 +307,7 @@ public final class AppModel {
     /// on top. Staleness is intentionally not a factor here (it only nils the correction auto-fill).
     func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
         BolusGate.evaluate(reachable: true, linked: snapshot.isLinked, bolusInFlight: snapshot.bolusInFlight,
+                           cartridgeReady: snapshot.cartridgeReadyForBolus,
                            amount: amount, minimum: minimum, maximum: snapshot.maxBolusUnits,
                            access: accessDecision(.deliverBolus, from: .phoneUI))
     }
@@ -425,6 +426,7 @@ public final class AppModel {
         // the string, so this is additive.
         let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
+                                       cartridgeReady: s.cartridgeReadyForBolus,
                                        amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         cmd.canBolus = avail.canBolus
