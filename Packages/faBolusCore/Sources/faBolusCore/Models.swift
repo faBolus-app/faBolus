@@ -268,6 +268,28 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// read-only/editor screen. Universal read — populated regardless of pump model (Phase 09.10
     /// D-04); empty until `PumpBackend.refreshSleepSchedule()` has been called and answered.
     public var sleepSchedules: [PumpSleepScheduleSlot] = []
+    /// Phase 09.15 T1-9 (D-01, D-08 note) — the already-decoded-but-previously-dropped exercise
+    /// countdown (`ControlIQInfoV2Response.exerciseTimeRemainingSeconds`, op-179), a RAW
+    /// remaining-seconds DURATION — deliberately NOT an epoch: the pump reports "time remaining"
+    /// directly, so a receiver counts down locally against its OWN receipt time for animation
+    /// smoothness only, re-anchoring on every subsequent read. Populated only while the pump's OWN
+    /// live `controlIQMode` is genuinely Exercise right now (`SleepExerciseAwareness
+    /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
+    /// another mode (D-06 guardrail #6, mutual-exclusivity). `nil` otherwise. Display-only, never a
+    /// dose input (C3).
+    public var exerciseTimeRemainingSec: Int? = nil
+    /// Phase 09.15 T1-9 (D-01, D-08, iPhone/Mac-only per the UI-SPEC Assumption) — whether the
+    /// pump's OWN configured Sleep-schedule (`sleepSchedules` above) has a window active RIGHT NOW,
+    /// plus that window's start/end minute-of-day — pure window math over pump-communicated data
+    /// (b), computed by `SleepWindowDerivation.activeWindow`, never a clinical literal. Independent
+    /// of the LIVE `controlIQMode` (a configured schedule can be active even while a different mode
+    /// happens to be live) — the T1-9 card itself additionally requires `controlIQMode == .sleep`
+    /// before rendering the window text (mutual-exclusivity enforced at render time via
+    /// `ciqActivityPreset`'s single-branch selection, not duplicated here). Display-only, never a
+    /// dose input (C3).
+    public var inSleepWindow: Bool? = nil
+    public var sleepWindowStartMinute: Int? = nil
+    public var sleepWindowEndMinute: Int? = nil
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -314,6 +336,176 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// (default 15 min). Unknown age (`therapyParamsDate == nil`) → stale.
     public func isTherapyStale(now: Date = Date()) -> Bool {
         CalcInputFreshness.isTherapyStale(therapyParamsDate, now: now)
+    }
+
+    /// Phase 09.15 T1-9 (D-01, D-06 guardrail #4) — the controller's OWN activity preset currently
+    /// selected by the pump's live `controlIQMode`, or `nil` in normal mode (no card) or when the
+    /// connected controller's descriptor has no matching preset (`.none` controller). Every caller
+    /// branches on `preset.name` ("Sleep"/"Exercise") rather than re-checking `controlIQMode`
+    /// itself — this is the single mutual-exclusivity choke point (a live mode is always exactly
+    /// one of normal/sleep/exercise, so exactly one preset — or none — is ever selected here).
+    public var ciqActivityPreset: ActivityPreset? {
+        SleepExerciseAwareness.activePreset(mode: ControlIQActivity(rawMode: controlIQMode),
+                                            descriptor: controllerDescriptor)
+    }
+    /// The compact single-line fact D-09.5 propagates to every remote surface (Watch/Garmin/Mac's
+    /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` under
+    /// `SleepExerciseAwareness.compactLine`'s own fail-closed guards.
+    public var ciqActivityCompactLine: String? {
+        SleepExerciseAwareness.compactLine(mode: ControlIQActivity(rawMode: controlIQMode),
+                                           descriptor: controllerDescriptor,
+                                           exerciseTimeRemainingSec: exerciseTimeRemainingSec)
+    }
+    /// The verbose Sleep window text (iPhone/Mac only, per the UI-SPEC Assumption): "Current
+    /// window: {start}–{end}" when `inSleepWindow` is true and both minute-of-day bounds are known,
+    /// else `nil` (SP-5 fail-closed — never a partial/garbled window string).
+    public var ciqSleepWindowLine: String? {
+        guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
+        return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-08) — pure minute-of-day/day-of-week window math over the pump's OWN
+/// `sleepSchedules` (already decoded from `ControlIQSleepScheduleResponse`, (b) pump-communicated).
+/// No clinical literal — this is structural scheduling arithmetic, not a Tandem clinical constant.
+public enum SleepWindowDerivation {
+    /// The first ENABLED slot (checked in stored `slot`-index order, matching the pump's own
+    /// precedence) whose day-of-week bit matches `now`'s weekday and whose minute-of-day range
+    /// contains `now` — including a slot that spans midnight (`startMinute > endMinute`), checked
+    /// against both today's and yesterday's day-bit as appropriate. `nil` when no slot is currently
+    /// active.
+    ///
+    /// Day-bit mapping (CONFIRMED, matches `PumpSleepScheduleSlot.activeDays`'s documented ordering):
+    /// Monday=bit0…Sunday=bit6. `Calendar.weekday` is Sunday=1…Saturday=7, so `todayBit = (weekday +
+    /// 5) % 7` converts one to the other.
+    public static func activeWindow(slots: [PumpSleepScheduleSlot], now: Date = Date(),
+                                     calendar: Calendar = .current) -> (startMinute: Int, endMinute: Int)? {
+        let comps = calendar.dateComponents([.hour, .minute, .weekday], from: now)
+        guard let weekday = comps.weekday else { return nil }
+        let nowMinute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let todayBit = (weekday + 5) % 7
+        let yesterdayBit = (todayBit + 6) % 7
+        for slot in slots.sorted(by: { $0.slot < $1.slot }) where slot.enabled {
+            let start = slot.startMinute, end = slot.endMinute
+            if start <= end {
+                // Same-day window.
+                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start, nowMinute < end {
+                    return (start, end)
+                }
+            } else {
+                // Midnight-spanning window: active either "tonight" (today's slot, start...midnight)
+                // or "this morning" (yesterday's slot, midnight...end).
+                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start {
+                    return (start, end)
+                }
+                if slot.activeDays & (1 << yesterdayBit) != 0, nowMinute < end {
+                    return (start, end)
+                }
+            }
+        }
+        return nil
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-06 guardrail #4, D-08) — the Sleep/Exercise Tandem-fact reader. Pure UI
+/// wiring of `ControllerDescriptor.activityPresets` (already Tandem-clinical-review-gated data,
+/// §13) — no new clinical literal is introduced anywhere in this enum; every number/word below is
+/// read directly off the preset the pump's OWN `controlIQMode` selects. Display-only, never a dose
+/// input (C3).
+public enum SleepExerciseAwareness {
+    /// The ONE activity preset the pump's live `mode` currently selects from the connected
+    /// controller's OWN `descriptor.activityPresets`, or `nil` in `.normal` mode (no card on any
+    /// surface) or when the descriptor has no matching preset by NAME ("Sleep"/"Exercise" — the
+    /// descriptor's own vocabulary, never a hardcoded index) — a `.none` controller, or a future
+    /// descriptor missing one, fails closed rather than guessing.
+    public static func activePreset(mode: ControlIQActivity, descriptor: ControllerDescriptor) -> ActivityPreset? {
+        let name: String
+        switch mode {
+        case .normal: return nil
+        case .sleep: name = "Sleep"
+        case .exercise: name = "Exercise"
+        }
+        return descriptor.activityPresets.first { $0.name == name }
+    }
+
+    /// The exercise-timer value to STORE, given the pump's raw already-decoded remaining-seconds
+    /// (op-179) and its live mode — gates the stored fact on genuinely being IN exercise mode right
+    /// now, so a leftover nonzero value from a PRIOR exercise session (or a value reported outside
+    /// Exercise) can never leak into another mode (D-06 guardrail #6, mutual-exclusivity). Testable
+    /// in isolation from the BLE decode.
+    public static func exerciseTimerToStore(mode: ControlIQActivity, rawRemainingSeconds: UInt32) -> Int? {
+        (mode == .exercise && rawRemainingSeconds > 0) ? Int(rawRemainingSeconds) : nil
+    }
+
+    /// The full-form target-range + AutoBolus-state fact line (iPhone/Mac), e.g. "Target
+    /// 112.5–120 mg/dL · AutoBolus off" — every number/word read directly off `preset` (c) Tandem, no
+    /// new clinical literal.
+    public static func targetAutoBolusLine(_ preset: ActivityPreset) -> String {
+        "Target \(mgdlString(preset.targetLowMgdl))–\(mgdlString(preset.targetHighMgdl)) mg/dL · \(autoBolusWords(preset))"
+    }
+
+    /// The preset's own suspend-threshold fact, or `nil` when the preset doesn't define one (Sleep,
+    /// today) — independently omittable per the partial-state fail-closed rule (D-08).
+    public static func suspendThresholdLine(_ preset: ActivityPreset) -> String? {
+        guard let t = preset.suspendThresholdMgdl else { return nil }
+        return "Suspends below \(mgdlString(t)) mg/dL"
+    }
+
+    /// "AutoBolus off" / "AutoBolus continues" — derived from `preset.automaticCorrectionEnabled`,
+    /// never hardcoded per Sleep/Exercise: Control-IQ+ keeps AutoBolus on during Sleep while classic
+    /// Control-IQ does not — the descriptor already encodes that difference (the CIQ/CIQ+
+    /// discriminator, O7).
+    public static func autoBolusWords(_ preset: ActivityPreset) -> String {
+        preset.automaticCorrectionEnabled ? "AutoBolus continues" : "AutoBolus off"
+    }
+
+    /// "{H}h {M}m remaining" from a raw remaining-seconds duration, or `nil` when absent/non-positive
+    /// (D-06 guardrail #5 fail-closed: never a negative/zero countdown).
+    public static func remainingLabel(seconds: Int?) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
+        let h = seconds / 3600, m = (seconds % 3600) / 60
+        return h > 0 ? "\(h)h \(m)m remaining" : "\(m)m remaining"
+    }
+
+    /// The compact "ends {h}:{mm}" clock label (D-09.5 remote-first form), computed by adding the
+    /// raw remaining-seconds DURATION to `now` — recomputed fresh at every draw/statusRead receipt,
+    /// never a transmitted absolute instant (the wire carries only the duration, D-08 T1-9 note).
+    /// 12-hour, no AM/PM (matches the UI-SPEC's own compact example "ends 4:20"). `nil` under the
+    /// same fail-closed guard as `remainingLabel`.
+    public static func endsAtLabel(seconds: Int?, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
+        let end = now.addingTimeInterval(TimeInterval(seconds))
+        let c = calendar.dateComponents([.hour, .minute], from: end)
+        let hour24 = c.hour ?? 0
+        let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
+        return "ends \(hour12):\(String(format: "%02d", c.minute ?? 0))"
+    }
+
+    /// The compact single-line fact D-09.5 propagates to EVERY surface (Watch/Garmin/Mac's compact
+    /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal mode, no
+    /// matching preset, or — for Exercise only — the timer is unknown (SP-5 fail-closed; Sleep's
+    /// compact fact never depends on the timer).
+    public static func compactLine(mode: ControlIQActivity, descriptor: ControllerDescriptor,
+                                    exerciseTimeRemainingSec: Int?, now: Date = Date()) -> String? {
+        guard let preset = activePreset(mode: mode, descriptor: descriptor) else { return nil }
+        switch mode {
+        case .normal: return nil
+        case .sleep: return "Sleep — \(autoBolusWords(preset))"
+        case .exercise:
+            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now) else { return nil }
+            return "Exercise — \(ends)"
+        }
+    }
+
+    /// "%02d:%02d" minute-of-day formatting — the same plain convention
+    /// `PumpWizardViews.SleepScheduleView.minuteOfDayString` already uses for the sleep-schedule
+    /// editor (structural echo, not a duplicated clinical constant).
+    public static func minuteOfDayString(_ minute: Int) -> String {
+        String(format: "%02d:%02d", minute / 60, minute % 60)
+    }
+
+    private static func mgdlString(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
     }
 }
 

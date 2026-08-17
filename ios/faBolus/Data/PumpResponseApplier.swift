@@ -384,6 +384,31 @@ final class PumpResponseApplier {
                     snap.ciqSuspendedForLow = false
                     snap.ciqSuspendStartDate = nil
                 }
+                // Phase 09.15 T1-9 (D-01, D-08 note, (b) pump-communicated) — the already-decoded
+                // exercise countdown, simply copied (mirrors T1-1/T1-2's "already arrives, applier
+                // just narrows it", TandemKit Responses.swift:60). Gated on the pump's OWN live mode
+                // (never populated outside Exercise) so a stale timer from a PRIOR exercise session
+                // can never leak into another mode — D-06 guardrail #6 and this task's own
+                // mutual-exclusivity requirement (never both Sleep and Exercise facts at once).
+                let mode = ControlIQActivity(rawMode: m.currentUserModeType)
+                snap.exerciseTimeRemainingSec = SleepExerciseAwareness.exerciseTimerToStore(
+                    mode: mode, rawRemainingSeconds: m.exerciseTimeRemainingSeconds)
+                // Sleep-window derivation — pure minute-of-day/day-of-week math over the
+                // already-decoded `sleepSchedules` (b), never a clinical literal (c/§13 values live
+                // only in `ControllerDescriptor.activityPresets`). Independent of the LIVE mode
+                // (answers "is a configured schedule window active right now", which can be true
+                // even while a different mode happens to be live) — the T1-9 card itself gates
+                // window-text rendering on `controlIQMode == .sleep` via `ciqActivityPreset`'s
+                // single-branch selection, not duplicated here.
+                if let window = SleepWindowDerivation.activeWindow(slots: snap.sleepSchedules) {
+                    snap.inSleepWindow = true
+                    snap.sleepWindowStartMinute = window.startMinute
+                    snap.sleepWindowEndMinute = window.endMinute
+                } else {
+                    snap.inSleepWindow = false
+                    snap.sleepWindowStartMinute = nil
+                    snap.sleepWindowEndMinute = nil
+                }
             }
         case let m as CGMHardwareInfoResponse:
             resumeCGMHardwareInfoContinuation(m)
