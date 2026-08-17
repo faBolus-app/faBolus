@@ -174,6 +174,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var activeProfileName: String = ""
     public var controlIQMode: Int = 0
     public var controlIQEnabled: Bool = false
+    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, as a frozen wire token
+    /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived at
+    /// `PumpResponseApplier` from op-179 `ControlIQInfoV2Response.controlStateType` (c) Tandem — the zone
+    /// words themselves are Tandem's own labels. `nil` until read OR when the raw value is unmapped —
+    /// never a synthesized 6th word (D-06 guardrail #6). Display-only, never a dose input (C3).
+    public var ciqZone: String? = nil
     /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
     /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
     /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This
@@ -436,6 +442,40 @@ public enum ControllerVariant: String, Sendable, Equatable, CaseIterable {
     case none = "none"
     case controlIQ = "controlIQ"
     case controlIQPro = "controlIQPro"
+}
+
+/// Phase 09.15 T1-1 (D-01/D-08) — the pump's live "what Control-IQ is doing right now" action zone, as a
+/// FROZEN wire token (`RemoteCommand.ciqZone`): a remote decodes the token and renders Tandem's own zone
+/// word + icon locally (never a rendered string on the wire), mirroring `ControllerVariant`. The five
+/// words themselves are Tandem's own labels (c) Tandem — never renamed, never a synthesized 6th word.
+///
+/// ⚠️ UNVERIFIED GUESS (see `docs/UNVERIFIED-GUESSES.md`): op-179's `ControlIQInfoV2Response.controlStateType`
+/// byte has no oracle-documented enum (the upstream jwoglom reference names it only `controlStateType`,
+/// no named constants). `fromControlStateType` below is a best-effort ordinal hypothesis — ascending with
+/// Tandem's own documented ~70/112.5/160/180 mg/dL predicted-glucose zone thresholds (stops < 70,
+/// decreases 70–112.5, maintains 112.5–160, increases 160–180, delivers > 180) — NOT a bench/capture-
+/// confirmed mapping. Any unmapped/out-of-range raw value returns `nil` (renders ABSENT everywhere, D-06
+/// guardrail #6/#13 fail-closed) rather than guessing wrong.
+public enum ControlIQZone: String, Sendable, Equatable, CaseIterable {
+    case increases = "increases"
+    case decreases = "decreases"
+    case maintains = "maintains"
+    case stops = "stops"
+    case delivers = "delivers"
+
+    /// Map the op-179 `ControlIQInfoV2Response.controlStateType` raw byte to a frozen wire token.
+    /// UNVERIFIED GUESS (see the enum doc comment) — any value outside the mapped 0...4 ordinal set
+    /// returns `nil`, never a synthesized word.
+    public static func fromControlStateType(_ raw: Int) -> ControlIQZone? {
+        switch raw {
+        case 0: return .stops
+        case 1: return .decreases
+        case 2: return .maintains
+        case 3: return .increases
+        case 4: return .delivers
+        default: return nil
+        }
+    }
 }
 
 /// The pump *model* identity, as typed data instead of a bare `isMobi` boolean threaded through the UI.

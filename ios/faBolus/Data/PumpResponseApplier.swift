@@ -365,6 +365,10 @@ final class PumpResponseApplier {
             withSnapshot { snap in
                 snap.controlIQMode = m.currentUserModeType
                 snap.controlIQEnabled = m.closedLoopEnabled
+                // Phase 09.15 T1-1 (D-01/D-08, (c) Tandem) — the zone words are Tandem's own labels;
+                // `controlStateType` is already decoded and was simply dropped here. UNVERIFIED GUESS
+                // mapping, see `ControlIQZone.fromControlStateType` — unmapped ⇒ nil ⇒ renders absent.
+                snap.ciqZone = ControlIQZone.fromControlStateType(m.controlStateType)?.rawValue
             }
         case let m as CGMHardwareInfoResponse:
             resumeCGMHardwareInfoContinuation(m)

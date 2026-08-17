@@ -365,6 +365,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// part of the shared JSON schema or the Garmin Monkey C mirror.
     public var diagnosticsText: String? = nil
 
+    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone as a FROZEN wire token
+    /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
+    /// `PumpSnapshot.ciqZone`. A remote decodes the token and renders Tandem's own zone word + icon
+    /// locally — no prose crosses the wire, mirroring `controllerVariant` exactly. (c) Tandem — the zone
+    /// words are Tandem's own labels. Display-only, never a dose input (C3). Absent ⇒ a legacy host OR the
+    /// zone is unread/unmapped; the remote renders the chip/row/field ABSENT, never a stale/fabricated 6th
+    /// word (D-06 guardrail #6, SP-5 fail-closed). Additive; auto-Codable, so the existing memberwise
+    /// initializer stays untouched (the host sets it via `cmd.ciqZone = …`), exactly like `controllerVariant`.
+    public var ciqZone: String? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -530,6 +540,14 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try intRange("glucosePlotCeiling", glucosePlotCeiling, 1, 1000)
         try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
         try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
+
+        // Phase 09.15 T1-1 (D-01/D-08, threat T-09.15-01-S): `ciqZone` is a frozen wire token — a remote
+        // reconstructs Tandem's own zone word locally from it, so an out-of-set string (e.g. a forged
+        // "unknown" or a future/renamed token an old remote can't render) must fail closed here rather
+        // than let a spoofed/corrupted value reach a render path. `nil` (absent/unread) is always valid.
+        if let z = ciqZone, ControlIQZone(rawValue: z) == nil {
+            throw ValidationError.outOfRange("ciqZone")
+        }
 
         // String length caps.
         let strings: [(String, String?)] = [

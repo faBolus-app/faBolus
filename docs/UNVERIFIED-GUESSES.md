@@ -149,6 +149,31 @@ feature is untested and "will likely not work" before they run — not just the 
   IDP target on the pump, read `CurrentActiveIdpValuesResponse`, and confirm byte 4 carries it on BOTH pump
   families and across more than one t:slim software version; confirm no genuine byte-5 variant exists.
 
+## 8. `ControlIQInfoV2Response.controlStateType` → `ciqZone` word mapping — Phase 09.15-01 (D-01/D-08)
+- **Not oracle-backed, not capture-backed, not bench-confirmed.** T1-1's "what Control-IQ is doing" state
+  chip mirrors Tandem's own five zone words verbatim (Increases/Decreases/Maintains/Stops/Delivers, (c)
+  Tandem) — the WORDS are Tandem's, but the raw op-179 byte that selects among them (`controlStateType`,
+  byte 9 of `ControlIQInfoV2Response`) has **no named enum anywhere upstream**: the pinned jwoglom oracle
+  decodes it only as an unnamed `int controlStateType` with no documented value table, and the only
+  same-shaped precedent in the kit (`HomeScreenMirrorResponse.ApControlStateIcon`, op-57 — a DIFFERENT
+  response/byte) has just 4 states, not 5, so it cannot be reused directly.
+- `ControlIQZone.fromControlStateType(_:)` (`Packages/faBolusCore/Sources/faBolusCore/Models.swift`) maps
+  raw ordinals `0...4` → `stops/decreases/maintains/increases/delivers`, a best-effort hypothesis that the
+  byte ascends in the same order as Tandem's own documented ~70/112.5/160/180 mg/dL predicted-glucose zone
+  thresholds (BRAINSTORM.md "IDEA 1/2"). Any other raw value → `nil` (chip renders ABSENT, never a guessed
+  or fabricated word — D-06 guardrail #6).
+- **Where:** `Models.swift` (`ControlIQZone`), `PumpResponseApplier.swift` (op-179 case), `RemoteCommand.swift`
+  (`ciqZone` field + `validate()` membership bound). No `UnverifiedFeatureGate` modal wired — this is a
+  pure DISPLAY primitive (T-09.15-01-I: info-disclosure severity low/accept in the phase threat register)
+  with a structurally enforced fail-closed default, not a consequential/dose-affecting action gated by the
+  blocking-modal convention (entries 1/2/6 above).
+- **Risk:** low — display-only, never a dose input (C3); worst case is a wrong (or absent) status word,
+  never a wrong dose. A confidently-wrong word is still a UX/trust hazard (mistaking "Increases" for
+  "Decreases"), which is why an unmapped raw value fails closed to absent rather than guessing.
+- **Verify (Phase-11 saline bench or a live capture):** put the pump through each of the 5 documented
+  Control-IQ zones (predicted BG in each of the 4 threshold bands) and record the `controlStateType` byte
+  seen at op-179 for each; confirm/correct the ordinal mapping above against the real values.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to
@@ -166,8 +191,9 @@ this phase) reads as Closed.
 | 5 | Passive Dexcom G6 direct BLE | Experimental; a passive read may never connect without an authenticated session | Field test (owner-tracked, not bench-blocked) | Owner, field test |
 | 6 | Mobi sleep-schedule `SetSleepScheduleRequest.flag` semantic + slots 1-3 | Value pinned to captured golden `3`; day-of-week bitmask confirmed; `flag`'s semantic meaning and slots 1-3 generalization unconfirmed | Set a distinctive schedule on all 4 slots, read back directly on the pump | v0.4.0 Phase 11 (09.10 bench) |
 | 7 | `CurrentActiveIdpValuesResponse.currentTargetBg` byte-4 decode | Capture-backed, not oracle-backed, not bench-confirmed; no live faBolus consumer today | TandemKit `docs/BENCH-SESSION-PLAN.md` Objective 4 — confirm byte 4 across pump families and t:slim software versions **before any dosing consumer relies on it**, matching this entry's own GATING RULE above | v0.4.0 Phase 11 |
+| 8 | `controlStateType` → `ciqZone` word mapping | Ordinal-hypothesis guess (0-4 ascending with Tandem's documented zone thresholds); no oracle/capture backing; display-only, fail-closed to absent on any unmapped value | Cycle the pump through each documented CIQ zone on the Phase-11 bench (or a live capture) and record the real `controlStateType` byte per zone | v0.4.0 Phase 11 |
 
-Every non-Closed row above (1, 2, 4, 5, 6, 7) is tagged for the keep-off-narrow-main gating rule added
+Every non-Closed row above (1, 2, 4, 5, 6, 7, 8) is tagged for the keep-off-narrow-main gating rule added
 to the 999.5 per-surface checklist (`.planning/intel/prep/999.5-branch-model-reorg/PER-SURFACE-CHECKLIST.md`,
 "Gating Rule: Unverified-Guess-Gated Features Stay Off Narrowed main") — none of these surfaces may be
 promoted onto the narrowed `main` until its "Resolves via" step clears.
