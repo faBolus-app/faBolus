@@ -338,7 +338,8 @@ struct DisplaySettingsView: View {
                     NavigationLink {
                         CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
                                           label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
-                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.")
+                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.",
+                                          allowEmpty: true)
                     } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
                 }
             } header: { Text("Live Activity") } footer: {
@@ -1002,29 +1003,55 @@ struct GarminScreensView: View {
     }
 }
 
-/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). Mirrors
-/// `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least one stays shown.
+/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills, Live Activity
+/// fields). Mirrors `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least
+/// one stays shown, UNLESS `allowEmpty` is set (Phase 09.14, D-01/WR-04) — currently only the Live
+/// Activity fields list opts in, since its 0-field state has a real, tested, non-blank fallback
+/// render (`LiveActivityComposer.compose`'s minimal-glyph branch). Every other call site keeps the
+/// default `allowEmpty: false` floor unchanged.
 struct CustomizeListView: View {
     let title: String
     let allIds: [String]
     let label: (String) -> String
     @Binding var order: [String]
     let shownFooter: String
+    var allowEmpty: Bool = false   // NEW (09.14 D-01) — default false, every existing call site unaffected
 
     private var hidden: [String] { allIds.filter { !order.contains($0) } }
+
+    /// Pure guard: whether removing `removingCount` items from a list of `currentCount` is allowed.
+    /// `allowEmpty` bypasses the "at least one stays shown" floor entirely. Extracted for unit testing
+    /// (`CustomizeListViewGuardTests`) — the `.onDelete` closure below is the only caller.
+    static func canDelete(currentCount: Int, removingCount: Int, allowEmpty: Bool) -> Bool {
+        allowEmpty || currentCount - removingCount >= 1
+    }
 
     var body: some View {
         Form {
             Section {
-                ForEach(order, id: \.self) { id in
-                    Label(label(id), systemImage: "line.3.horizontal")
+                if order.isEmpty {
+                    // 09.14 D-01: only reachable when allowEmpty == true (Live Activity fields list).
+                    // Non-interactive — no .onMove/.onDelete, no drag handle — matches the app's
+                    // existing static empty-list rows (AlertRulesView, PumpWizardViews).
+                    Text("No fields shown — the Live Activity displays a minimal synced-status glyph. Add a field below to bring it back.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(order, id: \.self) { id in
+                        Label(label(id), systemImage: "line.3.horizontal")
+                    }
+                    .onMove { from, to in order.move(fromOffsets: from, toOffset: to) }
+                    .onDelete { idx in
+                        if Self.canDelete(currentCount: order.count, removingCount: idx.count, allowEmpty: allowEmpty) {
+                            order.remove(atOffsets: idx)
+                        }
+                    }
                 }
-                .onMove { from, to in order.move(fromOffsets: from, toOffset: to) }
-                .onDelete { idx in if order.count - idx.count >= 1 { order.remove(atOffsets: idx) } }
             } header: {
                 Text("Shown (top → bottom)")
             } footer: {
-                Text(shownFooter)
+                // Suppress the "drag to reorder, swipe to hide" footer when there's nothing left to
+                // drag/swipe — the empty-hint row above already carries the full message.
+                if !order.isEmpty { Text(shownFooter) }
             }
             if !hidden.isEmpty {
                 Section("Hidden") {
