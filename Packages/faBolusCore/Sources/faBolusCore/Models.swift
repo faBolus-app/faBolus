@@ -214,6 +214,23 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// .ciqLastCouldNotDeliverEpochSec` (remote MARKER only — the full timeline stays phone-only,
     /// D-08).
     public var ciqLastCouldNotDeliverDate: Date? = nil
+    /// Phase 09.15 T1-5 (D-01, D-08) — the immutable instant Control-IQ's automatic correction becomes
+    /// available again after the most-recent bolus, derived from `lastAutoCorrectionDate` + the
+    /// descriptor's OWN documented lockout window (`ControllerDescriptor.automaticCorrection
+    /// .blockedByRecentBolusMinutes`) — never a literal 60. This is the T1-5 wire primitive's SOURCE
+    /// (`RemoteCommand.lockoutUntilEpochSec`, D-08): an immutable END epoch, so a receiver reverses the
+    /// arithmetic (`lockoutStart = lockoutUntilDate - window`) and calls `AutoCorrectionDisclosure
+    /// .lockoutRemainingFraction` locally — the fraction itself is NEVER transmitted (D-06 guardrail #1:
+    /// a fraction, never a dose/units value). `nil` when there is no known auto-correction yet, the
+    /// controller can't auto-correct, or the window is unknown — purely a derived instant; the
+    /// should-render/fail-closed decision (expired ⇒ absent) lives entirely in `lockoutRemainingFraction`
+    /// downstream, never duplicated here.
+    public var lockoutUntilDate: Date? {
+        guard let start = lastAutoCorrectionDate,
+              let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
+        else { return nil }
+        return start.addingTimeInterval(TimeInterval(windowMinutes) * 60)
+    }
     /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
     /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
     /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This

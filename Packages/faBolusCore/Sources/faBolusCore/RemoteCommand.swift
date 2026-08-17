@@ -408,6 +408,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Same Int32.max ceiling. Additive; auto-Codable.
     public var ciqLastCouldNotDeliverEpochSec: Int? = nil
 
+    /// Phase 09.15 T1-5 (D-01, D-08) — the immutable SOURCE epoch (Unix seconds) of the instant
+    /// Control-IQ's automatic correction becomes available again (`PumpSnapshot.lockoutUntilDate`), set
+    /// once at origin from `lastAutoCorrectionDate` + the descriptor's own documented lockout window and
+    /// propagated UNCHANGED — mirroring `glucoseEpochSec`'s epoch-not-age convention exactly: a receiver
+    /// reverses the arithmetic (`lockoutStart = lockoutUntilEpochSec - windowMinutes*60`) and calls
+    /// `AutoCorrectionDisclosure.lockoutRemainingFraction` locally, so the FRACTION itself is NEVER
+    /// transmitted (D-06 guardrail #1: a fraction, never a dose/units value). Emitted UNCONDITIONALLY on
+    /// every statusRead (nil only when there's no known auto-correction yet, the controller can't
+    /// auto-correct, or the window is unknown) so a remote always sees the host's current knowledge — same
+    /// unconditional-map parse idiom as `iobEpochSec`/`therapyEpochSec` above. Absent, OR a value already
+    /// in the past, ⇒ the bar/ring renders ABSENT — never a frozen 0%/100% bar, never a negative countdown
+    /// (D-06 guardrail #5, SP-5 fail-closed). Display-only, never a dose input (C3). Same Int32.max
+    /// (2038-01-19) ceiling as every other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`).
+    /// Additive; auto-Codable, so the existing memberwise initializer stays untouched.
+    public var lockoutUntilEpochSec: Int? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -576,6 +592,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         }
         if let e = ciqLastCouldNotDeliverEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("ciqLastCouldNotDeliverEpochSec")
+        }
+        // Phase 09.15 T1-5 (D-08): the lockout-until END epoch follows the exact same rule as every
+        // other immutable source epoch above. Absent is fine (⇒ bar/ring ABSENT); a future stamp is
+        // still a valid END instant (that's the whole point — it's usually in the near future until
+        // it elapses), so only zero/negative/overflow are rejected here. The "already in the past"
+        // fail-closed case is a RUNTIME state (time passing), not a validation-time defect, and is
+        // handled by `AutoCorrectionDisclosure.lockoutRemainingFraction` at render time, never here.
+        if let e = lockoutUntilEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("lockoutUntilEpochSec")
         }
         // Phase 09.13-02 (D-06/D-11, threat T-09.13-04): a plausible mg/dL display-integer bound —
         // absent is fine (⇒ the receiver's own default/shared fallback), but a present value outside a

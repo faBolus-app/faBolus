@@ -490,6 +490,12 @@ public final class AppModel {
         // chip/row/marker ABSENT, never a synthesized age. Display-only, never a dose input (C3).
         cmd.lastAutoCorrectionEpochSec = snapshot.lastAutoCorrectionDate.map { Int($0.timeIntervalSince1970) }
         cmd.ciqLastCouldNotDeliverEpochSec = snapshot.ciqLastCouldNotDeliverDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-5 (D-08): the lockout-until END epoch, relayed exactly like `lastAutoCorrectionEpochSec`
+        // above — `PumpSnapshot.lockoutUntilDate` is a computed instant (lastAutoCorrectionDate + the
+        // descriptor's own window, no literal 60), so this is emitted UNCONDITIONALLY every statusRead (never
+        // a compose-time constant). Absent ⇒ a remote renders the bar/ring ABSENT. Display-only, never a dose
+        // input (C3).
+        cmd.lockoutUntilEpochSec = snapshot.lockoutUntilDate.map { Int($0.timeIntervalSince1970) }
         return cmd
     }
 

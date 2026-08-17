@@ -116,6 +116,14 @@ class RemoteClientModel {
     /// had the pump history to build one from). `nil` ⇒ render the marker ABSENT. Never surfaced on
     /// widgets/LA (explicit scope, D-08).
     var ciqLastCouldNotDeliverDate: Date? = nil
+    /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction becomes
+    /// available again, mirrored from the phone's `lockoutUntilEpochSec` (epoch-not-age convention).
+    /// UNLIKE `lastAutoCorrectionDate`/`ciqLastCouldNotDeliverDate` above (monotonic historical markers
+    /// that never un-happen), this is a DERIVED instant the host recomputes fresh on every statusRead —
+    /// so it uses the SAME unconditional assign-or-clear parse as `iobDate`/`therapyDate` (map assign,
+    /// clearing to `nil` the moment the host doesn't send one), never the "if let, keep last" guard.
+    /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input (C3).
+    var lockoutUntilDate: Date? = nil
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -134,6 +142,25 @@ class RemoteClientModel {
                                                 glucoseMgdl: glucose,
                                                 trend: GlucoseTrend(rawValue: trend))
     }
+    /// T1-5 (D-01, D-08): the 60-min lockout countdown FRACTION, or nil — computed LOCALLY from the
+    /// mirrored `lockoutUntilDate` (an immutable END epoch) by reversing the arithmetic to the START
+    /// instant the pure fn expects (`lockoutStart = lockoutUntilDate - window`), matching
+    /// `autoCorrectionLockout`'s local-compute idiom exactly. **This is a fraction, NEVER a dose/units
+    /// value** (D-06 guardrail #1); NEVER gates delivery. `nil` when `lockoutUntilDate` is absent, the
+    /// window is unknown, or the lockout has already expired (fail-closed — SP-5).
+    var lockoutRemainingFraction: Double? {
+        guard let untilDate = lockoutUntilDate,
+              let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
+        else { return nil }
+        let startDate = untilDate.addingTimeInterval(-Double(windowMinutes) * 60)
+        return AutoCorrectionDisclosure.lockoutRemainingFraction(descriptor: controllerDescriptor,
+                                                                 controllerEnabled: controlIQEnabled,
+                                                                 lockoutStartDate: startDate, now: Date())
+    }
+    /// The "available at {time}" instant the countdown bar's trailing label + VoiceOver read — simply
+    /// `lockoutUntilDate` exposed under the UI-facing name, `nil` exactly when `lockoutRemainingFraction`
+    /// is (so a caller never renders a bar without a time, or a time without a bar).
+    var lockoutAvailableAt: Date? { lockoutRemainingFraction != nil ? lockoutUntilDate : nil }
     /// P15 §2.3 (watch): the watch may show/permit its bolus affordance only when remotes aren't read-only
     /// AND the phone has enabled watch bolusing. Fail-closed by default (`watchBolusEnabled` starts false).
     /// The Mac has its own gating and does not use this.
@@ -400,6 +427,12 @@ class RemoteClientModel {
             if let e = cmd.ciqLastCouldNotDeliverEpochSec {
                 ciqLastCouldNotDeliverDate = Date(timeIntervalSince1970: TimeInterval(e))
             }
+            // Phase 09.15 T1-5 (D-08, SP-5 fail-closed): UNLIKE the two monotonic markers just above,
+            // `lockoutUntilDate` is a DERIVED instant the host recomputes fresh every statusRead — so it
+            // is always fully authoritative (unconditional map-assign, mirrors `iobDate`/`therapyDate`),
+            // never "ignore if absent, keep last". Absent ⇒ nil ⇒ `lockoutRemainingFraction` renders the
+            // bar/ring ABSENT.
+            lockoutUntilDate = cmd.lockoutUntilEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not
