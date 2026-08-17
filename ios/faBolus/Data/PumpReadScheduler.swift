@@ -14,11 +14,12 @@ import os
 /// `TandemBackend` as separate statements right after construction (Swift's two-phase init forbids a
 /// `[weak self]`-capturing closure inside the very expression that initializes the property holding it).
 ///
-/// D-07 (deferred to Wave 4): the response-applier — the `didReceiveFrame` status cases, including
-/// `applyEgvReading` — stays in `TandemBackend` this wave. It calls back into this scheduler's exposed
+/// D-07 (landed in Wave 4): the response-applier — the `didReceiveFrame` status cases, including
+/// `applyEgvReading` — moved into `PumpResponseApplier`, which calls into this scheduler's exposed
 /// completion/scheduling methods (`completeGlucoseRead()`, `noteCalcInputArrived(iob:)`,
-/// `schedulePredictiveBurst(afterReadingAt:)`, `cgmReadingDate(pumpSec:now:)`, `insertBadOpcode(_:)`) —
-/// the same calls TandemBackend made directly before this extraction, now routed through the scheduler.
+/// `schedulePredictiveBurst(afterReadingAt:)`, `cgmReadingDate(pumpSec:now:)`, `insertBadOpcode(_:)`) via
+/// its own injected closures — the same calls TandemBackend made directly before this extraction,
+/// still routed through this scheduler.
 ///
 /// NO wire bytes, send order, or cadence change (D-06) — every member below is a verbatim move (including
 /// its fix-cycle doc-comment history) from `TandemBackend.swift`.
@@ -37,10 +38,11 @@ final class PumpReadScheduler {
     var isConnected: () -> Bool = { false }
     /// Bound to `pumpTimeAnchor` (the phone↔pump clock anchor TandemBackend owns).
     var pumpTimeAnchor: () -> (pump: UInt32, phone: Date)? = { nil }
-    /// Bound to `{ lastCgmPumpSec = 0 }` — `lastCgmPumpSec` stays on `TandemBackend` (it's read/written
-    /// only by `applyEgvReading`, which stays there too, D-07) but its reset is part of `startPolling()`'s
-    /// fresh-connection-cycle setup, which moved here — so this hook keeps that reset atomic with the rest
-    /// of `startPolling()`'s cycle-begin work, exactly as it ran inline before the move.
+    /// Bound to `{ responseApplier.resetCycleState() }` (Phase 09 Wave 4) — `lastCgmPumpSec` moved to
+    /// `PumpResponseApplier` with `applyEgvReading` (its only reader/writer, D-07), but its reset is part
+    /// of `startPolling()`'s fresh-connection-cycle setup, which lives here — so this hook keeps that
+    /// reset atomic with the rest of `startPolling()`'s cycle-begin work, exactly as it ran inline before
+    /// either move.
     var onStartPollingCycleBegin: () -> Void = {}
 
     // MARK: - Status read dispatch
