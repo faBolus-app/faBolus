@@ -94,6 +94,14 @@ class RemoteClientModel {
     /// locally from this. `nil` ⇒ render the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ
     /// off, never a stale last-known word (D-06 guardrail #5/#6, SP-5 fail-closed).
     var ciqZone: String? = nil
+    /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
+    /// active basal suspend to Control-IQ, mirrored from the phone. Mirrors `ciqZone`'s unconditional
+    /// assign-or-clear parse (SP-5 fail-closed): `nil`/`false` ⇒ this remote's OWN generic-suspend
+    /// fallback applies — never a fabricated "Control-IQ paused" claim (D-09.1 BINDING).
+    var ciqSuspendedForLow: Bool? = nil
+    /// The immutable instant `ciqSuspendedForLow` first became true, mirrored from the phone's
+    /// `ciqSuspendStartEpochSec` (epoch-not-age convention — elapsed is computed on draw).
+    var ciqSuspendStartDate: Date? = nil
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -357,6 +365,12 @@ class RemoteClientModel {
             // (unconditional assignment, not an `if let` guard): a stale zone word must never survive
             // past the moment it actually cleared.
             ciqZone = cmd.ciqZone
+            // Phase 09.15 T1-2 (D-08, D-09.1, SP-5 fail-closed): mirrors ciqZone's unconditional
+            // assign-or-clear exactly — same reasoning: a modern host legitimately clears this once the
+            // suspend ends or its cause is no longer CIQ-attributed, so a stale "true" must never
+            // survive past that moment. `nil` on the wire always wins over whatever was previously known.
+            ciqSuspendedForLow = cmd.ciqSuspendedForLow
+            ciqSuspendStartDate = cmd.ciqSuspendStartEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

@@ -375,6 +375,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// initializer stays untouched (the host sets it via `cmd.ciqZone = …`), exactly like `controllerVariant`.
     public var ciqZone: String? = nil
 
+    /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
+    /// active basal suspend to Control-IQ (`PumpSnapshot.ciqSuspendedForLow`), mirroring `ciqZone`
+    /// exactly: a frozen fail-closed fact, never a rendered string. Display-only, never a dose input
+    /// (C3). Emitted UNCONDITIONALLY (nil only before the first op-179 read; `false` is a fully-known
+    /// "not CIQ-attributed" state) so a remote always sees the host's current knowledge, exactly like
+    /// `ciqZone`. Absent (legacy host) or `false` ⇒ the remote falls back to its OWN generic-suspend
+    /// indicator, never a fabricated "Control-IQ paused" claim (D-09.1 BINDING fail-closed rule).
+    /// Additive; auto-Codable, so the existing memberwise initializer stays untouched.
+    public var ciqSuspendedForLow: Bool? = nil
+    /// The immutable SOURCE epoch (Unix seconds) of the moment `ciqSuspendedForLow` first became true —
+    /// mirrors `glucoseEpochSec`'s epoch-not-age convention exactly: set once at origin, propagated
+    /// unchanged, a receiver computes elapsed = now − epoch at DISPLAY time (never a receive-time
+    /// stamp). Absent ⇒ unknown / not currently attributed. Same Int32.max (2038-01-19) ceiling as every
+    /// other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`).
+    public var ciqSuspendStartEpochSec: Int? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -528,6 +544,12 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         }
         if let e = therapyEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("therapyEpochSec")
+        }
+        // Phase 09.15 T1-2 (D-08, D-09.1): the CIQ-suspend start is an immutable source epoch — same
+        // rule as glucoseEpochSec/iobEpochSec/therapyEpochSec above (a zero/negative value reads as
+        // decades-old/harmless, but a FUTURE one would compute a negative elapsed time). Absent is fine.
+        if let e = ciqSuspendStartEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("ciqSuspendStartEpochSec")
         }
         // Phase 09.13-02 (D-06/D-11, threat T-09.13-04): a plausible mg/dL display-integer bound —
         // absent is fine (⇒ the receiver's own default/shared fallback), but a present value outside a
