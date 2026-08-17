@@ -10,6 +10,9 @@ struct BolusEntryView: View {
     let model: AppModel
     var embedded: Bool = false
     @Environment(\.dismiss) private var dismiss
+    // Phase 09.17-04 (D-04, UI-SPEC §4): read live via @Environment (never cached in @State — UI-SPEC
+    // §6 — so rotation/Split-View resize re-triggers the cap correctly).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var settings = AppSettings.shared
 
     @State private var mode: BolusMode = .carbs
@@ -447,7 +450,24 @@ struct BolusEntryView: View {
         )
     }
 
+    // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `formContent` (the UNCHANGED Form +
+    // its full modifier chain below) at the shared readable-content width and center it (the
+    // double-frame idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today
+    // (D-06a). This is a pure presentation wrapper: `formContent` itself, the GeometryReader-relative
+    // `LockoutCountdownBarView` bar, and every delivery/gating/confirm/friction path are untouched.
     private var content: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                formContent
+                    .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth, alignment: .top)
+                    .frame(maxWidth: .infinity)
+            } else {
+                formContent
+            }
+        }
+    }
+
+    private var formContent: some View {
         Form {
             // Carbs entry only when the active backend supports the pump's bolus calculator.
             if model.capabilities.supportsCarbEntry {

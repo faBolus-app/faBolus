@@ -8,6 +8,9 @@ import faBolusDesign
 /// commands must be bench-validated on saline before being relied upon.
 struct PumpControlView: View {
     @Bindable var model: AppModel
+    // Phase 09.17-04 (D-04, UI-SPEC §4): read live via @Environment (never cached in @State — UI-SPEC
+    // §6 — so rotation/Split-View resize re-triggers the cap correctly).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var confirm: PendingAction?
     @State private var tempPercent: Double = 100
     @State private var tempDurationMin: Int = 60
@@ -58,7 +61,24 @@ struct PumpControlView: View {
         return (label.headline, label.detail, f)
     }
 
+    // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `content` (the UNCHANGED Form + its
+    // full modifier chain below) at the shared readable-content width and center it (the double-frame
+    // idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today (D-06a). This
+    // is a pure presentation wrapper: `content` itself, the GeometryReader-relative
+    // `MaxBasalReadoutView` bar, and every pump-control action path are untouched.
     var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                content
+                    .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth, alignment: .top)
+                    .frame(maxWidth: .infinity)
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
         Form {
             if !model.pumpReady {
                 Section {
