@@ -13,6 +13,18 @@ import SnapshotTesting
 /// is device-agnostic (Pitfall 5) — tracks whatever Simulator `scripts/test-ios.sh` auto-detects,
 /// never a hardcoded `.device(config:)` preset.
 ///
+/// **WR-03 gap closure (Phase 09.17-06):** `seedDeterministicGlucoseForTesting()` fixes
+/// `snapshot.glucoseDate` to exactly `Date() - 600s` at the moment it's called during setup, but any
+/// on-screen "N min ago"-style CGM-age readout is computed from `Date().timeIntervalSince(glucoseDate)`
+/// at RENDER time — i.e. `600s + however long elapses between seeding and rendering`. On a slow/loaded
+/// CI runner that gap can cross a minute boundary (e.g. "10 min ago" -> "11 min ago"), which would fail
+/// this test against its committed reference image for reasons having nothing to do with a real
+/// regression. `DashboardSnapshotTests` already reasons about this exact class of live-`Date()` jitter
+/// and budgets `precision: 0.99, perceptualPrecision: 0.98`; applying the SAME tolerance here (rather
+/// than freezing "now") keeps this test consistent with that precedent while still catching a REAL
+/// structural regression (a moved/missing row, wrong color, or layout break differs by orders of
+/// magnitude more than a one-digit text jitter).
+///
 /// `SettingsView` requires an injected `@Environment(ModeStore.self)` (the P14 S3 mode selector row).
 /// `ModeStore`'s designated `init(defaults:settings:)` is the injectable, side-effect-isolated
 /// constructor tests use (mirrors `ModeStoreTests`/`PumpOnboardingFlowTests`) — a fresh, per-test
@@ -40,6 +52,6 @@ import SnapshotTesting
 
         let view = SettingsView(model: model)
             .environment(freshModeStore())
-        assertSnapshot(of: view, as: .image(layout: .sizeThatFits))
+        assertSnapshot(of: view, as: .image(precision: 0.99, perceptualPrecision: 0.98, layout: .sizeThatFits))
     }
 }
