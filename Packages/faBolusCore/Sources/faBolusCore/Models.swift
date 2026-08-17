@@ -180,6 +180,23 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// words themselves are Tandem's own labels. `nil` until read OR when the raw value is unmapped —
     /// never a synthesized 6th word (D-06 guardrail #6). Display-only, never a dose input (C3).
     public var ciqZone: String? = nil
+    /// Phase 09.15 T1-2 (D-09.1, D-08) — whether the pump's own control-state currently attributes an
+    /// ACTIVE basal suspend to Control-IQ (vs a manual/other-cause suspend the generic `deliverySuspended`
+    /// bool alone can't distinguish). Derived at `PumpResponseApplier` via
+    /// `ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType:)` — display-only, never a
+    /// dose input (C3). Unconditional assign-or-clear like `ciqZone` (never "if let"-preserved): a modern
+    /// host legitimately clears this the instant the zone changes, so a stale `true` must never survive
+    /// past that moment (D-06 guardrail #5). `nil` only before the first op-179 read; `false` is a
+    /// fully-known "not CIQ-attributed" fact, not "unknown" — the D-09.1 BINDING fail-closed default for
+    /// every consumer of this field is to treat both `nil` and `false` identically (never render
+    /// "Control-IQ paused" for either).
+    public var ciqSuspendedForLow: Bool? = nil
+    /// The immutable instant `ciqSuspendedForLow` FIRST became true (never re-stamped on every
+    /// subsequent op-179 read while it stays true) — mirrors `glucoseDate`'s epoch-not-age convention so
+    /// a remote/UI computes elapsed time on draw, never transmits a pre-computed age. Cleared back to
+    /// `nil` the moment `ciqSuspendedForLow` clears, so a later re-suspend starts a fresh instant rather
+    /// than resuming a stale one.
+    public var ciqSuspendStartDate: Date? = nil
     /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
     /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
     /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This

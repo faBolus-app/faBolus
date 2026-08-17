@@ -92,3 +92,37 @@ public enum ControlIQPrecondition {
             : "Control-IQ can only be changed on the pump itself for this model."
     }
 }
+
+/// Phase 09.15 T1-2 (D-09.1, fail-closed cause-attribution) — a pure predicate answering ONE question:
+/// did the PUMP'S OWN control-state say Control-IQ suspended basal delivery to prevent a low? This is
+/// the safety-critical nuance distinguishing T1-2 from the generic `PumpSnapshot.deliverySuspended`
+/// bool: a suspend can also come from a manual user suspend, a cartridge/loading-state block, or any
+/// other cause the generic bool can't distinguish. Only op-179's own `controlStateType` — read directly,
+/// never inferred from context or from `deliverySuspended` itself — may attribute a suspend to
+/// Control-IQ (D-06 guardrail #4/#6: mechanism-gated on a pump value, never app inference).
+///
+/// Reuses the EXACT SAME raw-byte hypothesis 09.15-01 already established for the T1-1 zone chip
+/// (`ControlIQZone.fromControlStateType`, `docs/UNVERIFIED-GUESSES.md` #8) rather than inventing a
+/// second, independent guess about the same undocumented byte: the "Stops" zone word IS Tandem's own
+/// label for "predicted glucose below ~70 mg/dL, Control-IQ stops basal delivery" — i.e. exactly the
+/// CIQ-paused-for-low state T1-2 describes. Any other zone, or an unmapped/unknown raw value, returns
+/// `false` (fail-closed): never upgrade a generic suspend into a "Control-IQ paused" claim without this
+/// bit explicitly saying so. Display-only, never a dose input (C3) — this predicate is read by the
+/// disclosure surfaces only and never reaches BolusGate/TandemBackend's delivery path.
+public enum ControlIQSuspendAttribution {
+    /// `true` only for the raw `controlStateType` value that maps to `ControlIQZone.stops`; `false` for
+    /// every other mapped zone AND for an unknown/unmapped raw value (fail-closed, never a guess).
+    public static func isCiqAttributedSuspend(controlStateType: Int) -> Bool {
+        ControlIQZone.fromControlStateType(controlStateType) == .stops
+    }
+
+    /// Compact "N min" elapsed label, computed on DRAW from the immutable `ciqSuspendStartDate`/
+    /// `ciqSuspendStartEpochSec` — never transmitted as a pre-computed age (mirrors `glucoseEpochSec`'s
+    /// epoch-not-age convention). Matches the UI-SPEC's exact copy form ("· 8 min"), distinct from
+    /// `CalcInputFreshness.ageLabel`'s "N min ago" phrasing used elsewhere. Clamped to 0 for a
+    /// clock-skew/future `start` rather than showing a negative elapsed time.
+    public static func elapsedMinutesLabel(since start: Date, now: Date = Date()) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(start) / 60))
+        return "\(minutes) min"
+    }
+}

@@ -369,6 +369,21 @@ final class PumpResponseApplier {
                 // `controlStateType` is already decoded and was simply dropped here. UNVERIFIED GUESS
                 // mapping, see `ControlIQZone.fromControlStateType` — unmapped ⇒ nil ⇒ renders absent.
                 snap.ciqZone = ControlIQZone.fromControlStateType(m.controlStateType)?.rawValue
+                // Phase 09.15 T1-2 (D-09.1 fail-closed cause-attribution, (b) pump-communicated fact) —
+                // only assert a Control-IQ-attributed suspend when the pump's OWN control-state says so.
+                // The start instant is captured ONCE at the transition into the attributed state (never
+                // re-stamped on every subsequent op-179 read while it stays true), mirroring
+                // glucoseDate's epoch-not-age convention so elapsed time is computed on draw, never
+                // transmitted. Unconditional assign-or-clear (mirrors ciqZone) — a stale `true` must
+                // never survive past the moment the pump's own state actually changed.
+                let attributed = ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType: m.controlStateType)
+                if attributed {
+                    if snap.ciqSuspendedForLow != true { snap.ciqSuspendStartDate = Date() }
+                    snap.ciqSuspendedForLow = true
+                } else {
+                    snap.ciqSuspendedForLow = false
+                    snap.ciqSuspendStartDate = nil
+                }
             }
         case let m as CGMHardwareInfoResponse:
             resumeCGMHardwareInfoContinuation(m)
