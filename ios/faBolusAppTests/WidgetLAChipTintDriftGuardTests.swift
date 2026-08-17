@@ -91,15 +91,18 @@ struct WidgetLAChipTintDriftGuardTests {
 
     /// Every salient pump-chip builder (`reservoirChip` excluded — it has no clinical-band AppTheme
     /// reference today, D-02's own scope note) must still reference `AppTheme` for its clinically
-    /// salient tint. NOTE: this is currently the deliberately-WRONG sanity needle (RED step, D-02
-    /// task's own required "scan mechanism is not vacuous" check) — `iobChip` is asserted to contain
-    /// a nonexistent 'AppTheme.doesNotExist' string, which MUST fail. GREEN swaps this for the real
-    /// per-function `AppTheme.*` needle table.
+    /// salient tint. The RED step (this test's own prior commit) proved the scan mechanism is not
+    /// vacuous by asserting a deliberately nonexistent needle and confirming failure; this is the
+    /// real per-function `AppTheme.*` needle table (mirrors the Interfaces table in 09.14-02-PLAN.md).
     @Test func salientPumpChipsStillReferenceAppThemeDirectly() throws {
         let lines = try Self.widgetBundleLines()
 
         let expectations: [(function: String, needles: [String])] = [
-            ("iobChip(", ["AppTheme.doesNotExist"]),
+            ("iobChip(", ["AppTheme.low", "AppTheme.insulin"]),
+            ("batteryChip(", ["AppTheme.low"]),
+            ("basalChip(", ["AppTheme.low", "AppTheme.insulin"]),
+            ("controlIQChip(", ["AppTheme.inRange"]),
+            ("connectionChip(", ["AppTheme.low"]),
         ]
 
         for expectation in expectations {
