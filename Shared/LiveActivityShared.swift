@@ -59,6 +59,12 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
         public var controlIQMode: Int
         public var controlIQEnabled: Bool
+        /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, a frozen wire token
+        /// (`ciqZone`: increases/decreases/maintains/stops/delivers, (c) Tandem — Tandem's own zone
+        /// words). Opt-in `"controlIQZone"` LAField (off by default). `nil` ⇒ the region renders
+        /// nothing — a legacy publish, an unread zone, or Control-IQ off, never a stale/fabricated
+        /// word (D-06 guardrail #5/#6, SP-5 fail-closed). Display-only, never a dose input (C3).
+        public var ciqZone: String?
         /// Pump link connected (same definition `WidgetSnapshot.connected` carries).
         public var connected: Bool
         /// When this snapshot was published — the dateless pump-field cluster's last-sync basis.
@@ -97,7 +103,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
                     batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
-                    controlIQEnabled: Bool = false, connected: Bool = false, updatedAt: Date = Date(),
+                    controlIQEnabled: Bool = false, ciqZone: String? = nil, connected: Bool = false,
+                    updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
                     hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
             self.glucose = glucose
@@ -114,6 +121,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.deliverySuspended = deliverySuspended
             self.controlIQMode = controlIQMode
             self.controlIQEnabled = controlIQEnabled
+            self.ciqZone = ciqZone
             self.connected = connected
             self.updatedAt = updatedAt
             self.iobStale = iobStale
@@ -125,7 +133,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         private enum CodingKeys: String, CodingKey {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
-                 controlIQEnabled, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
+                 controlIQEnabled, ciqZone, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
                  hasSnoozeEligibleAlert, showUnitLabel
         }
 
@@ -155,6 +163,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 deliverySuspended: try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false,
                 controlIQMode: try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0,
                 controlIQEnabled: try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false,
+                // Phase 09.15 T1-1: Optional-typed, so a missing key already decodes fine even under
+                // the synthesized decoder — `decodeIfPresent ?? nil` kept explicit for symmetry with
+                // every other field here (clones `displayUnitToken`'s identical Optional-String shape).
+                ciqZone: try c.decodeIfPresent(String.self, forKey: .ciqZone) ?? nil,
                 connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
                 updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
@@ -212,7 +224,7 @@ public struct LAField: Equatable, Sendable {
 /// compiles into the `faBolusWidgets` extension too and must not link `AppSettings`/`faBolusCore`.
 /// Used as `compose(...)`'s `.lockScreen` capacity and as the manager's not-yet-synced fallback.
 public enum LAFieldVocabulary {
-    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "connection"]
+    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "connection"]
 }
 
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target
