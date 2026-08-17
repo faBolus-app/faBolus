@@ -499,11 +499,19 @@ public final class AppSettings {
     public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
 
     /// Restore a reorder/hide list: keep stored ids that are known + unique, in stored order; fall
-    /// back to the full list if nothing valid is stored (never leave the surface empty).
-    private static func restoreOrder(_ stored: [String]?, all: [String]) -> [String] {
+    /// back to the full list if nothing valid is stored (never leave the surface empty) — UNLESS
+    /// `emptyMeansEmpty` is true AND a value was actually persisted (`stored != nil`), in which case a
+    /// persisted `[]` is honored as an explicit empty selection rather than collapsed back to `all`.
+    /// (Phase 09.14, D-01/WR-04 — `liveActivityFields` opts in; `detailsOrder`/`watchDetailsOrder`/
+    /// `pillsOrder` keep the default `false` and are unaffected, pinned by
+    /// `LiveActivityFieldsRestoreOrderTests`'s 3 named non-regression tests.) A genuinely-absent key
+    /// (`stored == nil`) ALWAYS falls back to `all`, regardless of `emptyMeansEmpty`.
+    private static func restoreOrder(_ stored: [String]?, all: [String], emptyMeansEmpty: Bool = false) -> [String] {
+        guard let stored = stored else { return all }
         var order: [String] = []
-        for s in stored ?? all where all.contains(s) && !order.contains(s) { order.append(s) }
-        return order.isEmpty ? all : order
+        for s in stored where all.contains(s) && !order.contains(s) { order.append(s) }
+        if order.isEmpty { return emptyMeansEmpty ? [] : all }
+        return order
     }
 
     // Smallest is 0.05 U — the pump's real minimum increment (sub-0.05 doses are rejected by the
@@ -714,7 +722,7 @@ public final class AppSettings {
         liveActivityEnabled = (d.object(forKey: "liveActivityEnabled") as? Bool) ?? false
         liveActivityFields = Self.restoreOrder(
             d.array(forKey: "liveActivityFields") as? [String] ?? Self.defaultLiveActivityFields,
-            all: Self.laFieldItems)
+            all: Self.laFieldItems, emptyMeansEmpty: true)
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
