@@ -236,6 +236,17 @@ struct MacDetailsView: View {
         out.append(Row(title: "Target", value: model.targetBg > 0 ? "\(model.targetBg)" : "—",
                        stale: therapyStale, age: model.therapyAgeLabel))
         out.append(Row(title: "Max bolus", value: String(format: "%.1f U", model.maxBolusUnits)))
+        // Phase 09.15 T1-3 (D-01/D-08, SP-5 fail-closed): Mac has room for the full row (unlike the
+        // iPhone pill's compact form); appended only when an auto-correction has actually been seen —
+        // never a stale/fabricated age.
+        if let age = model.lastAutoCorrectionAgeLabel {
+            out.append(Row(title: "Auto-correction", value: age))
+        }
+        // Phase 09.15 T1-4 (D-01/D-08) — a single conditional marker row (NOT a remote-side timeline;
+        // Mac never had the pump history). Appended only when the marker is present.
+        if let age = model.ciqLastCouldNotDeliverAgeLabel {
+            out.append(Row(title: "Control-IQ", value: "Couldn't deliver (\(age))"))
+        }
         if !model.connection.isEmpty { out.append(Row(title: "Pump", value: model.connection)) }
         return out
     }

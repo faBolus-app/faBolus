@@ -72,6 +72,16 @@ struct StatusPillsView: View {
             } else {
                 EmptyView()
             }
+        case "lastAutoCorrection":
+            // Phase 09.15 T1-3 (D-01/D-08, SP-5 fail-closed): value = the age string itself (matches
+            // the UI-SPEC's example wording), label = the static "Auto-correction" — mirrors the
+            // ciqZone pill's absent-renders-nothing convention. Absent (Smart-Assist off OR no
+            // auto-correction seen yet) ⇒ chip omitted entirely, never "0 min ago".
+            if let age = lastAutoCorrectionAgeLabel(now: now) {
+                pill(icon: "bolt.circle.fill", tint: AppTheme.insulin, value: age, label: "Auto-correction")
+            } else {
+                EmptyView()
+            }
         case "lastBolus":
             pill(icon: "drop.triangle.fill", tint: AppTheme.insulin,
                  value: snapshot.lastBolusUnits.map { String(format: "%.2f U", $0) } ?? "—", label: "Last bolus")
@@ -147,6 +157,14 @@ struct StatusPillsView: View {
               snapshot.ciqSuspendedForLow == true,
               let start = snapshot.ciqSuspendStartDate else { return nil }
         return ControlIQSuspendAttribution.elapsedMinutesLabel(since: start, now: now)
+    }
+
+    /// Phase 09.15 T1-3 (D-01/D-08, D-07 toggle-gated, SP-5 fail-closed): `nil` unless the Smart-Assist
+    /// toggle is on AND an auto-correction has actually been seen — never a stale/fabricated age.
+    /// Computed HERE at draw time from the immutable `lastAutoCorrectionDate`, never a transmitted age.
+    private func lastAutoCorrectionAgeLabel(now: Date) -> String? {
+        guard AppSettings.shared.ciqStateReadoutsEnabled, let d = snapshot.lastAutoCorrectionDate else { return nil }
+        return CalcInputFreshness.ageLabel(for: d, now: now)
     }
 
     private func cgmPill(now: Date) -> some View {
