@@ -41,6 +41,7 @@ struct RootTabView: View {
             SettingsView(model: model)
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }.tag(4)
         }
+        .tabViewStyle(.sidebarAdaptable)
         .task { await autoReconnectIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await autoReconnectIfNeeded() } }

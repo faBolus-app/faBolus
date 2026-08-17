@@ -21,6 +21,12 @@ public enum AppTheme {
     public static let disconnected = Color.gray
     public static let stale = Color.gray                                    // de-emphasized old reading
 
+    /// Phase 09.17 (D-01/D-04, UI-SPEC §4) — shared iPad regular-width layout-width constants. Not
+    /// color/type tokens; consumed by plan 03 (Dashboard two-column region cap) and plan 04
+    /// (Bolus/Pump readable-width wrapper) so both surfaces cap at the same values.
+    public static let iPadReadableContentMaxWidth: CGFloat = 700
+    public static let iPadDashboardRegionMaxWidth: CGFloat = 1100
+
     public static func glucoseColor(_ mgdl: Int) -> Color {
         switch GlucoseRange.classify(mgdl) {
         case .low: return low
