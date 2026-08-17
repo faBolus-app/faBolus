@@ -41,7 +41,19 @@ struct StatusPillsView: View {
             cgmPill(now: now)
         case "basal":
             if snapshot.deliverySuspended {
-                pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
+                if let elapsed = ciqSuspendedForLowElapsedLabel(now: now) {
+                    // Phase 09.15 T1-2 (D-09.1 BINDING fail-closed cause-attribution): the pump's OWN
+                    // control-state confirmed this suspend is Control-IQ's — say so. Same AppTheme.low
+                    // tint as the bare "Suspended" pill (this IS a genuine low-adjacent safety state,
+                    // not a progress bar — the gauge-neutrality rule does NOT apply here).
+                    pill(icon: "pause.circle.fill", tint: AppTheme.low,
+                         value: "Control-IQ paused · \(elapsed)", label: "Delivery")
+                } else {
+                    // D-09.1: no pump-confirmed CIQ attribution (toggle off, unread, or the pump's own
+                    // control-state says it wasn't Control-IQ) — never upgrade the claim; fall back to
+                    // the existing bare "Suspended" pill, byte-identical to pre-T1-2 behavior.
+                    pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
+                }
             } else {
                 pill(icon: "waveform.path.ecg", tint: AppTheme.insulin,
                      value: String(format: "%.2f U/hr", snapshot.basalRateUnitsPerHour), label: "Basal")
@@ -124,6 +136,17 @@ struct StatusPillsView: View {
         case .stops: return "pause.circle.fill"
         case .delivers: return "bolt.circle.fill"
         }
+    }
+
+    /// Phase 09.15 T1-2 (D-09.1 BINDING fail-closed, D-07 toggle-gated) — `nil` unless the Smart-Assist
+    /// toggle is on AND the pump's OWN control-state has confirmed this suspend is Control-IQ's; never
+    /// upgrades a generic `deliverySuspended` on the toggle's/attribution's absence. Elapsed is computed
+    /// HERE at draw time from the immutable `ciqSuspendStartDate`, never a transmitted pre-computed age.
+    private func ciqSuspendedForLowElapsedLabel(now: Date) -> String? {
+        guard AppSettings.shared.ciqStateReadoutsEnabled,
+              snapshot.ciqSuspendedForLow == true,
+              let start = snapshot.ciqSuspendStartDate else { return nil }
+        return ControlIQSuspendAttribution.elapsedMinutesLabel(since: start, now: now)
     }
 
     private func cgmPill(now: Date) -> some View {

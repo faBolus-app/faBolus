@@ -65,6 +65,20 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// nothing — a legacy publish, an unread zone, or Control-IQ off, never a stale/fabricated
         /// word (D-06 guardrail #5/#6, SP-5 fail-closed). Display-only, never a dose input (C3).
         public var ciqZone: String?
+        /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state has confirmed the
+        /// ACTIVE basal suspend is Control-IQ's (alongside `deliverySuspended`). Default `false` is the
+        /// fail-closed value (matches `deliverySuspended`'s own non-optional shape): absent/legacy ⇒
+        /// never a fabricated "Control-IQ paused" claim (D-09.1 BINDING). Display-only, never a dose
+        /// input (C3). KNOWN GAP (mirrors 09.15-01's `ciqZone` precedent): `WidgetSnapshot` does not
+        /// carry this fact yet, so `GlucoseLiveActivityManager.makeContent` cannot populate it from a
+        /// real snapshot today — this field exists on `ContentState` (Codable-complete) but is not yet
+        /// wired end-to-end; out of this plan's declared `files_modified` scope (`Shared/WidgetShared.swift`
+        /// and the widget's `basalChip` renderer are untouched).
+        public var ciqSuspendedForLow: Bool
+        /// The immutable instant `ciqSuspendedForLow` first became true — mirrors `iobDate`'s Date shape
+        /// (ContentState carries real `Date`s, unlike the cross-platform `RemoteCommand` wire, which uses
+        /// an epoch Int for Monkey-C compatibility). `nil` ⇒ not currently attributed.
+        public var ciqSuspendStartDate: Date?
         /// Pump link connected (same definition `WidgetSnapshot.connected` carries).
         public var connected: Bool
         /// When this snapshot was published — the dateless pump-field cluster's last-sync basis.
@@ -103,7 +117,9 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
                     batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
-                    controlIQEnabled: Bool = false, ciqZone: String? = nil, connected: Bool = false,
+                    controlIQEnabled: Bool = false, ciqZone: String? = nil,
+                    ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
+                    connected: Bool = false,
                     updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
                     hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
@@ -122,6 +138,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.controlIQMode = controlIQMode
             self.controlIQEnabled = controlIQEnabled
             self.ciqZone = ciqZone
+            self.ciqSuspendedForLow = ciqSuspendedForLow
+            self.ciqSuspendStartDate = ciqSuspendStartDate
             self.connected = connected
             self.updatedAt = updatedAt
             self.iobStale = iobStale
@@ -133,8 +151,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         private enum CodingKeys: String, CodingKey {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
-                 controlIQEnabled, ciqZone, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
-                 hasSnoozeEligibleAlert, showUnitLabel
+                 controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, connected, updatedAt,
+                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -167,6 +185,11 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 // the synthesized decoder — `decodeIfPresent ?? nil` kept explicit for symmetry with
                 // every other field here (clones `displayUnitToken`'s identical Optional-String shape).
                 ciqZone: try c.decodeIfPresent(String.self, forKey: .ciqZone) ?? nil,
+                // Phase 09.15 T1-2: default `false`/`nil` mirrors deliverySuspended's/ciqZone's own
+                // fail-closed defaults — a missing key (legacy publish) never claims an attributed
+                // suspend.
+                ciqSuspendedForLow: try c.decodeIfPresent(Bool.self, forKey: .ciqSuspendedForLow) ?? false,
+                ciqSuspendStartDate: try c.decodeIfPresent(Date.self, forKey: .ciqSuspendStartDate) ?? nil,
                 connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
                 updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,

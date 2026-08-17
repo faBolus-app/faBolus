@@ -102,6 +102,12 @@ struct MacStatusPills: View {
             // (never a stale last-known word) unless Control-IQ is running and the token maps to a
             // member of the fixed five (D-06 guardrails #5/#6, SP-5 fail-closed).
             if let zone = ciqZone { pill("Control-IQ", zone.rawValue.capitalized) }
+            // Phase 09.15 T1-2 (D-09.1 BINDING fail-closed cause-attribution) — a conditional pill
+            // shown ONLY while the pump's OWN control-state has confirmed the ACTIVE suspend is
+            // Control-IQ's. Mac has no generic-suspend wire signal to fall back to (unlike the iPhone's
+            // pre-existing bare "Suspended" pill), so absent/false renders nothing extra — byte-identical
+            // to Mac's pre-T1-2 behavior, which never showed a suspend pill either.
+            if let elapsed = ciqSuspendedForLowElapsed { pill("Basal", "Control-IQ paused · \(elapsed)") }
         }
     }
 
@@ -109,6 +115,13 @@ struct MacStatusPills: View {
     private var ciqZone: ControlIQZone? {
         guard model.controlIQEnabled, let raw = model.ciqZone else { return nil }
         return ControlIQZone(rawValue: raw)
+    }
+
+    /// `nil` unless the pump's OWN control-state has confirmed the suspend is Control-IQ's (D-09.1
+    /// BINDING) — never inferred from a generic suspend signal Mac doesn't have.
+    private var ciqSuspendedForLowElapsed: String? {
+        guard model.ciqSuspendedForLow == true, let start = model.ciqSuspendStartDate else { return nil }
+        return ControlIQSuspendAttribution.elapsedMinutesLabel(since: start)
     }
 
     private func pill(_ title: String, _ value: String, stale: Bool = false, age: String? = nil) -> some View {

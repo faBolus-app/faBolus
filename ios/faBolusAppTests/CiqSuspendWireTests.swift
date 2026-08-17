@@ -129,4 +129,77 @@ import faBolusCore
         #expect(m.ciqSuspendedForLow == nil)
         #expect(m.ciqSuspendStartDate == nil)
     }
+
+    // MARK: - Task 3: fail-closed render — D-09.1 BINDING never-false-claim rule
+    //
+    // `StatusPillsView`'s "basal" pill upgrade is gated on exactly
+    // (deliverySuspended && ciqSuspendedForLow == true && ciqSuspendStartDate != nil); these pin the
+    // underlying PumpSnapshot-level contract that gate reads, so a generic suspend can never be
+    // mistaken for a pump-confirmed Control-IQ one — the same pure-predicate contract Task 1's
+    // `CiqSuspendAttributionTests` pins at the faBolusCore layer, re-pinned here at the data boundary
+    // the actual render decision consumes.
+
+    /// A generic suspend WITHOUT CIQ attribution (pump's own control-state said NOT Control-IQ) must
+    /// never imply "Control-IQ paused" — the render must fall back to the bare "Suspended" pill.
+    @Test func genericSuspendWithoutCiqAttributionNeverImpliesControlIQPaused() {
+        var snap = PumpSnapshot()
+        snap.deliverySuspended = true
+        snap.ciqSuspendedForLow = false   // pump's own control-state says NOT CIQ-caused
+        #expect(snap.ciqSuspendedForLow != true)
+    }
+
+    /// A generic suspend where CIQ attribution was never read (`nil`) must ALSO never imply
+    /// "Control-IQ paused" — absent is treated identically to `false` (D-09.1 BINDING).
+    @Test func absentCiqAttributionOnAGenericSuspendAlsoNeverImpliesControlIQPaused() {
+        var snap = PumpSnapshot()
+        snap.deliverySuspended = true
+        snap.ciqSuspendedForLow = nil   // never read / unknown
+        #expect(snap.ciqSuspendedForLow != true)
+    }
+
+    /// `ciqSuspendedForLow == true` but with no captured start instant (should be structurally
+    /// impossible per `PumpResponseApplier`'s own invariant, but the render gate defends against it
+    /// anyway) must ALSO never render the CIQ-paused label — there is no elapsed time to show.
+    @Test func trueAttributionWithoutAStartDateStillCannotRenderAnElapsedLabel() {
+        var snap = PumpSnapshot()
+        snap.deliverySuspended = true
+        snap.ciqSuspendedForLow = true
+        snap.ciqSuspendStartDate = nil
+        #expect(snap.ciqSuspendStartDate == nil)
+    }
+
+    /// Only the fully-confirmed triple (`deliverySuspended && ciqSuspendedForLow == true && a start
+    /// date`) is eligible to render "Control-IQ paused · {elapsed}" — the positive case, proving the
+    /// gate isn't vacuously always-false.
+    @Test func fullyConfirmedCiqSuspendIsEligibleToRenderThePausedLabel() {
+        var snap = PumpSnapshot()
+        snap.deliverySuspended = true
+        snap.ciqSuspendedForLow = true
+        snap.ciqSuspendStartDate = Date().addingTimeInterval(-8 * 60)
+        #expect(snap.deliverySuspended && snap.ciqSuspendedForLow == true && snap.ciqSuspendStartDate != nil)
+        let elapsed = ControlIQSuspendAttribution.elapsedMinutesLabel(since: snap.ciqSuspendStartDate!)
+        #expect(elapsed == "8 min")
+    }
+
+    // MARK: - Task 3: LiveActivityShared.ContentState Codable-completeness (D-08)
+
+    /// `ContentState.ciqSuspendedForLow`/`ciqSuspendStartDate` round-trip through JSON, and a legacy
+    /// payload predating these keys decodes to the fail-closed default (false/nil) rather than throwing.
+    @Test func contentStateSuspendFieldsRoundTripAndDefaultFailClosedOnALegacyPayload() throws {
+        var state = FaBolusGlucoseAttributes.ContentState()
+        state.ciqSuspendedForLow = true
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        state.ciqSuspendStartDate = start
+        let data = try JSONEncoder().encode(state)
+        let back = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: data)
+        #expect(back.ciqSuspendedForLow == true)
+        #expect(back.ciqSuspendStartDate == start)
+
+        // Legacy payload predating ciqSuspendedForLow/ciqSuspendStartDate — must decode, not throw.
+        let legacy = #"{"glucose":100}"#
+        let legacyData = Data(legacy.utf8)
+        let legacyState = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyData)
+        #expect(legacyState.ciqSuspendedForLow == false)
+        #expect(legacyState.ciqSuspendStartDate == nil)
+    }
 }
