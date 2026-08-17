@@ -576,6 +576,15 @@ public final class AppModel {
         }
     }
 
+    #if DEBUG
+    /// Test seam: `retryTerminalPersist()` is private and, on failure, re-schedules itself on a 5 s
+    /// `Task.sleep` — untestable deterministically without this. Calls the SAME production method
+    /// synchronously so a test can drive the release-on-retry-success path (Wave 1 gap A3) without
+    /// sleeping. Test scaffolding only — this relocates onto `DeliveryLedgerCoordinator` in Wave 2 (D-03);
+    /// it compiles to nothing in Release and never changes production dose/delivery/wire behavior.
+    func retryTerminalPersistForTesting() { retryTerminalPersist() }
+    #endif
+
     /// Round-3 §5: the backend's acknowledged bolus-id handshake. Records the pump-assigned id on the
     /// in-flight entry AND flips its explicit `sentToPump` phase, then saves DURABLY. Returns true only if
     /// the save succeeded — the backend must abort before writing metadata/initiate on false, so a save
