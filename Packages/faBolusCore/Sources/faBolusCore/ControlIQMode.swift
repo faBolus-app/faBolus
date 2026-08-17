@@ -93,6 +93,41 @@ public enum ControlIQPrecondition {
     }
 }
 
+/// Phase 09.15 T2-3 (D-04) — the Control-IQ+-only temporary basal-rate option, built as a BENCH-GATED
+/// PLACEHOLDER, never a live write path. Sourced (c) Tandem: current Control-IQ+ documentation states a
+/// temp rate CAN be set while Control-IQ+ stays ON — "If a Temp Rate is set while Control-IQ+ is turned
+/// on, Control-IQ+ will modulate basal and deliver automatic correction boluses even if a Temp Basal Rate
+/// is set to 0%." This is the OPPOSITE precondition from classic Control-IQ's
+/// `ControlIQPrecondition.tempRateBlockReason` above (a temp rate there requires Control-IQ **off**) —
+/// that gate is left byte-identical; this is a SEPARATE, inert path that never touches it and never
+/// re-hardcodes a CIQ-off requirement for Control-IQ+.
+///
+/// The premise that a real Control-IQ+ pump actually accepts this write is UNVERIFIED — see
+/// `.planning/todos/pending/2026-08-13-temp-rate-while-controliq-plus-on-vs-locked-sg3b-infeasible.md` —
+/// until the Phase-11 saline bench confirms it. So this type ships build-inert (SP-6, the same idiom as
+/// `TempRateAutomation.benchVerifiedDefault` at `ios/faBolus/Data/TempRateAutomation.swift:41`):
+/// `benchVerifiedDefault == false` means "not offered", on every controller variant, regardless of
+/// capability. It is a manual tool a Control-IQ+ user reaches for to manage a short-term glucose
+/// challenge WITHOUT turning off automation ("Control-IQ+ continues to modulate on top of this rate") —
+/// never a "Control-IQ is maxed → set a temp rate" suggestion (D-04) — so once bench-verified,
+/// availability additionally stays capability-scoped to `.controlIQPro` (Control-IQ+) only; classic
+/// Control-IQ (`.controlIQ`) and no-controller (`.none`) never offer it, even after the bench flips.
+public enum CiqPlusTempRate {
+    /// D-04/SP-6: flip to `true` only after the Phase-11 saline bench confirms a Control-IQ+ pump accepts
+    /// a temp-rate write while its controller stays on. Ships `false` so the option is inert regardless
+    /// of the connected controller variant.
+    public static let benchVerifiedDefault = false
+
+    /// `true` only when BOTH the bench has verified the write AND the connected controller is
+    /// Control-IQ+ (`.controlIQPro`) — never `true` for classic Control-IQ (`.controlIQ`) or `.none`,
+    /// even once the bench flips. The UI wraps its ENTIRE option in this predicate so the row/button is
+    /// render-absent (not merely disabled/greyed) while it returns `false` (D-05).
+    public static func isOffered(benchVerified: Bool = benchVerifiedDefault,
+                                  controllerVariant: ControllerVariant) -> Bool {
+        benchVerified && controllerVariant == .controlIQPro
+    }
+}
+
 /// Phase 09.15 T1-2 (D-09.1, fail-closed cause-attribution) — a pure predicate answering ONE question:
 /// did the PUMP'S OWN control-state say Control-IQ suspended basal delivery to prevent a low? This is
 /// the safety-critical nuance distinguishing T1-2 from the generic `PumpSnapshot.deliverySuspended`
