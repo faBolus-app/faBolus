@@ -153,35 +153,13 @@ final class DeliveryLedgerCoordinator {
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
         let unresolved = remoteBolusLedger.unreconciled()
-        if noDurableStore {
-            return "Delivery is locked: no durable safety store is available on this device. Delivery stays "
-                + "disabled until a storage location can be created."
-        }
-        if ledgerFailedClosed {
-            return "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
-                + "unconfirmed bolus, then clear the lock in Settings."
-        }
-        if terminalSaveFailed {
-            return "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
-                + "delivery resumes once the safety ledger is written."
-        }
-        if !unresolved.isEmpty {
-            // S6 — this global "one delivery at a time" block IS the cross-client mutex: it lives at this
-            // funnel (not in a PumpBackend, which a second backend would not share) and rejects a
-            // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
-            // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.
-            //
-            // Message: distinguish a LIVE in-flight delivery (this process is delivering right now — a
-            // concurrent request should simply wait) from a genuinely unresolved/indeterminate outcome
-            // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
-            // latter should tell the user to check the pump.
-            if let live = inFlightDeliveryKey,
-               unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId }) {
-                return "A bolus is already being delivered — wait for it to finish before sending another."
-            }
-            return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
-        }
-        return nil
+        // D-05: the precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
+        // this is the ONLY caller in the app target, so the strings have one source of truth with
+        // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`. Byte-identical to the inline copy
+        // Wave 1's `LedgerBlockPrecedenceGuardTests` pinned.
+        return RemoteBolusLedger.blockReason(noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
+                                             terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
+                                             inFlightDeliveryKey: inFlightDeliveryKey)
     }
     /// Recompute the current block reason and push it through `onDeliveryBlockChanged` (D-04). Exposed
     /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored

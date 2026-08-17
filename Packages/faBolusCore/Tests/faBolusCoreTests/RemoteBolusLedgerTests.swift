@@ -155,4 +155,84 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(reloaded.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
                        .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
     }
+
+    // MARK: - Phase 09-03 (D-05): `RemoteBolusLedger.blockReason` pure precedence — zero AppModel.
+    //
+    // Byte-identical string pins mirroring `LedgerBlockPrecedenceGuardTests` (app target, Wave 1), now
+    // proven here with NO `AppModel`/`MockBackend`/ledger-store fault-injection scaffolding at all — this
+    // function's only inputs are the 3 flags + the unresolved-entry list + the in-flight key.
+
+    private static let noDurableStoreMessage =
+        "Delivery is locked: no durable safety store is available on this device. Delivery stays "
+        + "disabled until a storage location can be created."
+    private static let ledgerFailedClosedMessage =
+        "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
+        + "unconfirmed bolus, then clear the lock in Settings."
+    private static let terminalSaveFailedMessage =
+        "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
+        + "delivery resumes once the safety ledger is written."
+    private static let liveInFlightMessage =
+        "A bolus is already being delivered — wait for it to finish before sending another."
+    private static let genuinelyUnresolvedMessage =
+        "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
+
+    func testBlockReasonIsNilWhenNothingIsSetAndNothingIsUnresolved() {
+        XCTAssertNil(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
+                                                   terminalSaveFailed: false, unresolved: [],
+                                                   inFlightDeliveryKey: nil))
+    }
+
+    func testBlockReasonNoDurableStoreOutranksEveryOtherFlagAndUnresolvedEntries() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("watch", "r1", 42, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: true, ledgerFailedClosed: true,
+                                                     terminalSaveFailed: true, unresolved: unresolved,
+                                                     inFlightDeliveryKey: nil), Self.noDurableStoreMessage)
+    }
+
+    func testBlockReasonLedgerFailedClosedOutranksTerminalSaveFailedAndUnresolved() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("watch", "r1", 42, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: true,
+                                                     terminalSaveFailed: true, unresolved: unresolved,
+                                                     inFlightDeliveryKey: nil), Self.ledgerFailedClosedMessage)
+    }
+
+    func testBlockReasonTerminalSaveFailedOutranksASimultaneouslyUnresolvedEntry() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("watch", "stuck-with-id", 9001, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
+                                                     terminalSaveFailed: true, unresolved: unresolved,
+                                                     inFlightDeliveryKey: nil), Self.terminalSaveFailedMessage)
+    }
+
+    func testBlockReasonLiveInFlightUsesTheWaitMessageNotTheCheckThePumpOne() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("local", "r1", nil, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
+                                                     terminalSaveFailed: false, unresolved: unresolved,
+                                                     inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
+                       Self.liveInFlightMessage)
+    }
+
+    func testBlockReasonGenuinelyUnresolvedEntryUsesTheCheckThePumpMessage() {
+        // Unresolved entry is NOT the live in-flight one (no in-flight key at all — e.g. surfaced at
+        // relaunch after a crash).
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("watch", "crashed-mid-delivery", 5555, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
+                                                     terminalSaveFailed: false, unresolved: unresolved,
+                                                     inFlightDeliveryKey: nil), Self.genuinelyUnresolvedMessage)
+    }
+
+    func testBlockReasonMixedInFlightAndUnresolvedEntriesUsesTheCheckThePumpMessage() {
+        // The in-flight key matches ONE entry but a SECOND, different entry is also unresolved — the
+        // `allSatisfy` gate must fail closed to the "check the pump" wording, not the transient one.
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("local", "r1", nil, true), ("watch", "crashed-mid-delivery", 5555, true)]
+        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
+                                                     terminalSaveFailed: false, unresolved: unresolved,
+                                                     inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
+                       Self.genuinelyUnresolvedMessage)
+    }
 }
