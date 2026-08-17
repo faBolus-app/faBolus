@@ -391,6 +391,23 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`).
     public var ciqSuspendStartEpochSec: Int? = nil
 
+    /// Phase 09.15 T1-3 (D-01, D-08) — the immutable SOURCE epoch (Unix seconds) of the most-recent
+    /// Control-IQ auto-correction (`PumpSnapshot.lastAutoCorrectionDate`), mirroring `glucoseEpochSec`'s
+    /// epoch-not-age convention exactly: set once at origin, propagated unchanged, a receiver computes
+    /// age as `now − epoch` at DISPLAY time. Display-only, never a dose input (C3). Absent ⇒ a legacy
+    /// host OR no auto-correction has been seen yet — the chip/row/marker renders ABSENT, never a
+    /// synthesized "0 min ago" (D-06 guardrail #6, SP-5 fail-closed). Same Int32.max (2038-01-19)
+    /// ceiling as every other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`). Additive;
+    /// auto-Codable, so the existing memberwise initializer stays untouched.
+    public var lastAutoCorrectionEpochSec: Int? = nil
+    /// Phase 09.15 T1-4 (D-01, D-08) — the immutable SOURCE epoch of the most-recent "Control-IQ tried
+    /// and couldn't deliver an automatic correction" event (`PumpSnapshot.ciqLastCouldNotDeliverDate`).
+    /// Remote MARKER only — the full timeline stays phone-only (remotes never had the pump history to
+    /// build one from). Never surfaced on widgets/LA (explicit scope, D-08). Absent ⇒ the marker
+    /// renders ABSENT, never a synthesized "recently" without a real timestamp (SP-5 fail-closed).
+    /// Same Int32.max ceiling. Additive; auto-Codable.
+    public var ciqLastCouldNotDeliverEpochSec: Int? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -550,6 +567,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // decades-old/harmless, but a FUTURE one would compute a negative elapsed time). Absent is fine.
         if let e = ciqSuspendStartEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("ciqSuspendStartEpochSec")
+        }
+        // Phase 09.15 T1-3/T1-4 (D-08): the auto-correction / couldn't-deliver markers are immutable
+        // source epochs — same rule as every epoch field above. Absent is fine (⇒ chip/row/marker
+        // ABSENT); a future stamp would compute a negative age (reads as fresh forever), so reject.
+        if let e = lastAutoCorrectionEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("lastAutoCorrectionEpochSec")
+        }
+        if let e = ciqLastCouldNotDeliverEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("ciqLastCouldNotDeliverEpochSec")
         }
         // Phase 09.13-02 (D-06/D-11, threat T-09.13-04): a plausible mg/dL display-integer bound —
         // absent is fine (⇒ the receiver's own default/shared fallback), but a present value outside a

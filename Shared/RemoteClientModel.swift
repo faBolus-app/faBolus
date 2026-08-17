@@ -102,6 +102,20 @@ class RemoteClientModel {
     /// The immutable instant `ciqSuspendedForLow` first became true, mirrored from the phone's
     /// `ciqSuspendStartEpochSec` (epoch-not-age convention — elapsed is computed on draw).
     var ciqSuspendStartDate: Date? = nil
+    /// Phase 09.15 T1-3 (D-01/D-08) — the immutable instant of the most-recent Control-IQ
+    /// auto-correction, mirrored from the phone's `lastAutoCorrectionEpochSec` (epoch-not-age
+    /// convention — age is computed on draw). `nil` ⇒ render the chip/row/marker ABSENT — a legacy
+    /// host or no auto-correction seen yet, never a synthesized "0 min ago" (SP-5 fail-closed).
+    /// Display-only, never a dose input (C3). A real historical fact never un-happens, so — unlike
+    /// `ciqZone`/`ciqSuspendedForLow` — this uses the STANDARD `if let` guard (SP-3): absent on a
+    /// later command means only "this reply didn't repeat it", never "it un-happened".
+    var lastAutoCorrectionDate: Date? = nil
+    /// Phase 09.15 T1-4 (D-01/D-08) — the immutable instant of the most-recent "Control-IQ tried and
+    /// couldn't deliver an automatic correction" event, mirrored from the phone's
+    /// `ciqLastCouldNotDeliverEpochSec`. Remote MARKER only (no remote-side timeline — remotes never
+    /// had the pump history to build one from). `nil` ⇒ render the marker ABSENT. Never surfaced on
+    /// widgets/LA (explicit scope, D-08).
+    var ciqLastCouldNotDeliverDate: Date? = nil
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -245,6 +259,11 @@ class RemoteClientModel {
     /// source epoch (legacy host).
     var iobAgeLabel: String? { iobDate.map { CalcInputFreshness.ageLabel(for: $0) } }
     var therapyAgeLabel: String? { therapyDate.map { CalcInputFreshness.ageLabel(for: $0) } }
+    /// Phase 09.15 T1-3/T1-4 — the SAME age-formatting convention as `iobAgeLabel`/`therapyAgeLabel`
+    /// (UI-SPEC T1-4 explicitly says "same age-formatting convention as T1-3"), computed HERE at draw
+    /// time from the immutable mirrored date — nil when there's nothing to show (SP-5 fail-closed).
+    var lastAutoCorrectionAgeLabel: String? { lastAutoCorrectionDate.map { CalcInputFreshness.ageLabel(for: $0) } }
+    var ciqLastCouldNotDeliverAgeLabel: String? { ciqLastCouldNotDeliverDate.map { CalcInputFreshness.ageLabel(for: $0) } }
 
     static func arrow(fromToken t: String?) -> String {
         switch t {
@@ -371,6 +390,16 @@ class RemoteClientModel {
             // survive past that moment. `nil` on the wire always wins over whatever was previously known.
             ciqSuspendedForLow = cmd.ciqSuspendedForLow
             ciqSuspendStartDate = cmd.ciqSuspendStartEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            // Phase 09.15 T1-3/T1-4 (D-08, SP-3 standard guard): UNLIKE ciqZone/ciqSuspendedForLow
+            // above, these are monotonic historical markers — a real occurrence never un-happens, so
+            // absent on a later command means only "this reply didn't repeat it", never "it
+            // un-happened". Keep the last-known value rather than clearing it.
+            if let e = cmd.lastAutoCorrectionEpochSec {
+                lastAutoCorrectionDate = Date(timeIntervalSince1970: TimeInterval(e))
+            }
+            if let e = cmd.ciqLastCouldNotDeliverEpochSec {
+                ciqLastCouldNotDeliverDate = Date(timeIntervalSince1970: TimeInterval(e))
+            }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

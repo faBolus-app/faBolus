@@ -485,6 +485,11 @@ public final class AppModel {
         // gate; remotes never dose off these.
         cmd.iobEpochSec = s.iobDate.map { Int($0.timeIntervalSince1970) }
         cmd.therapyEpochSec = s.therapyParamsDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-3/T1-4 (D-08): relay the single latest instant of each as an immutable
+        // source epoch — exactly like `iobEpochSec` above. Absent (nil date) ⇒ the remote renders the
+        // chip/row/marker ABSENT, never a synthesized age. Display-only, never a dose input (C3).
+        cmd.lastAutoCorrectionEpochSec = snapshot.lastAutoCorrectionDate.map { Int($0.timeIntervalSince1970) }
+        cmd.ciqLastCouldNotDeliverEpochSec = snapshot.ciqLastCouldNotDeliverDate.map { Int($0.timeIntervalSince1970) }
         return cmd
     }
 
