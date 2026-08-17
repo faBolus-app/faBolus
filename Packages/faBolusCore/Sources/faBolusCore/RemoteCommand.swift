@@ -436,6 +436,41 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// memberwise initializer stays untouched.
     public var maxBasalUnitsPerHour: Double? = nil
 
+    /// Phase 09.15 T1-9 (D-01, D-08) — the pump's live Sleep/Exercise activity mode
+    /// (`PumpSnapshot.controlIQMode`: 0 normal / 1 sleep / 2 exercise), now ALSO on `RemoteCommand` —
+    /// previously only `WidgetSnapshot`/`ContentState` carried this, so Watch/Garmin had no way to
+    /// gate the T1-9 card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact, not
+    /// "absent") — mirrors `ciqZone`'s unconditional-knowledge convention, NOT `controllerVariant`'s
+    /// "if let, keep last" one: a stale Sleep/Exercise mode must never survive past the moment the
+    /// pump's own state changed. Display-only, never a dose input (C3). Absent ⇒ a legacy host,
+    /// which the remote treats as `0` (no card). Additive; auto-Codable, so the existing memberwise
+    /// initializer stays untouched.
+    public var controlIQMode: Int? = nil
+
+    /// Phase 09.15 T1-9 (D-01, D-08 note) — the already-decoded-but-previously-dropped exercise
+    /// countdown (`ControlIQInfoV2Response.exerciseTimeRemainingSeconds`, op-179), relayed as a RAW
+    /// remaining-seconds DURATION — deliberately NOT an epoch (unlike every other time-ish field on
+    /// this type): the pump reports "time remaining" directly, so a receiver counts down LOCALLY
+    /// against ITS OWN receipt time for animation smoothness only, re-anchoring on every subsequent
+    /// statusRead — never trusting this value as absolute past that point. `nil` unless the pump's
+    /// OWN live mode is genuinely Exercise right now (`SleepExerciseAwareness
+    /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
+    /// another mode (D-06 guardrail #6, mutual-exclusivity). Display-only, never a dose input (C3).
+    /// Additive; auto-Codable.
+    public var exerciseTimeRemainingSec: Int? = nil
+
+    /// Phase 09.15 T1-9 (D-01, D-08, iPhone/Mac-only per the UI-SPEC Assumption) — whether the
+    /// pump's OWN configured Sleep-schedule (`PumpSnapshot.sleepSchedules`) has a window active
+    /// RIGHT NOW, plus that window's start/end minute-of-day — pure window math over
+    /// pump-communicated data (b), never a clinical literal. Watch/Garmin never render this (D-09.5
+    /// explicit scope), though it rides the SAME shared wire/parse point as every other primitive
+    /// here (SP-1..3) rather than a second channel. Emitted UNCONDITIONALLY (mirrors
+    /// `ciqSuspendedForLow`: `false` is a fully-known "no window active" fact, not "absent").
+    /// Display-only, never a dose input (C3). Additive; auto-Codable.
+    public var inSleepWindow: Bool? = nil
+    public var sleepWindowStartMinute: Int? = nil
+    public var sleepWindowEndMinute: Int? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -631,6 +666,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try intRange("glucosePlotCeiling", glucosePlotCeiling, 1, 1000)
         try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
         try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
+
+        // Phase 09.15 T1-9 (D-08): the live mode is always one of the pump's own 3 states; the
+        // exercise timer is a sane bounded duration (generous — not a clinical claim, matches
+        // `maxBasalUnitsPerHour`'s "sane upper bound" precedent above); the sleep-window minutes are
+        // a plain minute-of-day (0-1439). Absent is always valid for all four.
+        try intRange("controlIQMode", controlIQMode, 0, 2)
+        try intRange("exerciseTimeRemainingSec", exerciseTimeRemainingSec, 0, 24 * 60 * 60)
+        try intRange("sleepWindowStartMinute", sleepWindowStartMinute, 0, 1439)
+        try intRange("sleepWindowEndMinute", sleepWindowEndMinute, 0, 1439)
 
         // Phase 09.15 T1-1 (D-01/D-08, threat T-09.15-01-S): `ciqZone` is a frozen wire token — a remote
         // reconstructs Tandem's own zone word locally from it, so an out-of-set string (e.g. a forged

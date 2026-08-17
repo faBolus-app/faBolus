@@ -502,6 +502,24 @@ public final class AppModel {
         // when known; `0` means "unread" so it is relayed as `nil` (not a fabricated 0%), matching
         // `MaxBasalFraction.fraction`'s own `<= 0` fail-closed guard. Display-only, never a dose input (C3).
         cmd.maxBasalUnitsPerHour = snapshot.maxBasalUnitsPerHour > 0 ? snapshot.maxBasalUnitsPerHour : nil
+        // Phase 09.15 T1-9 (D-01, D-08): the pump's live Sleep/Exercise activity mode, now ALSO on
+        // RemoteCommand (previously only WidgetSnapshot/ContentState carried it) so Watch/Garmin can
+        // gate the T1-9 card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact,
+        // not "absent") — mirrors ciqZone's unconditional-knowledge convention. Display-only, never
+        // a dose input (C3).
+        cmd.controlIQMode = snapshot.controlIQMode
+        // The already-decoded-but-previously-dropped exercise countdown, raw remaining-seconds — NOT
+        // an epoch (D-08 T1-9 note): a receiver counts down locally against its OWN receipt time for
+        // animation only, never trusting it as absolute past the next statusRead. `nil` unless the
+        // pump's OWN live mode is genuinely Exercise right now (PumpResponseApplier only populates it
+        // then) — SP-5 fail-closed, never a stale timer surviving into another mode.
+        cmd.exerciseTimeRemainingSec = snapshot.exerciseTimeRemainingSec
+        // The pump's OWN configured sleep-schedule window fact (pure window math, (b)) — iPhone/Mac
+        // render the verbose "Current window: {start}–{end}" text from this; Watch/Garmin never
+        // receive/render it (D-09.5 explicit scope).
+        cmd.inSleepWindow = snapshot.inSleepWindow
+        cmd.sleepWindowStartMinute = snapshot.sleepWindowStartMinute
+        cmd.sleepWindowEndMinute = snapshot.sleepWindowEndMinute
         return cmd
     }
 

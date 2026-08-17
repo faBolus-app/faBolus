@@ -486,13 +486,14 @@ public enum SleepExerciseAwareness {
     /// matching preset, or — for Exercise only — the timer is unknown (SP-5 fail-closed; Sleep's
     /// compact fact never depends on the timer).
     public static func compactLine(mode: ControlIQActivity, descriptor: ControllerDescriptor,
-                                    exerciseTimeRemainingSec: Int?, now: Date = Date()) -> String? {
+                                    exerciseTimeRemainingSec: Int?, now: Date = Date(),
+                                    calendar: Calendar = .current) -> String? {
         guard let preset = activePreset(mode: mode, descriptor: descriptor) else { return nil }
         switch mode {
         case .normal: return nil
         case .sleep: return "Sleep — \(autoBolusWords(preset))"
         case .exercise:
-            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now) else { return nil }
+            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now, calendar: calendar) else { return nil }
             return "Exercise — \(ends)"
         }
     }

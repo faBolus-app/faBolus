@@ -131,6 +131,47 @@ class RemoteClientModel {
     /// zero/dash) — a legacy host, an unread max, or `<= 0` (the host only ever sends a positive value
     /// or `nil`). Display-only, never a dose input (C3).
     var maxBasalUnitsPerHour: Double? = nil
+    /// Phase 09.15 T1-9 (D-01/D-08) — the pump's live Sleep/Exercise activity mode, mirrored from the
+    /// phone (previously only `WidgetSnapshot`/`ContentState` carried this). Unconditional assign
+    /// (SP-5, mirrors `lockoutUntilDate`): the host relays its CURRENT knowledge every statusRead, so
+    /// `0` (normal) is a fully-known fact, not "absent" — never a stale Sleep/Exercise mode
+    /// surviving past the moment the pump's own state changed. Safe default `0` ⇒ no card on a cold
+    /// launch, before the first statusRead.
+    var controlIQMode: Int = 0
+    /// The already-decoded exercise countdown, raw remaining-seconds (NOT an epoch) — a receiver
+    /// counts down locally against ITS OWN receipt time for animation only, re-anchored on every
+    /// statusRead (D-08 T1-9 note). `nil` ⇒ the timer fact renders ABSENT (SP-5 fail-closed).
+    var exerciseTimeRemainingSec: Int? = nil
+    /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
+    /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
+    /// Watch does not render them (D-09.5 explicit scope) even though they ARE parsed here (one
+    /// shared parse point, SP-3).
+    var inSleepWindow: Bool? = nil
+    var sleepWindowStartMinute: Int? = nil
+    var sleepWindowEndMinute: Int? = nil
+
+    /// Phase 09.15 T1-9 (D-01/D-08) — the controller's OWN activity preset (Sleep/Exercise)
+    /// currently selected by `controlIQMode`, or `nil` in normal mode. Pure UI wiring of
+    /// `controllerDescriptor.activityPresets` — no new clinical literal (D-06 guardrail #4).
+    var ciqActivityPreset: ActivityPreset? {
+        SleepExerciseAwareness.activePreset(mode: ControlIQActivity(rawMode: controlIQMode),
+                                            descriptor: controllerDescriptor)
+    }
+    /// T1-9 (D-01/D-08, D-09.5): the compact single-line fact EVERY remote surface (Watch/Garmin/
+    /// Mac's base line) shows — "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal
+    /// mode, no matching preset, or (Exercise only) the timer is unknown (SP-5 fail-closed).
+    var ciqActivityCompactLine: String? {
+        SleepExerciseAwareness.compactLine(mode: ControlIQActivity(rawMode: controlIQMode),
+                                           descriptor: controllerDescriptor,
+                                           exerciseTimeRemainingSec: exerciseTimeRemainingSec)
+    }
+    /// T1-9 (D-01/D-08, iPhone/Mac only) — "Current window: {start}–{end}" when a configured
+    /// Sleep-schedule slot is currently active, else `nil`. Watch never renders this (D-09.5
+    /// explicit scope) even though it's parsed on this shared base.
+    var ciqSleepWindowLine: String? {
+        guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
+        return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
+    }
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -453,6 +494,15 @@ class RemoteClientModel {
             // unread/`<= 0`), so a stale max-basal value must never survive past the moment it clears.
             // The % itself is computed LOCALLY (`maxBasalReadout` below) — never received pre-rendered.
             maxBasalUnitsPerHour = cmd.maxBasalUnitsPerHour
+            // Phase 09.15 T1-9 (D-08, SP-5 fail-closed): mirrors `lockoutUntilDate`'s unconditional
+            // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead
+            // (`nil` on the wire means "legacy host", which the safe `0` default already covers), so
+            // a stale Sleep/Exercise mode/timer/window must never survive past the moment it clears.
+            controlIQMode = cmd.controlIQMode ?? 0
+            exerciseTimeRemainingSec = cmd.exerciseTimeRemainingSec
+            inSleepWindow = cmd.inSleepWindow
+            sleepWindowStartMinute = cmd.sleepWindowStartMinute
+            sleepWindowEndMinute = cmd.sleepWindowEndMinute
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not
