@@ -26,11 +26,74 @@ struct SettingsView: View {
     @State private var query = ""
     // P14 S3: injected by RootContainerView (same idiom as AppRouter). Drives Settings → Mode.
     @Environment(ModeStore.self) private var modeStore
+    // 09.17-02 (D-04/D-06a): live read, never @State — this is what makes rotation and iPad Split
+    // View/Slide Over resize re-trigger the correct layout automatically (UI-SPEC §1/§6).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    // 09.17-02 (D-04, UI-SPEC §2, Rule 3 — deviation): the type is `SettingsCategory?` — NOT the
+    // literally non-optional `SettingsCategory` RESEARCH.md sketched — because SwiftUI's
+    // `List.init(selection: Binding<SelectionValue>, content:)` (the truly non-optional overload) is
+    // "available on macOS 13.0 and later" ONLY [VERIFIED via Context7 `/websites/developer_apple_swiftui`
+    // this session: `xcodebuild` failed with "'init(selection:content:)' is unavailable in iOS" against
+    // the non-optional signature]; iOS's `List(selection:)` binds to `Binding<SelectionValue?>`. The
+    // NON-OPTIONAL CONTRACT (default `.bolus`, detail pane never blank) is preserved behaviorally, not
+    // via the type system: it defaults to `.bolus` here and every read in `body` falls back to `.bolus`
+    // via `selectedCategory ?? .bolus` (nothing in this file ever sets it to `nil`).
+    @State private var selectedCategory: SettingsCategory? = .bolus
 
     var body: some View {
-        NavigationStack {
-            SettingsLockGate(settings: settings) { settingsList }
-                .navigationTitle("Settings")
+        if horizontalSizeClass == .regular {
+            // 09.17-02 (Rule 2 — deviation): SettingsLockGate wraps the WHOLE split view (both panes),
+            // not just the sidebar, so Child mode's PIN lock still applies at regular width — the
+            // compact branch's lock gate covers 100% of Settings; omitting it here would silently
+            // bypass Child mode on iPad. SettingsLockGate itself is untouched (D-06a/UI-SPEC §2).
+            SettingsLockGate(settings: settings) {
+                NavigationSplitView {
+                    sidebarList
+                        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
+                        .navigationTitle("Settings")
+                } detail: {
+                    destination(selectedCategory ?? .bolus)
+                }
+            }
+        } else {
+            // TODAY'S body — byte-identical (D-06a). Do not modify.
+            NavigationStack {
+                SettingsLockGate(settings: settings) { settingsList }
+                    .navigationTitle("Settings")
+            }
+        }
+    }
+
+    // 09.17-02 (D-04, UI-SPEC §2): the regular-width sidebar — the SAME 8 routable categories, same
+    // order, same title/icon, same `.smartAssist`-filtered rule as `settingsList`'s category loop
+    // below, rendered as `List(selection:)` rows instead of `NavigationLink`s. UI-SPEC §2 scopes the
+    // sidebar to exactly this category list (not the Mode/Safety/Child-mode/Backup/Help rows below
+    // it in `settingsList` — those aren't `SettingsCategory` cases and have no `destination(_:)`
+    // detail-pane target). A search hit sets `selectedCategory` (routes to the detail pane) instead
+    // of pushing a new stack (RESEARCH Open Questions #1). `destination(_:)` is the SAME
+    // @ViewBuilder switch used by both size classes.
+    @ViewBuilder private var sidebarList: some View {
+        List(selection: $selectedCategory) {
+            if query.isEmpty {
+                ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
+                    Label(cat.title, systemImage: cat.icon).tag(cat)
+                }
+            } else {
+                let hits = SettingsIndex.entries.filter { $0.matches(query) }
+                if hits.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    ForEach(hits) { e in
+                        Button { selectedCategory = e.category } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(e.title)
+                                Text(e.category.title).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         }
     }
 
