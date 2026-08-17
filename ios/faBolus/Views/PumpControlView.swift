@@ -17,6 +17,13 @@ struct PumpControlView: View {
     /// readout below actually becomes visible (opt-in toggle just turned on). Mirrors `showClinicianTierAck`'s
     /// exact idiom in this same file. SEPARATE from the generic D-07 Smart-Assist explainer.
     @State private var showMaxBasalNotice = false
+    /// Phase 09.15 T2-3 (D-04) — state for the Control-IQ+-only temp-rate PLACEHOLDER below. Deliberately
+    /// separate from `tempPercent`/`tempDurationMin` above (the classic, CIQ-off temp-basal section) even
+    /// though the underlying write is the same request shape — this is a distinct, capability-scoped entry
+    /// point that stays render-absent (and therefore untouched) while `CiqPlusTempRate.benchVerifiedDefault`
+    /// is `false`.
+    @State private var ciqPlusTempPercent: Double = 100
+    @State private var ciqPlusTempDurationMin: Int = 60
 
     private struct PendingAction: Identifiable {
         let id = UUID()
@@ -115,6 +122,46 @@ struct PumpControlView: View {
                         label: { Label("Start temp basal", systemImage: "timer") }
                     Button(role: .destructive) { ask("Stop temp basal?", "Return to the scheduled basal rate.", destructive: false) { await model.stopTempBasal() } }
                         label: { Label("Stop temp basal", systemImage: "timer.slash") }
+                }
+            }
+
+            // Phase 09.15 T2-3 (D-04) — a Control-IQ+-only manual temp-rate option, currently a
+            // BENCH-GATED PLACEHOLDER: render-absent (not merely disabled/greyed, D-05) unless ALL THREE
+            // guard conditions hold — the Phase-11 saline bench has confirmed the write
+            // (`CiqPlusTempRate.benchVerifiedDefault`), the connected pump's controller is Control-IQ+
+            // (never classic Control-IQ or no-controller), and the user has opted in
+            // (`ciqPlusTempRateEnabled`, default OFF, D-07). While `benchVerifiedDefault == false` (today,
+            // always) this entire section compiles out of the tree — nothing here is reachable. Phone-only:
+            // no Mac/Watch/Garmin/widget surface exposes this pump-settings write.
+            if CiqPlusTempRate.benchVerifiedDefault
+                && model.snapshot.controllerVariant == .controlIQPro
+                && AppSettings.shared.ciqPlusTempRateEnabled {
+                Section {
+                    VStack(alignment: .leading) {
+                        Text("Rate: \(Int(ciqPlusTempPercent))% of basal").font(.subheadline)
+                        Slider(value: $ciqPlusTempPercent,
+                               in: Double(PumpControlBounds.tempRateMinPercent)...Double(PumpControlBounds.tempRateMaxPercent),
+                               step: 5)
+                    }
+                    Picker("Duration", selection: $ciqPlusTempDurationMin) {
+                        ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
+                    }
+                    Button {
+                        // T2-3 Copywriting Contract, verbatim (c) Tandem — never "override the ceiling".
+                        ask("Set a temporary basal rate?",
+                            "\(Int(ciqPlusTempPercent))% for \(ciqPlusTempDurationMin) min. Control-IQ+ continues to modulate on top of this rate.",
+                            destructive: true) {
+                            await model.setTempBasal(percent: Int(ciqPlusTempPercent), durationMinutes: ciqPlusTempDurationMin)
+                        }
+                    } label: { Label("Set a temporary basal rate", systemImage: "timer") }
+                } header: {
+                    Text("Control-IQ+ temp rate")
+                } footer: {
+                    // T2-3 Copywriting Contract, verbatim (c) Tandem — a manual tool for managing a
+                    // short-term glucose challenge, NEVER framed as "Control-IQ is maxed → set a temp
+                    // rate" (D-04).
+                    Text("Available on Control-IQ+ — manage a short-term glucose challenge without turning off "
+                         + "automation. Control-IQ+ continues to modulate on top of this rate.")
                 }
             }
 

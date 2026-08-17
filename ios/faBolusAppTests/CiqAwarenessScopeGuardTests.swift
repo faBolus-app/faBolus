@@ -134,6 +134,9 @@ struct CiqAwarenessScopeGuardTests {
         ("ios/faBolus/Views/PumpWizardViews.swift", "enum ControlIQDisableWarning"),
         // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
+        // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`
+        // availability flag (already an allowed shape), never a dose/units value.
+        ("Packages/faBolusCore/Sources/faBolusCore/ControlIQMode.swift", "public enum CiqPlusTempRate"),
     ]
 
     @Test func noCiqAwarenessFunctionReturnsADoseShapedType() throws {
@@ -202,6 +205,10 @@ struct CiqAwarenessScopeGuardTests {
         "ciqLastCouldNotDeliverEpochSec",
         // T1-8 (09.15-08): the max-basal fraction/label fn + the propagated primitive it's built from.
         "MaxBasalFraction", "maxBasalUnitsPerHour",
+        // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — a BENCH-GATED PLACEHOLDER, not a
+        // dose value itself, but forbidden here so the signed delivery path never grows a dependency on
+        // this disclosure-adjacent gate.
+        "CiqPlusTempRate",
     ]
 
     /// Scans `region` for every token in `forbiddenCiqAwarenessSymbols`, recording an `Issue` (via the
