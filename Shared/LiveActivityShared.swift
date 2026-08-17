@@ -92,6 +92,19 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// and the widget's renderer are untouched). T1-4 is deliberately NOT added here at all — not
         /// surfaced on widgets/LA (explicit scope decision, D-08).
         public var lastAutoCorrectionDate: Date?
+        /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction
+        /// becomes available again, mirrored via `RemoteCommand.lockoutUntilEpochSec`. ContentState
+        /// carries a real `Date` (unlike the cross-platform `RemoteCommand` wire's epoch `Int`, kept for
+        /// Monkey-C compatibility) — mirrors `ciqSuspendStartDate`'s identical Date-not-epoch shape.
+        /// `nil` ⇒ the region renders nothing — no known lockout, or it has already elapsed, never a
+        /// frozen 0%/100% bar or a negative countdown (D-06 guardrail #5, SP-5 fail-closed).
+        /// Display-only, never a dose input (C3). KNOWN GAP (mirrors 09.15-01's `ciqZone` / 09.15-06's
+        /// `lastAutoCorrectionDate` precedent): `WidgetSnapshot` does not carry this fact yet, so
+        /// `GlucoseLiveActivityManager.makeContent` cannot populate it from a real snapshot today — this
+        /// field exists on `ContentState` (Codable-complete) but is not yet wired end-to-end; out of this
+        /// plan's declared `files_modified` scope (`Shared/WidgetShared.swift` and the widget's renderer
+        /// are untouched).
+        public var lockoutUntilDate: Date?
         /// Pump link connected (same definition `WidgetSnapshot.connected` carries).
         public var connected: Bool
         /// When this snapshot was published — the dateless pump-field cluster's last-sync basis.
@@ -133,6 +146,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     controlIQEnabled: Bool = false, ciqZone: String? = nil,
                     ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
                     lastAutoCorrectionDate: Date? = nil,
+                    lockoutUntilDate: Date? = nil,
                     connected: Bool = false,
                     updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
@@ -155,6 +169,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.ciqSuspendedForLow = ciqSuspendedForLow
             self.ciqSuspendStartDate = ciqSuspendStartDate
             self.lastAutoCorrectionDate = lastAutoCorrectionDate
+            self.lockoutUntilDate = lockoutUntilDate
             self.connected = connected
             self.updatedAt = updatedAt
             self.iobStale = iobStale
@@ -167,6 +182,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
                  controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
+                 lockoutUntilDate,
                  connected, updatedAt,
                  iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
         }
@@ -209,6 +225,9 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 // Phase 09.15 T1-3: Optional-typed, so a missing key already decodes fine even under
                 // the synthesized decoder — kept explicit for symmetry with every other field here.
                 lastAutoCorrectionDate: try c.decodeIfPresent(Date.self, forKey: .lastAutoCorrectionDate) ?? nil,
+                // Phase 09.15 T1-5: Optional-typed, so a missing key already decodes fine even under the
+                // synthesized decoder — kept explicit for symmetry with every other field here.
+                lockoutUntilDate: try c.decodeIfPresent(Date.self, forKey: .lockoutUntilDate) ?? nil,
                 connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
                 updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
