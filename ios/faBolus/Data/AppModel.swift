@@ -496,6 +496,12 @@ public final class AppModel {
         // a compose-time constant). Absent ⇒ a remote renders the bar/ring ABSENT. Display-only, never a dose
         // input (C3).
         cmd.lockoutUntilEpochSec = snapshot.lockoutUntilDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-8 (D-03, D-08): the configured max-basal delivery limit, alongside `basalRate`
+        // (init param above), so each remote computes the "% of your configured max basal rate" readout
+        // LOCALLY via `MaxBasalFraction` — never a pre-rendered percentage string. Emitted UNCONDITIONALLY
+        // when known; `0` means "unread" so it is relayed as `nil` (not a fabricated 0%), matching
+        // `MaxBasalFraction.fraction`'s own `<= 0` fail-closed guard. Display-only, never a dose input (C3).
+        cmd.maxBasalUnitsPerHour = snapshot.maxBasalUnitsPerHour > 0 ? snapshot.maxBasalUnitsPerHour : nil
         return cmd
     }
 

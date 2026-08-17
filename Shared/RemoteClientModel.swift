@@ -124,6 +124,13 @@ class RemoteClientModel {
     /// clearing to `nil` the moment the host doesn't send one), never the "if let, keep last" guard.
     /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input (C3).
     var lockoutUntilDate: Date? = nil
+    /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit, mirrored from
+    /// the phone's `maxBasalUnitsPerHour`. Unconditional assign-or-clear (SP-5, mirrors `lockoutUntilDate`):
+    /// the host relays its current knowledge every statusRead, so a stale value must never survive past
+    /// the moment it clears. `nil` ⇒ the T1-8 readout renders ABSENT (D-03(v) fail-closed: hidden, not
+    /// zero/dash) — a legacy host, an unread max, or `<= 0` (the host only ever sends a positive value
+    /// or `nil`). Display-only, never a dose input (C3).
+    var maxBasalUnitsPerHour: Double? = nil
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -161,6 +168,14 @@ class RemoteClientModel {
     /// `lockoutUntilDate` exposed under the UI-facing name, `nil` exactly when `lockoutRemainingFraction`
     /// is (so a caller never renders a bar without a time, or a time without a bar).
     var lockoutAvailableAt: Date? { lockoutRemainingFraction != nil ? lockoutUntilDate : nil }
+    /// T1-8 (D-03, D-08): the LOCKED "% of your configured max basal rate" headline + U/hr detail pair,
+    /// computed LOCALLY from the mirrored `basalRate` + `maxBasalUnitsPerHour` via
+    /// `MaxBasalFraction.label` — never a pre-rendered percentage string on the wire. `nil` when
+    /// `maxBasalUnitsPerHour` is absent/unknown/`<= 0` (D-03(v) fail-closed: hidden, not zero/dash).
+    var maxBasalReadout: (headline: String, detail: String)? {
+        guard let max = maxBasalUnitsPerHour else { return nil }
+        return MaxBasalFraction.label(currentUnitsPerHour: basalRate, maxUnitsPerHour: max)
+    }
     /// P15 §2.3 (watch): the watch may show/permit its bolus affordance only when remotes aren't read-only
     /// AND the phone has enabled watch bolusing. Fail-closed by default (`watchBolusEnabled` starts false).
     /// The Mac has its own gating and does not use this.
@@ -433,6 +448,11 @@ class RemoteClientModel {
             // never "ignore if absent, keep last". Absent ⇒ nil ⇒ `lockoutRemainingFraction` renders the
             // bar/ring ABSENT.
             lockoutUntilDate = cmd.lockoutUntilEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            // Phase 09.15 T1-8 (D-03, D-08, SP-5 fail-closed): mirrors `lockoutUntilDate`'s unconditional
+            // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead (nil when
+            // unread/`<= 0`), so a stale max-basal value must never survive past the moment it clears.
+            // The % itself is computed LOCALLY (`maxBasalReadout` below) — never received pre-rendered.
+            maxBasalUnitsPerHour = cmd.maxBasalUnitsPerHour
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

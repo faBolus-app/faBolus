@@ -104,7 +104,13 @@ struct CiqAwarenessScopeGuardTests {
     /// Allowed return shapes for a Control-IQ-awareness advisory function (D-06 guardrail #1): a fraction,
     /// disclosure copy, a status flag, or a frozen wire-token enum. Anything else — in particular a bare
     /// `Double`/`Int`/`UInt32` that could carry a dose or milliunits value — is forbidden.
-    private static let allowedCiqReturnShapes: Set<String> = ["Double?", "String?", "String", "Bool", "ControlIQZone?"]
+    private static let allowedCiqReturnShapes: Set<String> = [
+        "Double?", "String?", "String", "Bool", "ControlIQZone?",
+        // T1-8 (09.15-08): `MaxBasalFraction.label` returns the LOCKED headline+detail pair as a tuple of
+        // two Strings — unambiguously disclosure copy, not a dose/units shape (both components are always
+        // formatted STRINGS, never a raw Double the tuple could smuggle a units value through).
+        "(headline: String, detail: String)?",
+    ]
 
     /// Extracts the substring after the LAST `-> ` in a normalized signature (its return type), or `nil`
     /// if the signature has no return type at all (`Void` — never a dose by construction).
@@ -126,6 +132,8 @@ struct CiqAwarenessScopeGuardTests {
         ("Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift", "public enum AutoCorrectionDisclosure"),
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
         ("ios/faBolus/Views/PumpWizardViews.swift", "enum ControlIQDisableWarning"),
+        // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
+        ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
     ]
 
     @Test func noCiqAwarenessFunctionReturnsADoseShapedType() throws {
@@ -192,6 +200,8 @@ struct CiqAwarenessScopeGuardTests {
         "ControlIQDisableWarning", "ciqSuspendedForLow", "ciqSuspendStartEpochSec",
         "ciqMaxBolusEventsExceeded", "ciqMaxIobEventsExceeded", "lastAutoCorrectionEpochSec",
         "ciqLastCouldNotDeliverEpochSec",
+        // T1-8 (09.15-08): the max-basal fraction/label fn + the propagated primitive it's built from.
+        "MaxBasalFraction", "maxBasalUnitsPerHour",
     ]
 
     /// Scans `region` for every token in `forbiddenCiqAwarenessSymbols`, recording an `Issue` (via the

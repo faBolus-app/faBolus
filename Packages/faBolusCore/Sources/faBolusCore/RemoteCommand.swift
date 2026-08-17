@@ -424,6 +424,18 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// Additive; auto-Codable, so the existing memberwise initializer stays untouched.
     public var lockoutUntilEpochSec: Int? = nil
 
+    /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit
+    /// (`PumpSnapshot.maxBasalUnitsPerHour`, from `BasalLimitSettingsResponse`), propagated ALONGSIDE
+    /// the existing `basalRate` so each remote computes the T1-8 "% of your configured max basal rate"
+    /// readout LOCALLY via `MaxBasalFraction.fraction`/`.label` — the % itself is NEVER transmitted
+    /// (D-06 guardrail #1: a fraction, never a dose/units value; also never a pre-rendered percentage
+    /// string, D-08). Display-only, never a dose input (C3). Absent OR `<= 0` ⇒ the readout renders
+    /// ABSENT on every surface (D-03(v) fail-closed: hidden, not zero/dash) — mirrors
+    /// `MaxBasalFraction.fraction`'s own `maxUnitsPerHour <= 0` guard so the wire-level and
+    /// core-level fail-closed conditions never diverge. Additive; auto-Codable, so the existing
+    /// memberwise initializer stays untouched.
+    public var maxBasalUnitsPerHour: Double? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -535,6 +547,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
             ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
             ("glucoseAgeSec", glucoseAgeSec), ("eatingProb", eatingProb),
+            ("maxBasalUnitsPerHour", maxBasalUnitsPerHour),
         ]
         for (name, v) in allDoubles where v != nil {
             guard v!.isFinite else { throw ValidationError.nonFinite(name) }
@@ -551,6 +564,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try range("remoteEstimateUnits", remoteEstimateUnits, 0, 100)
         try range("extendedNowUnits", extendedNowUnits, 0, 100)
         try range("eatingProb", eatingProb, 0, 1)
+        // T1-8 (D-03/D-08): display-only, never a dose input — a generous sane bound (not a clinical
+        // claim), matching the same 25 U/hr ceiling `Interlocks.clampMaxBolusLimit` enforces as its
+        // absolute hard cap, so an out-of-this-world value fails closed here rather than reaching a
+        // render path. Absent/nil is always valid (⇒ readout renders ABSENT, D-03(v)).
+        try range("maxBasalUnitsPerHour", maxBasalUnitsPerHour, 0, 25)
         if let m = extendedMinutes, m < 0 || m > 24 * 60 { throw ValidationError.outOfRange("extendedMinutes") }
         // An absolute source timestamp must be a plausible Unix second. A zero or negative value would
         // compute an age of decades (harmless — reads as stale), but a *future* one computes a NEGATIVE
