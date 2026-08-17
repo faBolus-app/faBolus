@@ -98,7 +98,17 @@ struct MacStatusPills: View {
             if d.showLastBolus, let last = model.lastBolusUnits {
                 pill("Last", String(format: "%.2f U", last))
             }
+            // Phase 09.15 T1-1 (D-01/D-08): full Tandem zone word (Mac has room) — 5th pill. ABSENT
+            // (never a stale last-known word) unless Control-IQ is running and the token maps to a
+            // member of the fixed five (D-06 guardrails #5/#6, SP-5 fail-closed).
+            if let zone = ciqZone { pill("Control-IQ", zone.rawValue.capitalized) }
         }
+    }
+
+    /// `nil` whenever Control-IQ isn't running or the token is absent/unmapped.
+    private var ciqZone: ControlIQZone? {
+        guard model.controlIQEnabled, let raw = model.ciqZone else { return nil }
+        return ControlIQZone(rawValue: raw)
     }
 
     private func pill(_ title: String, _ value: String, stale: Bool = false, age: String? = nil) -> some View {

@@ -89,6 +89,11 @@ class RemoteClientModel {
     /// B2 (S1+O3): whether Control-IQ is ON at runtime, mirrored from the phone. The disclosure renders only
     /// when the variant can auto-correct AND this is true. Safe default false ⇒ render no disclosure.
     var controlIQEnabled: Bool = false
+    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, a frozen wire token
+    /// (`ControlIQZone.rawValue`), mirrored from the phone. A remote renders Tandem's own zone word + icon
+    /// locally from this. `nil` ⇒ render the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ
+    /// off, never a stale last-known word (D-06 guardrail #5/#6, SP-5 fail-closed).
+    var ciqZone: String? = nil
 
     /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
     /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
@@ -344,6 +349,14 @@ class RemoteClientModel {
             // stays the safe default (.none / false ⇒ no disclosure). Unknown token ⇒ .none (never crash).
             if let v = cmd.controllerVariant { controllerVariant = ControllerVariant(rawValue: v) ?? .none }
             if let e = cmd.controlIQEnabled { controlIQEnabled = e }
+            // Phase 09.15 T1-1 (D-01/D-08, SP-5 fail-closed): UNLIKE `controllerVariant`/`controlIQEnabled`
+            // above (where absent only ever means "legacy host" and the stored default stays safe to
+            // keep), `ciqZone` can legitimately clear on a MODERN host too — CIQ turns off, or the raw
+            // zone becomes unmapped — and the wire's `Optional<String>` can't distinguish "never sent"
+            // from "explicitly cleared" once decoded. So this field is always fully authoritative
+            // (unconditional assignment, not an `if let` guard): a stale zone word must never survive
+            // past the moment it actually cleared.
+            ciqZone = cmd.ciqZone
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

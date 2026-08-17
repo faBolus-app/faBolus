@@ -136,6 +136,34 @@ public final class AppSettings {
     /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
     public var eatingLearnFromFeedback: Bool { didSet { d.set(eatingLearnFromFeedback, forKey: "eatingLearnFromFeedback") } }
 
+    // Phase 09.15 (D-07) — Control-IQ-awareness Smart-Assist toggle scaffold. Every later 09.15 plan
+    // reads these flags rather than inventing its own; defaults are the owner-locked D-07 table
+    // (`09.15-PATTERNS.md` "Smart Assist settings (D-07)", `09.15-BRAINSTORM.md` "Smart Assist grouping").
+    // Same idiom as `eatingNudgesEnabled`: plain persisted Bool, mirrored to remotes on `statusRead` so a
+    // remote suppresses an off feature belt-and-suspenders. T1-6 (extended disable-CIQ warning) has NO
+    // flag here — it always fires, per D-07.
+    /// T1-1/2/3/4 — CIQ state/status readouts (pure facts, no action). Default **ON**.
+    public var ciqStateReadoutsEnabled: Bool { didSet { d.set(ciqStateReadoutsEnabled, forKey: "ciqStateReadoutsEnabled") } }
+    /// T1-5 — 60-min auto-correction lockout countdown (safety-increasing disclosure). Default **ON**.
+    public var ciqLockoutCountdownEnabled: Bool { didSet { d.set(ciqLockoutCountdownEnabled, forKey: "ciqLockoutCountdownEnabled") } }
+    /// T1-8 — "% of configured max basal" readout (introduces a "limit" concept). Default **OFF**.
+    public var ciqMaxBasalReadoutEnabled: Bool { didSet { d.set(ciqMaxBasalReadoutEnabled, forKey: "ciqMaxBasalReadoutEnabled") } }
+    /// T1-9 — Sleep/Exercise awareness (least directly pump-sourced). Default **OFF**.
+    public var ciqSleepExerciseAwarenessEnabled: Bool { didSet { d.set(ciqSleepExerciseAwarenessEnabled, forKey: "ciqSleepExerciseAwarenessEnabled") } }
+    /// T2-3 — CIQ+-only temp-rate placeholder (bench-gated, `benchVerifiedDefault = false`). Default **OFF**.
+    public var ciqPlusTempRateEnabled: Bool { didSet { d.set(ciqPlusTempRateEnabled, forKey: "ciqPlusTempRateEnabled") } }
+    /// T2-1 — direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
+    public var ciqCeilingFlagsEnabled: Bool { didSet { d.set(ciqCeilingFlagsEnabled, forKey: "ciqCeilingFlagsEnabled") } }
+    // One-time acknowledgment markers — same idiom as `stackingGuardNoticeAckAt`: durable per-install
+    // markers, NOT `SettingsCatalog` rows — never backed up, never iCloud-synced (a synced ack must not
+    // silently pre-suppress the notice on another device). NEVER gate a write. nil ⇒ never shown.
+    public var ciqAwarenessNoticeAckAt: Date? { didSet { d.set(ciqAwarenessNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "ciqAwarenessNoticeAckAt") } }
+    public var hasAcknowledgedCiqAwarenessNotice: Bool { ciqAwarenessNoticeAckAt != nil }
+    public func acknowledgeCiqAwarenessNotice() { if ciqAwarenessNoticeAckAt == nil { ciqAwarenessNoticeAckAt = Date() } }
+    public var maxBasalNoticeAckAt: Date? { didSet { d.set(maxBasalNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "maxBasalNoticeAckAt") } }
+    public var hasAcknowledgedMaxBasalNotice: Bool { maxBasalNoticeAckAt != nil }
+    public func acknowledgeMaxBasalNotice() { if maxBasalNoticeAckAt == nil { maxBasalNoticeAckAt = Date() } }
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -448,7 +476,7 @@ public final class AppSettings {
     }
     /// Status pills available on the dashboard, in default order (first 6 shown by default).
     public static let pillItems: [String] =
-        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
+        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "ciqZone", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
     public static func pillLabel(_ id: String) -> String {
         switch id {
         case "iob": return "Active insulin"
@@ -457,6 +485,7 @@ public final class AppSettings {
         case "cgm": return "CGM"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
+        case "ciqZone": return "Control-IQ state"
         case "lastBolus": return "Last bolus"
         case "carbRatio": return "Carb ratio"
         case "isf": return "Correction (ISF)"
@@ -477,7 +506,7 @@ public final class AppSettings {
     /// down/stale (never as a redundant "all fine" confirmation), so it is last by default rather than
     /// third as the raw clinical-priority text reads.
     public static let laFieldItems: [String] =
-        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "connection"]
+        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "connection"]
     public static func laFieldLabel(_ id: String) -> String {
         switch id {
         case "glucose": return "Glucose"
@@ -486,6 +515,7 @@ public final class AppSettings {
         case "battery": return "Pump battery"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
+        case "controlIQZone": return "Control-IQ state"
         case "connection": return "Connection / last sync"
         default: return id
         }
@@ -647,6 +677,17 @@ public final class AppSettings {
         }
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
+        // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
+        ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
+        ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
+        ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
+        ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
+        ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
+        ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
+        let ciqAck = d.double(forKey: "ciqAwarenessNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
+        ciqAwarenessNoticeAckAt = ciqAck > 0 ? Date(timeIntervalSince1970: ciqAck) : nil
+        let mbAck = d.double(forKey: "maxBasalNoticeAckAt")        // 0 (absent) ⇒ never acknowledged
+        maxBasalNoticeAckAt = mbAck > 0 ? Date(timeIntervalSince1970: mbAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg

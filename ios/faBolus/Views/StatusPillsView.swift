@@ -49,6 +49,17 @@ struct StatusPillsView: View {
         case "controlIQ":
             pill(icon: controlIQIcon, tint: snapshot.controlIQEnabled ? AppTheme.inRange : .gray,
                  value: controlIQValue, label: "Control-IQ")
+        case "ciqZone":
+            // Phase 09.15 T1-1 (D-01/D-08): the pill renders ABSENT (not a "no data" placeholder) unless
+            // the Smart-Assist toggle is on, Control-IQ is running, AND the token maps to a member of the
+            // fixed five — never a stale last-known or fabricated 6th word (D-06 guardrails #5/#6).
+            if let zone = ciqZoneChip {
+                pill(icon: ciqZoneIcon(zone), tint: AppTheme.insulin,
+                     value: zone.rawValue.capitalized, label: "Control-IQ")
+                    .accessibilityLabel("Control-IQ \(zone.rawValue.capitalized) insulin delivery")
+            } else {
+                EmptyView()
+            }
         case "lastBolus":
             pill(icon: "drop.triangle.fill", tint: AppTheme.insulin,
                  value: snapshot.lastBolusUnits.map { String(format: "%.2f U", $0) } ?? "—", label: "Last bolus")
@@ -95,6 +106,23 @@ struct StatusPillsView: View {
         case 1: return "moon.zzz.fill"
         case 2: return "figure.run"
         default: return "checkmark.circle.fill"
+        }
+    }
+
+    /// Phase 09.15 T1-1 (D-01/D-08, SP-5 fail-closed) — `nil` whenever the Smart-Assist toggle is off,
+    /// Control-IQ isn't running, or the token is absent/unmapped; never a stale last-known zone.
+    private var ciqZoneChip: ControlIQZone? {
+        guard AppSettings.shared.ciqStateReadoutsEnabled, snapshot.controlIQEnabled,
+              let raw = snapshot.ciqZone else { return nil }
+        return ControlIQZone(rawValue: raw)
+    }
+    private func ciqZoneIcon(_ zone: ControlIQZone) -> String {
+        switch zone {
+        case .increases: return "arrow.up.circle.fill"
+        case .decreases: return "arrow.down.circle.fill"
+        case .maintains: return "equal.circle.fill"
+        case .stops: return "pause.circle.fill"
+        case .delivers: return "bolt.circle.fill"
         }
     }
 

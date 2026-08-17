@@ -468,6 +468,11 @@ public final class AppModel {
         // "absent" can only mean a legacy host (which renders nothing controller-specific).
         cmd.controllerVariant = snapshot.controllerVariant.rawValue
         cmd.controlIQEnabled = snapshot.controlIQEnabled
+        // Phase 09.15 T1-1 (D-01/D-08): the pump's live Control-IQ action zone as a frozen wire token — a
+        // remote renders Tandem's own zone word + icon locally from this. Emitted UNCONDITIONALLY (nil
+        // when unread/unmapped is a legitimate, fail-closed value, not "absent = legacy host" here) so a
+        // remote always sees the host's current knowledge. Display-only, never a dose input (C3).
+        cmd.ciqZone = snapshot.ciqZone
         // DIF-ux: relay the pump's own read times of the calc inputs (IOB op-109, therapy op-115) as
         // immutable source epochs — exactly like `glucoseEpochSec` above — so a remote can grey/age its IOB
         // + therapy rows and PRE-WARN off the same freshness the host judges. Absent (nil date) ⇒ the remote
