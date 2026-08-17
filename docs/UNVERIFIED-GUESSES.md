@@ -149,5 +149,28 @@ feature is untested and "will likely not work" before they run — not just the 
   IDP target on the pump, read `CurrentActiveIdpValuesResponse`, and confirm byte 4 carries it on BOTH pump
   families and across more than one t:slim software version; confirm no genuine byte-5 variant exists.
 
+## Resolution Ledger (09.14, D-03 — todo #17 Task A)
+
+Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to
+**v0.4.0 Phase 11** (the on-hardware saline bench), not resolved here. This ledger does **NOT**
+un-gate any pump-protocol guess; the full on-hardware validation matrix that must pass first lives in
+[RELEASE-GATES.md](RELEASE-GATES.md). Only item 3 (already resolved against the Connect IQ SDK, before
+this phase) reads as Closed.
+
+| # | Item | Current state | Resolves via | Owner/phase |
+|---|------|----------------|---------------|-------------|
+| 1 | CGM alert type (high=0/low=1) | Reference-documented, blocking-modal-gated; no captured BLE payload yet | Set a distinctive high/low threshold, read back on the pump | v0.4.0 Phase 11 |
+| 2 | IDP profile create + segment params | Aligned to captured reference values, insulin-affecting, bench-gated | Create/edit a profile, read back every field on the pump | v0.4.0 Phase 11 |
+| 3 | Garmin complication `:unit`/color | **RESOLVED** — SDK type source confirms the key usage; no guess remains | — (optional Connect IQ simulator eyeball-confirm, not required) | Closed |
+| 4 | Carb-bolus metadata (FOOD1/foodVolume/bolusIOB/isAutopopBg/BG) | Mostly oracle-locked; extended+carbs split and carb-graph/Control-IQ awareness still unverified | Deliver a carb bolus, confirm carb shows on pump/t:connect + Control-IQ awareness | v0.4.0 Phase 11 |
+| 5 | Passive Dexcom G6 direct BLE | Experimental; a passive read may never connect without an authenticated session | Field test (owner-tracked, not bench-blocked) | Owner, field test |
+| 6 | Mobi sleep-schedule `SetSleepScheduleRequest.flag` semantic + slots 1-3 | Value pinned to captured golden `3`; day-of-week bitmask confirmed; `flag`'s semantic meaning and slots 1-3 generalization unconfirmed | Set a distinctive schedule on all 4 slots, read back directly on the pump | v0.4.0 Phase 11 (09.10 bench) |
+| 7 | `CurrentActiveIdpValuesResponse.currentTargetBg` byte-4 decode | Capture-backed, not oracle-backed, not bench-confirmed; no live faBolus consumer today | TandemKit `docs/BENCH-SESSION-PLAN.md` Objective 4 — confirm byte 4 across pump families and t:slim software versions **before any dosing consumer relies on it**, matching this entry's own GATING RULE above | v0.4.0 Phase 11 |
+
+Every non-Closed row above (1, 2, 4, 5, 6, 7) is tagged for the keep-off-narrow-main gating rule added
+to the 999.5 per-surface checklist (`.planning/intel/prep/999.5-branch-model-reorg/PER-SURFACE-CHECKLIST.md`,
+"Gating Rule: Unverified-Guess-Gated Features Stay Off Narrowed main") — none of these surfaces may be
+promoted onto the narrowed `main` until its "Resolves via" step clears.
+
 ---
 Remove an entry once it's been confirmed on hardware.
