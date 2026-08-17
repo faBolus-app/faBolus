@@ -369,6 +369,16 @@ struct MacBolusEntryView: View {
                     Text(m).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
                 }
+                // T1-5 (D-01, D-06 "never adjacent to a dose CTA", D-08): the countdown bar renders
+                // FIRST in this disclosure block, ABOVE the amount entry — same placement rule as
+                // `BolusEntryView` (more separated from the Deliver button below than the existing
+                // ambient/lockout lines further down). Fail-closed: nil fraction ⇒ no bar at all. No
+                // Smart-Assist gate here — matches every other 09.15 Mac readout (ciqZone/ciqSuspend/
+                // lastAutoCorrection): the per-feature toggle is phone-local and not yet mirrored to
+                // remotes on the wire (a known, accepted cross-plan gap, not introduced by this plan).
+                if let fraction = model.lockoutRemainingFraction, let availableAt = model.lockoutAvailableAt {
+                    MacLockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
+                }
                 Picker("", selection: $mode) {
                     Text("Carbs").tag("carbs")
                     Text("Units").tag("units")
@@ -543,5 +553,46 @@ struct MacAlertsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - T1-5 lockout countdown bar
+
+/// T1-5 — the 60-min auto-correction lockout COUNTDOWN bar, full Mac-width: a linear TIME-FILL capsule
+/// (fraction = elapsed/window, filling UP toward 1.0 as availability returns — NEVER a draining
+/// battery). Flat `AppTheme.insulin` fill on a `.quaternary` track, single tone regardless of fraction —
+/// never red/amber near completion (D-06 explicit gauge-neutrality rule). Copy verbatim from the
+/// UI-SPEC Copywriting Contract. A separate struct from `BolusEntryView`'s `LockoutCountdownBarView`
+/// (a distinct app target — Mac can't import an iOS-app-target type), same visual contract.
+struct MacLockoutCountdownBarView: View {
+    let fraction: Double
+    let availableAt: Date
+
+    private var justFired: Bool { fraction < 0.02 }
+    private var timeLabel: String { availableAt.formatted(date: .omitted, time: .shortened) }
+    private var clampedFraction: Double { min(max(fraction, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if justFired {
+                Text("Just paused — next correction available at \(timeLabel)")
+                    .font(.caption)
+            } else {
+                HStack {
+                    Text("Control-IQ's next automatic correction").font(.caption)
+                    Spacer()
+                    Text("available at \(timeLabel)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(AppTheme.insulin)
+                        .frame(width: geo.size.width * CGFloat(clampedFraction))
+                }
+            }
+            .frame(height: 6)
+        }
+        .frame(maxWidth: .infinity)
     }
 }

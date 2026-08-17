@@ -197,6 +197,26 @@ struct BolusEntryView: View {
                                                 glucoseMgdl: model.snapshot.glucose,
                                                 trend: GlucoseTrend(rawValue: model.snapshot.trend))
     }
+    /// T1-5 (D-01, D-07, D-08): the 60-min lockout countdown FRACTION, or nil — gated on Settings'
+    /// `ciqLockoutCountdownEnabled` (ON by default). Pure `faBolusCore` fraction fn, reading the pump's
+    /// OWN `lastAutoCorrectionDate` (this device already has it, unlike a remote — no epoch round-trip
+    /// needed here). **This is a fraction, NEVER a dose/units value** (D-06 guardrail #1); NEVER gates,
+    /// changes, or delays delivery. `nil` when the toggle is off, there's no known auto-correction, or
+    /// the lockout has already expired (fail-closed — SP-5).
+    private var lockoutCountdownFraction: Double? {
+        guard settings.ciqLockoutCountdownEnabled else { return nil }
+        return AutoCorrectionDisclosure.lockoutRemainingFraction(
+            descriptor: model.snapshot.controllerDescriptor,
+            controllerEnabled: model.snapshot.controlIQEnabled,
+            lockoutStartDate: model.snapshot.lastAutoCorrectionDate,
+            now: Date())
+    }
+    /// The "available at {time}" instant the countdown bar's trailing label + VoiceOver read — nil
+    /// exactly when `lockoutCountdownFraction` is (a bar is never shown without a time, or vice versa).
+    private var lockoutAvailableAt: Date? {
+        guard lockoutCountdownFraction != nil else { return nil }
+        return model.snapshot.lockoutUntilDate
+    }
     /// SG1: the calc-override disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's OWN
     /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery;
     /// same "disclosure only" contract as `autoCorrectionAmbient`/`autoCorrectionLockout` above.
@@ -523,6 +543,15 @@ struct BolusEntryView: View {
                         .accessibilityLabel("Cancel bolus")
                     }
                 } else {
+                    // T1-5 (D-06 "never adjacent to a dose CTA"): the countdown bar renders FIRST in
+                    // this disclosure block, ABOVE the amount entry — the SAME visual separation from
+                    // the Deliver button `autoCorrectionAmbient`/`autoCorrectionLockout` already have
+                    // (both render in the warnings list below, well before the Deliver button), only
+                    // MORE separated (it's now the very first row in the section). Fail-closed: nil
+                    // fraction ⇒ no bar at all.
+                    if let fraction = lockoutCountdownFraction, let availableAt = lockoutAvailableAt {
+                        LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
+                    }
                     HStack(spacing: 6) {
                         // Enlarged tap target (see the carbs field) — visuals unchanged.
                         HStack(spacing: 6) {
@@ -1181,5 +1210,51 @@ private extension View {
     /// unchanged; only accessibility sizes let the field grow.
     @ViewBuilder func compactFixedSize(_ isAccessibility: Bool) -> some View {
         if isAccessibility { self } else { self.fixedSize() }
+    }
+}
+
+/// T1-5 — the 60-min auto-correction lockout COUNTDOWN bar: a linear TIME-FILL capsule (fraction =
+/// elapsed/window, filling UP toward 1.0 as availability returns — NEVER a draining battery). Flat
+/// `AppTheme.insulin` fill on a `.quaternary` track, single tone regardless of fraction — **never
+/// red/amber near completion** (D-06 explicit gauge-neutrality rule: a neutral status readout, not an
+/// alarm). Copy verbatim from the UI-SPEC Copywriting Contract; VoiceOver includes minutes remaining.
+/// Shared by `BolusEntryView`/`MainHUDView` (same app target, no import needed) and mirrored in spirit
+/// by `MacComponents.swift`'s own SwiftUI-native bar (a distinct target, can't share this struct).
+struct LockoutCountdownBarView: View {
+    let fraction: Double
+    let availableAt: Date
+
+    /// The Copywriting Contract's "fresh-fired state (0 min elapsed)" — approximated as "under one
+    /// window-minute elapsed" without needing the caller to pass the window separately.
+    private var justFired: Bool { fraction < 0.02 }
+    private var minutesRemaining: Int {
+        max(0, Int((availableAt.timeIntervalSinceNow / 60).rounded(.up)))
+    }
+    private var timeLabel: String { availableAt.formatted(date: .omitted, time: .shortened) }
+    private var clampedFraction: Double { min(max(fraction, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if justFired {
+                Text("Just paused — next correction available at \(timeLabel)")
+                    .font(.caption)
+            } else {
+                HStack {
+                    Text("Control-IQ's next automatic correction").font(.caption)
+                    Spacer()
+                    Text("available at \(timeLabel)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(AppTheme.insulin)
+                        .frame(width: geo.size.width * CGFloat(clampedFraction))
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Control-IQ's next automatic correction available at \(timeLabel), \(minutesRemaining) minutes remaining")
     }
 }

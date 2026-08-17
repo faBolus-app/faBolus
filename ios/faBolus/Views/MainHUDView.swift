@@ -94,6 +94,19 @@ struct DashboardView: View {
 
                     StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
 
+                    // T1-5 (D-01, D-07, D-08): a slim countdown card under the controlIQ/ciqZone pills —
+                    // StatusPillsView is pill-shaped (too small for a bar). Gated on
+                    // `ciqLockoutCountdownEnabled` (ON by default); fail-closed nil ⇒ card absent.
+                    if settings.ciqLockoutCountdownEnabled,
+                       let fraction = AutoCorrectionDisclosure.lockoutRemainingFraction(
+                           descriptor: model.snapshot.controllerDescriptor,
+                           controllerEnabled: model.snapshot.controlIQEnabled,
+                           lockoutStartDate: model.snapshot.lastAutoCorrectionDate, now: Date()),
+                       let availableAt = model.snapshot.lockoutUntilDate {
+                        LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
+                            .padding(.horizontal)
+                    }
+
                     VStack(spacing: 6) {
                         GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                          boluses: model.bolusMarkers, windowHours: windowHours,
