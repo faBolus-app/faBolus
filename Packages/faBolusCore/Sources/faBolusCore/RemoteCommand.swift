@@ -491,6 +491,27 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqMaxBolusEventsExceeded: Bool? = nil
     public var ciqMaxIobEventsExceeded: Bool? = nil
 
+    /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle STATES
+    /// themselves, mirrored to remotes on the SAME `statusRead` channel already used for
+    /// `eatingSensingOn`/`remotesReadOnly` (SP-1). This is belt-and-suspenders parity (guardrail #13,
+    /// D-08): a remote must suppress a feature whose toggle is OFF even if the phone forgot to ALSO
+    /// gate that feature's own field emission — the remote is never allowed to depend solely on the
+    /// host's other gate. Emitted UNCONDITIONALLY every statusRead (mirrors `eatingSensingOn`), so
+    /// "absent" can only mean a legacy host that predates this plan. Additive; auto-Codable, so the
+    /// existing memberwise initializer stays untouched.
+    ///
+    /// Absent-on-legacy-host default asymmetry (matches each flag's own `AppSettings` D-07 default):
+    /// the always-on-by-default features (state readouts, lockout countdown) resolve a missing key to
+    /// NON-suppressing (`true`); the opt-in/OFF-by-default features (max-basal readout, sleep/exercise,
+    /// CIQ+ temp-rate, ceiling flags) resolve a missing key to suppressing (`false`) — a legacy host
+    /// never advertised those toggles as on, so a remote must not assume they are.
+    public var ciqStateReadoutsEnabled: Bool? = nil
+    public var ciqLockoutCountdownEnabled: Bool? = nil
+    public var ciqMaxBasalReadoutEnabled: Bool? = nil
+    public var ciqSleepExerciseAwarenessEnabled: Bool? = nil
+    public var ciqPlusTempRateEnabled: Bool? = nil
+    public var ciqCeilingFlagsEnabled: Bool? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,

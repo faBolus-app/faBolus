@@ -520,6 +520,18 @@ public final class AppModel {
         cmd.inSleepWindow = snapshot.inSleepWindow
         cmd.sleepWindowStartMinute = snapshot.sleepWindowStartMinute
         cmd.sleepWindowEndMinute = snapshot.sleepWindowEndMinute
+        // Phase 09.15 D-07 (plan 12): mirror the phone-owned Control-IQ-awareness Smart-Assist toggle
+        // states to remotes on the SAME statusRead channel already used for
+        // eatingSensingOn/remotesReadOnly (line ~430 above), so a remote SUPPRESSES a CIQ-awareness
+        // feature whose toggle is OFF even if the phone forgot to also gate that feature's own field
+        // emission (belt-and-suspenders, D-08 parity, guardrail #13). Emitted UNCONDITIONALLY so
+        // "absent" can only mean a legacy host that predates this plan.
+        cmd.ciqStateReadoutsEnabled = AppSettings.shared.ciqStateReadoutsEnabled
+        cmd.ciqLockoutCountdownEnabled = AppSettings.shared.ciqLockoutCountdownEnabled
+        cmd.ciqMaxBasalReadoutEnabled = AppSettings.shared.ciqMaxBasalReadoutEnabled
+        cmd.ciqSleepExerciseAwarenessEnabled = AppSettings.shared.ciqSleepExerciseAwarenessEnabled
+        cmd.ciqPlusTempRateEnabled = AppSettings.shared.ciqPlusTempRateEnabled
+        cmd.ciqCeilingFlagsEnabled = AppSettings.shared.ciqCeilingFlagsEnabled
         return cmd
     }
 

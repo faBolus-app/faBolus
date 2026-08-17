@@ -131,6 +131,10 @@ import faBolusCore
         var cmdWithMax = RemoteCommand(kind: .statusRead)
         cmdWithMax.basalRate = 0.85
         cmdWithMax.maxBasalUnitsPerHour = 1.60
+        // Phase 09.15-12 (D-07 belt-and-suspenders): the readout toggle must be explicitly ON for the
+        // field to render on the client — this test is proving the raw parse/clear mechanics, not the
+        // toggle-suppression behavior (covered by CiqSmartAssistMirrorTests).
+        cmdWithMax.ciqMaxBasalReadoutEnabled = true
         m.handle(cmdWithMax)
         #expect(m.maxBasalUnitsPerHour == 1.60)
         #expect(m.maxBasalReadout != nil)
@@ -149,6 +153,8 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.basalRate = 0.85
         cmd.maxBasalUnitsPerHour = 1.60
+        // Phase 09.15-12 (D-07 belt-and-suspenders): see note above.
+        cmd.ciqMaxBasalReadoutEnabled = true
         m.handle(cmd)
         let readout = m.maxBasalReadout
         #expect(readout != nil)

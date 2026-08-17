@@ -150,6 +150,18 @@ class RemoteClientModel {
     var sleepWindowStartMinute: Int? = nil
     var sleepWindowEndMinute: Int? = nil
 
+    /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle states,
+    /// mirrored from the phone. Safe defaults mirror each flag's own `AppSettings` D-07 default exactly
+    /// (state readouts/lockout countdown default true; the opt-in surfaces default false), so a legacy
+    /// host (these keys absent) resolves to the SAME behavior the flag's own default already implies —
+    /// non-suppressing for the always-on features, suppressing for the opt-in ones.
+    var ciqStateReadoutsEnabled: Bool = true
+    var ciqLockoutCountdownEnabled: Bool = true
+    var ciqMaxBasalReadoutEnabled: Bool = false
+    var ciqSleepExerciseAwarenessEnabled: Bool = false
+    var ciqPlusTempRateEnabled: Bool = false
+    var ciqCeilingFlagsEnabled: Bool = false
+
     /// Phase 09.15 T1-9 (D-01/D-08) — the controller's OWN activity preset (Sleep/Exercise)
     /// currently selected by `controlIQMode`, or `nil` in normal mode. Pure UI wiring of
     /// `controllerDescriptor.activityPresets` — no new clinical literal (D-06 guardrail #4).
@@ -503,6 +515,43 @@ class RemoteClientModel {
             inSleepWindow = cmd.inSleepWindow
             sleepWindowStartMinute = cmd.sleepWindowStartMinute
             sleepWindowEndMinute = cmd.sleepWindowEndMinute
+            // Phase 09.15 D-07 (plan 12): adopt the phone's mirrored Control-IQ-awareness toggle states.
+            // Unconditional assign-with-fallback (not "if let, keep last"): a toggle flip must take
+            // effect on the VERY NEXT statusRead, exactly like every other CIQ-awareness primitive
+            // above — a stale "still on" must never survive past the moment the phone turned it off.
+            // Each fallback mirrors that flag's own `AppSettings` D-07 default (SP-5): non-suppressing
+            // for the always-on features, suppressing for the opt-in ones, on a legacy host.
+            ciqStateReadoutsEnabled = cmd.ciqStateReadoutsEnabled ?? true
+            ciqLockoutCountdownEnabled = cmd.ciqLockoutCountdownEnabled ?? true
+            ciqMaxBasalReadoutEnabled = cmd.ciqMaxBasalReadoutEnabled ?? false
+            ciqSleepExerciseAwarenessEnabled = cmd.ciqSleepExerciseAwarenessEnabled ?? false
+            ciqPlusTempRateEnabled = cmd.ciqPlusTempRateEnabled ?? false
+            ciqCeilingFlagsEnabled = cmd.ciqCeilingFlagsEnabled ?? false
+            // Belt-and-suspenders (guardrail #13, D-08 parity): suppress each CIQ-awareness primitive
+            // LOCALLY when its mirrored toggle is off, even though the host is ALSO expected to stop
+            // emitting the underlying field once its own toggle is off. This remote must never depend
+            // solely on the host's other gate — if a field leaked anyway, it is cleared right here,
+            // after every field assignment above and using the toggle values just adopted.
+            if !ciqStateReadoutsEnabled {
+                ciqZone = nil
+                ciqSuspendedForLow = nil
+                ciqSuspendStartDate = nil
+                lastAutoCorrectionDate = nil
+                ciqLastCouldNotDeliverDate = nil
+            }
+            if !ciqLockoutCountdownEnabled {
+                lockoutUntilDate = nil
+            }
+            if !ciqMaxBasalReadoutEnabled {
+                maxBasalUnitsPerHour = nil
+            }
+            if !ciqSleepExerciseAwarenessEnabled {
+                controlIQMode = 0
+                exerciseTimeRemainingSec = nil
+                inSleepWindow = nil
+                sleepWindowStartMinute = nil
+                sleepWindowEndMinute = nil
+            }
             if let a = cmd.alerts {
                 // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not
