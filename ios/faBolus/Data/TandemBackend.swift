@@ -100,10 +100,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// influences control flow.
     public var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)?
 
-    /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`.
+    /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`. D-02 (Phase 09.15-03): runs the
+    /// decoded title/detail through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name
+    /// table doesn't yet carry (e.g. Control-IQ High Alert #50) still surface with clean, neutral,
+    /// Tandem-sourced copy in the existing mirror — never overriding a name TandemKit already supplies.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
-        PumpAlert(id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
-                  title: n.title, detail: n.detail ?? "", isDismissable: n.dismissable)
+        let copy = PumpAlertCopyOverlay.resolve(id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
+        return PumpAlert(id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
+                          title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
     }
 
     /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity

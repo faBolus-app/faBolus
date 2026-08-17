@@ -85,3 +85,54 @@ public enum AlertRuleEngine {
         return nil
     }
 }
+
+// MARK: - D-02 (Phase 09.15-03, T1-7 dropped): pump-alert copy verification/overlay
+
+/// D-02: the existing pump-alert mirror (`TandemBackend.activeNotifications: [PumpAlert]` →
+/// `AlertsView`) already surfaces Control-IQ's own alerts — no new faBolus advisory is added (T1-7 is
+/// dropped). This is a client-side copy OVERLAY for specific pump alert ids whose decoded name the
+/// pump-protocol layer doesn't (yet) carry, so the mirror still surfaces them with clean, neutral,
+/// Tandem-sourced copy instead of a generic `"Alert N"` fallback.
+///
+/// **Control-IQ High Alert (#50)** — Tandem's own "CIQ increased delivery but glucose is still high"
+/// alert (BRAINSTORM IDEA 10, verbatim Tandem guidance): "test your blood glucose and treat as
+/// necessary, and check your infusion site." Provenance **(c)** Tandem-sourced. Never upgraded to "give
+/// a bolus" (D-06 guardrail #10 — neutral, non-directive copy). Compare **Control-IQ Low Alert (#51)**,
+/// which the decode layer (`TandemKit` `AlertStatusResponse.names[51]`) already names cleanly today —
+/// this overlay leaves that one untouched (`resolve` never overrides a real decoded name).
+public enum PumpAlertCopyOverlay {
+    /// id → (title, detail) for alerts this overlay improves. Pure data; applied only when the caller's
+    /// own decoded copy looks like a generic placeholder (see `resolve`).
+    static let overlays: [Int: (title: String, detail: String)] = [
+        50: ("Control-IQ high",
+             "Control-IQ increased insulin delivery, but glucose has stayed above 200 mg/dL for 30 " +
+             "minutes. Test your blood glucose and treat as necessary, and check your infusion site."),
+    ]
+
+    /// Resolves the copy to show for a decoded pump alert: the overlay's clean copy when one is defined
+    /// for `id` AND `decodedDetail == nil` (the pump-protocol layer's own signal for "this id has no
+    /// named entry, rendered as a generic fallback" — see TandemKit's `NotificationBitmap.decode`, which
+    /// leaves `detail` `nil` on an unnamed bit); otherwise the decoded copy passes through UNCHANGED, so
+    /// a real Tandem-sourced name the decode layer already supplies (e.g. id 51 "Control-IQ low") is
+    /// never overridden.
+    public static func resolve(id: Int, decodedTitle: String, decodedDetail: String?) -> (title: String, detail: String) {
+        if decodedDetail == nil, let overlay = overlays[id] {
+            return overlay
+        }
+        return (decodedTitle, decodedDetail ?? "")
+    }
+}
+
+/// D-06 guardrail #10 (neutral, non-directive copy): a copy-audit predicate, true when `text` contains
+/// an imperative DOSING verb that would upgrade a neutral Tandem-sourced alert into directive dosing
+/// advice (e.g. "give a bolus"). Case-insensitive substring check, mirrors the T1-8 copy-audit
+/// convention (a label must never contain certain words).
+public enum AlertCopyAudit {
+    public static let imperativeDosingVerbs = ["bolus", "give insulin", "deliver insulin", "inject", "dose now"]
+
+    /// True when `text` contains any imperative dosing verb/phrase (case-insensitive).
+    public static func hasImperativeDosingVerb(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return imperativeDosingVerbs.contains { lower.contains($0) }
+    }
+}
