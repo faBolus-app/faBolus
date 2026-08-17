@@ -317,6 +317,52 @@ public struct PumpSnapshot: Sendable, Equatable {
     }
 }
 
+/// Phase 09.15 T1-8 (D-03) — the honest "% of your configured max basal rate" readout. This is
+/// faBolus's OWN construct (Tandem ships no such gauge): `basalRateUnitsPerHour ÷
+/// maxBasalUnitsPerHour`, both already decoded from the pump (`CurrentBasalStatusResponse` /
+/// `BasalLimitSettingsResponse`). Labeled honestly as the pump's CONFIGURED max-basal delivery limit —
+/// a cap on ALL basal delivery — and NEVER a Control-IQ or auto-bolus figure. D-03's anti-misconstrual
+/// guardrails are ALL binding: (i) the label always contains "basal"; (ii) the absolute U/hr always
+/// accompanies the %; (iii) the readout lives physically separated from any bolus/correction surface
+/// (enforced at the call site, `PumpControlView`'s pump-settings area — not here); (iv) a copy-audit
+/// test (`CiqMaxBasalCopyAuditTests`) fails the build if the label ever contains one of
+/// `forbiddenMisconstrualWords`; (v) opt-in, off by default, with a one-time feature-specific explainer
+/// (also enforced at the call site).
+public enum MaxBasalFraction {
+    /// D-03(iv) — the exact forbidden misconstrual vocabulary, case-insensitive substring match. Any of
+    /// these words in the label would misconstrue this faBolus-computed configured-basal-cap readout as
+    /// a bolus, an automatic correction, a hard ceiling override, or "maxed out" delivery — none of
+    /// which this feature is. Exposed as one shared list so the label builder and its test never drift.
+    public static let forbiddenMisconstrualWords: [String] = ["bolus", "correction", "ceiling", "maxed"]  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+
+    /// True when `text` contains any D-03(iv) forbidden word (case-insensitive substring).
+    public static func hasForbiddenWord(_ text: String) -> Bool {
+        forbiddenMisconstrualWords.contains { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    /// D-06 guardrail #1 (a fraction, NEVER a dose/units value): `currentUnitsPerHour ÷
+    /// maxUnitsPerHour`, clamped to `[0.0, 1.0]`. `nil` (fail-closed) when `maxUnitsPerHour <= 0` — the
+    /// pump's configured max-basal limit is unknown/not yet read, so there is nothing honest to divide
+    /// by; the caller must render the readout entirely ABSENT (not zero/dash) in that case, per D-03.
+    public static func fraction(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> Double? {
+        guard maxUnitsPerHour > 0 else { return nil }
+        let raw = currentUnitsPerHour / maxUnitsPerHour
+        return min(max(raw, 0.0), 1.0)
+    }
+
+    /// D-03(i)/(ii) LOCKED wording pair, or `nil` under the exact same fail-closed guard `fraction`
+    /// uses. `headline` ALWAYS contains "basal"; `detail` ALWAYS shows both the current and configured
+    /// max U/hr together (never the % alone). Both are guaranteed (by the copy-audit test) to never
+    /// contain a `forbiddenMisconstrualWords` entry.
+    public static func label(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> (headline: String, detail: String)? {
+        guard let f = fraction(currentUnitsPerHour: currentUnitsPerHour, maxUnitsPerHour: maxUnitsPerHour) else { return nil }
+        let pct = Int((f * 100).rounded())
+        let headline = "\(pct)% of your configured max basal rate"
+        let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
+        return (headline, detail)
+    }
+}
+
 /// A pump alert/alarm surfaced to the UI. Backend-neutral: each `PumpBackend` maps its own
 /// notification type onto this so the app (and remotes) never depend on a specific pump library.
 /// `kind` raw values match the remote-protocol alert kinds (reminder 0 / alert 1 / alarm 2 /
