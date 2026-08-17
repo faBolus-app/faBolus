@@ -22,21 +22,28 @@ import faBolusCore
 final class DeliveryLedgerCoordinator {
 
     // MARK: - Injected seam bindings + side-effect hooks (D-04)
+    //
+    // `var`s with safe no-op defaults, set by `AppModel` right after construction (mirroring how
+    // `AppModel.init` already wires `source.onChange`/`source.commitBolusId` as separate statements
+    // AFTER `source` is assigned) — NOT `init` parameters. Swift's two-phase init forbids an `[weak
+    // self]`-capturing closure from appearing inside the very expression that initializes the stored
+    // property holding it (the property isn't "initialized" until that expression finishes evaluating),
+    // so these must be assigned once `self.deliveryLedgerCoordinator` itself already holds a value.
 
     /// Bound to `source.reconcile(bolusId:)`.
-    private let reconcile: (Int) async -> BolusReconciliation
+    var reconcile: (Int) async -> BolusReconciliation = { _ in .unavailable }
     /// Bound to `source.lastBolusCancelled`, read immediately after `deliver()` completes.
-    private let lastBolusCancelled: () -> Bool
+    var lastBolusCancelled: () -> Bool = { false }
     /// Bound to `AppModel.connectionTelemetry.recordReconciliation`.
-    private let recordReconciliation: (ConnectionTelemetry.ReconcileOutcome) -> Void
+    var recordReconciliation: (ConnectionTelemetry.ReconcileOutcome) -> Void = { _ in }
     /// Bound to `AppModel`'s private `postSafety(_:severity:title:body:dedupeKey:)`.
-    private let postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void
+    var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = { _, _, _, _, _ in }
     /// Bound to `AppModel.refresh()`.
-    private let refresh: () -> Void
+    var refresh: () -> Void = {}
     /// Mirrors the freshly computed block reason into `AppModel`'s own `@Observable` stored property
     /// (source of the published `deliveryBlockedReason`/`deliveryGloballyBlocked`), so SwiftUI
     /// observation is unbroken (D-04).
-    private let onDeliveryBlockChanged: (String?) -> Void
+    var onDeliveryBlockChanged: (String?) -> Void = { _ in }
 
     // MARK: - Ledger + store (moved verbatim from AppModel.swift :523-545)
 
@@ -72,19 +79,7 @@ final class DeliveryLedgerCoordinator {
     ///   no-storage-location block, which the filesystem path can't reproduce on a normal test host.
     init(ledgerStoreURL: URL? = nil,
          ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
-         forceNoDurableStore: Bool = false,
-         reconcile: @escaping (Int) async -> BolusReconciliation,
-         lastBolusCancelled: @escaping () -> Bool,
-         recordReconciliation: @escaping (ConnectionTelemetry.ReconcileOutcome) -> Void,
-         postSafety: @escaping (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void,
-         refresh: @escaping () -> Void,
-         onDeliveryBlockChanged: @escaping (String?) -> Void) {
-        self.reconcile = reconcile
-        self.lastBolusCancelled = lastBolusCancelled
-        self.recordReconciliation = recordReconciliation
-        self.postSafety = postSafety
-        self.refresh = refresh
-        self.onDeliveryBlockChanged = onDeliveryBlockChanged
+         forceNoDurableStore: Bool = false) {
         // Round-3 §5.8: require a DURABLE store (App Group / test override). If none exists, do NOT fall
         // back to a volatile /tmp file — create a placeholder store but keep delivery disabled via
         // `noDurableStore` (surfaced as a recoverable block), so a bolus is never tracked in a store that
@@ -188,7 +183,13 @@ final class DeliveryLedgerCoordinator {
         }
         return nil
     }
-    private func refreshDeliveryBlock() { onDeliveryBlockChanged(computeDeliveryBlockReason()) }
+    /// Recompute the current block reason and push it through `onDeliveryBlockChanged` (D-04). Exposed
+    /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored
+    /// from a previous run before its own `init` returns — mirroring the original `AppModel` ordering
+    /// where a caller could read `deliveryBlockedReason`/`deliveryGloballyBlocked` immediately after
+    /// construction, before the async `reconcileUnresolvedDeliveries()` launched at the end of `init`
+    /// completes.
+    func refreshDeliveryBlock() { onDeliveryBlockChanged(computeDeliveryBlockReason()) }
 
     /// P0 escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
     /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,
@@ -208,6 +209,47 @@ final class DeliveryLedgerCoordinator {
             terminalSaveFailed = true
         }
         refreshDeliveryBlock()
+    }
+
+    // MARK: - F1 (§13) on-device data export/erase support
+    //
+    // These are NOT part of the original :523-653/:2386-2507 D-03 cluster, but they read/mutate the same
+    // ledger internals (moved here with everything else) — `AppModel.buildPrivacyExport` /
+    // `eraseAllOnDeviceHealthData` / `maybeHandlePumpSwitch` consult them via these narrow accessors
+    // instead of reaching into coordinator-private state.
+
+    /// F1: a read-only snapshot of the ledger for the unified privacy-data export. Pure read.
+    var currentLedgerSnapshot: RemoteBolusLedger { remoteBolusLedger }
+
+    /// True while a delivery is in flight or the global block is set — used by callers (pump-switch
+    /// handling) that must DEFER rather than disturb ledger/snapshot state a crash-recovery reconcile
+    /// still needs. No message; see `eraseRefusalReason()` for the erase path's own worded refusal.
+    var hasInFlightOrUnresolvedDelivery: Bool { inFlightDeliveryKey != nil || computeDeliveryBlockReason() != nil }
+
+    /// F1: whether the given (peer, requestId) already reached a terminal outcome (used by
+    /// `presentRemoteBolus` to ignore a duplicate/already-handled remote request).
+    func isSettled(peerId: String, requestId: String) -> Bool {
+        remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId)
+    }
+
+    /// F1: the SAME refusal gate `eraseAllOnDeviceHealthData` enforces — never erase over an in-flight or
+    /// otherwise unresolved delivery (the ledger + snapshot are needed to reconcile it). Returns the
+    /// worded refusal reason, or nil when it's safe to proceed.
+    func eraseRefusalReason() -> String? {
+        if inFlightDeliveryKey != nil {
+            return "A bolus is being delivered right now. Wait for it to finish, then try again."
+        }
+        if let reason = computeDeliveryBlockReason() {
+            return "Can't erase while a delivery is unresolved — this data is needed to reconcile it. \(reason)"
+        }
+        return nil
+    }
+
+    /// F1: reset the ledger audit trail to fresh/empty, persisted durably (best-effort — the caller has
+    /// already confirmed via `eraseRefusalReason()` that no unresolved entry exists to lose).
+    func resetLedgerForErase() {
+        remoteBolusLedger = RemoteBolusLedger()
+        remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger)
     }
 
     // MARK: - Durable delivery ledger (P0)
