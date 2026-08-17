@@ -688,6 +688,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `snapshot`'s setter is private outside this file. Used to recreate the "last known reading was
     /// below the requested total" precondition that the `.possiblyOutOfInsulin` nack enrichment reads.
     func setReservoirUnitsForTesting(_ units: Double) { snapshot.reservoirUnits = units }
+    /// Test-only (Phase 09.2 Task 3, gap B3): directly set `viewedProfileId`, since the only production
+    /// setter (`refreshProfileSegments(idpId:)`) is `async`, requires `snapshot.connection == .connected`,
+    /// and burns a real 1.4s `Task.sleep` — lets a test arm "viewing profile X" before injecting an
+    /// `IDPSettingsResponse`/`IDPSegmentResponse` frame, to pin the segment-read cascade deterministically.
+    func setViewedProfileIdForTesting(_ id: Int) { viewedProfileId = id }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a
@@ -746,6 +751,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     /// Test accessor: whether `pollTimer` currently holds a live (non-nil) `Timer`.
     var pollTimerIsActiveForTesting: Bool { pollTimer != nil }
+
+    /// Test accessor (Phase 09.2 Task 3, gap B5): the predictive-burst deadline `schedulePredictiveBurst`
+    /// last armed — read-only, mirrors `pollTimerIsActiveForTesting`'s shape. Lets a test pin that an
+    /// advancing EGV reading schedules a burst (deadline becomes non-nil) and that a LATER advancing
+    /// reading reschedules it (the deadline moves forward), with no live `Timer` fired or waited on.
+    var predictiveBurstDeadlineForTesting: Date? { predictiveBurstDeadline }
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { badOpcodes }
@@ -2566,15 +2577,27 @@ extension TandemBackend: PumpBLEClientDelegate {
         case let m as ProfileStatusResponse:
             profileActiveIdpId = m.activeIdpId
             snapshot.profiles = []
-            for id in m.presentIdpIds where id >= 0 { try? client.send(IDPSettingsRequest(idpId: id)) }
+            // Phase 09.2 Task 3 (D-01, gap B3): routed through `tx` (== `client` in production, since
+            // `injectedTransport` is always nil outside tests — byte-identical wire behavior) instead of
+            // `client` directly, so a test can inject a `ProfileStatusResponse` via `FakePumpTransport` and
+            // observe the resulting `IDPSettingsRequest` cascade via `fake.sent` — the same pattern already
+            // used one case below for `HistoryLogStatusRequest`. No other behavior changes: same defaults
+            // (`authenticationKey: []`, `pumpTimeSinceReset: 0`, `allowInsulinDelivery: false`) `client.send`
+            // itself used, same per-id loop/order, same `try?` swallow-on-failure.
+            for id in m.presentIdpIds where id >= 0 {
+                try? tx.send(IDPSettingsRequest(idpId: id), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            }
         case let m as IDPSettingsResponse:
             snapshot.profiles.removeAll { $0.idpId == m.idpId }
             snapshot.profiles.append(PumpProfileInfo(idpId: m.idpId, name: m.name, active: m.idpId == profileActiveIdpId,
                                                      insulinDurationMinutes: m.insulinDuration))
             snapshot.profiles.sort { $0.idpId < $1.idpId }
-            // When viewing a specific profile's segments, read each one.
+            // When viewing a specific profile's segments, read each one. Same `tx`-routing note as the
+            // `ProfileStatusResponse` case above (gap B3).
             if m.idpId == viewedProfileId {
-                for i in 0..<max(0, m.numberOfProfileSegments) { try? client.send(IDPSegmentRequest(idpId: m.idpId, segmentIndex: i)) }
+                for i in 0..<max(0, m.numberOfProfileSegments) {
+                    try? tx.send(IDPSegmentRequest(idpId: m.idpId, segmentIndex: i), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+                }
             }
         case let m as IDPSegmentResponse where m.idpId == viewedProfileId:
             snapshot.viewedProfileSegments.removeAll { $0.segmentIndex == m.segmentIndex }
