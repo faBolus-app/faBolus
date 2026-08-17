@@ -211,111 +211,20 @@ public final class TandemBackend: NSObject, PumpBackend {
     private let injectedTransport: PumpTransport?
     private var tx: PumpTransport { injectedTransport ?? client }
     private var coordinator: (any PairingCoordinating)?
-    private var pollTimer: Timer?
+    /// Phase 09 Wave 3 (D-06): the send-side BLE read cascade — bootstrap trio, tiered polling, cadence
+    /// gating, predictive burst, coalescers, and the `badOpcodes` backstop — extracted into its own type
+    /// behind injected closures (`send`/`isConnected`/`pumpTimeAnchor`/`onStartPollingCycleBegin`, wired
+    /// in `init` right below since Swift's two-phase init forbids a `[weak self]`-capturing closure
+    /// inside the very expression that constructs the property holding it — the same pattern
+    /// `DeliveryLedgerCoordinator`'s hooks use).
+    private let readScheduler = PumpReadScheduler()
 
-    // MARK: - Status read dispatch
+    // MARK: - Status read dispatch + post-pair bootstrap order (Phase 09 Wave 3, D-06)
     //
-    // An EARLIER fix cycle in `.planning/debug/pump-pairing-loop.md` added an app-level `readQueue`
-    // that spaced every CURRENT_STATUS read `readSpacingSec` (200ms) apart, one at a time, built on an
-    // on-device capture showing `startPolling()`'s old unthrottled 13-message burst answered 0/13 before
-    // the pump tore the link down ~170ms later. A LATER capture (on-device capture #6) isolated that
-    // same drop to exactly ONE opcode: `CurrentEgvGuiDataV2Request` (op192), answered with
-    // `ErrorResponse`/BAD_OPCODE ~70ms after being sent, right before the teardown. Once the pump drops
-    // the link after that one rejection, every OTHER already-in-flight read in the same burst also goes
-    // unanswered — fully explaining "0 of 13 answered" without burst VOLUME being a factor at all. Nor
-    // does the vendored jwoglom/pumpx2-oracle reference pace its own reads: `TandemPump.java
-    // #onPumpConnected` fires its `ApiVersionRequest`/`PumpVersionRequest`/`TimeSinceResetRequest`
-    // bootstrap trio via `sendCommand()` back-to-back, with no delay between calls, relying on the same
-    // OS-level write serialization `PumpBLEClient.send()`/CoreBluetooth already provide for
-    // `.withResponse` writes (the OS itself won't dispatch a second GATT write before the first
-    // completes) — matching `WriteType.WITH_RESPONSE` in the reference's own `sendCommand()`. With op192
-    // no longer sent at all (see the EGV request sites below) and the opcode-agnostic `badOpcodes`
-    // backstop in place regardless, the app-level pacing/queue had no independent justification and was
-    // REMOVED — reads are sent directly, matching the reference's own unpaced approach.
-    /// Sends one CURRENT_STATUS/pairing-adjacent read directly. Applies the `badOpcodes` never-resend
-    /// guard every status read needs (see its own doc comment) and logs the type/opcode/send outcome as
-    /// `"read send →"` — distinct from the `"pairing send →"`/`"pairing recv ←"` lines above, so a future
-    /// on-device capture can name exactly which read request the pump was answering (or not) around a
-    /// drop. Never logs cargo/payload bytes (per D-08).
-    @discardableResult
-    private func sendStatusRead(_ message: Message) -> Bool {
-        let typeName = String(describing: type(of: message))
-        let opcode = message.opCode
-        // SEVENTH fix cycle: never (re-)send an opcode the pump has already rejected with
-        // ErrorResponse this connection-lifetime — see `badOpcodes`'s doc comment.
-        guard !badOpcodes.contains(opcode) else {
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=skipped (previously rejected by pump)")
-            #if DEBUG
-            onReadSkippedForTesting?(typeName, opcode)
-            #endif
-            return false
-        }
-        var sent = false
-        do {
-            try client.send(message)
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=sent")
-            sent = true
-        } catch {
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=threw")
-        }
-        #if DEBUG
-        onReadDispatchedForTesting?(typeName, opcode)
-        #endif
-        return sent
-    }
-    #if DEBUG
-    /// Test seam: fires each time `sendStatusRead` actually attempts a real send (regardless of
-    /// `client.send`'s own throw/success) — reports the type name/opcode, so a test can assert send
-    /// ORDER (e.g. the reference-required bootstrap trio first, per the "MARK: - Post-pair bootstrap
-    /// order" fix below) without a live `CBCentralManager`.
-    var onReadDispatchedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)?
-    /// SEVENTH fix cycle test seam: fires instead of `onReadDispatchedForTesting` when `sendStatusRead`
-    /// SKIPS a read because its opcode is in `badOpcodes` — lets a test assert a previously-error'd
-    /// opcode is dropped, not sent, on a later poll.
-    var onReadSkippedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)?
-    #endif
-
-    // MARK: - Post-pair bootstrap order
-    //
-    // THIRD fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #3): the settle
-    // delay above worked exactly as designed — the pump held an idle freshly-paired V1 link fine
-    // for the full 1.5s (no drop) — but the loop PERSISTED: the pump dropped the link ~315ms after
-    // the very FIRST post-settle READ (`ControlIQIOBRequest`, op108 — `fastRead()`'s first message),
-    // refuting settle-TIMING as the (sole) fix. Grounded directly in the vendored jwoglom/pumpX2
-    // reference (`TandemKit/vendor/pumpx2-oracle/androidLib/src/main/java/com/jwoglom/pumpx2/pump/
-    // bluetooth/TandemPump.java`, method `onPumpConnected`, and `TandemBluetoothHandler.java`'s
-    // `PumpChallengeResponse`/JPAKE-success branches, which both call `internalOnPumpConnected` →
-    // `tandemPump.onPumpConnected` the INSTANT auth succeeds — the exact same trigger point as this
-    // port's `onPaired`): the reference's own base class, UNMODIFIED by the sample app (the only
-    // consumer in this vendor tree), ALWAYS sends exactly `ApiVersionRequest`, then
-    // `PumpVersionRequest`, then `TimeSinceResetRequest` — in that order — as the FIRST GATT traffic
-    // issued post-auth, before any other current-status polling. `ApiVersionRequest.java`'s own doc
-    // comment confirms this is foundational, not incidental: "this message is invoked automatically
-    // by PumpX2 on connection with the pump so that the state can be tracked globally." This port's
-    // `startPolling()` instead fired `fastRead()`'s CURRENT_STATUS reads FIRST, with
-    // `ApiVersionRequest`/`TimeSinceResetRequest` not reached until position 9-10 of 13 inside
-    // `staticRead()` — exactly matching capture #3 (op108 sent first, drop follows). Checked and
-    // REFUTED directly against the reference: this is NOT a signing/HMAC requirement —
-    // `Packetize.java`/`Packetize.swift` only append the 24-byte HMAC block when a message declares
-    // `signed`/`@MessageProps(signed=true)`, and NONE of `ControlIQIOBRequest`, the EGV read,
-    // `ApiVersionRequest`, `PumpVersionRequest`, or `TimeSinceResetRequest` do, in either the port or
-    // the reference — it is purely a required FIRST-MESSAGE ORDER. `sendPostPairBootstrapReads()`
-    // below sends that exact trio, in that order, directly, ahead of every other read every time
-    // `startPolling()` (re)starts, matching the reference's required order exactly. (An earlier
-    // post-pair settle DELAY was also tried here; on-device capture #3, cited above, refuted
-    // settle-TIMING as a sufficient fix on its own, and it was removed once op192 stopped being sent
-    // at all — the actual root cause — made it unnecessary; see `.planning/debug/pump-pairing-loop.md`.)
-    /// Sends the reference-required post-auth bootstrap trio — `ApiVersionRequest`,
-    /// `PumpVersionRequest`, `TimeSinceResetRequest`, in that order — ahead of any other read.
-    /// Called once per `startPolling()` invocation (not from the recurring `pollTimer` tick's direct
-    /// `fastRead()`/`staticRead()` calls, which intentionally do NOT re-run the bootstrap — the
-    /// reference only sends it once, immediately after `onPumpConnected`/`onPaired`, not on every
-    /// recurring poll).
-    private func sendPostPairBootstrapReads() {
-        for r: Message in [ApiVersionRequest(), PumpVersionRequest(), TimeSinceResetRequest()] {
-            sendStatusRead(r)
-        }
-    }
+    // Moved to `PumpReadScheduler` (`sendStatusRead`, the `badOpcodes` never-resend backstop, the
+    // `onReadDispatchedForTesting`/`onReadSkippedForTesting` test seams, and `sendPostPairBootstrapReads`
+    // — see that file for the full fix-cycle history these preserve verbatim). `readScheduler` sends
+    // through the injected `send` closure (bound to `client.send` below), so the wire path is unchanged.
 
     /// 6-digit JPAKE pairing code (from the pump screen). Set before `connect()`.
     public var pairingCode: String = ""
@@ -385,16 +294,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// the reliable, direct model signal — the API version does NOT cleanly separate the two (newer
     /// t:slim X2 firmware reports API >= 3.5). nil = name didn't identify it → fall back to API version.
     private var detectedIsMobi: Bool?
-    /// SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): opcodes the
-    /// pump has explicitly rejected with `ErrorResponse` this connection-lifetime — `sendStatusRead()`
-    /// silently skips (never re-sends) any message whose opcode is in this set, so a single BAD_OPCODE
-    /// (or any other pump-side rejection) can never re-trigger the observed teardown loop again.
-    /// Generic/opcode-agnostic — a backstop independent of any per-message version handling, for
-    /// whatever the app doesn't otherwise anticipate. Deliberately NOT reset on disconnect (unlike
-    /// `pumpFeatureBits`/`detectedIsMobi`): an opcode already proven unsupported by THIS pump stays
-    /// proven unsupported across a BLE reconnect to the same physical device — re-learning it every
-    /// cycle would just reproduce one bad exchange (and its ~70ms drop risk) on every single reconnect.
-    private var badOpcodes: Set<UInt8> = []
+    // The `badOpcodes` never-resend backstop moved to `readScheduler` (Phase 09 Wave 3, D-06) — see
+    // `PumpReadScheduler.badOpcodes`'s doc comment for the SEVENTH fix cycle history. The `ErrorResponse`
+    // delegate case (still local this wave, D-07) feeds it via `readScheduler.insertBadOpcode(_:)`.
     /// P13: the pump's own capability bitmask (`PumpFeaturesV1Response`, op 79), projected to the
     /// neutral `PumpFeatureBits` at the decode boundary and consumed by `capabilities`. nil until the
     /// once-per-connect `staticRead` reply lands (or on firmware that never answers) → preset fallback.
@@ -450,29 +352,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     // (characteristic, opcode), bounds each with a deadline, and is failed-closed by the client on every
     // disconnect / transport error — so a lost reply can neither hang a bolus nor leave the write policy
     // elevated (audit A-03 / FB-02).
-    // Single-flight glucose refresh (audit C-05). Concurrent callers coalesce onto ONE in-flight pump
-    // read and are all resumed exactly once when the CGM reading arrives, on timeout, or on disconnect —
-    // fixing the old single-slot design where a second caller orphaned the first (permanent hang) and a
-    // stale timeout could resume a newer request. The generation tag makes a timeout a no-op once its
-    // read has completed.
-    private var glucoseWaiters: [CheckedContinuation<Void, Never>] = []
-    private var glucoseReadGeneration = 0
-    private var glucoseReadInFlight = false
-    // DIF-core single-flight for the calc inputs (modeled on the glucose one above). Concurrent callers
-    // coalesce onto ONE in-flight op-115 + op-109 read and are all resumed exactly once when BOTH frames
-    // arrive, on timeout, or on disconnect. `calcInputGotIob`/`calcInputGotTherapy` track which of the two
-    // frames has landed since the read began; the generation tag makes a stale timeout a no-op. Each waiter
-    // is resumed with a Bool = "did BOTH frames confirm for the read I participated in" — the per-attempt
-    // freshness proof `recommendBolus` gates on. This is coalescing-aware (a joiner gets the SAME result as
-    // the in-flight read it joined, not a wall-clock compare against its own start) and clock-free.
-    private var calcInputWaiters: [CheckedContinuation<Bool, Never>] = []
-    private var calcInputReadGeneration = 0
-    private var calcInputReadInFlight = false
-    private var calcInputGotIob = false
-    private var calcInputGotTherapy = false
-    /// Bounded wait for `refreshCalcInputsNow` (safety timeout so a silent pump never hangs a compose).
-    /// Overridable in tests to keep the fail-closed suite fast. Same 2.5 s default as the glucose refresh.
-    var calcInputRefreshTimeout: TimeInterval = 2.5
+    // The single-flight glucose/calc-input coalescers moved to `readScheduler` (Phase 09 Wave 3, D-06) —
+    // see `PumpReadScheduler.glucoseWaiters`/`calcInputWaiters`'s doc comments. `linkDroppedCleanup`/
+    // `applyClientError` below call `readScheduler.completeGlucoseRead()`/`completeCalcInputRead()`
+    // unconditionally (both are no-ops when nothing is in flight, so this is behavior-identical to the
+    // old outer `if glucoseReadInFlight || !glucoseWaiters.isEmpty` guards, which could not survive the
+    // move since those flags are now private to the scheduler).
 
     #if DEBUG
     /// Test seam: feed a raw response frame through the REAL parse + delegate-handler path (`didReceiveFrame`),
@@ -658,6 +543,17 @@ public final class TandemBackend: NSObject, PumpBackend {
         super.init()
         client.writePolicy = .readOnly
         client.delegate = self
+        wireReadScheduler()
+    }
+
+    /// Wires `readScheduler`'s injected closures (D-04 hook pattern) — called from BOTH initializers
+    /// right after `super.init()`, since Swift's two-phase init forbids a `[weak self]`-capturing
+    /// closure inside the very expression that constructs the property holding it.
+    private func wireReadScheduler() {
+        readScheduler.send = { [weak self] msg in try self?.client.send(msg) }
+        readScheduler.isConnected = { [weak self] in self?.snapshot.connection == .connected }
+        readScheduler.pumpTimeAnchor = { [weak self] in self?.pumpTimeAnchor }
+        readScheduler.onStartPollingCycleBegin = { [weak self] in self?.lastCgmPumpSec = 0 }
     }
 
     #if DEBUG
@@ -666,6 +562,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     init(testTransport: PumpTransport, authKey: [UInt8] = [0x01]) {
         self.injectedTransport = testTransport
         super.init()
+        wireReadScheduler()
         self.authenticationKey = authKey
         self.snapshot.connection = .connected
         // Phase 2 (D-07/Pitfall 1): default this test-double to "op-115 already read" — mirrors the
@@ -714,64 +611,61 @@ public final class TandemBackend: NSObject, PumpBackend {
         pumpClientDidBecomeReady(client)
     }
 
-    /// Test seam: runs the REAL `startPolling()` then immediately stops the Timers a live app would
-    /// keep running — this seam only wants the synchronous send-order effect for assertion, not a real
-    /// 15 s-repeating background `Timer` ticking during a unit test.
-    func startPollingForTesting() {
-        startPolling()
-        pollTimer?.invalidate(); pollTimer = nil
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+    // MARK: - Read-cascade test seams (Phase 09 Wave 3, D-06): forwarded to `readScheduler` under the
+    // SAME names, so every pre-existing guard test (ReadCascadeMembershipGuardTests,
+    // ReadCascadeChainingGuardTests, PumpPairingInstrumentationTests, TandemDeliveryOutcomeTests) keeps
+    // observing identical dispatch with zero test-file changes.
+
+    /// Test seam: fires each time `readScheduler`'s `sendStatusRead` actually attempts a real send.
+    var onReadDispatchedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)? {
+        get { readScheduler.onReadDispatchedForTesting }
+        set { readScheduler.onReadDispatchedForTesting = newValue }
+    }
+    /// Test seam: fires instead of `onReadDispatchedForTesting` when a read is skipped (bad opcode).
+    var onReadSkippedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)? {
+        get { readScheduler.onReadSkippedForTesting }
+        set { readScheduler.onReadSkippedForTesting = newValue }
+    }
+    /// Test-only: override `readScheduler`'s `scheduleAlertRead()` delay.
+    var alertReadDelaySecForTesting: Double? {
+        get { readScheduler.alertReadDelaySecForTesting }
+        set { readScheduler.alertReadDelaySecForTesting = newValue }
     }
 
+    /// Test seam: runs the REAL `startPolling()` then immediately stops the Timers a live app would
+    /// keep running.
+    func startPollingForTesting() { readScheduler.startPollingForTesting() }
+
     /// Test seam: exercises the recurring `pollTimer` tick's coincidence where `fastRead()` AND
-    /// `staticRead()` fire together (every 40th tick, since 40 is divisible by 4 — see the ticker in
-    /// `startPolling()`) directly, without waiting on a real `Timer`.
+    /// `staticRead()` fire together, directly, without waiting on a real `Timer`.
     func simulateRecurringFastAndStaticReadTickForTesting() {
-        fastRead()
-        staticRead()
+        readScheduler.simulateRecurringFastAndStaticReadTickForTesting()
     }
 
     /// Phase 09.2 Task 2 test seam (D-01/D-06, gap B2): fires the REAL recurring `pollTimer` tick body
-    /// (`recurringPollTick()`) directly, without waiting on the live 15s-repeating `Timer` — unlike
-    /// `simulateRecurringFastAndStaticReadTickForTesting()` above (which calls `fastRead()`/`staticRead()`
-    /// directly, bypassing the `%4`/`%40` cadence gating entirely), this seam exercises the SAME gating
-    /// the production timer runs, so a test can pin alerts-every-tick / fast-on-%4 / static-on-%40 across
-    /// a sequence of ticks. Relocates onto `PumpReadScheduler` in Wave 3 (D-06); this seam runs the real
-    /// body verbatim and changes no production behavior itself.
-    func firePollTimerTickForTesting() { recurringPollTick() }
+    /// directly, without waiting on the live 15s-repeating `Timer`.
+    func firePollTimerTickForTesting() { readScheduler.firePollTimerTickForTesting() }
 
     /// FIFTH fix cycle test seam: like `startPollingForTesting()` but does NOT immediately invalidate
     /// `pollTimer` — lets a test observe that `pollTimer` is a live `Timer` right after `startPolling()`
-    /// runs, then separately verify `linkDroppedCleanup()` (via `applyClientState`) is what tears it
-    /// down, rather than this seam's own cleanup masking the question. `predictivePollTimer` is still
-    /// stopped here (unrelated to this fix; same hygiene reason `startPollingForTesting()` stops it).
+    /// runs, then separately verify `linkDroppedCleanup()` (via `applyClientState`) is what tears it down.
     func startPollingLeavingPollTimerRunningForTesting() {
-        startPolling()
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        readScheduler.startPollingLeavingPollTimerRunningForTesting()
     }
-    /// Test accessor: whether `pollTimer` currently holds a live (non-nil) `Timer`.
-    var pollTimerIsActiveForTesting: Bool { pollTimer != nil }
+    /// Test accessor: whether `readScheduler`'s `pollTimer` currently holds a live (non-nil) `Timer`.
+    var pollTimerIsActiveForTesting: Bool { readScheduler.pollTimerIsActiveForTesting }
 
-    /// Test accessor (Phase 09.2 Task 3, gap B5): the predictive-burst deadline `schedulePredictiveBurst`
-    /// last armed — read-only, mirrors `pollTimerIsActiveForTesting`'s shape. Lets a test pin that an
-    /// advancing EGV reading schedules a burst (deadline becomes non-nil) and that a LATER advancing
-    /// reading reschedules it (the deadline moves forward), with no live `Timer` fired or waited on.
-    var predictiveBurstDeadlineForTesting: Date? { predictiveBurstDeadline }
+    /// Test accessor (Phase 09.2 Task 3, gap B5): the predictive-burst deadline last armed.
+    var predictiveBurstDeadlineForTesting: Date? { readScheduler.predictiveBurstDeadlineForTesting }
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
-    var badOpcodesForTesting: Set<UInt8> { badOpcodes }
+    var badOpcodesForTesting: Set<UInt8> { readScheduler.badOpcodesForTesting }
 
     /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
-    /// diagnostics section — mirrors `badOpcodesForTesting` exactly (additive, internal, no new
-    /// `client.send`/re-derivation; Pitfall 2). Consumed by `AppModel.badOpcodesForDiagnostics`.
-    /// D-01 (Part A, formalized Task 2): this diagnostics surface — like `BLESessionLog.record` and
-    /// `DebugMenuView`'s export-write path — is permanent first-class, never a debug-only aid;
-    /// `DiagnosticsGatingGuardTests` pins that no compilation gate wraps it.
-    var badOpcodesForDiagnostics: Set<UInt8> { badOpcodes }
-    /// SEVENTH fix cycle test seam: run one predictive-burst kick (the second and third of the three
-    /// direct EGV send sites). Lets a test prove those sends honour the `badOpcodes` guard exactly like
-    /// every other status read.
-    func simulatePredictiveBurstForTesting() { runPredictiveBurst() }
+    /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`.
+    var badOpcodesForDiagnostics: Set<UInt8> { readScheduler.badOpcodesForDiagnostics }
+    /// SEVENTH fix cycle test seam: run one predictive-burst kick.
+    func simulatePredictiveBurstForTesting() { readScheduler.simulatePredictiveBurstForTesting() }
 
     /// Phase 09.7-01 test seam: fires the gap-sync page-done debounce immediately, without waiting on a
     /// real 2.5 s `Timer` — mirrors `simulateRecurringFastAndStaticReadTickForTesting`'s "synchronous
@@ -794,8 +688,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     public func disconnect() {
-        pollTimer?.invalidate(); pollTimer = nil
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        readScheduler.stopAllTimers()
         client.disconnect()
     }
 
@@ -820,7 +713,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // sub-second race a routine-poll reply already in transit when this compose began can satisfy the
         // proof on ~1-s-old params. Clinically indistinguishable (a segment boundary ±1 s); txId correlation
         // closes it fully. Recorded for §13 in dosing-input-freshness-plan-2026-08-07.md.
-        let inputsFreshThisAttempt = await refreshCalcInputsConfirmed()
+        let inputsFreshThisAttempt = await readScheduler.refreshCalcInputsConfirmed()
 
         var rec = BolusRecommendation()
         rec.carbsGrams = carbsGrams; rec.bgMgdl = bgMgdl; rec.iobUnits = snapshot.iobUnits
@@ -917,109 +810,21 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Force a fresh CGM read and wait (bounded ~2.5 s) for it, so a correction uses the newest value.
-    /// Single-flight (audit C-05): concurrent callers coalesce onto one pump read; all are resumed
-    /// exactly once when the reading arrives, on timeout, or on disconnect.
+    /// Forwards to `readScheduler` (Phase 09 Wave 3, D-06) — see `PumpReadScheduler.refreshGlucoseNow()`.
     public func refreshGlucoseNow() async {
-        guard snapshot.connection == .connected else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            glucoseWaiters.append(cont)
-            if glucoseReadInFlight { return }   // join the in-flight read
-            glucoseReadInFlight = true
-            glucoseReadGeneration &+= 1
-            let gen = glucoseReadGeneration
-            // SEVENTH fix cycle: via `sendStatusRead` so the `badOpcodes` guard applies here too (see
-            // its doc comment), and via `CurrentEGVGuiDataRequest` (V1, op34) rather than the V2
-            // request — see `fastRead()`'s doc comment for why. If the read can't be sent at all,
-            // release the coalesced waiters now instead of stalling every caller for the full 2.5s
-            // timeout.
-            guard sendStatusRead(CurrentEGVGuiDataRequest()) else {
-                completeGlucoseRead()
-                return
-            }
-            // Safety timeout so we never hang if the pump doesn't answer. Tagged by generation, so a
-            // stale timeout whose read already completed is a no-op.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                guard let self, self.glucoseReadInFlight, self.glucoseReadGeneration == gen else { return }
-                self.completeGlucoseRead()
-            }
-        }
+        await readScheduler.refreshGlucoseNow()
     }
 
-    /// Resume every coalesced glucose waiter exactly once (CGM arrival, timeout, or disconnect).
-    private func completeGlucoseRead() {
-        glucoseReadInFlight = false
-        let waiters = glucoseWaiters
-        glucoseWaiters.removeAll()
-        for w in waiters { w.resume() }
-    }
-
-    /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read (public entry point for a
-    /// display refresh; the confirmation result is only needed by `recommendBolus`, which calls the
-    /// `-Confirmed` variant directly).
+    /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read. Forwards to
+    /// `readScheduler` (Phase 09 Wave 3, D-06) — see `PumpReadScheduler.refreshCalcInputsNow()`.
     public func refreshCalcInputsNow() async {
-        _ = await refreshCalcInputsConfirmed()
+        await readScheduler.refreshCalcInputsNow()
     }
 
-    /// DIF-core per-attempt freshness proof. Forces a fresh op-115 + op-109 read and waits (bounded) for
-    /// BOTH, then RETURNS whether both frames were confirmed by the read this call participated in.
-    /// Single-flight (audit C-05, modeled on `refreshGlucoseNow`): concurrent callers coalesce onto one
-    /// read; all resume exactly once — with the SAME confirmation Bool — when both frames arrive, on
-    /// timeout, or on disconnect. Never hangs (the safety timeout guarantees resumption).
-    ///
-    /// The returned Bool — not a wall-clock stamp comparison — is the authoritative gate, which fixes two
-    /// hazards a `Date()`-based proof had: (1) a compose that JOINS an in-flight read gets that read's real
-    /// outcome, so a healthy pump that answered both frames verifies even for the joiner (no spurious
-    /// fail-closed on every keystroke-triggered overlapping compose); (2) there is no clock in the proof,
-    /// so a backward wall-clock step can't make a stale value look freshly confirmed. `false` (⇒ fail
-    /// closed) when not connected, on timeout (a frame never arrived), or on disconnect. `calcInputGotIob`/
-    /// `calcInputGotTherapy` count only genuinely-received parsed frames (set in the op-109/op-115 handlers
-    /// via `noteCalcInputArrived`), so a cache can never satisfy the proof.
-    @discardableResult
-    func refreshCalcInputsConfirmed() async -> Bool {
-        guard snapshot.connection == .connected else { return false }
-        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            calcInputWaiters.append(cont)
-            if calcInputReadInFlight { return }   // join the in-flight read; resumed with its result
-            calcInputReadInFlight = true
-            calcInputGotIob = false
-            calcInputGotTherapy = false
-            calcInputReadGeneration &+= 1
-            let gen = calcInputReadGeneration
-            try? client.send(BolusCalcDataSnapshotRequest())
-            try? client.send(ControlIQIOBRequest())
-            // Safety timeout so a silent pump never hangs the compose. Tagged by generation, so a stale
-            // timeout whose read already completed is a no-op.
-            DispatchQueue.main.asyncAfter(deadline: .now() + calcInputRefreshTimeout) { [weak self] in
-                guard let self, self.calcInputReadInFlight, self.calcInputReadGeneration == gen else { return }
-                self.completeCalcInputRead()
-            }
-        }
-    }
-
-    /// Record that one of the two calc-input frames arrived since the read began; complete once BOTH have.
-    /// A no-op when no read is in flight (routine polling also delivers these frames). Only fires from the
-    /// op-109/op-115 delegate handlers on a genuinely-received frame — never from cache.
-    ///
-    /// Correlation caveat (§13 / Addendum G): frames are attributed to the in-flight read by OPCODE only,
-    /// not per-request — the fire-and-forget reads carry no txId the delegate layer can match. So a
-    /// routine-poll reply already in transit when the read began counts toward it. Bounded to ~1 s of
-    /// possible staleness (the in-transit window) and clinically indistinguishable; per-request txId
-    /// correlation (Addendum G, deferred to newer-firmware bench) is the complete fix.
-    private func noteCalcInputArrived(iob: Bool) {
-        guard calcInputReadInFlight else { return }
-        if iob { calcInputGotIob = true } else { calcInputGotTherapy = true }
-        if calcInputGotIob && calcInputGotTherapy { completeCalcInputRead() }
-    }
-
-    /// Resume every coalesced calc-input waiter exactly once, with the read's confirmation (both frames
-    /// arrived ⇒ true; timeout/disconnect ⇒ at least one flag false ⇒ false). The value is captured BEFORE
-    /// the reset so a subsequent read cannot race it.
-    private func completeCalcInputRead() {
-        calcInputReadInFlight = false
-        let confirmed = calcInputGotIob && calcInputGotTherapy
-        let waiters = calcInputWaiters
-        calcInputWaiters.removeAll()
-        for w in waiters { w.resume(returning: confirmed) }
+    /// Test-only override for the calc-input coalescer's safety timeout. Forwards to `readScheduler`.
+    var calcInputRefreshTimeout: TimeInterval {
+        get { readScheduler.calcInputRefreshTimeout }
+        set { readScheduler.calcInputRefreshTimeout = newValue }
     }
 
     /// Delivers a standard bolus via the validated signed path. Raises the write policy to
@@ -1286,8 +1091,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         lastBolusCancelled = false
         snapshot.lastBolusDate = Date()
         onChange?()
-        pollTimer?.invalidate()   // pause routine polling so its reads don't interfere
-        defer { startPolling() }  // resume routine polling on any exit (success or indeterminate throw)
+        readScheduler.pausePollingForDelivery()   // pause routine polling so its reads don't interfere
+        defer { readScheduler.startPolling() }    // resume routine polling on any exit (success or indeterminate throw)
 
         let timeout = deliveryPollTimeoutOverride ?? min(600.0, max(60.0, units * 90.0))
         let deadline = Date().addingTimeInterval(timeout)
@@ -1396,7 +1201,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         acknowledged[ackKey] = Date()
         mergeNotifications()
         onChange?()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.alertRead() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.readScheduler.alertRead() }
         // If the pump never answers the dismiss, say so — distinguishes "rejected/no response" from
         // "accepted but condition persists" on the next test.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
@@ -1694,66 +1499,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         return (id?.isEmpty ?? true) ? nil : id
     }
 
-    // MARK: - Helpers (tiered polling to spare phone + pump battery)
-
-    private var pollTick = 0
-
-    /// Fast-changing state (~60 s): IOB, glucose, reservoir, last bolus, battery. Each send goes
-    /// through `sendStatusRead()` (see its doc comment) for the `badOpcodes` guard + logging, but is
-    /// otherwise sent directly with no artificial pacing between messages.
-    ///
-    /// SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the CGM read
-    /// here uses `CurrentEGVGuiDataRequest` (V1, op34), never `CurrentEgvGuiDataV2Request` (V2, op192).
-    /// Capture #6 caught an older t:slim X2 (API 2.5) answering op192 with `ErrorResponse`/BAD_OPCODE
-    /// and tearing the BLE link down ~70ms later — the actual root cause of this session's
-    /// connect/pair/disconnect loop. The reference's own message metadata backs treating V2 as
-    /// unconfirmed on any real pump, not just older ones: `CurrentEgvGuiDataV2Request.java`/
-    /// `CurrentEgvGuiDataV2Response.java` both declare `minApi=KnownApiVersion.API_FUTURE` (99.99),
-    /// higher than every cataloged real firmware version including the newest (`MOBI_API_V3_8`, 3.8) —
-    /// `MessageProps.java`'s own default `minApi()` is `API_V2_1` (2.1, the earliest known version),
-    /// so this is a deliberate override, not an oversight. The reference never sends V2 anywhere
-    /// itself; its own automatic qualifying-event re-fetch (`QualifyingEvent.java`) uses V1
-    /// (`CurrentEGVGuiDataRequest`) exclusively. V1 and V2 carry byte-identical cargo semantics (see
-    /// TandemKit's `CurrentEGVGuiDataResponse`/`CurrentEgvGuiDataV2Response` doc comments), so using V1
-    /// unconditionally costs no data on any pump generation — and it's what the owner's on-device
-    /// re-capture confirmed holds the link on the API-2.5 pump. An earlier fix cycle here gated V2 vs
-    /// V1 by a `>= 3` major-API-version heuristic; that threshold was never reference- or
-    /// on-device-confirmed (no known pump has ever been shown to accept op192), so it was replaced by
-    /// always sending V1 — simpler, and the only behavior actually verified safe. The opcode-agnostic
-    /// `badOpcodes` backstop (`sendStatusRead`) stays regardless, as a safety net for any OTHER read
-    /// the pump ever rejects.
-    ///
-    /// HomeScreenMirrorRequest belongs in the fast tier: it carries the pump's own CGM trend icon
-    /// (C8 — the authoritative arrow), so it has to stay as fresh as the glucose value it annotates.
-    private func fastRead() {
-        for r: Message in [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           HomeScreenMirrorRequest(), LoadStatusRequest()] {
-            sendStatusRead(r)
-        }
-    }
-
-    /// Alerts/alarms/reminders/malfunctions — sent as a separate burst, spaced ~1.5s from
-    /// `fastRead()`/`staticRead()` by `scheduleAlertRead()` below.
-    private func alertRead() {
-        for r: Message in [AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(),
-                           ReminderStatusRequest(), MalfunctionStatusRequest()] {
-            sendStatusRead(r)
-        }
-    }
-
-    /// Slow/static settings (once per connect + every ~10 min): basal, calculator snapshot
-    /// (carb ratio/ISF/target/max), and the pump-clock anchor.
-    private func staticRead() {
-        // PumpFeaturesV1Request (op 78→79) is an unsigned empty current-status read — same shape as
-        // ApiVersionRequest — so it rides the same send path here, behind auth by construction
-        // (staticRead only runs after pairing, via startPolling). Its reply feeds `capabilities` (P13).
-        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
-                           ApiVersionRequest(), PumpFeaturesV1Request(), ControlIQInfoV2Request(),
-                           BasalLimitSettingsRequest()] {
-            sendStatusRead(r)
-        }
-    }
+    // MARK: - Helpers
+    //
+    // The tiered polling functions (`fastRead`/`alertRead`/`staticRead`), `pollTick`, the recurring
+    // `pollTimer` cadence gating, `pollCycleGeneration`/`scheduleAlertRead`, and the predictive-burst
+    // timer machinery (`predictivePollTimer`/`predictiveBurstDeadline`/`schedulePredictiveBurst`/
+    // `runPredictiveBurst`) all moved to `readScheduler` (Phase 09 Wave 3, D-06) — see
+    // `PumpReadScheduler.swift` for their doc-comment history (including the fix-cycle trail that
+    // grounds the bootstrap-order and generation-guard behavior). `lastCgmPumpSec` and
+    // `applyEgvReading` below stay here (D-07, deferred): the response-applier hasn't moved yet.
 
     /// Decode boundary (P13): project the pump's `PumpFeaturesV1` capability bitmask onto the neutral
     /// `PumpFeatureBits` faBolusCore consumes — keeping the PumpX2 message type out of the core.
@@ -1764,31 +1518,14 @@ public final class TandemBackend: NSObject, PumpBackend {
                         controlIQProSupported: r.controlIQProSupported)
     }
 
-    // MARK: - CGM reading time + predictive polling (Bug 5)
+    // MARK: - CGM reading time (Bug 5)
 
-    /// Latest CGM reading time seen from the pump (its own clock), used to detect a *new* reading.
+    /// Latest CGM reading time seen from the pump (its own clock), used to detect a *new* reading. Stays
+    /// here (not moved to `readScheduler`) because it's read/written only by `applyEgvReading` below,
+    /// which also stays local this wave (D-07) — its reset-on-fresh-connection-cycle runs via
+    /// `readScheduler`'s injected `onStartPollingCycleBegin` hook (wired in `init`), keeping that reset
+    /// atomic with the rest of `startPolling()`'s cycle-begin work exactly as it ran inline before the move.
     private var lastCgmPumpSec: UInt32 = 0
-    private var predictivePollTimer: Timer?
-    private var predictiveBurstDeadline: Date?
-    /// Predictive burst tuning. CGM cadence is ~5 min; start a little early and keep trying past the
-    /// expected time until the reading advances, polling only the single EGV request (battery-light).
-    private static let cgmIntervalSec: Double = 300
-    private static let predictiveLeadSec: Double = 20
-    private static let predictiveWindowSec: Double = 150
-    private static let predictivePollEverySec: Double = 10
-    /// Master switch; if predictive polling ever proves costly, set false to fall back to age-fix-only.
-    var predictivePollingEnabled = true
-
-    /// Convert a pump-clock reading timestamp to a real `Date` via the phone↔pump anchor. Clamps to
-    /// `now`; falls back to `now` when there's no anchor or the result is implausibly far off (a sign
-    /// the timestamp base is wrong), so a bad value can never masquerade as fresh or ancient.
-    private func cgmReadingDate(pumpSec: UInt32, now: Date) -> Date {
-        guard pumpSec > 0, let a = pumpTimeAnchor else { return now }
-        let candidate = a.phone.addingTimeInterval(Double(Int64(pumpSec) - Int64(a.pump)))
-        if candidate > now.addingTimeInterval(60) { return now }                 // future → clamp
-        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return now }         // absurd past → fall back
-        return candidate
-    }
 
     /// Apply one decoded EGV reading to the snapshot/history/predictive-burst state.
     ///
@@ -1815,7 +1552,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             // via the same phone↔pump clock anchor the LastBolus case uses (timezone-agnostic).
             // Fall back to receive time if there's no anchor yet or the timestamp looks bad.
             let now = Date()
-            let readingDate = cgmReadingDate(pumpSec: pumpSec, now: now)
+            let readingDate = readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now)
             snapshot.glucose = cgmReading
             snapshot.glucoseDate = readingDate
             // Append on a value change OR every ~4.5 min, so a stable BG still advances the
@@ -1832,133 +1569,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             // short burst near the next expected reading so the phone grabs it within seconds.
             if pumpSec > lastCgmPumpSec {
                 lastCgmPumpSec = pumpSec
-                schedulePredictiveBurst(afterReadingAt: readingDate)
+                readScheduler.schedulePredictiveBurst(afterReadingAt: readingDate)
             }
         }
-        // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived.
-        if glucoseReadInFlight { completeGlucoseRead() }
-    }
-
-    /// Line up a short EGV-only poll burst around the next expected reading (~5 min after this one).
-    /// A newly-arrived reading reschedules this, which naturally ends the previous burst.
-    private func schedulePredictiveBurst(afterReadingAt readingDate: Date) {
-        guard predictivePollingEnabled else { return }
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
-        let expected = readingDate.addingTimeInterval(Self.cgmIntervalSec)
-        predictiveBurstDeadline = expected.addingTimeInterval(Self.predictiveWindowSec)
-        let delay = max(1, expected.addingTimeInterval(-Self.predictiveLeadSec).timeIntervalSinceNow)
-        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
-            MainActor.assumeIsolated { self.runPredictiveBurst() }
-        }
-    }
-
-    private func runPredictiveBurst() {
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
-        // Skip while a bolus is delivering (that path already fast-polls) or when disconnected.
-        guard predictivePollingEnabled, snapshot.connection == .connected else { return }
-        // SEVENTH fix cycle: both sends use `CurrentEGVGuiDataRequest` (V1, op34), never the V2
-        // request — see `fastRead()`'s doc comment. `sendStatusRead` still applies the `badOpcodes`
-        // guard here too, as a backstop for any OTHER read the pump ever rejects.
-        sendStatusRead(CurrentEGVGuiDataRequest())
-        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: Self.predictivePollEverySec, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                guard self.snapshot.connection == .connected,
-                      let deadline = self.predictiveBurstDeadline, Date() < deadline else {
-                    self.predictivePollTimer?.invalidate(); self.predictivePollTimer = nil; return
-                }
-                self.sendStatusRead(CurrentEGVGuiDataRequest())
-            }
-        }
-    }
-
-    /// The recurring `pollTimer` tick's body (Phase 09.2 Task 2, D-01/D-06 gap B2): a behavior-preserving
-    /// extraction of the four lines the `pollTimer` closure below used to hold inline (verbatim — the
-    /// tick-increment, the every-tick alert schedule, and the `%4`/`%40` fast/static gates, in the same
-    /// order), so the cadence gating is directly callable — and therefore deterministically testable via
-    /// `firePollTimerTickForTesting()` below — without waiting on a live 15s-repeating `Timer`. This is
-    /// also a natural precursor to Wave 3's `PumpReadScheduler` (D-06), which will own this tick; the
-    /// extraction itself changes no timing, gating, order, or wire bytes.
-    private func recurringPollTick() {
-        pollTick += 1
-        scheduleAlertRead()                            // ~15 s
-        if pollTick % 4 == 0 { fastRead() }             // ~60 s
-        if pollTick % 40 == 0 { staticRead() }          // ~10 min
-    }
-
-    private func startPolling() {
-        // Fresh connection/pairing cycle: bump the generation so a `scheduleAlertRead()` call armed
-        // by a STALE, still-ticking `pollTimer` from a PRIOR connection cycle (see `scheduleAlertRead()`'s
-        // doc comment) recognizes it's stale and no-ops, instead of injecting `alertRead()`'s messages
-        // ahead of this cycle's own bootstrap trio.
-        pollCycleGeneration += 1
-        // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
-        // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
-        sendPostPairBootstrapReads()
-        fastRead(); staticRead()
-        scheduleAlertRead()
-        pollTick = 0
-        pollTimer?.invalidate()
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
-        lastCgmPumpSec = 0
-        // Tick every 15 s: alerts every tick (~15 s, so a new alert appears quickly on phone +
-        // watch), the fuller fast-read every 4th tick (~60 s), settings every ~10 min. Alert
-        // reads are cheap empty-cargo requests, so the tighter cadence barely affects battery.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            MainActor.assumeIsolated { self.recurringPollTick() }
-        }
-    }
-
-    /// Bumped once per `startPolling()` call (i.e. once per connection/pairing-selection cycle) so a
-    /// `scheduleAlertRead()` callback armed by a cycle that gets superseded by a NEWER
-    /// reconnect/re-pair before its delay elapses recognizes it's stale and no-ops, instead of firing a
-    /// rogue `alertRead()` burst on top of the newer cycle's already-in-progress reads. See
-    /// `scheduleAlertRead()`'s doc comment for the FIFTH fix cycle mechanism this guards against.
-    private var pollCycleGeneration = 0
-
-    /// Send the alert reads ~1.5 s after the fast reads so they aren't in the same request burst.
-    ///
-    /// FIFTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #4 direct log
-    /// analysis): captured evidence showed `alertRead()`'s messages (`AlertStatusRequest` et al.)
-    /// dispatched BEFORE the bootstrap trio in roughly half of observed post-pair cycles, violating
-    /// the FOURTH cycle's "bootstrap trio is always first" invariant even though `startPolling()`
-    /// itself unconditionally calls `sendPostPairBootstrapReads()` before anything else. Root cause:
-    /// `pollTimer` (armed by `startPolling()`, 15s repeating) was never invalidated on disconnect —
-    /// only at the top of the NEXT `startPolling()` call — so a `pollTimer` from a cycle that dropped
-    /// LESS than 15s after it started keeps ticking through the entire reconnect gap and its first
-    /// tick can land squarely inside the NEXT cycle's post-pair window, calling `scheduleAlertRead()`
-    /// again — which, at the time, had NO staleness guard at all — landing 1.5s later on an
-    /// otherwise-idle connection and becoming the FIRST thing sent in the new cycle. Confirmed directly
-    /// against the captured app log (not just theorized): cycle 2's `pollTimer`, created ~44.07s in,
-    /// ticked once at ~59.07s (its own +15s), calling `scheduleAlertRead()` → firing `alertRead()` at
-    /// ~60.57s — squarely between cycle 3's `pairing outcome → paired` (~59.79s) and cycle 3's own
-    /// `startPolling()` — exactly matching the observed `AlertStatusRequest`-before-`ApiVersionRequest`
-    /// corruption. Two-part fix, both closing this specific gap (NOT a delay/spacing VALUE tweak — no
-    /// timing constant here changed): `linkDroppedCleanup()` now invalidates `pollTimer` the instant
-    /// the link is confirmed down (stops a stale timer from ever ticking again into a future, unrelated
-    /// cycle), and this function's deferred call captures `pollCycleGeneration` and re-checks it before
-    /// running `alertRead()` (stops any ALREADY-armed stale call — whether from a `pollTimer` tick or
-    /// this function's own original invocation — that's still in flight when a NEWER `startPolling()`
-    /// has since restarted the cycle).
-    private static let defaultAlertReadDelaySec: Double = 1.5
-    #if DEBUG
-    /// Test-only: override `scheduleAlertRead()`'s delay so a test can exercise the generation guard
-    /// deterministically without waiting the real 1.5s. `nil` (default) uses the real production delay
-    /// — this seam changes no production behavior, only testability.
-    var alertReadDelaySecForTesting: Double?
-    #endif
-    private var alertReadDelaySec: Double {
-        #if DEBUG
-        if let override = alertReadDelaySecForTesting { return override }
-        #endif
-        return Self.defaultAlertReadDelaySec
-    }
-
-    private func scheduleAlertRead() {
-        let generation = pollCycleGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + alertReadDelaySec) { [weak self] in
-            guard let self, generation == self.pollCycleGeneration else { return }
-            self.alertRead()
-        }
+        // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived. Unconditional
+        // (no outer `if glucoseReadInFlight` guard — that flag is now private to `readScheduler`;
+        // `completeGlucoseRead()` is a no-op when nothing is in flight, so this is behavior-identical).
+        readScheduler.completeGlucoseRead()
     }
 
     /// Pure gap computation (D-02, RESEARCH Pattern 1) — no BLE, directly unit-testable. Given the pump's
@@ -2345,9 +1962,10 @@ extension TandemBackend: PumpBLEClientDelegate {
     private func linkDroppedCleanup() {
         // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
         // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
-        // path reads them as stale and fails closed.
-        if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
-        if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
+        // path reads them as stale and fails closed. Unconditional (see the note where `readScheduler`
+        // is declared) — both are no-ops when nothing is in flight.
+        readScheduler.completeGlucoseRead()
+        readScheduler.completeCalcInputRead()
         // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
         failPumpWaiters(BolusError.notConnected)
         // D-05 (UI-SPEC partial/interrupted state): a sync mid-flight when the link drops is a benign,
@@ -2365,16 +1983,16 @@ extension TandemBackend: PumpBLEClientDelegate {
         detectedIsMobi = nil   // re-detect the model on the next connect
         pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
         // FIFTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #4 direct log
-        // analysis, see `scheduleAlertRead()`'s doc comment for the full mechanism): `pollTimer` was
-        // previously invalidated ONLY at the top of the next `startPolling()` call, so a cycle that
-        // dropped less than 15s after starting left its `pollTimer` ticking through the whole
+        // analysis, see `PumpReadScheduler.scheduleAlertRead()`'s doc comment for the full mechanism):
+        // `pollTimer` was previously invalidated ONLY at the top of the next `startPolling()` call, so a
+        // cycle that dropped less than 15s after starting left its `pollTimer` ticking through the whole
         // reconnect gap — confirmed, via the captured app log, to land its first tick inside a LATER
         // cycle's post-pair settle window and inject a stale `scheduleAlertRead()`/`alertRead()` call
         // ahead of that cycle's own bootstrap-trio-first read burst. Invalidating it here, the instant
         // the link is confirmed down, stops it at the source — this is additive to (not a replacement
         // for) `scheduleAlertRead()`'s own new generation guard, which also closes the narrower gap of
         // a call already in flight when this fires.
-        pollTimer?.invalidate(); pollTimer = nil
+        readScheduler.invalidatePollTimerOnDisconnect()
     }
 
     /// A short human explanation for a specific down state; nil for the benign/transitional ones where
@@ -2422,26 +2040,26 @@ extension TandemBackend: PumpBLEClientDelegate {
             let code = pairingCode
             switch PairingAuth.detectType(code) {
             case .short6Char:                                   // modern EC-JPAKE, resumable
-                guard let full = try? PairingCoordinator(pairingCode: code) else { startPolling(); return }
+                guard let full = try? PairingCoordinator(pairingCode: code) else { readScheduler.startPolling(); return }
                 coord = full
                 schemeName = "JPAKE (fresh)"
                 onFirstPair = { [weak self] in PairingStore.save(full.derivedSecret); self?.pairingCode = "" }
             case .long16Char:                                   // legacy V1 — no resume, persist the code
-                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { startPolling(); return }
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { readScheduler.startPolling(); return }
                 coord = v1
                 schemeName = "V1/legacy (fresh)"
                 onFirstPair = { [weak self] in PairingStore.saveV1Code(code); self?.pairingCode = "" }
             }
         } else if let v1Code = PairingStore.loadV1Code() {      // legacy reconnect: silent full re-challenge
             guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
-                PairingStore.clear(); startPolling(); return
+                PairingStore.clear(); readScheduler.startPolling(); return
             }
             coord = v1; onFirstPair = nil; schemeName = "V1/legacy (resume re-challenge)"
         } else if let stored = PairingStore.load() {            // modern reconnect: JPAKE quick-pair resume
             coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
             schemeName = "JPAKE (quick-pair resume)"
         } else {
-            startPolling(); return   // no code and no saved pairing — reads will be rejected
+            readScheduler.startPolling(); return   // no code and no saved pairing — reads will be rejected
         }
         Self.pairingLog.log("pairing scheme selected → \(schemeName, privacy: .public)")
 
@@ -2481,7 +2099,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             Self.pairingLog.log("pairing outcome → paired")
             self?.authenticationKey = key
             onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
-            self?.startPolling()
+            self?.readScheduler.startPolling()
             // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
             // drop), reconcile it against the pump now so new deliveries can unblock.
             Task { [weak self] in await self?.reconcileIndeterminateDelivery() }
@@ -2543,7 +2161,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             // (mirrors `glucoseDate`). Wake any coalesced `refreshCalcInputsNow()` waiter once both the IOB
             // (op-109) and therapy (op-115) frames have landed since the refresh began.
             snapshot.iobDate = Date()
-            noteCalcInputArrived(iob: true)
+            readScheduler.noteCalcInputArrived(iob: true)
             // Accumulate an IOB time series (append on change or every ~4.5 min) for the chart.
             let now = Date()
             if let last = iobHistory.last {
@@ -2653,7 +2271,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             // DIF-core: stamp the receive time (one op-115 frame resolves the active profile+segment to a
             // self-consistent CR/ISF/target set) and wake a coalesced `refreshCalcInputsNow()` waiter.
             snapshot.therapyParamsDate = Date()
-            noteCalcInputArrived(iob: false)
+            readScheduler.noteCalcInputArrived(iob: false)
         case let m as TimeSinceResetResponse:
             // PX-08: awaited time responses are consumed by the coordinator (side-effects applied in
             // `applyTimeResponse`); this handles any unsolicited time frame.
@@ -2711,7 +2329,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             // debug-session scaffolding) so any FUTURE unsupported-opcode rejection on any pump is
             // immediately visible, not just this session's op192 case.
             let badOpcode = UInt8(truncatingIfNeeded: m.requestCodeId)
-            badOpcodes.insert(badOpcode)
+            readScheduler.insertBadOpcode(badOpcode)
             Self.pairingLog.log("pump error ← requestOpcode=\(badOpcode, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
         case let m as PumpFeaturesV1Response:
             // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
@@ -2767,8 +2385,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         // unhelpful boilerplate ("The operation couldn't be completed…"). Still resume in-flight work
         // exactly like every other transport error — only the connection/connectionDetail differ.
         if case PumpBLEClient.ClientError.reconnectLoopDetected = error {
-            if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
-            if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
+            readScheduler.completeGlucoseRead()
+            readScheduler.completeCalcInputRead()
             failPumpWaiters(error)
             return
         }
@@ -2781,8 +2399,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         snapshot.connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
         // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
-        if glucoseReadInFlight || !glucoseWaiters.isEmpty { completeGlucoseRead() }
-        if calcInputReadInFlight || !calcInputWaiters.isEmpty { completeCalcInputRead() }
+        readScheduler.completeGlucoseRead()
+        readScheduler.completeCalcInputRead()
         failPumpWaiters(error)
     }
 }
