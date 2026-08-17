@@ -290,6 +290,24 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var inSleepWindow: Bool? = nil
     public var sleepWindowStartMinute: Int? = nil
     public var sleepWindowEndMinute: Int? = nil
+    /// Phase 09.15 T2-1 (D-05, "Candidate #4") — the two independent Control-IQ ceiling flags from
+    /// op-115's `BolusCalcDataSnapshotResponse` (`maxBolusEventsExceeded@24` / `maxIobEventsExceeded@25`),
+    /// dose-path-adjacent and gated as a BENCH-GATED PLACEHOLDER exactly like `CiqCeilingFlags` below
+    /// (`benchVerifiedDefault == false`). Display-only, never a dose input (C3); ALWAYS independent
+    /// booleans, never merged into one generic flag.
+    ///
+    /// **DOCUMENTED STUB — pin deliberately held (09.14 D-05 pin-hygiene).** The kit decode itself landed
+    /// in TandemKit (commit `8f29a4f`, kit PR #20, green CI) but the faBolus `TandemKit` pin in
+    /// `project.yml` is NOT advanced yet — re-pinning happens only once the Phase-11 saline bench
+    /// validates the change (never before, per pin-hygiene discipline). So these two fields are `nil`
+    /// unconditionally today: `PumpResponseApplier`'s `BolusCalcDataSnapshotResponse` case does NOT yet
+    /// read `m.maxBolusEventsExceeded`/`m.maxIobEventsExceeded` (those symbols don't exist in the
+    /// currently-pinned kit revision; referencing them now would break the build). Wiring this read is
+    /// deferred to the plan that advances the pin post-bench — this stub exists so the wire-level
+    /// (`RemoteCommand`) and UI (`StatusPillsView`) shapes are already in place and reviewed ahead of
+    /// that trivial follow-up.
+    public var ciqMaxBolusEventsExceeded: Bool? = nil
+    public var ciqMaxIobEventsExceeded: Bool? = nil
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -553,6 +571,51 @@ public enum MaxBasalFraction {
         let headline = "\(pct)% of your configured max basal rate"
         let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
         return (headline, detail)
+    }
+}
+
+/// Phase 09.15 T2-1 (D-05, "Candidate #4") — the bench+emission gate for the two independent
+/// Control-IQ ceiling flags (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`,
+/// sourced from op-115's `BolusCalcDataSnapshotResponse.maxBolusEventsExceeded@24` /
+/// `.maxIobEventsExceeded@25`), built as a BENCH-GATED PLACEHOLDER — the SAME `benchVerifiedDefault`
+/// idiom as `TempRateAutomation.swift:41` / `CiqPlusTempRate.benchVerifiedDefault`
+/// (`ControlIQMode.swift:119`). This is dose-path-adjacent (op-115 also carries carb ratio/ISF/target
+/// for the bolus calculator) so it gets FULL dose-path discipline: nothing is marked verified; the
+/// `true` case has never been observed in a first-party capture (the Phase-11 validation blocker, not a
+/// code gap).
+///
+/// The kit decode is oracle-backed for LAYOUT + the `false` case only (TandemKit commit `8f29a4f`, kit
+/// PR #20, green CI — merge itself is a separate operator step, D-06). The faBolus `TandemKit` pin
+/// stays DELIBERATELY HELD (09.14 D-05 pin-hygiene) until the Phase-11 bench validates, so
+/// `PumpSnapshot`'s two fields above are an inert, always-`nil` documented stub today regardless of
+/// this gate's value.
+public enum CiqCeilingFlags {
+    /// D-05/SP-6: flips to `true` only after the Phase-11 saline bench captures a real `true` frame for
+    /// EITHER flag. Ships `false` so both flags are inert on every build regardless of the connected
+    /// pump or the pin state.
+    public static let benchVerifiedDefault = false
+
+    /// Verbatim Copywriting-Contract strings (never merged into one generic "limit" string, D-05
+    /// zero-one-many coverage) — the single source of truth both this package's tests and
+    /// `StatusPillsView` read from, so the two surfaces can never drift apart.
+    public static let maxBolusEventsExceededLabel = "Control-IQ hit its hourly auto-bolus limit"
+    public static let maxIobEventsExceededLabel = "Control-IQ hit its insulin-on-board limit"
+
+    /// The wire value to emit for `maxBolusEventsExceeded`, gated on `benchVerified` — `nil` pre-bench
+    /// REGARDLESS of `snapshotValue` (belt-and-suspenders: even if a future pin advance populated the
+    /// snapshot field, this gate alone still decides emission onto the wire, D-06 guardrail #5/#6
+    /// fail-closed idiom).
+    public static func wireMaxBolusEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
+                                                   snapshotValue: Bool?) -> Bool? {
+        benchVerified ? snapshotValue : nil
+    }
+
+    /// Same gate as `wireMaxBolusEventsExceeded`, but for the INDEPENDENT `maxIobEventsExceeded` flag —
+    /// a deliberately separate function (never a shared "wireFlags" that could accidentally couple the
+    /// two), matching the "always exactly two independent booleans" requirement (D-05).
+    public static func wireMaxIobEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
+                                                 snapshotValue: Bool?) -> Bool? {
+        benchVerified ? snapshotValue : nil
     }
 }
 

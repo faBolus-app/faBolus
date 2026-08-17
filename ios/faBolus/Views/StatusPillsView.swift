@@ -72,6 +72,33 @@ struct StatusPillsView: View {
             } else {
                 EmptyView()
             }
+        case "ciqCeilingMaxBolusEvents":
+            // Phase 09.15 T2-1 (D-05, "Candidate #4") — a BENCH-GATED PLACEHOLDER, render-absent (not
+            // merely disabled/greyed, D-05) unless the Phase-11 bench has verified the decode AND the
+            // Smart-Assist toggle is on AND the pump has actually reported this flag `true`. While
+            // `CiqCeilingFlags.benchVerifiedDefault == false` (today, always) this entire chip compiles
+            // out of the tree — nothing here is reachable. Amber (not red) `exclamationmark.circle` per
+            // the Copywriting Contract: informational, not alarm-severity (D-02 already owns alarms).
+            // Independent of the `ciqCeilingMaxIobEvents` chip below — its OWN distinct string, never
+            // merged into one generic "limit" chip (D-05 zero-one-many coverage).
+            if CiqCeilingFlags.benchVerifiedDefault, AppSettings.shared.ciqCeilingFlagsEnabled,
+               snapshot.ciqMaxBolusEventsExceeded == true {
+                pill(icon: "exclamationmark.circle", tint: .orange,
+                     value: CiqCeilingFlags.maxBolusEventsExceededLabel, label: "Control-IQ")
+            } else {
+                EmptyView()
+            }
+        case "ciqCeilingMaxIobEvents":
+            // Phase 09.15 T2-1 (D-05) — same bench-gated placeholder shape as
+            // `ciqCeilingMaxBolusEvents` above, for the INDEPENDENT `maxIobEventsExceeded` flag. Its OWN
+            // distinct Copywriting-Contract string — never collapsed with the hourly-limit chip.
+            if CiqCeilingFlags.benchVerifiedDefault, AppSettings.shared.ciqCeilingFlagsEnabled,
+               snapshot.ciqMaxIobEventsExceeded == true {
+                pill(icon: "exclamationmark.circle", tint: .orange,
+                     value: CiqCeilingFlags.maxIobEventsExceededLabel, label: "Control-IQ")
+            } else {
+                EmptyView()
+            }
         case "lastAutoCorrection":
             // Phase 09.15 T1-3 (D-01/D-08, SP-5 fail-closed): value = the age string itself (matches
             // the UI-SPEC's example wording), label = the static "Auto-correction" — mirrors the

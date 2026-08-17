@@ -110,6 +110,10 @@ struct CiqAwarenessScopeGuardTests {
         // two Strings — unambiguously disclosure copy, not a dose/units shape (both components are always
         // formatted STRINGS, never a raw Double the tuple could smuggle a units value through).
         "(headline: String, detail: String)?",
+        // T2-1 (09.15-11): `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded` return
+        // a fail-closed OPTIONAL status flag (nil pre-bench, never a dose/units value) — the nilable
+        // counterpart of the already-allowed bare `Bool` above.
+        "Bool?",
     ]
 
     /// Extracts the substring after the LAST `-> ` in a normalized signature (its return type), or `nil`
@@ -137,6 +141,9 @@ struct CiqAwarenessScopeGuardTests {
         // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`
         // availability flag (already an allowed shape), never a dose/units value.
         ("Packages/faBolusCore/Sources/faBolusCore/ControlIQMode.swift", "public enum CiqPlusTempRate"),
+        // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — both `wireMax*Exceeded`
+        // functions return `Bool?` (already an allowed shape), never a dose/units value.
+        ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum CiqCeilingFlags"),
     ]
 
     @Test func noCiqAwarenessFunctionReturnsADoseShapedType() throws {
@@ -209,6 +216,10 @@ struct CiqAwarenessScopeGuardTests {
         // dose value itself, but forbidden here so the signed delivery path never grows a dependency on
         // this disclosure-adjacent gate.
         "CiqPlusTempRate",
+        // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — same rationale as
+        // `CiqPlusTempRate` above; `ciqMaxBolusEventsExceeded`/`ciqMaxIobEventsExceeded` were already
+        // pinned here in advance by an earlier plan.
+        "CiqCeilingFlags",
     ]
 
     /// Scans `region` for every token in `forbiddenCiqAwarenessSymbols`, recording an `Issue` (via the

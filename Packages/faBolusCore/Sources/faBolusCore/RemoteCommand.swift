@@ -471,6 +471,26 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var sleepWindowStartMinute: Int? = nil
     public var sleepWindowEndMinute: Int? = nil
 
+    /// Phase 09.15 T2-1 (D-05, "Candidate #4", D-08) — the two independent Control-IQ ceiling flags
+    /// (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`), mirroring `ciqZone`'s
+    /// SAME wire/compose/parse/Garmin-persist/widget-field pattern once active — but this is a
+    /// BENCH-GATED PLACEHOLDER (`CiqCeilingFlags.benchVerifiedDefault == false`, `Models.swift`):
+    /// composed ONLY via `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded`, which
+    /// return `nil` unconditionally while the gate is unverified — dose-path-adjacent, full dose-path
+    /// discipline, nothing marked verified. Display-only, never a dose input (C3). Never merged into
+    /// one generic flag — always exactly two independent booleans, each mapping to its OWN distinct
+    /// Copywriting-Contract string (`CiqCeilingFlags.maxBolusEventsExceededLabel` /
+    /// `.maxIobEventsExceededLabel`).
+    ///
+    /// **NOT YET COMPOSED (documented stub, pin held per 09.14 D-05).** `AppModel`'s `statusRead`
+    /// builder does not yet set these fields — that compose-site wiring, plus the
+    /// Watch/Mac/Garmin/widget parse-side plumbing every other primitive here has, is explicitly
+    /// DEFERRED to the plan that advances the `TandemKit` pin post-Phase-11-bench (this plan's scope is
+    /// the inert wire-shape only). Additive; auto-Codable, so the existing memberwise initializer stays
+    /// untouched — an old JSON blob with these keys absent decodes fine.
+    public var ciqMaxBolusEventsExceeded: Bool? = nil
+    public var ciqMaxIobEventsExceeded: Bool? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
