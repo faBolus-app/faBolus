@@ -32,12 +32,14 @@ struct DashboardView: View {
                                     Label(eating.message, systemImage: "fork.knife")
                                         .font(.subheadline).foregroundStyle(.orange)
                                 }.buttonStyle(.plain)
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel(eating.message)
                                 .accessibilityHint("Opens bolus entry")
                                 Spacer()
                                 Button { model.dismissEatingNudge() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss eating nudge")
                             }
                             .padding().frame(maxWidth: .infinity)
@@ -56,6 +58,7 @@ struct DashboardView: View {
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }.buttonStyle(.plain)
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss low power notice")
                             }
                             .padding().frame(maxWidth: .infinity)
@@ -70,12 +73,15 @@ struct DashboardView: View {
                                 HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
                                     .accessibilityElement(children: .combine)
                                 Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
+                                    .hoverEffect(.automatic)
                                     .accessibilityLabel("Cancel pending approval")
                             }
                             .padding().frame(maxWidth: .infinity)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
                         }
 
+                        // D-08 (UI-SPEC §9): "Cancel bolus" is a dose-affecting action (calls
+                        // model.cancelBolus()) — deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                                 Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
@@ -161,12 +167,14 @@ struct DashboardView: View {
                                     Label(eating.message, systemImage: "fork.knife")
                                         .font(.subheadline).foregroundStyle(.orange)
                                 }.buttonStyle(.plain)
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel(eating.message)
                                 .accessibilityHint("Opens bolus entry")
                                 Spacer()
                                 Button { model.dismissEatingNudge() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss eating nudge")
                             }
                             .padding().frame(maxWidth: .infinity)
@@ -188,6 +196,7 @@ struct DashboardView: View {
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }.buttonStyle(.plain)
+                                .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss low power notice")
                             }
                             .padding().frame(maxWidth: .infinity)
@@ -202,12 +211,15 @@ struct DashboardView: View {
                                 HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
                                     .accessibilityElement(children: .combine)
                                 Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
+                                    .hoverEffect(.automatic)
                                     .accessibilityLabel("Cancel pending approval")
                             }
                             .padding().frame(maxWidth: .infinity)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
                         }
 
+                        // D-08 (UI-SPEC §9): "Cancel bolus" is a dose-affecting action (calls
+                        // model.cancelBolus()) — deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                                 Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
@@ -299,6 +311,7 @@ private struct NoPumpConnectedCard: View {
                 Text("Connect a pump").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .hoverEffect(.automatic)
         }
         .padding().frame(maxWidth: .infinity)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))

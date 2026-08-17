@@ -77,6 +77,7 @@ struct SettingsView: View {
             if query.isEmpty {
                 ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
                     Label(cat.title, systemImage: cat.icon).tag(cat)
+                        .hoverEffect(.automatic)
                 }
             } else {
                 let hits = SettingsIndex.entries.filter { $0.matches(query) }
@@ -91,6 +92,7 @@ struct SettingsView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .hoverEffect(.automatic)
                     }
                 }
             }
@@ -109,6 +111,7 @@ struct SettingsView: View {
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
                             }
+                            .hoverEffect(.automatic)
                         }
                     }
                     // P14 S3: mode selector. Shows the current mode; opens the unlock/opt-out controls.
@@ -116,6 +119,7 @@ struct SettingsView: View {
                         NavigationLink { ModeSettingsView() } label: {
                             Label("Mode: \(modeStore.activeMode.title)", systemImage: "dial.medium")
                         }
+                        .hoverEffect(.automatic)
                     } footer: {
                         Text("How much of faBolus is shown — Simple, Standard, or Advanced. Start simple; unlock more as you go.")
                     }
@@ -131,20 +135,25 @@ struct SettingsView: View {
                         NavigationLink { ChildModeView(settings: settings) } label: {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { BackupRestoreView(model: model) } label: {
                             Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { PrivacyDataView(model: model) } label: {
                             Label("Privacy & data", systemImage: "hand.raised")
                         }
+                        .hoverEffect(.automatic)
                         #if FABOLUS_NUDGE
                         NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
                             Label(settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
+                        .hoverEffect(.automatic)
                         #else
                         // E6: show a DISABLED row rather than hiding Smart Assist, so a build without the
                         // faBolusNudge SDK still discloses that the feature exists but isn't compiled in
@@ -159,6 +168,7 @@ struct SettingsView: View {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")
                         }
+                        .hoverEffect(.automatic)
                     } footer: {
                         Text("Opens faBolus.org.")
                     }
@@ -174,6 +184,7 @@ struct SettingsView: View {
                                     Text(e.category.title).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
+                            .hoverEffect(.automatic)
                         }
                     }
                 }
