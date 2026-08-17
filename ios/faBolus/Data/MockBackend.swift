@@ -166,6 +166,29 @@ public final class MockBackend: PumpBackend {
     /// Test knob (FB-04): set the LIVE IOB, so a test can prove a delivery sends the FROZEN calc IOB, not
     /// the live snapshot value.
     public func setLiveIob(_ u: Double) { snapshot.iobUnits = u; onChange?() }
+    /// Test knob (Phase 09.17-01, D-06b): `seedHistory()`'s glucose trace uses `Double.random` so the
+    /// Simulator/SwiftUI-preview experience never looks robotic — but that same randomness makes the
+    /// default `MockBackend()` fixture unusable as a `SnapshotTesting` reference (a golden image must
+    /// render byte-identical content on every run). This replaces ONLY the randomized glucose values
+    /// with a fixed, deterministic trace of the same shape/count and timestamps; `iobHistory`/
+    /// `bolusMarkers`/every other `snapshot` field `seedHistory()` sets were already deterministic
+    /// literals and are left untouched. Additive/opt-in — never called in production or by any other
+    /// existing test.
+    public func seedDeterministicGlucoseForTesting() {
+        let now = Date()
+        let newest = now.addingTimeInterval(-600)
+        var readings: [GlucoseReading] = []
+        for i in stride(from: 36, through: 0, by: -1) {
+            let t = newest.addingTimeInterval(TimeInterval(-i * 300))
+            // Fixed gentle oscillation (no `Double.random`) — identical shape every run.
+            let value = 140 + 30 * sin(Double(36 - i) * 0.3)
+            readings.append(GlucoseReading(date: t, mgdl: Int(value)))
+        }
+        glucoseHistory = readings
+        snapshot.glucose = readings.last?.mgdl
+        snapshot.glucoseDate = readings.last?.date
+        onChange?()
+    }
     /// Spy (FB-04): the exact metadata the most recent delivery passed to the backend.
     public private(set) var lastDeliver: (units: Double, carbs: Double?, bg: Int?, iob: Double?)?
     /// DIF-core spy: how many times `refreshCalcInputsNow()` was invoked, so a test can prove the dose path
