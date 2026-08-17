@@ -173,6 +173,12 @@ feature is untested and "will likely not work" before they run — not just the 
 - **Verify (Phase-11 saline bench or a live capture):** put the pump through each of the 5 documented
   Control-IQ zones (predicted BG in each of the 4 threshold bands) and record the `controlStateType` byte
   seen at op-179 for each; confirm/correct the ordinal mapping above against the real values.
+- **09.15-05 addendum (T1-2, D-09.1):** `ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType:)`
+  (`Packages/faBolusCore/Sources/faBolusCore/ControlIQMode.swift`) reuses this SAME unverified ordinal
+  mapping — it returns `true` only when `ControlIQZone.fromControlStateType(_:) == .stops` — rather than
+  hypothesizing a second, independent raw-byte guess for "Control-IQ paused basal to prevent a low."
+  Resolving this item's Phase-11 bench verification also resolves T1-2's cause-attribution predicate;
+  they are the same open question, not two.
 
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
