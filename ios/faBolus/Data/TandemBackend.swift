@@ -726,6 +726,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         staticRead()
     }
 
+    /// Phase 09.2 Task 2 test seam (D-01/D-06, gap B2): fires the REAL recurring `pollTimer` tick body
+    /// (`recurringPollTick()`) directly, without waiting on the live 15s-repeating `Timer` — unlike
+    /// `simulateRecurringFastAndStaticReadTickForTesting()` above (which calls `fastRead()`/`staticRead()`
+    /// directly, bypassing the `%4`/`%40` cadence gating entirely), this seam exercises the SAME gating
+    /// the production timer runs, so a test can pin alerts-every-tick / fast-on-%4 / static-on-%40 across
+    /// a sequence of ticks. Relocates onto `PumpReadScheduler` in Wave 3 (D-06); this seam runs the real
+    /// body verbatim and changes no production behavior itself.
+    func firePollTimerTickForTesting() { recurringPollTick() }
+
     /// FIFTH fix cycle test seam: like `startPollingForTesting()` but does NOT immediately invalidate
     /// `pollTimer` — lets a test observe that `pollTimer` is a live `Timer` right after `startPolling()`
     /// runs, then separately verify `linkDroppedCleanup()` (via `applyClientState`) is what tears it
@@ -1851,6 +1860,20 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
+    /// The recurring `pollTimer` tick's body (Phase 09.2 Task 2, D-01/D-06 gap B2): a behavior-preserving
+    /// extraction of the four lines the `pollTimer` closure below used to hold inline (verbatim — the
+    /// tick-increment, the every-tick alert schedule, and the `%4`/`%40` fast/static gates, in the same
+    /// order), so the cadence gating is directly callable — and therefore deterministically testable via
+    /// `firePollTimerTickForTesting()` below — without waiting on a live 15s-repeating `Timer`. This is
+    /// also a natural precursor to Wave 3's `PumpReadScheduler` (D-06), which will own this tick; the
+    /// extraction itself changes no timing, gating, order, or wire bytes.
+    private func recurringPollTick() {
+        pollTick += 1
+        scheduleAlertRead()                            // ~15 s
+        if pollTick % 4 == 0 { fastRead() }             // ~60 s
+        if pollTick % 40 == 0 { staticRead() }          // ~10 min
+    }
+
     private func startPolling() {
         // Fresh connection/pairing cycle: bump the generation so a `scheduleAlertRead()` call armed
         // by a STALE, still-ticking `pollTimer` from a PRIOR connection cycle (see `scheduleAlertRead()`'s
@@ -1870,12 +1893,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // watch), the fuller fast-read every 4th tick (~60 s), settings every ~10 min. Alert
         // reads are cheap empty-cargo requests, so the tighter cadence barely affects battery.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                self.pollTick += 1
-                self.scheduleAlertRead()                            // ~15 s
-                if self.pollTick % 4 == 0 { self.fastRead() }       // ~60 s
-                if self.pollTick % 40 == 0 { self.staticRead() }    // ~10 min
-            }
+            MainActor.assumeIsolated { self.recurringPollTick() }
         }
     }
 
