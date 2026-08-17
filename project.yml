@@ -71,6 +71,10 @@ packages:
     # TandemMessages/Auth/BLE), which changed the products faBolus requests by name — a
     # revision bump was REQUIRED here (not optional), since the old pinned commit's Package.swift
     # still declares the pre-rename product names.
+    # Pin hygiene (09.14 D-05, todo #15): this SHA should be re-pinned to a fresh TandemKit `main`
+    # SHA once the v0.4.0 Phase-11 saline bench validates the changes it currently carries. No pin
+    # change is made now — this SHA is reachable from TandemKit `main` and safe to keep until then.
+    # See .planning/OWNER-DECISIONS.md for the matching dated entry.
     revision: 1a09dba67de2d45f2f26f408dccb4bccb9749e6c
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
