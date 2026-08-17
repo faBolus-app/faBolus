@@ -197,6 +197,23 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// `nil` the moment `ciqSuspendedForLow` clears, so a later re-suspend starts a fresh instant rather
     /// than resuming a stale one.
     public var ciqSuspendStartDate: Date? = nil
+    /// Phase 09.15 T1-3 (D-01, D-06 guardrail #4, D-08) — the immutable instant of the most-recent
+    /// Control-IQ auto-correction, derived at `TandemBackend.neutralEvent` from a decoded
+    /// `BolusDeliveryHistoryLog` whose `bolusSource == 7` (a fact the pump's own history log already
+    /// records — (b) pump-communicated). Only ever moves forward in time (a real historical fact
+    /// never un-happens); `nil` until the first such event is seen. Display-only, never a dose input
+    /// (C3). Mirrors `glucoseEpochSec`'s epoch-not-age convention on the wire (`RemoteCommand
+    /// .lastAutoCorrectionEpochSec`) — a receiver computes age at draw time, never transmits one.
+    public var lastAutoCorrectionDate: Date? = nil
+    /// Phase 09.15 T1-4 (D-01, D-08) — the immutable instant of the most-recent "Control-IQ tried and
+    /// couldn't deliver an automatic correction" event, derived from a decoded
+    /// `AaAutoBolusRejectedHistoryLog` or `CorrectionDeclinedHistoryLog` (both already decoded +
+    /// registered but previously dropped at `TandemBackend.neutralEvent`). Never speculates WHY (D-06
+    /// guardrail #6) — neither struct exposes a reason field anyway. `nil` until the first such event
+    /// is seen. Display-only, never a dose input (C3). Wire mirror: `RemoteCommand
+    /// .ciqLastCouldNotDeliverEpochSec` (remote MARKER only — the full timeline stays phone-only,
+    /// D-08).
+    public var ciqLastCouldNotDeliverDate: Date? = nil
     /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
     /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
     /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This

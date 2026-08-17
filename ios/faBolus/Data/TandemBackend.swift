@@ -1833,6 +1833,17 @@ public final class TandemBackend: NSObject, PumpBackend {
             events.sort { $0.date > $1.date }          // newest first
             if events.count > 500 { events.removeLast(events.count - 500) }
             historyEvents = events
+            // Phase 09.15 T1-3/T1-4 (D-08): surface the single LATEST instant of each into
+            // PumpSnapshot so it can propagate to remotes as a lightweight marker — `events` is
+            // already newest-first, so the first match after filtering is the latest. Both start
+            // `nil` and only ever move forward in time (a real historical fact never un-happens);
+            // absent stays `nil` (fail-closed, SP-5) rather than the row/marker ever inventing one.
+            if let latest = events.first(where: { $0.category == .autoCorrection }) {
+                snapshot.lastAutoCorrectionDate = latest.date
+            }
+            if let latest = events.first(where: { $0.category == .couldNotDeliver }) {
+                snapshot.ciqLastCouldNotDeliverDate = latest.date
+            }
         }
         // D-05: a completed gap sync (whether or not this pass actually fetched new records — see the
         // safety-cap partial-credit path above) is a successful sync for "Last synced" purposes.
@@ -1865,6 +1876,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         switch e {
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
+        case let m as BolusDeliveryHistoryLog where m.bolusSource == 7:
+            // Phase 09.15 T1-3 (D-01, D-06 guardrail #4) — (b) pump-communicated fact:
+            // `BolusDeliveryHistoryLog` already decodes `bolusSource`; this was previously dropped
+            // here (fell through to `default: nil`). `bolusSource == 7` marks a Control-IQ
+            // auto-correction. Display-only, never a dose input (C3); the latest instant is surfaced
+            // into `PumpSnapshot.lastAutoCorrectionDate` below, after this switch runs.
+            return HistoryEvent(id: seq, date: date, category: .autoCorrection, title: "Control-IQ auto-corrected")
         case let m as BolexCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))
         case let m as CarbEnteredHistoryLog:
@@ -1881,6 +1899,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate started", detail: String(format: "%.0f%%", m.percent))
         case is TempRateCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
+        case is AaAutoBolusRejectedHistoryLog, is CorrectionDeclinedHistoryLog:
+            // Phase 09.15 T1-4 (D-01) — (b) pump-communicated fact: both already decoded +
+            // registered in `HistoryLogParser` but previously dropped here. Never speculates WHY
+            // (D-06 guardrail #6) — neither struct exposes a reason field to report anyway. The
+            // latest instant is surfaced into `PumpSnapshot.ciqLastCouldNotDeliverDate` below.
+            return HistoryEvent(id: seq, date: date, category: .couldNotDeliver,
+                                 title: "Control-IQ tried and couldn't deliver an automatic correction")
         case let m as PumpingSuspendedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin suspended", detail: m.reasonId == 0 ? "" : "reason \(m.reasonId)")
         case is PumpingResumedHistoryLog:
