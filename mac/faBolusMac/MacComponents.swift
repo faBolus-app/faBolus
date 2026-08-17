@@ -267,12 +267,58 @@ struct MacDetailsView: View {
                 .accessibilityLabel(macRowLabel(r))
             }
         }
+        // Phase 09.15 T1-9 (D-01, D-08): full Sleep/Exercise facts + window text (Mac has room) — a
+        // separate conditional card below the Row table. No Smart-Assist gate here — matches every
+        // other 09.15 Mac readout (ciqZone/ciqSuspend/lastAutoCorrection): the per-feature toggle is
+        // phone-local and not yet mirrored to remotes on the wire (a known, accepted cross-plan gap,
+        // not introduced by this plan). Fail-closed: absent unless a preset is actively selected by
+        // the mirrored `controlIQMode` (never a "Normal mode" card).
+        if let preset = model.ciqActivityPreset {
+            MacSleepExerciseCard(model: model, preset: preset)
+        }
     }
 
     /// N12: spoken description of a details row, with age + "stale" when the calc input is de-emphasized.
     private func macRowLabel(_ r: Row) -> String {
         let title = (r.stale && r.age != nil) ? "\(r.title) · \(r.age!)" : r.title
         return r.stale ? "\(title), \(r.value), stale" : "\(title), \(r.value)"
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-06 guardrail #4, D-08) — the full Sleep/Exercise facts + window text
+/// card (Mac has room, unlike the compact Watch/Garmin form). Mutual-exclusivity is structural:
+/// `MacDetailsView.body` only constructs this view when `model.ciqActivityPreset` selected exactly
+/// one preset, and `isSleep` picks exactly one branch below — Sleep and Exercise facts can never
+/// render together. Each fact line renders independently (partial-state coverage, D-08).
+private struct MacSleepExerciseCard: View {
+    var model: MacRemoteModel
+    let preset: ActivityPreset
+    private var isSleep: Bool { preset.name == "Sleep" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: isSleep ? "moon.zzz.fill" : "figure.run")
+                    .foregroundStyle(AppTheme.insulin)
+                    .accessibilityHidden(true)
+                Text("\(preset.name) Activity is on").font(.callout.weight(.semibold))
+            }
+            Text(SleepExerciseAwareness.targetAutoBolusLine(preset)).font(.caption).foregroundStyle(.secondary)
+            if let threshold = SleepExerciseAwareness.suspendThresholdLine(preset) {
+                Text(threshold).font(.caption).foregroundStyle(.secondary)
+            }
+            if isSleep {
+                if let window = model.ciqSleepWindowLine {
+                    Text(window).font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let remaining = SleepExerciseAwareness.remainingLabel(seconds: model.exerciseTimeRemainingSec) {
+                Text(remaining).font(.caption.weight(.semibold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
     }
 }
 

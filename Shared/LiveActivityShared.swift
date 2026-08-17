@@ -105,6 +105,20 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// plan's declared `files_modified` scope (`Shared/WidgetShared.swift` and the widget's renderer
         /// are untouched).
         public var lockoutUntilDate: Date?
+        /// Phase 09.15 T1-9 (D-01/D-08) — the already-decoded exercise countdown, a RAW
+        /// remaining-seconds DURATION (NOT an epoch, unlike every Date field above — the pump
+        /// reports "time remaining" directly), mirrored via `RemoteCommand.exerciseTimeRemainingSec`.
+        /// Opt-in `"exerciseTimer"` LAField (off by default — Sleep facts are explicitly NOT
+        /// surfaced on widgets/LA, D-08 T1-9 scope). `nil` ⇒ the region renders nothing — a legacy
+        /// publish, not currently in Exercise, or the timer is unknown, never a negative/zero
+        /// countdown (D-06 guardrail #5, SP-5 fail-closed). Display-only, never a dose input (C3).
+        /// KNOWN GAP (mirrors 09.15-01's `ciqZone` / 09.15-06's `lastAutoCorrectionDate` precedent):
+        /// `WidgetSnapshot` does not carry this fact yet, so `GlucoseLiveActivityManager.makeContent`
+        /// cannot populate it from a real snapshot today — this field exists on `ContentState`
+        /// (Codable-complete, vocabulary-registered) but is not yet wired end-to-end; out of this
+        /// plan's declared `files_modified` scope (`Shared/WidgetShared.swift` and the widget's
+        /// renderer are untouched).
+        public var exerciseTimeRemainingSec: Int?
         /// Pump link connected (same definition `WidgetSnapshot.connected` carries).
         public var connected: Bool
         /// When this snapshot was published — the dateless pump-field cluster's last-sync basis.
@@ -147,6 +161,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
                     lastAutoCorrectionDate: Date? = nil,
                     lockoutUntilDate: Date? = nil,
+                    exerciseTimeRemainingSec: Int? = nil,
                     connected: Bool = false,
                     updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
@@ -170,6 +185,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.ciqSuspendStartDate = ciqSuspendStartDate
             self.lastAutoCorrectionDate = lastAutoCorrectionDate
             self.lockoutUntilDate = lockoutUntilDate
+            self.exerciseTimeRemainingSec = exerciseTimeRemainingSec
             self.connected = connected
             self.updatedAt = updatedAt
             self.iobStale = iobStale
@@ -182,7 +198,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
                  controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
-                 lockoutUntilDate,
+                 lockoutUntilDate, exerciseTimeRemainingSec,
                  connected, updatedAt,
                  iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
         }
@@ -228,6 +244,9 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 // Phase 09.15 T1-5: Optional-typed, so a missing key already decodes fine even under the
                 // synthesized decoder — kept explicit for symmetry with every other field here.
                 lockoutUntilDate: try c.decodeIfPresent(Date.self, forKey: .lockoutUntilDate) ?? nil,
+                // Phase 09.15 T1-9: Optional-typed, so a missing key already decodes fine even under
+                // the synthesized decoder — kept explicit for symmetry with every other field here.
+                exerciseTimeRemainingSec: try c.decodeIfPresent(Int.self, forKey: .exerciseTimeRemainingSec) ?? nil,
                 connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
                 updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
@@ -287,7 +306,10 @@ public struct LAField: Equatable, Sendable {
 public enum LAFieldVocabulary {
     // Phase 09.15 T1-3 (D-08): "lastAutoCorrection" registered as opt-in (off by default, matches
     // "controlIQZone"'s own precedent) — T1-4 is deliberately NOT added here (explicit scope, D-08).
-    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "connection"]
+    // Phase 09.15 T1-9: "exerciseTimer" registered as opt-in (off by default, matches
+    // "lastAutoCorrection"'s own precedent) — Sleep facts are deliberately NOT added here (explicit
+    // scope, D-08 T1-9 note).
+    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection"]
 }
 
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target
