@@ -16,6 +16,11 @@ struct GlucoseChartView: View {
     var showIOB: Bool = true
     var showBolusBars: Bool = true
 
+    // Phase 09.18b (D-05/D-06): the transient scrub x-position (in plot-area points) while the user
+    // long-presses/drags the chart, or nil when idle. Read-only, never committed anywhere — cleared on
+    // release. Each GlucoseChartView instance owns its own scrub state.
+    @State private var scrubX: CGFloat? = nil
+
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
     /// mg/dL-scaled (Pitfall 4) — only the rendered text below changes.
@@ -106,6 +111,18 @@ struct GlucoseChartView: View {
                 AxisGridLine(); AxisValueLabel(format: .dateTime.hour())
             }
         }
+        // Phase 09.18b (D-05/D-06) — the scrubbable readout, attached INSIDE this existing Chart via
+        // `.chartOverlay` + `ChartProxy` (UI-SPEC §1 primary approach; NOT a bolted-on screen). Gated
+        // behind `graphDetailEnabled` (default ON) — when off, nothing renders and the chart behaves
+        // exactly as today. This plan (09.18b-01 tracer) shows the GLUCOSE row only.
+        .chartOverlay(alignment: .top) { proxy in
+            GeometryReader { geo in
+                if AppSettings.shared.graphDetailEnabled {
+                    scrubberLayer(proxy: proxy, size: geo.size)
+                }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: scrubX != nil)
         .overlay(alignment: .topLeading) {
             // Owner-requested toggle: this axis caption is the only persistent unit label the chart
             // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
@@ -128,5 +145,67 @@ struct GlucoseChartView: View {
         case ...12: return 2
         default: return 4
         }
+    }
+
+    // MARK: - GraphDetailView scrubber (Phase 09.18b, D-05/D-06)
+
+    /// The ViewModel is rewritten over faBolus's OWN feed — the same `visible` glucose array this chart
+    /// already renders — never Loop's stores (D-05). This plan feeds glucose only; Task 2 adds IOB/bolus/basal.
+    private var detailViewModel: GraphDetailViewModel { GraphDetailViewModel(glucose: visible) }
+
+    /// The scrubber layer inside `.chartOverlay`: a full-plot transparent hit area carrying a
+    /// `LongPressGesture` SEQUENCED with a `DragGesture(minimumDistance: 0)` so a plain tap/pan of the
+    /// chart is NOT hijacked (only a deliberate ≥0.3s press begins a scrub). While scrubbing, the touch
+    /// x maps through `ChartProxy.value(atX:)` to a `Date`, the ViewModel/`GraphDetailReadout` resolve
+    /// the nearest values, and a vertical rule + grab handle + readout card render — the card offset to
+    /// the side opposite the scrub point and clamped inside the 160px frame. Nothing is committed; the
+    /// scrub clears on release.
+    @ViewBuilder
+    private func scrubberLayer(proxy: ChartProxy, size: CGSize) -> some View {
+        let scrub = LongPressGesture(minimumDuration: 0.3)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                if case .second(true, let drag?) = value {
+                    scrubX = min(max(drag.location.x, 0), size.width)
+                }
+            }
+            .onEnded { _ in scrubX = nil }
+
+        ZStack(alignment: .topLeading) {
+            // Full-plot hit area (≥44px in both dimensions at 160px height) — the deliberate-press
+            // gate lives in the gesture, not a small handle, so the whole chart is scrubbable.
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .gesture(scrub)
+
+            if let x = scrubX, let date: Date = proxy.value(atX: x) {
+                let readout = detailViewModel.readout(at: date)
+                let onLeftHalf = x < size.width / 2
+
+                // Vertical rule + grab handle marking the active timestamp.
+                Rectangle()
+                    .fill(AppTheme.insulin)
+                    .frame(width: 1.5, height: size.height)
+                    .position(x: x, y: size.height / 2)
+                Circle()
+                    .fill(AppTheme.insulin)
+                    .frame(width: 8, height: 8)
+                    .position(x: x, y: 4)
+
+                // Readout card, pinned to the plot edge OPPOSITE the scrub point (so it never sits
+                // under the finger) and width-capped so it stays inside the chart bounds.
+                HStack(spacing: 0) {
+                    if !onLeftHalf { GraphDetailCard(readout: readout); Spacer(minLength: 0) }
+                    if onLeftHalf { Spacer(minLength: 0); GraphDetailCard(readout: readout) }
+                }
+                .frame(maxWidth: .infinity, alignment: onLeftHalf ? .trailing : .leading)
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: scrubX == nil)
     }
 }
