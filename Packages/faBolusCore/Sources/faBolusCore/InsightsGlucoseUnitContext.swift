@@ -28,8 +28,13 @@ public struct InsightsGlucoseUnitContext: Sendable, Equatable {
     public func formatMgdl(_ mgdl: Int) -> String { unit.format(mgdl: mgdl) }
 
     /// Convenience for `Double` mg/dL values (e.g. an average) — rounded to the nearest mg/dL `Int`
-    /// before routing through the single `GlucoseUnit.format` funnel.
-    public func formatMgdl(_ mgdl: Double) -> String { unit.format(mgdl: Int(mgdl.rounded())) }
+    /// before routing through the single `GlucoseUnit.format` funnel. L-01: the `Double`→`Int` step goes
+    /// through the shared `clampedInt` guard so a non-finite / out-of-range value (latent today, since
+    /// callers pass bounded means of stored `Int` mg/dL) can never trap `Int(_:)` if this shim is ever
+    /// reused for a free-entered value. Clamped to a physiologically-absurd-but-safe mg/dL ceiling.
+    public func formatMgdl(_ mgdl: Double) -> String {
+        unit.format(mgdl: clampedInt(mgdl, max: 10_000))
+    }
 
     /// The lower TIR threshold (70 mg/dL) as a unit-appropriate label — clinically-rounded in mmol/L
     /// (D-08: "3.9", not a raw 70/18.0182 conversion).
