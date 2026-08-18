@@ -137,4 +137,81 @@ final class HistoryStoreTests: XCTestCase {
         store.clear()
         XCTAssertEqual(store.allSites().count, 0, "clear() wipes site PHI too (data-minimization)")
     }
+
+    // MARK: Caffeine / Alcohol benign trackers (09.18d-02, D-14/D-17)
+
+    func testCaffeineRoundTrip() throws {
+        let store = try makeStore()
+        store.ingestCaffeine(entryID: "c1", milligrams: 95, source: "Coffee",
+                             date: t0, sourceID: "fabolus", recordedAt: t0)
+        let rows = store.caffeine(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(60))
+        XCTAssertEqual(rows.count, 1)
+        let c = try XCTUnwrap(rows.first)
+        XCTAssertEqual(c.entryID, "c1")
+        XCTAssertEqual(c.milligrams, 95, accuracy: 1e-9)
+        XCTAssertEqual(c.source, "Coffee")
+        XCTAssertEqual(c.date, t0)
+        XCTAssertEqual(c.sourceID, "fabolus")
+        XCTAssertEqual(c.recordedAt, t0)
+    }
+
+    func testCaffeineInsertThenDeleteOne() throws {
+        let store = try makeStore()
+        store.ingestCaffeine(entryID: "c1", milligrams: 95, source: "Coffee",
+                             date: t0, sourceID: "fabolus", recordedAt: t0)
+        store.ingestCaffeine(entryID: "c2", milligrams: 40, source: "Tea",
+                             date: t0.addingTimeInterval(60), sourceID: "fabolus", recordedAt: t0)
+        let window = t0.addingTimeInterval(-60)...t0.addingTimeInterval(120)
+        XCTAssertEqual(store.caffeine(in: window).count, 2)
+        // sorted by date desc → the later "c2" comes first.
+        XCTAssertEqual(store.caffeine(in: window).map(\.entryID), ["c2", "c1"])
+        store.deleteCaffeine(id: "c1")
+        let remaining = store.caffeine(in: window)
+        XCTAssertEqual(remaining.count, 1, "delete by entryID removes exactly one row")
+        XCTAssertEqual(remaining.first?.entryID, "c2", "the other entry remains")
+    }
+
+    func testCaffeineInRangeFilters() throws {
+        let store = try makeStore()
+        store.ingestCaffeine(entryID: "old", milligrams: 60, source: "Cola",
+                             date: t0.addingTimeInterval(-40 * 86400), sourceID: "fabolus", recordedAt: t0)
+        store.ingestCaffeine(entryID: "recent", milligrams: 95, source: "Coffee",
+                             date: t0, sourceID: "fabolus", recordedAt: t0)
+        let inWindow = store.caffeine(in: t0.addingTimeInterval(-7 * 86400)...t0.addingTimeInterval(60))
+        XCTAssertEqual(inWindow.map(\.entryID), ["recent"])
+    }
+
+    func testAlcoholRoundTripAndDelete() throws {
+        let store = try makeStore()
+        store.ingestAlcohol(entryID: "a1", standardDrinks: 1.5, source: "Wine",
+                            date: t0, sourceID: "fabolus", recordedAt: t0)
+        store.ingestAlcohol(entryID: "a2", standardDrinks: 1.0, source: "Beer",
+                            date: t0.addingTimeInterval(60), sourceID: "fabolus", recordedAt: t0)
+        let window = t0.addingTimeInterval(-60)...t0.addingTimeInterval(120)
+        let rows = store.alcohol(in: window)
+        XCTAssertEqual(rows.count, 2)
+        // sorted by date desc.
+        XCTAssertEqual(rows.map(\.entryID), ["a2", "a1"])
+        let a = try XCTUnwrap(rows.last)
+        XCTAssertEqual(a.entryID, "a1")
+        XCTAssertEqual(a.standardDrinks, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(a.source, "Wine")
+        XCTAssertEqual(a.date, t0)
+        store.deleteAlcohol(id: "a2")
+        XCTAssertEqual(store.alcohol(in: window).map(\.entryID), ["a1"])
+    }
+
+    func testClearWipesTrackers() throws {
+        let store = try makeStore()
+        store.ingestCaffeine(entryID: "c", milligrams: 95, source: "Coffee",
+                             date: t0, sourceID: "fabolus", recordedAt: t0)
+        store.ingestAlcohol(entryID: "a", standardDrinks: 1, source: "Beer",
+                            date: t0, sourceID: "fabolus", recordedAt: t0)
+        let window = t0.addingTimeInterval(-60)...t0.addingTimeInterval(60)
+        XCTAssertEqual(store.caffeine(in: window).count, 1)
+        XCTAssertEqual(store.alcohol(in: window).count, 1)
+        store.clear()
+        XCTAssertEqual(store.caffeine(in: window).count, 0, "clear() wipes caffeine PHI too")
+        XCTAssertEqual(store.alcohol(in: window).count, 0, "clear() wipes alcohol PHI too")
+    }
 }

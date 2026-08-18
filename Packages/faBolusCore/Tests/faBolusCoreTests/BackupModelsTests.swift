@@ -49,8 +49,9 @@ final class BackupModelsTests: XCTestCase {
 
     // MARK: SiteAtlas backup section (09.18a-01, D-10)
 
-    func testCurrentSchemaIsTwo() {
-        XCTAssertEqual(FaBolusBackup.currentSchema, 2)
+    /// 09.18d-02: schema chained to 3 (adds the optional `trackers` section on top of `siteAtlas`).
+    func testCurrentSchemaIsThree() {
+        XCTAssertEqual(FaBolusBackup.currentSchema, 3)
     }
 
     /// D-10 back-compat: a schema-1 backup (no `siteAtlas` key) still decodes; `siteAtlas` is nil.
@@ -70,7 +71,67 @@ final class BackupModelsTests: XCTestCase {
         let decoded = try FaBolusBackup.decode(Data(schema1JSON.utf8))
         XCTAssertEqual(decoded.meta.schemaVersion, 1, "the fixture's own version is preserved")
         XCTAssertNil(decoded.siteAtlas, "a schema-1 backup has no siteAtlas section")
+        XCTAssertNil(decoded.trackers, "a schema-1 backup has no trackers section")
         XCTAssertNil(decoded.appSettings); XCTAssertNil(decoded.secrets); XCTAssertNil(decoded.pumpSettings)
+    }
+
+    // MARK: Caffeine / Alcohol tracker backup section (09.18d-02, D-14/D-17)
+
+    /// D-17 back-compat: a schema-2 backup (siteAtlas present, but written before the `trackers` section
+    /// existed) still decodes; `trackers` is nil while `siteAtlas` is preserved.
+    func testSchema2BackupDecodesWithNilTrackers() throws {
+        let schema2JSON = """
+        {
+          "meta": {
+            "appVersion": "0.3.0",
+            "createdAt": "2023-11-14T22:13:20Z",
+            "deviceName": "iPhone",
+            "pumpModel": "mobi",
+            "schemaVersion": 2
+          },
+          "siteAtlas": {
+            "entries": [
+              {
+                "bodySide": "front",
+                "date": "2023-11-14T22:13:20Z",
+                "kind": "pump",
+                "normalizedX": 0.5,
+                "normalizedY": 0.4,
+                "siteID": "site-1"
+              }
+            ]
+          }
+        }
+        """
+        let decoded = try FaBolusBackup.decode(Data(schema2JSON.utf8))
+        XCTAssertEqual(decoded.meta.schemaVersion, 2, "the fixture's own version is preserved")
+        XCTAssertNotNil(decoded.siteAtlas, "a schema-2 backup's siteAtlas section still decodes")
+        XCTAssertEqual(decoded.siteAtlas?.entries.first?.siteID, "site-1")
+        XCTAssertNil(decoded.trackers, "a schema-2 backup has no trackers section")
+    }
+
+    func testTrackerBackupRoundTrips() throws {
+        let meta = FaBolusBackup.Meta(createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                                      appVersion: "0.3.0", pumpModel: "mobi", deviceName: "iPhone")
+        let caffeine = CaffeineEntryBackup(entryID: "c1", milligrams: 95, source: "Coffee",
+                                           date: Date(timeIntervalSince1970: 1_700_000_000))
+        let alcohol = AlcoholEntryBackup(entryID: "a1", standardDrinks: 1.5, source: "Wine",
+                                         date: Date(timeIntervalSince1970: 1_700_000_100))
+        let backup = FaBolusBackup(meta: meta,
+                                   trackers: TrackerBackup(caffeine: [caffeine], alcohol: [alcohol]))
+        let decoded = try FaBolusBackup.decode(backup.encoded())
+        XCTAssertEqual(decoded.meta.schemaVersion, 3)
+        let c = try XCTUnwrap(decoded.trackers?.caffeine.first)
+        XCTAssertEqual(c.entryID, "c1")
+        XCTAssertEqual(c.milligrams, 95, accuracy: 1e-9)
+        XCTAssertEqual(c.source, "Coffee")
+        let a = try XCTUnwrap(decoded.trackers?.alcohol.first)
+        XCTAssertEqual(a.entryID, "a1")
+        XCTAssertEqual(a.standardDrinks, 1.5, accuracy: 1e-9)
+        XCTAssertEqual(a.source, "Wine")
+        // trackers stays independently optional alongside the other sections.
+        XCTAssertNil(decoded.appSettings); XCTAssertNil(decoded.secrets)
+        XCTAssertNil(decoded.pumpSettings); XCTAssertNil(decoded.siteAtlas)
     }
 
     func testSiteAtlasBackupRoundTrips() throws {
