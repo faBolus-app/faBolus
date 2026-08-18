@@ -1033,6 +1033,40 @@ public final class AppModel {
         }
     }
 
+    // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
+
+    /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
+    /// `SiteAtlasStore.sourceID`). Benign log data only.
+    static let trackerSourceID = "app.loopInsightsTrackers"
+
+    /// Snapshot every logged caffeine + alcohol entry for the unified backup (schema 3+). Reads the
+    /// SAME shared store the tracker log views write and the export reads. Benign fields only — no
+    /// risk inference (D-14). Called by `BackupRestoreView.createBackup()`.
+    func trackersBackup() -> TrackerBackup {
+        let wide = Date(timeIntervalSince1970: 0)...Date().addingTimeInterval(86400)
+        let caffeine = history?.caffeine(in: wide) ?? []
+        let alcohol = history?.alcohol(in: wide) ?? []
+        return TrackerBackup(
+            caffeine: caffeine.map { CaffeineEntryBackup(entryID: $0.entryID, milligrams: $0.milligrams,
+                                                         source: $0.source, date: $0.date) },
+            alcohol: alcohol.map { AlcoholEntryBackup(entryID: $0.entryID, standardDrinks: $0.standardDrinks,
+                                                      source: $0.source, date: $0.date) })
+    }
+
+    /// Rehydrate caffeine + alcohol tracker entries from a restored backup into the shared store,
+    /// preserving each original stable `entryID`/`date`. Additive, mirroring the SiteAtlas restore.
+    func restoreTrackers(_ backup: TrackerBackup) {
+        guard let history else { return }
+        for e in backup.caffeine {
+            history.ingestCaffeine(entryID: e.entryID, milligrams: e.milligrams, source: e.source,
+                                   date: e.date, sourceID: Self.trackerSourceID)
+        }
+        for e in backup.alcohol {
+            history.ingestAlcohol(entryID: e.entryID, standardDrinks: e.standardDrinks, source: e.source,
+                                  date: e.date, sourceID: Self.trackerSourceID)
+        }
+    }
+
     // MARK: F1 (§13) — unified export of on-device health data
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
@@ -1045,6 +1079,8 @@ public final class AppModel {
         let b = history?.boluses(in: all) ?? []
         let c = history?.carbs(in: all) ?? []
         let s = history?.sites(in: all) ?? []
+        let caf = history?.caffeine(in: all) ?? []
+        let alc = history?.alcohol(in: all) ?? []
         let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
         return PrivacyDataExport(
             meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
@@ -1054,6 +1090,8 @@ public final class AppModel {
             sites: s.map { .init(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
                                  normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
                                  note: $0.note, date: $0.date) },
+            caffeine: caf.map { .init(date: $0.date, milligrams: $0.milligrams, source: $0.source) },
+            alcohol: alc.map { .init(date: $0.date, standardDrinks: $0.standardDrinks, source: $0.source) },
             settingChangeLog: settingChangeStore.load(),
             remoteBolusLedger: deliveryLedgerCoordinator.currentLedgerSnapshot)
     }

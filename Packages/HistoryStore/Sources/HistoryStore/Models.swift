@@ -61,3 +61,42 @@ import SwiftData
         self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
     }
 }
+
+/// A logged caffeine intake (LoopInsights benign tracker, 09.18d-02, D-14/D-17). A standalone,
+/// informational log entry — never a dose input. Ports ONLY the mirror `CaffeineTracker`'s benign
+/// field shape (milligrams / source / timestamp / stable id); the mirror's AI-prompt builder and
+/// UserDefaults persistence are NOT ported (persistence is faBolus SwiftData here). `entryID` is a
+/// stable UUID string for delete + backup identity; carries the same `sourceID`/`recordedAt`
+/// provenance columns as the other stores.
+@Model public final class StoredCaffeine {
+    public var entryID: String
+    public var milligrams: Double
+    public var source: String
+    public var date: Date
+    public var sourceID: String
+    public var recordedAt: Date
+    public init(entryID: String, milligrams: Double, source: String,
+                date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.milligrams = milligrams; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}
+
+/// A logged alcohol intake (LoopInsights benign tracker, 09.18d-02, D-14/D-17). Informational log
+/// entry only. Ports ONLY the mirror `AlcoholTracker`'s benign field shape (standardDrinks / source /
+/// timestamp / stable id); the mirror's `computeHypoRisk` medical inference and AI-prompt builder are
+/// NOT ported (D-14 — novel medical advice). `entryID` is a stable UUID string for delete + backup
+/// identity; carries the same `sourceID`/`recordedAt` provenance columns as the other stores.
+@Model public final class StoredAlcohol {
+    public var entryID: String
+    public var standardDrinks: Double
+    public var source: String
+    public var date: Date
+    public var sourceID: String
+    public var recordedAt: Date
+    public init(entryID: String, standardDrinks: Double, source: String,
+                date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.standardDrinks = standardDrinks; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}

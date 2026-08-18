@@ -70,6 +70,33 @@ import faBolusCore
                 == .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
     }
 
+    // MARK: 09.18d-02 — caffeine/alcohol tracker export round-trip + back-compat
+
+    /// The tracker arrays round-trip losslessly, and a legacy payload written before the trackers
+    /// shipped (no `caffeine`/`alcohol` keys) decodes to empty arrays (decode-optional back-compat).
+    @Test func trackerExportRoundTripsAndDecodesLegacyPayload() throws {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let export = PrivacyDataExport(
+            meta: .init(createdAt: t0, appVersion: "0.3.0", schemaVersion: PrivacyDataExport.currentSchema),
+            glucose: [], boluses: [], carbs: [],
+            caffeine: [.init(date: t0, milligrams: 95, source: "Coffee")],
+            alcohol: [.init(date: t0.addingTimeInterval(60), standardDrinks: 1.5, source: "Wine")],
+            settingChangeLog: SettingChangeLog(), remoteBolusLedger: RemoteBolusLedger())
+        let decoded = try PrivacyDataExport.decode(export.encoded())
+        #expect(decoded.caffeine == export.caffeine)
+        #expect(decoded.alcohol == export.alcohol)
+
+        // A legacy payload lacking the tracker keys still decodes → empty arrays. Derived from a real
+        // encoded payload with the two keys stripped, so every nested encoding matches the decoder.
+        var obj = try JSONSerialization.jsonObject(with: export.encoded()) as! [String: Any]
+        obj.removeValue(forKey: "caffeine")
+        obj.removeValue(forKey: "alcohol")
+        let legacyData = try JSONSerialization.data(withJSONObject: obj)
+        let legacyDecoded = try PrivacyDataExport.decode(legacyData)
+        #expect(legacyDecoded.caffeine.isEmpty)
+        #expect(legacyDecoded.alcohol.isEmpty)
+    }
+
     // MARK: Complete erase — gated + health-data-only
 
     /// Erase MUST refuse while a delivery is unresolved (a `delivering` entry that reconciliation still
