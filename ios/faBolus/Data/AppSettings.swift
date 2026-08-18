@@ -172,6 +172,15 @@ public final class AppSettings {
     /// standalone informational log + device-local idiom as `caffeineTrackerEnabled`. Never suggests/
     /// changes/blocks a dose, and carries NO delayed-hypo risk inference (D-14).
     public var alcoholTrackerEnabled: Bool { didSet { d.set(alcoholTrackerEnabled, forKey: "alcoholTrackerEnabled") } }
+    /// Phase 09.18d-03 (D-14/D-17): gate the caregiver-digest PHI-sharing surface. **Default OFF** — the
+    /// digest externalizes glucose + activity PHI to whoever the user shares with (the highest-exposure
+    /// benign LoopInsights surface), and is AI-adjacent (D-17), so it stays inert until the user
+    /// explicitly enables it AND acknowledges the one-time "About Smart Features" explainer
+    /// (`hasAcknowledgedCaregiverDigestNotice`). The digest is a summary of what already happened — never
+    /// advice, a directive, or a dose (§13). Same device-local persisted-Bool idiom as `endoReportEnabled`
+    /// — deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (it gates a read-only share
+    /// surface, carries no dose logic), so the catalog drift guards stay untouched.
+    public var caregiverDigestEnabled: Bool { didSet { d.set(caregiverDigestEnabled, forKey: "caregiverDigestEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -225,6 +234,14 @@ public final class AppSettings {
     public var foodFinderAINoticeAckAt: Date? { didSet { d.set(foodFinderAINoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "foodFinderAINoticeAckAt") } }
     public var hasAcknowledgedFoodFinderAINotice: Bool { foodFinderAINoticeAckAt != nil }
     public func acknowledgeFoodFinderAINotice() { if foodFinderAINoticeAckAt == nil { foodFinderAINoticeAckAt = Date() } }
+    // Caregiver-digest one-time explainer (09.18d-03, D-14/D-17) — the "About Smart Features" notice fired
+    // on first ENABLE of the caregiver digest (PHI-sharing, AI-adjacent). Same durable per-install-marker
+    // idiom as `smartFeaturesNoticeAckAt`/`foodFinderAINoticeAckAt`: NOT a `SettingsCatalog` row, never
+    // backed up / iCloud-synced (a synced ack must not silently pre-suppress the notice on another
+    // device). nil ⇒ never shown. NEVER gates a write / a share.
+    public var caregiverDigestNoticeAckAt: Date? { didSet { d.set(caregiverDigestNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "caregiverDigestNoticeAckAt") } }
+    public var hasAcknowledgedCaregiverDigestNotice: Bool { caregiverDigestNoticeAckAt != nil }
+    public func acknowledgeCaregiverDigestNotice() { if caregiverDigestNoticeAckAt == nil { caregiverDigestNoticeAckAt = Date() } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -751,6 +768,9 @@ public final class AppSettings {
         // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol trackers are discoverable / ON by default.
         caffeineTrackerEnabled = (d.object(forKey: "caffeineTrackerEnabled") as? Bool) ?? true
         alcoholTrackerEnabled = (d.object(forKey: "alcoholTrackerEnabled") as? Bool) ?? true
+        // Phase 09.18d-03 (D-14/D-17): the caregiver digest is OFF by default (PHI leaves the device on
+        // share; AI-adjacent) — a fresh install / absent key never enables it silently.
+        caregiverDigestEnabled = (d.object(forKey: "caregiverDigestEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
@@ -769,6 +789,8 @@ public final class AppSettings {
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged
         foodFinderAINoticeAckAt = ffAck > 0 ? Date(timeIntervalSince1970: ffAck) : nil
+        let cdAck = d.double(forKey: "caregiverDigestNoticeAckAt") // 0 (absent) ⇒ never acknowledged
+        caregiverDigestNoticeAckAt = cdAck > 0 ? Date(timeIntervalSince1970: cdAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg

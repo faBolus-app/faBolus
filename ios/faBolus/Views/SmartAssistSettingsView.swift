@@ -34,6 +34,11 @@ struct SmartAssistSettingsView: View {
     // copy. This path is the ONLY one where PHI leaves the device, so the disclosure gates it explicitly.
     @State private var showFoodFinderAINotice = false
 
+    // Phase 09.18d-03 (D-14/D-17): the one-time "About Smart Features" explainer for the caregiver digest
+    // — fired on first ENABLE of the (default-OFF, PHI-sharing, AI-adjacent) digest toggle. Same one-shot-
+    // ack idiom, with the dedicated `hasAcknowledgedCaregiverDigestNotice` flag and the UI-SPEC copy.
+    @State private var showCaregiverDigestNotice = false
+
     var body: some View {
         Form {
             Section {
@@ -162,6 +167,34 @@ struct SmartAssistSettingsView: View {
                 Text("**Informational only — faBolus won't change any dose.** Log caffeine or drinks to see them alongside your glucose. On by default.")
             }
 
+            // Phase 09.18d-03 (D-14/D-17): the caregiver-digest PHI-sharing surface. **Default OFF**
+            // (opt-in) — the digest externalizes glucose + activity PHI to whoever the user shares with
+            // and is AI-adjacent, so enabling it fires the one-time "About Smart Features" explainer that
+            // MUST be acknowledged (same D-07 idiom: bound Toggle whose setter fires the notice on enable).
+            // When on, a NavigationLink reveals the digest surface, which shows the verbatim PHI disclosure
+            // before any share and shares a summary-only records snapshot via the standard share sheet. The
+            // digest is a summary of what already happened — never advice or a dose (§13).
+            Section {
+                Toggle("Caregiver digest", isOn: Binding(
+                    get: { settings.caregiverDigestEnabled },
+                    set: { newValue in
+                        settings.caregiverDigestEnabled = newValue
+                        if newValue { presentCaregiverDigestNoticeIfNeeded() }
+                    }))
+                if settings.caregiverDigestEnabled {
+                    NavigationLink {
+                        LoopInsights_CaregiverDigestView(historyStore: model.sharedHistoryStore,
+                                                         glucoseUnit: settings.glucoseDisplayUnit)
+                    } label: {
+                        Label("Caregiver digest", systemImage: "person.2")
+                    }
+                }
+            } header: {
+                Text("Caregiver digest")
+            } footer: {
+                Text("**Off by default.** Advisory only — never blocks, changes, or suggests a dose. Shares a summary of glucose and activity you can send to a caregiver — a summary of what's already happened.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every
@@ -235,6 +268,13 @@ struct SmartAssistSettingsView: View {
         } message: {
             Text("Turning this on sends your food photo/description to the AI provider you choose. That's health-adjacent data leaving your device. Only your carb estimate comes back — faBolus never doses automatically.")
         }
+        // Phase 09.18d-03 (D-14/D-16/D-17): the "About Smart Features" one-time explainer for the
+        // caregiver digest, fired on first enable. Acknowledging sets `caregiverDigestNoticeAckAt`.
+        .alert("About Smart Features", isPresented: $showCaregiverDigestNotice) {
+            Button("I understand") { AppSettings.shared.acknowledgeCaregiverDigestNotice() }
+        } message: {
+            Text("These features are informational and advisory only. faBolus is not your pump and never changes your insulin or doses for you.")
+        }
     }
 
     /// Fires the generic D-07 explainer exactly once ever, the first time the user enables EITHER
@@ -259,6 +299,14 @@ struct SmartAssistSettingsView: View {
     private func presentFoodFinderAINoticeIfNeeded() {
         if !AppSettings.shared.hasAcknowledgedFoodFinderAINotice {
             showFoodFinderAINotice = true
+        }
+    }
+
+    /// Fires the "About Smart Features" explainer the first time the user enables the caregiver digest —
+    /// never on disable, never a second time (09.18d-03, D-14/D-17).
+    private func presentCaregiverDigestNoticeIfNeeded() {
+        if !AppSettings.shared.hasAcknowledgedCaregiverDigestNotice {
+            showCaregiverDigestNotice = true
         }
     }
 }
