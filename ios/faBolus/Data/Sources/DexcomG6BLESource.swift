@@ -28,6 +28,30 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
 
+    /// D-06: the ONE stable restore identifier used by the production instance
+    /// (`GlucoseSourceRegistry.makeSelected()`). Textually stable — a literal, never a timestamp/UUID
+    /// — so it survives relaunches unchanged (a requirement of CoreBluetooth state restoration).
+    static let productionRestoreIdentifier = "com.fabolus.cgm.dexcom-g6-ble"
+
+    /// Set at construction (nil for the ephemeral `CgmCredentialsView` "Test" instance,
+    /// `productionRestoreIdentifier` for the one production instance — see `GlucoseSourceRegistry`).
+    /// CoreBluetooth SIGABRTs (`-[CBCentralManager initWithDelegate:queue:options:]`) when the SAME
+    /// restore-identifier string is used by more than one live manager in the process, which is
+    /// exactly what happened when both the launch-selected source and the "test failover" button
+    /// built a G6 source with the same hardcoded identifier (D-06). Scoping it to the production
+    /// instance only — and reattaching via `willRestoreState` below — restores background failover
+    /// without reintroducing that crash.
+    private let restoreIdentifier: String?
+
+    init(restoreIdentifier: String? = nil) {
+        self.restoreIdentifier = restoreIdentifier
+        super.init()
+    }
+
+    /// Read-only accessor for the construction-time restore-identifier scoping test (D-06) — no live
+    /// `CBCentralManager` required.
+    var restoreIdentifierForTesting: String? { restoreIdentifier }
+
     /// Sensor clock → wall clock anchor (D-08a). Set/refreshed whenever a `transmitterTimeRx`
     /// (opcode 0x25) is passively observed: `activationDate = now - currentTime`. A glucose frame's
     /// sensor-relative `timestamp` then converts via `activationDate.addingTimeInterval(timestamp)` —
@@ -74,12 +98,18 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         guard central == nil else { return }
         status = .searching
         connectedAt = Date()
-        // NO CBCentralManagerOptionRestoreIdentifierKey: CoreBluetooth asserts (SIGABRT in
-        // -[CBCentralManager initWithDelegate:queue:options:]) when a restore identifier is used by
-        // more than one manager in the process — which happens when the launch-selected source and
-        // the "test failover" both build a G6 source, and on restore relaunches. A passive failover
-        // source doesn't need background state restoration (it re-scans on start), so skip it.
-        central = CBCentralManager(delegate: self, queue: .main)
+        // D-06: pass CBCentralManagerOptionRestoreIdentifierKey ONLY when this instance was built
+        // with a restore identifier (the production instance — see `GlucoseSourceRegistry`). The
+        // ephemeral "Test" instance is built with `restoreIdentifier == nil` and gets no options at
+        // all, so the two never share a restore-identifier string (the SIGABRT this used to hit).
+        // Background relaunch then reattaches via `centralManager(_:willRestoreState:)` below, so the
+        // production instance re-arms for overnight failover instead of losing state restoration
+        // entirely.
+        var options: [String: Any]?
+        if let restoreIdentifier {
+            options = [CBCentralManagerOptionRestoreIdentifierKey: restoreIdentifier]
+        }
+        central = CBCentralManager(delegate: self, queue: .main, options: options)
     }
 
     func stop() {

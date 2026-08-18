@@ -12,19 +12,26 @@ public enum GlucoseSourceRegistry {
     /// (last resort), and HealthKit (Eversense).
     public static let enabled: [GlucoseSourceDescriptor] = [
         GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
-                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { DexcomG7BLESource() },
+                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { _ in DexcomG7BLESource() },
+        // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
+        // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
+        // gets nil. Two CBCentralManagers sharing a restore-identifier string in one process is a
+        // CoreBluetooth SIGABRT — this is the only thing standing between the two call sites and that
+        // crash, so do not default this to true.
         GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE (direct BLE, passive — experimental)",
-                                sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { DexcomG6BLESource() },
+                                sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { restoreStateEnabled in
+            DexcomG6BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG6BLESource.productionRestoreIdentifier : nil)
+        },
         GlucoseSourceDescriptor(id: "librelinkup", name: "FreeStyle Libre 2/3 (LibreLinkUp)",
-                                sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { LibreLinkUpSource() },
+                                sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { _ in LibreLinkUpSource() },
         GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
-                                sensors: ["Any"]) { NightscoutSource() },
+                                sensors: ["Any"]) { _ in NightscoutSource() },
         GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
-                                sensors: ["Dexcom G6", "Dexcom G7"]) { DexcomShareSource() },
+                                sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
         GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
-                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { HealthKitGlucoseSource() },
+                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() },
         GlucoseSourceDescriptor(id: "xdrip-appgroup", name: "xDrip4iOS — App Group (local)",
-                                sensors: ["xDrip4iOS (any sensor, local)"]) { XDripAppGroupSource() },
+                                sensors: ["xDrip4iOS (any sensor, local)"]) { _ in XDripAppGroupSource() },
     ]
 
     /// Every descriptor — used for id lookups.
@@ -48,11 +55,14 @@ public enum GlucoseSourceRegistry {
         return all.first { $0.id == id }
     }
 
-    /// Build the selected source, or nil when none is configured/available.
-    public static func makeSelected() -> GlucoseSource? { selected()?.make() }
+    /// Build the selected source, or nil when none is configured/available. The ONE production
+    /// instance (D-06) — passes `restoreStateEnabled: true`.
+    public static func makeSelected() -> GlucoseSource? { selected()?.make(true) }
 
     /// The descriptor for a specific source id (for the credentials "test all" diagnostic).
     public static func descriptor(id: String) -> GlucoseSourceDescriptor? { all.first { $0.id == id } }
-    /// Build a specific source by id (for testing a not-necessarily-selected source).
-    public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make() }
+    /// Build a specific source by id (for testing a not-necessarily-selected source). This is the
+    /// ephemeral `CgmCredentialsView` "Test" path — always `restoreStateEnabled: false` (D-06), so it
+    /// can never collide with the production instance's restore identifier.
+    public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make(false) }
 }
