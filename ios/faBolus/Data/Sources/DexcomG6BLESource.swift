@@ -28,6 +28,13 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
 
+    /// Sensor clock → wall clock anchor (D-08a). Set/refreshed whenever a `transmitterTimeRx`
+    /// (opcode 0x25) is passively observed: `activationDate = now - currentTime`. A glucose frame's
+    /// sensor-relative `timestamp` then converts via `activationDate.addingTimeInterval(timestamp)` —
+    /// this is CGMBLEKit's own proven technique (ported per the RESEARCH re-check), not a per-message
+    /// receipt-`Date()` stamp, which would read a delayed/batched frame as artificially fresh.
+    private var activationDate: Date?
+
     /// Optional Dexcom transmitter ID (6 chars). Used only to pick the right transmitter by its
     /// advertised name suffix when several Dexcom sensors are in range; passive reads need no auth.
     private var transmitterID: String { (GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? "").uppercased() }
@@ -51,11 +58,39 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         onChange?()
     }
 
+    /// Decodes a raw control-characteristic frame and routes it by opcode: a `transmitterTimeRx`
+    /// (0x25) refreshes the sensor-time anchor; a glucose frame (0x31/0x4f) is decoded and handled.
+    /// Internal + MainActor so tests can drive the decode path directly, without CoreBluetooth. The
+    /// CB delegate (`peripheral(_:didUpdateValueFor:)`) is a thin wrapper over this.
+    func ingest(controlFrame data: Data) {
+        guard !data.isEmpty else { return }
+        if data.starts(with: .transmitterTimeRx) {
+            // A corrupt/wrong-opcode time frame fails to decode and simply doesn't refresh the
+            // anchor — it must NOT fall through to a `GlucoseRxMessage` attempt (opcode mismatch
+            // would reject it anyway, but this keeps the routing explicit).
+            if let time = TransmitterTimeRxMessage(data: data) {
+                activationDate = Date(timeIntervalSinceNow: -TimeInterval(time.currentTime))
+            }
+            return
+        }
+        guard let msg = GlucoseRxMessage(data: data) else { return }
+        handle(msg)
+    }
+
     private func handle(_ msg: GlucoseRxMessage) {
         guard msg.hasReliableGlucose else { status = .connected; onChange?(); return }
-        // Passive readings arrive in real time (~5 min), so stamp at receipt (the message timestamp
-        // is transmitter-relative and would need the activation date to convert).
-        let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: Date(),
+        guard let activationDate else {
+            // FAIL-CLOSED pre-anchor (D-08a/D-10): no sensor-time anchor has been observed yet, so
+            // this frame's true age is unknowable. Do NOT fall back to stamping `Date()` at receipt
+            // (that IS the hazard D-08a eliminates) and do NOT publish it as `latest` — the trusted
+            // bolus-calc input. The ≈10-min never-anchored bound + gate special-casing land in
+            // Plan 02 Task 3; here it is simply never surfaced.
+            status = .connected
+            onChange?()
+            return
+        }
+        let date = activationDate.addingTimeInterval(TimeInterval(msg.glucose.timestamp))
+        let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
                                    trend: Self.trend(msg.trendDirection), sourceID: id)
         latest = sample
         var byBucket: [Int: GlucoseReading] = [:]
@@ -175,9 +210,8 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
                                 error: Error?) {
         MainActor.assumeIsolated {
             guard let data = characteristic.value, !data.isEmpty,
-                  characteristic.uuid == CGMServiceCharacteristicUUID.control.cbUUID,
-                  let msg = GlucoseRxMessage(data: data) else { return }
-            handle(msg)
+                  characteristic.uuid == CGMServiceCharacteristicUUID.control.cbUUID else { return }
+            ingest(controlFrame: data)
         }
     }
 }
