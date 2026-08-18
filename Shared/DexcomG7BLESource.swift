@@ -65,6 +65,12 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
 
     private func notify() { onChange?() }
 
+    /// Read-only lifecycle-state accessors for the W-02 stop()/re-arm test (D-14). `isArmedForTesting`
+    /// reflects whether a live central exists (set by `start()`); `anchorIsSetForTesting` reflects the
+    /// sensor-time anchor — both must reset on `stop()` so a later `start()` is not a permanent no-op.
+    var isArmedForTesting: Bool { central != nil }
+    var anchorIsSetForTesting: Bool { anchorMessageTimestamp != nil || anchorReceivedAt != nil }
+
     // MARK: Decoding → GlucoseSample
 
     /// Internal testable ingest seam (mirrors `DexcomG6BLESource.ingest(controlFrame:)`): decodes a

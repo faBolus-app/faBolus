@@ -56,6 +56,12 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     /// `CBCentralManager` required.
     var restoreIdentifierForTesting: String? { restoreIdentifier }
 
+    /// Read-only lifecycle-state accessors for the W-02 stop()/re-arm test (D-14). `isArmedForTesting`
+    /// reflects whether a live central exists (set by `start()`); `activationDateForTesting` reflects
+    /// the sensor-time anchor — both must reset on `stop()` so a later `start()` re-arms.
+    var isArmedForTesting: Bool { central != nil }
+    var activationDateForTesting: Date? { activationDate }
+
     /// Sensor clock → wall clock anchor (D-08a). Set/refreshed whenever a `transmitterTimeRx`
     /// (opcode 0x25) is passively observed: `activationDate = now - currentTime`. A glucose frame's
     /// sensor-relative `timestamp` then converts via `activationDate.addingTimeInterval(timestamp)` —

@@ -209,6 +209,33 @@ struct DexcomG6BLESourceTests {
         #expect(source.status == .connected)
     }
 
+    // MARK: - 09.22-01 Task 3: stop() lifecycle reset (D-14 / W-02)
+
+    /// W-02: `stop()` must clear the sensor-time anchor (`activationDate`) so a fresh connection
+    /// re-anchors — no live CoreBluetooth (drives the anchor via the ingest seam).
+    @Test func stopClearsSensorAnchorSoFreshConnectionReanchors() {
+        let source = DexcomG6BLESource()
+        source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
+        source.ingest(controlFrame: Self.glucoseFrame(timestamp: 3590, glucose: 120))
+        #expect(source.latest?.mgdl == 120)
+        #expect(source.activationDateForTesting != nil, "a transmitterTimeRx must set the anchor")
+        source.stop()
+        #expect(source.activationDateForTesting == nil,
+                "stop() must clear the sensor-time anchor so a later connection re-anchors (W-02)")
+    }
+
+    /// W-02: after start() → stop() → start(), the second start() is NOT a permanent no-op — stop()
+    /// resets the central so start() re-arms.
+    @Test func stopResetsCentralSoLaterStartReArms() async {
+        let source = DexcomG6BLESource()
+        await source.start()
+        #expect(source.isArmedForTesting, "start() must arm the central")
+        source.stop()
+        #expect(!source.isArmedForTesting, "stop() must reset the central (W-02)")
+        await source.start()
+        #expect(source.isArmedForTesting, "a second start() after stop() must re-arm, not be a permanent no-op")
+    }
+
     // MARK: - H-02 (09.20-REVIEW.md) — RSSI tie-break selection
     //
     // `strongestCandidateIndex` is the pure, CoreBluetooth-free decision logic behind H-02's fix:

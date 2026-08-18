@@ -132,4 +132,30 @@ struct DexcomG7BLESourceTests {
         #expect(prov == .pump, "arbiter must not fail over to a source reporting no usable value")
         #expect(snap.glucose == 100)
     }
+
+    // MARK: - Task 3: stop() lifecycle reset (D-14 / W-02)
+
+    /// W-02: `stop()` must clear the sensor-time anchor so a fresh connection re-bootstraps it (no
+    /// live CoreBluetooth — drives the anchor via the ingest seam).
+    @Test func stopClearsSensorAnchorSoFreshConnectionRebootstraps() {
+        let source = DexcomG7BLESource()
+        source.ingest(glucoseFrame: Self.glucoseFrame(messageTimestamp: 1000, age: 0, glucose: 120))
+        #expect(source.latest?.mgdl == 120)
+        #expect(source.anchorIsSetForTesting, "a bootstrapped frame must set the anchor")
+        source.stop()
+        #expect(!source.anchorIsSetForTesting,
+                "stop() must clear the sensor-time anchor so a later connection re-bootstraps (W-02)")
+    }
+
+    /// W-02: after start() → stop() → start(), the second start() is NOT a permanent no-op — stop()
+    /// resets the central so start() re-arms.
+    @Test func stopResetsCentralSoLaterStartReArms() async {
+        let source = DexcomG7BLESource()
+        await source.start()
+        #expect(source.isArmedForTesting, "start() must arm the central")
+        source.stop()
+        #expect(!source.isArmedForTesting, "stop() must reset the central (W-02)")
+        await source.start()
+        #expect(source.isArmedForTesting, "a second start() after stop() must re-arm, not be a permanent no-op")
+    }
 }
