@@ -142,7 +142,11 @@ final class BackupModelsTests: XCTestCase {
                                          date: Date(timeIntervalSince1970: 1_700_000_000))
         let backup = FaBolusBackup(meta: meta, siteAtlas: SiteAtlasBackup(entries: [entry]))
         let decoded = try FaBolusBackup.decode(backup.encoded())
-        XCTAssertEqual(decoded.meta.schemaVersion, 2)
+        // A freshly-created backup carries the CURRENT schema (Meta.schemaVersion defaults to
+        // FaBolusBackup.currentSchema). SiteAtlas landed in schema 2; trackers (09.18d) bumped
+        // currentSchema to 3, so a fresh backup is 3 regardless of which sections it carries.
+        // (Schema-2 backward-compat decoding is covered separately by the schema-2 fixture test above.)
+        XCTAssertEqual(decoded.meta.schemaVersion, 3)
         let out = try XCTUnwrap(decoded.siteAtlas?.entries.first)
         XCTAssertEqual(out.siteID, "site-1")
         XCTAssertEqual(out.kind, "pump")
