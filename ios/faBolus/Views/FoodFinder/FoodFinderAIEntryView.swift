@@ -155,9 +155,13 @@ struct FoodFinderAIEntryView: View {
             TextField("Describe the food (e.g. \"bowl of oatmeal with berries\")",
                       text: $description, axis: .vertical)
                 .lineLimit(1...4)
+            // Swift 6: PhotosPicker's `label` is a @Sendable closure, so it can't capture the
+            // main-actor `photoData` @State directly. Read it into a Sendable Bool on the main
+            // actor first, then use that inside the label (behavior unchanged).
+            let hasPhoto = photoData != nil
             PhotosPicker(selection: $photoItem, matching: .images) {
-                Label(photoData == nil ? "Add a photo" : "Photo attached",
-                      systemImage: photoData == nil ? "photo" : "checkmark.circle.fill")
+                Label(hasPhoto ? "Photo attached" : "Add a photo",
+                      systemImage: hasPhoto ? "checkmark.circle.fill" : "photo")
             }
             if photoData != nil {
                 Button("Remove photo", role: .destructive) { photoData = nil; photoItem = nil }

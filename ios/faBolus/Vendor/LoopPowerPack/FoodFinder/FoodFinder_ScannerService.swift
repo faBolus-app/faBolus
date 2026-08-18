@@ -182,6 +182,21 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
         _recentlyScannedBarcodes.removeAll()
     }
 
+    /// Last known device orientation (guarded by `stateLock`).
+    ///
+    /// faBolus adapter delta (Swift 6 strict concurrency): `UIDevice.current.orientation` is
+    /// main-actor-isolated, but `captureOutput(_:didOutput:from:)` runs on `sessionQueue` (off the main
+    /// actor), so it cannot read it there. The orientation is cached here instead — refreshed on the
+    /// main actor via `UIDevice.orientationDidChangeNotification` — and the off-main delegate reads the
+    /// cached (Sendable) value. Defaults to `.unknown`, which the image-orientation mapping below sends
+    /// to `.right` exactly as a direct `.unknown` read did, so behavior is unchanged.
+    private var _deviceOrientation: UIDeviceOrientation = .unknown
+
+    private var cachedDeviceOrientation: UIDeviceOrientation {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _deviceOrientation }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _deviceOrientation = newValue }
+    }
+
     /// Timer to clear recently scanned barcodes
     private var duplicatePreventionTimer: Timer?
 
@@ -244,6 +259,26 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
             name: .AVCaptureSessionRuntimeError,
             object: captureSession
         )
+
+        // faBolus adapter delta (Swift 6): cache device orientation on the main actor so the off-main
+        // `captureOutput` delegate can read it without touching main-actor `UIDevice.current`. This
+        // fires only while some part of the app is generating orientation notifications, matching the
+        // direct per-frame read the mirror used; when none are generated the cache stays `.unknown`.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(deviceOrientationChanged),
+            name: UIDevice.orientationDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func deviceOrientationChanged() {
+        // Orientation notifications are posted on the main thread, so assumeIsolated is safe here; it
+        // lets this nonisolated @objc handler read the main-actor-isolated `UIDevice.current.orientation`
+        // and stash it in the lock-guarded cache the off-main delegate reads.
+        MainActor.assumeIsolated {
+            cachedDeviceOrientation = UIDevice.current.orientation
+        }
     }
     
     @objc private func sessionWasInterrupted(notification: NSNotification) {
@@ -1919,8 +1954,9 @@ extension BarcodeScannerService: AVCaptureVideoDataOutputSampleBufferDelegate {
         // Update frame time for health monitoring
         lastValidFrameTime = Date()
         
-        // Determine image orientation based on device orientation
-        let deviceOrientation = UIDevice.current.orientation
+        // Determine image orientation based on device orientation (read from the main-actor-refreshed
+        // cache; see `cachedDeviceOrientation` — the delegate runs off the main actor).
+        let deviceOrientation = cachedDeviceOrientation
         let imageOrientation: CGImagePropertyOrientation
         
         switch deviceOrientation {
