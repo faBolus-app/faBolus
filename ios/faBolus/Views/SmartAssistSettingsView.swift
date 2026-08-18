@@ -72,6 +72,22 @@ struct SmartAssistSettingsView: View {
                 Text("**Advisory only** — never blocks or changes a dose. Tap and hold the glucose chart to read exact values at any time. On by default; turn off here.")
             }
 
+            // Phase 09.18b (D-07/D-09/D-17): the heart-rate chart-context toggle. Default ON, off-able.
+            // HR is display-only chart context — never a dose/meal input. Turning it OFF is the single
+            // switch that (a) stops the phone's on-demand HealthKit HR query, (b) fires `hr_ctl` off to
+            // the watch so it stops appending HR, and (c) hides the HR readout row entirely (not "—").
+            // The set closure drives `model.setWantHeartRate` so the watch is told the instant it flips.
+            Section {
+                Toggle("Heart rate context", isOn: Binding(
+                    get: { settings.heartRateContextEnabled },
+                    set: { newValue in
+                        settings.heartRateContextEnabled = newValue
+                        model.setWantHeartRate(newValue)
+                    }))
+            } footer: {
+                Text("**Heart rate is chart context only — never meal detection or dosing.** Off turns it off everywhere: the phone stops requesting it and your Garmin stops sending it.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every

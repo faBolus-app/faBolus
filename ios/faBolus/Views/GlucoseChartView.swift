@@ -20,6 +20,13 @@ struct GlucoseChartView: View {
     /// single scalar handed in by the caller — never a synthesized schedule. Default nil so callers that
     /// don't surface basal (e.g. the slim remote chart) simply render "—".
     var basalUnitsPerHour: Double? = nil
+    /// Phase 09.18b-02 (D-07/D-09): whether the HR chart-context toggle is ON. When off, no HealthKit HR
+    /// query runs and the HR readout row is hidden entirely. Default false so callers that don't surface
+    /// HR (e.g. the slim remote chart) never query Health.
+    var heartRateContextEnabled: Bool = false
+    /// Phase 09.18b-02 (D-07): the last Garmin ambient-HR sample (bpm + when), used as the HR value when
+    /// Apple Health has no sample near the scrub point. Display-only chart context; nil hides the row.
+    var latestGarminHeartRate: (bpm: Double, date: Date)? = nil
 
     // Phase 09.18b (D-05/D-06): the transient scrub x-position (in plot-area points) while the user
     // long-presses/drags the chart, or nil when idle. Read-only, never committed anywhere — cleared on
@@ -33,6 +40,12 @@ struct GlucoseChartView: View {
     /// so VoiceOver users can step the scrub without the drag gesture (UI-SPEC §1 backstop). nil = not
     /// yet stepped.
     @State private var a11yIndex: Int? = nil
+    /// Phase 09.18b-02 (D-07): the on-demand reader for the Apple-Health `.heartRate` sample nearest the
+    /// scrub point. Owned per-chart; queried only while scrubbing with HR on (costs nothing otherwise).
+    @State private var healthKitHR = HealthKitHeartRateSource()
+    /// The Apple-Health HR (bpm) resolved for the current scrubbed data point, or nil. Refreshed by the
+    /// `.task(id:)` below as the scrub crosses to a new point; cleared when HR is off or scrubbing ends.
+    @State private var scrubbedHealthKitHR: Double? = nil
 
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
@@ -236,6 +249,7 @@ struct GlucoseChartView: View {
 
             if let x = scrubX, let date: Date = proxy.value(atX: x) {
                 let readout = detailViewModel.readout(at: date)
+                let hr = resolvedHeartRate(at: date)
                 let onLeftHalf = x < size.width / 2
 
                 // Vertical rule + grab handle marking the active timestamp.
@@ -251,8 +265,16 @@ struct GlucoseChartView: View {
                 // Readout card, pinned to the plot edge OPPOSITE the scrub point (so it never sits
                 // under the finger) and width-capped so it stays inside the chart bounds.
                 HStack(spacing: 0) {
-                    if !onLeftHalf { GraphDetailCard(readout: readout); Spacer(minLength: 0) }
-                    if onLeftHalf { Spacer(minLength: 0); GraphDetailCard(readout: readout) }
+                    if !onLeftHalf {
+                        GraphDetailCard(readout: readout, heartRate: hr.bpm,
+                                        heartRateEnabled: heartRateContextEnabled, heartRateStale: hr.stale)
+                        Spacer(minLength: 0)
+                    }
+                    if onLeftHalf {
+                        Spacer(minLength: 0)
+                        GraphDetailCard(readout: readout, heartRate: hr.bpm,
+                                        heartRateEnabled: heartRateContextEnabled, heartRateStale: hr.stale)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: onLeftHalf ? .trailing : .leading)
                 .padding(.horizontal, 4)
@@ -262,5 +284,30 @@ struct GlucoseChartView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: scrubX == nil)
+        // Phase 09.18b-02 (D-07/D-09): resolve the Apple-Health HR for the point the scrub lands on.
+        // Keyed on `scrubbedPointDate` so it fires only when the scrub crosses to a NEW data point (or
+        // ends), never on every sub-pixel move; a no-op (and no HealthKit query at all) when HR is off.
+        .task(id: scrubbedPointDate) { await refreshScrubbedHealthKitHR() }
+    }
+
+    /// The HR value + staleness for the readout row (D-07). Prefers the Apple-Health sample nearest the
+    /// scrub point (fresh by construction — queried within ±5 min); falls back to the last Garmin
+    /// ambient-HR sample, tinted stale when that sample is more than ~15 min from the scrubbed time.
+    /// Returns nil bpm when HR is off or no sample exists → the HR row hides entirely (D-09).
+    private func resolvedHeartRate(at date: Date) -> (bpm: Double?, stale: Bool) {
+        guard heartRateContextEnabled else { return (nil, false) }
+        if let hk = scrubbedHealthKitHR { return (hk, false) }
+        if let g = latestGarminHeartRate {
+            return (g.bpm, abs(g.date.timeIntervalSince(date)) > 15 * 60)
+        }
+        return (nil, false)
+    }
+
+    /// On-demand Apple-Health HR read at the scrubbed data point (D-07). Only runs while scrubbing with
+    /// HR ON — when HR is off or the scrub ends, it clears the value and issues NO HealthKit query (D-09).
+    private func refreshScrubbedHealthKitHR() async {
+        guard heartRateContextEnabled, let date = scrubbedPointDate else { scrubbedHealthKitHR = nil; return }
+        await healthKitHR.requestAuthorizationIfNeeded()
+        scrubbedHealthKitHR = await healthKitHR.heartRate(at: date)
     }
 }

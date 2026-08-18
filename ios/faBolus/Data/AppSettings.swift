@@ -136,6 +136,13 @@ public final class AppSettings {
     /// row and NOT in `backupSnapshot` (it gates a transient read-only overlay, carries no dose logic,
     /// and never rides a backup/iCloud round-trip), so the catalog drift guards stay untouched.
     public var graphDetailEnabled: Bool { didSet { d.set(graphDetailEnabled, forKey: "graphDetailEnabled") } }
+    /// Phase 09.18b (D-07/D-09/D-17): gate heart-rate as GraphDetailView chart context. **Default ON**
+    /// with the readout (D-17), independently off-able. When OFF (D-09): the phone stops the on-demand
+    /// HealthKit HR query, the phone signals the watch to stop appending HR (`hr_ctl` off), and the HR
+    /// readout row is HIDDEN ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input.
+    /// Device-local display toggle (same idiom as `graphDetailEnabled`): deliberately NOT a
+    /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
+    public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -698,6 +705,8 @@ public final class AppSettings {
         // Phase 09.18b (D-17): default ON — a fresh install (and any device with no stored value)
         // gets the scrubbable readout, discoverable and off-able from Smart Assist.
         graphDetailEnabled = (d.object(forKey: "graphDetailEnabled") as? Bool) ?? true
+        // Phase 09.18b (D-09/D-17): HR chart context defaults ON with GraphDetailView, off-able.
+        heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true

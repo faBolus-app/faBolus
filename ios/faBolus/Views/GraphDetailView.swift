@@ -15,8 +15,9 @@ import faBolusDesign
 
 /// The values resolved at one scrubbed instant. Each optional is `nil` when no sample is within
 /// tolerance of the scrub point → that row renders an em dash (never a fabricated number). COB /
-/// override / AutoPreset are DROPPED entirely (no faBolus data source, D-06). HR is deliberately absent
-/// this plan.
+/// override / AutoPreset are DROPPED entirely (no faBolus data source, D-06). HR is deliberately NOT a
+/// field here: the Apple-Health HR read is async (on-demand at scrub) so it can't run inside this pure,
+/// synchronous value type — 09.18b-02 resolves HR in the view and passes it straight to `GraphDetailCard`.
 struct GraphDetailReadoutModel: Equatable {
     let date: Date
     let glucoseMgdl: Int?
@@ -25,7 +26,7 @@ struct GraphDetailReadoutModel: Equatable {
     /// The current KNOWN basal rate (a single scalar from the pump snapshot) — faBolus has no
     /// per-timestamp basal history, so this is not resolved against the scrub `Date`; it is the same
     /// current rate at every scrub point. `nil` when the snapshot has none (→ "—"); never a fabricated
-    /// schedule. 09.18b-02 adds: heartRate.
+    /// schedule.
     let basalUnitsPerHour: Double?
 
     private static let a11yTimeFormatter: DateFormatter = {
@@ -38,7 +39,7 @@ struct GraphDetailReadoutModel: Equatable {
     /// {time}: glucose {v}, IOB {v}, bolus {v}, basal {v}", with a missing value spoken as "no reading"
     /// rather than the visual em dash (which VoiceOver would read as a bare "dash"). Reused verbatim by
     /// the chart's `.accessibilityAdjustableAction` value so a sighted read and a VoiceOver read never
-    /// drift. HR is appended here by 09.18b-02.
+    /// drift. HR (resolved async in the view) is appended by `GraphDetailCard.accessibilityLabel`, not here.
     func accessibilityDescription(unit: GlucoseUnit) -> String {
         let unitWord = unit == .mmol ? "mmol/L" : "mg/dL"
         let glucose = glucoseMgdl.map { "\(unit.format(mgdl: $0)) \(unitWord)" } ?? "no reading"
@@ -93,6 +94,17 @@ struct GraphDetailCard: View {
     /// The user's display-unit funnel (D-10) — the glucose value routes through the SAME
     /// `GlucoseUnit.format` every other glucose display uses, never a second conversion.
     var unit: GlucoseUnit = AppSettings.shared.glucoseDisplayUnit
+    /// Phase 09.18b-02 (D-07/D-09): the heart-rate value (bpm) resolved at the scrubbed timestamp from
+    /// Apple Health (on-demand) and/or the last Garmin ambient-HR envelope, or nil when no sample is
+    /// available. Display-only chart context — never a dose/meal input.
+    var heartRate: Double? = nil
+    /// Whether the HR chart-context toggle is ON. When OFF the HR row is OMITTED ENTIRELY (not "—", D-09);
+    /// when ON, the row shows only if `heartRate` has a value (an unavailable reading also hides the row,
+    /// per UI-SPEC — never a nag inside the chart).
+    var heartRateEnabled: Bool = false
+    /// Tint the HR row `AppTheme.stale` when the sample is old (e.g. a stale Garmin ambient reading),
+    /// else `.secondary` (UI-SPEC §1).
+    var heartRateStale: Bool = false
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -128,6 +140,16 @@ struct GraphDetailCard: View {
                 label: "Basal",
                 value: readout.basalUnitsPerHour.map { "\(formatUnits($0))/hr" } ?? Self.emDash,
                 tint: .secondary)
+
+            // Phase 09.18b-02 (D-07/D-09): the HR row. Chart context only. Shown ONLY when the HR
+            // toggle is ON *and* a value exists — when HR is off (or unavailable) the row is OMITTED
+            // ENTIRELY (not an em dash), so the card silently loses a row and the chart stays usable.
+            if heartRateEnabled, let hr = heartRate {
+                row(icon: "heart.fill",
+                    label: "HR",
+                    value: "\(Int(hr.rounded())) BPM",
+                    tint: heartRateStale ? AppTheme.stale : .secondary)
+            }
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
@@ -138,7 +160,17 @@ struct GraphDetailCard: View {
         .fixedSize(horizontal: false, vertical: true)
         // VoiceOver: the whole card is one element announcing the scrubbed time + every shown value.
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(readout.accessibilityDescription(unit: unit))
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// The base readout announcement, with the HR row appended only when it is actually shown (HR on +
+    /// a value present) — so a sighted read and a VoiceOver read never drift (mirrors the card body).
+    private var accessibilityLabel: String {
+        var label = readout.accessibilityDescription(unit: unit)
+        if heartRateEnabled, let hr = heartRate {
+            label += ", heart rate \(Int(hr.rounded())) BPM"
+        }
+        return label
     }
 
     /// One readout row: leading SF Symbol + `.caption` `.secondary` label, trailing `.body`

@@ -118,7 +118,9 @@ struct DashboardView: View {
                                                      showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
                                                      showBolusBars: settings.showBolusBars,
                                                      basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
-                                                         ? model.snapshot.basalRateUnitsPerHour : nil)
+                                                         ? model.snapshot.basalRateUnitsPerHour : nil,
+                                                     heartRateContextEnabled: settings.heartRateContextEnabled,
+                                                     latestGarminHeartRate: model.latestGarminHeartRate)
                                     Picker("Window", selection: $windowHours) {
                                         ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                                     }.pickerStyle(.segmented)
@@ -256,7 +258,9 @@ struct DashboardView: View {
                                              showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
                                              showBolusBars: settings.showBolusBars,
                                              basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
-                                                 ? model.snapshot.basalRateUnitsPerHour : nil)
+                                                 ? model.snapshot.basalRateUnitsPerHour : nil,
+                                             heartRateContextEnabled: settings.heartRateContextEnabled,
+                                             latestGarminHeartRate: model.latestGarminHeartRate)
                             Picker("Window", selection: $windowHours) {
                                 ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                             }.pickerStyle(.segmented)
