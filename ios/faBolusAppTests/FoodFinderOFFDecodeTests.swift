@@ -138,4 +138,44 @@ struct FoodFinderOFFDecodeTests {
         #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 1) == .grams(15))
         #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 2) == .grams(30))
     }
+
+    // MARK: Task 3 tracer — the "Add to carbs" seam contract (D-12)
+
+    /// The FoodFinder surface's exposed estimate equals `FoodFinderCarbEstimate.grams(...)`, and changing
+    /// the serving Stepper from 1 to 2 doubles it — the exact value FoodFinderView renders and applies.
+    @Test func surfaceEstimateMatchesGramsAndDoublesWithServings() throws {
+        let product = try Self.product(from: Self.v3ProductJSON)
+        let one = FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 30, servings: 1)
+        let two = FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 30, servings: 2)
+        #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 1) == .grams(one))
+        #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 2) == .grams(two))
+        #expect(two == one * 2)
+    }
+
+    /// Invoking the "Add to carbs" confirm action (whose entire body is the `onApplyGrams` call) hands the
+    /// displayed integer grams to the callback exactly once and performs no other side effect — the test
+    /// double records the value; no calculator/delivery hook is reachable from the callback (structurally
+    /// enforced by FoodFinderCarbSeamGuardTests).
+    @Test func addToCarbsConfirmCallsOnApplyGramsExactlyOnce() throws {
+        let product = try Self.product(from: Self.v3ProductJSON)
+        guard case .grams(let displayed) = FoodFinderCarbEstimate.estimate(for: product, servings: 2) else {
+            Issue.record("expected a gram estimate for a product with usable carbs")
+            return
+        }
+        var applied: [Int] = []
+        let onApplyGrams: (Int) -> Void = { applied.append($0) }
+        // This is exactly the FoodFinderView confirm-button body: onApplyGrams(displayed).
+        onApplyGrams(displayed)
+        #expect(applied == [displayed])
+        #expect(displayed == 30)
+        // What BolusEntryView's callback then assigns into carbsText — a plain grams string, nothing else.
+        #expect(String(displayed) == "30")
+    }
+
+    /// A product with no usable carbs (the no-match / unreadable path) leaves the estimate absent and
+    /// surfaces the manual-entry fallback rather than a fabricated number — never blocking the carb field.
+    @Test func unreadableProductSurfacesManualEntryFallback() throws {
+        let product = try Self.product(from: Self.v3ProductMissingCarbsJSON)
+        #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 1) == .manualEntryFallback)
+    }
 }

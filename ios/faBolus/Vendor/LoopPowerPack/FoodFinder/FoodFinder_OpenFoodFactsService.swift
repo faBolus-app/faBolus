@@ -22,8 +22,9 @@
 import Foundation
 import os.log
 
-/// Keyless client for the OpenFoodFacts REST API (product search + barcode lookup).
-final class OpenFoodFactsService {
+/// Keyless client for the OpenFoodFacts REST API (product search + barcode lookup). Immutable
+/// (`let`-only, Sendable-typed members) so it is safe to use from a detached `Task` (Swift 6 concurrency).
+final class OpenFoodFactsService: Sendable {
 
     // MARK: Configuration
 
