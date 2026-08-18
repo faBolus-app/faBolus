@@ -34,10 +34,16 @@ struct FoodFinderView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var showScanner = false
     @State private var lookupTask: Task<Void, Never>?
+    // 09.18c-03 (D-13): the opt-in AI carb-estimate surface. Reachable ONLY when `foodFinderAIEnabled`
+    // is on; its estimate flows through the SAME `onApplyGrams` seam as the keyless OFF path.
+    @State private var showAIEntry = false
 
     var body: some View {
         Form {
             searchSection
+            if AppSettings.shared.foodFinderAIEnabled {
+                aiEntrySection
+            }
             if let selected {
                 estimateSection(for: selected)
             } else {
@@ -65,7 +71,32 @@ struct FoodFinderView: View {
                 })
             }
         }
+        // 09.18c-03 (D-12/D-13): the AI estimate applies through the SAME onApplyGrams seam, then closes
+        // both this surface and the AI sheet so the user lands back on the bolus screen with carbsText set.
+        .sheet(isPresented: $showAIEntry) {
+            NavigationStack {
+                FoodFinderAIEntryView(onApplyGrams: { grams in
+                    onApplyGrams(grams)
+                    dismiss()
+                })
+            }
+        }
         .onDisappear { searchTask?.cancel(); lookupTask?.cancel() }
+    }
+
+    // MARK: AI entry (opt-in, default OFF)
+
+    private var aiEntrySection: some View {
+        Section {
+            Button {
+                showAIEntry = true
+            } label: {
+                Label("Estimate with AI (photo or description)", systemImage: "sparkles")
+                    .foregroundStyle(AppTheme.carbs)
+            }
+        } footer: {
+            Text("Uses the AI provider you connected in Settings. Advisory only — the estimate goes into the carb field for you to review.")
+        }
     }
 
     // MARK: Search

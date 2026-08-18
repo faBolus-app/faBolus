@@ -28,6 +28,12 @@ struct SmartAssistSettingsView: View {
     // notice above, but with the D-16 `smartFeaturesNoticeAckAt` flag and the UI-SPEC copy.
     @State private var showSmartFeaturesNotice = false
 
+    // Phase 09.18c-03 (D-13): the one-time PHI disclosure for the FoodFinder AI path — fired on first
+    // ENABLE of the AI toggle (and re-enforced before the first AI call in FoodFinderAIEntryView). Same
+    // one-shot-ack idiom, with the `hasAcknowledgedFoodFinderAINotice` flag and the verbatim UI-SPEC PHI
+    // copy. This path is the ONLY one where PHI leaves the device, so the disclosure gates it explicitly.
+    @State private var showFoodFinderAINotice = false
+
     var body: some View {
         Form {
             Section {
@@ -88,6 +94,24 @@ struct SmartAssistSettingsView: View {
                 Text("**Heart rate is chart context only — never meal detection or dosing.** Off turns it off everywhere: the phone stops requesting it and your Garmin stops sending it.")
             }
 
+            // Phase 09.18c-03 (D-12/D-13/D-17): the FoodFinder AI carb-estimate toggle. **Default OFF**
+            // (opt-in) — this is the ONLY FoodFinder path where PHI (a food photo / description) leaves
+            // the device, so enabling it fires the one-time PHI disclosure that MUST be acknowledged. The
+            // AI estimate still reaches the dose ONLY through the shared "Add to carbs" → carbsText seam
+            // (never auto-applied). Same D-07 idiom: bound Toggle whose setter fires the notice on enable.
+            Section {
+                Toggle("Estimate carbs with AI", isOn: Binding(
+                    get: { settings.foodFinderAIEnabled },
+                    set: { newValue in
+                        settings.foodFinderAIEnabled = newValue
+                        if newValue { presentFoodFinderAINoticeIfNeeded() }
+                    }))
+            } header: {
+                Text("Food & carbs")
+            } footer: {
+                Text("Estimate carbs from a photo, voice, or description using an AI service you connect. This sends the photo/text to that provider — off the phone. **Off by default.** Advisory only — never blocks, changes, or suggests a dose.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every
@@ -144,6 +168,16 @@ struct SmartAssistSettingsView: View {
         } message: {
             Text("These features are informational and advisory only. faBolus is not your pump and never changes your insulin or doses for you.")
         }
+        // Phase 09.18c-03 (D-13): the verbatim PHI disclosure (UI-SPEC "FoodFinder — PHI disclosure").
+        // Acknowledging here sets `foodFinderAINoticeAckAt`, which also unblocks the first AI call in
+        // FoodFinderAIEntryView. Dismissing without "I understand" leaves the ack unset (the AI entry
+        // surface then re-presents the disclosure before any call).
+        .alert("Sending data to an AI provider", isPresented: $showFoodFinderAINotice) {
+            Button("I understand") { AppSettings.shared.acknowledgeFoodFinderAINotice() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Turning this on sends your food photo/description to the AI provider you choose. That's health-adjacent data leaving your device. Only your carb estimate comes back — faBolus never doses automatically.")
+        }
     }
 
     /// Fires the generic D-07 explainer exactly once ever, the first time the user enables EITHER
@@ -159,6 +193,15 @@ struct SmartAssistSettingsView: View {
     private func presentSmartFeaturesNoticeIfNeeded() {
         if !AppSettings.shared.hasAcknowledgedSmartFeaturesNotice {
             showSmartFeaturesNotice = true
+        }
+    }
+
+    /// Fires the one-time PHI disclosure the first time the user enables the FoodFinder AI path — never
+    /// on disable, never a second time. Until it is acknowledged, FoodFinderAIEntryView refuses to make
+    /// an AI call (D-13).
+    private func presentFoodFinderAINoticeIfNeeded() {
+        if !AppSettings.shared.hasAcknowledgedFoodFinderAINotice {
+            showFoodFinderAINotice = true
         }
     }
 }

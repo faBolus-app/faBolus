@@ -143,6 +143,15 @@ public final class AppSettings {
     /// Device-local display toggle (same idiom as `graphDetailEnabled`): deliberately NOT a
     /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
     public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
+    /// Phase 09.18c-03 (D-12/D-13): master opt-in for the FoodFinder BYO-key AI carb-estimate path
+    /// (photo/text → a user-connected AI provider). **Default OFF** — this is the ONLY FoodFinder path
+    /// where PHI leaves the device, so it stays inert until the user explicitly enables it AND
+    /// acknowledges the one-time PHI disclosure (`hasAcknowledgedFoodFinderAINotice`). AI-estimated carbs
+    /// still reach the dose ONLY through the shared "Add to carbs" → `carbsText` seam — this flag never
+    /// changes that. Device-local display/behavior toggle (same idiom as `graphDetailEnabled`):
+    /// deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (the BYO KEY rides the
+    /// encrypted secrets backup instead, D-13), so the catalog drift guards stay untouched.
+    public var foodFinderAIEnabled: Bool { didSet { d.set(foodFinderAIEnabled, forKey: "foodFinderAIEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -189,6 +198,13 @@ public final class AppSettings {
     public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
     public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
     public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
+    // FoodFinder AI PHI disclosure (09.18c-03, D-13) — the one-time explainer that MUST be acknowledged
+    // before the first AI call sends any PHI off-device. Same durable per-install-marker idiom as
+    // `smartFeaturesNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a synced
+    // ack must not silently pre-suppress the PHI disclosure on another device). nil ⇒ never shown.
+    public var foodFinderAINoticeAckAt: Date? { didSet { d.set(foodFinderAINoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "foodFinderAINoticeAckAt") } }
+    public var hasAcknowledgedFoodFinderAINotice: Bool { foodFinderAINoticeAckAt != nil }
+    public func acknowledgeFoodFinderAINotice() { if foodFinderAINoticeAckAt == nil { foodFinderAINoticeAckAt = Date() } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -707,6 +723,9 @@ public final class AppSettings {
         graphDetailEnabled = (d.object(forKey: "graphDetailEnabled") as? Bool) ?? true
         // Phase 09.18b (D-09/D-17): HR chart context defaults ON with GraphDetailView, off-able.
         heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
+        // Phase 09.18c-03 (D-13): the FoodFinder AI path is OFF by default (PHI leaves the device only
+        // here) — a fresh install / absent key never enables it silently.
+        foodFinderAIEnabled = (d.object(forKey: "foodFinderAIEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
@@ -723,6 +742,8 @@ public final class AppSettings {
         maxBasalNoticeAckAt = mbAck > 0 ? Date(timeIntervalSince1970: mbAck) : nil
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
+        let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged
+        foodFinderAINoticeAckAt = ffAck > 0 ? Date(timeIntervalSince1970: ffAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg
