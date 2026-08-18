@@ -94,9 +94,17 @@ feature is untested and "will likely not work" before they run — not just the 
 - **Verify (saline):** deliver a carb bolus; confirm the carb amount shows on the pump / t:connect and
   Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery.
 
-## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental)
-- Marked experimental in the CGM source picker; a passive G6 read may never connect (G6 needs an
-  authenticated session). Prefer Dexcom Share or the xDrip App Group. See `docs/operate/cgm-failover.md`.
+## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental pending on-device UAT)
+- **Updated Phase 09.20 (D-03/D-05):** "a passive G6 read may never connect" was the ORIGINAL framing
+  and has been **retracted** — a `LoopKit/CGMBLEKit`-mirror re-check (09.20-RESEARCH.md, "D-05
+  reliability re-check" + "Already-paired-sensor first-run behavior") found no evidence for it: the
+  official Dexcom app's own "Read from Dexcom app" (follow) mode is this exact mechanism, mandatory in
+  xDrip4iOS's Dexcom setup, and re-authentication happens every ~5-min cycle regardless of when a
+  sensor was originally paired — no authenticated session is needed for a SECOND passive listener.
+  Marked **experimental** still means only ONE thing now: it is **validation-pending** (D-14) — the
+  mechanism itself is confident, but the on-device UAT (`09.20-UAT.md`, D-13) hasn't run yet. See
+  `docs/operate/cgm-failover.md` for the user-facing explanation and `09.20-CONTEXT.md`/
+  `09.20-RESEARCH.md` for the full evidence trail.
 
 ## 6. Mobi native Sleep-schedule write (`SetSleepScheduleRequest.flag`) — Phase 09.10
 - **Narrowed (not removed):** the write's `activeDays` day-of-week bitmask is now **CONFIRMED** —
