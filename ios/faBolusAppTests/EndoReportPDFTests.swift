@@ -47,4 +47,38 @@ struct EndoReportPDFTests {
         #expect(!data.isEmpty)
         #expect(beginsWithPDFHeader(data))
     }
+
+    // MARK: - Task 2: full multi-section report + pagination
+
+    private func populatedReport() throws -> FaBolusInsightsReport {
+        let store = try makeStore()
+        var readings: [GlucoseReading] = []
+        for i in 0..<40 { readings.append(GlucoseReading(date: now.addingTimeInterval(Double(i) * 300 - 3 * 86400), mgdl: 90 + (i % 5) * 20)) }
+        store.ingestGlucose(readings, sourceID: "dexcomG7", priority: 100)
+        store.ingestBoluses([BolusMarker(date: now.addingTimeInterval(-86400), units: 4.5),
+                             BolusMarker(date: now.addingTimeInterval(-2 * 86400), units: 6.0)], sourceID: "pump")
+        store.ingestCarbs([(date: now.addingTimeInterval(-86400), grams: 45),
+                           (date: now.addingTimeInterval(-2 * 86400), grams: 60)], sourceID: "fabolus")
+        return FaBolusInsightsAggregator(store: store).report(period: .days(7), now: now)
+    }
+
+    @Test func fullReportRendersAllSectionsValidPDF() throws {
+        let report = try populatedReport()
+        let unit = InsightsGlucoseUnitContext(unit: .mgdl)
+        let data = try #require(EndoReportPDF.render(report: report, unit: unit))
+        #expect(beginsWithPDFHeader(data))
+        // Pagination mechanism yields at least one page for a populated report.
+        #expect(EndoReportPDF.pageCount(report: report, unit: unit) >= 1)
+    }
+
+    @Test func tallContentPaginatesIntoMultiplePages() throws {
+        let report = try populatedReport()
+        let unit = InsightsGlucoseUnitContext(unit: .mgdl)
+        // Force a small usable page height so the multi-section content must split across pages —
+        // exercises the one-`beginPDFPage`-per-page path (no clipping).
+        let pages = EndoReportPDF.pageCount(report: report, unit: unit, maxContentHeight: 120)
+        #expect(pages > 1, "sections must paginate when they exceed the usable page height")
+        let data = try #require(EndoReportPDF.render(report: report, unit: unit, maxContentHeight: 120))
+        #expect(beginsWithPDFHeader(data), "paginated output is still a valid %PDF document")
+    }
 }
