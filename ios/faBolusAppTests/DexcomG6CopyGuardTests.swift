@@ -33,6 +33,12 @@ struct DexcomG6CopyGuardTests {
     private static let sources = [
         "ios/faBolus/Data/GlucoseSourceRegistry.swift",
         "ios/faBolus/Views/CgmCredentialsView.swift",
+        // Gap-closure (09.20-VERIFICATION.md): the point-of-selection blocking alert (FB-07) and the
+        // BLE source's own doc-comment header also carry user/maintainer-facing G6 copy and must be
+        // held to the same retraction as the two files above — a 2-file scope was exactly why this
+        // guard stayed green while the retracted framing still lived in these two files.
+        "ios/faBolus/Views/SettingsView.swift",
+        "ios/faBolus/Data/Sources/DexcomG6BLESource.swift",
     ]
 
     /// Vacuous-pass guard: fail loudly if either source file cannot be resolved from `#filePath`,
@@ -53,7 +59,11 @@ struct DexcomG6CopyGuardTests {
     @Test func retractedHedgingPhrasesAreAbsent() throws {
         let corpus = Self.combinedCorpus().lowercased()
         #expect(!corpus.isEmpty, "corpus is empty — path resolution likely broke")
-        for hedge in ["often unreliable", "may never connect", "refused outright", "best-effort", "best effort"] {
+        for hedge in [
+            "often unreliable", "may never connect", "refused outright", "best-effort", "best effort",
+            "likely will not connect", "needs an authenticated session", "often receives nothing",
+            "unverified best guess",
+        ] {
             #expect(!corpus.contains(hedge),
                     "retracted hedging phrase \"\(hedge)\" must not appear — D-03/D-05 walked this back (see 09.20-RESEARCH.md)")
         }
