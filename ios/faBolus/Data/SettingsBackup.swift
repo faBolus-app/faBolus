@@ -62,6 +62,9 @@ enum SettingsBackup {
         if let secret = PairingStore.load() { items["pump.jpakeDerivedSecret"] = Data(secret).base64EncodedString() }
         if let v1 = PairingStore.loadV1Code() { items["pump.legacyV1Code"] = v1 }   // legacy 16-char pumps
         if let pin = PairingStore.loadPin() { items["pump.mobiPin"] = pin }
+        // 09.18c-03 (D-13): the FoodFinder BYO AI key rides the SAME unified encrypted secrets backup
+        // (opt-in at export). `backupItems()` is empty when no key is configured.
+        items.merge(FoodFinderAIKeyStore.backupItems()) { _, new in new }
         return SecretsBackup(items: items)
     }
 
@@ -72,6 +75,8 @@ enum SettingsBackup {
         }
         if let v1 = s.items["pump.legacyV1Code"] { PairingStore.saveV1Code(v1) }   // legacy 16-char pumps
         if let pin = s.items["pump.mobiPin"] { PairingStore.savePin(pin) }
+        // 09.18c-03 (D-13): restore the FoodFinder BYO AI key from the unified secrets backup.
+        FoodFinderAIKeyStore.applyBackup(s.items)
     }
 
     // MARK: Assemble
