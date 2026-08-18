@@ -111,8 +111,15 @@ extension BarcodeScanResult {
 }
 #endif
 
-/// Service for barcode scanning using the device camera and Vision framework
-class BarcodeScannerService: NSObject, ObservableObject {
+/// Service for barcode scanning using the device camera and Vision framework.
+///
+/// faBolus adapter delta (Swift 6 strict concurrency): declared `@unchecked Sendable` because the
+/// mirror was written for Swift 5 and dispatches its own work across `sessionQueue` (session setup +
+/// the `AVCaptureVideoDataOutputSampleBufferDelegate` callback) and `DispatchQueue.main` (all
+/// `@Published` mutations). All mutable state is confined to those queues, so the type is thread-safe
+/// in practice; the annotation opts it out of the compiler's static-isolation checking without changing
+/// the ported pipeline logic.
+final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendable {
     
     // MARK: - Properties
     
@@ -163,7 +170,7 @@ class BarcodeScannerService: NSObject, ObservableObject {
     
     // MARK: - Public Interface
     
-    /// Shared instance for app-wide use
+    /// Shared instance for app-wide use.
     static let shared = BarcodeScannerService()
     
     /// Focus the camera at a specific point
@@ -581,14 +588,14 @@ class BarcodeScannerService: NSObject, ObservableObject {
                 #if DEBUG
                 print("🎥 New authorization status: \(newStatus)")
                 #endif
-                
+
+                // faBolus adapter delta (Swift 6): fulfill the promise directly in this @Sendable
+                // completion; only the @Published mutation is hopped to main (the promise closure must
+                // not be captured into the nested main-dispatch closure).
                 DispatchQueue.main.async {
                     self?.cameraAuthorizationStatus = newStatus
-                    #if DEBUG
-                    print("🎥 Updated service authorization status to: \(newStatus)")
-                    #endif
-                    promise(.success(granted))
                 }
+                promise(.success(granted))
             }
         }
         .eraseToAnyPublisher()
