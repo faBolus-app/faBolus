@@ -29,6 +29,10 @@ struct GlucoseChartView: View {
     /// haptic: a change fires `.selection` — on scrub start (nil → a point) and on crossing to a NEW
     /// data point while dragging (UI-SPEC §1 long-press-active + dragging states).
     @State private var scrubbedPointDate: Date? = nil
+    /// VoiceOver scrub position: an index into `visible` moved by the `.accessibilityAdjustableAction`
+    /// so VoiceOver users can step the scrub without the drag gesture (UI-SPEC §1 backstop). nil = not
+    /// yet stepped.
+    @State private var a11yIndex: Int? = nil
 
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
@@ -166,6 +170,16 @@ struct GlucoseChartView: View {
                              currentBasalUnitsPerHour: basalUnitsPerHour)
     }
 
+    /// The VoiceOver value string for the adjustable scrubber: the readout at the currently-stepped
+    /// data point, or a prompt when the user hasn't stepped yet / there is nothing to scrub.
+    private var a11yValue: String {
+        guard let idx = a11yIndex, visible.indices.contains(idx) else {
+            return visible.isEmpty ? "No readings to inspect" : "Not scrubbing"
+        }
+        return detailViewModel.readout(at: visible[idx].date)
+            .accessibilityDescription(unit: AppSettings.shared.glucoseDisplayUnit)
+    }
+
     /// The scrubber layer inside `.chartOverlay`: a full-plot transparent hit area carrying a
     /// `LongPressGesture` SEQUENCED with a `DragGesture(minimumDistance: 0)` so a plain tap/pan of the
     /// chart is NOT hijacked (only a deliberate ≥0.3s press begins a scrub). While scrubbing, the touch
@@ -195,10 +209,30 @@ struct GlucoseChartView: View {
         ZStack(alignment: .topLeading) {
             // Full-plot hit area (≥44px in both dimensions at 160px height) — the deliberate-press
             // gate lives in the gesture, not a small handle, so the whole chart is scrubbable.
+            // VoiceOver: exposed as an adjustable element so increment/decrement steps the scrub
+            // through glucose data points without the drag gesture (UI-SPEC §1 accessibility backstop).
             Rectangle()
                 .fill(Color.clear)
                 .contentShape(Rectangle())
                 .gesture(scrub)
+                .accessibilityElement()
+                .accessibilityLabel("Glucose chart detail")
+                .accessibilityHint("Swipe up or down to inspect glucose, insulin, bolus, and basal at each reading")
+                .accessibilityValue(a11yValue)
+                .accessibilityAdjustableAction { direction in
+                    guard !visible.isEmpty else { return }
+                    let current = a11yIndex ?? (visible.count - 1)
+                    let next: Int
+                    switch direction {
+                    case .increment: next = min(current + 1, visible.count - 1)
+                    case .decrement: next = max(current - 1, 0)
+                    @unknown default: return
+                    }
+                    a11yIndex = next
+                    let point = visible[next]
+                    scrubbedPointDate = point.date
+                    if let x = proxy.position(forX: point.date) { scrubX = min(max(x, 0), size.width) }
+                }
 
             if let x = scrubX, let date: Date = proxy.value(atX: x) {
                 let readout = detailViewModel.readout(at: date)

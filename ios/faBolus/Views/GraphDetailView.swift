@@ -27,6 +27,27 @@ struct GraphDetailReadoutModel: Equatable {
     /// current rate at every scrub point. `nil` when the snapshot has none (→ "—"); never a fabricated
     /// schedule. 09.18b-02 adds: heartRate.
     let basalUnitsPerHour: Double?
+
+    private static let a11yTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    /// The single VoiceOver announcement string for the card (UI-SPEC §1 accessibility backstop): "At
+    /// {time}: glucose {v}, IOB {v}, bolus {v}, basal {v}", with a missing value spoken as "no reading"
+    /// rather than the visual em dash (which VoiceOver would read as a bare "dash"). Reused verbatim by
+    /// the chart's `.accessibilityAdjustableAction` value so a sighted read and a VoiceOver read never
+    /// drift. HR is appended here by 09.18b-02.
+    func accessibilityDescription(unit: GlucoseUnit) -> String {
+        let unitWord = unit == .mmol ? "mmol/L" : "mg/dL"
+        let glucose = glucoseMgdl.map { "\(unit.format(mgdl: $0)) \(unitWord)" } ?? "no reading"
+        let iobText = iob.map { formatUnits($0) } ?? "no value"
+        let bolusText = bolusUnits.map { formatUnits($0) } ?? "no value"
+        let basalText = basalUnitsPerHour.map { "\(formatUnits($0)) per hour" } ?? "no value"
+        return "At \(Self.a11yTimeFormatter.string(from: date)): glucose \(glucose), "
+            + "IOB \(iobText), bolus \(bolusText), basal \(basalText)"
+    }
 }
 
 // MARK: - ViewModel (rewritten over the faBolus feed, D-05)
@@ -111,7 +132,13 @@ struct GraphDetailCard: View {
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(.separator).opacity(0.3), lineWidth: 0.5))
-        .fixedSize(horizontal: true, vertical: true)
+        // Dynamic Type: cap the readable width and let rows WRAP/grow vertically rather than clip
+        // horizontally at XXL (UI-SPEC §1 — "rows stack, never clips"). No horizontal fixedSize.
+        .frame(maxWidth: 260, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        // VoiceOver: the whole card is one element announcing the scrubbed time + every shown value.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(readout.accessibilityDescription(unit: unit))
     }
 
     /// One readout row: leading SF Symbol + `.caption` `.secondary` label, trailing `.body`

@@ -61,6 +61,17 @@ struct SmartAssistSettingsView: View {
                 Text("**Advisory only** — never blocks or changes a dose. Site Atlas tracks where you place infusion sets and CGM sensors and reminds you about reused spots. On by default.")
             }
 
+            // Phase 09.18b (D-05/D-06/D-17): the GraphDetailView scrubbable-readout toggle. Default ON,
+            // runtime-gated. This is display CONTEXT (read-only chart values), not a dose/limit surface,
+            // so it deliberately does NOT fire the one-time Control-IQ explainer. `settings.graphDetailEnabled`
+            // is a device-local display flag (not a SettingsCatalog row) — it gates the overlay in
+            // GlucoseChartView; toggling off restores the chart exactly as before.
+            Section {
+                Toggle("Chart detail readout", isOn: $settings.graphDetailEnabled)
+            } footer: {
+                Text("**Advisory only** — never blocks or changes a dose. Tap and hold the glucose chart to read exact values at any time. On by default; turn off here.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every
