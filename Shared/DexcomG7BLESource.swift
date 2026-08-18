@@ -22,10 +22,29 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     private var peripheral: CBPeripheral?
 
     // Sensor clock → wall clock. G7 timestamps are "seconds since pairing"; we anchor them to the
-    // wall time a live message arrived: wall(s) = receivedAt + (s - messageTimestamp).
+    // wall time a live message arrived: wall(s) = receivedAt + (s - messageTimestamp). Unlike G6, G7
+    // has NO transmitterTimeRx-equivalent broadcast, so the glucose message itself carries the anchor
+    // source. The anchor is bootstrapped ONCE per connection (from a near-real-time message) and then
+    // held STABLE — never re-derived per glucose message (D-02, closing the A2 self-defeat).
     private var anchorMessageTimestamp: UInt32?
     private var anchorReceivedAt: Date?
     private var pendingBackfill: [G7BackfillMessage] = []
+
+    /// Bootstrap-eligibility ceiling (D-02): only a message that itself claims to be near-real-time
+    /// (small self-reported `age`) may establish the anchor. Once set, the anchor is held for the
+    /// life of the connection object and NEVER reset per glucose message — that per-message reset IS
+    /// the A2 self-defeat this closes. Owner/bench-adjustable (UNVERIFIED-GUESS, `docs/UNVERIFIED-GUESSES.md` #11a).
+    static var anchorBootstrapMaxAge: UInt16 = 60          // seconds
+
+    /// Absolute plausible ceiling on a frame's own self-reported `age`. Beyond this the frame is too
+    /// stale-at-transmission to trust as a live reading (≈3 G7 wake cycles). Owner/bench-adjustable
+    /// (UNVERIFIED-GUESS, `docs/UNVERIFIED-GUESSES.md` #11b).
+    static var plausibleFrameAgeCeiling: UInt16 = 900      // seconds
+
+    /// Mirrors `DexcomG6BLESource.implausibleAgeBound` — beyond this the anchored date is
+    /// decode/anchor-arithmetic-wrong, not a genuinely old reading (ordinary staleness stays
+    /// `GlucoseFreshness`'s job). Deliberately generous so it never fires on real staleness.
+    static var implausibleAgeBound: TimeInterval = 24 * 3600
 
     func start() async {
         guard central == nil else { return }
@@ -70,10 +89,43 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     }
 
     private func handleGlucose(_ msg: G7GlucoseMessage) {
-        anchorMessageTimestamp = msg.messageTimestamp
-        anchorReceivedAt = Date()
-        guard let mgdl = msg.glucose, msg.hasReliableGlucose,
-              let date = wallTime(forSensor: msg.glucoseTimestamp) else {
+        // Require reliability first — an unreliable/absent glucose frame never anchors or publishes.
+        guard let mgdl = msg.glucose, msg.hasReliableGlucose else {
+            status = .connected
+            notify()
+            return
+        }
+        // Bootstrap the anchor ONCE per connection, and ONLY from a message that itself claims to be
+        // near-real-time (small self-reported age). If no anchor exists yet and this message is not
+        // bootstrap-eligible, leave the source unanchored and publish nothing (fail-closed): an
+        // un-anchored / implausibly-anchored G7 frame must never become `latest` (D-02).
+        if anchorMessageTimestamp == nil || anchorReceivedAt == nil {
+            guard msg.age <= Self.anchorBootstrapMaxAge else {
+                status = .connected
+                notify()
+                return
+            }
+            anchorMessageTimestamp = msg.messageTimestamp
+            anchorReceivedAt = Date()
+        }
+        // Once an anchor exists, DO NOT recompute it from the current message — convert the frame's
+        // sensor-relative timestamp via the STABLE anchor. (Deliberately never refreshed even when a
+        // later message validates cleanly: a message must never be able to re-legitimize itself —
+        // that is the entire point of closing A2.)
+        guard let date = wallTime(forSensor: msg.glucoseTimestamp) else {
+            status = .connected
+            notify()
+            return
+        }
+        // Reject the computed sample if its anchored wall time is beyond the future-skew tolerance
+        // (the delayed/batched-frame hazard A2 — sensor time far ahead of the stable anchor lands in
+        // the FUTURE), older than the implausible-age bound (decode/anchor arithmetic wrong), or the
+        // frame's own self-reported age exceeds the absolute plausible ceiling. A rejected frame
+        // leaves `latest` unchanged.
+        let elapsed = Date().timeIntervalSince(date)
+        guard elapsed > -GlucoseFreshness.futureSkewTolerance,
+              elapsed < Self.implausibleAgeBound,
+              msg.age <= Self.plausibleFrameAgeCeiling else {
             status = .connected
             notify()
             return
