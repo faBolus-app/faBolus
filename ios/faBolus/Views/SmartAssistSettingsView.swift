@@ -1,8 +1,14 @@
 import SwiftUI
 
-#if FABOLUS_NUDGE
-/// Smart Assist (faBolusNudge) settings, in their own submenu (like Child mode / Backup & restore /
+/// Smart Assist settings, in their own submenu (like Child mode / Backup & restore /
 /// Data & history) rather than an inline Settings section. All advisory-only.
+///
+/// 09.18a-03 (D-16): the whole-struct `#if FABOLUS_NUDGE` wrapper was removed — this submenu now
+/// compiles and is reachable in BOTH the default (FABOLUS_NUDGE=0, CI) and local (FABOLUS_NUDGE=1)
+/// builds. The LoopPowerPack features surfaced here are RUNTIME-toggle-gated, not compile-gated;
+/// per-feature narrow-main compile exclusion is deferred to 09.16. Every symbol referenced below
+/// (`AppSettings` flags, `EatingNudgeSettingsView`) lives in the app/faBolusCore and carries no
+/// faBolusNudge-package dependency, so the view builds cleanly with the Nudge SDK stripped.
 struct SmartAssistSettingsView: View {
     @Bindable var settings: AppSettings
 
@@ -86,4 +92,3 @@ struct SmartAssistSettingsView: View {
         }
     }
 }
-#endif
