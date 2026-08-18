@@ -210,8 +210,9 @@ targets:
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
-        # Scan a host phone's pairing QR code when using this phone as a remote.
-        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
+        # Scan a host phone's pairing QR code when using this phone as a remote, AND scan food barcodes
+        # in FoodFinder for a carb estimate the user reviews (09.18c-02, D-13) — never a dose.
+        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you."
         # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
         # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
         NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
