@@ -160,6 +160,18 @@ public final class AppSettings {
     /// in `backupSnapshot` (it gates a read-only display surface, carries no dose logic), so the catalog
     /// drift guards stay untouched.
     public var endoReportEnabled: Bool { didSet { d.set(endoReportEnabled, forKey: "endoReportEnabled") } }
+    /// Phase 09.18d-02 (D-14/D-17): gate the benign caffeine tracker log surface. **Default ON** — a
+    /// standalone informational log (amount + time, surfaced alongside glucose), discoverable and
+    /// off-able from the Smart Assist submenu. Never suggests/changes/blocks a dose (§13). Same
+    /// device-local persisted-Bool idiom as `endoReportEnabled` — deliberately NOT a `SettingsCatalog`
+    /// row and NOT in `backupSnapshot` (it gates a display surface, carries no dose logic), so the
+    /// catalog drift guards stay untouched. (The logged ENTRIES ride the `trackers` backup section; this
+    /// visibility flag does not.)
+    public var caffeineTrackerEnabled: Bool { didSet { d.set(caffeineTrackerEnabled, forKey: "caffeineTrackerEnabled") } }
+    /// Phase 09.18d-02 (D-14/D-17): gate the benign alcohol tracker log surface. **Default ON** — same
+    /// standalone informational log + device-local idiom as `caffeineTrackerEnabled`. Never suggests/
+    /// changes/blocks a dose, and carries NO delayed-hypo risk inference (D-14).
+    public var alcoholTrackerEnabled: Bool { didSet { d.set(alcoholTrackerEnabled, forKey: "alcoholTrackerEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -736,6 +748,9 @@ public final class AppSettings {
         foodFinderAIEnabled = (d.object(forKey: "foodFinderAIEnabled") as? Bool) ?? false
         // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
         endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true
+        // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol trackers are discoverable / ON by default.
+        caffeineTrackerEnabled = (d.object(forKey: "caffeineTrackerEnabled") as? Bool) ?? true
+        alcoholTrackerEnabled = (d.object(forKey: "alcoholTrackerEnabled") as? Bool) ?? true
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true

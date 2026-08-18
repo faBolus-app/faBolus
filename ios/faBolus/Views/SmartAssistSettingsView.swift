@@ -132,6 +132,36 @@ struct SmartAssistSettingsView: View {
                 Text("**Advisory only** — never blocks, changes, or suggests a dose. Builds a shareable PDF summary of your glucose, insulin, and carb history for an endo visit. On by default.")
             }
 
+            // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol tracker log surfaces. Default
+            // ON (discoverable), runtime-gated. Each toggle, when on, reveals a NavigationLink to the
+            // log view (log list + entry sheet + glucose-context readout). These are informational-only
+            // standalone logs — no risk inference, no AI, never a dose (§13). Device-local display flags
+            // (same idiom as `endoReportEnabled`); the logged ENTRIES ride the `trackers` backup section.
+            Section {
+                Toggle("Caffeine tracker", isOn: $settings.caffeineTrackerEnabled)
+                if settings.caffeineTrackerEnabled {
+                    NavigationLink {
+                        LoopInsights_CaffeineLogView(historyStore: model.sharedHistoryStore,
+                                                     glucoseUnit: settings.glucoseDisplayUnit)
+                    } label: {
+                        Label("Caffeine log", systemImage: "cup.and.saucer")
+                    }
+                }
+                Toggle("Alcohol tracker", isOn: $settings.alcoholTrackerEnabled)
+                if settings.alcoholTrackerEnabled {
+                    NavigationLink {
+                        LoopInsights_AlcoholLogView(historyStore: model.sharedHistoryStore,
+                                                    glucoseUnit: settings.glucoseDisplayUnit)
+                    } label: {
+                        Label("Drink log", systemImage: "wineglass")
+                    }
+                }
+            } header: {
+                Text("Caffeine & alcohol")
+            } footer: {
+                Text("**Informational only — faBolus won't change any dose.** Log caffeine or drinks to see them alongside your glucose. On by default.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every
