@@ -33,7 +33,38 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     /// sensor-relative `timestamp` then converts via `activationDate.addingTimeInterval(timestamp)` —
     /// this is CGMBLEKit's own proven technique (ported per the RESEARCH re-check), not a per-message
     /// receipt-`Date()` stamp, which would read a delayed/batched frame as artificially fresh.
+    ///
+    /// **09.20-02 Task-1 sign-off (`reject-and-stable`, owner-authorized):** this anchor is held
+    /// STABLE per-connection — refreshed ONLY on a fresh `transmitterTimeRx`, NOT reset on every
+    /// glucose message the way `DexcomG7BLESource.handleGlucose` does. Confirmed as the deliberate,
+    /// permanent design (was provisional in Plan 01); recorded as an UNVERIFIED-GUESS pending D-13
+    /// on-device confirmation (`docs/UNVERIFIED-GUESSES.md` #10).
     private var activationDate: Date?
+
+    /// Wall time this source began actively listening (set once, in `start()`) — backs the no-anchor
+    /// bound below. A test drives `ingest(controlFrame:)` directly without ever calling `start()`
+    /// (mirrors this file's own `ingest` test seam), so `setConnectedAtForTesting` lets it simulate
+    /// "connected for N minutes with no anchor ever observed".
+    private var connectedAt: Date?
+
+    /// Rate-of-change plausibility ceiling (D-08b) — owner-adjustable, mirrors
+    /// `GlucoseFreshness.staleAfter`'s `static var` pattern rather than a literal buried in `handle()`.
+    /// UNVERIFIED-GUESS: default 12 mg/dL/min, deferred to Phase-10 clinical review
+    /// (`docs/UNVERIFIED-GUESSES.md` #9). A frame implying a faster PER-MINUTE rate vs the prior
+    /// anchored `latest` is decode corruption, not real physiology, and is rejected — never clamped.
+    static var rateOfChangeCeilingMgdlPerMin: Double = 12.0
+
+    /// Beyond this many seconds of age, an anchored date is decode/anchor-arithmetic-wrong, not a
+    /// genuinely old-but-real reading — ordinary staleness is `GlucoseFreshness`'s job (D-07, reused
+    /// here, not duplicated). Deliberately generous (24h) so it never fires on real staleness; it only
+    /// catches wildly wrong anchor math.
+    static let implausibleAgeBound: TimeInterval = 24 * 3600
+
+    /// No-anchor bound (Warning 1) — owner-adjustable, mirrors the pattern above. UNVERIFIED-GUESS:
+    /// the `transmitterTimeRx` (0x25) wire cadence was never established by the RESEARCH; default
+    /// ≈10 min = 2 assumed wake cycles (`docs/UNVERIFIED-GUESSES.md` #11). Beyond this, with STILL no
+    /// anchor ever observed, the source reports `.stale` rather than trusting any fallback-dated frame.
+    static var noAnchorBound: TimeInterval = 10 * 60
 
     /// Optional Dexcom transmitter ID (6 chars). Used only to pick the right transmitter by its
     /// advertised name suffix when several Dexcom sensors are in range; passive reads need no auth.
@@ -42,6 +73,7 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     func start() async {
         guard central == nil else { return }
         status = .searching
+        connectedAt = Date()
         // NO CBCentralManagerOptionRestoreIdentifierKey: CoreBluetooth asserts (SIGABRT in
         // -[CBCentralManager initWithDelegate:queue:options:]) when a restore identifier is used by
         // more than one manager in the process — which happens when the launch-selected source and
@@ -78,18 +110,61 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     }
 
     private func handle(_ msg: GlucoseRxMessage) {
-        guard msg.hasReliableGlucose else { status = .connected; onChange?(); return }
+        // D-08b physiologic-range gate (decode-time, Task-1 sign-off `reject-and-stable`): a
+        // CRC-valid-but-out-of-[40,400]-or-unreliable frame is REJECTED, never clamped, and never
+        // becomes `latest`.
+        guard msg.hasPlausibleGlucose else { status = .connected; onChange?(); return }
         guard let activationDate else {
-            // FAIL-CLOSED pre-anchor (D-08a/D-10): no sensor-time anchor has been observed yet, so
-            // this frame's true age is unknowable. Do NOT fall back to stamping `Date()` at receipt
-            // (that IS the hazard D-08a eliminates) and do NOT publish it as `latest` — the trusted
-            // bolus-calc input. The ≈10-min never-anchored bound + gate special-casing land in
-            // Plan 02 Task 3; here it is simply never surfaced.
-            status = .connected
+            // FAIL-CLOSED pre-anchor (D-08a/D-10, Warning 1 — finalized here): no sensor-time anchor
+            // has ever been observed, so this frame's true age is unknowable. Do NOT fall back to
+            // stamping `Date()` at receipt (that IS the hazard D-08a eliminates) and do NOT publish it
+            // as `latest` — the trusted bolus-calc input. A run of un-anchored frames never accumulates
+            // into a trusted reading (there is nothing here that could accumulate: this branch only
+            // ever leaves `latest` untouched). Once the source has been listening longer than
+            // `noAnchorBound` with STILL no anchor observed, flip to `.stale` so the UI stops implying
+            // "still trying" forever; below the bound, stay `.connected` (matches Plan 01's behavior).
+            if let connectedAt, Date().timeIntervalSince(connectedAt) > Self.noAnchorBound {
+                status = .stale
+            } else {
+                status = .connected
+            }
             onChange?()
             return
         }
         let date = activationDate.addingTimeInterval(TimeInterval(msg.glucose.timestamp))
+
+        // Implausible-age rejection (D-08a): more than `futureSkewTolerance` in the future, or more
+        // than `implausibleAgeBound` in the past, means decode/anchor arithmetic went wrong — not a
+        // genuinely old-but-real reading (ordinary staleness stays GlucoseFreshness's job, D-07, not
+        // duplicated here). Reject; `latest` stays unchanged.
+        let elapsed = Date().timeIntervalSince(date)
+        guard elapsed > -GlucoseFreshness.futureSkewTolerance, elapsed < Self.implausibleAgeBound else {
+            status = .connected
+            onChange?()
+            return
+        }
+
+        // Rate-of-change plausibility (D-08b): evaluated OVER TIME — |Δmg/dL ÷ Δwall-MINUTES| vs the
+        // prior anchored `latest` — NOT the raw absolute delta between two frames. A large glucose
+        // swing across a large time gap (e.g. a BLE disconnect that missed several ~5-min cycles)
+        // implies a SMALL per-minute rate and must NOT be rejected. Skipped entirely — not evaluated,
+        // not rejected — when there is no valid predecessor (first reading after (re)connect, or
+        // `latest` is nil) or when Δt is too small to divide by safely (duplicate/near-duplicate
+        // timestamp, ≈0s apart): in both cases the rate simply isn't computable, which is not evidence
+        // of corruption, and must not false-reject.
+        if let prior = latest {
+            let deltaSeconds = date.timeIntervalSince(prior.date)
+            if abs(deltaSeconds) >= 1 {
+                let deltaMinutes = abs(deltaSeconds) / 60
+                let rate = abs(Double(msg.glucoseMgdl - prior.mgdl)) / deltaMinutes
+                guard rate <= Self.rateOfChangeCeilingMgdlPerMin else {
+                    status = .connected
+                    onChange?()
+                    return
+                }
+            }
+        }
+
         let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
                                    trend: Self.trend(msg.trendDirection), sourceID: id)
         latest = sample
@@ -100,6 +175,11 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         status = .connected
         onChange?()
     }
+
+    /// Test seam: overrides `connectedAt` directly, mirroring `TandemBackend`'s `set...ForTesting`
+    /// pattern — lets a test simulate "connected for N minutes with no anchor ever observed" without a
+    /// real timer.
+    func setConnectedAtForTesting(_ date: Date) { connectedAt = date }
 
     // C8: `.flat` is a *reported* steady slope (|rate| < 1 mg/dL/min) and keeps its arrow; `nil` means
     // the transmitter sent the "unavailable" sentinel (0x7f) so `trendRateMgDlPerMin` is nil — no

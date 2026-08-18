@@ -180,6 +180,55 @@ feature is untested and "will likely not work" before they run — not just the 
   Resolving this item's Phase-11 bench verification also resolves T1-2's cause-attribution predicate;
   they are the same open question, not two.
 
+## 9. G6 rate-of-change plausibility ceiling (12 mg/dL/min) — Phase 09.20-02 (D-08b)
+- **UNVERIFIED-GUESS, fail-closed, owner-adjustable like `GlucoseFreshness.staleAfter`.**
+  `DexcomG6BLESource.rateOfChangeCeilingMgdlPerMin` (default 12 mg/dL/min) rejects a glucose frame
+  whose implied `|Δmg/dL ÷ Δwall-MINUTES|` vs the prior anchored `latest` exceeds the ceiling — this
+  catches DECODE CORRUPTION (a garbage-but-CRC-valid value), not real physiology; a genuine fast
+  excursion (e.g. ~8 mg/dL/min) stays under it. No clinical literature or bench data set this number;
+  it is a best-guess ceiling picked to be generous to real physiology while still catching gross
+  corruption. Evaluated per-minute (not the raw absolute delta between two frames), so a large swing
+  across a large time gap (e.g. a BLE disconnect that missed several ~5-min cycles) implies a small
+  per-minute rate and is correctly NOT rejected.
+- **Where:** `ios/faBolus/Data/Sources/DexcomG6BLESource.swift` (`handle()`, `rateOfChangeCeilingMgdlPerMin`).
+- **Risk:** dose-path-adjacent (feeds `PumpSnapshot.glucose` via `GlucoseArbiter`) but fail-CLOSED — a
+  value that trips the ceiling is REJECTED (never clamped/substituted), so the failure mode is "loses
+  the failover reading, falls back to pump/carbs-only," never "doses off a wrong number."
+- **Verify:** Phase-10 clinical review of the 12 mg/dL/min default against real physiologic
+  rate-of-change literature; D-13 on-device UAT can additionally confirm no false-rejection during
+  ordinary fast excursions.
+
+## 10. G6 per-connection anchor-stability design (vs G7's per-message reset) — Phase 09.20-01/02 sign-off (D-08a)
+- **Signed off 2026-08-18 (09.20-02 Task-1 checkpoint, owner-authorized default): `reject-and-stable`.**
+  `DexcomG6BLESource.activationDate` is held STABLE per-connection — refreshed ONLY when a fresh
+  `transmitterTimeRx` (0x25) is observed — rather than reset on every glucose message the way
+  `DexcomG7BLESource.handleGlucose` does. This was implemented PROVISIONALLY in Plan 01; Plan 02
+  Task 1 confirms it as the deliberate, permanent design (not a bug to "fix" back toward G7's
+  per-message reset).
+- **Where:** `ios/faBolus/Data/Sources/DexcomG6BLESource.swift` (`activationDate`, `ingest(controlFrame:)`).
+- **Risk:** dose-path-adjacent. A stale anchor (if the transmitter's sensor clock itself drifted
+  between `transmitterTimeRx` observations) would misdate subsequent glucose frames — bounded by the
+  (separately logged) 0x25-cadence/no-anchor-bound guess below, and further bounded by the
+  implausible-age rejection gate (entry 9's sibling gate, same file).
+- **Verify:** D-13 on-device UAT — confirm glucose frames continue dating correctly across a live
+  session with only occasional `transmitterTimeRx` frames observed, and that the anchor is not
+  needlessly reset.
+
+## 11. G6 `transmitterTimeRx` (0x25) wire cadence + no-anchor bound (≈10 min / 2 wake cycles) — Phase 09.20-02 (Warning 1)
+- **UNVERIFIED-GUESS, owner/bench-confirmable like the rate ceiling.** The RESEARCH did not establish
+  how often a G6/G5/ONE transmitter actually broadcasts `transmitterTimeRx` on the control
+  characteristic during a passive third-central listen. `DexcomG6BLESource.noAnchorBound` (default
+  ≈10 min = 2 assumed wake cycles) is the time a connection may run with NO anchor ever observed
+  before it gives up (`status = .stale`) rather than trusting any never-anchored frame.
+- **Where:** `ios/faBolus/Data/Sources/DexcomG6BLESource.swift` (`connectedAt`, `noAnchorBound`, the
+  never-anchored branch of `handle()`).
+- **Risk:** availability-only, fail-closed — an under-estimated bound makes the source give up on a
+  connection that would have anchored soon after; an over-estimated bound just delays the `.stale`
+  signal. Never affects the calc (a never-anchored frame is never published either way).
+- **Verify (D-13 on-device UAT, Pitfall 5):** measure the actual latency from BLE connect to the first
+  `transmitterTimeRx` observed; if 0x25 proves rare in practice, tune `noAnchorBound` (and possibly the
+  first-reading-latency expectation) to match.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to
