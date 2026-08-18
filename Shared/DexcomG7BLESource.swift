@@ -47,6 +47,23 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
 
     // MARK: Decoding → GlucoseSample
 
+    /// Internal testable ingest seam (mirrors `DexcomG6BLESource.ingest(controlFrame:)`): decodes a
+    /// raw control-characteristic glucose frame and routes it to `handleGlucose`, so
+    /// `DexcomG7BLESourceTests` can drive the anchor/decode path directly without CoreBluetooth. The
+    /// CB delegate (`peripheral(_:didUpdateValueFor:)`) is a thin wrapper over this — it adds no
+    /// characteristic write and does not change the discover/subscribe set (read-only, D-12a).
+    func ingest(glucoseFrame data: Data) {
+        guard data.starts(with: .glucoseTx), let msg = G7GlucoseMessage(data: data) else { return }
+        handleGlucose(msg)
+    }
+
+    /// Internal testable ingest seam for backfill (history) frames — same seam family as
+    /// `ingest(glucoseFrame:)` so backfill decode is also drivable without CoreBluetooth.
+    func ingest(backfillFrame data: Data) {
+        guard let msg = G7BackfillMessage(data: data) else { return }
+        handleBackfill(msg)
+    }
+
     private func wallTime(forSensor ts: UInt32) -> Date? {
         guard let anchorTs = anchorMessageTimestamp, let anchorAt = anchorReceivedAt else { return nil }
         return anchorAt.addingTimeInterval(Double(Int64(ts) - Int64(anchorTs)))
@@ -197,11 +214,9 @@ extension DexcomG7BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
             guard let data = characteristic.value, !data.isEmpty else { return }
             switch characteristic.uuid {
             case CGMServiceCharacteristicUUID.control.cbUUID:
-                if data.starts(with: .glucoseTx), let msg = G7GlucoseMessage(data: data) {
-                    handleGlucose(msg)
-                }
+                ingest(glucoseFrame: data)
             case CGMServiceCharacteristicUUID.backfill.cbUUID:
-                if let msg = G7BackfillMessage(data: data) { handleBackfill(msg) }
+                ingest(backfillFrame: data)
             default:
                 break
             }
