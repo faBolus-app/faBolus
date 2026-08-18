@@ -968,6 +968,32 @@ public final class AppModel {
     /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
     var sharedHistoryStore: GlucoseHistoryStore? { history }
 
+    // MARK: WR-01 — SiteAtlas ⇄ unified backup
+
+    /// Snapshot every logged SiteAtlas placement for the unified backup (schema 2+). Reads the SAME
+    /// shared store the UI writes and the export reads, so a `.faBolus` backup reflects exactly the
+    /// placements on screen. Called by `BackupRestoreView.createBackup()`.
+    func siteAtlasBackup() -> SiteAtlasBackup {
+        let sites = history?.allSites() ?? []
+        return SiteAtlasBackup(entries: sites.map {
+            SiteAtlasEntryBackup(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
+                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
+                                 note: $0.note, date: $0.date)
+        })
+    }
+
+    /// Rehydrate SiteAtlas placements from a restored backup into the shared store, preserving each
+    /// original stable `siteID`/`date` so a restored placement is identical to the backed-up one.
+    /// Additive (existing rows untouched), mirroring the other restore sections. Called by `RestoreSheet`.
+    func restoreSiteAtlas(_ backup: SiteAtlasBackup) {
+        guard let history else { return }
+        for e in backup.entries {
+            history.ingestSite(siteID: e.siteID, kind: e.kind, bodySide: e.bodySide,
+                               normalizedX: e.normalizedX, normalizedY: e.normalizedY,
+                               note: e.note, date: e.date, sourceID: SiteAtlasStore.sourceID)
+        }
+    }
+
     // MARK: F1 (§13) — unified export of on-device health data
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change

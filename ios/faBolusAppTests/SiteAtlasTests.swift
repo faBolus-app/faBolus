@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import HistoryStore
+import faBolusCore
 @testable import faBolus
 
 /// Phase 09.18a-04 — SiteAtlas body-map UI + default-ON toggle.
@@ -162,5 +163,52 @@ struct SiteAtlasTests {
         let firstAck = s.smartFeaturesNoticeAckAt
         s.acknowledgeSmartFeaturesNotice()   // second call must not move the timestamp
         #expect(s.smartFeaturesNoticeAckAt == firstAck)
+    }
+
+    // MARK: - WR-01: SiteAtlas backup → restore round-trip
+
+    /// Proves the end-to-end wiring: N placements snapshot into a backup section, survive a full
+    /// `FaBolusBackup` encode/decode, and restore into a SEPARATE empty store — the misleading
+    /// delete-copy ("removed from your history and backup") is now true. Exercises the exact
+    /// `AppModel.siteAtlasBackup()` / `restoreSiteAtlas(_:)` methods that `BackupRestoreView` calls.
+    @MainActor @Test func siteAtlasBacksUpAndRestoresIntoAnEmptyStore() throws {
+        // Source model + N placements in its (in-memory) shared store.
+        let source = AppModel(source: MockBackend())
+        let srcStore = try GlucoseHistoryStore(inMemory: true)
+        source.setHistoryStoreForTesting(srcStore)
+        let logger = SiteAtlasStore(history: srcStore)
+        let id1 = logger.add(type: .pump, bodySide: .front, normalizedX: 0.58, normalizedY: 0.44,
+                             note: "left abdomen", date: Date(timeIntervalSince1970: 1_700_000_000))
+        let id2 = logger.add(type: .sensor, bodySide: .back, normalizedX: 0.30, normalizedY: 0.25,
+                             note: nil, date: Date(timeIntervalSince1970: 1_700_100_000))
+        #expect(logger.allSites().count == 2)
+
+        // Snapshot into the backup section (what createBackup writes) and round-trip the whole envelope.
+        let section = source.siteAtlasBackup()
+        #expect(section.entries.count == 2)
+        let meta = FaBolusBackup.Meta(createdAt: Date(), appVersion: "test",
+                                      pumpModel: "mobi", deviceName: "test")
+        let decoded = try FaBolusBackup.decode(FaBolusBackup(meta: meta, siteAtlas: section).encoded())
+        let restoredSection = try #require(decoded.siteAtlas)
+
+        // Restore into a DIFFERENT, empty model/store (what RestoreSheet does).
+        let dest = AppModel(source: MockBackend())
+        let destStore = try GlucoseHistoryStore(inMemory: true)
+        dest.setHistoryStoreForTesting(destStore)
+        let destLogger = SiteAtlasStore(history: destStore)
+        #expect(destLogger.allSites().isEmpty)
+
+        dest.restoreSiteAtlas(restoredSection)
+
+        // All N placements are present, with identity + fields preserved across the round-trip.
+        let restored = destLogger.allSites()
+        #expect(restored.count == 2)
+        let byId = Dictionary(uniqueKeysWithValues: restored.map { ($0.id, $0) })
+        #expect(byId[id1]?.type == .pump)
+        #expect(byId[id1]?.bodySide == .front)
+        #expect(byId[id1]?.note == "left abdomen")
+        #expect(byId[id2]?.type == .sensor)
+        #expect(byId[id2]?.bodySide == .back)
+        #expect(byId[id2]?.note == nil)
     }
 }
