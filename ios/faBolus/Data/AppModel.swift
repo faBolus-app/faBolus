@@ -1036,8 +1036,9 @@ public final class AppModel {
     // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
 
     /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
-    /// `SiteAtlasStore.sourceID`). Benign log data only.
-    static let trackerSourceID = "app.loopInsightsTrackers"
+    /// `SiteAtlasStore.sourceID`). Benign log data only. IN-02: aliases the single shared constant on
+    /// `GlucoseHistoryStore` so the literal lives in exactly one place.
+    static let trackerSourceID = GlucoseHistoryStore.loopInsightsTrackerSourceID
 
     /// Snapshot every logged caffeine + alcohol entry for the unified backup (schema 3+). Reads the
     /// SAME shared store the tracker log views write and the export reads. Benign fields only — no
@@ -1054,14 +1055,19 @@ public final class AppModel {
     }
 
     /// Rehydrate caffeine + alcohol tracker entries from a restored backup into the shared store,
-    /// preserving each original stable `entryID`/`date`. Additive, mirroring the SiteAtlas restore.
+    /// preserving each original stable `entryID`/`date`. L-02: upsert (delete-by-`entryID` then insert)
+    /// rather than blind-append — SwiftData does not enforce `entryID` uniqueness, so a double restore of
+    /// the same backup would otherwise create duplicate rows sharing an id (visible in the log list until
+    /// a predicate-delete removes both). Keying on the stable `entryID` makes restore idempotent.
     func restoreTrackers(_ backup: TrackerBackup) {
         guard let history else { return }
         for e in backup.caffeine {
+            history.deleteCaffeine(id: e.entryID)
             history.ingestCaffeine(entryID: e.entryID, milligrams: e.milligrams, source: e.source,
                                    date: e.date, sourceID: Self.trackerSourceID)
         }
         for e in backup.alcohol {
+            history.deleteAlcohol(id: e.entryID)
             history.ingestAlcohol(entryID: e.entryID, standardDrinks: e.standardDrinks, source: e.source,
                                   date: e.date, sourceID: Self.trackerSourceID)
         }
