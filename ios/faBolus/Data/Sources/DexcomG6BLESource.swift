@@ -241,7 +241,23 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
             guard let restored = restoredPeripherals?.first else { return }
             peripheral = restored
             restored.delegate = self
-            if restored.state != .connected { central.connect(restored) }
+            if restored.state == .connected {
+                // H-01: do NOT rely on `centralManagerDidUpdateState`'s separate cold-join
+                // (`retrieveConnectedPeripherals`) side effect to force a fresh discovery/subscribe
+                // cycle here. A relaunched process has a brand-new `DexcomG6BLESource` instance with no
+                // in-memory record of previously-discovered characteristics or notify subscriptions —
+                // CoreBluetooth's restoration guarantee covers the *peripheral object and raw link
+                // state*, not the fresh delegate's own notify subscriptions (09.20-RESEARCH.md
+                // ~468-481). Force re-discovery ourselves, exactly mirroring the cold-join path's own
+                // defensive `central.connect(existing)` for the identical already-connected ambiguity.
+                // Passive read-only (D-12a): only discoverServices → discoverCharacteristics →
+                // setNotifyValue follow from this, never a characteristic write. Final confirmation
+                // that a reading actually arrives after this branch fires is the D-13 on-device
+                // backgrounded-failover UAT (09.20-UAT.md).
+                restored.discoverServices([TransmitterServiceUUID.cgmService.cbUUID])
+            } else {
+                central.connect(restored)
+            }
         }
     }
 

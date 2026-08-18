@@ -128,4 +128,47 @@ struct DexcomG6RestoreIdentifierTests {
         #expect(!code.contains("writeValue("),
                 "must never call CBPeripheral.writeValue(for:type:) — passive-read-only source (D-12a)")
     }
+
+    // MARK: H-01 (09.20-REVIEW.md) — the already-connected restore branch must force its own
+    // fresh discovery/subscribe cycle, not depend on `centralManagerDidUpdateState`'s separate
+    // cold-join side effect. Source-scan, scoped narrowly to the `willRestoreState` function body
+    // (not the whole file — `discoverServices(` already appears elsewhere, e.g. `didConnect`, so an
+    // unscoped `code.contains` would vacuously pass even before the fix).
+
+    /// Isolate the `willRestoreState` delegate method's body text, bounded by the next delegate
+    /// method declared immediately after it in this file (`centralManagerDidUpdateState`), so the
+    /// assertions below can't be satisfied by code living in a DIFFERENT delegate method.
+    private static func willRestoreStateBody() throws -> String {
+        let code = try #require(Self.readSource())
+        let startMarker = "willRestoreState dict: [String: Any]) {"
+        guard let startRange = code.range(of: startMarker) else {
+            Issue.record("could not locate the willRestoreState function signature")
+            return ""
+        }
+        guard let endRange = code.range(of: "func centralManagerDidUpdateState",
+                                        range: startRange.upperBound..<code.endIndex) else {
+            Issue.record("could not locate the end boundary (centralManagerDidUpdateState) after willRestoreState")
+            return ""
+        }
+        return String(code[startRange.upperBound..<endRange.lowerBound])
+    }
+
+    @Test func alreadyConnectedRestoreBranchForcesFreshDiscovery() throws {
+        let body = try Self.willRestoreStateBody()
+        #expect(!body.isEmpty, "willRestoreState function body could not be isolated — scan boundaries likely broke")
+        #expect(body.contains("restored.state == .connected"),
+                "the already-connected case must be explicitly branched on (H-01)")
+        #expect(body.contains("discoverServices("),
+                "the already-connected restore branch must force fresh service/characteristic discovery itself, rather than depending on an undocumented centralManagerDidUpdateState side effect (H-01)")
+    }
+
+    /// The already-connected branch's forced rediscovery must still never write a characteristic —
+    /// re-affirms D-12a specifically within the narrower H-01 scan boundary (not just file-wide, as
+    /// `willRestoreStateNeverWritesACharacteristic` above already checks).
+    @Test func alreadyConnectedRestoreBranchNeverWritesACharacteristic() throws {
+        let body = try Self.willRestoreStateBody()
+        #expect(!body.isEmpty, "willRestoreState function body could not be isolated — scan boundaries likely broke")
+        #expect(!body.contains("writeValue("),
+                "must never call CBPeripheral.writeValue(for:type:) — passive-read-only source (D-12a)")
+    }
 }
