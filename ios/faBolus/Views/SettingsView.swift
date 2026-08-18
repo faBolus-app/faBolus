@@ -115,16 +115,13 @@ struct SettingsView: View {
                     Label("Privacy & data", systemImage: "hand.raised")
                         .tag(SettingsSidebarItem.privacyData)
                         .hoverEffect(.automatic)
-                    #if FABOLUS_NUDGE
+                    // 09.18a-03 (D-16): un-gated — Smart Assist is a runtime-toggle-gated submenu that
+                    // compiles in every config, so the sidebar always renders the selectable tag (this
+                    // is now symmetric with `SettingsSidebarItem.allExtras`, which always lists it). The
+                    // "(on)" state stays a runtime read of the unconditional `settings.eatingNudgesEnabled`.
                     Label(settings.eatingNudgesEnabled ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         .tag(SettingsSidebarItem.smartAssist)
                         .hoverEffect(.automatic)
-                    #else
-                    // Mirrors settingsList's disabled row (E6): discloses the feature exists but isn't
-                    // compiled into this build. Non-interactive + greyed — no `.tag`, not selectable.
-                    Label("Smart Assist — unavailable in this build", systemImage: "sparkles")
-                        .foregroundStyle(.secondary)
-                    #endif
                     // Not selection-based (no `.tag`) — same as `settingsList`'s Help row, this opens
                     // Safari directly rather than routing to a detail-pane screen.
                     Link(destination: faBolusHelpURL) {
@@ -177,8 +174,8 @@ struct SettingsView: View {
         case .backupRestore: BackupRestoreView(model: model)
         case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
-        // Reuses `destination(_:)`'s own `.smartAssist` arm (its `#if FABOLUS_NUDGE` gate included)
-        // rather than duplicating that conditional here.
+        // 09.18a-03 (D-16): reuses `destination(_:)`'s own `.smartAssist` arm (now unconditional after
+        // the compile-gate was dropped) rather than duplicating anything here.
         case .smartAssist: destination(.smartAssist)
         }
     }
@@ -190,7 +187,7 @@ struct SettingsView: View {
                         // 09.3-05 (D-06): .smartAssist exists only so SettingsCatalog can categorize the
                         // eating-nudge keys where their screen actually lives; it is filtered out of this
                         // generic loop so the existing hand-placed Smart Assist row below (the sole entry
-                        // point, #if FABOLUS_NUDGE / #else disabled Label) never gets a duplicate.
+                        // point, now an unconditional NavigationLink after 09.18a-03) never gets a duplicate.
                         ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
@@ -232,19 +229,14 @@ struct SettingsView: View {
                             Label("Privacy & data", systemImage: "hand.raised")
                         }
                         .hoverEffect(.automatic)
-                        #if FABOLUS_NUDGE
+                        // 09.18a-03 (D-16): un-gated — the submenu compiles in every config, so this is
+                        // always the selectable NavigationLink. "(on)" is a runtime read of the
+                        // unconditional `settings.eatingNudgesEnabled`.
                         NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
                             Label(settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
                         .hoverEffect(.automatic)
-                        #else
-                        // E6: show a DISABLED row rather than hiding Smart Assist, so a build without the
-                        // faBolusNudge SDK still discloses that the feature exists but isn't compiled in
-                        // (a hidden section reads as "never existed"). Non-interactive + greyed.
-                        Label("Smart Assist — unavailable in this build", systemImage: "sparkles")
-                            .foregroundStyle(.secondary)
-                        #endif
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
@@ -288,13 +280,10 @@ struct SettingsView: View {
         case .about:   AboutSettingsView(model: model)
         // 09.3-05 (D-06): this arm exists only to keep the switch exhaustive — .smartAssist is filtered
         // out of the generic root-menu loop above, so this is never reached from that loop. The real,
-        // sole Smart Assist entry point stays the hand-placed NavigationLink/disabled-Label block above.
+        // sole Smart Assist entry point stays the hand-placed NavigationLink block above.
+        // 09.18a-03 (D-16): un-gated — SmartAssistSettingsView compiles in every config now.
         case .smartAssist:
-            #if FABOLUS_NUDGE
             SmartAssistSettingsView(settings: settings)
-            #else
-            Text("Smart Assist — unavailable in this build")
-            #endif
         }
     }
 }
