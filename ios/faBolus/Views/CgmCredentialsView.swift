@@ -118,9 +118,16 @@ struct CgmCredentialsView: View {
                 .disabled(readingTxId)
                 if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
             } header: {
-                Text("Dexcom G5 / G6 / ONE (direct — experimental)")
+                Text("Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)")
             } footer: {
-                Text("Experimental and often unreliable: a G6 only talks to its authenticated app and allows few Bluetooth connections, so this passive read may never connect. For a dependable backup, prefer **Dexcom Share** (above) or **xDrip4iOS via the App Group**. Keep the official Dexcom app running — faBolus reads passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it from the connected pump.")
+                // D-03/D-05 (Plan 04): confident guided-setup copy, replacing the earlier hedging
+                // framing that this document's "D-05 reliability re-check" section walked back
+                // (09.20-RESEARCH.md — the re-check found no evidence for it). "Read from Dexcom
+                // app" is the DEFAULT mode: reliable whenever its one hard precondition holds (the
+                // official Dexcom app installed, paired, and running). The experimental / untested
+                // marker stays (D-14) — the mechanism is confident, but on-device validation (D-13)
+                // hasn't run yet.
+                Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor (the ID above only disambiguates multiple sensors nearby). The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
             }
 
             Section {

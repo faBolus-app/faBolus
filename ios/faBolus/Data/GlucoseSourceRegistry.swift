@@ -18,7 +18,12 @@ public enum GlucoseSourceRegistry {
         // gets nil. Two CBCentralManagers sharing a restore-identifier string in one process is a
         // CoreBluetooth SIGABRT — this is the only thing standing between the two call sites and that
         // crash, so do not default this to true.
-        GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE (direct BLE, passive — experimental)",
+        // D-03/D-05 (Plan 04): renamed from the earlier "(direct BLE, passive — experimental)"
+        // framing, which hedged the mechanism itself as unreliable. It's the SAME reliable "Read
+        // from Dexcom app" path (see 09.20-RESEARCH.md's "D-05 reliability re-check" section, which
+        // walked that earlier framing back); only the on-device validation is pending (D-14), which
+        // is why "experimental" stays in the name.
+        GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)",
                                 sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { restoreStateEnabled in
             DexcomG6BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG6BLESource.productionRestoreIdentifier : nil)
         },
