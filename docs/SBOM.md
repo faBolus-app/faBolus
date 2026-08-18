@@ -24,6 +24,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 | G7SensorKit | LoopKit/G7SensorKit | MIT | `Packages/G7SensorKit` (LICENSE incl.) | Dexcom G7/ONE+ BLE decoders (passive) |
 | DexcomG6Kit | LoopKit/CGMBLEKit | MIT | `Packages/DexcomG6Kit` | Dexcom G5/G6/ONE passive decoders |
 | ShareClient | LoopKit/dexcom-share-client-swift | MIT | `Packages/ShareClient` (LICENSE incl.) | Dexcom Share follower core |
+| LoopPowerPack (SiteAtlas) | LoopPowerPack/Loop @ ad4c4d4 | MIT | `ios/faBolus/Vendor/LoopPowerPack` | Vendored MIT feature source (infusion-site/CGM body-map tracker), adapted behind a thin faBolus adapter |
 
 ## Local path dependency (separate repo)
 
@@ -51,6 +52,7 @@ license token (§3.1 / plan Q4).
 | ProfileIntents.swift | Apple official `EntityQuery` Developer-documentation sample | LicenseRef-Apple-Sample-Code (API pattern; independent Swift impl, no upstream code copied) | `ios/faBolus/Intents/ProfileIntents.swift` | AppEntity/EntityQuery pattern for the profile picker in the Activate Profile Shortcuts intent (Phase 6 / 06-02; refuse-when-headless, D-02) |
 | GlucoseLiveActivity.swift | kylebshr/luka-ios (© 2024 Kyle Bashour) + LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolusWidgets/GlucoseLiveActivity.swift` | Dynamic Island region split + optional-arrow pattern (luka-ios) and the iOS-18 CarPlay `.small` availability-branch pattern (Loop) rebound to faBolus's own `WidgetSnapshot` projection; content faBolus-original (see 05-REFERENCE-COMPARISON.md §2/§5) |
 | GlucoseLiveActivityManager.swift | LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolus/Data/GlucoseLiveActivityManager.swift` | App-driven `Activity.update`/re-arm structure only — NOT Loop's APNs push-token flow (faBolus never uses APNs, D-04); see 05-REFERENCE-COMPARISON.md §5 |
+| SiteAtlas_Models.swift | LoopPowerPack/Loop @ ad4c4d4 (© 2026 LoopKit Authors and Taylor Patterson) | MIT | `ios/faBolus/Vendor/LoopPowerPack/SiteAtlas/SiteAtlas_Models.swift` | Vendored SiteAtlas data models (site-rotation tracking); pure Foundation/SwiftUI, adapted behind a faBolus adapter (drift-checked via `scripts/check-vendor-drift.sh`) |
 
 ## Optional / credential-gated (not committed, not in the open-source build)
 

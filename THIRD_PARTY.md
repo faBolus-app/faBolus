@@ -12,6 +12,7 @@ itself is MIT (see `LICENSE`).
 | G7SensorKit | MIT | vendored (LoopKit/G7SensorKit; xDripG5/CGMBLEKit lineage) | `Packages/G7SensorKit` |
 | DexcomG6Kit | MIT | vendored (LoopKit/CGMBLEKit) | `Packages/DexcomG6Kit` |
 | ShareClient | MIT | vendored (LoopKit/dexcom-share-client-swift) | `Packages/ShareClient` |
+| **LoopPowerPack (SiteAtlas)** | **MIT** (© 2026 LoopKit Authors and Taylor Patterson) | vendored (LoopPowerPack/Loop MIT feature source @ `ad4c4d4`; drift-checked) | `ios/faBolus/Vendor/LoopPowerPack` |
 | TandemKit | MIT | local-path dependency (separate repo; vendors pumpX2-oracle MIT + Mbed TLS `Apache-2.0 OR GPL-2.0`) | `../TandemKit` |
 | **XDripAppGroupSource.swift** | **MIT** (© 2016 Mark Wilson, via JohanDegraeve/xdrip-client-swift) | **ported app-tree source** | `ios/faBolus/Data/Sources/` |
 | **LibreLinkUpSource.swift** | independent Swift impl (API knowledge from nightscout-librelink-up MIT + libre-link-unofficial-api; no upstream code copied) | **API-derived app-tree source** | `ios/faBolus/Data/Sources/` |

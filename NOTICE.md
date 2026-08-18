@@ -59,6 +59,16 @@ source (a clean reimplementation, so no upstream code license attaches).
 
 See `docs/SBOM.md` for the full machine-checked component inventory (audit L-01).
 
+## LoopPowerPack (SiteAtlas feature source)
+
+The SiteAtlas data models in `ios/faBolus/Vendor/LoopPowerPack/SiteAtlas/` are vendored from the
+**LoopPowerPack** fork of Loop (`LoopPowerPack/Loop`, pinned at commit
+`ad4c4d498f936a25e22dd3a8dc93354138458509`), used under the MIT License. The SiteAtlas feature is
+**© 2026 LoopKit Authors and Taylor Patterson** (idea by Taylor Patterson); the surrounding Loop code is
+© 2015 Nathan Racklyeft and © 2016 LoopKit Authors. faBolus adapts this source behind a thin adapter and
+does not auto-merge upstream changes — see `ios/faBolus/Vendor/LoopPowerPack/UPSTREAM.md` and the
+`scripts/check-vendor-drift.sh` integrity check. The BodyMap PNG graphics are not vendored here.
+
 ## Loop / LoopDocs (design + documentation)
 
 faBolus's visual design draws inspiration from the **[Loop](https://github.com/LoopKit/Loop)** app,
