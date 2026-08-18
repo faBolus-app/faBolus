@@ -58,7 +58,16 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     func stop() {
         if let p = peripheral { central?.cancelPeripheralConnection(p) }
         central?.stopScan()
+        // W-02 (D-14): reset the source-internal connection state to its pre-start baseline so a
+        // later start() re-arms instead of being a permanent no-op (start() guards on `central == nil`).
+        // Confined to lifecycle state — nil the central + peripheral, clear the sensor-time anchor
+        // (so a fresh connection re-bootstraps it per D-02) and any pending backfill. Decode/anchor/gate
+        // behavior is otherwise unchanged; `latest`/`history` are left as the last-known cached values.
+        central = nil
         peripheral = nil
+        anchorMessageTimestamp = nil
+        anchorReceivedAt = nil
+        pendingBackfill = []
         status = .idle
         notify()
     }

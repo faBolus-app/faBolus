@@ -140,7 +140,15 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         selectionTask?.cancel()
         selectionTask = nil
         rssiCandidates = []
+        // W-02 (D-14): reset the source-internal connection state to its pre-start baseline so a
+        // later start() re-arms instead of being a permanent no-op (start() guards on `central == nil`).
+        // Confined to lifecycle state — nil the central + peripheral, clear the connected-at marker and
+        // the sensor-time anchor (so a fresh connection re-anchors per D-08a). Decode/anchor/gate
+        // behavior is otherwise unchanged; `latest`/`history` are left as the last-known cached values.
+        central = nil
         peripheral = nil
+        connectedAt = nil
+        activationDate = nil
         status = .idle
         onChange?()
     }
