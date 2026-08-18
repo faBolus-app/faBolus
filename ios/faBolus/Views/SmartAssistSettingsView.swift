@@ -20,6 +20,11 @@ struct SmartAssistSettingsView: View {
     // feature-specific explainer (`hasAcknowledgedMaxBasalNotice`, already wired in `PumpControlView`).
     @State private var showCiqAwarenessNotice = false
 
+    // Phase 09.18a-04 (D-16): the generic "About Smart Features" one-time explainer, fired on first
+    // ENABLE of a Smart Features surface (currently SiteAtlas) — same one-shot-ack idiom as the CIQ
+    // notice above, but with the D-16 `smartFeaturesNoticeAckAt` flag and the UI-SPEC copy.
+    @State private var showSmartFeaturesNotice = false
+
     var body: some View {
         Form {
             Section {
@@ -29,6 +34,28 @@ struct SmartAssistSettingsView: View {
                 }
             } footer: {
                 Text("**Advisory only** — never blocks or changes a dose. Eating nudges suggest a bolus when a meal looks likely. Off by default. Retrospective insights are under Data & History.")
+            }
+
+            // Phase 09.18a-04 (D-10/D-16/D-17): the SiteAtlas body-map tracker. Default-ON, runtime-gated
+            // (D-16 — no compile `#if`). The toggle fires the generic one-time explainer on first enable;
+            // when on, a NavigationLink reveals the tracker. `settings.siteAtlasEnabled` is referenced
+            // literally here so SettingsReachabilityGuardTests (SC2) finds its catalog key.
+            Section {
+                Toggle("Site Atlas", isOn: Binding(
+                    get: { settings.siteAtlasEnabled },
+                    set: { newValue in
+                        settings.siteAtlasEnabled = newValue
+                        if newValue { presentSmartFeaturesNoticeIfNeeded() }
+                    }))
+                if settings.siteAtlasEnabled {
+                    NavigationLink { SiteAtlasRootView() } label: {
+                        Label("Body-map site tracker", systemImage: "figure.stand")
+                    }
+                }
+            } header: {
+                Text("Smart Features")
+            } footer: {
+                Text("**Advisory only** — never blocks or changes a dose. Site Atlas tracks where you place infusion sets and CGM sensors and reminds you about reused spots. On by default.")
             }
 
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
@@ -82,6 +109,11 @@ struct SmartAssistSettingsView: View {
         } message: {
             Text("faBolus is not the pump and does not control Control-IQ. These are informational only and never change your insulin.")
         }
+        .alert("About Smart Features", isPresented: $showSmartFeaturesNotice) {
+            Button("I understand") { AppSettings.shared.acknowledgeSmartFeaturesNotice() }
+        } message: {
+            Text("These features are informational and advisory only. faBolus is not your pump and never changes your insulin or doses for you.")
+        }
     }
 
     /// Fires the generic D-07 explainer exactly once ever, the first time the user enables EITHER
@@ -89,6 +121,14 @@ struct SmartAssistSettingsView: View {
     private func presentCiqAwarenessNoticeIfNeeded() {
         if !AppSettings.shared.hasAcknowledgedCiqAwarenessNotice {
             showCiqAwarenessNotice = true
+        }
+    }
+
+    /// Fires the generic D-16 "About Smart Features" explainer exactly once ever, the first time the
+    /// user enables a Smart Features surface (currently SiteAtlas) — never on disable, never twice.
+    private func presentSmartFeaturesNoticeIfNeeded() {
+        if !AppSettings.shared.hasAcknowledgedSmartFeaturesNotice {
+            showSmartFeaturesNotice = true
         }
     }
 }

@@ -154,6 +154,10 @@ public final class AppSettings {
     public var ciqPlusTempRateEnabled: Bool { didSet { d.set(ciqPlusTempRateEnabled, forKey: "ciqPlusTempRateEnabled") } }
     /// T2-1 — direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
     public var ciqCeilingFlagsEnabled: Bool { didSet { d.set(ciqCeilingFlagsEnabled, forKey: "ciqCeilingFlagsEnabled") } }
+    /// SiteAtlas infusion-site / CGM-sensor body-map tracker (09.18a, D-10/D-16/D-17). Advisory/
+    /// display-only — never originates or gates a dose. Default **ON** (discoverable, D-17); unlike the
+    /// `ciq*` flags this one is backup-participating (`SettingsCatalog`), so a restore preserves it.
+    public var siteAtlasEnabled: Bool { didSet { d.set(siteAtlasEnabled, forKey: "siteAtlasEnabled") } }
     // One-time acknowledgment markers — same idiom as `stackingGuardNoticeAckAt`: durable per-install
     // markers, NOT `SettingsCatalog` rows — never backed up, never iCloud-synced (a synced ack must not
     // silently pre-suppress the notice on another device). NEVER gate a write. nil ⇒ never shown.
@@ -163,6 +167,13 @@ public final class AppSettings {
     public var maxBasalNoticeAckAt: Date? { didSet { d.set(maxBasalNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "maxBasalNoticeAckAt") } }
     public var hasAcknowledgedMaxBasalNotice: Bool { maxBasalNoticeAckAt != nil }
     public func acknowledgeMaxBasalNotice() { if maxBasalNoticeAckAt == nil { maxBasalNoticeAckAt = Date() } }
+    // Generic "About Smart Features" one-time explainer (09.18a, D-16) — same durable per-install-marker
+    // idiom as `ciqAwarenessNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a
+    // synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of a Smart
+    // Features surface (e.g. SiteAtlas). nil ⇒ never shown. NEVER gates a write.
+    public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
+    public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
+    public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -684,10 +695,14 @@ public final class AppSettings {
         ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
         ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
+        // 09.18a (D-17): SiteAtlas is discoverable / ON by default.
+        siteAtlasEnabled = (d.object(forKey: "siteAtlasEnabled") as? Bool) ?? true
         let ciqAck = d.double(forKey: "ciqAwarenessNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         ciqAwarenessNoticeAckAt = ciqAck > 0 ? Date(timeIntervalSince1970: ciqAck) : nil
         let mbAck = d.double(forKey: "maxBasalNoticeAckAt")        // 0 (absent) ⇒ never acknowledged
         maxBasalNoticeAckAt = mbAck > 0 ? Date(timeIntervalSince1970: mbAck) : nil
+        let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
+        smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg
@@ -824,6 +839,8 @@ public final class AppSettings {
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
+            // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
+            "siteAtlasEnabled": .bool(siteAtlasEnabled),
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
@@ -905,6 +922,7 @@ public final class AppSettings {
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
+        if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()

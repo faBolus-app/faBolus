@@ -35,8 +35,9 @@ struct SettingsCatalogTests {
         // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
         // Phase 09.13-01 (D-01/D-02/D-04): 53 → 55 (glucosePlotFloor + glucosePlotCeiling added).
         // Phase 09.13-02 (D-05): 55 → 57 (glucosePlotFloorSmall + glucosePlotCeilingSmall added).
-        #expect(SettingsCatalog.descriptors.count == 57)
-        #expect(SettingsCatalog.byKey.count == 57)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 09.18a-04 (D-10/D-16/D-17): 57 → 58 (siteAtlasEnabled added — backup-participating).
+        #expect(SettingsCatalog.descriptors.count == 58)
+        #expect(SettingsCatalog.byKey.count == 58)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -59,7 +60,8 @@ struct SettingsCatalogTests {
         // Phase 09.7-02 (D-01): historySyncEnabled is NOT backed up (device-local), no count change here.
         // Phase 09.13-01 (D-01/D-02/D-04): 48 → 50 (glucosePlotFloor + glucosePlotCeiling, both unconditional).
         // Phase 09.13-02 (D-05): 50 → 52 (glucosePlotFloorSmall + glucosePlotCeilingSmall, both conditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 52)                      // 46 unconditional + 6 conditional
+        // Phase 09.18a-04 (D-10/D-17): 52 → 53 (siteAtlasEnabled, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 53)                      // 47 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

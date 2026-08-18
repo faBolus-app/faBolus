@@ -198,6 +198,14 @@ enum SettingsCatalog {
         // MARK: CGM upload (off-device, opt-in)
         .init("nightscoutUploadEnabled", .cgm, from: .advanced, backsUp: true),
 
+        // MARK: Smart Assist (backup-participating)
+        // Phase 09.18a-04 (D-10/D-16/D-17): the SiteAtlas body-map tracker feature toggle. `.smartAssist`
+        // (like `eatingNudgesEnabled`), but — unlike the eating flags — it IS backed up so a restore
+        // preserves the user's SiteAtlas on/off choice. Not command-adjacent and not an ambient
+        // always-on-screen surface, so it takes the default iCloud sync ON (a feature preference the
+        // owner reasonably wants on all their devices, like `glucoseDisplayUnit`).
+        .init("siteAtlasEnabled", .smartAssist, from: .advanced, backsUp: true),
+
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
         // Phase 09.7-02 (D-01): auto-sync toggle, surfaced in the same DataHistoryView "Pump history
