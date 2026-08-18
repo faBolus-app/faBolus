@@ -49,16 +49,15 @@ import SwiftData
     public var normalizedX: Double
     public var normalizedY: Double
     public var note: String?
-    public var isHidden: Bool
     public var date: Date
     public var sourceID: String
     public var recordedAt: Date
     public init(siteID: String, kind: String, bodySide: String,
-                normalizedX: Double, normalizedY: Double, note: String?, isHidden: Bool,
+                normalizedX: Double, normalizedY: Double, note: String?,
                 date: Date, sourceID: String, recordedAt: Date) {
         self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
         self.normalizedX = normalizedX; self.normalizedY = normalizedY
-        self.note = note; self.isHidden = isHidden
+        self.note = note
         self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
     }
 }

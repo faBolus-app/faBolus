@@ -82,11 +82,11 @@ public final class GlucoseHistoryStore {
     /// UUID string; callers pass a stable one when they need delete/backup identity.
     public func ingestSite(siteID: String = UUID().uuidString, kind: String, bodySide: String,
                            normalizedX: Double, normalizedY: Double, note: String? = nil,
-                           isHidden: Bool = false, date: Date = Date(), sourceID: String,
+                           date: Date = Date(), sourceID: String,
                            recordedAt: Date = Date()) {
         context.insert(StoredSite(siteID: siteID, kind: kind, bodySide: bodySide,
                                   normalizedX: normalizedX, normalizedY: normalizedY, note: note,
-                                  isHidden: isHidden, date: date, sourceID: sourceID, recordedAt: recordedAt))
+                                  date: date, sourceID: sourceID, recordedAt: recordedAt))
         try? context.save()
     }
 

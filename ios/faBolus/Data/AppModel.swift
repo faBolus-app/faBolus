@@ -982,7 +982,7 @@ public final class AppModel {
             carbs: c.map { .init(date: $0.date, grams: $0.grams) },
             sites: s.map { .init(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
                                  normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
-                                 note: $0.note, date: $0.date, isHidden: $0.isHidden) },
+                                 note: $0.note, date: $0.date) },
             settingChangeLog: settingChangeStore.load(),
             remoteBolusLedger: deliveryLedgerCoordinator.currentLedgerSnapshot)
     }

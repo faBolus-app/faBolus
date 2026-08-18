@@ -176,12 +176,11 @@ public struct SiteAtlasEntryBackup: Codable, Sendable, Equatable {
     public var normalizedY: Double
     public var note: String?
     public var date: Date
-    public var isHidden: Bool
     public init(siteID: String, kind: String, bodySide: String,
                 normalizedX: Double, normalizedY: Double, note: String?,
-                date: Date, isHidden: Bool) {
+                date: Date) {
         self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
         self.normalizedX = normalizedX; self.normalizedY = normalizedY
-        self.note = note; self.date = date; self.isHidden = isHidden
+        self.note = note; self.date = date
     }
 }

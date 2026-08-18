@@ -26,7 +26,6 @@ struct PrivacyDataExport: Codable {
         var normalizedY: Double
         var note: String?
         var date: Date
-        var isHidden: Bool
     }
 
     var meta: Meta

@@ -78,7 +78,7 @@ final class BackupModelsTests: XCTestCase {
                                       appVersion: "0.3.0", pumpModel: "mobi", deviceName: "iPhone")
         let entry = SiteAtlasEntryBackup(siteID: "site-1", kind: "pump", bodySide: "front",
                                          normalizedX: 0.58, normalizedY: 0.44, note: "left abdomen",
-                                         date: Date(timeIntervalSince1970: 1_700_000_000), isHidden: false)
+                                         date: Date(timeIntervalSince1970: 1_700_000_000))
         let backup = FaBolusBackup(meta: meta, siteAtlas: SiteAtlasBackup(entries: [entry]))
         let decoded = try FaBolusBackup.decode(backup.encoded())
         XCTAssertEqual(decoded.meta.schemaVersion, 2)
@@ -89,7 +89,6 @@ final class BackupModelsTests: XCTestCase {
         XCTAssertEqual(out.normalizedX, 0.58, accuracy: 1e-9)
         XCTAssertEqual(out.normalizedY, 0.44, accuracy: 1e-9)
         XCTAssertEqual(out.note, "left abdomen")
-        XCTAssertEqual(out.isHidden, false)
         // siteAtlas stays independently optional alongside the other sections.
         XCTAssertNil(decoded.appSettings); XCTAssertNil(decoded.secrets); XCTAssertNil(decoded.pumpSettings)
     }
