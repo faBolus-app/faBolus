@@ -600,8 +600,11 @@ struct CgmSettingsView: View {
     @State private var pendingExperimentalId: String?
     @State private var lastCommittedSource = GlucoseSourceRegistry.selectedId() ?? ""
     @State private var isReverting = false
-    /// Failover sources whose direct-BLE path is an unverified best guess (docs/UNVERIFIED-GUESSES.md #5):
-    /// selecting one raises a blocking warning that it will likely not connect.
+    /// Failover sources that are experimental / validation-pending (docs/UNVERIFIED-GUESSES.md #5,
+    /// D-14): selecting one raises a blocking warning that it hasn't been verified on-device yet.
+    /// D-03/D-05 (09.20-RESEARCH.md "D-05 reliability re-check"): the mechanism itself — passively
+    /// reading alongside an already-running official Dexcom app — is confident, not a guess; only the
+    /// on-device confirmation (D-13) is still pending.
     private static let experimentalCgmSourceIds: Set<String> = ["dexcom-g6-ble"]
     var body: some View {
         Form {
@@ -644,7 +647,11 @@ struct CgmSettingsView: View {
                     selectedGlucoseSource = lastCommittedSource
                 }
             } message: {
-                Text("⚠️ The direct-BLE Dexcom source is experimental and has NOT been verified — a passive read likely will NOT connect (the sensor needs an authenticated session). Prefer Dexcom Share or the xDrip App Group. See docs/operate/cgm-failover.md.")
+                // D-03/D-05 (gap-closure, 09.20-VERIFICATION.md): honest "Read from Dexcom app" framing,
+                // matching CgmCredentialsView's footer copy — this is the point-of-selection gate a user
+                // hits BEFORE ever reaching that screen, so it must carry the same confident-but-untested
+                // message, not the earlier retracted hedge about the connection not succeeding.
+                Text("⚠️ This reads your sensor passively alongside the official Dexcom app — keep that app installed, paired, and running (a sensor already set up there needs no re-pairing and no transmitter ID). The first reading can take up to ~5 minutes (one Dexcom wake cycle) — that's normal, not a failure. This mode hasn't been verified on-device yet. See docs/operate/cgm-failover.md.")
             }
             Section {
                 Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)

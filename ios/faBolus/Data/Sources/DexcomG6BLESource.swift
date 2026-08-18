@@ -12,10 +12,13 @@ import DexcomG6Kit
 /// Requires the official Dexcom app installed and connected (it keeps the session alive). Local,
 /// no cloud. Its own `CBCentralManager` keeps it isolated from the pump.
 ///
-/// EXPERIMENTAL / unreliable: unlike the G7 (a true broadcaster), a G5/G6 delivers glucose only
-/// inside an *authenticated* session, and allows a limited number of BLE connections, so a passive
-/// third central often receives nothing or is refused outright. Prefer Dexcom Share (cloud) or the
-/// xDrip4iOS App Group as a robust failover; this source is best-effort.
+/// EXPERIMENTAL / validation-pending (D-14), not unreliable: a `LoopKit/CGMBLEKit`-mirror re-check
+/// (09.20-RESEARCH.md, "D-05 reliability re-check") found this mechanism — the official Dexcom app's
+/// own "Read from Dexcom app" (follow) mode — mandatory in xDrip4iOS's own Dexcom setup, with
+/// re-authentication happening every ~5-min cycle regardless of when the sensor was originally
+/// paired. The earlier "unreliable / passive third central" framing was walked back, not confirmed.
+/// The remaining "EXPERIMENTAL" marker means only that on-device UAT (D-13, `09.20-UAT.md`) hasn't run
+/// yet. Dexcom Share (cloud) or the xDrip4iOS App Group remain the other failover options.
 @MainActor
 final class DexcomG6BLESource: NSObject, GlucoseSource {
     let id = "dexcom-g6-ble"
