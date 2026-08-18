@@ -236,6 +236,29 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
 
 // CoreBluetooth callbacks run on `queue: .main`; `MainActor.assumeIsolated` hops into the main actor.
 extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
+    /// D-06 completion: background relaunch reattachment, mirroring `faBolusCore/BLELink.swift`'s
+    /// central-role `willRestoreState` — reattach the delegate on the restored peripheral (and
+    /// re-issue `connect` if CoreBluetooth hasn't already re-established the link) so the production
+    /// instance re-arms without waiting for a fresh scan. Only ever fires for the production instance
+    /// (the Test instance is built with no restore identifier, so CoreBluetooth never restores state
+    /// for it). Never touches the auth/control characteristics — read-only, same as every other path
+    /// in this source (D-12a).
+    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        // Pull the restored peripheral out here, same as `didDiscover`'s `advName` extraction above:
+        // the non-Sendable `[String: Any]` dict itself must not cross into the main-actor closure.
+        // `nonisolated(unsafe)` (an existing pattern in this codebase, e.g. `BolusPasscode.swift`) is
+        // safe here: CoreBluetooth invokes this delegate callback on `queue: .main` (see `start()`),
+        // so there is no actual concurrent access — only the strict-concurrency checker's Sendable
+        // requirement on `[CBPeripheral]` (unmet because `CBPeripheral` predates Sendable) to satisfy.
+        nonisolated(unsafe) let restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]
+        MainActor.assumeIsolated {
+            guard let restored = restoredPeripherals?.first else { return }
+            peripheral = restored
+            restored.delegate = self
+            if restored.state != .connected { central.connect(restored) }
+        }
+    }
+
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {
             guard central.state == .poweredOn else { status = .searching; onChange?(); return }

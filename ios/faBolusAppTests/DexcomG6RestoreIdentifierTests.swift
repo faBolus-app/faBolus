@@ -66,4 +66,66 @@ struct DexcomG6RestoreIdentifierTests {
         }
     }
 
+    // MARK: Task 2 — willRestoreState reattachment (source-scan; CB restoration isn't simulatable)
+
+    /// Resolve `<root>` by walking up from `#filePath`
+    /// (`<root>/ios/faBolusAppTests/DexcomG6RestoreIdentifierTests.swift`) until `Shared` exists —
+    /// same technique as `DexcomG6ScopeGuardTests.repoRootURL()` / `WatchDirectBleScopeGuardTests`.
+    private static func repoRootURL() -> URL? {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("Shared")
+            if fm.fileExists(atPath: candidate.path) { return probe }
+            probe = probe.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    private static let sourcePath = "ios/faBolus/Data/Sources/DexcomG6BLESource.swift"
+
+    private static func readSource() -> String? {
+        guard let root = repoRootURL() else { return nil }
+        return try? String(contentsOf: root.appendingPathComponent(Self.sourcePath), encoding: .utf8)
+    }
+
+    /// Vacuous-pass guard: fail loudly if the source file can't be resolved, rather than silently
+    /// passing every scan below because `readSource` returned nil.
+    @Test func sourceFileResolvesFromFilePath() throws {
+        #expect(Self.readSource() != nil,
+                "path resolution broke: could not read \(Self.sourcePath) from #filePath=\(#filePath)")
+    }
+
+    /// `DexcomG6BLESource` implements `centralManager(_:willRestoreState:)` and reattaches from
+    /// `CBCentralManagerRestoredStatePeripheralsKey` (delegate + connect), mirroring
+    /// `faBolusCore/BLELink.swift`'s central-role `willRestoreState`.
+    @Test func implementsWillRestoreStateReattachment() throws {
+        let code = try #require(Self.readSource())
+        #expect(code.contains("willRestoreState"),
+                "expected a willRestoreState delegate method for background reattachment (D-06)")
+        #expect(code.contains("CBCentralManagerRestoredStatePeripheralsKey"),
+                "willRestoreState must read CBCentralManagerRestoredStatePeripheralsKey to recover the restored peripheral")
+        #expect(code.contains(".delegate = self"),
+                "the restored peripheral must be reattached as this source's delegate")
+        #expect(code.contains("central.connect("),
+                "the restored peripheral must be (re)connected if CoreBluetooth hasn't already done so")
+    }
+
+    /// The existing cold-join path (`retrieveConnectedPeripherals` in
+    /// `centralManagerDidUpdateState`) must still be present — background relaunch re-adopts the
+    /// already-connected peripheral via EITHER path, and this one was already proven correct for
+    /// joining the Dexcom app's live session (Plan 01/02).
+    @Test func coldJoinPathIsPreserved() throws {
+        let code = try #require(Self.readSource())
+        #expect(code.contains("retrieveConnectedPeripherals"),
+                "the cold-join path must remain — do not remove it when adding willRestoreState")
+    }
+
+    /// Never a characteristic write, even in the new restoration path — the Plan 01 scope-guard
+    /// property (D-12a) must hold for every line added in this plan too.
+    @Test func willRestoreStateNeverWritesACharacteristic() throws {
+        let code = try #require(Self.readSource())
+        #expect(!code.contains("writeValue("),
+                "must never call CBPeripheral.writeValue(for:type:) — passive-read-only source (D-12a)")
+    }
 }
