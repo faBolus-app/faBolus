@@ -76,4 +76,66 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(c.count, 1)
         XCTAssertEqual(c.first?.grams, 45)
     }
+
+    // MARK: SiteAtlas (09.18a-01, D-10)
+
+    func testSiteRoundTrip() throws {
+        let store = try makeStore()
+        store.ingestSite(siteID: "site-1", kind: "pump", bodySide: "front",
+                         normalizedX: 0.58, normalizedY: 0.44, note: "left abdomen",
+                         isHidden: false, date: t0, sourceID: "fabolus", recordedAt: t0)
+        let sites = store.allSites()
+        XCTAssertEqual(sites.count, 1)
+        let s = try XCTUnwrap(sites.first)
+        XCTAssertEqual(s.siteID, "site-1")
+        XCTAssertEqual(s.kind, "pump")
+        XCTAssertEqual(s.bodySide, "front")
+        XCTAssertEqual(s.normalizedX, 0.58, accuracy: 1e-9)
+        XCTAssertEqual(s.normalizedY, 0.44, accuracy: 1e-9)
+        XCTAssertEqual(s.note, "left abdomen")
+        XCTAssertEqual(s.isHidden, false)
+        XCTAssertEqual(s.date, t0)
+        XCTAssertEqual(s.sourceID, "fabolus")
+        XCTAssertEqual(s.recordedAt, t0)
+    }
+
+    func testSitePumpAndSensorInsertThenDeleteOne() throws {
+        let store = try makeStore()
+        store.ingestSite(siteID: "pump-1", kind: "pump", bodySide: "front",
+                         normalizedX: 0.5, normalizedY: 0.4, note: nil, isHidden: false,
+                         date: t0, sourceID: "fabolus", recordedAt: t0)
+        store.ingestSite(siteID: "sensor-1", kind: "sensor", bodySide: "back",
+                         normalizedX: 0.22, normalizedY: 0.30, note: nil, isHidden: false,
+                         date: t0.addingTimeInterval(60), sourceID: "fabolus", recordedAt: t0)
+        XCTAssertEqual(store.allSites().count, 2)
+        // sorted by date desc → the later-dated sensor comes first.
+        XCTAssertEqual(store.allSites().map(\.siteID), ["sensor-1", "pump-1"])
+
+        store.deleteSite(id: "pump-1")
+        let remaining = store.allSites()
+        XCTAssertEqual(remaining.count, 1, "delete by siteID removes exactly one row")
+        XCTAssertEqual(remaining.first?.siteID, "sensor-1", "the other site remains")
+    }
+
+    func testSitesInRangeFilters() throws {
+        let store = try makeStore()
+        store.ingestSite(siteID: "old", kind: "pump", bodySide: "front",
+                         normalizedX: 0.5, normalizedY: 0.4, note: nil, isHidden: false,
+                         date: t0.addingTimeInterval(-40 * 86400), sourceID: "fabolus", recordedAt: t0)
+        store.ingestSite(siteID: "recent", kind: "sensor", bodySide: "back",
+                         normalizedX: 0.5, normalizedY: 0.4, note: nil, isHidden: false,
+                         date: t0, sourceID: "fabolus", recordedAt: t0)
+        let inWindow = store.sites(in: t0.addingTimeInterval(-7 * 86400)...t0.addingTimeInterval(60))
+        XCTAssertEqual(inWindow.map(\.siteID), ["recent"])
+    }
+
+    func testClearWipesSites() throws {
+        let store = try makeStore()
+        store.ingestSite(siteID: "s", kind: "pump", bodySide: "front",
+                         normalizedX: 0.5, normalizedY: 0.4, note: nil, isHidden: false,
+                         date: t0, sourceID: "fabolus", recordedAt: t0)
+        XCTAssertEqual(store.allSites().count, 1)
+        store.clear()
+        XCTAssertEqual(store.allSites().count, 0, "clear() wipes site PHI too (data-minimization)")
+    }
 }
