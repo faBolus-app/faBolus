@@ -244,6 +244,10 @@ struct FoodFinderAIEntryView: View {
 
     /// Run one AI estimate — gated on the one-time PHI disclosure + a stored key, then parsed strictly.
     private func runEstimate() {
+        // Gate 0 (WR-05, defense-in-depth): the master FoodFinder-AI toggle must be ON. Today this sheet
+        // is only reachable when the toggle is on, but enforcing it at the call site means a future caller
+        // that presents this view directly cannot bypass the master OFF switch and fire an AI call.
+        guard AppSettings.shared.foodFinderAIEnabled else { return }
         // Gate 1: PHI disclosure must be acknowledged before any PHI leaves the device.
         guard AppSettings.shared.hasAcknowledgedFoodFinderAINotice else {
             showPHIDisclosure = true

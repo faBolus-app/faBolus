@@ -174,7 +174,14 @@ struct SmartAssistSettingsView: View {
         // surface then re-presents the disclosure before any call).
         .alert("Sending data to an AI provider", isPresented: $showFoodFinderAINotice) {
             Button("I understand") { AppSettings.shared.acknowledgeFoodFinderAINotice() }
-            Button("Cancel", role: .cancel) {}
+            // WR-05(b): if the user cancels the disclosure, revert the master toggle so it never stays ON
+            // with the PHI notice unacknowledged (the runtime gate already blocks any call, but the stored
+            // toggle should reflect the user's actual choice).
+            Button("Cancel", role: .cancel) {
+                if !AppSettings.shared.hasAcknowledgedFoodFinderAINotice {
+                    settings.foodFinderAIEnabled = false
+                }
+            }
         } message: {
             Text("Turning this on sends your food photo/description to the AI provider you choose. That's health-adjacent data leaving your device. Only your carb estimate comes back — faBolus never doses automatically.")
         }
