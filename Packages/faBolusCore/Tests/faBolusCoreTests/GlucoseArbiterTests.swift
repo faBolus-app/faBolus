@@ -6,6 +6,7 @@ import XCTest
 private final class MockGlucoseSource: GlucoseSource {
     let id = "mock"
     let priority = 100
+    let connectionKind: GlucoseConnectionKind = .localBLE   // D-06: conformers must classify
     var latest: GlucoseSample?
     var history: [GlucoseReading]
     var status: GlucoseSourceStatus = .connected

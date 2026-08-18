@@ -130,6 +130,16 @@ public struct GlucoseSample: Sendable, Equatable {
     public var isStale: Bool { GlucoseFreshness.isStale(date) }
 }
 
+/// How a `GlucoseSource` physically connects — a typed classification (D-06) that later waves branch
+/// on instead of scattered `id == "dexcom-g6-ble" || id == "dexcom-g7-ble"` string literals. Lives on
+/// the protocol only (mirroring `priority`'s placement), so a new source is FORCED to classify itself
+/// — there is deliberately no protocol extension default a new BLE source could silently inherit.
+public enum GlucoseConnectionKind: Sendable, Equatable {
+    case localBLE        // Dexcom G6 / G7 — CoreBluetooth passive read
+    case cloudPoll       // Dexcom Share / Nightscout / LibreLinkUp — polled over the network
+    case localOnDevice   // HealthKit / xDrip App Group — on-device, no BLE, no network
+}
+
 /// Health of a `GlucoseSource`, so the UI can show what the failover feed is doing.
 public enum GlucoseSourceStatus: Sendable, Equatable {
     case idle            // not started
@@ -153,6 +163,9 @@ public protocol GlucoseSource: AnyObject {
     var id: String { get }
     /// Selection priority when several sources are healthy (higher wins). Local BLE outranks cloud.
     var priority: Int { get }
+    /// Typed connection classification (D-06) — later waves' Test-flow/copy logic branch on this
+    /// instead of `id`-string literals. No extension default: every source must classify itself.
+    var connectionKind: GlucoseConnectionKind { get }
     /// Most recent reading, or nil if none yet.
     var latest: GlucoseSample? { get }
     /// Recent history (newest last), to backfill the chart when failing over.

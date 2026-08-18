@@ -22,6 +22,7 @@ private struct SendableBox: @unchecked Sendable {
 final class HealthKitGlucoseSource: GlucoseSource {
     let id = "healthkit"
     let priority = 15
+    let connectionKind: GlucoseConnectionKind = .localOnDevice   // D-06
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle

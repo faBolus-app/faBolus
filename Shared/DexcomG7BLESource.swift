@@ -13,6 +13,7 @@ import G7SensorKit
 final class DexcomG7BLESource: NSObject, GlucoseSource {
     let id = "dexcom-g7-ble"
     let priority = 100                       // local BLE outranks cloud sources
+    let connectionKind: GlucoseConnectionKind = .localBLE   // D-06
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle

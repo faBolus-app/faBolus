@@ -17,6 +17,7 @@ struct CgmTestFlowStateTests {
     private final class StubGlucoseSource: GlucoseSource {
         let id = "stub"
         let priority = 100
+        let connectionKind: GlucoseConnectionKind = .localBLE   // D-06: conformers must classify
         var latest: GlucoseSample?
         var history: [GlucoseReading] = []
         var status: GlucoseSourceStatus

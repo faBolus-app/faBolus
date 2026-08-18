@@ -23,6 +23,7 @@ import DexcomG6Kit
 final class DexcomG6BLESource: NSObject, GlucoseSource {
     let id = "dexcom-g6-ble"
     let priority = 100                       // local BLE outranks cloud sources
+    let connectionKind: GlucoseConnectionKind = .localBLE   // D-06
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle

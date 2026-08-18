@@ -8,6 +8,8 @@ import faBolusCore
 class PollingGlucoseSource: GlucoseSource {
     let id: String
     let priority: Int
+    /// D-06: cloud pollers (Dexcom Share / Nightscout / LibreLinkUp) inherit this classification.
+    let connectionKind: GlucoseConnectionKind = .cloudPoll
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle
