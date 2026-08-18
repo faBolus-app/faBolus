@@ -944,6 +944,92 @@ public final class AppModel {
     /// in Settings to try again.
     public private(set) var failoverAutoDisabled: String?
 
+    // MARK: - CGM Test flow (Phase 09.20-04, change 3, D-13 UX)
+    //
+    // The CgmCredentialsView "Test" action OBSERVES this already-running production instance
+    // (`glucoseSource`, armed at launch above) instead of building a second ephemeral central via
+    // `GlucoseSourceRegistry.make(id:)` — so a reading already buffered when Test is tapped resolves
+    // instantly, and no second CoreBluetooth restore-identifier central is ever created (the same
+    // class of dup-restore-id SIGABRT D-06/Plan 03 fixed). State lives here, not in view `@State`, so
+    // a ~5-minute Dexcom wake-cycle wait SURVIVES navigating away from and back to the credentials
+    // screen.
+
+    /// Read-only probe of the selected failover source's live production instance — id, latest,
+    /// status — mirroring `glucoseSourceDiagnosticsInfo`'s pattern (`glucoseSource` stays private,
+    /// never widened). nil when no failover source is selected, or the crash guard auto-disabled it.
+    public var glucoseSourceProbe: (id: String, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
+        guard let glucoseSource else { return nil }
+        return (glucoseSource.id, glucoseSource.latest, glucoseSource.status)
+    }
+
+    /// True while a Test run is polling for an outcome; drives the "Testing…" button label / disabled
+    /// state.
+    public private(set) var cgmTestInProgress = false
+    /// Seconds elapsed since the current/most-recent Test run started; holds at its last value once
+    /// the run reaches a terminal outcome. Drives the elapsed indicator + the determinate progress bar.
+    public private(set) var cgmTestElapsedSeconds = 0
+    /// The active/most-recent run's timeout in seconds (see `cgmTestTimeout(forSourceId:)`), so the UI
+    /// can render a determinate `ProgressView(value:)` (elapsed / timeout) instead of an indeterminate
+    /// spinner. 0 before any run.
+    public private(set) var cgmTestTimeoutSeconds = 0
+    /// The current/most-recent Test outcome; nil before any Test has been run this launch.
+    // Not `public`: `CgmCredentialsView.CgmTestOutcome` is `internal` (the view itself is internal,
+    // same-module default) — Swift access control forbids a `public` property of a less-than-public
+    // type. `internal` is sufficient: this is read only by `CgmCredentialsView`, in the same module.
+    private(set) var cgmTestOutcome: CgmCredentialsView.CgmTestOutcome?
+    private var cgmTestPollTask: Task<Void, Never>?
+
+    /// How long the Test flow waits before concluding TIMEOUT. Dexcom direct-BLE sources (G6/G7) get
+    /// one full wake/connect cycle (~5 min, RESEARCH "Already-paired-sensor first-run behavior") plus
+    /// margin; cloud/local pollers get a shorter window since they don't wait on a transmitter's radio
+    /// cycle.
+    public static func cgmTestTimeout(forSourceId id: String) -> TimeInterval {
+        (id == "dexcom-g6-ble" || id == "dexcom-g7-ble") ? 6 * 60 : 45
+    }
+
+    /// Start (or restart) the Test flow. OBSERVES `glucoseSourceProbe` on a 1s poll instead of
+    /// building a second central, so an already-buffered reading resolves `.success` on the very
+    /// first tick. Reports an immediate `.timeout` (not a spin) when no production instance exists —
+    /// no fallback selected, or the crash guard auto-disabled it after a launch crash.
+    public func startCgmTest() {
+        cgmTestPollTask?.cancel()
+        guard let probe = glucoseSourceProbe else {
+            cgmTestOutcome = .timeout(detail: failoverAutoDisabled != nil
+                ? "The fallback source was auto-disabled after a launch crash — re-select it in Settings to try again."
+                : "No fallback source is selected.")
+            cgmTestInProgress = false
+            cgmTestElapsedSeconds = 0
+            cgmTestTimeoutSeconds = 0
+            return
+        }
+        let sourceId = probe.id
+        let timeout = Self.cgmTestTimeout(forSourceId: sourceId)
+        cgmTestInProgress = true
+        cgmTestOutcome = nil
+        cgmTestElapsedSeconds = 0
+        cgmTestTimeoutSeconds = Int(timeout)
+        let startedAt = Date()
+        cgmTestPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let probe = self.glucoseSourceProbe, probe.id == sourceId else {
+                    self?.cgmTestInProgress = false
+                    return
+                }
+                let elapsed = Date().timeIntervalSince(startedAt)
+                self.cgmTestElapsedSeconds = Int(elapsed)
+                let outcome = CgmCredentialsView.testOutcome(latest: probe.latest, status: probe.status,
+                                                              elapsed: elapsed, timeout: timeout)
+                self.cgmTestOutcome = outcome
+                if case .waiting = outcome {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    continue
+                }
+                self.cgmTestInProgress = false
+                return
+            }
+        }
+    }
+
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
     /// the bolus-entry sheet.
     public var openBolusRequested = false
