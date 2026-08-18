@@ -308,6 +308,13 @@ struct GlucoseChartView: View {
     private func refreshScrubbedHealthKitHR() async {
         guard heartRateContextEnabled, let date = scrubbedPointDate else { scrubbedHealthKitHR = nil; return }
         await healthKitHR.requestAuthorizationIfNeeded()
-        scrubbedHealthKitHR = await healthKitHR.heartRate(at: date)
+        // WR-01 stale-race guard: the HealthKit read is async and a superseded `.task(id:)` (an old
+        // scrub point) can still resume its continuation and win the last write — painting a PRIOR
+        // point's HR as fresh (`stale: false`). `date` is the scrub identity token captured when this
+        // query was issued; re-check it against the CURRENT `scrubbedPointDate` after the await and drop
+        // the result if the scrub has since moved on. Never commit a value for a point we're no longer on.
+        let bpm = await healthKitHR.heartRate(at: date)
+        guard scrubbedPointDate == date else { return }
+        scrubbedHealthKitHR = bpm
     }
 }
