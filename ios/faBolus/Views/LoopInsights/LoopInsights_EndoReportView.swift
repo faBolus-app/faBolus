@@ -40,7 +40,7 @@ struct LoopInsights_EndoReportView: View {
             }
 
             if let r = report, r.hasSufficientHistory {
-                Section("Preview") {
+                Section("Glucose") {
                     summaryRow(unitContext.tirRangeLabel,
                                String(format: "%.1f%%", r.glucose.timeInRangePct))
                     summaryRow("Average Glucose",
@@ -49,6 +49,15 @@ struct LoopInsights_EndoReportView: View {
                     summaryRow("Std Deviation",
                                "\(unitContext.formatMgdl(r.glucose.sd)) \(unitContext.unitString)")
                     summaryRow("Readings", "\(r.glucose.readingCount)")
+                }
+                Section("Insulin") {
+                    summaryRow("Total Daily Dose", String(format: "%.1f U/day", r.insulin.dailyAverageUnits))
+                    summaryRow("Total Insulin", String(format: "%.1f U", r.insulin.totalUnits))
+                }
+                Section("Carbs") {
+                    summaryRow("Daily Average", String(format: "%.0f g/day", r.carbs.dailyAverageGrams))
+                    summaryRow("Per Meal Average", String(format: "%.0f g", r.carbs.perMealAverageGrams))
+                    summaryRow("Meals Logged", "\(r.carbs.mealCount)")
                 }
                 Section {
                     if let url = pdfURL {

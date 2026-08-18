@@ -40,19 +40,23 @@ public struct FaBolusInsightsReport: Sendable, Equatable {
                                                  inRangePct: 0, highPct: 0, veryHighPct: 0)
     }
 
-    /// Carb summary over the window. The tracer carries the totals; the daily-average / per-meal
-    /// average land in 09.18d-01 Task 2.
+    /// Carb summary over the window: totals + daily-average (total / period days) + per-meal-average
+    /// (total / meal count). Zero meals yields 0 averages without a divide-by-zero.
     public struct CarbSummary: Sendable, Equatable {
         public let totalGrams: Double
         public let mealCount: Int
-        public static let empty = CarbSummary(totalGrams: 0, mealCount: 0)
+        public let dailyAverageGrams: Double
+        public let perMealAverageGrams: Double
+        public static let empty = CarbSummary(totalGrams: 0, mealCount: 0,
+                                              dailyAverageGrams: 0, perMealAverageGrams: 0)
     }
 
-    /// Insulin summary over the window (faBolus history stores boluses only — no basal ledger — so
-    /// TDD here is a bolus rollup). Tracer carries the total; the daily-average TDD lands in Task 2.
+    /// Insulin summary over the window (faBolus history stores boluses only — no basal ledger — so the
+    /// TDD rollup here is bolus-only): total units + daily-average TDD (total / period days).
     public struct InsulinSummary: Sendable, Equatable {
         public let totalUnits: Double
-        public static let empty = InsulinSummary(totalUnits: 0)
+        public let dailyAverageUnits: Double
+        public static let empty = InsulinSummary(totalUnits: 0, dailyAverageUnits: 0)
     }
 
     public let period: Period
@@ -99,11 +103,17 @@ public struct FaBolusInsightsAggregator {
             glucose = .empty
         }
 
+        let days = Double(period.days)
+        let carbTotal = carbEntries.reduce(0) { $0 + $1.grams }
         let carbs = FaBolusInsightsReport.CarbSummary(
-            totalGrams: carbEntries.reduce(0) { $0 + $1.grams },
-            mealCount: carbEntries.count)
+            totalGrams: carbTotal,
+            mealCount: carbEntries.count,
+            dailyAverageGrams: days > 0 ? carbTotal / days : 0,
+            perMealAverageGrams: carbEntries.isEmpty ? 0 : carbTotal / Double(carbEntries.count))
+        let insulinTotal = boluses.reduce(0) { $0 + $1.units }
         let insulin = FaBolusInsightsReport.InsulinSummary(
-            totalUnits: boluses.reduce(0) { $0 + $1.units })
+            totalUnits: insulinTotal,
+            dailyAverageUnits: days > 0 ? insulinTotal / days : 0)
 
         return FaBolusInsightsReport(period: period,
                                      range: range,
