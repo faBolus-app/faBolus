@@ -20,6 +20,7 @@ public final class GlucoseHistoryStore {
     public init(inMemory: Bool = false) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+                                       StoredSite.self,
                                        configurations: config)
         if !inMemory { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -71,6 +72,42 @@ public final class GlucoseHistoryStore {
         for e in entries {
             context.insert(StoredCarb(date: e.date, grams: e.grams, sourceID: sourceID, recordedAt: recordedAt))
         }
+        try? context.save()
+    }
+
+    // MARK: SiteAtlas CRUD (09.18a, D-10)
+
+    /// Record an infusion-site / CGM-sensor placement. `kind` is "pump" | "sensor"; `bodySide` is
+    /// "front" | "back" (raw enum values, keeping the schema primitive). `siteID` defaults to a fresh
+    /// UUID string; callers pass a stable one when they need delete/backup identity.
+    public func ingestSite(siteID: String = UUID().uuidString, kind: String, bodySide: String,
+                           normalizedX: Double, normalizedY: Double, note: String? = nil,
+                           isHidden: Bool = false, date: Date = Date(), sourceID: String,
+                           recordedAt: Date = Date()) {
+        context.insert(StoredSite(siteID: siteID, kind: kind, bodySide: bodySide,
+                                  normalizedX: normalizedX, normalizedY: normalizedY, note: note,
+                                  isHidden: isHidden, date: date, sourceID: sourceID, recordedAt: recordedAt))
+        try? context.save()
+    }
+
+    /// All recorded sites, most-recent placement first.
+    public func allSites() -> [StoredSite] {
+        var desc = FetchDescriptor<StoredSite>()
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Recorded sites whose placement `date` falls in `range`, most-recent first.
+    public func sites(in range: ClosedRange<Date>) -> [StoredSite] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredSite>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Delete the site with the given stable `siteID`.
+    public func deleteSite(id siteID: String) {
+        try? context.delete(model: StoredSite.self, where: #Predicate { $0.siteID == siteID })
         try? context.save()
     }
 
@@ -135,6 +172,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredGlucose.self)
         try? context.delete(model: StoredBolus.self)
         try? context.delete(model: StoredCarb.self)
+        try? context.delete(model: StoredSite.self)
         try? context.save()
     }
 }
