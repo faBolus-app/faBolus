@@ -167,6 +167,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var softwareVersion: String = ""
     /// Current basal delivery rate (units/hr) and whether delivery is suspended.
     public var basalRateUnitsPerHour: Double = 0
+    /// WR-03: whether `basalRateUnitsPerHour` reflects a value actually READ from the pump (op-77
+    /// CurrentBasalStatusResponse) rather than the default-unknown 0. Without this flag a genuine 0 U/hr
+    /// basal — a suspend or a 0 U/hr temp — is indistinguishable from "never read", so the GraphDetailView
+    /// readout would render a real suspend as the unknown em-dash "—" instead of "0/hr". Set true the
+    /// first time a basal-status frame lands; display-only, never a dose input.
+    public var basalRateKnown: Bool = false
     /// Configured max basal-rate limit (units/hr), from BasalLimitSettings. 0 = unknown/not read.
     public var maxBasalUnitsPerHour: Double = 0
     public var deliverySuspended: Bool = false

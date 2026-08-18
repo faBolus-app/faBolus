@@ -117,7 +117,7 @@ struct DashboardView: View {
                                                      boluses: model.bolusMarkers, windowHours: windowHours,
                                                      showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
                                                      showBolusBars: settings.showBolusBars,
-                                                     basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
+                                                     basalUnitsPerHour: model.snapshot.basalRateKnown
                                                          ? model.snapshot.basalRateUnitsPerHour : nil,
                                                      heartRateContextEnabled: settings.heartRateContextEnabled,
                                                      latestGarminHeartRate: model.latestGarminHeartRate)
@@ -257,7 +257,7 @@ struct DashboardView: View {
                                              boluses: model.bolusMarkers, windowHours: windowHours,
                                              showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
                                              showBolusBars: settings.showBolusBars,
-                                             basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
+                                             basalUnitsPerHour: model.snapshot.basalRateKnown
                                                  ? model.snapshot.basalRateUnitsPerHour : nil,
                                              heartRateContextEnabled: settings.heartRateContextEnabled,
                                              latestGarminHeartRate: model.latestGarminHeartRate)

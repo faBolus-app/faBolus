@@ -358,7 +358,13 @@ final class PumpResponseApplier {
             // descriptor is reachable from pump state. Identity only — no capability gate reads it.
             withSnapshot { $0.controllerVariant = bits.controllerVariant }
         case let m as CurrentBasalStatusResponse:
-            withSnapshot { $0.basalRateUnitsPerHour = m.currentBasalUnitsPerHour }
+            // WR-03: mark the basal rate as KNOWN so a genuine 0 U/hr (suspend / zero temp) renders as
+            // "0/hr" in the GraphDetailView readout rather than the unknown em-dash — the default 0 stays
+            // "unknown" until this frame lands.
+            withSnapshot {
+                $0.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
+                $0.basalRateKnown = true
+            }
         case let m as BasalLimitSettingsResponse:
             withSnapshot { $0.maxBasalUnitsPerHour = m.basalLimitUnitsPerHour }
         case let m as ControlIQInfoV2Response:
