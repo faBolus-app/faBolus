@@ -16,6 +16,7 @@
 //  calculator, or delivery symbol (the D-18.1 source-scan guard asserts their absence).
 
 import Foundation
+import faBolusCore
 
 // MARK: - OpenFoodFacts API Response Models
 
@@ -191,11 +192,11 @@ struct OpenFoodFactsProduct: Codable, Identifiable, Hashable {
         if let servingSize, !servingSize.isEmpty {
             return servingSize
         } else if let servingQuantity, servingQuantity.isFinite, servingQuantity > 0 {
-            // Clamp in Double space BEFORE the Int() conversion: an unbounded OFF `serving_quantity`
-            // above Int.max (e.g. 1e19) would trap Int(_:) and crash the results-list / card render
-            // (every row calls this). Cap at a sane, safely-representable display bound (100 kg) —
-            // NOTE: `Double(Int.max)` is NOT a safe cap here (it rounds up to 2^63 > Int.max and traps).
-            let g = Int(min(servingQuantity.rounded(), 100_000))
+            // Route the untrusted OFF `serving_quantity` through the shared `clampedInt` funnel (faBolusCore):
+            // it clamps in Double space to `0...100_000` (a sane 100 kg display bound) BEFORE the `Int(_:)`,
+            // so an unbounded value above Int.max (e.g. 1e19) can never trap the results-list / card render
+            // (every row calls this). One guarded path — no re-derived inline clamp per site.
+            let g = clampedInt(servingQuantity, max: 100_000)
             return "\(g) g"
         } else {
             return "100 g"

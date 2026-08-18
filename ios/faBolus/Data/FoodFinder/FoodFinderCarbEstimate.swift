@@ -8,6 +8,7 @@
 //  calculator, or delivery symbol (the D-18.1 source-scan guard asserts their absence).
 
 import Foundation
+import faBolusCore
 
 enum FoodFinderCarbEstimate {
 
@@ -40,12 +41,11 @@ enum FoodFinderCarbEstimate {
         guard carbsPer100g.isFinite, carbsPer100g >= 0, servings.isFinite, servings >= 0 else { return 0 }
         let quantity = (servingQuantity.isFinite && servingQuantity > 0) ? servingQuantity : 100.0
         let raw = carbsPer100g * quantity / 100.0 * servings
-        guard raw.isFinite else { return 0 }
-        // Clamp in Double space BEFORE the Int() conversion: a finite value above Int.max (a garbled or
-        // malicious OFF nutriment, e.g. 1e19) would trap Int(_:) and crash the carb-estimate card.
-        // `maxCarbGrams` (1000) is exactly representable as a Double, so Int() of the capped value is safe.
-        let capped = min(max(raw.rounded(), 0), Double(maxCarbGrams))
-        return Int(capped)
+        // Route the untrusted Double→Int through the shared `clampedInt` funnel (faBolusCore): it maps a
+        // non-finite `raw` (e.g. an overflow to +inf) to the floor (0) and clamps a finite value in Double
+        // space to `0...maxCarbGrams` BEFORE the `Int(_:)`, so a garbled/malicious OFF nutriment (e.g. 1e19,
+        // above Int.max) can never trap the carb-estimate card. One guarded path, no re-derived inline clamp.
+        return clampedInt(raw, max: maxCarbGrams)
     }
 
     /// The carb estimate for `servings` servings of a product: `.grams(N)` when the product carries a

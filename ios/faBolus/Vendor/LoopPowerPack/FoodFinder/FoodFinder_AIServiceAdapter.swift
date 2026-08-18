@@ -133,7 +133,11 @@ final class FoodFinderAIServiceAdapter: Sendable {
         }
         var current: Any? = root
         for component in keyPath.split(separator: ".") {
-            if let index = Int(component) {
+            // The `Int(component)` below is the failable String→Int? parse of a keyPath array-index component
+            // (returns nil, never traps, on non-numeric input) — NOT the untrusted-Double→Int trap that the
+            // shared `clampedInt` guards. The inline `safe-int-conversion` marker exempts it from
+            // DoubleToIntTrapGuardTests (which bans raw `Int(` in the FoodFinder / LoopInsights dirs).
+            if let index = Int(component) {  // safe-int-conversion: String→Int? parse, returns nil not a trap
                 guard let array = current as? [Any], index >= 0, index < array.count else {
                     throw FoodFinderAIError.emptyResponse
                 }

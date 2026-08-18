@@ -13,6 +13,7 @@
 //  source-scan guard, FoodFinderCarbSeamGuardTests, asserts their absence from this file).
 
 import Foundation
+import faBolusCore
 
 enum FoodFinderAICarbParse {
 
@@ -37,12 +38,13 @@ enum FoodFinderAICarbParse {
     static func parse(_ text: String) -> Outcome {
         guard let value = extractNumber(from: text) else { return .manualEntryFallback }
         // Non-finite / negative are not usable estimates → manual-entry fallback (never a fabricated 0).
+        // (This semantic differs from the OpenFoodFacts path, which returns 0 for those, so the guard stays
+        // here rather than being folded into `clampedInt`.)
         guard value.isFinite, value >= 0 else { return .manualEntryFallback }
-        // Clamp in Double space BEFORE the Int() conversion: a hallucinated/adversarial value above
-        // Int.max (e.g. {"carbs_g": 1e19} or a 25-digit prose number) would trap Int(_:) and crash.
-        // `maxCarbGrams` is exactly representable as a Double, so Int() of the capped value is safe.
-        let capped = min(max(value.rounded(), 0), Double(FoodFinderCarbEstimate.maxCarbGrams))
-        return .grams(Int(capped))
+        // Route the surviving positive value through the shared `clampedInt` funnel (faBolusCore): it rounds
+        // and clamps in Double space to `0...maxCarbGrams` BEFORE the `Int(_:)`, so a hallucinated/adversarial
+        // value above Int.max (e.g. {"carbs_g": 1e19} or a 25-digit prose number) can never trap the card.
+        return .grams(clampedInt(value, max: FoodFinderCarbEstimate.maxCarbGrams))
     }
 
     // MARK: - Extraction

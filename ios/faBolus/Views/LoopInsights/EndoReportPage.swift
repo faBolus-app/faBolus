@@ -64,7 +64,7 @@ enum EndoReportContent {
         let glucose = EndoReportBlock.section(title: "Glucose", rows: [
             EndoReportRow(label: unit.tirRangeLabel, value: String(format: "%.1f%%", g.timeInRangePct)),
             EndoReportRow(label: "Average Glucose", value: "\(unit.formatMgdl(g.average)) \(u)",
-                          valueColor: AppTheme.glucoseColor(Int(g.average.rounded()))),
+                          valueColor: AppTheme.glucoseColor(clampedInt(g.average, max: 10_000))),
             EndoReportRow(label: "GMI (est. A1C)", value: String(format: "%.1f%%", g.gmi)),
             EndoReportRow(label: "Std Deviation", value: "\(unit.formatMgdl(g.sd)) \(u)"),
             EndoReportRow(label: "Coefficient of Variation", value: String(format: "%.1f%%", cv)),

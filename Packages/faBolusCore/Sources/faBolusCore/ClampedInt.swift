@@ -14,6 +14,10 @@ import Foundation
 /// conversion. Both bounds are `Int`s chosen to round-trip exactly through `Double` for the ranges used
 /// here, so `Int(clamped)` can never trap.
 ///
+/// The routing of the FoodFinder + LoopInsights untrusted `Double`→`Int` sites through this funnel is
+/// enforced by `DoubleToIntTrapGuardTests` (a source-scan guard in the always-run `swift test` suite),
+/// which fails if a raw `Int(` reappears in those dirs without a `safe-int-conversion` marker.
+///
 /// - Parameters:
 ///   - value: the untrusted `Double` (may be `.infinity`, `.nan`, or wildly out of range).
 ///   - min: the inclusive lower bound (default `0`) — also the value returned for a non-finite input.
