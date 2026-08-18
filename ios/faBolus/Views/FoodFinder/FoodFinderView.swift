@@ -32,6 +32,8 @@ struct FoodFinderView: View {
     @State private var statusText: String?
     @State private var confirming = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var showScanner = false
+    @State private var lookupTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -52,7 +54,18 @@ struct FoodFinderView: View {
         // 09.17 readable-width contract: cap the detail width on iPad / regular width.
         .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth)
         .frame(maxWidth: .infinity)
-        .onDisappear { searchTask?.cancel() }
+        // 09.18c-02 (D-13): the barcode scanner is an INPUT ADAPTER into this same surface. A scanned
+        // barcode resolves via OpenFoodFacts into the EXISTING carb-estimate card + "Add to carbs" confirm
+        // seam — it opens no new path to the dose (the scanner only yields a product to estimate over).
+        .sheet(isPresented: $showScanner) {
+            NavigationStack {
+                BarcodeScannerView(onBarcodeScanned: { code in
+                    showScanner = false
+                    lookupBarcode(code)
+                })
+            }
+        }
+        .onDisappear { searchTask?.cancel(); lookupTask?.cancel() }
     }
 
     // MARK: Search
@@ -74,6 +87,17 @@ struct FoodFinderView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
                 }
+                // D-13 keyless-default input: scan a barcode instead of typing. Presents the vendored
+                // camera scanner; a scanned code resolves through the SAME OFF lookup + estimate card.
+                Button {
+                    showScanner = true
+                } label: {
+                    Image(systemName: "barcode.viewfinder")
+                        .foregroundStyle(AppTheme.carbs)
+                        .imageScale(.large)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scan a barcode")
             }
         }
     }
@@ -214,6 +238,57 @@ struct FoodFinderView: View {
         servings = 1
         confirming = false
         selected = product
+    }
+
+    /// Resolve a scanned barcode through the SAME OpenFoodFacts lookup and land it in the SAME
+    /// carb-estimate card as the text path (no parallel card, no new dose path). No-match / network
+    /// failures fall back to the documented "enter carbs yourself" copy — never a fabricated estimate,
+    /// and never blocking the manual carb field.
+    private func lookupBarcode(_ barcode: String) {
+        let clean = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        searchTask?.cancel()
+        lookupTask?.cancel()
+        selected = nil
+        results = []
+        query = ""
+        statusText = nil
+        isSearching = true
+        lookupTask = Task {
+            do {
+                let product = try await service.fetchProduct(barcode: clean)
+                await MainActor.run {
+                    isSearching = false
+                    if let product {
+                        // Lands in the EXISTING estimate card via the same selection path as text search.
+                        select(product)
+                    } else {
+                        statusText = "No product found for that barcode. Try searching by name, or enter carbs yourself."
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run { isSearching = false }
+            } catch let offError as OpenFoodFactsError {
+                await MainActor.run {
+                    isSearching = false
+                    results = []
+                    switch offError {
+                    case .productNotFound, .invalidBarcode:
+                        // No-match fallback (documented copy) — never a fabricated estimate.
+                        statusText = "No product found for that barcode. Try searching by name, or enter carbs yourself."
+                    default:
+                        statusText = offError.errorDescription
+                            ?? "Couldn't reach the food database. Check your connection and try again, or enter carbs yourself."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isSearching = false
+                    results = []
+                    statusText = "Couldn't reach the food database. Check your connection and try again, or enter carbs yourself."
+                }
+            }
+        }
     }
 
     private func runSearch() {
