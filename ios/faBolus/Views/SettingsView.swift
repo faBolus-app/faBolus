@@ -232,7 +232,7 @@ struct SettingsView: View {
                         // 09.18a-03 (D-16): un-gated — the submenu compiles in every config, so this is
                         // always the selectable NavigationLink. "(on)" is a runtime read of the
                         // unconditional `settings.eatingNudgesEnabled`.
-                        NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
+                        NavigationLink { SmartAssistSettingsView(settings: settings, model: model) } label: {
                             Label(settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
@@ -283,7 +283,7 @@ struct SettingsView: View {
         // sole Smart Assist entry point stays the hand-placed NavigationLink block above.
         // 09.18a-03 (D-16): un-gated — SmartAssistSettingsView compiles in every config now.
         case .smartAssist:
-            SmartAssistSettingsView(settings: settings)
+            SmartAssistSettingsView(settings: settings, model: model)
         }
     }
 }

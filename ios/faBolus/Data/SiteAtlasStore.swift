@@ -56,9 +56,16 @@ final class SiteAtlasStore {
         }
     }
 
-    init(history: GlucoseHistoryStore? = try? GlucoseHistoryStore()) {
+    /// Injected the app's SHARED `GlucoseHistoryStore` (WR-02) — this adapter must NOT open its own
+    /// `ModelContainer`. A `nil` store means the on-disk store failed to open at app init; the UI reads
+    /// `isAvailable` and surfaces that instead of silently dropping placements.
+    init(history: GlucoseHistoryStore?) {
         self.history = history
     }
+
+    /// False when the shared store failed to open — the UI disables logging + shows an error rather than
+    /// no-op'ing an `add()` into the void (WR-02).
+    var isAvailable: Bool { history != nil }
 
     /// All logged sites, most-recent placement first.
     func allSites() -> [Site] {

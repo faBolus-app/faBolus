@@ -5,16 +5,25 @@
 
 import SwiftUI
 import faBolusDesign
+import HistoryStore
 
 /// The SiteAtlas screen: a front/back segmented control over a body map with age-faded site markers,
 /// an empty state, and a chronological history list with swipe-to-delete. All logging/reading flows
 /// through `SiteAtlasStore` → the `StoredSite` CRUD (09.18a-01).
 struct SiteAtlasRootView: View {
-    @State private var store = SiteAtlasStore()
+    @State private var store: SiteAtlasStore
     @State private var side: SiteAtlas_BodySide = .front
     @State private var sites: [SiteAtlasStore.Site] = []
     @State private var logContext: LogContext?
     @State private var pendingDelete: SiteAtlasStore.Site?
+
+    /// WR-02: inject the app's SHARED `GlucoseHistoryStore` so the body map reads/writes the SAME store
+    /// backup + export use — not a private second `ModelContainer` over the same file. A `nil` store
+    /// (failed to open at app init) degrades to a visible "unavailable" banner with logging disabled,
+    /// never a silent no-op that drops the placement.
+    init(historyStore: GlucoseHistoryStore?) {
+        _store = State(initialValue: SiteAtlasStore(history: historyStore))
+    }
 
     /// Identifies a pending log-entry sheet + the body coordinate the user tapped.
     private struct LogContext: Identifiable {
@@ -25,6 +34,14 @@ struct SiteAtlasRootView: View {
 
     var body: some View {
         Form {
+            if !store.isAvailable {
+                Section {
+                    Label("Site history is unavailable — the on-device store didn't open. Reopen faBolus; if this persists, your data store may need attention.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.stale)
+                }
+            }
             Section {
                 Picker("Body side", selection: $side) {
                     ForEach(SiteAtlas_BodySide.allCases, id: \.self) { s in
@@ -35,6 +52,7 @@ struct SiteAtlasRootView: View {
                 .tint(AppTheme.insulin)
 
                 SiteAtlasBodyMapView(side: side, sites: sitesOnSide) { x, y in
+                    guard store.isAvailable else { return }   // WR-02: never no-op a tap silently
                     logContext = LogContext(normalizedX: x, normalizedY: y)
                 }
                 .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth)
@@ -78,6 +96,7 @@ struct SiteAtlasRootView: View {
                 } label: {
                     Label("Log site", systemImage: "plus")
                 }
+                .disabled(!store.isAvailable)   // WR-02: no logging when the store is unavailable
             }
         }
         .sheet(item: $logContext) { ctx in

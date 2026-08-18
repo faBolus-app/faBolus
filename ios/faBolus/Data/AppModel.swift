@@ -962,6 +962,12 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
+    /// WR-02: the app's single shared persistent store, exposed for the SiteAtlas UI so it reads/writes
+    /// the SAME on-disk SwiftData store that backup/export read — never a second `ModelContainer` over
+    /// the same file. `nil` only if the store failed to open at init, in which case the SiteAtlas UI
+    /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
+    var sharedHistoryStore: GlucoseHistoryStore? { history }
+
     // MARK: F1 (§13) — unified export of on-device health data
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change

@@ -11,6 +11,9 @@ import SwiftUI
 /// faBolusNudge-package dependency, so the view builds cleanly with the Nudge SDK stripped.
 struct SmartAssistSettingsView: View {
     @Bindable var settings: AppSettings
+    // WR-02: needed so the SiteAtlas tracker binds to the app's SHARED GlucoseHistoryStore
+    // (`model.sharedHistoryStore`) instead of opening a second private ModelContainer.
+    var model: AppModel
 
     // Phase 09.15 (D-07, plan 12): the generic Smart-Assist one-time explainer, fired on first ENABLE
     // of a limit/mode-framed surface (T1-8 or T1-9) — reuses the exact `showStackingGuardNotice`/
@@ -48,7 +51,7 @@ struct SmartAssistSettingsView: View {
                         if newValue { presentSmartFeaturesNoticeIfNeeded() }
                     }))
                 if settings.siteAtlasEnabled {
-                    NavigationLink { SiteAtlasRootView() } label: {
+                    NavigationLink { SiteAtlasRootView(historyStore: model.sharedHistoryStore) } label: {
                         Label("Body-map site tracker", systemImage: "figure.stand")
                     }
                 }
