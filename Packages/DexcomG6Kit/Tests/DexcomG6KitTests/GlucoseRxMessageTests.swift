@@ -75,4 +75,59 @@ final class GlucoseRxMessageTests: XCTestCase {
         XCTAssertFalse(msg.hasReliableGlucose)                        // warmup
         XCTAssertNil(msg.trendRateMgDlPerMin)                         // 0x7f → unavailable
     }
+
+    // MARK: - Task 2 (09.20-02, D-08b): physiologic-range gate — reject, never clamp (Task-1 sign-off).
+
+    /// Builds a CRC-valid, calibration-ok (state = 0x06) G6 glucose frame carrying `glucose`.
+    private func makeReliableFrame(glucose: UInt16) -> Data {
+        var body = Data()
+        body.append(0x4f)
+        body.append(0x00)
+        body.append(contentsOf: [0x01, 0, 0, 0])                     // sequence = 1
+        body.append(contentsOf: [0x10, 0x0e, 0, 0])                  // timestamp = 3600
+        body.append(contentsOf: withUnsafeBytes(of: glucose.littleEndian) { Array($0) })
+        body.append(0x06)                                             // state = ok
+        body.append(0x00)                                             // trend = 0
+        return body.appendingCRC()
+    }
+
+    func testRejectsAboveMaximumRange() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 500)))
+        XCTAssertTrue(msg.hasReliableGlucose, "500 passes the old >=39 floor alone")
+        XCTAssertFalse(msg.hasPlausibleGlucose, "500 is above GlucoseLimits.maximum (400) — reject, don't clamp")
+    }
+
+    func testRejectsBelowMinimumRange() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 20)))
+        XCTAssertFalse(msg.hasPlausibleGlucose, "20 is below both the old >=39 floor and GlucoseLimits.minimum")
+    }
+
+    func testAcceptsBoundaryMinimum() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 40)))
+        XCTAssertTrue(msg.hasPlausibleGlucose, "40 == GlucoseLimits.minimum, inclusive boundary")
+    }
+
+    func testAcceptsBoundaryMaximum() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 400)))
+        XCTAssertTrue(msg.hasPlausibleGlucose, "400 == GlucoseLimits.maximum, inclusive boundary")
+    }
+
+    func testRejectsJustBelowMinimumBoundary() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 39)))
+        XCTAssertFalse(msg.hasPlausibleGlucose, "39 is one below GlucoseLimits.minimum (40) — the aligned floor")
+    }
+
+    func testRejectsJustAboveMaximumBoundary() throws {
+        let msg = try XCTUnwrap(GlucoseRxMessage(data: makeReliableFrame(glucose: 401)))
+        XCTAssertFalse(msg.hasPlausibleGlucose, "401 is one above GlucoseLimits.maximum (400)")
+    }
+
+    /// Bad CRC / wrong opcode must still decode to nil outright (unchanged, D-08b must not regress it).
+    func testRangeGateDoesNotRegressBadCRCRejection() {
+        var frame = Data([0x4f, 0x00, 0x01, 0, 0, 0, 0x10, 0x0e, 0, 0, 0x78, 0, 0x06, 0x00, 0x00, 0x00])
+        XCTAssertFalse(frame.isCRCValid)
+        XCTAssertNil(GlucoseRxMessage(data: frame))
+        frame[0] = 0x30   // not a glucose opcode
+        XCTAssertNil(GlucoseRxMessage(data: frame))
+    }
 }

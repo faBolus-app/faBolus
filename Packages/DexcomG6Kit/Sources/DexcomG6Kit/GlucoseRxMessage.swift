@@ -51,6 +51,18 @@ public struct GlucoseRxMessage: Equatable {
         calibrationState.hasReliableGlucose && glucose.glucose >= 39
     }
 
+    /// D-08b physiologic-range gate (decode-time, symmetric with `hasReliableGlucose`): `hasReliableGlucose`
+    /// PLUS the decoded value falling inside `[GlucoseLimits.minimum, GlucoseLimits.maximum]` — this
+    /// ALIGNS the effective floor with `GlucoseLimits.minimum` (40), stricter than `hasReliableGlucose`'s
+    /// own ≥39 floor alone. A CRC-valid, calibration-ok frame carrying an out-of-range value (e.g. 500 or
+    /// 20 mg/dL) is decode/transport corruption, not real physiology, and is NOT usable — per the Task-1
+    /// sign-off (`reject-and-stable`), the caller REJECTS it outright and never clamps it into range.
+    public var hasPlausibleGlucose: Bool {
+        hasReliableGlucose &&
+            glucose.glucose >= GlucoseLimits.minimum &&
+            glucose.glucose <= GlucoseLimits.maximum
+    }
+
     public var glucoseMgdl: Int { Int(glucose.glucose) }
 
     /// Trend rate in mg/dL/min, or nil when the transmitter reports it unavailable.
