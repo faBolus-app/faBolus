@@ -59,6 +59,66 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
         public var controlIQMode: Int
         public var controlIQEnabled: Bool
+        /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, a frozen wire token
+        /// (`ciqZone`: increases/decreases/maintains/stops/delivers, (c) Tandem — Tandem's own zone
+        /// words). Opt-in `"controlIQZone"` LAField (off by default). `nil` ⇒ the region renders
+        /// nothing — a legacy publish, an unread zone, or Control-IQ off, never a stale/fabricated
+        /// word (D-06 guardrail #5/#6, SP-5 fail-closed). Display-only, never a dose input (C3).
+        public var ciqZone: String?
+        /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state has confirmed the
+        /// ACTIVE basal suspend is Control-IQ's (alongside `deliverySuspended`). Default `false` is the
+        /// fail-closed value (matches `deliverySuspended`'s own non-optional shape): absent/legacy ⇒
+        /// never a fabricated "Control-IQ paused" claim (D-09.1 BINDING). Display-only, never a dose
+        /// input (C3). KNOWN GAP (mirrors 09.15-01's `ciqZone` precedent): `WidgetSnapshot` does not
+        /// carry this fact yet, so `GlucoseLiveActivityManager.makeContent` cannot populate it from a
+        /// real snapshot today — this field exists on `ContentState` (Codable-complete) but is not yet
+        /// wired end-to-end; out of this plan's declared `files_modified` scope (`Shared/WidgetShared.swift`
+        /// and the widget's `basalChip` renderer are untouched).
+        public var ciqSuspendedForLow: Bool
+        /// The immutable instant `ciqSuspendedForLow` first became true — mirrors `iobDate`'s Date shape
+        /// (ContentState carries real `Date`s, unlike the cross-platform `RemoteCommand` wire, which uses
+        /// an epoch Int for Monkey-C compatibility). `nil` ⇒ not currently attributed.
+        public var ciqSuspendStartDate: Date?
+        /// Phase 09.15 T1-3 (D-01/D-08) — the immutable instant of the most-recent Control-IQ
+        /// auto-correction (`PumpSnapshot.lastAutoCorrectionDate`), mirrored via `RemoteCommand
+        /// .lastAutoCorrectionEpochSec`. Opt-in `"lastAutoCorrection"` LAField (off by default —
+        /// informational depth, not glanceable). `nil` ⇒ the region renders nothing — a legacy publish
+        /// or no auto-correction seen yet, never a synthesized "0 min ago" (D-06 guardrail #6, SP-5
+        /// fail-closed). Display-only, never a dose input (C3). KNOWN GAP (mirrors 09.15-01's `ciqZone`
+        /// / 09.15-05's `ciqSuspendedForLow` precedent): `WidgetSnapshot` does not carry this fact yet,
+        /// so `GlucoseLiveActivityManager.makeContent` cannot populate it from a real snapshot today —
+        /// this field exists on `ContentState` (Codable-complete, vocabulary-registered) but is not yet
+        /// wired end-to-end; out of this plan's declared `files_modified` scope (`Shared/WidgetShared.swift`
+        /// and the widget's renderer are untouched). T1-4 is deliberately NOT added here at all — not
+        /// surfaced on widgets/LA (explicit scope decision, D-08).
+        public var lastAutoCorrectionDate: Date?
+        /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction
+        /// becomes available again, mirrored via `RemoteCommand.lockoutUntilEpochSec`. ContentState
+        /// carries a real `Date` (unlike the cross-platform `RemoteCommand` wire's epoch `Int`, kept for
+        /// Monkey-C compatibility) — mirrors `ciqSuspendStartDate`'s identical Date-not-epoch shape.
+        /// `nil` ⇒ the region renders nothing — no known lockout, or it has already elapsed, never a
+        /// frozen 0%/100% bar or a negative countdown (D-06 guardrail #5, SP-5 fail-closed).
+        /// Display-only, never a dose input (C3). KNOWN GAP (mirrors 09.15-01's `ciqZone` / 09.15-06's
+        /// `lastAutoCorrectionDate` precedent): `WidgetSnapshot` does not carry this fact yet, so
+        /// `GlucoseLiveActivityManager.makeContent` cannot populate it from a real snapshot today — this
+        /// field exists on `ContentState` (Codable-complete) but is not yet wired end-to-end; out of this
+        /// plan's declared `files_modified` scope (`Shared/WidgetShared.swift` and the widget's renderer
+        /// are untouched).
+        public var lockoutUntilDate: Date?
+        /// Phase 09.15 T1-9 (D-01/D-08) — the already-decoded exercise countdown, a RAW
+        /// remaining-seconds DURATION (NOT an epoch, unlike every Date field above — the pump
+        /// reports "time remaining" directly), mirrored via `RemoteCommand.exerciseTimeRemainingSec`.
+        /// Opt-in `"exerciseTimer"` LAField (off by default — Sleep facts are explicitly NOT
+        /// surfaced on widgets/LA, D-08 T1-9 scope). `nil` ⇒ the region renders nothing — a legacy
+        /// publish, not currently in Exercise, or the timer is unknown, never a negative/zero
+        /// countdown (D-06 guardrail #5, SP-5 fail-closed). Display-only, never a dose input (C3).
+        /// KNOWN GAP (mirrors 09.15-01's `ciqZone` / 09.15-06's `lastAutoCorrectionDate` precedent):
+        /// `WidgetSnapshot` does not carry this fact yet, so `GlucoseLiveActivityManager.makeContent`
+        /// cannot populate it from a real snapshot today — this field exists on `ContentState`
+        /// (Codable-complete, vocabulary-registered) but is not yet wired end-to-end; out of this
+        /// plan's declared `files_modified` scope (`Shared/WidgetShared.swift` and the widget's
+        /// renderer are untouched).
+        public var exerciseTimeRemainingSec: Int?
         /// Pump link connected (same definition `WidgetSnapshot.connected` carries).
         public var connected: Bool
         /// When this snapshot was published — the dateless pump-field cluster's last-sync basis.
@@ -97,7 +157,13 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
                     batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
-                    controlIQEnabled: Bool = false, connected: Bool = false, updatedAt: Date = Date(),
+                    controlIQEnabled: Bool = false, ciqZone: String? = nil,
+                    ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
+                    lastAutoCorrectionDate: Date? = nil,
+                    lockoutUntilDate: Date? = nil,
+                    exerciseTimeRemainingSec: Int? = nil,
+                    connected: Bool = false,
+                    updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
                     hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
             self.glucose = glucose
@@ -114,6 +180,12 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.deliverySuspended = deliverySuspended
             self.controlIQMode = controlIQMode
             self.controlIQEnabled = controlIQEnabled
+            self.ciqZone = ciqZone
+            self.ciqSuspendedForLow = ciqSuspendedForLow
+            self.ciqSuspendStartDate = ciqSuspendStartDate
+            self.lastAutoCorrectionDate = lastAutoCorrectionDate
+            self.lockoutUntilDate = lockoutUntilDate
+            self.exerciseTimeRemainingSec = exerciseTimeRemainingSec
             self.connected = connected
             self.updatedAt = updatedAt
             self.iobStale = iobStale
@@ -125,8 +197,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         private enum CodingKeys: String, CodingKey {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
                  reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
-                 controlIQEnabled, connected, updatedAt, iobStale, pumpLinkStale, selectedFields,
-                 hasSnoozeEligibleAlert, showUnitLabel
+                 controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
+                 lockoutUntilDate, exerciseTimeRemainingSec,
+                 connected, updatedAt,
+                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -155,6 +229,24 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 deliverySuspended: try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false,
                 controlIQMode: try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0,
                 controlIQEnabled: try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false,
+                // Phase 09.15 T1-1: Optional-typed, so a missing key already decodes fine even under
+                // the synthesized decoder — `decodeIfPresent ?? nil` kept explicit for symmetry with
+                // every other field here (clones `displayUnitToken`'s identical Optional-String shape).
+                ciqZone: try c.decodeIfPresent(String.self, forKey: .ciqZone) ?? nil,
+                // Phase 09.15 T1-2: default `false`/`nil` mirrors deliverySuspended's/ciqZone's own
+                // fail-closed defaults — a missing key (legacy publish) never claims an attributed
+                // suspend.
+                ciqSuspendedForLow: try c.decodeIfPresent(Bool.self, forKey: .ciqSuspendedForLow) ?? false,
+                ciqSuspendStartDate: try c.decodeIfPresent(Date.self, forKey: .ciqSuspendStartDate) ?? nil,
+                // Phase 09.15 T1-3: Optional-typed, so a missing key already decodes fine even under
+                // the synthesized decoder — kept explicit for symmetry with every other field here.
+                lastAutoCorrectionDate: try c.decodeIfPresent(Date.self, forKey: .lastAutoCorrectionDate) ?? nil,
+                // Phase 09.15 T1-5: Optional-typed, so a missing key already decodes fine even under the
+                // synthesized decoder — kept explicit for symmetry with every other field here.
+                lockoutUntilDate: try c.decodeIfPresent(Date.self, forKey: .lockoutUntilDate) ?? nil,
+                // Phase 09.15 T1-9: Optional-typed, so a missing key already decodes fine even under
+                // the synthesized decoder — kept explicit for symmetry with every other field here.
+                exerciseTimeRemainingSec: try c.decodeIfPresent(Int.self, forKey: .exerciseTimeRemainingSec) ?? nil,
                 connected: try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false,
                 updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
                 iobStale: try c.decodeIfPresent(Bool.self, forKey: .iobStale) ?? false,
@@ -212,7 +304,12 @@ public struct LAField: Equatable, Sendable {
 /// compiles into the `faBolusWidgets` extension too and must not link `AppSettings`/`faBolusCore`.
 /// Used as `compose(...)`'s `.lockScreen` capacity and as the manager's not-yet-synced fallback.
 public enum LAFieldVocabulary {
-    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "connection"]
+    // Phase 09.15 T1-3 (D-08): "lastAutoCorrection" registered as opt-in (off by default, matches
+    // "controlIQZone"'s own precedent) — T1-4 is deliberately NOT added here (explicit scope, D-08).
+    // Phase 09.15 T1-9: "exerciseTimer" registered as opt-in (off by default, matches
+    // "lastAutoCorrection"'s own precedent) — Sleep facts are deliberately NOT added here (explicit
+    // scope, D-08 T1-9 note).
+    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection"]
 }
 
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target

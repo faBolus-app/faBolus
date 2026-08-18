@@ -58,6 +58,39 @@ public final class AppSettings {
     public var showIOBAxis: Bool { didSet { d.set(showIOBAxis, forKey: "showIOBAxis") } }
     public var showBolusBars: Bool { didSet { d.set(showBolusBars, forKey: "showBolusBars") } }
 
+    /// Glucose plot Y-axis **ceiling**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
+    /// `.display`/`backsUp: true` (same class as `glucoseDisplayUnit`) — see `SettingsCatalog`. The
+    /// resolved-at-init pair always satisfies `floor < ceiling` via `GlucosePlotScale.resolve`
+    /// (never assigned directly with an unresolved raw value from a Picker binding elsewhere).
+    public var glucosePlotCeiling: Int { didSet { d.set(glucosePlotCeiling, forKey: "glucosePlotCeiling") } }
+    /// Glucose plot Y-axis **floor**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
+    /// `.display`/`backsUp: true`. Capped at 50 by `GlucosePlotScale.floorOptions` so the §13
+    /// `veryLow` (54) reference line always stays on-chart (D-02/D-10).
+    public var glucosePlotFloor: Int { didSet { d.set(glucosePlotFloor, forKey: "glucosePlotFloor") } }
+    /// Re-exposed option sets for the Settings UI — pinned to `GlucosePlotScale` so no second
+    /// literal preset list ever exists (D-02).
+    public static let glucosePlotFloorOptions: [Int] = GlucosePlotScale.floorOptions
+    public static let glucosePlotCeilingOptions: [Int] = GlucosePlotScale.ceilingOptions
+
+    /// Optional Watch/Garmin plot Y-axis **override** (Phase 09.13-02, D-05). Treated as ONE unit — the
+    /// UI clears/sets both together; `nil` means "Same as phone" for BOTH bounds, not per-bound. When
+    /// set, always snapped in-set via `GlucosePlotScale.resolve` (never assigned raw). `.remotes`,
+    /// `backsUp: true` (same category as `watchChartRanges`), canonical mg/dL. Never iCloud-relevant
+    /// beyond the normal `.remotes` default (this is a display preference, not command-adjacent).
+    public var glucosePlotCeilingSmall: Int? {
+        didSet {
+            if let v = glucosePlotCeilingSmall { d.set(v, forKey: "glucosePlotCeilingSmall") }
+            else { d.removeObject(forKey: "glucosePlotCeilingSmall") }
+        }
+    }
+    /// See `glucosePlotCeilingSmall` — the paired floor half of the same override unit.
+    public var glucosePlotFloorSmall: Int? {
+        didSet {
+            if let v = glucosePlotFloorSmall { d.set(v, forKey: "glucosePlotFloorSmall") }
+            else { d.removeObject(forKey: "glucosePlotFloorSmall") }
+        }
+    }
+
     /// Show the opt-in **Statistics** card on the dashboard (Time-in-Range, GMI, mean, CV over the
     /// in-memory ~24 h history). **Default OFF** so regular use stays clean. See [[GlucoseStatistics]].
     public var showStats: Bool { didSet { d.set(showStats, forKey: "showStats") } }
@@ -95,6 +128,59 @@ public final class AppSettings {
 
     /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
     public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
+
+    /// Phase 09.18b (D-05/D-06/D-17): gate the GraphDetailView scrubbable readout overlay on the
+    /// glucose chart. **Default ON** (a display-context convenience, off-able from the Smart Assist
+    /// submenu); when off the chart renders exactly as today with no scrubber. Same persisted-Bool idiom
+    /// as `eatingNudgesEnabled`. Deliberately a DEVICE-LOCAL display toggle — NOT a `SettingsCatalog`
+    /// row and NOT in `backupSnapshot` (it gates a transient read-only overlay, carries no dose logic,
+    /// and never rides a backup/iCloud round-trip), so the catalog drift guards stay untouched.
+    public var graphDetailEnabled: Bool { didSet { d.set(graphDetailEnabled, forKey: "graphDetailEnabled") } }
+    /// Phase 09.18b (D-07/D-09/D-17): gate heart-rate as GraphDetailView chart context. **Default ON**
+    /// with the readout (D-17), independently off-able. When OFF (D-09): the phone stops the on-demand
+    /// HealthKit HR query, the phone signals the watch to stop appending HR (`hr_ctl` off), and the HR
+    /// readout row is HIDDEN ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input.
+    /// Device-local display toggle (same idiom as `graphDetailEnabled`): deliberately NOT a
+    /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
+    public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
+    /// Phase 09.18c-03 (D-12/D-13): master opt-in for the FoodFinder BYO-key AI carb-estimate path
+    /// (photo/text → a user-connected AI provider). **Default OFF** — this is the ONLY FoodFinder path
+    /// where PHI leaves the device, so it stays inert until the user explicitly enables it AND
+    /// acknowledges the one-time PHI disclosure (`hasAcknowledgedFoodFinderAINotice`). AI-estimated carbs
+    /// still reach the dose ONLY through the shared "Add to carbs" → `carbsText` seam — this flag never
+    /// changes that. Device-local display/behavior toggle (same idiom as `graphDetailEnabled`):
+    /// deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (the BYO KEY rides the
+    /// encrypted secrets backup instead, D-13), so the catalog drift guards stay untouched.
+    public var foodFinderAIEnabled: Bool { didSet { d.set(foodFinderAIEnabled, forKey: "foodFinderAIEnabled") } }
+    /// Phase 09.18d-01 (D-15/D-17): gate the LoopInsights endo-visit PDF report surface. **Default ON**
+    /// — a benign records-export feature (glucose/insulin/carb summary rendered to a shareable PDF),
+    /// discoverable and off-able from the Smart Assist submenu. Advisory only: the report is a summary
+    /// of what already happened and never suggests/changes/blocks a dose (§13). Same device-local
+    /// persisted-Bool idiom as `graphDetailEnabled` — deliberately NOT a `SettingsCatalog` row and NOT
+    /// in `backupSnapshot` (it gates a read-only display surface, carries no dose logic), so the catalog
+    /// drift guards stay untouched.
+    public var endoReportEnabled: Bool { didSet { d.set(endoReportEnabled, forKey: "endoReportEnabled") } }
+    /// Phase 09.18d-02 (D-14/D-17): gate the benign caffeine tracker log surface. **Default ON** — a
+    /// standalone informational log (amount + time, surfaced alongside glucose), discoverable and
+    /// off-able from the Smart Assist submenu. Never suggests/changes/blocks a dose (§13). Same
+    /// device-local persisted-Bool idiom as `endoReportEnabled` — deliberately NOT a `SettingsCatalog`
+    /// row and NOT in `backupSnapshot` (it gates a display surface, carries no dose logic), so the
+    /// catalog drift guards stay untouched. (The logged ENTRIES ride the `trackers` backup section; this
+    /// visibility flag does not.)
+    public var caffeineTrackerEnabled: Bool { didSet { d.set(caffeineTrackerEnabled, forKey: "caffeineTrackerEnabled") } }
+    /// Phase 09.18d-02 (D-14/D-17): gate the benign alcohol tracker log surface. **Default ON** — same
+    /// standalone informational log + device-local idiom as `caffeineTrackerEnabled`. Never suggests/
+    /// changes/blocks a dose, and carries NO delayed-hypo risk inference (D-14).
+    public var alcoholTrackerEnabled: Bool { didSet { d.set(alcoholTrackerEnabled, forKey: "alcoholTrackerEnabled") } }
+    /// Phase 09.18d-03 (D-14/D-17): gate the caregiver-digest PHI-sharing surface. **Default OFF** — the
+    /// digest externalizes glucose + activity PHI to whoever the user shares with (the highest-exposure
+    /// benign LoopInsights surface), and is AI-adjacent (D-17), so it stays inert until the user
+    /// explicitly enables it AND acknowledges the one-time "About Smart Features" explainer
+    /// (`hasAcknowledgedCaregiverDigestNotice`). The digest is a summary of what already happened — never
+    /// advice, a directive, or a dose (§13). Same device-local persisted-Bool idiom as `endoReportEnabled`
+    /// — deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (it gates a read-only share
+    /// surface, carries no dose logic), so the catalog drift guards stay untouched.
+    public var caregiverDigestEnabled: Bool { didSet { d.set(caregiverDigestEnabled, forKey: "caregiverDigestEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -102,6 +188,60 @@ public final class AppSettings {
     /// On-device personalization for the nudge: adapt the wrist threshold (and, when the model is
     /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
     public var eatingLearnFromFeedback: Bool { didSet { d.set(eatingLearnFromFeedback, forKey: "eatingLearnFromFeedback") } }
+
+    // Phase 09.15 (D-07) — Control-IQ-awareness Smart-Assist toggle scaffold. Every later 09.15 plan
+    // reads these flags rather than inventing its own; defaults are the owner-locked D-07 table
+    // (`09.15-PATTERNS.md` "Smart Assist settings (D-07)", `09.15-BRAINSTORM.md` "Smart Assist grouping").
+    // Same idiom as `eatingNudgesEnabled`: plain persisted Bool, mirrored to remotes on `statusRead` so a
+    // remote suppresses an off feature belt-and-suspenders. T1-6 (extended disable-CIQ warning) has NO
+    // flag here — it always fires, per D-07.
+    /// T1-1/2/3/4 — CIQ state/status readouts (pure facts, no action). Default **ON**.
+    public var ciqStateReadoutsEnabled: Bool { didSet { d.set(ciqStateReadoutsEnabled, forKey: "ciqStateReadoutsEnabled") } }
+    /// T1-5 — 60-min auto-correction lockout countdown (safety-increasing disclosure). Default **ON**.
+    public var ciqLockoutCountdownEnabled: Bool { didSet { d.set(ciqLockoutCountdownEnabled, forKey: "ciqLockoutCountdownEnabled") } }
+    /// T1-8 — "% of configured max basal" readout (introduces a "limit" concept). Default **OFF**.
+    public var ciqMaxBasalReadoutEnabled: Bool { didSet { d.set(ciqMaxBasalReadoutEnabled, forKey: "ciqMaxBasalReadoutEnabled") } }
+    /// T1-9 — Sleep/Exercise awareness (least directly pump-sourced). Default **OFF**.
+    public var ciqSleepExerciseAwarenessEnabled: Bool { didSet { d.set(ciqSleepExerciseAwarenessEnabled, forKey: "ciqSleepExerciseAwarenessEnabled") } }
+    /// T2-3 — CIQ+-only temp-rate placeholder (bench-gated, `benchVerifiedDefault = false`). Default **OFF**.
+    public var ciqPlusTempRateEnabled: Bool { didSet { d.set(ciqPlusTempRateEnabled, forKey: "ciqPlusTempRateEnabled") } }
+    /// T2-1 — direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
+    public var ciqCeilingFlagsEnabled: Bool { didSet { d.set(ciqCeilingFlagsEnabled, forKey: "ciqCeilingFlagsEnabled") } }
+    /// SiteAtlas infusion-site / CGM-sensor body-map tracker (09.18a, D-10/D-16/D-17). Advisory/
+    /// display-only — never originates or gates a dose. Default **ON** (discoverable, D-17); unlike the
+    /// `ciq*` flags this one is backup-participating (`SettingsCatalog`), so a restore preserves it.
+    public var siteAtlasEnabled: Bool { didSet { d.set(siteAtlasEnabled, forKey: "siteAtlasEnabled") } }
+    // One-time acknowledgment markers — same idiom as `stackingGuardNoticeAckAt`: durable per-install
+    // markers, NOT `SettingsCatalog` rows — never backed up, never iCloud-synced (a synced ack must not
+    // silently pre-suppress the notice on another device). NEVER gate a write. nil ⇒ never shown.
+    public var ciqAwarenessNoticeAckAt: Date? { didSet { d.set(ciqAwarenessNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "ciqAwarenessNoticeAckAt") } }
+    public var hasAcknowledgedCiqAwarenessNotice: Bool { ciqAwarenessNoticeAckAt != nil }
+    public func acknowledgeCiqAwarenessNotice() { if ciqAwarenessNoticeAckAt == nil { ciqAwarenessNoticeAckAt = Date() } }
+    public var maxBasalNoticeAckAt: Date? { didSet { d.set(maxBasalNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "maxBasalNoticeAckAt") } }
+    public var hasAcknowledgedMaxBasalNotice: Bool { maxBasalNoticeAckAt != nil }
+    public func acknowledgeMaxBasalNotice() { if maxBasalNoticeAckAt == nil { maxBasalNoticeAckAt = Date() } }
+    // Generic "About Smart Features" one-time explainer (09.18a, D-16) — same durable per-install-marker
+    // idiom as `ciqAwarenessNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a
+    // synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of a Smart
+    // Features surface (e.g. SiteAtlas). nil ⇒ never shown. NEVER gates a write.
+    public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
+    public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
+    public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
+    // FoodFinder AI PHI disclosure (09.18c-03, D-13) — the one-time explainer that MUST be acknowledged
+    // before the first AI call sends any PHI off-device. Same durable per-install-marker idiom as
+    // `smartFeaturesNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a synced
+    // ack must not silently pre-suppress the PHI disclosure on another device). nil ⇒ never shown.
+    public var foodFinderAINoticeAckAt: Date? { didSet { d.set(foodFinderAINoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "foodFinderAINoticeAckAt") } }
+    public var hasAcknowledgedFoodFinderAINotice: Bool { foodFinderAINoticeAckAt != nil }
+    public func acknowledgeFoodFinderAINotice() { if foodFinderAINoticeAckAt == nil { foodFinderAINoticeAckAt = Date() } }
+    // Caregiver-digest one-time explainer (09.18d-03, D-14/D-17) — the "About Smart Features" notice fired
+    // on first ENABLE of the caregiver digest (PHI-sharing, AI-adjacent). Same durable per-install-marker
+    // idiom as `smartFeaturesNoticeAckAt`/`foodFinderAINoticeAckAt`: NOT a `SettingsCatalog` row, never
+    // backed up / iCloud-synced (a synced ack must not silently pre-suppress the notice on another
+    // device). nil ⇒ never shown. NEVER gates a write / a share.
+    public var caregiverDigestNoticeAckAt: Date? { didSet { d.set(caregiverDigestNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "caregiverDigestNoticeAckAt") } }
+    public var hasAcknowledgedCaregiverDigestNotice: Bool { caregiverDigestNoticeAckAt != nil }
+    public func acknowledgeCaregiverDigestNotice() { if caregiverDigestNoticeAckAt == nil { caregiverDigestNoticeAckAt = Date() } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -415,7 +555,7 @@ public final class AppSettings {
     }
     /// Status pills available on the dashboard, in default order (first 6 shown by default).
     public static let pillItems: [String] =
-        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
+        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "ciqZone", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
     public static func pillLabel(_ id: String) -> String {
         switch id {
         case "iob": return "Active insulin"
@@ -424,6 +564,7 @@ public final class AppSettings {
         case "cgm": return "CGM"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
+        case "ciqZone": return "Control-IQ state"
         case "lastBolus": return "Last bolus"
         case "carbRatio": return "Carb ratio"
         case "isf": return "Correction (ISF)"
@@ -444,7 +585,7 @@ public final class AppSettings {
     /// down/stale (never as a redundant "all fine" confirmation), so it is last by default rather than
     /// third as the raw clinical-priority text reads.
     public static let laFieldItems: [String] =
-        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "connection"]
+        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "connection"]
     public static func laFieldLabel(_ id: String) -> String {
         switch id {
         case "glucose": return "Glucose"
@@ -453,6 +594,7 @@ public final class AppSettings {
         case "battery": return "Pump battery"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
+        case "controlIQZone": return "Control-IQ state"
         case "connection": return "Connection / last sync"
         default: return id
         }
@@ -466,11 +608,19 @@ public final class AppSettings {
     public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
 
     /// Restore a reorder/hide list: keep stored ids that are known + unique, in stored order; fall
-    /// back to the full list if nothing valid is stored (never leave the surface empty).
-    private static func restoreOrder(_ stored: [String]?, all: [String]) -> [String] {
+    /// back to the full list if nothing valid is stored (never leave the surface empty) — UNLESS
+    /// `emptyMeansEmpty` is true AND a value was actually persisted (`stored != nil`), in which case a
+    /// persisted `[]` is honored as an explicit empty selection rather than collapsed back to `all`.
+    /// (Phase 09.14, D-01/WR-04 — `liveActivityFields` opts in; `detailsOrder`/`watchDetailsOrder`/
+    /// `pillsOrder` keep the default `false` and are unaffected, pinned by
+    /// `LiveActivityFieldsRestoreOrderTests`'s 3 named non-regression tests.) A genuinely-absent key
+    /// (`stored == nil`) ALWAYS falls back to `all`, regardless of `emptyMeansEmpty`.
+    private static func restoreOrder(_ stored: [String]?, all: [String], emptyMeansEmpty: Bool = false) -> [String] {
+        guard let stored = stored else { return all }
         var order: [String] = []
-        for s in stored ?? all where all.contains(s) && !order.contains(s) { order.append(s) }
-        return order.isEmpty ? all : order
+        for s in stored where all.contains(s) && !order.contains(s) { order.append(s) }
+        if order.isEmpty { return emptyMeansEmpty ? [] : all }
+        return order
     }
 
     // Smallest is 0.05 U — the pump's real minimum increment (sub-0.05 doses are rejected by the
@@ -572,6 +722,26 @@ public final class AppSettings {
         showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
+        // D-01/D-02/D-10: an absent/out-of-set stored bound (or a legacy/corrupt value) snaps to a
+        // safe in-set pair via the single shared faBolusCore math — never assigned raw.
+        let plotBounds = GlucosePlotScale.resolve(
+            storedFloor: d.object(forKey: "glucosePlotFloor") as? Int,
+            storedCeiling: d.object(forKey: "glucosePlotCeiling") as? Int)
+        glucosePlotFloor = plotBounds.floor
+        glucosePlotCeiling = plotBounds.ceiling
+        // D-05: the pair is ONE unit — only treat it as "on" when BOTH halves are present on disk; a
+        // partial/corrupt state (only one half persisted) falls back to nil ("Same as phone") rather
+        // than a half-applied override. A present pair still snaps through the same shared math so a
+        // legacy/out-of-set override value can never surface as an invalid Picker selection.
+        if let sf = d.object(forKey: "glucosePlotFloorSmall") as? Int,
+           let sc = d.object(forKey: "glucosePlotCeilingSmall") as? Int {
+            let smallBounds = GlucosePlotScale.resolve(storedFloor: sf, storedCeiling: sc)
+            glucosePlotFloorSmall = smallBounds.floor
+            glucosePlotCeilingSmall = smallBounds.ceiling
+        } else {
+            glucosePlotFloorSmall = nil
+            glucosePlotCeilingSmall = nil
+        }
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
@@ -585,7 +755,42 @@ public final class AppSettings {
             historyCoverage = HistoryCoverageMap()
         }
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
+        // Phase 09.18b (D-17): default ON — a fresh install (and any device with no stored value)
+        // gets the scrubbable readout, discoverable and off-able from Smart Assist.
+        graphDetailEnabled = (d.object(forKey: "graphDetailEnabled") as? Bool) ?? true
+        // Phase 09.18b (D-09/D-17): HR chart context defaults ON with GraphDetailView, off-able.
+        heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
+        // Phase 09.18c-03 (D-13): the FoodFinder AI path is OFF by default (PHI leaves the device only
+        // here) — a fresh install / absent key never enables it silently.
+        foodFinderAIEnabled = (d.object(forKey: "foodFinderAIEnabled") as? Bool) ?? false
+        // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
+        endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true
+        // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol trackers are discoverable / ON by default.
+        caffeineTrackerEnabled = (d.object(forKey: "caffeineTrackerEnabled") as? Bool) ?? true
+        alcoholTrackerEnabled = (d.object(forKey: "alcoholTrackerEnabled") as? Bool) ?? true
+        // Phase 09.18d-03 (D-14/D-17): the caregiver digest is OFF by default (PHI leaves the device on
+        // share; AI-adjacent) — a fresh install / absent key never enables it silently.
+        caregiverDigestEnabled = (d.object(forKey: "caregiverDigestEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
+        // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
+        ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
+        ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
+        ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
+        ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
+        ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
+        ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
+        // 09.18a (D-17): SiteAtlas is discoverable / ON by default.
+        siteAtlasEnabled = (d.object(forKey: "siteAtlasEnabled") as? Bool) ?? true
+        let ciqAck = d.double(forKey: "ciqAwarenessNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
+        ciqAwarenessNoticeAckAt = ciqAck > 0 ? Date(timeIntervalSince1970: ciqAck) : nil
+        let mbAck = d.double(forKey: "maxBasalNoticeAckAt")        // 0 (absent) ⇒ never acknowledged
+        maxBasalNoticeAckAt = mbAck > 0 ? Date(timeIntervalSince1970: mbAck) : nil
+        let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
+        smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
+        let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged
+        foodFinderAINoticeAckAt = ffAck > 0 ? Date(timeIntervalSince1970: ffAck) : nil
+        let cdAck = d.double(forKey: "caregiverDigestNoticeAckAt") // 0 (absent) ⇒ never acknowledged
+        caregiverDigestNoticeAckAt = cdAck > 0 ? Date(timeIntervalSince1970: cdAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg
@@ -661,7 +866,7 @@ public final class AppSettings {
         liveActivityEnabled = (d.object(forKey: "liveActivityEnabled") as? Bool) ?? false
         liveActivityFields = Self.restoreOrder(
             d.array(forKey: "liveActivityFields") as? [String] ?? Self.defaultLiveActivityFields,
-            all: Self.laFieldItems)
+            all: Self.laFieldItems, emptyMeansEmpty: true)
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
@@ -690,6 +895,8 @@ public final class AppSettings {
             "showGlucoseUnitLabels": .bool(showGlucoseUnitLabels),
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
+            "glucosePlotFloor": .int(glucosePlotFloor),
+            "glucosePlotCeiling": .int(glucosePlotCeiling),
             "showStats": .bool(showStats),
             "detailsOrder": .stringArray(detailsOrder),
             "watchDetailsOrder": .stringArray(watchDetailsOrder),
@@ -720,10 +927,15 @@ public final class AppSettings {
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
+            // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
+            "siteAtlasEnabled": .bool(siteAtlasEnabled),
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
         if let ceiling = remoteBolusCeiling { m["remoteBolusCeiling"] = .double(ceiling) }
+        // D-05: the small-screen override pair — emitted only when set (nil ⇒ Same as phone ⇒ omitted).
+        if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
+        if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
         if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
         // Emit a canonical (sorted) encoding of the in-memory set rather than the raw persisted bytes, so the
         // snapshot for a given set of features is byte-identical regardless of process hash-seed or persist
@@ -757,6 +969,15 @@ public final class AppSettings {
         if let v = b("showGlucoseUnitLabels") { showGlucoseUnitLabels = v }
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
+        if let v = i("glucosePlotFloor") { glucosePlotFloor = v }
+        if let v = i("glucosePlotCeiling") { glucosePlotCeiling = v }
+        // D-05: only apply the override when BOTH halves are present in the backup (same one-unit
+        // treatment as init); a backup missing one half leaves the current override unchanged, per
+        // applyBackup's documented "absent keys are left unchanged" contract.
+        if let f = i("glucosePlotFloorSmall"), let c = i("glucosePlotCeilingSmall") {
+            glucosePlotFloorSmall = f
+            glucosePlotCeilingSmall = c
+        }
         if let v = b("showStats") { showStats = v }
         if let v = sa("detailsOrder") { detailsOrder = v }
         if let v = sa("watchDetailsOrder") { watchDetailsOrder = v }
@@ -789,6 +1010,7 @@ public final class AppSettings {
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
+        if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()

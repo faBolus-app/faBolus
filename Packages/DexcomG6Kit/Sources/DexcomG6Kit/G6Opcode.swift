@@ -6,6 +6,11 @@ public enum G6Opcode: UInt8 {
     case glucoseRx = 0x31       // G5
     case glucoseG6Rx = 0x4f     // G6 / ONE
     case glucoseBackfillRx = 0x51
+    /// The transmitter's own periodic time broadcast (status/currentTime/sessionStartTime) —
+    /// decoded by `TransmitterTimeRxMessage`. This is the sensor-time anchor D-08a uses to convert a
+    /// glucose frame's sensor-relative `timestamp` into a true wall date, instead of stamping `Date()`
+    /// at receipt.
+    case transmitterTimeRx = 0x25
 }
 
 public extension Data {

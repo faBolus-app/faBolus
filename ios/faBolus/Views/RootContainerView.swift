@@ -32,5 +32,14 @@ struct RootContainerView: View {
         .fullScreenCover(isPresented: .init(get: { !modeStore.hasCompletedOnboarding }, set: { _ in })) {
             ModeOnboardingView(modeStore: modeStore)
         }
+        // Phase 09.4 (D-01): the skippable "Connect your pump" step, shown exactly once — AFTER the mode
+        // step, and only while there's no stored pairing. Not gated by `router.target`/tabs, so it
+        // presents regardless of which tab would otherwise render underneath.
+        .fullScreenCover(isPresented: .init(
+            get: { modeStore.hasCompletedOnboarding && !modeStore.hasCompletedPumpOnboarding && !model.hasStoredPairing },
+            set: { _ in }
+        )) {
+            ConnectPumpOnboardingView(model: model, modeStore: modeStore)
+        }
     }
 }

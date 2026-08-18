@@ -98,7 +98,30 @@ struct MacStatusPills: View {
             if d.showLastBolus, let last = model.lastBolusUnits {
                 pill("Last", String(format: "%.2f U", last))
             }
+            // Phase 09.15 T1-1 (D-01/D-08): full Tandem zone word (Mac has room) — 5th pill. ABSENT
+            // (never a stale last-known word) unless Control-IQ is running and the token maps to a
+            // member of the fixed five (D-06 guardrails #5/#6, SP-5 fail-closed).
+            if let zone = ciqZone { pill("Control-IQ", zone.rawValue.capitalized) }
+            // Phase 09.15 T1-2 (D-09.1 BINDING fail-closed cause-attribution) — a conditional pill
+            // shown ONLY while the pump's OWN control-state has confirmed the ACTIVE suspend is
+            // Control-IQ's. Mac has no generic-suspend wire signal to fall back to (unlike the iPhone's
+            // pre-existing bare "Suspended" pill), so absent/false renders nothing extra — byte-identical
+            // to Mac's pre-T1-2 behavior, which never showed a suspend pill either.
+            if let elapsed = ciqSuspendedForLowElapsed { pill("Basal", "Control-IQ paused · \(elapsed)") }
         }
+    }
+
+    /// `nil` whenever Control-IQ isn't running or the token is absent/unmapped.
+    private var ciqZone: ControlIQZone? {
+        guard model.controlIQEnabled, let raw = model.ciqZone else { return nil }
+        return ControlIQZone(rawValue: raw)
+    }
+
+    /// `nil` unless the pump's OWN control-state has confirmed the suspend is Control-IQ's (D-09.1
+    /// BINDING) — never inferred from a generic suspend signal Mac doesn't have.
+    private var ciqSuspendedForLowElapsed: String? {
+        guard model.ciqSuspendedForLow == true, let start = model.ciqSuspendStartDate else { return nil }
+        return ControlIQSuspendAttribution.elapsedMinutesLabel(since: start)
     }
 
     private func pill(_ title: String, _ value: String, stale: Bool = false, age: String? = nil) -> some View {
@@ -157,11 +180,19 @@ struct MacChartView: View {
                     RectangleMark(yStart: .value("lo", GlucoseThresholds.low), yEnd: .value("hi", GlucoseThresholds.high))
                         .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(pts.indices, id: \.self) { i in
-                        PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", pts[i].mgdl))
+                        // D-08: symmetric clamp using the PHONE-scoped shared bounds (D-07) — the
+                        // point's color still classifies off the TRUE unclamped reading.
+                        let plottedY = GlucosePlotScale.clamp(pts[i].mgdl, floor: model.glucosePlotFloor,
+                                                              ceiling: model.glucosePlotCeiling)
+                        PointMark(x: .value("t", pts[i].date), y: .value("mg/dL", plottedY))
                             .foregroundStyle(AppTheme.glucoseColor(pts[i].mgdl)).symbolSize(8)
                     }
                 }
-                .chartYScale(domain: 40...300)
+                // D-07 CRITICAL: the Mac is in the PHONE group — it reads the shared
+                // glucosePlotFloor/Ceiling getters directly, NEVER smallScreenFloor/Ceiling and NEVER
+                // anything derived from model.chartRanges (that channel is the tap-through time-range
+                // mirror, a different concept — do not repeat the watchChartRanges conflation here).
+                .chartYScale(domain: model.glucosePlotFloor...model.glucosePlotCeiling)
                 .chartYAxis { AxisMarks(values: [GlucoseThresholds.low, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) }
                 .chartXAxis(.hidden)
                 .frame(height: 90)
@@ -205,6 +236,17 @@ struct MacDetailsView: View {
         out.append(Row(title: "Target", value: model.targetBg > 0 ? "\(model.targetBg)" : "—",
                        stale: therapyStale, age: model.therapyAgeLabel))
         out.append(Row(title: "Max bolus", value: String(format: "%.1f U", model.maxBolusUnits)))
+        // Phase 09.15 T1-3 (D-01/D-08, SP-5 fail-closed): Mac has room for the full row (unlike the
+        // iPhone pill's compact form); appended only when an auto-correction has actually been seen —
+        // never a stale/fabricated age.
+        if let age = model.lastAutoCorrectionAgeLabel {
+            out.append(Row(title: "Auto-correction", value: age))
+        }
+        // Phase 09.15 T1-4 (D-01/D-08) — a single conditional marker row (NOT a remote-side timeline;
+        // Mac never had the pump history). Appended only when the marker is present.
+        if let age = model.ciqLastCouldNotDeliverAgeLabel {
+            out.append(Row(title: "Control-IQ", value: "Couldn't deliver (\(age))"))
+        }
         if !model.connection.isEmpty { out.append(Row(title: "Pump", value: model.connection)) }
         return out
     }
@@ -225,12 +267,58 @@ struct MacDetailsView: View {
                 .accessibilityLabel(macRowLabel(r))
             }
         }
+        // Phase 09.15 T1-9 (D-01, D-08): full Sleep/Exercise facts + window text (Mac has room) — a
+        // separate conditional card below the Row table. No Smart-Assist gate here — matches every
+        // other 09.15 Mac readout (ciqZone/ciqSuspend/lastAutoCorrection): the per-feature toggle is
+        // phone-local and not yet mirrored to remotes on the wire (a known, accepted cross-plan gap,
+        // not introduced by this plan). Fail-closed: absent unless a preset is actively selected by
+        // the mirrored `controlIQMode` (never a "Normal mode" card).
+        if let preset = model.ciqActivityPreset {
+            MacSleepExerciseCard(model: model, preset: preset)
+        }
     }
 
     /// N12: spoken description of a details row, with age + "stale" when the calc input is de-emphasized.
     private func macRowLabel(_ r: Row) -> String {
         let title = (r.stale && r.age != nil) ? "\(r.title) · \(r.age!)" : r.title
         return r.stale ? "\(title), \(r.value), stale" : "\(title), \(r.value)"
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-06 guardrail #4, D-08) — the full Sleep/Exercise facts + window text
+/// card (Mac has room, unlike the compact Watch/Garmin form). Mutual-exclusivity is structural:
+/// `MacDetailsView.body` only constructs this view when `model.ciqActivityPreset` selected exactly
+/// one preset, and `isSleep` picks exactly one branch below — Sleep and Exercise facts can never
+/// render together. Each fact line renders independently (partial-state coverage, D-08).
+private struct MacSleepExerciseCard: View {
+    var model: MacRemoteModel
+    let preset: ActivityPreset
+    private var isSleep: Bool { preset.name == "Sleep" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: isSleep ? "moon.zzz.fill" : "figure.run")
+                    .foregroundStyle(AppTheme.insulin)
+                    .accessibilityHidden(true)
+                Text("\(preset.name) Activity is on").font(.callout.weight(.semibold))
+            }
+            Text(SleepExerciseAwareness.targetAutoBolusLine(preset)).font(.caption).foregroundStyle(.secondary)
+            if let threshold = SleepExerciseAwareness.suspendThresholdLine(preset) {
+                Text(threshold).font(.caption).foregroundStyle(.secondary)
+            }
+            if isSleep {
+                if let window = model.ciqSleepWindowLine {
+                    Text(window).font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let remaining = SleepExerciseAwareness.remainingLabel(seconds: model.exerciseTimeRemainingSec) {
+                Text(remaining).font(.caption.weight(.semibold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -326,6 +414,16 @@ struct MacBolusEntryView: View {
                     // phone unreachable), so the Mac explains itself instead of just greying out.
                     Text(m).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.center)
+                }
+                // T1-5 (D-01, D-06 "never adjacent to a dose CTA", D-08): the countdown bar renders
+                // FIRST in this disclosure block, ABOVE the amount entry — same placement rule as
+                // `BolusEntryView` (more separated from the Deliver button below than the existing
+                // ambient/lockout lines further down). Fail-closed: nil fraction ⇒ no bar at all. No
+                // Smart-Assist gate here — matches every other 09.15 Mac readout (ciqZone/ciqSuspend/
+                // lastAutoCorrection): the per-feature toggle is phone-local and not yet mirrored to
+                // remotes on the wire (a known, accepted cross-plan gap, not introduced by this plan).
+                if let fraction = model.lockoutRemainingFraction, let availableAt = model.lockoutAvailableAt {
+                    MacLockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
                 }
                 Picker("", selection: $mode) {
                     Text("Carbs").tag("carbs")
@@ -501,5 +599,46 @@ struct MacAlertsView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - T1-5 lockout countdown bar
+
+/// T1-5 — the 60-min auto-correction lockout COUNTDOWN bar, full Mac-width: a linear TIME-FILL capsule
+/// (fraction = elapsed/window, filling UP toward 1.0 as availability returns — NEVER a draining
+/// battery). Flat `AppTheme.insulin` fill on a `.quaternary` track, single tone regardless of fraction —
+/// never red/amber near completion (D-06 explicit gauge-neutrality rule). Copy verbatim from the
+/// UI-SPEC Copywriting Contract. A separate struct from `BolusEntryView`'s `LockoutCountdownBarView`
+/// (a distinct app target — Mac can't import an iOS-app-target type), same visual contract.
+struct MacLockoutCountdownBarView: View {
+    let fraction: Double
+    let availableAt: Date
+
+    private var justFired: Bool { fraction < 0.02 }
+    private var timeLabel: String { availableAt.formatted(date: .omitted, time: .shortened) }
+    private var clampedFraction: Double { min(max(fraction, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if justFired {
+                Text("Just paused — next correction available at \(timeLabel)")
+                    .font(.caption)
+            } else {
+                HStack {
+                    Text("Control-IQ's next automatic correction").font(.caption)
+                    Spacer()
+                    Text("available at \(timeLabel)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(AppTheme.insulin)
+                        .frame(width: geo.size.width * CGFloat(clampedFraction))
+                }
+            }
+            .frame(height: 6)
+        }
+        .frame(maxWidth: .infinity)
     }
 }

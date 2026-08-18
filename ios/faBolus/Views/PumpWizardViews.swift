@@ -282,6 +282,33 @@ struct PumpLimitsView: View {
     private func set(_ op: @escaping () async -> Void) { busy = true; Task { await op(); busy = false } }
 }
 
+// MARK: - Control-IQ disable warning (T1-6, D-01/D-06 guardrail #4)
+
+/// The extended "disabling Control-IQ pauses X" confirmation, expressed as PURE functions of the pump's
+/// own `ControllerDescriptor` — never a hardcoded brand/behavior string. Because `descriptor.displayName`
+/// and `descriptor.automaticCorrection` already differ between `.controlIQ` and `.controlIQPlus`
+/// (`ControllerDescriptor.swift:205-231`), a Control-IQ+ pump's warning differs from classic Control-IQ's
+/// automatically, with no second hardcoded copy branch. Copy is verbatim from the 09.15-UI-SPEC
+/// Copywriting Contract "T1-6" rows — provenance **(c)** Tandem-sourced (Control-IQ Technology User
+/// Guide framing: automatic basal adjustment + automatic correction boluses).
+enum ControlIQDisableWarning {
+    /// Fires ONLY when the controller actually delivers automatic correction (T1-6 fail-closed): a
+    /// `.none` controller (`AutomaticCorrection.none`, `enabled == false`) has nothing to warn about, so
+    /// `setControlIQ` on a non-CIQ pump stays a no-op-adjacent action with no confirmation gate.
+    static func shouldWarn(descriptor: ControllerDescriptor) -> Bool {
+        descriptor.automaticCorrection.enabled
+    }
+
+    static func title(descriptor: ControllerDescriptor) -> String {
+        "Turn off \(descriptor.displayName)?"
+    }
+
+    /// (c) Tandem-sourced, derived from `descriptor.displayName` — never a hardcoded brand literal.
+    static func body(descriptor: ControllerDescriptor) -> String {
+        "Turning off \(descriptor.displayName) stops automatic basal adjustment and automatic correction boluses. Your pump will deliver only your Personal Profile's manual basal rate until you turn it back on."
+    }
+}
+
 // MARK: - Control-IQ settings
 
 struct ControlIQSettingsView: View {
@@ -291,6 +318,8 @@ struct ControlIQSettingsView: View {
     @State private var tdi: Double = 40
     @State private var busy = false
     @State private var loaded = false
+    /// T1-6: presenting the extended disable-CIQ confirmation, gated on the disable direction of `save()`.
+    @State private var pendingDisableConfirm = false
     /// C1 (§2.4): the pump's Control-IQ family name (Control-IQ vs Control-IQ+), with a generic fallback.
     private var ciq: String { model.snapshot.controlIQBrandName }
 
@@ -328,6 +357,21 @@ struct ControlIQSettingsView: View {
                 loaded = true
             }
         }
+        // T1-6: the extended disable-CIQ warning — a confirmation gate (ALWAYS fires on the disable path,
+        // not user-toggleable, mirroring the StackingGuard disclosures), destructive-role "Turn Off" +
+        // "Cancel", reusing the same `.alert(title, isPresented:) { actions } message: { … }` idiom already
+        // established in this file (PumpLimitsView's "Confirm max bolus" alert, above).
+        .alert(ControlIQDisableWarning.title(descriptor: model.snapshot.controllerDescriptor),
+               isPresented: $pendingDisableConfirm) {
+            Button("Turn Off", role: .destructive) { performSave() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            // Overflow backstop (UI-SPEC): wraps rather than clips at .accessibility5 Dynamic Type sizes,
+            // matching the `NoPumpConnectedCard`/`CameraPermissionFallbackView` body-text convention.
+            Text(ControlIQDisableWarning.body(descriptor: model.snapshot.controllerDescriptor))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// P14 S11: the pump-derived reason Control-IQ can't be configured here, or nil when it can. Same
@@ -338,7 +382,17 @@ struct ControlIQSettingsView: View {
             controllerVariant: model.snapshot.controllerVariant)
     }
 
+    /// T1-6: gates the DISABLE direction only — turning Control-IQ on (or re-saving while already off on a
+    /// non-CIQ pump) writes straight through, same as before this feature.
     private func save() {
+        if !enabled && ControlIQDisableWarning.shouldWarn(descriptor: model.snapshot.controllerDescriptor) {
+            pendingDisableConfirm = true
+            return
+        }
+        performSave()
+    }
+
+    private func performSave() {
         busy = true
         Task { await model.setControlIQ(enabled: enabled, weightLbs: Int(weightLbs), totalDailyInsulinUnits: Int(tdi)); busy = false }
     }

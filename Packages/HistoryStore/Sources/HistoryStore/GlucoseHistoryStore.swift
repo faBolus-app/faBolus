@@ -14,12 +14,19 @@ import faBolusCore
 /// `deleteGlucose(olderThan:)` powers the optional advanced auto-delete.
 @MainActor
 public final class GlucoseHistoryStore {
+    /// The single `sourceID` stamped on the benign LoopInsights caffeine/alcohol tracker entries so they
+    /// are attributable in export/backup (IN-02). Hoisted here — the one type both the vendored trackers
+    /// and `AppModel` already reference — so the literal is declared once instead of three times.
+    public static let loopInsightsTrackerSourceID = "app.loopInsightsTrackers"
+
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
     public init(inMemory: Bool = false) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+                                       StoredSite.self,
+                                       StoredCaffeine.self, StoredAlcohol.self,
                                        configurations: config)
         if !inMemory { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -71,6 +78,90 @@ public final class GlucoseHistoryStore {
         for e in entries {
             context.insert(StoredCarb(date: e.date, grams: e.grams, sourceID: sourceID, recordedAt: recordedAt))
         }
+        try? context.save()
+    }
+
+    // MARK: SiteAtlas CRUD (09.18a, D-10)
+
+    /// Record an infusion-site / CGM-sensor placement. `kind` is "pump" | "sensor"; `bodySide` is
+    /// "front" | "back" (raw enum values, keeping the schema primitive). `siteID` defaults to a fresh
+    /// UUID string; callers pass a stable one when they need delete/backup identity.
+    public func ingestSite(siteID: String = UUID().uuidString, kind: String, bodySide: String,
+                           normalizedX: Double, normalizedY: Double, note: String? = nil,
+                           date: Date = Date(), sourceID: String,
+                           recordedAt: Date = Date()) {
+        context.insert(StoredSite(siteID: siteID, kind: kind, bodySide: bodySide,
+                                  normalizedX: normalizedX, normalizedY: normalizedY, note: note,
+                                  date: date, sourceID: sourceID, recordedAt: recordedAt))
+        try? context.save()
+    }
+
+    /// All recorded sites, most-recent placement first.
+    public func allSites() -> [StoredSite] {
+        var desc = FetchDescriptor<StoredSite>()
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Recorded sites whose placement `date` falls in `range`, most-recent first.
+    public func sites(in range: ClosedRange<Date>) -> [StoredSite] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredSite>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Delete the site with the given stable `siteID`.
+    public func deleteSite(id siteID: String) {
+        try? context.delete(model: StoredSite.self, where: #Predicate { $0.siteID == siteID })
+        try? context.save()
+    }
+
+    // MARK: Caffeine / Alcohol benign trackers CRUD (09.18d-02, D-14/D-17)
+
+    /// Log a caffeine intake (informational only — never a dose input). `entryID` defaults to a fresh
+    /// UUID string; callers pass a stable one when they need delete/backup identity.
+    public func ingestCaffeine(entryID: String = UUID().uuidString, milligrams: Double, source: String,
+                               date: Date = Date(), sourceID: String, recordedAt: Date = Date()) {
+        context.insert(StoredCaffeine(entryID: entryID, milligrams: milligrams, source: source,
+                                      date: date, sourceID: sourceID, recordedAt: recordedAt))
+        try? context.save()
+    }
+
+    /// Caffeine entries whose `date` falls in `range`, most-recent first.
+    public func caffeine(in range: ClosedRange<Date>) -> [StoredCaffeine] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredCaffeine>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Delete the caffeine entry with the given stable `entryID`.
+    public func deleteCaffeine(id entryID: String) {
+        try? context.delete(model: StoredCaffeine.self, where: #Predicate { $0.entryID == entryID })
+        try? context.save()
+    }
+
+    /// Log an alcohol intake (informational only — never a dose input). `entryID` defaults to a fresh
+    /// UUID string; callers pass a stable one when they need delete/backup identity.
+    public func ingestAlcohol(entryID: String = UUID().uuidString, standardDrinks: Double, source: String,
+                              date: Date = Date(), sourceID: String, recordedAt: Date = Date()) {
+        context.insert(StoredAlcohol(entryID: entryID, standardDrinks: standardDrinks, source: source,
+                                     date: date, sourceID: sourceID, recordedAt: recordedAt))
+        try? context.save()
+    }
+
+    /// Alcohol entries whose `date` falls in `range`, most-recent first.
+    public func alcohol(in range: ClosedRange<Date>) -> [StoredAlcohol] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredAlcohol>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    /// Delete the alcohol entry with the given stable `entryID`.
+    public func deleteAlcohol(id entryID: String) {
+        try? context.delete(model: StoredAlcohol.self, where: #Predicate { $0.entryID == entryID })
         try? context.save()
     }
 
@@ -135,6 +226,9 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredGlucose.self)
         try? context.delete(model: StoredBolus.self)
         try? context.delete(model: StoredCarb.self)
+        try? context.delete(model: StoredSite.self)
+        try? context.delete(model: StoredCaffeine.self)
+        try? context.delete(model: StoredAlcohol.self)
         try? context.save()
     }
 }

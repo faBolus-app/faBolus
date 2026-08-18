@@ -26,11 +26,157 @@ struct SettingsView: View {
     @State private var query = ""
     // P14 S3: injected by RootContainerView (same idiom as AppRouter). Drives Settings → Mode.
     @Environment(ModeStore.self) private var modeStore
+    // 09.17-02 (D-04/D-06a): live read, never @State — this is what makes rotation and iPad Split
+    // View/Slide Over resize re-trigger the correct layout automatically (UI-SPEC §1/§6).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    // 09.17-02 (D-04, UI-SPEC §2, Rule 3 — deviation): the type is `SettingsCategory?` — NOT the
+    // literally non-optional `SettingsCategory` RESEARCH.md sketched — because SwiftUI's
+    // `List.init(selection: Binding<SelectionValue>, content:)` (the truly non-optional overload) is
+    // "available on macOS 13.0 and later" ONLY [VERIFIED via Context7 `/websites/developer_apple_swiftui`
+    // this session: `xcodebuild` failed with "'init(selection:content:)' is unavailable in iOS" against
+    // the non-optional signature]; iOS's `List(selection:)` binds to `Binding<SelectionValue?>`. The
+    // NON-OPTIONAL CONTRACT (default `.bolus`, detail pane never blank) is preserved behaviorally, not
+    // via the type system: it defaults to `.bolus` here and every read in `body` falls back to `.bolus`
+    // via `selectedItem ?? .category(.bolus)` (nothing in this file ever sets it to `nil`).
+    //
+    // 09.17-06 (CR-01 gap closure): widened from `SettingsCategory?` to `SettingsSidebarItem?` so the
+    // SAME `List(selection:)` binding can also drive the six non-`SettingsCategory` groups (Mode,
+    // Safety, Child mode, Backup & restore, Data & history, Privacy & data) that were reachable on
+    // iPhone (`settingsList`) but had no path at all — not even via search — from the iPad sidebar.
+    // See `SettingsSidebarItem` below.
+    @State private var selectedItem: SettingsSidebarItem? = .category(.bolus)
 
     var body: some View {
-        NavigationStack {
-            SettingsLockGate(settings: settings) { settingsList }
-                .navigationTitle("Settings")
+        if horizontalSizeClass == .regular {
+            // 09.17-02 (Rule 2 — deviation): SettingsLockGate wraps the WHOLE split view (both panes),
+            // not just the sidebar, so Child mode's PIN lock still applies at regular width — the
+            // compact branch's lock gate covers 100% of Settings; omitting it here would silently
+            // bypass Child mode on iPad. SettingsLockGate itself is untouched (D-06a/UI-SPEC §2).
+            // 09.17-06: this gate now also covers the six newly-reachable extra rows below — they're
+            // rendered/routed entirely INSIDE this same SettingsLockGate wrapper, so Child mode's PIN
+            // lock (and, circularly, the Child mode toggle itself) stay behind the lock exactly as on
+            // iPhone. Nothing new escapes the gate.
+            SettingsLockGate(settings: settings) {
+                NavigationSplitView {
+                    sidebarList
+                        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
+                        .navigationTitle("Settings")
+                } detail: {
+                    sidebarDestination(selectedItem ?? .category(.bolus))
+                }
+            }
+        } else {
+            // TODAY'S body — byte-identical (D-06a). Do not modify.
+            NavigationStack {
+                SettingsLockGate(settings: settings) { settingsList }
+                    .navigationTitle("Settings")
+            }
+        }
+    }
+
+    // 09.17-02 (D-04, UI-SPEC §2): the regular-width sidebar — the SAME 8 routable categories, same
+    // order, same title/icon, same `.smartAssist`-filtered rule as `settingsList`'s category loop
+    // below, rendered as `List(selection:)` rows instead of `NavigationLink`s. A search hit sets
+    // `selectedItem` (routes to the detail pane) instead of pushing a new stack (RESEARCH Open
+    // Questions #1). `destination(_:)` is the SAME @ViewBuilder switch used by both size classes.
+    //
+    // 09.17-06 (CR-01 gap closure): a second Section mirrors `settingsList`'s non-category rows —
+    // Mode selector, Safety (Read-only mode), Child mode, Backup & restore, Data & history, Privacy &
+    // data, Smart Assist, and the Help link — so every iPhone-reachable setting is also reachable
+    // here. This is deliberate content DUPLICATION (not a shared subview extracted from
+    // `settingsList`), because extracting one would require editing `settingsList`'s own lines,
+    // breaking its byte-identical guarantee (D-06a) — same precedent 09.17-03's `MainHUDView`
+    // duplication established for the same reason.
+    @ViewBuilder private var sidebarList: some View {
+        List(selection: $selectedItem) {
+            if query.isEmpty {
+                Section {
+                    ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
+                        Label(cat.title, systemImage: cat.icon).tag(SettingsSidebarItem.category(cat))
+                            .hoverEffect(.automatic)
+                    }
+                }
+                Section {
+                    Label("Mode: \(modeStore.activeMode.title)", systemImage: "dial.medium")
+                        .tag(SettingsSidebarItem.mode)
+                        .hoverEffect(.automatic)
+                    Label("Safety (read-only mode)", systemImage: "shield.lefthalf.filled")
+                        .tag(SettingsSidebarItem.safety)
+                        .hoverEffect(.automatic)
+                    Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
+                        .tag(SettingsSidebarItem.childMode)
+                        .hoverEffect(.automatic)
+                    Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
+                        .tag(SettingsSidebarItem.backupRestore)
+                        .hoverEffect(.automatic)
+                    Label("Data & history", systemImage: "chart.bar.doc.horizontal")
+                        .tag(SettingsSidebarItem.dataHistory)
+                        .hoverEffect(.automatic)
+                    Label("Privacy & data", systemImage: "hand.raised")
+                        .tag(SettingsSidebarItem.privacyData)
+                        .hoverEffect(.automatic)
+                    // 09.18a-03 (D-16): un-gated — Smart Assist is a runtime-toggle-gated submenu that
+                    // compiles in every config, so the sidebar always renders the selectable tag (this
+                    // is now symmetric with `SettingsSidebarItem.allExtras`, which always lists it). The
+                    // "(on)" state stays a runtime read of the unconditional `settings.eatingNudgesEnabled`.
+                    Label(settings.eatingNudgesEnabled ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
+                        .tag(SettingsSidebarItem.smartAssist)
+                        .hoverEffect(.automatic)
+                    // Not selection-based (no `.tag`) — same as `settingsList`'s Help row, this opens
+                    // Safari directly rather than routing to a detail-pane screen.
+                    Link(destination: faBolusHelpURL) {
+                        Label("Help & documentation", systemImage: "questionmark.circle")
+                    }
+                    .hoverEffect(.automatic)
+                }
+            } else {
+                // 09.17-06 (CR-01): search now covers BOTH the existing category index
+                // (`SettingsIndex`, untouched — also used by `settingsList`'s own search) and the new
+                // extra-row index (`SettingsExtraIndex`, sidebar-only) so typing "child", "pin",
+                // "backup", "safe viewer", "read-only", or "mode" surfaces a hit here too.
+                let categoryHits = SettingsIndex.entries.filter { $0.matches(query) }
+                let extraHits = SettingsExtraIndex.entries.filter { $0.matches(query) }
+                if categoryHits.isEmpty && extraHits.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                } else {
+                    ForEach(categoryHits) { e in
+                        Button { selectedItem = .category(e.category) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(e.title)
+                                Text(e.category.title).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .hoverEffect(.automatic)
+                    }
+                    ForEach(extraHits) { e in
+                        Button { selectedItem = e.item } label: {
+                            Text(e.title)
+                        }
+                        .buttonStyle(.plain)
+                        .hoverEffect(.automatic)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 09.17-06 (CR-01 gap closure): detail-pane router for `sidebarList`'s selection — a superset of
+    /// `destination(_:)` (which stays completely untouched, per D-06a) that ALSO routes the six extra
+    /// groups to their existing, unmodified screens. Every case reuses an existing View type; none of
+    /// them are reimplemented here.
+    @ViewBuilder private func sidebarDestination(_ item: SettingsSidebarItem) -> some View {
+        switch item {
+        case .category(let cat): destination(cat)
+        case .mode: ModeSettingsView()
+        case .safety: SafetySettingsView(settings: settings)
+        case .childMode: ChildModeView(settings: settings)
+        case .backupRestore: BackupRestoreView(model: model)
+        case .dataHistory: DataHistoryView(model: model)
+        case .privacyData: PrivacyDataView(model: model)
+        // 09.18a-03 (D-16): reuses `destination(_:)`'s own `.smartAssist` arm (now unconditional after
+        // the compile-gate was dropped) rather than duplicating anything here.
+        case .smartAssist: destination(.smartAssist)
         }
     }
 
@@ -41,11 +187,12 @@ struct SettingsView: View {
                         // 09.3-05 (D-06): .smartAssist exists only so SettingsCatalog can categorize the
                         // eating-nudge keys where their screen actually lives; it is filtered out of this
                         // generic loop so the existing hand-placed Smart Assist row below (the sole entry
-                        // point, #if FABOLUS_NUDGE / #else disabled Label) never gets a duplicate.
+                        // point, now an unconditional NavigationLink after 09.18a-03) never gets a duplicate.
                         ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
                             }
+                            .hoverEffect(.automatic)
                         }
                     }
                     // P14 S3: mode selector. Shows the current mode; opens the unlock/opt-out controls.
@@ -53,6 +200,7 @@ struct SettingsView: View {
                         NavigationLink { ModeSettingsView() } label: {
                             Label("Mode: \(modeStore.activeMode.title)", systemImage: "dial.medium")
                         }
+                        .hoverEffect(.automatic)
                     } footer: {
                         Text("How much of faBolus is shown — Simple, Standard, or Advanced. Start simple; unlock more as you go.")
                     }
@@ -68,27 +216,27 @@ struct SettingsView: View {
                         NavigationLink { ChildModeView(settings: settings) } label: {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { BackupRestoreView(model: model) } label: {
                             Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
+                        .hoverEffect(.automatic)
                         NavigationLink { PrivacyDataView(model: model) } label: {
                             Label("Privacy & data", systemImage: "hand.raised")
                         }
-                        #if FABOLUS_NUDGE
-                        NavigationLink { SmartAssistSettingsView(settings: settings) } label: {
+                        .hoverEffect(.automatic)
+                        // 09.18a-03 (D-16): un-gated — the submenu compiles in every config, so this is
+                        // always the selectable NavigationLink. "(on)" is a runtime read of the
+                        // unconditional `settings.eatingNudgesEnabled`.
+                        NavigationLink { SmartAssistSettingsView(settings: settings, model: model) } label: {
                             Label(settings.eatingNudgesEnabled
                                   ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
-                        #else
-                        // E6: show a DISABLED row rather than hiding Smart Assist, so a build without the
-                        // faBolusNudge SDK still discloses that the feature exists but isn't compiled in
-                        // (a hidden section reads as "never existed"). Non-interactive + greyed.
-                        Label("Smart Assist — unavailable in this build", systemImage: "sparkles")
-                            .foregroundStyle(.secondary)
-                        #endif
+                        .hoverEffect(.automatic)
                     } footer: {
                         Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
                     }
@@ -96,6 +244,7 @@ struct SettingsView: View {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")
                         }
+                        .hoverEffect(.automatic)
                     } footer: {
                         Text("Opens faBolus.org.")
                     }
@@ -111,6 +260,7 @@ struct SettingsView: View {
                                     Text(e.category.title).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
+                            .hoverEffect(.automatic)
                         }
                     }
                 }
@@ -130,13 +280,10 @@ struct SettingsView: View {
         case .about:   AboutSettingsView(model: model)
         // 09.3-05 (D-06): this arm exists only to keep the switch exhaustive — .smartAssist is filtered
         // out of the generic root-menu loop above, so this is never reached from that loop. The real,
-        // sole Smart Assist entry point stays the hand-placed NavigationLink/disabled-Label block above.
+        // sole Smart Assist entry point stays the hand-placed NavigationLink block above.
+        // 09.18a-03 (D-16): un-gated — SmartAssistSettingsView compiles in every config now.
         case .smartAssist:
-            #if FABOLUS_NUDGE
-            SmartAssistSettingsView(settings: settings)
-            #else
-            Text("Smart Assist — unavailable in this build")
-            #endif
+            SmartAssistSettingsView(settings: settings, model: model)
         }
     }
 }
@@ -221,6 +368,80 @@ enum SettingsIndex {
     ]
 }
 
+/// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
+/// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
+/// missing from the regular-width sidebar (CR-01) — Mode, Safety (Read-only mode), Child mode,
+/// Backup & restore, Data & history, Privacy & data, and Smart Assist. Lets a single
+/// `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
+/// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
+enum SettingsSidebarItem: Hashable {
+    case category(SettingsCategory)
+    case mode
+    case safety
+    case childMode
+    case backupRestore
+    case dataHistory
+    case privacyData
+    case smartAssist
+
+    /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
+    /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
+    /// the two can never silently drift apart.
+    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .backupRestore, .dataHistory, .privacyData, .smartAssist]
+}
+
+/// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
+/// reachable via the regular-width sidebar's second section. Kept SEPARATE from `SettingsIndex`
+/// (rather than widening `SettingsIndex.Entry.category`'s type to a union) because that flat index
+/// also drives `settingsList`'s (iPhone) OWN search-to-`destination(_:)` routing; widening it would
+/// require touching `settingsList`, breaking its byte-identical guarantee (D-06a). Only consulted by
+/// `sidebarList`'s search branch (regular width) — `settingsList`'s search is untouched.
+enum SettingsExtraIndex {
+    struct Entry: Identifiable {
+        let id = UUID()
+        let title: String
+        let keywords: String
+        let item: SettingsSidebarItem
+        func matches(_ q: String) -> Bool {
+            let s = q.lowercased()
+            return title.lowercased().contains(s) || keywords.lowercased().contains(s)
+        }
+    }
+    static let entries: [Entry] = [
+        .init(title: "Mode: Simple / Standard / Advanced", keywords: "mode selector simple standard advanced unlock", item: .mode),
+        .init(title: "Read-only mode", keywords: "safe viewer caregiver backup phone bolusing disabled pump control hidden clearing alerts", item: .safety),
+        .init(title: "Child mode", keywords: "pin lock child mode security", item: .childMode),
+        .init(title: "Backup & restore", keywords: "backup restore icloud files settings export import", item: .backupRestore),
+        .init(title: "Data & history", keywords: "history data export logs time in range", item: .dataHistory),
+        .init(title: "Privacy & data", keywords: "privacy data erase export", item: .privacyData),
+        .init(title: "Smart Assist", keywords: "eating nudges meal detection", item: .smartAssist),
+    ]
+}
+
+/// 09.17-06 (CR-01 gap closure): the iPad regular-width sidebar's detail destination for the "Safety"
+/// row. Wraps the SAME `settings.phoneReadOnly` / `settings.readOnlyAllowAlertClear` bindings and the
+/// SAME copy as `settingsList`'s inline "Safety" `Section` (compact/iPhone) — duplicated into its own
+/// small `View` rather than extracted into a shared subview, because extracting would require editing
+/// `settingsList`, breaking its byte-identical guarantee (D-06a). Every OTHER extra row
+/// (Mode/Child mode/Backup/Data/Privacy/Smart Assist) already has its own existing View type and is
+/// reused as-is — this is the one group that was previously just an inline `Section`, not a screen.
+struct SafetySettingsView: View {
+    @Bindable var settings: AppSettings
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Read-only mode", isOn: $settings.phoneReadOnly)
+                if settings.phoneReadOnly {
+                    Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
+                }
+            } header: { Text("Safety") } footer: {
+                Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+            }
+        }
+        .navigationTitle("Safety")
+    }
+}
+
 // MARK: - Bolus & entry
 
 struct BolusSettingsView: View {
@@ -300,6 +521,18 @@ struct DisplaySettingsView: View {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
+                // Phase 09.13-01 (D-01/D-02/D-03): discrete preset pickers for the plot Y-axis
+                // ceiling + floor, unit-aware via GlucosePlotScale.boundLabel — no free-numeric entry.
+                Picker("Plot ceiling", selection: $settings.glucosePlotCeiling) {
+                    ForEach(AppSettings.glucosePlotCeilingOptions, id: \.self) { opt in
+                        Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                    }
+                }
+                Picker("Plot floor", selection: $settings.glucosePlotFloor) {
+                    ForEach(AppSettings.glucosePlotFloorOptions, id: \.self) { opt in
+                        Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                    }
+                }
             }
             Section {
                 Toggle("Show statistics card", isOn: $settings.showStats)
@@ -326,7 +559,8 @@ struct DisplaySettingsView: View {
                     NavigationLink {
                         CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
                                           label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
-                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.")
+                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.",
+                                          allowEmpty: true)
                     } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
                 }
             } header: { Text("Live Activity") } footer: {
@@ -366,8 +600,11 @@ struct CgmSettingsView: View {
     @State private var pendingExperimentalId: String?
     @State private var lastCommittedSource = GlucoseSourceRegistry.selectedId() ?? ""
     @State private var isReverting = false
-    /// Failover sources whose direct-BLE path is an unverified best guess (docs/UNVERIFIED-GUESSES.md #5):
-    /// selecting one raises a blocking warning that it will likely not connect.
+    /// Failover sources that are experimental / validation-pending (docs/UNVERIFIED-GUESSES.md #5,
+    /// D-14): selecting one raises a blocking warning that it hasn't been verified on-device yet.
+    /// D-03/D-05 (09.20-RESEARCH.md "D-05 reliability re-check"): the mechanism itself — passively
+    /// reading alongside an already-running official Dexcom app — is confident, not a guess; only the
+    /// on-device confirmation (D-13) is still pending.
     private static let experimentalCgmSourceIds: Set<String> = ["dexcom-g6-ble"]
     var body: some View {
         Form {
@@ -410,7 +647,11 @@ struct CgmSettingsView: View {
                     selectedGlucoseSource = lastCommittedSource
                 }
             } message: {
-                Text("⚠️ The direct-BLE Dexcom source is experimental and has NOT been verified — a passive read likely will NOT connect (the sensor needs an authenticated session). Prefer Dexcom Share or the xDrip App Group. See docs/operate/cgm-failover.md.")
+                // D-03/D-05 (gap-closure, 09.20-VERIFICATION.md): honest "Read from Dexcom app" framing,
+                // matching CgmCredentialsView's footer copy — this is the point-of-selection gate a user
+                // hits BEFORE ever reaching that screen, so it must carry the same confident-but-untested
+                // message, not the earlier retracted hedge about the connection not succeeding.
+                Text("⚠️ This reads your sensor passively alongside the official Dexcom app — keep that app installed, paired, and running (a sensor already set up there needs no re-pairing and no transmitter ID). The first reading can take up to ~5 minutes (one Dexcom wake cycle) — that's normal, not a failure. This mode hasn't been verified on-device yet. See docs/operate/cgm-failover.md.")
             }
             Section {
                 Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
@@ -642,6 +883,34 @@ struct RemotesSettingsView: View {
         Binding(get: { settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling },
                 set: { settings.remoteBolusCeiling = $0 })
     }
+    /// Phase 09.13-02 (D-05): the optional Watch/Garmin plot Y-axis override, treated as ONE unit — the
+    /// on/off state IS the Picker's first-row selection ("Same as phone" vs "Custom"), not a separate
+    /// `Toggle`. Turning it on snaps the pair via `GlucosePlotScale.resolve` (seeded from the phone's
+    /// current bounds when no prior override exists); turning it off clears BOTH keys back to nil.
+    private var smallPlotOverrideOn: Binding<Bool> {
+        Binding(
+            get: { settings.glucosePlotFloorSmall != nil },
+            set: { on in
+                if on {
+                    let resolved = GlucosePlotScale.resolve(
+                        storedFloor: settings.glucosePlotFloorSmall ?? settings.glucosePlotFloor,
+                        storedCeiling: settings.glucosePlotCeilingSmall ?? settings.glucosePlotCeiling)
+                    settings.glucosePlotFloorSmall = resolved.floor
+                    settings.glucosePlotCeilingSmall = resolved.ceiling
+                } else {
+                    settings.glucosePlotFloorSmall = nil
+                    settings.glucosePlotCeilingSmall = nil
+                }
+            })
+    }
+    private var smallPlotFloorValue: Binding<Int> {
+        Binding(get: { settings.glucosePlotFloorSmall ?? settings.glucosePlotFloor },
+                set: { settings.glucosePlotFloorSmall = $0 })
+    }
+    private var smallPlotCeilingValue: Binding<Int> {
+        Binding(get: { settings.glucosePlotCeilingSmall ?? settings.glucosePlotCeiling },
+                set: { settings.glucosePlotCeilingSmall = $0 })
+    }
 
     var body: some View {
         Form {
@@ -737,8 +1006,27 @@ struct RemotesSettingsView: View {
                 NavigationLink { WatchChartRangesView(settings: settings) } label: {
                     LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
                 }
+                // Phase 09.13-02 (D-05): optional small-screen plot Y-axis override — one Picker whose
+                // first row IS "Same as phone" (no separate boolean toggle); the two dependent Pickers
+                // below only appear once "Custom" is selected, mirroring the remoteBolusCeiling reveal.
+                Picker("Watch/Garmin plot range", selection: smallPlotOverrideOn) {
+                    Text("Same as phone").tag(false)
+                    Text("Custom").tag(true)
+                }
+                if settings.glucosePlotFloorSmall != nil {
+                    Picker("Plot ceiling", selection: smallPlotCeilingValue) {
+                        ForEach(AppSettings.glucosePlotCeilingOptions, id: \.self) { opt in
+                            Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                        }
+                    }
+                    Picker("Plot floor", selection: smallPlotFloorValue) {
+                        ForEach(AppSettings.glucosePlotFloorOptions, id: \.self) { opt in
+                            Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
+                        }
+                    }
+                }
             } header: { Text("Watch display") } footer: {
-                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. Mirrored to the remotes on the next update.")
+                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. \"Watch/Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. Mirrored to the remotes on the next update.")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
@@ -943,29 +1231,55 @@ struct GarminScreensView: View {
     }
 }
 
-/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). Mirrors
-/// `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least one stays shown.
+/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills, Live Activity
+/// fields). Mirrors `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least
+/// one stays shown, UNLESS `allowEmpty` is set (Phase 09.14, D-01/WR-04) — currently only the Live
+/// Activity fields list opts in, since its 0-field state has a real, tested, non-blank fallback
+/// render (`LiveActivityComposer.compose`'s minimal-glyph branch). Every other call site keeps the
+/// default `allowEmpty: false` floor unchanged.
 struct CustomizeListView: View {
     let title: String
     let allIds: [String]
     let label: (String) -> String
     @Binding var order: [String]
     let shownFooter: String
+    var allowEmpty: Bool = false   // NEW (09.14 D-01) — default false, every existing call site unaffected
 
     private var hidden: [String] { allIds.filter { !order.contains($0) } }
+
+    /// Pure guard: whether removing `removingCount` items from a list of `currentCount` is allowed.
+    /// `allowEmpty` bypasses the "at least one stays shown" floor entirely. Extracted for unit testing
+    /// (`CustomizeListViewGuardTests`) — the `.onDelete` closure below is the only caller.
+    static func canDelete(currentCount: Int, removingCount: Int, allowEmpty: Bool) -> Bool {
+        allowEmpty || currentCount - removingCount >= 1
+    }
 
     var body: some View {
         Form {
             Section {
-                ForEach(order, id: \.self) { id in
-                    Label(label(id), systemImage: "line.3.horizontal")
+                if order.isEmpty {
+                    // 09.14 D-01: only reachable when allowEmpty == true (Live Activity fields list).
+                    // Non-interactive — no .onMove/.onDelete, no drag handle — matches the app's
+                    // existing static empty-list rows (AlertRulesView, PumpWizardViews).
+                    Text("No fields shown — the Live Activity displays a minimal synced-status glyph. Add a field below to bring it back.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(order, id: \.self) { id in
+                        Label(label(id), systemImage: "line.3.horizontal")
+                    }
+                    .onMove { from, to in order.move(fromOffsets: from, toOffset: to) }
+                    .onDelete { idx in
+                        if Self.canDelete(currentCount: order.count, removingCount: idx.count, allowEmpty: allowEmpty) {
+                            order.remove(atOffsets: idx)
+                        }
+                    }
                 }
-                .onMove { from, to in order.move(fromOffsets: from, toOffset: to) }
-                .onDelete { idx in if order.count - idx.count >= 1 { order.remove(atOffsets: idx) } }
             } header: {
                 Text("Shown (top → bottom)")
             } footer: {
-                Text(shownFooter)
+                // Suppress the "drag to reorder, swipe to hide" footer when there's nothing left to
+                // drag/swipe — the empty-hint row above already carries the full message.
+                if !order.isEmpty { Text(shownFooter) }
             }
             if !hidden.isEmpty {
                 Section("Hidden") {

@@ -224,3 +224,54 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 }
+
+public extension RemoteBolusLedger {
+    /// Phase 09-03 (D-05, discretion): the PURE global delivery-block precedence
+    /// `noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, plus the live-in-flight vs
+    /// genuinely-unresolved message split. Lifted verbatim from the app-target
+    /// `DeliveryLedgerCoordinator.computeDeliveryBlockReason()` so the strings have ONE source of truth
+    /// with zero-`AppModel` unit coverage (see `RemoteBolusLedgerTests`). Byte-identical to the copy the
+    /// 09-01 `LedgerBlockPrecedenceGuardTests` pins — this function does not change any wording.
+    ///
+    /// - Parameters:
+    ///   - noDurableStore: Round-3 §5.8 — no durable safety-ledger location exists.
+    ///   - ledgerFailedClosed: the durable ledger existed but couldn't be read (corrupt/unreadable).
+    ///   - terminalSaveFailed: a terminal (or manual-clear) ledger save failed.
+    ///   - unresolved: `RemoteBolusLedger.unreconciled()` — mid-flight entries the caller consulted first
+    ///     (evaluating it triggers the lazy ledger load that sets `ledgerFailedClosed`, so the caller must
+    ///     compute it before calling this function).
+    ///   - inFlightDeliveryKey: the (peer, requestId) currently delivering in THIS process, if any.
+    static func blockReason(noDurableStore: Bool, ledgerFailedClosed: Bool, terminalSaveFailed: Bool,
+                            unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)],
+                            inFlightDeliveryKey: (peerId: String, requestId: String)?) -> String? {
+        if noDurableStore {
+            return "Delivery is locked: no durable safety store is available on this device. Delivery stays "
+                + "disabled until a storage location can be created."
+        }
+        if ledgerFailedClosed {
+            return "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
+                + "unconfirmed bolus, then clear the lock in Settings."
+        }
+        if terminalSaveFailed {
+            return "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
+                + "delivery resumes once the safety ledger is written."
+        }
+        if !unresolved.isEmpty {
+            // S6 — this global "one delivery at a time" block IS the cross-client mutex: it lives at this
+            // funnel (not in a PumpBackend, which a second backend would not share) and rejects a
+            // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
+            // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.
+            //
+            // Message: distinguish a LIVE in-flight delivery (this process is delivering right now — a
+            // concurrent request should simply wait) from a genuinely unresolved/indeterminate outcome
+            // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
+            // latter should tell the user to check the pump.
+            if let live = inFlightDeliveryKey,
+               unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId }) {
+                return "A bolus is already being delivered — wait for it to finish before sending another."
+            }
+            return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
+        }
+        return nil
+    }
+}

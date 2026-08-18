@@ -197,6 +197,22 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// `cmd.glucoseDisplayUnit = …`), exactly like `clockAnalog`.
     public var glucoseDisplayUnit: String? = nil
 
+    // Phase 09.13 (glucose plot height customization, D-06) — glucose-plot Y-axis bounds, canonical
+    // mg/dL, statusRead-reply only, display-only (D-11: never crosses into bgMgdl/dosing, which stay
+    // mg/dL always). `glucosePlotFloor`/`glucosePlotCeiling` are the SHARED/phone-scoped bounds — the
+    // phone group (iPhone + Mac) reads these (D-07). Absent ⇒ a legacy host/remote falls back to the
+    // surface's built-in default (matches `glucoseDisplayUnit`'s absent-default pattern). Additive;
+    // auto-Codable, so the existing memberwise initializer stays untouched (the host sets these via
+    // `cmd.glucosePlotFloor = …`), exactly like `clockAnalog`/`glucoseDisplayUnit`.
+    public var glucosePlotFloor: Int? = nil
+    public var glucosePlotCeiling: Int? = nil
+    /// The optional small-screen (Apple Watch + Garmin) OVERRIDE, canonical mg/dL — the small-screen
+    /// group reads these when present. Absent ⇒ a legacy host/remote follows the shared bounds above
+    /// (D-05/D-06/D-07). Never authorizes anything; excluded from `mutatesPumpState`/
+    /// `isFreshnessSensitive` (D-11).
+    public var glucosePlotFloorSmall: Int? = nil
+    public var glucosePlotCeilingSmall: Int? = nil
+
     // Advisory eating-detection (Phase 5). Not part of the safety-critical schema.
     public var eatingProb: Double? = nil       // eatingEvent: watch's on-device p(eating) ∈ [0,1]
     public var eatingSensingOn: Bool? = nil    // status push: should the watch run wrist eating-sensing?
@@ -349,6 +365,153 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// part of the shared JSON schema or the Garmin Monkey C mirror.
     public var diagnosticsText: String? = nil
 
+    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone as a FROZEN wire token
+    /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
+    /// `PumpSnapshot.ciqZone`. A remote decodes the token and renders Tandem's own zone word + icon
+    /// locally — no prose crosses the wire, mirroring `controllerVariant` exactly. (c) Tandem — the zone
+    /// words are Tandem's own labels. Display-only, never a dose input (C3). Absent ⇒ a legacy host OR the
+    /// zone is unread/unmapped; the remote renders the chip/row/field ABSENT, never a stale/fabricated 6th
+    /// word (D-06 guardrail #6, SP-5 fail-closed). Additive; auto-Codable, so the existing memberwise
+    /// initializer stays untouched (the host sets it via `cmd.ciqZone = …`), exactly like `controllerVariant`.
+    public var ciqZone: String? = nil
+
+    /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
+    /// active basal suspend to Control-IQ (`PumpSnapshot.ciqSuspendedForLow`), mirroring `ciqZone`
+    /// exactly: a frozen fail-closed fact, never a rendered string. Display-only, never a dose input
+    /// (C3). Emitted UNCONDITIONALLY (nil only before the first op-179 read; `false` is a fully-known
+    /// "not CIQ-attributed" state) so a remote always sees the host's current knowledge, exactly like
+    /// `ciqZone`. Absent (legacy host) or `false` ⇒ the remote falls back to its OWN generic-suspend
+    /// indicator, never a fabricated "Control-IQ paused" claim (D-09.1 BINDING fail-closed rule).
+    /// Additive; auto-Codable, so the existing memberwise initializer stays untouched.
+    public var ciqSuspendedForLow: Bool? = nil
+    /// The immutable SOURCE epoch (Unix seconds) of the moment `ciqSuspendedForLow` first became true —
+    /// mirrors `glucoseEpochSec`'s epoch-not-age convention exactly: set once at origin, propagated
+    /// unchanged, a receiver computes elapsed = now − epoch at DISPLAY time (never a receive-time
+    /// stamp). Absent ⇒ unknown / not currently attributed. Same Int32.max (2038-01-19) ceiling as every
+    /// other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`).
+    public var ciqSuspendStartEpochSec: Int? = nil
+
+    /// Phase 09.15 T1-3 (D-01, D-08) — the immutable SOURCE epoch (Unix seconds) of the most-recent
+    /// Control-IQ auto-correction (`PumpSnapshot.lastAutoCorrectionDate`), mirroring `glucoseEpochSec`'s
+    /// epoch-not-age convention exactly: set once at origin, propagated unchanged, a receiver computes
+    /// age as `now − epoch` at DISPLAY time. Display-only, never a dose input (C3). Absent ⇒ a legacy
+    /// host OR no auto-correction has been seen yet — the chip/row/marker renders ABSENT, never a
+    /// synthesized "0 min ago" (D-06 guardrail #6, SP-5 fail-closed). Same Int32.max (2038-01-19)
+    /// ceiling as every other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`). Additive;
+    /// auto-Codable, so the existing memberwise initializer stays untouched.
+    public var lastAutoCorrectionEpochSec: Int? = nil
+    /// Phase 09.15 T1-4 (D-01, D-08) — the immutable SOURCE epoch of the most-recent "Control-IQ tried
+    /// and couldn't deliver an automatic correction" event (`PumpSnapshot.ciqLastCouldNotDeliverDate`).
+    /// Remote MARKER only — the full timeline stays phone-only (remotes never had the pump history to
+    /// build one from). Never surfaced on widgets/LA (explicit scope, D-08). Absent ⇒ the marker
+    /// renders ABSENT, never a synthesized "recently" without a real timestamp (SP-5 fail-closed).
+    /// Same Int32.max ceiling. Additive; auto-Codable.
+    public var ciqLastCouldNotDeliverEpochSec: Int? = nil
+
+    /// Phase 09.15 T1-5 (D-01, D-08) — the immutable SOURCE epoch (Unix seconds) of the instant
+    /// Control-IQ's automatic correction becomes available again (`PumpSnapshot.lockoutUntilDate`), set
+    /// once at origin from `lastAutoCorrectionDate` + the descriptor's own documented lockout window and
+    /// propagated UNCHANGED — mirroring `glucoseEpochSec`'s epoch-not-age convention exactly: a receiver
+    /// reverses the arithmetic (`lockoutStart = lockoutUntilEpochSec - windowMinutes*60`) and calls
+    /// `AutoCorrectionDisclosure.lockoutRemainingFraction` locally, so the FRACTION itself is NEVER
+    /// transmitted (D-06 guardrail #1: a fraction, never a dose/units value). Emitted UNCONDITIONALLY on
+    /// every statusRead (nil only when there's no known auto-correction yet, the controller can't
+    /// auto-correct, or the window is unknown) so a remote always sees the host's current knowledge — same
+    /// unconditional-map parse idiom as `iobEpochSec`/`therapyEpochSec` above. Absent, OR a value already
+    /// in the past, ⇒ the bar/ring renders ABSENT — never a frozen 0%/100% bar, never a negative countdown
+    /// (D-06 guardrail #5, SP-5 fail-closed). Display-only, never a dose input (C3). Same Int32.max
+    /// (2038-01-19) ceiling as every other epoch field (32-bit watchOS `Int` / Monkey C `Lang.Number`).
+    /// Additive; auto-Codable, so the existing memberwise initializer stays untouched.
+    public var lockoutUntilEpochSec: Int? = nil
+
+    /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit
+    /// (`PumpSnapshot.maxBasalUnitsPerHour`, from `BasalLimitSettingsResponse`), propagated ALONGSIDE
+    /// the existing `basalRate` so each remote computes the T1-8 "% of your configured max basal rate"
+    /// readout LOCALLY via `MaxBasalFraction.fraction`/`.label` — the % itself is NEVER transmitted
+    /// (D-06 guardrail #1: a fraction, never a dose/units value; also never a pre-rendered percentage
+    /// string, D-08). Display-only, never a dose input (C3). Absent OR `<= 0` ⇒ the readout renders
+    /// ABSENT on every surface (D-03(v) fail-closed: hidden, not zero/dash) — mirrors
+    /// `MaxBasalFraction.fraction`'s own `maxUnitsPerHour <= 0` guard so the wire-level and
+    /// core-level fail-closed conditions never diverge. Additive; auto-Codable, so the existing
+    /// memberwise initializer stays untouched.
+    public var maxBasalUnitsPerHour: Double? = nil
+
+    /// Phase 09.15 T1-9 (D-01, D-08) — the pump's live Sleep/Exercise activity mode
+    /// (`PumpSnapshot.controlIQMode`: 0 normal / 1 sleep / 2 exercise), now ALSO on `RemoteCommand` —
+    /// previously only `WidgetSnapshot`/`ContentState` carried this, so Watch/Garmin had no way to
+    /// gate the T1-9 card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact, not
+    /// "absent") — mirrors `ciqZone`'s unconditional-knowledge convention, NOT `controllerVariant`'s
+    /// "if let, keep last" one: a stale Sleep/Exercise mode must never survive past the moment the
+    /// pump's own state changed. Display-only, never a dose input (C3). Absent ⇒ a legacy host,
+    /// which the remote treats as `0` (no card). Additive; auto-Codable, so the existing memberwise
+    /// initializer stays untouched.
+    public var controlIQMode: Int? = nil
+
+    /// Phase 09.15 T1-9 (D-01, D-08 note) — the already-decoded-but-previously-dropped exercise
+    /// countdown (`ControlIQInfoV2Response.exerciseTimeRemainingSeconds`, op-179), relayed as a RAW
+    /// remaining-seconds DURATION — deliberately NOT an epoch (unlike every other time-ish field on
+    /// this type): the pump reports "time remaining" directly, so a receiver counts down LOCALLY
+    /// against ITS OWN receipt time for animation smoothness only, re-anchoring on every subsequent
+    /// statusRead — never trusting this value as absolute past that point. `nil` unless the pump's
+    /// OWN live mode is genuinely Exercise right now (`SleepExerciseAwareness
+    /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
+    /// another mode (D-06 guardrail #6, mutual-exclusivity). Display-only, never a dose input (C3).
+    /// Additive; auto-Codable.
+    public var exerciseTimeRemainingSec: Int? = nil
+
+    /// Phase 09.15 T1-9 (D-01, D-08, iPhone/Mac-only per the UI-SPEC Assumption) — whether the
+    /// pump's OWN configured Sleep-schedule (`PumpSnapshot.sleepSchedules`) has a window active
+    /// RIGHT NOW, plus that window's start/end minute-of-day — pure window math over
+    /// pump-communicated data (b), never a clinical literal. Watch/Garmin never render this (D-09.5
+    /// explicit scope), though it rides the SAME shared wire/parse point as every other primitive
+    /// here (SP-1..3) rather than a second channel. Emitted UNCONDITIONALLY (mirrors
+    /// `ciqSuspendedForLow`: `false` is a fully-known "no window active" fact, not "absent").
+    /// Display-only, never a dose input (C3). Additive; auto-Codable.
+    public var inSleepWindow: Bool? = nil
+    public var sleepWindowStartMinute: Int? = nil
+    public var sleepWindowEndMinute: Int? = nil
+
+    /// Phase 09.15 T2-1 (D-05, "Candidate #4", D-08) — the two independent Control-IQ ceiling flags
+    /// (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`), mirroring `ciqZone`'s
+    /// SAME wire/compose/parse/Garmin-persist/widget-field pattern once active — but this is a
+    /// BENCH-GATED PLACEHOLDER (`CiqCeilingFlags.benchVerifiedDefault == false`, `Models.swift`):
+    /// composed ONLY via `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded`, which
+    /// return `nil` unconditionally while the gate is unverified — dose-path-adjacent, full dose-path
+    /// discipline, nothing marked verified. Display-only, never a dose input (C3). Never merged into
+    /// one generic flag — always exactly two independent booleans, each mapping to its OWN distinct
+    /// Copywriting-Contract string (`CiqCeilingFlags.maxBolusEventsExceededLabel` /
+    /// `.maxIobEventsExceededLabel`).
+    ///
+    /// **NOT YET COMPOSED (documented stub, pin held per 09.14 D-05).** `AppModel`'s `statusRead`
+    /// builder does not yet set these fields — that compose-site wiring, plus the
+    /// Watch/Mac/Garmin/widget parse-side plumbing every other primitive here has, is explicitly
+    /// DEFERRED to the plan that advances the `TandemKit` pin post-Phase-11-bench (this plan's scope is
+    /// the inert wire-shape only). Additive; auto-Codable, so the existing memberwise initializer stays
+    /// untouched — an old JSON blob with these keys absent decodes fine.
+    public var ciqMaxBolusEventsExceeded: Bool? = nil
+    public var ciqMaxIobEventsExceeded: Bool? = nil
+
+    /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle STATES
+    /// themselves, mirrored to remotes on the SAME `statusRead` channel already used for
+    /// `eatingSensingOn`/`remotesReadOnly` (SP-1). This is belt-and-suspenders parity (guardrail #13,
+    /// D-08): a remote must suppress a feature whose toggle is OFF even if the phone forgot to ALSO
+    /// gate that feature's own field emission — the remote is never allowed to depend solely on the
+    /// host's other gate. Emitted UNCONDITIONALLY every statusRead (mirrors `eatingSensingOn`), so
+    /// "absent" can only mean a legacy host that predates this plan. Additive; auto-Codable, so the
+    /// existing memberwise initializer stays untouched.
+    ///
+    /// Absent-on-legacy-host default asymmetry (matches each flag's own `AppSettings` D-07 default):
+    /// the always-on-by-default features (state readouts, lockout countdown) resolve a missing key to
+    /// NON-suppressing (`true`); the opt-in/OFF-by-default features (max-basal readout, sleep/exercise,
+    /// CIQ+ temp-rate, ceiling flags) resolve a missing key to suppressing (`false`) — a legacy host
+    /// never advertised those toggles as on, so a remote must not assume they are.
+    public var ciqStateReadoutsEnabled: Bool? = nil
+    public var ciqLockoutCountdownEnabled: Bool? = nil
+    public var ciqMaxBasalReadoutEnabled: Bool? = nil
+    public var ciqSleepExerciseAwarenessEnabled: Bool? = nil
+    public var ciqPlusTempRateEnabled: Bool? = nil
+    public var ciqCeilingFlagsEnabled: Bool? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -460,6 +623,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
             ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
             ("glucoseAgeSec", glucoseAgeSec), ("eatingProb", eatingProb),
+            ("maxBasalUnitsPerHour", maxBasalUnitsPerHour),
         ]
         for (name, v) in allDoubles where v != nil {
             guard v!.isFinite else { throw ValidationError.nonFinite(name) }
@@ -476,6 +640,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try range("remoteEstimateUnits", remoteEstimateUnits, 0, 100)
         try range("extendedNowUnits", extendedNowUnits, 0, 100)
         try range("eatingProb", eatingProb, 0, 1)
+        // T1-8 (D-03/D-08): display-only, never a dose input — a generous sane bound (not a clinical
+        // claim), matching the same 25 U/hr ceiling `Interlocks.clampMaxBolusLimit` enforces as its
+        // absolute hard cap, so an out-of-this-world value fails closed here rather than reaching a
+        // render path. Absent/nil is always valid (⇒ readout renders ABSENT, D-03(v)).
+        try range("maxBasalUnitsPerHour", maxBasalUnitsPerHour, 0, 25)
         if let m = extendedMinutes, m < 0 || m > 24 * 60 { throw ValidationError.outOfRange("extendedMinutes") }
         // An absolute source timestamp must be a plausible Unix second. A zero or negative value would
         // compute an age of decades (harmless — reads as stale), but a *future* one computes a NEGATIVE
@@ -502,6 +671,58 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         }
         if let e = therapyEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("therapyEpochSec")
+        }
+        // Phase 09.15 T1-2 (D-08, D-09.1): the CIQ-suspend start is an immutable source epoch — same
+        // rule as glucoseEpochSec/iobEpochSec/therapyEpochSec above (a zero/negative value reads as
+        // decades-old/harmless, but a FUTURE one would compute a negative elapsed time). Absent is fine.
+        if let e = ciqSuspendStartEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("ciqSuspendStartEpochSec")
+        }
+        // Phase 09.15 T1-3/T1-4 (D-08): the auto-correction / couldn't-deliver markers are immutable
+        // source epochs — same rule as every epoch field above. Absent is fine (⇒ chip/row/marker
+        // ABSENT); a future stamp would compute a negative age (reads as fresh forever), so reject.
+        if let e = lastAutoCorrectionEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("lastAutoCorrectionEpochSec")
+        }
+        if let e = ciqLastCouldNotDeliverEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("ciqLastCouldNotDeliverEpochSec")
+        }
+        // Phase 09.15 T1-5 (D-08): the lockout-until END epoch follows the exact same rule as every
+        // other immutable source epoch above. Absent is fine (⇒ bar/ring ABSENT); a future stamp is
+        // still a valid END instant (that's the whole point — it's usually in the near future until
+        // it elapses), so only zero/negative/overflow are rejected here. The "already in the past"
+        // fail-closed case is a RUNTIME state (time passing), not a validation-time defect, and is
+        // handled by `AutoCorrectionDisclosure.lockoutRemainingFraction` at render time, never here.
+        if let e = lockoutUntilEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("lockoutUntilEpochSec")
+        }
+        // Phase 09.13-02 (D-06/D-11, threat T-09.13-04): a plausible mg/dL display-integer bound —
+        // absent is fine (⇒ the receiver's own default/shared fallback), but a present value outside a
+        // sane display range is nonsense and must fail closed, never trap. These are display-only Y-axis
+        // bounds, never dose inputs, so the range is generous (not `bgMgdl`'s clinical 0–2000).
+        func intRange(_ name: String, _ v: Int?, _ lo: Int, _ hi: Int) throws {
+            if let v, v < lo || v > hi { throw ValidationError.outOfRange(name) }
+        }
+        try intRange("glucosePlotFloor", glucosePlotFloor, 1, 1000)
+        try intRange("glucosePlotCeiling", glucosePlotCeiling, 1, 1000)
+        try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
+        try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
+
+        // Phase 09.15 T1-9 (D-08): the live mode is always one of the pump's own 3 states; the
+        // exercise timer is a sane bounded duration (generous — not a clinical claim, matches
+        // `maxBasalUnitsPerHour`'s "sane upper bound" precedent above); the sleep-window minutes are
+        // a plain minute-of-day (0-1439). Absent is always valid for all four.
+        try intRange("controlIQMode", controlIQMode, 0, 2)
+        try intRange("exerciseTimeRemainingSec", exerciseTimeRemainingSec, 0, 24 * 60 * 60)
+        try intRange("sleepWindowStartMinute", sleepWindowStartMinute, 0, 1439)
+        try intRange("sleepWindowEndMinute", sleepWindowEndMinute, 0, 1439)
+
+        // Phase 09.15 T1-1 (D-01/D-08, threat T-09.15-01-S): `ciqZone` is a frozen wire token — a remote
+        // reconstructs Tandem's own zone word locally from it, so an out-of-set string (e.g. a forged
+        // "unknown" or a future/renamed token an old remote can't render) must fail closed here rather
+        // than let a spoofed/corrupted value reach a render path. `nil` (absent/unread) is always valid.
+        if let z = ciqZone, ControlIQZone(rawValue: z) == nil {
+            throw ValidationError.outOfRange("ciqZone")
         }
 
         // String length caps.

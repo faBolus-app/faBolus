@@ -56,12 +56,20 @@ struct WatchChartView: View {
                     RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
                         .foregroundStyle(AppTheme.inRange.opacity(0.12))
                     ForEach(points.indices, id: \.self) { idx in
-                        PointMark(x: .value("t", points[idx].date), y: .value("bg", points[idx].mgdl))
+                        // D-08: symmetric clamp — an out-of-range reading pins to the visible top/bottom
+                        // edge instead of clipping; the point's color still classifies off the TRUE
+                        // unclamped reading (AppTheme.glucoseColor below).
+                        let plottedY = GlucosePlotScale.clamp(points[idx].mgdl, floor: model.smallScreenFloor,
+                                                              ceiling: model.smallScreenCeiling)
+                        PointMark(x: .value("t", points[idx].date), y: .value("bg", plottedY))
                             .foregroundStyle(AppTheme.glucoseColor(points[idx].mgdl, stale: false))
                             .symbolSize(10)
                     }
                 }
-                .chartYScale(domain: 40...300)
+                // D-05/D-06: the small-screen group (Watch + Garmin) follows the resolved override
+                // (override when set, else the shared phone bounds) — never the phone-scoped
+                // glucosePlotFloor/Ceiling directly.
+                .chartYScale(domain: model.smallScreenFloor...model.smallScreenCeiling)
                 .chartYAxis { AxisMarks(values: [GlucoseThresholds.low, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) }
                 .chartXAxis(.hidden)   // time is the X *value* (proportional spacing); labels stay off on the small face
             }

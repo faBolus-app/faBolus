@@ -58,10 +58,49 @@ public final class AppModel {
     @ObservationIgnored private var lastEatingPositiveAt = Date.distantPast
     private(set) var eatingNudge: EatingAlert?
 
+    /// Phase 09.18b (D-07/D-09): set by the Garmin bridge — the phone tells the watch when to
+    /// read+append ambient HR to its out-of-band envelope (battery: only while the in-app HR-context
+    /// toggle is on). Mirrors `onWantAccelSensing`; nil in builds without a remote. HR is chart context
+    /// ONLY — this control signal never touches the signed dose path or eating inference.
+    @ObservationIgnored public var onWantHeartRate: ((Bool) -> Void)?
+    /// nil until the first reconcile so the initial toggle state is always pushed once (default is ON,
+    /// unlike accel's default-off, so a nil→true first fire is intended).
+    @ObservationIgnored private var lastWantHR: Bool?
+    /// The most recent Garmin ambient-HR sample from the out-of-band `hr_window` envelope, or nil.
+    /// **Display-only chart context (D-07)** — read by the GraphDetailView HR row; NEVER fed into
+    /// eating inference (`ingestGarminIMUWindow`/`accelPipeline`/`EatingTrigger`) or any dose/meal path.
+    /// Observed (not `@ObservationIgnored`) so the readout refreshes when a new sample lands.
+    public private(set) var latestGarminHeartRate: (bpm: Double, date: Date)?
+
     private func setWantAccelSensing(_ on: Bool) {
         guard on != lastWantAccel else { return }
         lastWantAccel = on
         onWantAccelSensing?(on)
+    }
+
+    /// De-duped setter mirroring `setWantAccelSensing`: fire the watch HR control signal only on an
+    /// actual change so `hr_ctl` isn't spammed. Public so the Smart Assist HR toggle drives it directly
+    /// (D-09 — off → the watch stops appending HR).
+    public func setWantHeartRate(_ on: Bool) {
+        guard on != lastWantHR else { return }
+        lastWantHR = on
+        // IN-03: drop the retained Garmin sample when HR is turned OFF so re-enabling starts clean rather
+        // than flashing an old value before a fresh sample arrives. Display-only state; touches no dose path.
+        if !on { latestGarminHeartRate = nil }
+        onWantHeartRate?(on)
+    }
+
+    /// Reconcile the watch HR-send state to the in-app toggle (D-09). Called on each `refresh()` and on
+    /// toggle change; de-duped, so it's a no-op unless the desired state actually changed.
+    public func reconcileHeartRateWanted() {
+        setWantHeartRate(AppSettings.shared.heartRateContextEnabled)
+    }
+
+    /// Ingest a Garmin ambient-HR sample from the out-of-band `hr_window` envelope (parsed BEFORE the
+    /// signed `RemoteCommand` path in `GarminRemoteBridge`). Chart context ONLY — stores the latest
+    /// sample for the GraphDetailView readout and touches NO eating/dose path (D-07).
+    public func ingestGarminHeartRate(bpm: Double, at date: Date) {
+        latestGarminHeartRate = (bpm, date)
     }
 
     /// Feed a raw IMU window from the Garmin watch (imu_window message) → phone-side p(eating).
@@ -415,6 +454,16 @@ public final class AppModel {
         // token (never the raw enum — Pitfall 6), so Watch/Garmin render mg/dL/mmol like the phone.
         // Absent on a legacy remote ⇒ it defaults to mgdl (display-only; dose/wire glucose stays mg/dL).
         cmd.glucoseDisplayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
+        // Phase 09.13 (D-06/D-07): the SHARED/phone-scoped glucose-plot Y-axis bounds — emitted
+        // UNCONDITIONALLY on every statusRead (the phone group, iPhone + Mac, reads these; "absent" can
+        // only mean a legacy host). The optional small-screen (Watch + Garmin) OVERRIDE is emitted only
+        // when the AppSettings pair is non-nil, leaving the wire field absent otherwise (D-05) — the
+        // shared client's `smallScreenFloor`/`smallScreenCeiling` getters fall back to these shared
+        // values when the override is absent.
+        cmd.glucosePlotFloor = AppSettings.shared.glucosePlotFloor
+        cmd.glucosePlotCeiling = AppSettings.shared.glucosePlotCeiling
+        cmd.glucosePlotFloorSmall = AppSettings.shared.glucosePlotFloorSmall
+        cmd.glucosePlotCeilingSmall = AppSettings.shared.glucosePlotCeilingSmall
         // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
         // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
         cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
@@ -458,6 +507,16 @@ public final class AppModel {
         // "absent" can only mean a legacy host (which renders nothing controller-specific).
         cmd.controllerVariant = snapshot.controllerVariant.rawValue
         cmd.controlIQEnabled = snapshot.controlIQEnabled
+        // Phase 09.15 T1-1 (D-01/D-08): the pump's live Control-IQ action zone as a frozen wire token — a
+        // remote renders Tandem's own zone word + icon locally from this. Emitted UNCONDITIONALLY (nil
+        // when unread/unmapped is a legitimate, fail-closed value, not "absent = legacy host" here) so a
+        // remote always sees the host's current knowledge. Display-only, never a dose input (C3).
+        cmd.ciqZone = snapshot.ciqZone
+        // Phase 09.15 T1-2 (D-08, D-09.1): mirrors ciqZone exactly — unconditional (nil only pre-read;
+        // `false` is a fully-known "not CIQ-attributed" fact, not "absent"), so a remote always sees
+        // the host's current knowledge. Display-only, never a dose input (C3).
+        cmd.ciqSuspendedForLow = snapshot.ciqSuspendedForLow
+        cmd.ciqSuspendStartEpochSec = snapshot.ciqSuspendStartDate.map { Int($0.timeIntervalSince1970) }
         // DIF-ux: relay the pump's own read times of the calc inputs (IOB op-109, therapy op-115) as
         // immutable source epochs — exactly like `glucoseEpochSec` above — so a remote can grey/age its IOB
         // + therapy rows and PRE-WARN off the same freshness the host judges. Absent (nil date) ⇒ the remote
@@ -465,6 +524,53 @@ public final class AppModel {
         // gate; remotes never dose off these.
         cmd.iobEpochSec = s.iobDate.map { Int($0.timeIntervalSince1970) }
         cmd.therapyEpochSec = s.therapyParamsDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-3/T1-4 (D-08): relay the single latest instant of each as an immutable
+        // source epoch — exactly like `iobEpochSec` above. Absent (nil date) ⇒ the remote renders the
+        // chip/row/marker ABSENT, never a synthesized age. Display-only, never a dose input (C3).
+        cmd.lastAutoCorrectionEpochSec = snapshot.lastAutoCorrectionDate.map { Int($0.timeIntervalSince1970) }
+        cmd.ciqLastCouldNotDeliverEpochSec = snapshot.ciqLastCouldNotDeliverDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-5 (D-08): the lockout-until END epoch, relayed exactly like `lastAutoCorrectionEpochSec`
+        // above — `PumpSnapshot.lockoutUntilDate` is a computed instant (lastAutoCorrectionDate + the
+        // descriptor's own window, no literal 60), so this is emitted UNCONDITIONALLY every statusRead (never
+        // a compose-time constant). Absent ⇒ a remote renders the bar/ring ABSENT. Display-only, never a dose
+        // input (C3).
+        cmd.lockoutUntilEpochSec = snapshot.lockoutUntilDate.map { Int($0.timeIntervalSince1970) }
+        // Phase 09.15 T1-8 (D-03, D-08): the configured max-basal delivery limit, alongside `basalRate`
+        // (init param above), so each remote computes the "% of your configured max basal rate" readout
+        // LOCALLY via `MaxBasalFraction` — never a pre-rendered percentage string. Emitted UNCONDITIONALLY
+        // when known; `0` means "unread" so it is relayed as `nil` (not a fabricated 0%), matching
+        // `MaxBasalFraction.fraction`'s own `<= 0` fail-closed guard. Display-only, never a dose input (C3).
+        cmd.maxBasalUnitsPerHour = snapshot.maxBasalUnitsPerHour > 0 ? snapshot.maxBasalUnitsPerHour : nil
+        // Phase 09.15 T1-9 (D-01, D-08): the pump's live Sleep/Exercise activity mode, now ALSO on
+        // RemoteCommand (previously only WidgetSnapshot/ContentState carried it) so Watch/Garmin can
+        // gate the T1-9 card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact,
+        // not "absent") — mirrors ciqZone's unconditional-knowledge convention. Display-only, never
+        // a dose input (C3).
+        cmd.controlIQMode = snapshot.controlIQMode
+        // The already-decoded-but-previously-dropped exercise countdown, raw remaining-seconds — NOT
+        // an epoch (D-08 T1-9 note): a receiver counts down locally against its OWN receipt time for
+        // animation only, never trusting it as absolute past the next statusRead. `nil` unless the
+        // pump's OWN live mode is genuinely Exercise right now (PumpResponseApplier only populates it
+        // then) — SP-5 fail-closed, never a stale timer surviving into another mode.
+        cmd.exerciseTimeRemainingSec = snapshot.exerciseTimeRemainingSec
+        // The pump's OWN configured sleep-schedule window fact (pure window math, (b)) — iPhone/Mac
+        // render the verbose "Current window: {start}–{end}" text from this; Watch/Garmin never
+        // receive/render it (D-09.5 explicit scope).
+        cmd.inSleepWindow = snapshot.inSleepWindow
+        cmd.sleepWindowStartMinute = snapshot.sleepWindowStartMinute
+        cmd.sleepWindowEndMinute = snapshot.sleepWindowEndMinute
+        // Phase 09.15 D-07 (plan 12): mirror the phone-owned Control-IQ-awareness Smart-Assist toggle
+        // states to remotes on the SAME statusRead channel already used for
+        // eatingSensingOn/remotesReadOnly (line ~430 above), so a remote SUPPRESSES a CIQ-awareness
+        // feature whose toggle is OFF even if the phone forgot to also gate that feature's own field
+        // emission (belt-and-suspenders, D-08 parity, guardrail #13). Emitted UNCONDITIONALLY so
+        // "absent" can only mean a legacy host that predates this plan.
+        cmd.ciqStateReadoutsEnabled = AppSettings.shared.ciqStateReadoutsEnabled
+        cmd.ciqLockoutCountdownEnabled = AppSettings.shared.ciqLockoutCountdownEnabled
+        cmd.ciqMaxBasalReadoutEnabled = AppSettings.shared.ciqMaxBasalReadoutEnabled
+        cmd.ciqSleepExerciseAwarenessEnabled = AppSettings.shared.ciqSleepExerciseAwarenessEnabled
+        cmd.ciqPlusTempRateEnabled = AppSettings.shared.ciqPlusTempRateEnabled
+        cmd.ciqCeilingFlagsEnabled = AppSettings.shared.ciqCeilingFlagsEnabled
         return cmd
     }
 
@@ -510,137 +616,36 @@ public final class AppModel {
     private static let remoteApprovalMaxAge: TimeInterval = 120
     public var pendingRemoteBolus: PendingRemoteBolus?
 
-    /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
-    /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
-    /// FB-03: durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
-    @ObservationIgnored private let remoteBolusLedgerStore: any RemoteBolusLedgerPersisting
-    @ObservationIgnored private lazy var remoteBolusLedger: RemoteBolusLedger = {
-        let outcome = remoteBolusLedgerStore.loadOutcome()
-        if outcome.failedClosed { ledgerFailedClosed = true }
-        return outcome.ledger
-    }()
-    /// P0: true when the durable ledger existed but couldn't be read (corrupt/unreadable). An unreadable
-    /// ledger may be hiding an unresolved delivery, so while this is set ALL delivery is blocked (fail
-    /// closed) until the user verifies on the pump and clears it.
-    @ObservationIgnored private var ledgerFailedClosed = false
-    /// Round-3 §5.8: no durable safety-ledger location exists (no App Group / Application Support). Delivery
-    /// must stay disabled rather than fall back to a volatile store.
-    @ObservationIgnored private var noDurableStore = false
-    /// Round-3 §5.6/5.7: a terminal (or manual-clear) ledger save failed; keep the global block until a
-    /// clean save succeeds, and retry persistence in the background.
-    @ObservationIgnored private var terminalSaveFailed = false
-    /// P0: the ledger entry (peer, requestId) whose delivery is currently in flight, so the pump's
-    /// `commitBolusId` handshake lands the assigned bolus id on the right entry. Deliveries are
-    /// serialized (one at a time), so a single slot suffices.
-    @ObservationIgnored private var inFlightDeliveryKey: (peerId: String, requestId: String)?
-    /// Persist the ledger. Best-effort — for non-terminal writes (intent / indeterminate) where losing the
-    /// record only risks a redundant reconcile, since the entry already blocks. Terminal transitions use
-    /// `persistTerminalOrBlock()` (which keeps the block until the clean save lands).
-    private func persistLedger() { remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger) }
-
-    /// Round-3 §5.6/5.7: persist a TERMINAL/clean ledger state durably; if the save fails, retain the
-    /// global block (`terminalSaveFailed`) and retry — never release the block on an unsaved terminal.
-    private func persistTerminalOrBlock() {
-        do {
-            try remoteBolusLedgerStore.save(remoteBolusLedger)
-            terminalSaveFailed = false
-        } catch {
-            terminalSaveFailed = true
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                self?.retryTerminalPersist()
-            }
-        }
-    }
-    private func retryTerminalPersist() {
-        guard terminalSaveFailed else { return }
-        do {
-            try remoteBolusLedgerStore.save(remoteBolusLedger)
-            terminalSaveFailed = false
-            refreshDeliveryBlock()
-        } catch {
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                self?.retryTerminalPersist()
-            }
-        }
-    }
-
-    /// Round-3 §5: the backend's acknowledged bolus-id handshake. Records the pump-assigned id on the
-    /// in-flight entry AND flips its explicit `sentToPump` phase, then saves DURABLY. Returns true only if
-    /// the save succeeded — the backend must abort before writing metadata/initiate on false, so a save
-    /// failure can never leave an id-less record a relaunch mistakes for "not sent".
-    private func commitInFlightBolusId(_ bolusId: Int) async -> Bool {
-        guard let key = inFlightDeliveryKey else { return false }
-        remoteBolusLedger.markSent(peerId: key.peerId, requestId: key.requestId, bolusId: bolusId)
-        do { try remoteBolusLedgerStore.save(remoteBolusLedger); return true }
-        catch { return false }
-    }
+    /// Wave 2 (D-03): the ledger/global-block host state machine — the durable idempotency ledger + store,
+    /// the 4 fail-closed flags, `inFlightDeliveryKey`, the persist/retry paths,
+    /// `computeDeliveryBlockReason`, `runLedgeredDelivery`, `reconcileUnresolvedDeliveries`,
+    /// `commitInFlightBolusId`, and `clearDeliveryBlockAfterVerification` — now lives on
+    /// `DeliveryLedgerCoordinator`, behind the unchanged `PumpBackend` seam. AppModel stays the thin facade
+    /// (D-04): it re-publishes `deliveryBlockedReason`/`deliveryGloballyBlocked` below (mirrored from the
+    /// coordinator via `onDeliveryBlockChanged`), and its delivery entry points are thin adapters over
+    /// `deliveryLedgerCoordinator.runLedgeredDelivery`.
+    @ObservationIgnored private let deliveryLedgerCoordinator: DeliveryLedgerCoordinator
 
     /// P0 — the single global delivery-block gate every delivery surface consults. Non-nil ⇒ NO new
     /// insulin delivery may start (local standard/extended, widget, Watch, Garmin, Mac, peer). Derived
     /// from the DURABLE ledger, so it survives a process restart: any `delivering`/`indeterminate` record
     /// blocks everything until reconciled against the pump; a corrupt ledger also blocks (fail closed).
-    /// Stored + observed so SwiftUI updates; kept in sync by `refreshDeliveryBlock()` after every ledger
-    /// mutation. Enforcement paths use `computeDeliveryBlockReason()` (authoritative at the instant).
+    /// Stored + observed so SwiftUI updates; mirrored from `DeliveryLedgerCoordinator` via the
+    /// `onDeliveryBlockChanged` hook every time the coordinator recomputes the reason (D-04).
     public private(set) var deliveryBlockedReason: String?
     /// True when delivery is globally blocked by an unresolved/unreadable transaction (P0). UI convenience.
     public var deliveryGloballyBlocked: Bool { deliveryBlockedReason != nil }
 
-    private func computeDeliveryBlockReason() -> String? {
-        // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
-        let unresolved = remoteBolusLedger.unreconciled()
-        if noDurableStore {
-            return "Delivery is locked: no durable safety store is available on this device. Delivery stays "
-                + "disabled until a storage location can be created."
-        }
-        if ledgerFailedClosed {
-            return "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
-                + "unconfirmed bolus, then clear the lock in Settings."
-        }
-        if terminalSaveFailed {
-            return "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
-                + "delivery resumes once the safety ledger is written."
-        }
-        if !unresolved.isEmpty {
-            // S6 — this global "one delivery at a time" block IS the cross-client mutex: it lives at the
-            // AppModel funnel (not in a PumpBackend, which a second backend would not share) and rejects a
-            // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
-            // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.
-            //
-            // Message: distinguish a LIVE in-flight delivery (this process is delivering right now — a
-            // concurrent request should simply wait) from a genuinely unresolved/indeterminate outcome
-            // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
-            // latter should tell the user to check the pump.
-            if let live = inFlightDeliveryKey,
-               unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId }) {
-                return "A bolus is already being delivered — wait for it to finish before sending another."
-            }
-            return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
-        }
-        return nil
-    }
-    private func refreshDeliveryBlock() { deliveryBlockedReason = computeDeliveryBlockReason() }
+    #if DEBUG
+    /// Test seam: forwards to `DeliveryLedgerCoordinator.retryTerminalPersistForTesting()` — see its doc
+    /// comment. Test scaffolding only; compiles to nothing in Release and never changes production
+    /// dose/delivery/wire behavior.
+    func retryTerminalPersistForTesting() { deliveryLedgerCoordinator.retryTerminalPersistForTesting() }
+    #endif
 
     /// P0 escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
-    /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,
-    /// writing a fresh clean ledger, so delivery can resume. Never called automatically.
-    public func clearDeliveryBlockAfterVerification() {
-        for entry in remoteBolusLedger.unreconciled() {
-            remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                     status: RemoteCommand.Status.delivered.rawValue,
-                                     message: "Cleared after manual verification on the pump.")
-        }
-        // Round-3 §5.6: only release the block once the clean ledger is durably saved.
-        do {
-            try remoteBolusLedgerStore.save(remoteBolusLedger)
-            ledgerFailedClosed = false
-            terminalSaveFailed = false
-        } catch {
-            terminalSaveFailed = true
-        }
-        refreshDeliveryBlock()
-    }
+    /// delivery. Forwards to `DeliveryLedgerCoordinator.clearDeliveryBlockAfterVerification()`.
+    public func clearDeliveryBlockAfterVerification() { deliveryLedgerCoordinator.clearDeliveryBlockAfterVerification() }
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation (B5).
     public struct PendingRemoteControl: Equatable, Sendable {
@@ -835,25 +840,31 @@ public final class AppModel {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
-        // Round-3 §5.8: require a DURABLE store (App Group / test override). If none exists, do NOT fall
-        // back to a volatile /tmp file — create a placeholder store but keep delivery disabled via
-        // `noDurableStore` (surfaced as a recoverable block), so a bolus is never tracked in a store that
-        // can vanish.
-        if let ledgerStore {
-            self.remoteBolusLedgerStore = ledgerStore
-            self.noDurableStore = forceNoDurableStore
-        } else {
-            let durableURL = ledgerStoreURL ?? RemoteBolusLedgerStore.defaultURL(appGroupID: WidgetStore.appGroup)
-            if durableURL == nil || forceNoDurableStore { self.noDurableStore = true }
-            self.remoteBolusLedgerStore = RemoteBolusLedgerStore(
-                url: durableURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger-unavailable.json"))
-        }
+        // Wave 2 (D-03/D-04): construct the coordinator with the SAME store-construction inputs
+        // `AppModel.init` used directly, so the R3CLedgerFault + 09-01 fault-injection paths behave
+        // identically. The seam/side-effect hooks are wired as separate statements right below (Swift's
+        // two-phase init forbids a `[weak self]`-capturing closure inside the very expression that
+        // initializes the property holding it) — mirroring how `source.onChange`/`source.commitBolusId`
+        // are already assigned as separate post-construction statements in this initializer.
+        self.deliveryLedgerCoordinator = DeliveryLedgerCoordinator(
+            ledgerStoreURL: ledgerStoreURL, ledgerStore: ledgerStore, forceNoDurableStore: forceNoDurableStore)
         Self.shared = self
+        // D-04: the coordinator depends ONLY on closures bound to `source` (the existing seam) + injected
+        // side-effect hooks bound to `self` — never a whole-`AppModel` back-pointer.
+        deliveryLedgerCoordinator.reconcile = { bolusId in await source.reconcile(bolusId: bolusId) }
+        deliveryLedgerCoordinator.lastBolusCancelled = { source.lastBolusCancelled }
+        deliveryLedgerCoordinator.recordReconciliation = { [weak self] outcome in self?.connectionTelemetry.recordReconciliation(outcome) }
+        deliveryLedgerCoordinator.postSafety = { [weak self] category, severity, title, body, dedupeKey in
+            self?.postSafety(category, severity: severity, title: title, body: body, dedupeKey: dedupeKey)
+        }
+        deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
+        deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason }
         source.onChange = { [weak self] in self?.refresh() }
         // Round-3 §5: acknowledged bolus-id handshake — durably record the pump id (+ its "sent" phase)
         // BEFORE the backend writes metadata/initiate. Returns false if the save failed, so the backend
-        // aborts before initiate (nothing delivered, no id-less record to misread later).
-        source.commitBolusId = { [weak self] bolusId in await self?.commitInFlightBolusId(bolusId) ?? false }
+        // aborts before initiate (nothing delivered, no id-less record to misread later). Forwarded
+        // straight to the coordinator (D-04) — AppModel no longer owns this state.
+        source.commitBolusId = { [weak self] bolusId in await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false }
         // B3a (§5.2.8): route the concrete Tandem backend's command round-trip latency into the opt-in
         // telemetry store (the 4th dimension). Concrete-only (the `PumpBackend` protocol stays clean — see
         // the Phase-B addendum default); the sink is @MainActor and a no-op unless the diagnostics opt-in is
@@ -911,7 +922,7 @@ public final class AppModel {
         // P0: surface any restored global block immediately, then reconcile at launch. Entries with no
         // pump bolus id (interrupted before permission) clear now; id-bearing entries stay blocked until a
         // reconnect can reconcile them against the pump.
-        refreshDeliveryBlock()
+        deliveryLedgerCoordinator.refreshDeliveryBlock()
         Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
     }
 
@@ -932,6 +943,92 @@ public final class AppModel {
     /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
     /// in Settings to try again.
     public private(set) var failoverAutoDisabled: String?
+
+    // MARK: - CGM Test flow (Phase 09.20-04, change 3, D-13 UX)
+    //
+    // The CgmCredentialsView "Test" action OBSERVES this already-running production instance
+    // (`glucoseSource`, armed at launch above) instead of building a second ephemeral central via
+    // `GlucoseSourceRegistry.make(id:)` — so a reading already buffered when Test is tapped resolves
+    // instantly, and no second CoreBluetooth restore-identifier central is ever created (the same
+    // class of dup-restore-id SIGABRT D-06/Plan 03 fixed). State lives here, not in view `@State`, so
+    // a ~5-minute Dexcom wake-cycle wait SURVIVES navigating away from and back to the credentials
+    // screen.
+
+    /// Read-only probe of the selected failover source's live production instance — id, latest,
+    /// status — mirroring `glucoseSourceDiagnosticsInfo`'s pattern (`glucoseSource` stays private,
+    /// never widened). nil when no failover source is selected, or the crash guard auto-disabled it.
+    public var glucoseSourceProbe: (id: String, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
+        guard let glucoseSource else { return nil }
+        return (glucoseSource.id, glucoseSource.latest, glucoseSource.status)
+    }
+
+    /// True while a Test run is polling for an outcome; drives the "Testing…" button label / disabled
+    /// state.
+    public private(set) var cgmTestInProgress = false
+    /// Seconds elapsed since the current/most-recent Test run started; holds at its last value once
+    /// the run reaches a terminal outcome. Drives the elapsed indicator + the determinate progress bar.
+    public private(set) var cgmTestElapsedSeconds = 0
+    /// The active/most-recent run's timeout in seconds (see `cgmTestTimeout(forSourceId:)`), so the UI
+    /// can render a determinate `ProgressView(value:)` (elapsed / timeout) instead of an indeterminate
+    /// spinner. 0 before any run.
+    public private(set) var cgmTestTimeoutSeconds = 0
+    /// The current/most-recent Test outcome; nil before any Test has been run this launch.
+    // Not `public`: `CgmCredentialsView.CgmTestOutcome` is `internal` (the view itself is internal,
+    // same-module default) — Swift access control forbids a `public` property of a less-than-public
+    // type. `internal` is sufficient: this is read only by `CgmCredentialsView`, in the same module.
+    private(set) var cgmTestOutcome: CgmCredentialsView.CgmTestOutcome?
+    private var cgmTestPollTask: Task<Void, Never>?
+
+    /// How long the Test flow waits before concluding TIMEOUT. Dexcom direct-BLE sources (G6/G7) get
+    /// one full wake/connect cycle (~5 min, RESEARCH "Already-paired-sensor first-run behavior") plus
+    /// margin; cloud/local pollers get a shorter window since they don't wait on a transmitter's radio
+    /// cycle.
+    public static func cgmTestTimeout(forSourceId id: String) -> TimeInterval {
+        (id == "dexcom-g6-ble" || id == "dexcom-g7-ble") ? 6 * 60 : 45
+    }
+
+    /// Start (or restart) the Test flow. OBSERVES `glucoseSourceProbe` on a 1s poll instead of
+    /// building a second central, so an already-buffered reading resolves `.success` on the very
+    /// first tick. Reports an immediate `.timeout` (not a spin) when no production instance exists —
+    /// no fallback selected, or the crash guard auto-disabled it after a launch crash.
+    public func startCgmTest() {
+        cgmTestPollTask?.cancel()
+        guard let probe = glucoseSourceProbe else {
+            cgmTestOutcome = .timeout(detail: failoverAutoDisabled != nil
+                ? "The fallback source was auto-disabled after a launch crash — re-select it in Settings to try again."
+                : "No fallback source is selected.")
+            cgmTestInProgress = false
+            cgmTestElapsedSeconds = 0
+            cgmTestTimeoutSeconds = 0
+            return
+        }
+        let sourceId = probe.id
+        let timeout = Self.cgmTestTimeout(forSourceId: sourceId)
+        cgmTestInProgress = true
+        cgmTestOutcome = nil
+        cgmTestElapsedSeconds = 0
+        cgmTestTimeoutSeconds = Int(timeout)
+        let startedAt = Date()
+        cgmTestPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let probe = self.glucoseSourceProbe, probe.id == sourceId else {
+                    self?.cgmTestInProgress = false
+                    return
+                }
+                let elapsed = Date().timeIntervalSince(startedAt)
+                self.cgmTestElapsedSeconds = Int(elapsed)
+                let outcome = CgmCredentialsView.testOutcome(latest: probe.latest, status: probe.status,
+                                                              elapsed: elapsed, timeout: timeout)
+                self.cgmTestOutcome = outcome
+                if case .waiting = outcome {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    continue
+                }
+                self.cgmTestInProgress = false
+                return
+            }
+        }
+    }
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present
     /// the bolus-entry sheet.
@@ -990,6 +1087,78 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { history?.clear() }
 
+    /// WR-02: the app's single shared persistent store, exposed for the SiteAtlas UI so it reads/writes
+    /// the SAME on-disk SwiftData store that backup/export read — never a second `ModelContainer` over
+    /// the same file. `nil` only if the store failed to open at init, in which case the SiteAtlas UI
+    /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
+    var sharedHistoryStore: GlucoseHistoryStore? { history }
+
+    // MARK: WR-01 — SiteAtlas ⇄ unified backup
+
+    /// Snapshot every logged SiteAtlas placement for the unified backup (schema 2+). Reads the SAME
+    /// shared store the UI writes and the export reads, so a `.faBolus` backup reflects exactly the
+    /// placements on screen. Called by `BackupRestoreView.createBackup()`.
+    func siteAtlasBackup() -> SiteAtlasBackup {
+        let sites = history?.allSites() ?? []
+        return SiteAtlasBackup(entries: sites.map {
+            SiteAtlasEntryBackup(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
+                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
+                                 note: $0.note, date: $0.date)
+        })
+    }
+
+    /// Rehydrate SiteAtlas placements from a restored backup into the shared store, preserving each
+    /// original stable `siteID`/`date` so a restored placement is identical to the backed-up one.
+    /// Additive (existing rows untouched), mirroring the other restore sections. Called by `RestoreSheet`.
+    func restoreSiteAtlas(_ backup: SiteAtlasBackup) {
+        guard let history else { return }
+        for e in backup.entries {
+            history.ingestSite(siteID: e.siteID, kind: e.kind, bodySide: e.bodySide,
+                               normalizedX: e.normalizedX, normalizedY: e.normalizedY,
+                               note: e.note, date: e.date, sourceID: SiteAtlasStore.sourceID)
+        }
+    }
+
+    // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
+
+    /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
+    /// `SiteAtlasStore.sourceID`). Benign log data only. IN-02: aliases the single shared constant on
+    /// `GlucoseHistoryStore` so the literal lives in exactly one place.
+    static let trackerSourceID = GlucoseHistoryStore.loopInsightsTrackerSourceID
+
+    /// Snapshot every logged caffeine + alcohol entry for the unified backup (schema 3+). Reads the
+    /// SAME shared store the tracker log views write and the export reads. Benign fields only — no
+    /// risk inference (D-14). Called by `BackupRestoreView.createBackup()`.
+    func trackersBackup() -> TrackerBackup {
+        let wide = Date(timeIntervalSince1970: 0)...Date().addingTimeInterval(86400)
+        let caffeine = history?.caffeine(in: wide) ?? []
+        let alcohol = history?.alcohol(in: wide) ?? []
+        return TrackerBackup(
+            caffeine: caffeine.map { CaffeineEntryBackup(entryID: $0.entryID, milligrams: $0.milligrams,
+                                                         source: $0.source, date: $0.date) },
+            alcohol: alcohol.map { AlcoholEntryBackup(entryID: $0.entryID, standardDrinks: $0.standardDrinks,
+                                                      source: $0.source, date: $0.date) })
+    }
+
+    /// Rehydrate caffeine + alcohol tracker entries from a restored backup into the shared store,
+    /// preserving each original stable `entryID`/`date`. L-02: upsert (delete-by-`entryID` then insert)
+    /// rather than blind-append — SwiftData does not enforce `entryID` uniqueness, so a double restore of
+    /// the same backup would otherwise create duplicate rows sharing an id (visible in the log list until
+    /// a predicate-delete removes both). Keying on the stable `entryID` makes restore idempotent.
+    func restoreTrackers(_ backup: TrackerBackup) {
+        guard let history else { return }
+        for e in backup.caffeine {
+            history.deleteCaffeine(id: e.entryID)
+            history.ingestCaffeine(entryID: e.entryID, milligrams: e.milligrams, source: e.source,
+                                   date: e.date, sourceID: Self.trackerSourceID)
+        }
+        for e in backup.alcohol {
+            history.deleteAlcohol(id: e.entryID)
+            history.ingestAlcohol(entryID: e.entryID, standardDrinks: e.standardDrinks, source: e.source,
+                                  date: e.date, sourceID: Self.trackerSourceID)
+        }
+    }
+
     // MARK: F1 (§13) — unified export of on-device health data
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
@@ -1001,14 +1170,22 @@ public final class AppModel {
         let g = history?.glucose(in: all) ?? []
         let b = history?.boluses(in: all) ?? []
         let c = history?.carbs(in: all) ?? []
+        let s = history?.sites(in: all) ?? []
+        let caf = history?.caffeine(in: all) ?? []
+        let alc = history?.alcohol(in: all) ?? []
         let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
         return PrivacyDataExport(
             meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
             glucose: g.map { .init(date: $0.date, mgdl: $0.mgdl) },
             boluses: b.map { .init(date: $0.date, units: $0.units) },
             carbs: c.map { .init(date: $0.date, grams: $0.grams) },
+            sites: s.map { .init(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
+                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
+                                 note: $0.note, date: $0.date) },
+            caffeine: caf.map { .init(date: $0.date, milligrams: $0.milligrams, source: $0.source) },
+            alcohol: alc.map { .init(date: $0.date, standardDrinks: $0.standardDrinks, source: $0.source) },
             settingChangeLog: settingChangeStore.load(),
-            remoteBolusLedger: remoteBolusLedger)
+            remoteBolusLedger: deliveryLedgerCoordinator.currentLedgerSnapshot)
     }
 
     /// Encode the unified export as one shareable JSON payload (for the Privacy & data → Export action).
@@ -1039,18 +1216,12 @@ public final class AppModel {
     /// (not child / read-only profiles).
     public func eraseAllOnDeviceHealthData() -> EraseOutcome {
         // Never erase over an in-flight or otherwise unresolved delivery.
-        if inFlightDeliveryKey != nil {
-            return .refused("A bolus is being delivered right now. Wait for it to finish, then try again.")
-        }
-        if let reason = computeDeliveryBlockReason() {
-            return .refused("Can't erase while a delivery is unresolved — this data is needed to reconcile it. \(reason)")
-        }
+        if let refusal = deliveryLedgerCoordinator.eraseRefusalReason() { return .refused(refusal) }
 
         // 1) Glucose / insulin / carb history (SwiftData).
         history?.clear()
         // 2) Remote-bolus ledger audit trail → fresh empty, persisted durably (no unresolved entries remain).
-        remoteBolusLedger = RemoteBolusLedger()
-        remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger)
+        deliveryLedgerCoordinator.resetLedgerForErase()
         // 3) Setting-change provenance log → empty.
         settingChangeStore.saveBestEffort(SettingChangeLog())
         // 4) Local telemetry / runtime blobs in the App Group (diagnostics DATA; NOT the opt-in flag/prefs).
@@ -1058,7 +1229,7 @@ public final class AppModel {
         NotificationRuntime.eraseStoredBlobs()
         bleSessionLog.clear()   // F7: in-memory only, but erase it here too for "Delete all on-device data"
 
-        refreshDeliveryBlock()
+        deliveryLedgerCoordinator.refreshDeliveryBlock()
         return .erased
     }
 
@@ -1125,7 +1296,7 @@ public final class AppModel {
         case .samePump:
             break
         case .switched:
-            if inFlightDeliveryKey != nil || computeDeliveryBlockReason() != nil { return }   // defer
+            if deliveryLedgerCoordinator.hasInFlightOrUnresolvedDelivery { return }   // defer
             source.resetSnapshotForPumpSwitch()      // auto-clear the old pump's config (re-read on connect)
             PumpSwitchStore.setHandled(current)      // handled ⇒ don't re-fire every refresh
             pendingPumpSwitch = true                 // offer to reset pump-specific app prefs too
@@ -1404,6 +1575,7 @@ public final class AppModel {
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
         updateEatingNudge()
+        reconcileHeartRateWanted()   // 09.18b (D-09): keep the watch HR-send in sync with the in-app toggle
         evaluateSavePinOffer()
         maybeAutoSyncPumpTime()
         if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
@@ -1484,7 +1656,7 @@ public final class AppModel {
         // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
         let requestId = "local:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        let outcome = await runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
             try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
         switch outcome {
@@ -1563,7 +1735,7 @@ public final class AppModel {
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
         let requestId = "local-ext:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        let outcome = await runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
             try await self.source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
                                                        durationMinutes: durationMinutes,
                                                        carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
@@ -2165,7 +2337,7 @@ public final class AppModel {
                                message: "Another bolus approval is pending on the phone — confirm or dismiss it, then resend."))
             return
         }
-        if remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId) { return }
+        if deliveryLedgerCoordinator.isSettled(peerId: peerId, requestId: requestId) { return }
         // P8: gate the request through the single evaluator (child mode for local/watch/Garmin; the
         // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
@@ -2370,130 +2542,17 @@ public final class AppModel {
                              usedIncludedStaleBG: usedStale)
     }
 
-    // MARK: - Durable delivery ledger (P0)
+    // MARK: - Durable delivery ledger (P0) — thin adapters over `DeliveryLedgerCoordinator` (D-04)
 
-    /// The outcome of a delivery routed through the durable ledger + global unresolved-delivery block.
-    private enum DeliveryOutcome {
-        case delivered(units: Double, cancelled: Bool)
-        case indeterminate
-        case failed(String)
-        /// Nothing was sent to the pump — a global block, an idempotency conflict, or an intent-record fail.
-        case blocked(String)
-        case duplicateInFlight
-        case replay(status: String, message: String?, deliveredUnits: Double?)
-    }
+    /// The outcome of a delivery routed through the coordinator's durable ledger + global
+    /// unresolved-delivery block. A type alias (not a redeclaration) — the coordinator is the single
+    /// source of this enum so every adapter below switches over the SAME type it returns.
+    private typealias DeliveryOutcome = DeliveryLedgerCoordinator.DeliveryOutcome
 
-    /// Route EVERY delivery surface (local standard/extended, widget, Watch, Garmin, Mac, peer) through
-    /// this one method so exactly-once idempotency AND the global unresolved-delivery block are enforced in
-    /// a single place (P0). It (1) refuses to start while any prior sent transaction is unresolved or the
-    /// ledger is unreadable, (2) records intent DURABLY before the first pump write, (3) tags the in-flight
-    /// entry so the pump's assigned bolus id is persisted before initiate, and (4) settles /
-    /// marks-indeterminate on outcome. `onStarted` fires only after intent is durably recorded.
-    private func runLedgeredDelivery(peerId: String, requestId: String, doseKey: String,
-                                     usedIncludedStaleBG: Bool = false,
-                                     onStarted: (() -> Void)? = nil,
-                                     deliver: () async throws -> Double) async -> DeliveryOutcome {
-        // Global block: survives restart via the durable ledger; corrupt ledger fails closed.
-        if let reason = computeDeliveryBlockReason() { return .blocked(reason) }
-
-        // `usedIncludedStaleBG` is DURABLE provenance only (Addendum B): recorded on a new ledger entry,
-        // never part of `doseKey` or the conflict/replay/in-flight decision.
-        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey,
-                                       usedIncludedStaleBG: usedIncludedStaleBG) {
-        case .proceed: break
-        case .duplicateInFlight: return .duplicateInFlight
-        case .replay(let s, let m, let u): return .replay(status: s, message: m, deliveredUnits: u)
-        case .conflict: return .blocked("Duplicate request id with different dose — rejected.")
-        }
-        defer { refreshDeliveryBlock() }
-        // Durable point (FB-03): mark delivering + persist atomically BEFORE the first pump write. If the
-        // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose).
-        remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
-        do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
-        catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
-            persistLedger()
-            return .failed("Could not record delivery intent — not delivered.")
-        }
-        // Tag this entry so the backend's `commitBolusId` handshake (at pump permission, before initiate)
-        // durably records the pump bolus id + `sentToPump` phase on THIS entry.
-        inFlightDeliveryKey = (peerId, requestId)
-        defer { inFlightDeliveryKey = nil }
-        onStarted?()
-        do {
-            let delivered = try await deliver()
-            let cancelled = source.lastBolusCancelled
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
-                                     deliveredUnits: delivered)
-            persistTerminalOrBlock()   // §5.6: keep the block until this terminal state is durably saved
-            return .delivered(units: delivered, cancelled: cancelled)
-        } catch let e as BolusError where e.isIndeterminate {
-            // FB-02: sent but outcome unknown → leave the entry unreconciled (keeps the GLOBAL block on)
-            // and tell the surface to verify. Reconciliation by bolus id clears it later.
-            _ = e
-            remoteBolusLedger.markIndeterminate(peerId: peerId, requestId: requestId)
-            persistLedger()
-            return .indeterminate
-        } catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
-            persistTerminalOrBlock()
-            return .failed(error.localizedDescription)
-        }
-    }
-
-    /// P0 — reconcile every unresolved delivery in the durable ledger against the pump, releasing the
-    /// global block only for entries settled from an AUTHORITATIVE pump result. Call at launch and on
-    /// every reconnect. An entry with NO pump bolus id was interrupted before the pump granted permission
-    /// (so nothing could have been delivered) → safe to settle as not-delivered. An entry WITH an id is
-    /// reconciled by that id; a mismatch/`.unavailable` keeps it blocked (verify on the pump).
+    /// P0 — reconcile every unresolved delivery in the durable ledger against the pump. Forwards to
+    /// `DeliveryLedgerCoordinator.reconcileUnresolvedDeliveries()`. Call at launch and on every reconnect.
     public func reconcileUnresolvedDeliveries() async {
-        let unresolved = remoteBolusLedger.unreconciled()
-        guard !unresolved.isEmpty else { refreshDeliveryBlock(); return }
-        var changed = false
-        for entry in unresolved {
-            // Round-3 §5: decide from the EXPLICIT phase, not merely a missing id. `sentToPump == false`
-            // proves pre-initiate (the id was never durably recorded, so the backend aborted before the
-            // initiate write) → safe to settle as not-delivered. `sentToPump == true` means the initiate is
-            // imminent/issued → reconcile by id; stay blocked unless the pump authoritatively resolves it.
-            if !entry.sentToPump {
-                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                         status: RemoteCommand.Status.failed.rawValue,
-                                         message: "Interrupted before the pump accepted it — not delivered.",
-                                         deliveredUnits: 0)
-                postSafety(.bolusReconciliation, severity: .warning, title: "Bolus not delivered",
-                           body: "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
-                           dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
-                connectionTelemetry.recordReconciliation(.notDelivered)   // §5.2.8
-                changed = true
-                continue
-            }
-            guard let bolusId = entry.bolusId else { continue }   // sent but no id (rare) → stay blocked
-            switch await source.reconcile(bolusId: bolusId) {
-            case .resolved(let delivered, let cancelled):
-                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                         status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
-                                         message: "Reconciled from pump history.", deliveredUnits: delivered)
-                let f = formatUnits(delivered)
-                postSafety(.bolusReconciliation, severity: .info,
-                           title: cancelled ? "Bolus cancelled" : "Bolus delivered",
-                           body: cancelled
-                               ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
-                               : "Reconciled from the pump: \(f) U delivered.",
-                           dedupeKey: "reconcile-\(entry.peerId)-\(entry.requestId)")
-                connectionTelemetry.recordReconciliation(cancelled ? .cancelled : .delivered)   // §5.2.8
-                changed = true
-            case .unavailable:
-                connectionTelemetry.recordReconciliation(.unavailable)   // §5.2.8: stayed unresolved
-                break   // stay blocked; retry on next reconnect / manual verification
-            }
-        }
-        // Round-3 §5.6: release the block only once the settled ledger is durably saved.
-        if changed { persistTerminalOrBlock() }
-        refreshDeliveryBlock()
-        refresh()
+        await deliveryLedgerCoordinator.reconcileUnresolvedDeliveries()
     }
 
     /// Deliver a frozen `ResolvedBolus` through the durable ledger + validated signed path, echoing status
@@ -2504,7 +2563,7 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
-        let outcome = await runLedgeredDelivery(peerId: peerId, requestId: requestId, doseKey: doseKey,
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: peerId, requestId: requestId, doseKey: doseKey,
             usedIncludedStaleBG: r.usedIncludedStaleBG,
             onStarted: { [weak self] in
                 self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
@@ -2586,7 +2645,7 @@ public final class AppModel {
         }
         // P0 + FB-03: durable ledger + global unresolved-delivery block, same as every other surface.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        let outcome = await runLedgeredDelivery(peerId: "widget", requestId: requestId, doseKey: dkey,
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "widget", requestId: requestId, doseKey: dkey,
             onStarted: { [weak self] in
                 self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
             }) {

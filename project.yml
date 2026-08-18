@@ -44,6 +44,12 @@ packages:
     # Dexcom Share follower core, vendored from LoopKit/dexcom-share-client-swift (MIT) — the
     # validated client Loop uses. Powers DexcomShareSource. See Phase 6 in MIGRATION.md.
     path: Packages/ShareClient
+  SnapshotTesting:
+    # Phase 09.17-01 (D-06b): pointfreeco/swift-snapshot-testing — the compact-width iPhone visual-
+    # regression net for the iPad-adaptive retrofit (RESEARCH Package Legitimacy Audit: OK). Linked
+    # into faBolusAppTests ONLY (see that target's dependencies: below) — never a shipping target.
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    from: "1.19.4"
   # >>> NUDGE (scripts/generate-project.sh strips this block when the faBolusNudge repo is unavailable)
   faBolusNudge:
     # Advisory SDK (reusable, stateless): on-device eating detection + meal-detection intelligence.
@@ -71,6 +77,10 @@ packages:
     # TandemMessages/Auth/BLE), which changed the products faBolus requests by name — a
     # revision bump was REQUIRED here (not optional), since the old pinned commit's Package.swift
     # still declares the pre-rename product names.
+    # Pin hygiene (09.14 D-05, todo #15): this SHA should be re-pinned to a fresh TandemKit `main`
+    # SHA once the v0.4.0 Phase-11 saline bench validates the changes it currently carries. No pin
+    # change is made now — this SHA is reachable from TandemKit `main` and safe to keep until then.
+    # See .planning/OWNER-DECISIONS.md for the matching dated entry.
     revision: 1a09dba67de2d45f2f26f408dccb4bccb9749e6c
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
@@ -85,7 +95,7 @@ targets:
   faBolus:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - ios/faBolus
       # WidgetBolusIntents belongs to the widget extensions only (the app uses WidgetBolusReceiver).
@@ -200,13 +210,16 @@ targets:
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
-        # Scan a host phone's pairing QR code when using this phone as a remote.
-        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
+        # Scan a host phone's pairing QR code when using this phone as a remote, AND scan food barcodes
+        # in FoodFinder for a carb estimate the user reviews (09.18c-02, D-13) — never a dose.
+        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you."
         # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
         # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
         NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
         # Read glucose from Apple Health as a failover CGM feed (xDrip4iOS in real time, or Eversense).
-        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable."
+        # 09.18b (D-07): also read heart rate on demand as OPTIONAL chart context for the glucose detail
+        # readout (never a dosing/meal input) — additive to the glucose read, never gating it.
+        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable. faBolus may also read your heart rate to show it as optional chart context in the glucose detail readout — heart rate is never used for dosing."
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
         # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
         LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
@@ -412,7 +425,7 @@ targets:
   faBolusWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - ios/faBolusWidgets
       - path: Shared/WidgetShared.swift
@@ -562,7 +575,7 @@ targets:
   faBolusAppTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - ios/faBolusAppTests
     dependencies:
@@ -576,6 +589,11 @@ targets:
       # transitive link the app target already has.
       - package: HistoryStore
         product: HistoryStore
+      # Phase 09.17-01 (D-06b): compact-width visual-regression net. Test-target-ONLY dependency —
+      # never linked into faBolus/faBolusWidgets/faBolusWatch/faBolusMac, so it never ships in the
+      # App Store binary (Pitfall 4).
+      - package: SnapshotTesting
+        product: SnapshotTesting
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

@@ -80,24 +80,35 @@ Which to choose: **App Group** if you self-compile both under one team (fastest,
 Health** otherwise (near-real-time, no team matching). Either way the pump stays primary and the same
 staleness/age rules apply.
 
-## Dexcom G5/G6/ONE (direct)
+## Dexcom G5/G6/ONE (direct) — "Read from Dexcom app"
 
-faBolus can read a Dexcom **G6** (also G5 / ONE) **directly over Bluetooth**, locally — the "follow
-the Dexcom app" approach, so you don't need a separate xDrip install:
+faBolus can read a Dexcom **G6** (also G5 / ONE) **directly over Bluetooth**, locally. This is the
+**default, reliable mode**: "Read from Dexcom app" (aka follow mode) — the same approach xDrip4iOS
+uses (and its own setup docs treat as the standard way to connect), not a long shot.
 
-- **Keep the official Dexcom app installed and running.** It stays the *master* (it authenticates and
-  owns the session); faBolus connects as a second listener and **passively reads** the glucose the
-  transmitter broadcasts. faBolus never authenticates or writes to the transmitter, so it can't
-  disconnect the Dexcom app.
-- Optionally enter your **transmitter ID** under Settings → Glucose failover → CGM account credentials
-  (it just helps pick the right sensor if several Dexcoms are nearby). No login, no cloud.
+- **Keep the official Dexcom app installed, paired, and running.** That's the ONE hard precondition —
+  without it, faBolus gets no readings at all (that's when Dexcom Share, above, is the fallback). The
+  Dexcom app stays the master (it authenticates and re-authenticates the transmitter every ~5-minute
+  cycle); faBolus connects as a second listener and **passively reads** the glucose the transmitter
+  broadcasts. faBolus never authenticates or writes to the transmitter, so it can't disconnect the
+  Dexcom app.
+- **A sensor already set up in the Dexcom app works as-is** — no re-pairing, no transmitter ID needed
+  for a single sensor. **If anyone else nearby also wears a Dexcom** (a sibling, a clinic waiting room,
+  another household member), enter your **transmitter ID** under Settings → Glucose failover → CGM
+  account credentials so faBolus reads YOUR sensor, not theirs — without it, faBolus passively connects
+  to whichever real Dexcom transmitter answers first. No login, no cloud.
+- **The first reading can take up to ~5 minutes** — one Dexcom wake/connect cycle — after you enable
+  the source. That's normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth
+  off then on **inside the official Dexcom app** (not iOS Settings) — the documented xDrip4iOS remedy.
 - Decoding is vendored from LoopKit/CGMBLEKit (MIT), passive path only.
 
-!!! warning "Needs the Dexcom app connected, and validate coexistence on-device"
-    Without the official Dexcom app installed and connected to the transmitter, this gives no
-    readings (it relies on that app keeping the session alive). And a G6 allows only a limited number
-    of Bluetooth connections — **pump + Dexcom app + faBolus** all at once should be validated on your
-    hardware. (The G7, which faBolus reads passively too, has no such limit.)
+!!! note "Experimental: validation-pending, not unreliable"
+    This source is marked **experimental** in the source picker (behind a blocking untested-feature
+    warning) because it hasn't completed its on-device UAT yet — NOT because the mechanism itself is
+    shaky. iOS fans out one physical Bluetooth link to every app that subscribes (there's no
+    per-app "connection slot" limit for this), and the "sometimes refused outright" framing this
+    warning used to carry was retracted after a deeper protocol re-check found no evidence for it.
+    Treat "experimental" here as "not yet confirmed on real hardware," not "expect it to fail."
 
 ## On the watch
 
@@ -151,11 +162,15 @@ stays clean in the normal case.
 
 ## Testing your failover sources
 
-Open **Settings → CGM &amp; failover → CGM credentials &amp; testing** and tap **Save &amp; test**. faBolus tries
-to pull a live reading from each source and shows which work — including the **credential-free** ones
-(Dexcom **G7**/G6 direct BLE and the xDrip **App Group**) plus any cloud sources you've entered logins
-for. Direct-BLE sources need the sensor nearby and can take up to ~30 seconds; a green check with a
-value + age means it's pulling data.
+Open **Settings → CGM &amp; failover → CGM credentials &amp; testing** and tap **Test** on your
+currently-selected fallback source. faBolus observes that source's already-running feed (the same one
+that would kick in during a real failover) rather than starting a separate check, so a reading it
+already has shows up **instantly**. For the Dexcom direct-BLE sources (G7/G6), which only get a new
+reading every ~5 minutes, the screen shows a determinate progress bar and an elapsed-time counter
+while it waits — never a plain spinner with no sense of progress — and you can leave the screen and
+come back without losing that progress. A green "✓ Received a reading" means it's pulling data; if
+nothing arrives within the window, the message tells you what to check (for Dexcom sources: confirm
+the official Dexcom app is running, or try toggling its Bluetooth).
 
 ## Uploading to Nightscout
 

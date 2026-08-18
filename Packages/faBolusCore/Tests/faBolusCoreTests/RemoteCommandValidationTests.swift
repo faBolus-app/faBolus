@@ -107,4 +107,36 @@ final class RemoteCommandValidationTests: XCTestCase {
         let back = try RemoteCommand.decodeValidated(try cmd.encoded())
         XCTAssertEqual(back.history?.count, 288)
     }
+
+    // MARK: - Phase 09.13-02 (D-06/D-11, threat T-09.13-04) — plot bound validation
+
+    /// Absent is fine (⇒ receiver's own default/shared fallback); a present in-range pair passes.
+    func testGlucosePlotBoundsAbsentOrInRangePasses() throws {
+        var cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        let bare = try RemoteCommand.decodeValidated(try cmd.encoded())
+        XCTAssertNil(bare.glucosePlotFloor)
+
+        cmd.glucosePlotFloor = 40
+        cmd.glucosePlotCeiling = 300
+        cmd.glucosePlotFloorSmall = 50
+        cmd.glucosePlotCeilingSmall = 400
+        let back = try RemoteCommand.decodeValidated(try cmd.encoded())
+        XCTAssertEqual(back.glucosePlotFloor, 40)
+        XCTAssertEqual(back.glucosePlotCeilingSmall, 400)
+    }
+
+    /// A hostile/garbled out-of-range value on any of the four fields fails closed rather than driving
+    /// an invalid remote axis (T-09.13-04).
+    func testGlucosePlotBoundOutOfRangeRejected() {
+        for field in ["glucosePlotFloor", "glucosePlotCeiling", "glucosePlotFloorSmall", "glucosePlotCeilingSmall"] {
+            let json = #"{"version":1,"kind":"bolusStatus","requestId":"r1","\#(field)":5000}"#
+            XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json)), field) {
+                XCTAssertEqual($0 as? RemoteCommand.ValidationError, .outOfRange(field))
+            }
+        }
+        let zeroJSON = #"{"version":1,"kind":"bolusStatus","requestId":"r1","glucosePlotFloor":0}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(zeroJSON))) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .outOfRange("glucosePlotFloor"))
+        }
+    }
 }

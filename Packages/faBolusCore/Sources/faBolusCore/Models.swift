@@ -167,6 +167,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var softwareVersion: String = ""
     /// Current basal delivery rate (units/hr) and whether delivery is suspended.
     public var basalRateUnitsPerHour: Double = 0
+    /// WR-03: whether `basalRateUnitsPerHour` reflects a value actually READ from the pump (op-77
+    /// CurrentBasalStatusResponse) rather than the default-unknown 0. Without this flag a genuine 0 U/hr
+    /// basal — a suspend or a 0 U/hr temp — is indistinguishable from "never read", so the GraphDetailView
+    /// readout would render a real suspend as the unknown em-dash "—" instead of "0/hr". Set true the
+    /// first time a basal-status frame lands; display-only, never a dose input.
+    public var basalRateKnown: Bool = false
     /// Configured max basal-rate limit (units/hr), from BasalLimitSettings. 0 = unknown/not read.
     public var maxBasalUnitsPerHour: Double = 0
     public var deliverySuspended: Bool = false
@@ -174,6 +180,63 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var activeProfileName: String = ""
     public var controlIQMode: Int = 0
     public var controlIQEnabled: Bool = false
+    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, as a frozen wire token
+    /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived at
+    /// `PumpResponseApplier` from op-179 `ControlIQInfoV2Response.controlStateType` (c) Tandem — the zone
+    /// words themselves are Tandem's own labels. `nil` until read OR when the raw value is unmapped —
+    /// never a synthesized 6th word (D-06 guardrail #6). Display-only, never a dose input (C3).
+    public var ciqZone: String? = nil
+    /// Phase 09.15 T1-2 (D-09.1, D-08) — whether the pump's own control-state currently attributes an
+    /// ACTIVE basal suspend to Control-IQ (vs a manual/other-cause suspend the generic `deliverySuspended`
+    /// bool alone can't distinguish). Derived at `PumpResponseApplier` via
+    /// `ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType:)` — display-only, never a
+    /// dose input (C3). Unconditional assign-or-clear like `ciqZone` (never "if let"-preserved): a modern
+    /// host legitimately clears this the instant the zone changes, so a stale `true` must never survive
+    /// past that moment (D-06 guardrail #5). `nil` only before the first op-179 read; `false` is a
+    /// fully-known "not CIQ-attributed" fact, not "unknown" — the D-09.1 BINDING fail-closed default for
+    /// every consumer of this field is to treat both `nil` and `false` identically (never render
+    /// "Control-IQ paused" for either).
+    public var ciqSuspendedForLow: Bool? = nil
+    /// The immutable instant `ciqSuspendedForLow` FIRST became true (never re-stamped on every
+    /// subsequent op-179 read while it stays true) — mirrors `glucoseDate`'s epoch-not-age convention so
+    /// a remote/UI computes elapsed time on draw, never transmits a pre-computed age. Cleared back to
+    /// `nil` the moment `ciqSuspendedForLow` clears, so a later re-suspend starts a fresh instant rather
+    /// than resuming a stale one.
+    public var ciqSuspendStartDate: Date? = nil
+    /// Phase 09.15 T1-3 (D-01, D-06 guardrail #4, D-08) — the immutable instant of the most-recent
+    /// Control-IQ auto-correction, derived at `TandemBackend.neutralEvent` from a decoded
+    /// `BolusDeliveryHistoryLog` whose `bolusSource == 7` (a fact the pump's own history log already
+    /// records — (b) pump-communicated). Only ever moves forward in time (a real historical fact
+    /// never un-happens); `nil` until the first such event is seen. Display-only, never a dose input
+    /// (C3). Mirrors `glucoseEpochSec`'s epoch-not-age convention on the wire (`RemoteCommand
+    /// .lastAutoCorrectionEpochSec`) — a receiver computes age at draw time, never transmits one.
+    public var lastAutoCorrectionDate: Date? = nil
+    /// Phase 09.15 T1-4 (D-01, D-08) — the immutable instant of the most-recent "Control-IQ tried and
+    /// couldn't deliver an automatic correction" event, derived from a decoded
+    /// `AaAutoBolusRejectedHistoryLog` or `CorrectionDeclinedHistoryLog` (both already decoded +
+    /// registered but previously dropped at `TandemBackend.neutralEvent`). Never speculates WHY (D-06
+    /// guardrail #6) — neither struct exposes a reason field anyway. `nil` until the first such event
+    /// is seen. Display-only, never a dose input (C3). Wire mirror: `RemoteCommand
+    /// .ciqLastCouldNotDeliverEpochSec` (remote MARKER only — the full timeline stays phone-only,
+    /// D-08).
+    public var ciqLastCouldNotDeliverDate: Date? = nil
+    /// Phase 09.15 T1-5 (D-01, D-08) — the immutable instant Control-IQ's automatic correction becomes
+    /// available again after the most-recent bolus, derived from `lastAutoCorrectionDate` + the
+    /// descriptor's OWN documented lockout window (`ControllerDescriptor.automaticCorrection
+    /// .blockedByRecentBolusMinutes`) — never a literal 60. This is the T1-5 wire primitive's SOURCE
+    /// (`RemoteCommand.lockoutUntilEpochSec`, D-08): an immutable END epoch, so a receiver reverses the
+    /// arithmetic (`lockoutStart = lockoutUntilDate - window`) and calls `AutoCorrectionDisclosure
+    /// .lockoutRemainingFraction` locally — the fraction itself is NEVER transmitted (D-06 guardrail #1:
+    /// a fraction, never a dose/units value). `nil` when there is no known auto-correction yet, the
+    /// controller can't auto-correct, or the window is unknown — purely a derived instant; the
+    /// should-render/fail-closed decision (expired ⇒ absent) lives entirely in `lockoutRemainingFraction`
+    /// downstream, never duplicated here.
+    public var lockoutUntilDate: Date? {
+        guard let start = lastAutoCorrectionDate,
+              let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
+        else { return nil }
+        return start.addingTimeInterval(TimeInterval(windowMinutes) * 60)
+    }
     /// Which automated controller this pump runs, derived from the pump's own `PumpFeaturesV1` bits at the
     /// driver boundary (never guessed from the model name). `.none` until the feature frame lands — the
     /// safe default (a controller descriptor of `.none` renders no controller-specific disclosure). This
@@ -211,6 +274,46 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// read-only/editor screen. Universal read — populated regardless of pump model (Phase 09.10
     /// D-04); empty until `PumpBackend.refreshSleepSchedule()` has been called and answered.
     public var sleepSchedules: [PumpSleepScheduleSlot] = []
+    /// Phase 09.15 T1-9 (D-01, D-08 note) — the already-decoded-but-previously-dropped exercise
+    /// countdown (`ControlIQInfoV2Response.exerciseTimeRemainingSeconds`, op-179), a RAW
+    /// remaining-seconds DURATION — deliberately NOT an epoch: the pump reports "time remaining"
+    /// directly, so a receiver counts down locally against its OWN receipt time for animation
+    /// smoothness only, re-anchoring on every subsequent read. Populated only while the pump's OWN
+    /// live `controlIQMode` is genuinely Exercise right now (`SleepExerciseAwareness
+    /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
+    /// another mode (D-06 guardrail #6, mutual-exclusivity). `nil` otherwise. Display-only, never a
+    /// dose input (C3).
+    public var exerciseTimeRemainingSec: Int? = nil
+    /// Phase 09.15 T1-9 (D-01, D-08, iPhone/Mac-only per the UI-SPEC Assumption) — whether the
+    /// pump's OWN configured Sleep-schedule (`sleepSchedules` above) has a window active RIGHT NOW,
+    /// plus that window's start/end minute-of-day — pure window math over pump-communicated data
+    /// (b), computed by `SleepWindowDerivation.activeWindow`, never a clinical literal. Independent
+    /// of the LIVE `controlIQMode` (a configured schedule can be active even while a different mode
+    /// happens to be live) — the T1-9 card itself additionally requires `controlIQMode == .sleep`
+    /// before rendering the window text (mutual-exclusivity enforced at render time via
+    /// `ciqActivityPreset`'s single-branch selection, not duplicated here). Display-only, never a
+    /// dose input (C3).
+    public var inSleepWindow: Bool? = nil
+    public var sleepWindowStartMinute: Int? = nil
+    public var sleepWindowEndMinute: Int? = nil
+    /// Phase 09.15 T2-1 (D-05, "Candidate #4") — the two independent Control-IQ ceiling flags from
+    /// op-115's `BolusCalcDataSnapshotResponse` (`maxBolusEventsExceeded@24` / `maxIobEventsExceeded@25`),
+    /// dose-path-adjacent and gated as a BENCH-GATED PLACEHOLDER exactly like `CiqCeilingFlags` below
+    /// (`benchVerifiedDefault == false`). Display-only, never a dose input (C3); ALWAYS independent
+    /// booleans, never merged into one generic flag.
+    ///
+    /// **DOCUMENTED STUB — pin deliberately held (09.14 D-05 pin-hygiene).** The kit decode itself landed
+    /// in TandemKit (commit `8f29a4f`, kit PR #20, green CI) but the faBolus `TandemKit` pin in
+    /// `project.yml` is NOT advanced yet — re-pinning happens only once the Phase-11 saline bench
+    /// validates the change (never before, per pin-hygiene discipline). So these two fields are `nil`
+    /// unconditionally today: `PumpResponseApplier`'s `BolusCalcDataSnapshotResponse` case does NOT yet
+    /// read `m.maxBolusEventsExceeded`/`m.maxIobEventsExceeded` (those symbols don't exist in the
+    /// currently-pinned kit revision; referencing them now would break the build). Wiring this read is
+    /// deferred to the plan that advances the pin post-bench — this stub exists so the wire-level
+    /// (`RemoteCommand`) and UI (`StatusPillsView`) shapes are already in place and reviewed ahead of
+    /// that trivial follow-up.
+    public var ciqMaxBolusEventsExceeded: Bool? = nil
+    public var ciqMaxIobEventsExceeded: Bool? = nil
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -257,6 +360,268 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// (default 15 min). Unknown age (`therapyParamsDate == nil`) → stale.
     public func isTherapyStale(now: Date = Date()) -> Bool {
         CalcInputFreshness.isTherapyStale(therapyParamsDate, now: now)
+    }
+
+    /// Phase 09.15 T1-9 (D-01, D-06 guardrail #4) — the controller's OWN activity preset currently
+    /// selected by the pump's live `controlIQMode`, or `nil` in normal mode (no card) or when the
+    /// connected controller's descriptor has no matching preset (`.none` controller). Every caller
+    /// branches on `preset.name` ("Sleep"/"Exercise") rather than re-checking `controlIQMode`
+    /// itself — this is the single mutual-exclusivity choke point (a live mode is always exactly
+    /// one of normal/sleep/exercise, so exactly one preset — or none — is ever selected here).
+    public var ciqActivityPreset: ActivityPreset? {
+        SleepExerciseAwareness.activePreset(mode: ControlIQActivity(rawMode: controlIQMode),
+                                            descriptor: controllerDescriptor)
+    }
+    /// The compact single-line fact D-09.5 propagates to every remote surface (Watch/Garmin/Mac's
+    /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` under
+    /// `SleepExerciseAwareness.compactLine`'s own fail-closed guards.
+    public var ciqActivityCompactLine: String? {
+        SleepExerciseAwareness.compactLine(mode: ControlIQActivity(rawMode: controlIQMode),
+                                           descriptor: controllerDescriptor,
+                                           exerciseTimeRemainingSec: exerciseTimeRemainingSec)
+    }
+    /// The verbose Sleep window text (iPhone/Mac only, per the UI-SPEC Assumption): "Current
+    /// window: {start}–{end}" when `inSleepWindow` is true and both minute-of-day bounds are known,
+    /// else `nil` (SP-5 fail-closed — never a partial/garbled window string).
+    public var ciqSleepWindowLine: String? {
+        guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
+        return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-08) — pure minute-of-day/day-of-week window math over the pump's OWN
+/// `sleepSchedules` (already decoded from `ControlIQSleepScheduleResponse`, (b) pump-communicated).
+/// No clinical literal — this is structural scheduling arithmetic, not a Tandem clinical constant.
+public enum SleepWindowDerivation {
+    /// The first ENABLED slot (checked in stored `slot`-index order, matching the pump's own
+    /// precedence) whose day-of-week bit matches `now`'s weekday and whose minute-of-day range
+    /// contains `now` — including a slot that spans midnight (`startMinute > endMinute`), checked
+    /// against both today's and yesterday's day-bit as appropriate. `nil` when no slot is currently
+    /// active.
+    ///
+    /// Day-bit mapping (CONFIRMED, matches `PumpSleepScheduleSlot.activeDays`'s documented ordering):
+    /// Monday=bit0…Sunday=bit6. `Calendar.weekday` is Sunday=1…Saturday=7, so `todayBit = (weekday +
+    /// 5) % 7` converts one to the other.
+    public static func activeWindow(slots: [PumpSleepScheduleSlot], now: Date = Date(),
+                                     calendar: Calendar = .current) -> (startMinute: Int, endMinute: Int)? {
+        let comps = calendar.dateComponents([.hour, .minute, .weekday], from: now)
+        guard let weekday = comps.weekday else { return nil }
+        let nowMinute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let todayBit = (weekday + 5) % 7
+        let yesterdayBit = (todayBit + 6) % 7
+        for slot in slots.sorted(by: { $0.slot < $1.slot }) where slot.enabled {
+            let start = slot.startMinute, end = slot.endMinute
+            if start <= end {
+                // Same-day window.
+                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start, nowMinute < end {
+                    return (start, end)
+                }
+            } else {
+                // Midnight-spanning window: active either "tonight" (today's slot, start...midnight)
+                // or "this morning" (yesterday's slot, midnight...end).
+                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start {
+                    return (start, end)
+                }
+                if slot.activeDays & (1 << yesterdayBit) != 0, nowMinute < end {
+                    return (start, end)
+                }
+            }
+        }
+        return nil
+    }
+}
+
+/// Phase 09.15 T1-9 (D-01, D-06 guardrail #4, D-08) — the Sleep/Exercise Tandem-fact reader. Pure UI
+/// wiring of `ControllerDescriptor.activityPresets` (already Tandem-clinical-review-gated data,
+/// §13) — no new clinical literal is introduced anywhere in this enum; every number/word below is
+/// read directly off the preset the pump's OWN `controlIQMode` selects. Display-only, never a dose
+/// input (C3).
+public enum SleepExerciseAwareness {
+    /// The ONE activity preset the pump's live `mode` currently selects from the connected
+    /// controller's OWN `descriptor.activityPresets`, or `nil` in `.normal` mode (no card on any
+    /// surface) or when the descriptor has no matching preset by NAME ("Sleep"/"Exercise" — the
+    /// descriptor's own vocabulary, never a hardcoded index) — a `.none` controller, or a future
+    /// descriptor missing one, fails closed rather than guessing.
+    public static func activePreset(mode: ControlIQActivity, descriptor: ControllerDescriptor) -> ActivityPreset? {
+        let name: String
+        switch mode {
+        case .normal: return nil
+        case .sleep: name = "Sleep"
+        case .exercise: name = "Exercise"
+        }
+        return descriptor.activityPresets.first { $0.name == name }
+    }
+
+    /// The exercise-timer value to STORE, given the pump's raw already-decoded remaining-seconds
+    /// (op-179) and its live mode — gates the stored fact on genuinely being IN exercise mode right
+    /// now, so a leftover nonzero value from a PRIOR exercise session (or a value reported outside
+    /// Exercise) can never leak into another mode (D-06 guardrail #6, mutual-exclusivity). Testable
+    /// in isolation from the BLE decode.
+    public static func exerciseTimerToStore(mode: ControlIQActivity, rawRemainingSeconds: UInt32) -> Int? {
+        (mode == .exercise && rawRemainingSeconds > 0) ? Int(rawRemainingSeconds) : nil
+    }
+
+    /// The full-form target-range + AutoBolus-state fact line (iPhone/Mac), e.g. "Target
+    /// 112.5–120 mg/dL · AutoBolus off" — every number/word read directly off `preset` (c) Tandem, no
+    /// new clinical literal.
+    public static func targetAutoBolusLine(_ preset: ActivityPreset) -> String {
+        "Target \(mgdlString(preset.targetLowMgdl))–\(mgdlString(preset.targetHighMgdl)) mg/dL · \(autoBolusWords(preset))"
+    }
+
+    /// The preset's own suspend-threshold fact, or `nil` when the preset doesn't define one (Sleep,
+    /// today) — independently omittable per the partial-state fail-closed rule (D-08).
+    public static func suspendThresholdLine(_ preset: ActivityPreset) -> String? {
+        guard let t = preset.suspendThresholdMgdl else { return nil }
+        return "Suspends below \(mgdlString(t)) mg/dL"
+    }
+
+    /// "AutoBolus off" / "AutoBolus continues" — derived from `preset.automaticCorrectionEnabled`,
+    /// never hardcoded per Sleep/Exercise: Control-IQ+ keeps AutoBolus on during Sleep while classic
+    /// Control-IQ does not — the descriptor already encodes that difference (the CIQ/CIQ+
+    /// discriminator, O7).
+    public static func autoBolusWords(_ preset: ActivityPreset) -> String {
+        preset.automaticCorrectionEnabled ? "AutoBolus continues" : "AutoBolus off"
+    }
+
+    /// "{H}h {M}m remaining" from a raw remaining-seconds duration, or `nil` when absent/non-positive
+    /// (D-06 guardrail #5 fail-closed: never a negative/zero countdown).
+    public static func remainingLabel(seconds: Int?) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
+        let h = seconds / 3600, m = (seconds % 3600) / 60
+        return h > 0 ? "\(h)h \(m)m remaining" : "\(m)m remaining"
+    }
+
+    /// The compact "ends {h}:{mm}" clock label (D-09.5 remote-first form), computed by adding the
+    /// raw remaining-seconds DURATION to `now` — recomputed fresh at every draw/statusRead receipt,
+    /// never a transmitted absolute instant (the wire carries only the duration, D-08 T1-9 note).
+    /// 12-hour, no AM/PM (matches the UI-SPEC's own compact example "ends 4:20"). `nil` under the
+    /// same fail-closed guard as `remainingLabel`.
+    public static func endsAtLabel(seconds: Int?, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        guard let seconds, seconds > 0 else { return nil }
+        let end = now.addingTimeInterval(TimeInterval(seconds))
+        let c = calendar.dateComponents([.hour, .minute], from: end)
+        let hour24 = c.hour ?? 0
+        let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
+        return "ends \(hour12):\(String(format: "%02d", c.minute ?? 0))"
+    }
+
+    /// The compact single-line fact D-09.5 propagates to EVERY surface (Watch/Garmin/Mac's compact
+    /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal mode, no
+    /// matching preset, or — for Exercise only — the timer is unknown (SP-5 fail-closed; Sleep's
+    /// compact fact never depends on the timer).
+    public static func compactLine(mode: ControlIQActivity, descriptor: ControllerDescriptor,
+                                    exerciseTimeRemainingSec: Int?, now: Date = Date(),
+                                    calendar: Calendar = .current) -> String? {
+        guard let preset = activePreset(mode: mode, descriptor: descriptor) else { return nil }
+        switch mode {
+        case .normal: return nil
+        case .sleep: return "Sleep — \(autoBolusWords(preset))"
+        case .exercise:
+            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now, calendar: calendar) else { return nil }
+            return "Exercise — \(ends)"
+        }
+    }
+
+    /// "%02d:%02d" minute-of-day formatting — the same plain convention
+    /// `PumpWizardViews.SleepScheduleView.minuteOfDayString` already uses for the sleep-schedule
+    /// editor (structural echo, not a duplicated clinical constant).
+    public static func minuteOfDayString(_ minute: Int) -> String {
+        String(format: "%02d:%02d", minute / 60, minute % 60)
+    }
+
+    private static func mgdlString(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
+    }
+}
+
+/// Phase 09.15 T1-8 (D-03) — the honest "% of your configured max basal rate" readout. This is
+/// faBolus's OWN construct (Tandem ships no such gauge): `basalRateUnitsPerHour ÷
+/// maxBasalUnitsPerHour`, both already decoded from the pump (`CurrentBasalStatusResponse` /
+/// `BasalLimitSettingsResponse`). Labeled honestly as the pump's CONFIGURED max-basal delivery limit —
+/// a cap on ALL basal delivery — and NEVER a Control-IQ or auto-bolus figure. D-03's anti-misconstrual
+/// guardrails are ALL binding: (i) the label always contains "basal"; (ii) the absolute U/hr always
+/// accompanies the %; (iii) the readout lives physically separated from any bolus/correction surface
+/// (enforced at the call site, `PumpControlView`'s pump-settings area — not here); (iv) a copy-audit
+/// test (`CiqMaxBasalCopyAuditTests`) fails the build if the label ever contains one of
+/// `forbiddenMisconstrualWords`; (v) opt-in, off by default, with a one-time feature-specific explainer
+/// (also enforced at the call site).
+public enum MaxBasalFraction {
+    /// D-03(iv) — the exact forbidden misconstrual vocabulary, case-insensitive substring match. Any of
+    /// these words in the label would misconstrue this faBolus-computed configured-basal-cap readout as
+    /// a bolus, an automatic correction, a hard ceiling override, or "maxed out" delivery — none of
+    /// which this feature is. Exposed as one shared list so the label builder and its test never drift.
+    public static let forbiddenMisconstrualWords: [String] = ["bolus", "correction", "ceiling", "maxed"]  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+
+    /// True when `text` contains any D-03(iv) forbidden word (case-insensitive substring).
+    public static func hasForbiddenWord(_ text: String) -> Bool {
+        forbiddenMisconstrualWords.contains { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    /// D-06 guardrail #1 (a fraction, NEVER a dose/units value): `currentUnitsPerHour ÷
+    /// maxUnitsPerHour`, clamped to `[0.0, 1.0]`. `nil` (fail-closed) when `maxUnitsPerHour <= 0` — the
+    /// pump's configured max-basal limit is unknown/not yet read, so there is nothing honest to divide
+    /// by; the caller must render the readout entirely ABSENT (not zero/dash) in that case, per D-03.
+    public static func fraction(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> Double? {
+        guard maxUnitsPerHour > 0 else { return nil }
+        let raw = currentUnitsPerHour / maxUnitsPerHour
+        return min(max(raw, 0.0), 1.0)
+    }
+
+    /// D-03(i)/(ii) LOCKED wording pair, or `nil` under the exact same fail-closed guard `fraction`
+    /// uses. `headline` ALWAYS contains "basal"; `detail` ALWAYS shows both the current and configured
+    /// max U/hr together (never the % alone). Both are guaranteed (by the copy-audit test) to never
+    /// contain a `forbiddenMisconstrualWords` entry.
+    public static func label(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> (headline: String, detail: String)? {
+        guard let f = fraction(currentUnitsPerHour: currentUnitsPerHour, maxUnitsPerHour: maxUnitsPerHour) else { return nil }
+        let pct = Int((f * 100).rounded())
+        let headline = "\(pct)% of your configured max basal rate"
+        let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
+        return (headline, detail)
+    }
+}
+
+/// Phase 09.15 T2-1 (D-05, "Candidate #4") — the bench+emission gate for the two independent
+/// Control-IQ ceiling flags (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`,
+/// sourced from op-115's `BolusCalcDataSnapshotResponse.maxBolusEventsExceeded@24` /
+/// `.maxIobEventsExceeded@25`), built as a BENCH-GATED PLACEHOLDER — the SAME `benchVerifiedDefault`
+/// idiom as `TempRateAutomation.swift:41` / `CiqPlusTempRate.benchVerifiedDefault`
+/// (`ControlIQMode.swift:119`). This is dose-path-adjacent (op-115 also carries carb ratio/ISF/target
+/// for the bolus calculator) so it gets FULL dose-path discipline: nothing is marked verified; the
+/// `true` case has never been observed in a first-party capture (the Phase-11 validation blocker, not a
+/// code gap).
+///
+/// The kit decode is oracle-backed for LAYOUT + the `false` case only (TandemKit commit `8f29a4f`, kit
+/// PR #20, green CI — merge itself is a separate operator step, D-06). The faBolus `TandemKit` pin
+/// stays DELIBERATELY HELD (09.14 D-05 pin-hygiene) until the Phase-11 bench validates, so
+/// `PumpSnapshot`'s two fields above are an inert, always-`nil` documented stub today regardless of
+/// this gate's value.
+public enum CiqCeilingFlags {
+    /// D-05/SP-6: flips to `true` only after the Phase-11 saline bench captures a real `true` frame for
+    /// EITHER flag. Ships `false` so both flags are inert on every build regardless of the connected
+    /// pump or the pin state.
+    public static let benchVerifiedDefault = false
+
+    /// Verbatim Copywriting-Contract strings (never merged into one generic "limit" string, D-05
+    /// zero-one-many coverage) — the single source of truth both this package's tests and
+    /// `StatusPillsView` read from, so the two surfaces can never drift apart.
+    public static let maxBolusEventsExceededLabel = "Control-IQ hit its hourly auto-bolus limit"
+    public static let maxIobEventsExceededLabel = "Control-IQ hit its insulin-on-board limit"
+
+    /// The wire value to emit for `maxBolusEventsExceeded`, gated on `benchVerified` — `nil` pre-bench
+    /// REGARDLESS of `snapshotValue` (belt-and-suspenders: even if a future pin advance populated the
+    /// snapshot field, this gate alone still decides emission onto the wire, D-06 guardrail #5/#6
+    /// fail-closed idiom).
+    public static func wireMaxBolusEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
+                                                   snapshotValue: Bool?) -> Bool? {
+        benchVerified ? snapshotValue : nil
+    }
+
+    /// Same gate as `wireMaxBolusEventsExceeded`, but for the INDEPENDENT `maxIobEventsExceeded` flag —
+    /// a deliberately separate function (never a shared "wireFlags" that could accidentally couple the
+    /// two), matching the "always exactly two independent booleans" requirement (D-05).
+    public static func wireMaxIobEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
+                                                 snapshotValue: Bool?) -> Bool? {
+        benchVerified ? snapshotValue : nil
     }
 }
 
@@ -436,6 +801,40 @@ public enum ControllerVariant: String, Sendable, Equatable, CaseIterable {
     case none = "none"
     case controlIQ = "controlIQ"
     case controlIQPro = "controlIQPro"
+}
+
+/// Phase 09.15 T1-1 (D-01/D-08) — the pump's live "what Control-IQ is doing right now" action zone, as a
+/// FROZEN wire token (`RemoteCommand.ciqZone`): a remote decodes the token and renders Tandem's own zone
+/// word + icon locally (never a rendered string on the wire), mirroring `ControllerVariant`. The five
+/// words themselves are Tandem's own labels (c) Tandem — never renamed, never a synthesized 6th word.
+///
+/// ⚠️ UNVERIFIED GUESS (see `docs/UNVERIFIED-GUESSES.md`): op-179's `ControlIQInfoV2Response.controlStateType`
+/// byte has no oracle-documented enum (the upstream jwoglom reference names it only `controlStateType`,
+/// no named constants). `fromControlStateType` below is a best-effort ordinal hypothesis — ascending with
+/// Tandem's own documented ~70/112.5/160/180 mg/dL predicted-glucose zone thresholds (stops < 70,
+/// decreases 70–112.5, maintains 112.5–160, increases 160–180, delivers > 180) — NOT a bench/capture-
+/// confirmed mapping. Any unmapped/out-of-range raw value returns `nil` (renders ABSENT everywhere, D-06
+/// guardrail #6/#13 fail-closed) rather than guessing wrong.
+public enum ControlIQZone: String, Sendable, Equatable, CaseIterable {
+    case increases = "increases"
+    case decreases = "decreases"
+    case maintains = "maintains"
+    case stops = "stops"
+    case delivers = "delivers"
+
+    /// Map the op-179 `ControlIQInfoV2Response.controlStateType` raw byte to a frozen wire token.
+    /// UNVERIFIED GUESS (see the enum doc comment) — any value outside the mapped 0...4 ordinal set
+    /// returns `nil`, never a synthesized word.
+    public static func fromControlStateType(_ raw: Int) -> ControlIQZone? {
+        switch raw {
+        case 0: return .stops
+        case 1: return .decreases
+        case 2: return .maintains
+        case 3: return .increases
+        case 4: return .delivers
+        default: return nil
+        }
+    }
 }
 
 /// The pump *model* identity, as typed data instead of a bare `isMobi` boolean threaded through the UI.

@@ -12,10 +12,13 @@ import DexcomG6Kit
 /// Requires the official Dexcom app installed and connected (it keeps the session alive). Local,
 /// no cloud. Its own `CBCentralManager` keeps it isolated from the pump.
 ///
-/// EXPERIMENTAL / unreliable: unlike the G7 (a true broadcaster), a G5/G6 delivers glucose only
-/// inside an *authenticated* session, and allows a limited number of BLE connections, so a passive
-/// third central often receives nothing or is refused outright. Prefer Dexcom Share (cloud) or the
-/// xDrip4iOS App Group as a robust failover; this source is best-effort.
+/// EXPERIMENTAL / validation-pending (D-14), not unreliable: a `LoopKit/CGMBLEKit`-mirror re-check
+/// (09.20-RESEARCH.md, "D-05 reliability re-check") found this mechanism — the official Dexcom app's
+/// own "Read from Dexcom app" (follow) mode — mandatory in xDrip4iOS's own Dexcom setup, with
+/// re-authentication happening every ~5-min cycle regardless of when the sensor was originally
+/// paired. The earlier "unreliable / passive third central" framing was walked back, not confirmed.
+/// The remaining "EXPERIMENTAL" marker means only that on-device UAT (D-13, `09.20-UAT.md`) hasn't run
+/// yet. Dexcom Share (cloud) or the xDrip4iOS App Group remain the other failover options.
 @MainActor
 final class DexcomG6BLESource: NSObject, GlucoseSource {
     let id = "dexcom-g6-ble"
@@ -28,34 +31,178 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
 
+    /// D-06: the ONE stable restore identifier used by the production instance
+    /// (`GlucoseSourceRegistry.makeSelected()`). Textually stable — a literal, never a timestamp/UUID
+    /// — so it survives relaunches unchanged (a requirement of CoreBluetooth state restoration).
+    static let productionRestoreIdentifier = "com.fabolus.cgm.dexcom-g6-ble"
+
+    /// Set at construction (nil for the ephemeral `CgmCredentialsView` "Test" instance,
+    /// `productionRestoreIdentifier` for the one production instance — see `GlucoseSourceRegistry`).
+    /// CoreBluetooth SIGABRTs (`-[CBCentralManager initWithDelegate:queue:options:]`) when the SAME
+    /// restore-identifier string is used by more than one live manager in the process, which is
+    /// exactly what happened when both the launch-selected source and the "test failover" button
+    /// built a G6 source with the same hardcoded identifier (D-06). Scoping it to the production
+    /// instance only — and reattaching via `willRestoreState` below — restores background failover
+    /// without reintroducing that crash.
+    private let restoreIdentifier: String?
+
+    init(restoreIdentifier: String? = nil) {
+        self.restoreIdentifier = restoreIdentifier
+        super.init()
+    }
+
+    /// Read-only accessor for the construction-time restore-identifier scoping test (D-06) — no live
+    /// `CBCentralManager` required.
+    var restoreIdentifierForTesting: String? { restoreIdentifier }
+
+    /// Sensor clock → wall clock anchor (D-08a). Set/refreshed whenever a `transmitterTimeRx`
+    /// (opcode 0x25) is passively observed: `activationDate = now - currentTime`. A glucose frame's
+    /// sensor-relative `timestamp` then converts via `activationDate.addingTimeInterval(timestamp)` —
+    /// this is CGMBLEKit's own proven technique (ported per the RESEARCH re-check), not a per-message
+    /// receipt-`Date()` stamp, which would read a delayed/batched frame as artificially fresh.
+    ///
+    /// **09.20-02 Task-1 sign-off (`reject-and-stable`, owner-authorized):** this anchor is held
+    /// STABLE per-connection — refreshed ONLY on a fresh `transmitterTimeRx`, NOT reset on every
+    /// glucose message the way `DexcomG7BLESource.handleGlucose` does. Confirmed as the deliberate,
+    /// permanent design (was provisional in Plan 01); recorded as an UNVERIFIED-GUESS pending D-13
+    /// on-device confirmation (`docs/UNVERIFIED-GUESSES.md` #9).
+    private var activationDate: Date?
+
+    /// Wall time this source began actively listening (set once, in `start()`) — backs the no-anchor
+    /// bound below. A test drives `ingest(controlFrame:)` directly without ever calling `start()`
+    /// (mirrors this file's own `ingest` test seam), so `setConnectedAtForTesting` lets it simulate
+    /// "connected for N minutes with no anchor ever observed".
+    private var connectedAt: Date?
+
+    /// Beyond this many seconds of age, an anchored date is decode/anchor-arithmetic-wrong, not a
+    /// genuinely old-but-real reading — ordinary staleness is `GlucoseFreshness`'s job (D-07, reused
+    /// here, not duplicated). Deliberately generous (24h) so it never fires on real staleness; it only
+    /// catches wildly wrong anchor math.
+    static let implausibleAgeBound: TimeInterval = 24 * 3600
+
+    /// No-anchor bound (Warning 1) — owner-adjustable, mirrors `GlucoseFreshness.staleAfter`'s
+    /// `static var` pattern rather than a literal buried in `handle()`. UNVERIFIED-GUESS: the
+    /// `transmitterTimeRx` (0x25) wire cadence was never established by the RESEARCH; default
+    /// ≈10 min = 2 assumed wake cycles (`docs/UNVERIFIED-GUESSES.md` #10). Beyond this, with STILL no
+    /// anchor ever observed, the source reports `.stale` rather than trusting any fallback-dated frame.
+    static var noAnchorBound: TimeInterval = 10 * 60
+
     /// Optional Dexcom transmitter ID (6 chars). Used only to pick the right transmitter by its
     /// advertised name suffix when several Dexcom sensors are in range; passive reads need no auth.
     private var transmitterID: String { (GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? "").uppercased() }
 
+    /// H-02: peripherals seen matching (with NO transmitter ID configured) during the current RSSI
+    /// collection window — cleared once a candidate is chosen (or `stop()` is called).
+    private var rssiCandidates: [(peripheral: CBPeripheral, rssi: Int)] = []
+    private var selectionTask: Task<Void, Never>?
+
+    /// H-02 collection window: once the FIRST Dexcom-advertising peripheral is seen with no
+    /// transmitter ID configured, wait this long for any OTHER real Dexcom transmitter simultaneously
+    /// in range (siblings, a clinic waiting room, a shared household with two T1D members) to also
+    /// advertise, so RSSI — not first-come-first-served — decides which one to connect to. Short
+    /// relative to the ~5-minute Dexcom wake/broadcast cycle, so it doesn't meaningfully delay the
+    /// common case (only one real sensor in range). Does not apply when a transmitter ID IS
+    /// configured — `matches()` already restricts to the exact suffix match in that case, so it
+    /// remains the primary disambiguator and connects immediately.
+    static let rssiCollectionWindow: TimeInterval = 3
+
     func start() async {
         guard central == nil else { return }
         status = .searching
-        // NO CBCentralManagerOptionRestoreIdentifierKey: CoreBluetooth asserts (SIGABRT in
-        // -[CBCentralManager initWithDelegate:queue:options:]) when a restore identifier is used by
-        // more than one manager in the process — which happens when the launch-selected source and
-        // the "test failover" both build a G6 source, and on restore relaunches. A passive failover
-        // source doesn't need background state restoration (it re-scans on start), so skip it.
-        central = CBCentralManager(delegate: self, queue: .main)
+        connectedAt = Date()
+        // D-06: pass CBCentralManagerOptionRestoreIdentifierKey ONLY when this instance was built
+        // with a restore identifier (the production instance — see `GlucoseSourceRegistry`). The
+        // ephemeral "Test" instance is built with `restoreIdentifier == nil` and gets no options at
+        // all, so the two never share a restore-identifier string (the SIGABRT this used to hit).
+        // Background relaunch then reattaches via `centralManager(_:willRestoreState:)` below, so the
+        // production instance re-arms for overnight failover instead of losing state restoration
+        // entirely.
+        var options: [String: Any]?
+        if let restoreIdentifier {
+            options = [CBCentralManagerOptionRestoreIdentifierKey: restoreIdentifier]
+        }
+        central = CBCentralManager(delegate: self, queue: .main, options: options)
     }
 
     func stop() {
         if let p = peripheral { central?.cancelPeripheralConnection(p) }
         central?.stopScan()
+        // H-02: don't let a pending RSSI-selection Task fire (and connect) after `stop()` — this is
+        // new state THIS fix introduced, so it's cleaned up here rather than left as a fresh leak on
+        // top of the pre-existing stop()/start() lifecycle gap tracked separately (W-02, deferred).
+        selectionTask?.cancel()
+        selectionTask = nil
+        rssiCandidates = []
         peripheral = nil
         status = .idle
         onChange?()
     }
 
+    /// Decodes a raw control-characteristic frame and routes it by opcode: a `transmitterTimeRx`
+    /// (0x25) refreshes the sensor-time anchor; a glucose frame (0x31/0x4f) is decoded and handled.
+    /// Internal + MainActor so tests can drive the decode path directly, without CoreBluetooth. The
+    /// CB delegate (`peripheral(_:didUpdateValueFor:)`) is a thin wrapper over this.
+    func ingest(controlFrame data: Data) {
+        guard !data.isEmpty else { return }
+        if data.starts(with: .transmitterTimeRx) {
+            // A corrupt/wrong-opcode time frame fails to decode and simply doesn't refresh the
+            // anchor — it must NOT fall through to a `GlucoseRxMessage` attempt (opcode mismatch
+            // would reject it anyway, but this keeps the routing explicit).
+            if let time = TransmitterTimeRxMessage(data: data) {
+                activationDate = Date(timeIntervalSinceNow: -TimeInterval(time.currentTime))
+            }
+            return
+        }
+        guard let msg = GlucoseRxMessage(data: data) else { return }
+        handle(msg)
+    }
+
     private func handle(_ msg: GlucoseRxMessage) {
-        guard msg.hasReliableGlucose else { status = .connected; onChange?(); return }
-        // Passive readings arrive in real time (~5 min), so stamp at receipt (the message timestamp
-        // is transmitter-relative and would need the activation date to convert).
-        let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: Date(),
+        // D-08b physiologic-range gate (decode-time, Task-1 sign-off `reject-and-stable`): a
+        // CRC-valid-but-out-of-[40,400]-or-unreliable frame is REJECTED, never clamped, and never
+        // becomes `latest`.
+        guard msg.hasPlausibleGlucose else { status = .connected; onChange?(); return }
+        guard let activationDate else {
+            // FAIL-CLOSED pre-anchor (D-08a/D-10, Warning 1 — finalized here): no sensor-time anchor
+            // has ever been observed, so this frame's true age is unknowable. Do NOT fall back to
+            // stamping `Date()` at receipt (that IS the hazard D-08a eliminates) and do NOT publish it
+            // as `latest` — the trusted bolus-calc input. A run of un-anchored frames never accumulates
+            // into a trusted reading (there is nothing here that could accumulate: this branch only
+            // ever leaves `latest` untouched). Once the source has been listening longer than
+            // `noAnchorBound` with STILL no anchor observed, flip to `.stale` so the UI stops implying
+            // "still trying" forever; below the bound, stay `.connected` (matches Plan 01's behavior).
+            if let connectedAt, Date().timeIntervalSince(connectedAt) > Self.noAnchorBound {
+                status = .stale
+            } else {
+                status = .connected
+            }
+            onChange?()
+            return
+        }
+        let date = activationDate.addingTimeInterval(TimeInterval(msg.glucose.timestamp))
+
+        // Implausible-age rejection (D-08a): more than `futureSkewTolerance` in the future, or more
+        // than `implausibleAgeBound` in the past, means decode/anchor arithmetic went wrong — not a
+        // genuinely old-but-real reading (ordinary staleness stays GlucoseFreshness's job, D-07, not
+        // duplicated here). Reject; `latest` stays unchanged.
+        let elapsed = Date().timeIntervalSince(date)
+        guard elapsed > -GlucoseFreshness.futureSkewTolerance, elapsed < Self.implausibleAgeBound else {
+            status = .connected
+            onChange?()
+            return
+        }
+
+        // NOTE (09.20-02, owner review): a rate-of-change (Δmg/dL ÷ Δt) rejection gate was implemented
+        // here and then REMOVED — no respected reference implementation rejects a CGM reading by
+        // rate-of-change (CGMBLEKit gates only on CRC + hasReliableGlucose + range; Loop's rate-of-
+        // change use is limited to Missed Meal Detection + trend display, never a rejection gate;
+        // xDrip4iOS's `maxSlopeInMinutes` is graph-slope windowing, not a rejection gate). It was
+        // ungrounded and risked rejecting a genuine fast excursion, failing over to pump-only when the
+        // failover reading was in fact the more correct one. Delayed/batched frames are still caught by
+        // the implausible-age gate above and by the existing GlucoseFreshness/CalcInputFreshness
+        // staleness policy downstream (D-07) — not duplicated here.
+
+        let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
                                    trend: Self.trend(msg.trendDirection), sourceID: id)
         latest = sample
         var byBucket: [Int: GlucoseReading] = [:]
@@ -65,6 +212,11 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         status = .connected
         onChange?()
     }
+
+    /// Test seam: overrides `connectedAt` directly, mirroring `TandemBackend`'s `set...ForTesting`
+    /// pattern — lets a test simulate "connected for N minutes with no anchor ever observed" without a
+    /// real timer.
+    func setConnectedAtForTesting(_ date: Date) { connectedAt = date }
 
     // C8: `.flat` is a *reported* steady slope (|rate| < 1 mg/dL/min) and keeps its arrow; `nil` means
     // the transmitter sent the "unavailable" sentinel (0x7f) so `trendRateMgDlPerMin` is nil — no
@@ -91,6 +243,45 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
 
 // CoreBluetooth callbacks run on `queue: .main`; `MainActor.assumeIsolated` hops into the main actor.
 extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
+    /// D-06 completion: background relaunch reattachment, mirroring `faBolusCore/BLELink.swift`'s
+    /// central-role `willRestoreState` — reattach the delegate on the restored peripheral (and
+    /// re-issue `connect` if CoreBluetooth hasn't already re-established the link) so the production
+    /// instance re-arms without waiting for a fresh scan. Only ever fires for the production instance
+    /// (the Test instance is built with no restore identifier, so CoreBluetooth never restores state
+    /// for it). Never touches the auth/control characteristics — read-only, same as every other path
+    /// in this source (D-12a).
+    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        // Pull the restored peripheral out here, same as `didDiscover`'s `advName` extraction above:
+        // the non-Sendable `[String: Any]` dict itself must not cross into the main-actor closure.
+        // `nonisolated(unsafe)` (an existing pattern in this codebase, e.g. `BolusPasscode.swift`) is
+        // safe here: CoreBluetooth invokes this delegate callback on `queue: .main` (see `start()`),
+        // so there is no actual concurrent access — only the strict-concurrency checker's Sendable
+        // requirement on `[CBPeripheral]` (unmet because `CBPeripheral` predates Sendable) to satisfy.
+        nonisolated(unsafe) let restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]
+        MainActor.assumeIsolated {
+            guard let restored = restoredPeripherals?.first else { return }
+            peripheral = restored
+            restored.delegate = self
+            if restored.state == .connected {
+                // H-01: do NOT rely on `centralManagerDidUpdateState`'s separate cold-join
+                // (`retrieveConnectedPeripherals`) side effect to force a fresh discovery/subscribe
+                // cycle here. A relaunched process has a brand-new `DexcomG6BLESource` instance with no
+                // in-memory record of previously-discovered characteristics or notify subscriptions —
+                // CoreBluetooth's restoration guarantee covers the *peripheral object and raw link
+                // state*, not the fresh delegate's own notify subscriptions (09.20-RESEARCH.md
+                // ~468-481). Force re-discovery ourselves, exactly mirroring the cold-join path's own
+                // defensive `central.connect(existing)` for the identical already-connected ambiguity.
+                // Passive read-only (D-12a): only discoverServices → discoverCharacteristics →
+                // setNotifyValue follow from this, never a characteristic write. Final confirmation
+                // that a reading actually arrives after this branch fires is the D-13 on-device
+                // backgrounded-failover UAT (09.20-UAT.md).
+                restored.discoverServices([TransmitterServiceUUID.cgmService.cbUUID])
+            } else {
+                central.connect(restored)
+            }
+        }
+    }
+
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {
             guard central.state == .poweredOn else { status = .searching; onChange?(); return }
@@ -110,13 +301,60 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
         // Pull the advertised name out here so the non-Sendable [String: Any] isn't sent into the
         // main-actor closure (Swift 6).
         let advName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let rssiValue = RSSI.intValue
         MainActor.assumeIsolated {
             guard self.peripheral == nil, matches(peripheral, advName: advName) else { return }
-            self.peripheral = peripheral
-            peripheral.delegate = self
-            central.stopScan()
-            central.connect(peripheral)
+            guard transmitterID.count < 2 else {
+                // H-02: a transmitter ID IS configured and `matches()` already restricted to the
+                // exact suffix match above — it's already the primary disambiguator, so connect
+                // immediately, no RSSI collection window needed.
+                self.peripheral = peripheral
+                peripheral.delegate = self
+                central.stopScan()
+                central.connect(peripheral)
+                return
+            }
+            // H-02: no transmitter ID configured — `matches()` accepted ANY Dexcom-advertising
+            // peripheral. Rather than latch onto whichever one answers first, collect briefly and let
+            // RSSI (strongest/nearest) decide. `stopScan()` is deliberately deferred to
+            // `connectStrongestRSSICandidate()` below so other real transmitters get a chance to be seen.
+            if !rssiCandidates.contains(where: { $0.peripheral.identifier == peripheral.identifier }) {
+                rssiCandidates.append((peripheral, rssiValue))
+            }
+            if selectionTask == nil {
+                selectionTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(Self.rssiCollectionWindow * 1_000_000_000))
+                    self?.connectStrongestRSSICandidate()
+                }
+            }
         }
+    }
+
+    /// H-02: after the RSSI collection window elapses, connect to whichever candidate reported the
+    /// strongest signal (nearest transmitter) — see `strongestCandidateIndex` for the pure selection
+    /// logic. A no-op if something else already claimed `peripheral` in the meantime (e.g. a
+    /// transmitter-ID exact match, or `stop()` having already run).
+    private func connectStrongestRSSICandidate() {
+        selectionTask = nil
+        defer { rssiCandidates = [] }
+        guard peripheral == nil, let index = Self.strongestCandidateIndex(rssiCandidates.map(\.rssi)) else { return }
+        let chosen = rssiCandidates[index].peripheral
+        peripheral = chosen
+        chosen.delegate = self
+        central?.stopScan()
+        central?.connect(chosen)
+    }
+
+    /// Pure selection logic (H-02) — deliberately decoupled from `CBPeripheral` (which can't be
+    /// constructed outside CoreBluetooth) so it's directly unit-testable. CoreBluetooth RSSI is a
+    /// negative dBm value; closer to 0 means a stronger/nearer signal, so the numerically-highest
+    /// value wins. Ties keep the first-seen index (only replaced on a STRICTLY stronger reading),
+    /// since `rssiCandidates` preserves discovery order.
+    static func strongestCandidateIndex(_ rssiValues: [Int]) -> Int? {
+        guard !rssiValues.isEmpty else { return nil }
+        var bestIndex = 0
+        for i in rssiValues.indices where rssiValues[i] > rssiValues[bestIndex] { bestIndex = i }
+        return bestIndex
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -175,9 +413,8 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
                                 error: Error?) {
         MainActor.assumeIsolated {
             guard let data = characteristic.value, !data.isEmpty,
-                  characteristic.uuid == CGMServiceCharacteristicUUID.control.cbUUID,
-                  let msg = GlucoseRxMessage(data: data) else { return }
-            handle(msg)
+                  characteristic.uuid == CGMServiceCharacteristicUUID.control.cbUUID else { return }
+            ingest(controlFrame: data)
         }
     }
 }

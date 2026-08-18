@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import faBolusCore
 import faBolusDesign
 
@@ -9,6 +10,9 @@ struct BolusEntryView: View {
     let model: AppModel
     var embedded: Bool = false
     @Environment(\.dismiss) private var dismiss
+    // Phase 09.17-04 (D-04, UI-SPEC §4): read live via @Environment (never cached in @State — UI-SPEC
+    // §6 — so rotation/Split-View resize re-triggers the cap correctly).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var settings = AppSettings.shared
 
     @State private var mode: BolusMode = .carbs
@@ -21,7 +25,16 @@ struct BolusEntryView: View {
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
+    // Phase 09.4 D-04/D-05/D-06: the transient, truthful bolus-success confirmation. Set ONLY from the
+    // model's ALREADY-resolved outcome (`deliverFrozen` for the sync path, the `.onChange(of:
+    // model.pendingApproval)` handler below for the async remote-approval path) — this view never
+    // computes a delivery outcome itself (D-08).
+    @State private var successBanner: BolusSuccessBanner?
     @State private var showReasoning = false
+    // 09.18c-01 (D-12): presents the FoodFinder carb-estimate surface. Its ONLY effect on this screen is
+    // the `onApplyGrams` callback writing a grams string into `carbsText` (below) — no calc, units, or
+    // delivery. The existing `.onChange(of: carbsText)` then runs the user-driven recommendation.
+    @State private var showFoodFinder = false
     // Extended (combo) bolus
     @State private var extendedOn = false
     @State private var extendedDurationMin = 120
@@ -190,6 +203,26 @@ struct BolusEntryView: View {
                                                 controllerEnabled: model.snapshot.controlIQEnabled,
                                                 glucoseMgdl: model.snapshot.glucose,
                                                 trend: GlucoseTrend(rawValue: model.snapshot.trend))
+    }
+    /// T1-5 (D-01, D-07, D-08): the 60-min lockout countdown FRACTION, or nil — gated on Settings'
+    /// `ciqLockoutCountdownEnabled` (ON by default). Pure `faBolusCore` fraction fn, reading the pump's
+    /// OWN `lastAutoCorrectionDate` (this device already has it, unlike a remote — no epoch round-trip
+    /// needed here). **This is a fraction, NEVER a dose/units value** (D-06 guardrail #1); NEVER gates,
+    /// changes, or delays delivery. `nil` when the toggle is off, there's no known auto-correction, or
+    /// the lockout has already expired (fail-closed — SP-5).
+    private var lockoutCountdownFraction: Double? {
+        guard settings.ciqLockoutCountdownEnabled else { return nil }
+        return AutoCorrectionDisclosure.lockoutRemainingFraction(
+            descriptor: model.snapshot.controllerDescriptor,
+            controllerEnabled: model.snapshot.controlIQEnabled,
+            lockoutStartDate: model.snapshot.lastAutoCorrectionDate,
+            now: Date())
+    }
+    /// The "available at {time}" instant the countdown bar's trailing label + VoiceOver read — nil
+    /// exactly when `lockoutCountdownFraction` is (a bar is never shown without a time, or vice versa).
+    private var lockoutAvailableAt: Date? {
+        guard lockoutCountdownFraction != nil else { return nil }
+        return model.snapshot.lockoutUntilDate
     }
     /// SG1: the calc-override disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's OWN
     /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery;
@@ -421,7 +454,24 @@ struct BolusEntryView: View {
         )
     }
 
+    // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `formContent` (the UNCHANGED Form +
+    // its full modifier chain below) at the shared readable-content width and center it (the
+    // double-frame idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today
+    // (D-06a). This is a pure presentation wrapper: `formContent` itself, the GeometryReader-relative
+    // `LockoutCountdownBarView` bar, and every delivery/gating/confirm/friction path are untouched.
     private var content: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                formContent
+                    .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth, alignment: .top)
+                    .frame(maxWidth: .infinity)
+            } else {
+                formContent
+            }
+        }
+    }
+
+    private var formContent: some View {
         Form {
             // Carbs entry only when the active backend supports the pump's bolus calculator.
             if model.capabilities.supportsCarbEntry {
@@ -468,6 +518,15 @@ struct BolusEntryView: View {
                             .font(.caption)
                             .foregroundStyle(stale ? .orange : .secondary)
                     }
+                    // 09.18c-01 (D-12/D-13): non-destructive entry point to the FoodFinder carb estimator.
+                    // A plain tap-only row (no hardware-key binding — the D-08 dose-surface guard must stay
+                    // green); it only presents a sheet.
+                    Button {
+                        showFoodFinder = true
+                    } label: {
+                        Label("Find food", systemImage: "magnifyingglass")
+                    }
+                    .accessibilityHint("Search a food to estimate carbs and add them to the carb field")
                 }
                 if let rec = recommendation {
                     Section("Recommended") {
@@ -517,6 +576,15 @@ struct BolusEntryView: View {
                         .accessibilityLabel("Cancel bolus")
                     }
                 } else {
+                    // T1-5 (D-06 "never adjacent to a dose CTA"): the countdown bar renders FIRST in
+                    // this disclosure block, ABOVE the amount entry — the SAME visual separation from
+                    // the Deliver button `autoCorrectionAmbient`/`autoCorrectionLockout` already have
+                    // (both render in the warnings list below, well before the Deliver button), only
+                    // MORE separated (it's now the very first row in the section). Fail-closed: nil
+                    // fraction ⇒ no bar at all.
+                    if let fraction = lockoutCountdownFraction, let availableAt = lockoutAvailableAt {
+                        LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
+                    }
                     HStack(spacing: 6) {
                         // Enlarged tap target (see the carbs field) — visuals unchanged.
                         HStack(spacing: 6) {
@@ -601,8 +669,27 @@ struct BolusEntryView: View {
                 }
             }
         }
+        // Phase 09.4 D-06: a floating top toast, NOT a Form Section — it never permanently consumes
+        // Form space. `.overlay` (not a sibling in a ZStack) so it draws above the Form without
+        // affecting its layout.
+        .overlay(alignment: .top) {
+            if let banner = successBanner {
+                BolusSuccessBannerView(banner: banner)
+                    .padding(.horizontal)
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
+        // 09.18c-01 (D-12): the FoodFinder carb-estimate surface. The callback body is the ENTIRE seam —
+        // assign the confirmed grams string into `carbsText`. No `calculate()` here (the existing
+        // `.onChange(of: carbsText)` runs it), no units pre-fill, no CarbStore, no delivery.
+        .sheet(isPresented: $showFoodFinder) {
+            NavigationStack {
+                FoodFinderView(onApplyGrams: { grams in carbsText = String(grams) })
+            }
+        }
         // N12 (Dynamic Type): scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         .onAppear {
@@ -646,6 +733,17 @@ struct BolusEntryView: View {
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
         .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
+        // Phase 09.4 D-05: the async remote-approval resolution. A staged bolus (`pendingApproval !=
+        // nil`) resolves LATER via `resolveRemoteApproval` — approved (→ actually delivers, `lastError
+        // == nil`) or rejected/timed-out (→ `lastError` set). Only a non-nil→nil transition is a
+        // resolution; `oldValue` still carries the resolved request's units (the request that JUST
+        // stopped being pending), so the truthful confirmation uses the SAME frozen amount that was
+        // staged — never a false "delivered" at the initial staging moment, never on rejection/timeout.
+        .onChange(of: model.pendingApproval) { oldValue, newValue in
+            guard let resolved = oldValue, newValue == nil else { return }
+            let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
+            present(BolusConfirmation.banner(for: signal, units: resolved.units))
+        }
         // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
         // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
         // actually aging (>90 s); otherwise the app-wide predictive poll has already refreshed it, so
@@ -1103,7 +1201,39 @@ struct BolusEntryView: View {
             await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         }
         delivering = false
+        // Phase 09.4 D-04/D-06: the sync-path confirmation, computed from the model's ALREADY-updated
+        // state right after the delivery call returns. `deliverBolus`/`deliverExtendedBolus` return
+        // having staged a `pendingApproval` for the child-mode reverse-approval path — that resolves
+        // LATER, via the `.onChange(of: model.pendingApproval)` handler above, not here (D-05).
+        let extended: BolusConfirmation.ExtendedDetail? = f.extendedNow.map {
+            BolusConfirmation.ExtendedDetail(nowUnits: $0, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
+        }
+        present(BolusConfirmation.banner(for: confirmationSignal(), units: f.units, extended: extended))
         finishDelivery()
+    }
+
+    /// The outcome `Signal` for a JUST-COMPLETED delivery attempt, read from the model's own
+    /// already-updated state — a pure read, never a delivery decision (D-08).
+    private func confirmationSignal() -> BolusConfirmation.Signal {
+        if model.pendingApproval != nil { return .staged }
+        return model.lastError == nil ? .delivered : .failed
+    }
+
+    /// Present `banner` (if non-nil — `.staged`/`.failed` never call this with a value) as the floating
+    /// top toast, post the accessibility backstop announcement, and auto-dismiss after ~4s (extended to
+    /// ~6s while VoiceOver is running, so a user whose focus is elsewhere doesn't miss a short-lived
+    /// toast — 09.4-UI-SPEC "accessibility (transient content)").
+    private func present(_ banner: BolusSuccessBanner?) {
+        guard let banner else { return }
+        withAnimation(.easeInOut) { successBanner = banner }
+        AccessibilityNotification.Announcement("\(banner.primary), \(banner.secondary)").post()
+        let dwellSeconds: UInt64 = UIAccessibility.isVoiceOverRunning ? 6 : 4
+        Task {
+            try? await Task.sleep(nanoseconds: dwellSeconds * 1_000_000_000)
+            if successBanner == banner {
+                withAnimation(.easeInOut) { successBanner = nil }
+            }
+        }
     }
 
     private func finishDelivery() {
@@ -1121,5 +1251,51 @@ private extension View {
     /// unchanged; only accessibility sizes let the field grow.
     @ViewBuilder func compactFixedSize(_ isAccessibility: Bool) -> some View {
         if isAccessibility { self } else { self.fixedSize() }
+    }
+}
+
+/// T1-5 — the 60-min auto-correction lockout COUNTDOWN bar: a linear TIME-FILL capsule (fraction =
+/// elapsed/window, filling UP toward 1.0 as availability returns — NEVER a draining battery). Flat
+/// `AppTheme.insulin` fill on a `.quaternary` track, single tone regardless of fraction — **never
+/// red/amber near completion** (D-06 explicit gauge-neutrality rule: a neutral status readout, not an
+/// alarm). Copy verbatim from the UI-SPEC Copywriting Contract; VoiceOver includes minutes remaining.
+/// Shared by `BolusEntryView`/`MainHUDView` (same app target, no import needed) and mirrored in spirit
+/// by `MacComponents.swift`'s own SwiftUI-native bar (a distinct target, can't share this struct).
+struct LockoutCountdownBarView: View {
+    let fraction: Double
+    let availableAt: Date
+
+    /// The Copywriting Contract's "fresh-fired state (0 min elapsed)" — approximated as "under one
+    /// window-minute elapsed" without needing the caller to pass the window separately.
+    private var justFired: Bool { fraction < 0.02 }
+    private var minutesRemaining: Int {
+        max(0, Int((availableAt.timeIntervalSinceNow / 60).rounded(.up)))
+    }
+    private var timeLabel: String { availableAt.formatted(date: .omitted, time: .shortened) }
+    private var clampedFraction: Double { min(max(fraction, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if justFired {
+                Text("Just paused — next correction available at \(timeLabel)")
+                    .font(.caption)
+            } else {
+                HStack {
+                    Text("Control-IQ's next automatic correction").font(.caption)
+                    Spacer()
+                    Text("available at \(timeLabel)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(AppTheme.insulin)
+                        .frame(width: geo.size.width * CGFloat(clampedFraction))
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Control-IQ's next automatic correction available at \(timeLabel), \(minutesRemaining) minutes remaining")
     }
 }

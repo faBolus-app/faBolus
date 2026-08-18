@@ -5,7 +5,16 @@ import Foundation
 /// specific pump library — mirroring how `PumpAlert` abstracts notifications.
 public struct HistoryEvent: Identifiable, Sendable, Equatable {
     public enum Category: String, Sendable, CaseIterable {
-        case bolus, carbs, bg, basal, tempRate, mode, cartridge, alarm, alert, reminder, pumping, other
+        case bolus, carbs, bg, basal, tempRate, mode, cartridge, alarm, alert, reminder, pumping
+        /// Phase 09.15 T1-3 (D-01) — "Control-IQ auto-corrected" (`bolusSource == 7`, a decoded-but-
+        /// previously-dropped `BolusDeliveryHistoryLog` fact). Display-only, never a dose input (C3).
+        case autoCorrection
+        /// Phase 09.15 T1-4 (D-01) — "Control-IQ tried and couldn't deliver an automatic correction"
+        /// (`AaAutoBolusRejectedHistoryLog`/`CorrectionDeclinedHistoryLog`, decoded+registered but
+        /// previously dropped). Never speculates WHY (D-06 guardrail #6). Rendered amber (never red —
+        /// informational, not an alarm), distinctly from `.alarm`'s red-adjacent severity.
+        case couldNotDeliver
+        case other
 
         /// SF Symbol for the row icon.
         public var symbol: String {
@@ -21,6 +30,9 @@ public struct HistoryEvent: Identifiable, Sendable, Equatable {
             case .alert: return "bell.fill"
             case .reminder: return "bell.badge"
             case .pumping: return "pause.circle.fill"
+            case .autoCorrection: return "bolt.circle.fill"
+            // Non-filled + amber (never red, never the alarm glyph) — informational, not an alarm.
+            case .couldNotDeliver: return "exclamationmark.triangle"
             case .other: return "circle.fill"
             }
         }

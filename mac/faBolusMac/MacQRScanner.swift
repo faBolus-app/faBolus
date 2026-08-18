@@ -1,9 +1,65 @@
 import SwiftUI
 import AVFoundation
+import AppKit
+import faBolusDesign
 
 /// A minimal macOS webcam QR scanner. Calls `onScan` once with the first decoded string. Requires the
 /// camera entitlement + `NSCameraUsageDescription`. Used to scan the host iPhone's pairing QR.
-struct MacQRScanner: NSViewControllerRepresentable {
+///
+/// Branches on this Mac's own camera authorization (Phase 09.4, D-09/D-10) instead of silently falling
+/// back to a black view: `.denied`/`.restricted` and "no camera hardware" both render the shared
+/// `CameraPermissionFallbackView`; `.notDetermined` requests access and shows the real scanner only if
+/// granted; `.authorized` renders the real scanner directly. Supplies no Cancel of its own — the caller's
+/// standalone Cancel button (`MacSettingsView.swift`'s `MacPairWindowView`) still owns dismissal, and this
+/// view renders inside the existing fixed 360x360 slot.
+struct MacQRScanner: View {
+    let onScan: (String) -> Void
+
+    @State private var authStatus = AVCaptureDevice.authorizationStatus(for: .video)
+
+    var body: some View {
+        Group {
+            switch authStatus {
+            case .denied, .restricted:
+                deniedFallback
+            case .authorized:
+                if AVCaptureDevice.default(for: .video) == nil {
+                    CameraPermissionFallbackView(state: .noCamera)
+                } else {
+                    MacQRScannerRepresentable(onScan: onScan)
+                }
+            case .notDetermined:
+                // Requesting re-queries `authorizationStatus` on completion, which resolves to either
+                // `.authorized` (representable renders next pass) or `.denied` (fallback renders next
+                // pass) — never stays `.notDetermined` once the system prompt has been answered.
+                Color.clear.onAppear { requestAccess() }
+            @unknown default:
+                deniedFallback
+            }
+        }
+    }
+
+    private var deniedFallback: some View {
+        CameraPermissionFallbackView(state: .denied) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    private func requestAccess() {
+        AVCaptureDevice.requestAccess(for: .video) { _ in
+            DispatchQueue.main.async {
+                authStatus = AVCaptureDevice.authorizationStatus(for: .video)
+            }
+        }
+    }
+}
+
+/// The actual camera-capture representable — behavior byte-identical to the pre-09.4-03
+/// `MacQRScanner`, just renamed so the SwiftUI wrapper above can branch to either it or the shared
+/// permission-fallback view.
+struct MacQRScannerRepresentable: NSViewControllerRepresentable {
     let onScan: (String) -> Void
 
     func makeNSViewController(context: Context) -> ScannerVC {

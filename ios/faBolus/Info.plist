@@ -69,9 +69,9 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote.</string>
+	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable.</string>
+	<string>faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable. faBolus may also read your heart rate to show it as optional chart context in the glucose detail readout — heart rate is never used for dosing.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default.</string>
 	<key>NSSupportsLiveActivities</key>

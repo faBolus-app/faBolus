@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Advanced pump control (Workstream B3). Reachable only when `model.advancedControlAllowed`
 /// (opt-in "Advanced control" ON + a Mobi pump + backend capability). Insulin-affecting actions
@@ -7,11 +8,25 @@ import faBolusCore
 /// commands must be bench-validated on saline before being relied upon.
 struct PumpControlView: View {
     @Bindable var model: AppModel
+    // Phase 09.17-04 (D-04, UI-SPEC §4): read live via @Environment (never cached in @State — UI-SPEC
+    // §6 — so rotation/Split-View resize re-triggers the cap correctly).
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var confirm: PendingAction?
     @State private var tempPercent: Double = 100
     @State private var tempDurationMin: Int = 60
     @State private var busy = false
     @State private var showClinicianTierAck = false
+    /// Phase 09.15 T1-8 (D-03(v)) — the feature-specific one-time explainer, shown the first time the
+    /// readout below actually becomes visible (opt-in toggle just turned on). Mirrors `showClinicianTierAck`'s
+    /// exact idiom in this same file. SEPARATE from the generic D-07 Smart-Assist explainer.
+    @State private var showMaxBasalNotice = false
+    /// Phase 09.15 T2-3 (D-04) — state for the Control-IQ+-only temp-rate PLACEHOLDER below. Deliberately
+    /// separate from `tempPercent`/`tempDurationMin` above (the classic, CIQ-off temp-basal section) even
+    /// though the underlying write is the same request shape — this is a distinct, capability-scoped entry
+    /// point that stays render-absent (and therefore untouched) while `CiqPlusTempRate.benchVerifiedDefault`
+    /// is `false`.
+    @State private var ciqPlusTempPercent: Double = 100
+    @State private var ciqPlusTempDurationMin: Int = 60
 
     private struct PendingAction: Identifiable {
         let id = UUID()
@@ -31,7 +46,39 @@ struct PumpControlView: View {
         caps.supportsLimits || caps.supportsControlIQSettings || caps.supportsProfiles
     }
 
+    /// Phase 09.15 T1-8 (D-03, SP-5 fail-closed): the "% of your configured max basal rate" readout, or
+    /// `nil` when it must render ABSENT (not zero/dash) — the Smart-Assist toggle is off, the pump isn't
+    /// currently connected (the only per-field freshness signal available for `basalRateUnitsPerHour`/
+    /// `maxBasalUnitsPerHour` today — neither carries its own read-timestamp, unlike IOB/therapy), or
+    /// `maxBasalUnitsPerHour == 0` (unread/unknown max, `MaxBasalFraction`'s own fail-closed guard).
+    private var maxBasalReadout: (headline: String, detail: String, fraction: Double)? {
+        guard AppSettings.shared.ciqMaxBasalReadoutEnabled, model.pumpReady,
+              let f = MaxBasalFraction.fraction(currentUnitsPerHour: model.snapshot.basalRateUnitsPerHour,
+                                                maxUnitsPerHour: model.snapshot.maxBasalUnitsPerHour),
+              let label = MaxBasalFraction.label(currentUnitsPerHour: model.snapshot.basalRateUnitsPerHour,
+                                                 maxUnitsPerHour: model.snapshot.maxBasalUnitsPerHour)
+        else { return nil }
+        return (label.headline, label.detail, f)
+    }
+
+    // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `content` (the UNCHANGED Form + its
+    // full modifier chain below) at the shared readable-content width and center it (the double-frame
+    // idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today (D-06a). This
+    // is a pure presentation wrapper: `content` itself, the GeometryReader-relative
+    // `MaxBasalReadoutView` bar, and every pump-control action path are untouched.
     var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                content
+                    .frame(maxWidth: AppTheme.iPadReadableContentMaxWidth, alignment: .top)
+                    .frame(maxWidth: .infinity)
+            } else {
+                content
+            }
+        }
+    }
+
+    private var content: some View {
         Form {
             if !model.pumpReady {
                 Section {
@@ -98,6 +145,46 @@ struct PumpControlView: View {
                 }
             }
 
+            // Phase 09.15 T2-3 (D-04) — a Control-IQ+-only manual temp-rate option, currently a
+            // BENCH-GATED PLACEHOLDER: render-absent (not merely disabled/greyed, D-05) unless ALL THREE
+            // guard conditions hold — the Phase-11 saline bench has confirmed the write
+            // (`CiqPlusTempRate.benchVerifiedDefault`), the connected pump's controller is Control-IQ+
+            // (never classic Control-IQ or no-controller), and the user has opted in
+            // (`ciqPlusTempRateEnabled`, default OFF, D-07). While `benchVerifiedDefault == false` (today,
+            // always) this entire section compiles out of the tree — nothing here is reachable. Phone-only:
+            // no Mac/Watch/Garmin/widget surface exposes this pump-settings write.
+            if CiqPlusTempRate.benchVerifiedDefault
+                && model.snapshot.controllerVariant == .controlIQPro
+                && AppSettings.shared.ciqPlusTempRateEnabled {
+                Section {
+                    VStack(alignment: .leading) {
+                        Text("Rate: \(Int(ciqPlusTempPercent))% of basal").font(.subheadline)
+                        Slider(value: $ciqPlusTempPercent,
+                               in: Double(PumpControlBounds.tempRateMinPercent)...Double(PumpControlBounds.tempRateMaxPercent),
+                               step: 5)
+                    }
+                    Picker("Duration", selection: $ciqPlusTempDurationMin) {
+                        ForEach([30, 60, 120, 180, 240], id: \.self) { Text("\($0 / 60 == 0 ? "\($0) min" : "\($0 / 60) h")").tag($0) }
+                    }
+                    Button {
+                        // T2-3 Copywriting Contract, verbatim (c) Tandem — never "override the ceiling".
+                        ask("Set a temporary basal rate?",
+                            "\(Int(ciqPlusTempPercent))% for \(ciqPlusTempDurationMin) min. Control-IQ+ continues to modulate on top of this rate.",
+                            destructive: true) {
+                            await model.setTempBasal(percent: Int(ciqPlusTempPercent), durationMinutes: ciqPlusTempDurationMin)
+                        }
+                    } label: { Label("Set a temporary basal rate", systemImage: "timer") }
+                } header: {
+                    Text("Control-IQ+ temp rate")
+                } footer: {
+                    // T2-3 Copywriting Contract, verbatim (c) Tandem — a manual tool for managing a
+                    // short-term glucose challenge, NEVER framed as "Control-IQ is maxed → set a temp
+                    // rate" (D-04).
+                    Text("Available on Control-IQ+ — manage a short-term glucose challenge without turning off "
+                         + "automation. Control-IQ+ continues to modulate on top of this rate.")
+                }
+            }
+
             if caps.supportsModes {
                 Section {
                     Text("Current: \(modeName(model.snapshot.controlIQMode))").font(.subheadline).foregroundStyle(.secondary)
@@ -147,6 +234,22 @@ struct PumpControlView: View {
                         Label("Delivery limits", systemImage: "slider.horizontal.3")
                     }
                 } header: { Text("Limits") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
+            }
+
+            // Phase 09.15 T1-8 (D-03): faBolus's OWN "% of your configured max basal rate" readout — a
+            // cap on ALL basal delivery, NEVER a Control-IQ/auto-bolus figure. Placed here, next to the
+            // "Limits" section that already owns `setMaxBasal` (max-basal-adjacent settings), and
+            // physically separated from every bolus/correction surface on this screen (D-03(iii) — this
+            // whole view has no bolus-entry control at all). Opt-in (default OFF, D-07); render-absent
+            // (not zero/dash) whenever `maxBasalReadout` is nil — never disabled-but-visible.
+            if let readout = maxBasalReadout {
+                Section {
+                    MaxBasalReadoutView(headline: readout.headline, detail: readout.detail, fraction: readout.fraction)
+                } header: {
+                    Text("Basal rate")
+                } footer: {
+                    Text("faBolus's own reading of your pump's configured maximum basal rate — a safety cap on ALL basal delivery, not a Control-IQ figure.")
+                }
             }
 
             if caps.supportsTimeSync {
@@ -206,11 +309,26 @@ struct PumpControlView: View {
             if !AppSettings.shared.hasAcknowledgedClinicianTier && hasClinicianTierSection {
                 showClinicianTierAck = true
             }
+            // Phase 09.15 T1-8 (D-03(v)): the feature-specific one-time explainer, shown the first time
+            // the readout above is actually visible on screen — never on a toggle that's off, and never
+            // more than once ever (persisted via `hasAcknowledgedMaxBasalNotice`, same idiom as
+            // `hasAcknowledgedClinicianTier` just above). SEPARATE from the generic D-07 Smart-Assist
+            // explainer — this one is required IN ADDITION to it.
+            if maxBasalReadout != nil && !AppSettings.shared.hasAcknowledgedMaxBasalNotice {
+                showMaxBasalNotice = true
+            }
         }
         .alert("Clinician-tier settings", isPresented: $showClinicianTierAck) {
             Button("I understand") { AppSettings.shared.acknowledgeClinicianTier() }
         } message: {
             Text(ClinicianTierAck.disclosure)
+        }
+        .alert("About the basal rate readout", isPresented: $showMaxBasalNotice) {
+            Button("I understand") { AppSettings.shared.acknowledgeMaxBasalNotice() }
+        } message: {
+            Text("This is faBolus's own reading of your pump's configured maximum basal rate — a safety "
+                 + "cap on ALL basal delivery. It is not a Control-IQ or auto-bolus figure, and Tandem does "
+                 + "not ship this gauge; faBolus computed it from your pump's own settings.")
         }
         // Gate every action (and the NavigationLinks into the wizards) on a live pump connection.
         .disabled(busy || !model.pumpReady)
@@ -230,4 +348,34 @@ struct PumpControlView: View {
         Task { busy = true; await action.run(); busy = false }
     }
     private func modeName(_ m: Int) -> String { m == 1 ? "Sleep" : m == 2 ? "Exercise" : "Normal" }
+}
+
+/// Phase 09.15 T1-8 (D-03) — the honest "% of your configured max basal rate" readout. Same neutral bar
+/// family as `LockoutCountdownBarView` (flat `AppTheme.insulin` fill on a `.quaternary` track, never
+/// banded by %, D-06 gauge-neutrality) — but this is a STATIC current/max fraction, not a time-fill
+/// countdown. `headline`/`detail` are the D-03(i)/(ii) LOCKED wording from `MaxBasalFraction.label`; this
+/// view never re-derives or reformats the string, so a future copy edit has exactly one place to change.
+private struct MaxBasalReadoutView: View {
+    let headline: String
+    let detail: String
+    let fraction: Double
+
+    private var clampedFraction: Double { min(max(fraction, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(headline).font(.subheadline)
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(AppTheme.insulin)
+                        .frame(width: geo.size.width * CGFloat(clampedFraction))
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(headline). \(detail)")
+    }
 }

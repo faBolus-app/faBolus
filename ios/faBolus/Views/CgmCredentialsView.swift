@@ -25,9 +25,6 @@ struct CgmCredentialsView: View {
     // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
     @State private var g6TransmitterID = ""
 
-    @State private var testing = false
-    @State private var results: [SourceResult] = []
-
     /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
     /// "Test <name>" button label and the empty-state guidance.
     private var selectedSourceName: String? {
@@ -43,15 +40,71 @@ struct CgmCredentialsView: View {
         return [id]
     }
 
-    /// One method's save-&-test outcome, shown in the results list.
-    private struct SourceResult: Identifiable {
-        enum Status { case ok, warn, fail }
-        let id: String
-        let name: String
-        let status: Status
-        let detail: String
-        var symbol: String { status == .ok ? "checkmark.circle.fill" : status == .warn ? "exclamationmark.triangle.fill" : "xmark.circle.fill" }
-        var color: Color { status == .ok ? .green : status == .warn ? .orange : .red }
+    // MARK: - Test flow (change 3, D-13 UX): determinate, observes the live production source
+
+    /// Outcome of observing the selected source's live production probe (`AppModel.
+    /// glucoseSourceProbe`) for the "Test" flow — DETERMINATE: the caller (`AppModel.startCgmTest`)
+    /// polls elapsed time on a timer and re-evaluates, rather than an indeterminate spinner.
+    /// `.success` when a reading is already buffered — an already-buffered reading always wins, even
+    /// past the timeout, so a late poll tick can never downgrade a real result to a timeout. `.timeout`
+    /// once the window has elapsed with nothing, OR immediately if the source reports a hard `.error`
+    /// (nothing to wait for — surfaced right away regardless of elapsed). `.waiting` otherwise.
+    enum CgmTestOutcome: Equatable {
+        case waiting
+        case success(GlucoseSample)
+        case timeout(detail: String?)
+    }
+
+    /// The pure Test-flow decision (change 3, D-13 UX) — kept pure and unit-testable like
+    /// `sourcesToTest` (`CgmTestFlowStateTests`). See `CgmTestOutcome` for the priority order.
+    static func testOutcome(latest: GlucoseSample?, status: GlucoseSourceStatus,
+                             elapsed: TimeInterval, timeout: TimeInterval) -> CgmTestOutcome {
+        if let latest { return .success(latest) }
+        if case let .error(msg) = status { return .timeout(detail: msg) }
+        if elapsed >= timeout { return .timeout(detail: nil) }
+        return .waiting
+    }
+
+    private func waitingHeadline() -> String {
+        switch GlucoseSourceRegistry.selectedId() {
+        case "dexcom-g6-ble", "dexcom-g7-ble":
+            return "Waiting for the next Dexcom reading — up to ~5 min. You can leave this screen; we'll keep listening."
+        default:
+            return "Waiting for a reading from \(selectedSourceName ?? "the selected source"). You can leave this screen; we'll keep listening."
+        }
+    }
+
+    private func successHeadline() -> String {
+        switch GlucoseSourceRegistry.selectedId() {
+        case "dexcom-g6-ble": return "✓ Received a reading from your G6"
+        case "dexcom-g7-ble": return "✓ Received a reading from your G7"
+        default: return "✓ Received a reading from \(selectedSourceName ?? "the selected source")"
+        }
+    }
+
+    private func successDetail(_ sample: GlucoseSample) -> String {
+        let age = Int(max(0, Date().timeIntervalSince(sample.date)))
+        let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
+        let stale = GlucoseFreshness.isStale(sample.date) ? " · STALE" : ""
+        // WR-03 gap closure (04-07): route through the display-unit funnel — reachable from mainline
+        // Settings ("CGM credentials & testing"), not debug-gated.
+        let bgUnit = AppSettings.shared.glucoseDisplayUnit
+        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+        return "\(bgStr) \(sample.trend?.rawValue ?? "") · \(ageStr)\(stale)"
+    }
+
+    private func timeoutHeadline(elapsedSeconds: Int) -> String {
+        let minutes = max(1, elapsedSeconds / 60)
+        switch GlucoseSourceRegistry.selectedId() {
+        case "dexcom-g6-ble", "dexcom-g7-ble":
+            return "No reading yet after \(minutes) min — make sure the Dexcom app is running; try toggling its Bluetooth."
+        default:
+            return "No reading yet after \(minutes) min from \(selectedSourceName ?? "the selected source") — check the connection/credentials."
+        }
+    }
+
+    private func elapsedLabel(seconds: Int) -> String {
+        seconds < 60 ? "\(seconds)s elapsed" : "\(seconds / 60)m \(seconds % 60)s elapsed"
     }
 
     var body: some View {
@@ -118,30 +171,60 @@ struct CgmCredentialsView: View {
                 .disabled(readingTxId)
                 if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
             } header: {
-                Text("Dexcom G5 / G6 / ONE (direct — experimental)")
+                Text("Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)")
             } footer: {
-                Text("Experimental and often unreliable: a G6 only talks to its authenticated app and allows few Bluetooth connections, so this passive read may never connect. For a dependable backup, prefer **Dexcom Share** (above) or **xDrip4iOS via the App Group**. Keep the official Dexcom app running — faBolus reads passively alongside it. The transmitter ID just helps pick the right sensor if several are nearby; no login needed. “Read transmitter ID from pump” fills it from the connected pump.")
+                // D-03/D-05 (Plan 04): confident guided-setup copy, replacing the earlier hedging
+                // framing that this document's "D-05 reliability re-check" section walked back
+                // (09.20-RESEARCH.md — the re-check found no evidence for it). "Read from Dexcom
+                // app" is the DEFAULT mode: reliable whenever its one hard precondition holds (the
+                // official Dexcom app installed, paired, and running). The experimental / untested
+                // marker stays (D-14) — the mechanism is confident, but on-device validation (D-13)
+                // hasn't run yet.
+                Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor — but if anyone else nearby also wears a Dexcom (a sibling, a clinic waiting room, another household member), enter your transmitter ID above so faBolus reads YOUR sensor, not theirs. The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
             }
 
             Section {
                 Button {
-                    Task { await testSelected() }
+                    save()
+                    model.startCgmTest()
                 } label: {
                     HStack {
                         Image(systemName: "checkmark.circle")
-                        Text(testing ? "Testing…" : "Test \(selectedSourceName ?? "selected source")").fontWeight(.semibold)
+                        Text(model.cgmTestInProgress ? "Testing…" : "Test \(selectedSourceName ?? "selected source")").fontWeight(.semibold)
                         Spacer()
-                        if testing { ProgressView() }
                     }
                 }
-                .disabled(testing || selectedSourceName == nil)
+                .disabled(model.cgmTestInProgress || selectedSourceName == nil)
 
-                ForEach(results) { r in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: r.symbol).foregroundStyle(r.color)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(r.name).font(.subheadline)
-                            Text(r.detail).font(.caption).foregroundStyle(.secondary)
+                // Change 3 (D-13 UX): a DETERMINATE waiting state — a linear ProgressView with a
+                // `value` (not the indeterminate spinner variant), an elapsed indicator, and explicit
+                // SUCCESS/TIMEOUT terminal states. `model.cgmTestOutcome`/`cgmTestElapsedSeconds` are
+                // AppModel-owned (not view @State), so this state SURVIVES navigating away and back.
+                if let outcome = model.cgmTestOutcome {
+                    switch outcome {
+                    case .waiting:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(waitingHeadline()).font(.subheadline)
+                            ProgressView(value: model.cgmTestTimeoutSeconds > 0
+                                         ? min(1, Double(model.cgmTestElapsedSeconds) / Double(model.cgmTestTimeoutSeconds)) : 0)
+                            Text(elapsedLabel(seconds: model.cgmTestElapsedSeconds))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    case .success(let sample):
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(successHeadline()).font(.subheadline)
+                                Text(successDetail(sample)).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    case .timeout(let detail):
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(timeoutHeadline(elapsedSeconds: model.cgmTestElapsedSeconds)).font(.subheadline)
+                                if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                            }
                         }
                     }
                 }
@@ -150,7 +233,7 @@ struct CgmCredentialsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Credentials save automatically. **Test** pulls a live reading from the fallback source you've selected above, so you can confirm just that one works. Direct-BLE sources (Dexcom G7/G6) need the sensor nearby and can take up to ~30 s.")
+                Text("Credentials save automatically (applied the next time the app launches, like the fallback selection itself). **Test** observes the fallback source that's already running in the background, so a reading it already has shows instantly. Direct-BLE Dexcom sources (G7/G6) wait up to ~5 minutes for the sensor's next wake cycle — you can leave this screen; it keeps listening.")
             }
         }
         .navigationTitle("CGM credentials & testing")
@@ -193,48 +276,4 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 
-    /// E7: save the entered credentials, then test ONLY the currently-selected fallback source (build it,
-    /// start it, and poll for a live reading) — not the whole set — so the test verifies the source the
-    /// app will actually fall back to. Direct-BLE sources (G7/G6) get a longer window (the sensor emits
-    /// only every ~5 min).
-    @MainActor private func testSelected() async {
-        save()
-        testing = true; results = []
-        defer { testing = false }
-        for id in Self.sourcesToTest(selectedId: GlucoseSourceRegistry.selectedId()) {
-            let name = GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
-            guard let source = GlucoseSourceRegistry.make(id: id) else {
-                results.append(SourceResult(id: id, name: name, status: .fail, detail: "couldn't build source"))
-                continue
-            }
-            await source.start()
-            var result = SourceResult(id: id, name: name, status: .warn,
-                                      detail: "no reading yet — check the sensor is nearby / sharing")
-            // Direct BLE (G7/G6) can take longer to see the first message (and a sensor emits only
-            // every ~5 min), so give it a longer window; cloud + local App Group answer fast.
-            let attempts = (id == "dexcom-g7-ble" || id == "dexcom-g6-ble") ? 30 : 8
-            for _ in 0..<attempts {
-                if let s = source.latest {
-                    let age = Int(max(0, Date().timeIntervalSince(s.date)))
-                    let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
-                    let stale = GlucoseFreshness.isStale(s.date) ? " · STALE" : ""
-                    // WR-03 gap closure (04-07): route through the display-unit funnel — reachable
-                    // from mainline Settings ("CGM credentials & testing"), not debug-gated.
-                    let bgUnit = AppSettings.shared.glucoseDisplayUnit
-                    let bgStr = "\(bgUnit.format(mgdl: s.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
-                    result = SourceResult(id: id, name: name, status: .ok,
-                                          detail: "\(bgStr) \(s.trend?.rawValue ?? "") · \(ageStr)\(stale)")
-                    break
-                }
-                // Surface a real connection error instead of a generic "no reading" warning.
-                if case let .error(msg) = source.status {
-                    result = SourceResult(id: id, name: name, status: .fail, detail: msg)
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-            results.append(result)
-            source.stop()
-        }
-    }
 }

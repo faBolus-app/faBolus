@@ -58,11 +58,15 @@ struct LogbookView: View {
 
 private struct LogbookRow: View {
     let event: HistoryEvent
+    // Phase 09.15 T1-4 (D-01, D-06 guardrail #3 "no fabricated urgency") — amber, matching the
+    // established informational-not-alarm convention elsewhere in the app (e.g. BolusEntryView's
+    // advisory `exclamationmark.triangle` warnings), never red like `.alarm`'s filled triangle.
+    private var iconTint: Color { event.category == .couldNotDeliver ? .orange : .secondary }
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: event.category.symbol)
                 .frame(width: 26)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(iconTint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title).font(.body)
                 if !event.detail.isEmpty {

@@ -10,6 +10,12 @@ struct BackupRestoreView: View {
     @State private var includeApp = true
     @State private var includePump = false
     @State private var includeSecrets = false
+    // WR-01: SiteAtlas placements now ride along in the backup. On by default (health data the user
+    // expects a restore to bring back — matching the delete prompt's "history and backup" copy).
+    @State private var includeSiteAtlas = true
+    // 09.18d-02: caffeine/alcohol benign-tracker log rides along too. On by default (health data the
+    // user expects a restore to bring back — same rationale as SiteAtlas).
+    @State private var includeTrackers = true
     @State private var encryptFile = false
     @State private var password = ""
     @State private var passwordConfirm = ""
@@ -33,6 +39,8 @@ struct BackupRestoreView: View {
             Section {
                 Toggle("App settings", isOn: $includeApp)
                 Toggle("Pump settings", isOn: $includePump).disabled(!pumpConnected)
+                Toggle("Site history", isOn: $includeSiteAtlas)
+                Toggle("Caffeine & alcohol log", isOn: $includeTrackers)
                 Toggle("Include credentials & pairing", isOn: $includeSecrets)
             } header: { Text("Back up") } footer: {
                 Text("Choose what to save. **Pump settings** need a connected pump\(pumpConnected ? "" : " — connect first"). **Credentials & pairing** adds your CGM logins and the pump PIN to the file — leave off unless you need a full restore, and then encrypt it below.")
@@ -57,7 +65,7 @@ struct BackupRestoreView: View {
                 } label: {
                     HStack { Label("Create backup…", systemImage: "square.and.arrow.up"); if busy { Spacer(); ProgressView() } }
                 }
-                .disabled(busy || (!includeApp && !includePump) || !encryptReady)
+                .disabled(busy || (!includeApp && !includePump && !includeSiteAtlas && !includeTrackers) || !encryptReady)
                 Button {
                     importing = true
                 } label: { Label("Restore from a file…", systemImage: "square.and.arrow.down") }
@@ -108,7 +116,9 @@ struct BackupRestoreView: View {
         let backup = FaBolusBackup(meta: meta,
                                    appSettings: includeApp ? SettingsBackup.appSettingsSnapshot() : nil,
                                    secrets: includeSecrets ? SettingsBackup.secretsSnapshot() : nil,
-                                   pumpSettings: pump)
+                                   pumpSettings: pump,
+                                   siteAtlas: includeSiteAtlas ? model.siteAtlasBackup() : nil,
+                                   trackers: includeTrackers ? model.trackersBackup() : nil)
         do {
             var data = try backup.encoded()
             if encryptFile { data = try BackupCrypto.encrypt(data, password: password) }
@@ -148,6 +158,8 @@ private struct RestoreSheet: View {
     @State private var restoreApp = true
     @State private var restoreSecrets = false
     @State private var restorePump = false
+    @State private var restoreSites = true   // WR-01: bring SiteAtlas placements back on restore
+    @State private var restoreTrackers = true  // 09.18d-02: bring caffeine/alcohol log back on restore
     @State private var message: String?
 
     var body: some View {
@@ -161,6 +173,8 @@ private struct RestoreSheet: View {
 
                 Section {
                     if backup.appSettings != nil { Toggle("App settings", isOn: $restoreApp) }
+                    if backup.siteAtlas != nil { Toggle("Site history", isOn: $restoreSites) }
+                    if backup.trackers != nil { Toggle("Caffeine & alcohol log", isOn: $restoreTrackers) }
                     if backup.secrets != nil { Toggle("Credentials & pairing", isOn: $restoreSecrets) }
                     if backup.pumpSettings != nil {
                         NavigationLink {
@@ -176,9 +190,14 @@ private struct RestoreSheet: View {
                     Button("Restore app settings" + (backup.secrets != nil && restoreSecrets ? " + credentials" : "")) {
                         if restoreApp, let a = backup.appSettings { SettingsBackup.applyAppSettings(a) }
                         if restoreSecrets, let s = backup.secrets { SettingsBackup.applySecrets(s) }
+                        if restoreSites, let sa = backup.siteAtlas { model.restoreSiteAtlas(sa) }
+                        if restoreTrackers, let tr = backup.trackers { model.restoreTrackers(tr) }
                         message = "Restored. Some changes may need reopening the app."
                     }
-                    .disabled(!(restoreApp && backup.appSettings != nil) && !(restoreSecrets && backup.secrets != nil))
+                    .disabled(!(restoreApp && backup.appSettings != nil)
+                              && !(restoreSecrets && backup.secrets != nil)
+                              && !(restoreSites && backup.siteAtlas != nil)
+                              && !(restoreTrackers && backup.trackers != nil))
                 }
                 if let message { Section { Text(message).font(.caption).foregroundStyle(.secondary) } }
             }
