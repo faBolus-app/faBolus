@@ -152,6 +152,14 @@ public final class AppSettings {
     /// deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (the BYO KEY rides the
     /// encrypted secrets backup instead, D-13), so the catalog drift guards stay untouched.
     public var foodFinderAIEnabled: Bool { didSet { d.set(foodFinderAIEnabled, forKey: "foodFinderAIEnabled") } }
+    /// Phase 09.18d-01 (D-15/D-17): gate the LoopInsights endo-visit PDF report surface. **Default ON**
+    /// — a benign records-export feature (glucose/insulin/carb summary rendered to a shareable PDF),
+    /// discoverable and off-able from the Smart Assist submenu. Advisory only: the report is a summary
+    /// of what already happened and never suggests/changes/blocks a dose (§13). Same device-local
+    /// persisted-Bool idiom as `graphDetailEnabled` — deliberately NOT a `SettingsCatalog` row and NOT
+    /// in `backupSnapshot` (it gates a read-only display surface, carries no dose logic), so the catalog
+    /// drift guards stay untouched.
+    public var endoReportEnabled: Bool { didSet { d.set(endoReportEnabled, forKey: "endoReportEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -726,6 +734,8 @@ public final class AppSettings {
         // Phase 09.18c-03 (D-13): the FoodFinder AI path is OFF by default (PHI leaves the device only
         // here) — a fresh install / absent key never enables it silently.
         foodFinderAIEnabled = (d.object(forKey: "foodFinderAIEnabled") as? Bool) ?? false
+        // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
+        endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true

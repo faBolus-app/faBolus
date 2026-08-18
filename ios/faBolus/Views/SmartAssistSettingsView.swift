@@ -112,6 +112,26 @@ struct SmartAssistSettingsView: View {
                 Text("Estimate carbs from a photo, voice, or description using an AI service you connect. This sends the photo/text to that provider — off the phone. **Off by default.** Advisory only — never blocks, changes, or suggests a dose.")
             }
 
+            // Phase 09.18d-01 (D-15/D-17): the endo-visit PDF report toggle. **Default ON** (benign
+            // records export), runtime-gated. When on, a NavigationLink reveals the report surface,
+            // which renders a faBolusDesign glucose/insulin/carb summary through ImageRenderer → PDF and
+            // shares it via the standard share sheet. `settings.endoReportEnabled` is a device-local
+            // display flag (not a SettingsCatalog row) — same idiom as `graphDetailEnabled`. This is a
+            // summary of what already happened, never advice or a dose (§13).
+            Section {
+                Toggle("Endo-visit PDF report", isOn: $settings.endoReportEnabled)
+                if settings.endoReportEnabled {
+                    NavigationLink {
+                        LoopInsights_EndoReportView(historyStore: model.sharedHistoryStore,
+                                                    glucoseUnit: settings.glucoseDisplayUnit)
+                    } label: {
+                        Label("Glucose report", systemImage: "doc.text")
+                    }
+                }
+            } footer: {
+                Text("**Advisory only** — never blocks, changes, or suggests a dose. Builds a shareable PDF summary of your glucose, insulin, and carb history for an endo visit. On by default.")
+            }
+
             // Phase 09.15 (D-07, plan 12): the "Control-IQ awareness" subsection this plan adds — one
             // row per 09.15 feature toggle, bound directly to the `AppSettings` flags the tracer (09.15-01)
             // scaffolded, at the LOCKED D-07 defaults. This is the FIRST reachable Settings UI for every

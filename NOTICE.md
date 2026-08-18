@@ -59,7 +59,16 @@ source (a clean reimplementation, so no upstream code license attaches).
 
 See `docs/SBOM.md` for the full machine-checked component inventory (audit L-01).
 
-## LoopPowerPack (SiteAtlas + FoodFinder feature source)
+## LoopPowerPack (SiteAtlas + FoodFinder + LoopInsights feature source)
+
+The benign LoopInsights report DTO shapes in
+`ios/faBolus/Vendor/LoopPowerPack/LoopInsights/LoopInsights_EndoReportModels.swift` (the endo-report
+analysis-period enum + a reduced aggregated-stats struct) are vendored from the same LoopPowerPack fork
+under the MIT License, with the AI/advisor/Phase5/biometric/LoopKit-typed fields stripped — LoopInsights
+is never vendored as a whole dir (D-04/D-14). The endo-report aggregator, the SwiftUI `ImageRenderer` PDF
+page, and the report view are independent faBolus rewrites over `GlucoseHistoryStore` (not ports of
+LoopKit's `DataAggregator` or Loop's HTML→PDF generator, D-15); the report is a records summary only and
+never advice or a dose.
 
 The SiteAtlas data models in `ios/faBolus/Vendor/LoopPowerPack/SiteAtlas/` and the FoodFinder
 OpenFoodFacts client + models in `ios/faBolus/Vendor/LoopPowerPack/FoodFinder/` are vendored from the
