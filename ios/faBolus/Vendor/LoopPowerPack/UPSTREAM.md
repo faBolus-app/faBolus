@@ -20,6 +20,7 @@ The `feat/*` branches are **cumulative** — features are isolated by DIRECTORY,
 | Feature | Vendored path | Upstream source dir | Status |
 |---|---|---|---|
 | SiteAtlas | `SiteAtlas/SiteAtlas_Models.swift` | `Loop/Models/SiteAtlas/` | vendored (models only, this slice — 09.18a-01) |
+| FoodFinder | `FoodFinder/FoodFinder_OpenFoodFactsService.swift`, `FoodFinder/FoodFinder_Models.swift` | `Loop/Services/FoodFinder/`, `Loop/Models/FoodFinder/` | vendored (pure OFF service + models; manual adapter, no auto-merge — 09.18c-01). Adapter deltas: production `world.openfoodfacts.org` + `api/v3` barcode path + faBolus User-Agent (mirror's staging `.net`/`api/v2`/`Loop-iOS-Diabetes-App` UA corrected); text search kept on `cgi/search.pl` (.org); strict tolerant decode + 1 MB byte cap; DEBUG MockURLProtocol dropped; `Nutriments.carbohydrates` made optional (D-03) |
 
 > BodyMap PNG graphics (`BodyMapFront.png` / `BodyMapBack.png`) are **NOT** vendored here — their MIT
 > graphics-exception is unresolved and is deferred to 09.18a-04's human-verify checkpoint.

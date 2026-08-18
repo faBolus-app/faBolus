@@ -11,8 +11,6 @@ import Foundation
 
 enum FoodFinderCarbEstimate {
 
-    // RED STUB (Task 2 TDD): returns sentinels so FoodFinderOFFDecodeTests fail before the real math lands.
-
     /// A sane upper bound for a single carb-estimate entry (grams), clamped to avoid a runaway number.
     static let maxCarbGrams = 1000
 
@@ -24,9 +22,34 @@ enum FoodFinderCarbEstimate {
         case manualEntryFallback
     }
 
-    static func carbsPerServing(from product: OpenFoodFactsProduct) -> Double? { nil }
+    /// Carbohydrates for one serving of the product, or `nil` if the product carries no usable
+    /// (present, finite, non-negative) carbohydrate value. When the serving quantity is unknown, this
+    /// falls back to the per-100g value (mirror parity).
+    static func carbsPerServing(from product: OpenFoodFactsProduct) -> Double? {
+        guard let per100 = product.nutriments.carbohydrates, per100.isFinite, per100 >= 0 else { return nil }
+        guard let servingQuantity = product.servingQuantity, servingQuantity.isFinite, servingQuantity > 0 else {
+            return per100
+        }
+        return per100 * servingQuantity / 100.0
+    }
 
-    static func grams(carbsPer100g: Double, servingQuantity: Double, servings: Double) -> Int { 0 }
+    /// Scale a per-100g carbohydrate value by a serving quantity and serving count, rounded to a
+    /// non-negative Int and clamped to `0...maxCarbGrams`. An unknown/zero serving quantity is treated as
+    /// a 100 g serving (so the per-100g value is used as-is).
+    static func grams(carbsPer100g: Double, servingQuantity: Double, servings: Double) -> Int {
+        guard carbsPer100g.isFinite, carbsPer100g >= 0, servings.isFinite, servings >= 0 else { return 0 }
+        let quantity = (servingQuantity.isFinite && servingQuantity > 0) ? servingQuantity : 100.0
+        let raw = carbsPer100g * quantity / 100.0 * servings
+        guard raw.isFinite else { return 0 }
+        return min(max(Int(raw.rounded()), 0), maxCarbGrams)
+    }
 
-    static func estimate(for product: OpenFoodFactsProduct, servings: Double) -> Estimate { .manualEntryFallback }
+    /// The carb estimate for `servings` servings of a product: `.grams(N)` when the product carries a
+    /// usable carbohydrate value, else `.manualEntryFallback` (never a fabricated 0).
+    static func estimate(for product: OpenFoodFactsProduct, servings: Double) -> Estimate {
+        guard let per100 = product.nutriments.carbohydrates, per100.isFinite, per100 >= 0 else {
+            return .manualEntryFallback
+        }
+        return .grams(grams(carbsPer100g: per100, servingQuantity: product.servingQuantity ?? 0, servings: servings))
+    }
 }
