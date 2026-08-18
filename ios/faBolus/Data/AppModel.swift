@@ -973,12 +973,16 @@ public final class AppModel {
         let g = history?.glucose(in: all) ?? []
         let b = history?.boluses(in: all) ?? []
         let c = history?.carbs(in: all) ?? []
+        let s = history?.sites(in: all) ?? []
         let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
         return PrivacyDataExport(
             meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
             glucose: g.map { .init(date: $0.date, mgdl: $0.mgdl) },
             boluses: b.map { .init(date: $0.date, units: $0.units) },
             carbs: c.map { .init(date: $0.date, grams: $0.grams) },
+            sites: s.map { .init(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
+                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
+                                 note: $0.note, date: $0.date, isHidden: $0.isHidden) },
             settingChangeLog: settingChangeStore.load(),
             remoteBolusLedger: deliveryLedgerCoordinator.currentLedgerSnapshot)
     }

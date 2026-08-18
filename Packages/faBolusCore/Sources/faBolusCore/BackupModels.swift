@@ -6,7 +6,9 @@ import Foundation
 /// iCloud Drive) — faBolus has no servers.
 public struct FaBolusBackup: Codable, Sendable {
     /// Bump when the on-disk shape changes incompatibly; restore refuses a newer schema than it knows.
-    public static let currentSchema = 1
+    /// Schema 2 (09.18a-01) adds the optional `siteAtlas` section; schema-1 backups still decode (the
+    /// section is independently optional, so restore refuses only a schema *newer* than it knows).
+    public static let currentSchema = 2
 
     public var meta: Meta
     /// Non-secret app preferences (UserDefaults-backed). See `AppSettings.backupSnapshot()`.
@@ -15,6 +17,9 @@ public struct FaBolusBackup: Codable, Sendable {
     public var secrets: SecretsBackup?
     /// Pump therapy settings (readable on any Tandem model; auto-applyable only on Mobi).
     public var pumpSettings: PumpSettingsBackup?
+    /// SiteAtlas infusion-site / CGM-sensor placement log (schema 2+). Independently optional so a
+    /// schema-1 backup — which has no `siteAtlas` key — still decodes with this nil.
+    public var siteAtlas: SiteAtlasBackup?
 
     public struct Meta: Codable, Sendable {
         public var schemaVersion: Int
@@ -30,9 +35,11 @@ public struct FaBolusBackup: Codable, Sendable {
     }
 
     public init(meta: Meta, appSettings: [String: BackupValue]? = nil,
-                secrets: SecretsBackup? = nil, pumpSettings: PumpSettingsBackup? = nil) {
+                secrets: SecretsBackup? = nil, pumpSettings: PumpSettingsBackup? = nil,
+                siteAtlas: SiteAtlasBackup? = nil) {
         self.meta = meta; self.appSettings = appSettings
         self.secrets = secrets; self.pumpSettings = pumpSettings
+        self.siteAtlas = siteAtlas
     }
 
     public func encoded() throws -> Data {
@@ -149,5 +156,32 @@ public struct PumpSettingsBackup: Codable, Sendable {
             self.startTimeMinutes = startTimeMinutes; self.basalRateUnitsPerHour = basalRateUnitsPerHour
             self.carbRatioGramsPerUnit = carbRatioGramsPerUnit; self.isf = isf; self.targetBg = targetBg
         }
+    }
+}
+
+/// SiteAtlas placement log for the unified backup (schema 2+, 09.18a-01, D-10). Mirrors the
+/// `StoredSite` @Model field shape so a restore can rehydrate the HistoryStore sites. `kind`/`bodySide`
+/// are the raw enum String values ("pump"|"sensor", "front"|"back"), keeping the payload primitive.
+public struct SiteAtlasBackup: Codable, Sendable {
+    public var entries: [SiteAtlasEntryBackup]
+    public init(entries: [SiteAtlasEntryBackup] = []) { self.entries = entries }
+}
+
+/// One recorded site placement in a `SiteAtlasBackup`.
+public struct SiteAtlasEntryBackup: Codable, Sendable, Equatable {
+    public var siteID: String
+    public var kind: String        // "pump" | "sensor"
+    public var bodySide: String    // "front" | "back"
+    public var normalizedX: Double
+    public var normalizedY: Double
+    public var note: String?
+    public var date: Date
+    public var isHidden: Bool
+    public init(siteID: String, kind: String, bodySide: String,
+                normalizedX: Double, normalizedY: Double, note: String?,
+                date: Date, isHidden: Bool) {
+        self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
+        self.normalizedX = normalizedX; self.normalizedY = normalizedY
+        self.note = note; self.date = date; self.isHidden = isHidden
     }
 }
