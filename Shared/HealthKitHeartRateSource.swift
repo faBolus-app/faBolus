@@ -25,19 +25,30 @@ final class HealthKitHeartRateSource {
     /// glucose auth). Safe to call repeatedly; the actual system prompt appears at most once ever.
     func requestAuthorizationIfNeeded() async {
         guard !requestedAuthorization, HKHealthStore.isHealthDataAvailable() else { return }
-        requestedAuthorization = true
         do {
             try await store.requestAuthorization(toShare: [], read: [type])
+            // IN-05: mark the one-shot guard satisfied only on SUCCESS. Setting it before the await meant a
+            // transient throw (not a user denial) permanently blocked a retry for the instance's lifetime;
+            // arming it here lets a later scrub retry after a transient failure. A real denial still doesn't
+            // re-prompt (HealthKit itself won't), so this never nags the user.
+            requestedAuthorization = true
         } catch {
-            // Denied / unavailable → heartRate(at:) returns nil and the HR row hides. Never fatal.
+            // Transient error → leave the guard unset so the next scrub can retry. Denied / unavailable →
+            // heartRate(at:) returns nil and the HR row hides. Never fatal.
         }
     }
 
-    /// The heart-rate sample (bpm) nearest the scrubbed `date`, read on demand over a short ±5-min
-    /// window, newest-first, limit 1. Returns `nil` when Health is unavailable, access is denied, or
-    /// there is no sample in the window (→ the HR row hides — never a fabricated value). Mirrors the
-    /// continuation idiom in `HealthKitGlucoseSource.runAnchoredQuery`: the off-actor completion only
-    /// resumes with the samples; the bpm is read back on the main actor.
+    /// The heart-rate sample (bpm) for the scrubbed `date`, read on demand over a short ±5-min window,
+    /// newest-first, limit 1. Returns `nil` when Health is unavailable, access is denied, or there is no
+    /// sample in the window (→ the HR row hides — never a fabricated value). Mirrors the continuation
+    /// idiom in `HealthKitGlucoseSource.runAnchoredQuery`: the off-actor completion only resumes with the
+    /// samples; the bpm is read back on the main actor.
+    ///
+    /// IN-01 (intentional tradeoff): this returns the NEWEST sample in the ±5-min window, not the one
+    /// strictly nearest `date` (unlike `GraphDetailReadout.nearest` for glucose/IOB/bolus). Ambient HR is
+    /// sparse and display-only chart context, so the sub-window error is small; a strict-nearest read
+    /// would need an unbounded in-window fetch (per-second HR during a workout is hundreds of samples).
+    /// The newest-in-window heuristic is bounded (limit 1) and accepted for this HR row.
     func heartRate(at date: Date) async -> Double? {
         guard HKHealthStore.isHealthDataAvailable() else { return nil }
         let predicate = HKQuery.predicateForSamples(withStart: date.addingTimeInterval(-300),
