@@ -62,7 +62,7 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     /// STABLE per-connection — refreshed ONLY on a fresh `transmitterTimeRx`, NOT reset on every
     /// glucose message the way `DexcomG7BLESource.handleGlucose` does. Confirmed as the deliberate,
     /// permanent design (was provisional in Plan 01); recorded as an UNVERIFIED-GUESS pending D-13
-    /// on-device confirmation (`docs/UNVERIFIED-GUESSES.md` #10).
+    /// on-device confirmation (`docs/UNVERIFIED-GUESSES.md` #9).
     private var activationDate: Date?
 
     /// Wall time this source began actively listening (set once, in `start()`) — backs the no-anchor
@@ -71,22 +71,16 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     /// "connected for N minutes with no anchor ever observed".
     private var connectedAt: Date?
 
-    /// Rate-of-change plausibility ceiling (D-08b) — owner-adjustable, mirrors
-    /// `GlucoseFreshness.staleAfter`'s `static var` pattern rather than a literal buried in `handle()`.
-    /// UNVERIFIED-GUESS: default 12 mg/dL/min, deferred to Phase-10 clinical review
-    /// (`docs/UNVERIFIED-GUESSES.md` #9). A frame implying a faster PER-MINUTE rate vs the prior
-    /// anchored `latest` is decode corruption, not real physiology, and is rejected — never clamped.
-    static var rateOfChangeCeilingMgdlPerMin: Double = 12.0
-
     /// Beyond this many seconds of age, an anchored date is decode/anchor-arithmetic-wrong, not a
     /// genuinely old-but-real reading — ordinary staleness is `GlucoseFreshness`'s job (D-07, reused
     /// here, not duplicated). Deliberately generous (24h) so it never fires on real staleness; it only
     /// catches wildly wrong anchor math.
     static let implausibleAgeBound: TimeInterval = 24 * 3600
 
-    /// No-anchor bound (Warning 1) — owner-adjustable, mirrors the pattern above. UNVERIFIED-GUESS:
-    /// the `transmitterTimeRx` (0x25) wire cadence was never established by the RESEARCH; default
-    /// ≈10 min = 2 assumed wake cycles (`docs/UNVERIFIED-GUESSES.md` #11). Beyond this, with STILL no
+    /// No-anchor bound (Warning 1) — owner-adjustable, mirrors `GlucoseFreshness.staleAfter`'s
+    /// `static var` pattern rather than a literal buried in `handle()`. UNVERIFIED-GUESS: the
+    /// `transmitterTimeRx` (0x25) wire cadence was never established by the RESEARCH; default
+    /// ≈10 min = 2 assumed wake cycles (`docs/UNVERIFIED-GUESSES.md` #10). Beyond this, with STILL no
     /// anchor ever observed, the source reports `.stale` rather than trusting any fallback-dated frame.
     static var noAnchorBound: TimeInterval = 10 * 60
 
@@ -174,26 +168,15 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
             return
         }
 
-        // Rate-of-change plausibility (D-08b): evaluated OVER TIME — |Δmg/dL ÷ Δwall-MINUTES| vs the
-        // prior anchored `latest` — NOT the raw absolute delta between two frames. A large glucose
-        // swing across a large time gap (e.g. a BLE disconnect that missed several ~5-min cycles)
-        // implies a SMALL per-minute rate and must NOT be rejected. Skipped entirely — not evaluated,
-        // not rejected — when there is no valid predecessor (first reading after (re)connect, or
-        // `latest` is nil) or when Δt is too small to divide by safely (duplicate/near-duplicate
-        // timestamp, ≈0s apart): in both cases the rate simply isn't computable, which is not evidence
-        // of corruption, and must not false-reject.
-        if let prior = latest {
-            let deltaSeconds = date.timeIntervalSince(prior.date)
-            if abs(deltaSeconds) >= 1 {
-                let deltaMinutes = abs(deltaSeconds) / 60
-                let rate = abs(Double(msg.glucoseMgdl - prior.mgdl)) / deltaMinutes
-                guard rate <= Self.rateOfChangeCeilingMgdlPerMin else {
-                    status = .connected
-                    onChange?()
-                    return
-                }
-            }
-        }
+        // NOTE (09.20-02, owner review): a rate-of-change (Δmg/dL ÷ Δt) rejection gate was implemented
+        // here and then REMOVED — no respected reference implementation rejects a CGM reading by
+        // rate-of-change (CGMBLEKit gates only on CRC + hasReliableGlucose + range; Loop's rate-of-
+        // change use is limited to Missed Meal Detection + trend display, never a rejection gate;
+        // xDrip4iOS's `maxSlopeInMinutes` is graph-slope windowing, not a rejection gate). It was
+        // ungrounded and risked rejecting a genuine fast excursion, failing over to pump-only when the
+        // failover reading was in fact the more correct one. Delayed/batched frames are still caught by
+        // the implausible-age gate above and by the existing GlucoseFreshness/CalcInputFreshness
+        // staleness policy downstream (D-07) — not duplicated here.
 
         let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
                                    trend: Self.trend(msg.trendDirection), sourceID: id)

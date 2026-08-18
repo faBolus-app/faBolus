@@ -136,7 +136,13 @@ struct DexcomG6BLESourceTests {
         #expect(snap.glucose == 100)
     }
 
-    // MARK: - Task 3 (09.20-02, D-08a/D-08b) — rate-of-change, implausible-age, never-anchored bound.
+    // MARK: - Task 3 (09.20-02, D-08a/D-08b) — range, implausible-age, never-anchored bound.
+    //
+    // NOTE (owner review): a rate-of-change (Δmg/dL ÷ Δt) rejection gate + its dedicated tests
+    // (implausible-rate-rejected, plausible-fast-excursion-accepted, large-gap/no-predecessor/Δt≈0
+    // rate-specific cases) were implemented here and then REMOVED — ungrounded against every mirrored
+    // reference (CGMBLEKit/Loop/xDrip4iOS), and it risked rejecting a genuine fast excursion. The range,
+    // CRC, anchor, never-anchored, and freshness gates below remain the grounded fail-closed set.
 
     /// D-08b: an out-of-[40,400] frame (Task 2's decode-time gate) never becomes `latest` end-to-end
     /// through `ingest`, even after a real anchor is established.
@@ -145,71 +151,6 @@ struct DexcomG6BLESourceTests {
         source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
         source.ingest(controlFrame: Self.glucoseFrame(timestamp: 3590, glucose: 500))
         #expect(source.latest == nil, "an out-of-range frame must never become `latest`")
-    }
-
-    /// D-08b rate-of-change ceiling: a frame implying a per-minute rate ABOVE the ceiling (12 mg/dL/min
-    /// default) vs the prior anchored `latest` is rejected — `latest` keeps the prior reading.
-    @Test func implausibleRateOfChangeIsRejected() {
-        let source = DexcomG6BLESource()
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 1, timestamp: 3300, glucose: 120))
-        #expect(source.latest?.mgdl == 120)
-
-        // 60s later (1 min), a 200 mg/dL jump == 200 mg/dL/min, far above the 12 mg/dL/min ceiling.
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 2, timestamp: 3360, glucose: 320))
-        #expect(source.latest?.mgdl == 120, "implausible rate must be rejected; `latest` keeps the prior reading")
-    }
-
-    /// A genuine fast-but-plausible excursion (well under the ceiling) is accepted — the ceiling only
-    /// catches decode corruption, not real physiology.
-    @Test func plausibleFastExcursionIsAccepted() {
-        let source = DexcomG6BLESource()
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 1, timestamp: 3300, glucose: 120))
-        #expect(source.latest?.mgdl == 120)
-
-        // 60s later, an 8 mg/dL jump == 8 mg/dL/min, under the 12 mg/dL/min ceiling.
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 2, timestamp: 3360, glucose: 128))
-        #expect(source.latest?.mgdl == 128, "a plausible fast excursion must be accepted")
-    }
-
-    /// OWNER CORRECTNESS REQUIREMENT: the rate gate is per-MINUTE, not absolute delta. A large glucose
-    /// change across a LARGE time gap (e.g. a BLE disconnect that missed several ~5-min cycles) must
-    /// yield a SMALL per-minute rate and must NOT be rejected (and must not throw/crash).
-    @Test func largeChangeAcrossLargeGapIsNotRejected() {
-        let source = DexcomG6BLESource()
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 100, sessionStartTime: 60))
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 1, timestamp: 90, glucose: 90))
-        #expect(source.latest?.mgdl == 90)
-
-        // Missed several cycles: 30 min gap (1800s), a 150 mg/dL swing == 5 mg/dL/min, well under 12.
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 1_900, sessionStartTime: 60))
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 2, timestamp: 1_890, glucose: 240))
-        #expect(source.latest?.mgdl == 240, "a large change across a large time gap implies a small per-minute rate and must be accepted")
-    }
-
-    /// OWNER CORRECTNESS REQUIREMENT: with NO valid predecessor (first reading after (re)connect —
-    /// `latest` is nil), the rate check is SKIPPED entirely; a large absolute value alone is not a
-    /// rejection reason (range + CRC + anchor-age checks still apply and pass here).
-    @Test func firstReadingAfterConnectSkipsRateCheck() {
-        let source = DexcomG6BLESource()
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
-        // First reading ever (`latest` is nil) — a big in-range value must not be rejected for "rate".
-        source.ingest(controlFrame: Self.glucoseFrame(timestamp: 3590, glucose: 380))
-        #expect(source.latest?.mgdl == 380, "no predecessor means the rate check must be skipped, not fail-rejected")
-    }
-
-    /// OWNER CORRECTNESS REQUIREMENT: Δt ≈ 0 (duplicate/near-duplicate timestamp) must not divide by
-    /// zero and must not false-reject.
-    @Test func nearZeroDeltaTDoesNotDivideByZeroOrFalseReject() {
-        let source = DexcomG6BLESource()
-        source.ingest(controlFrame: Self.timeFrame(currentTime: 3600, sessionStartTime: 60))
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 1, timestamp: 3590, glucose: 120))
-        #expect(source.latest?.mgdl == 120)
-
-        // Same sensor timestamp again (Δt == 0), a different value — must not crash or be rejected.
-        source.ingest(controlFrame: Self.glucoseFrame(sequence: 2, timestamp: 3590, glucose: 130))
-        #expect(source.latest?.mgdl == 130, "Δt≈0 must skip the rate check, not divide-by-zero or false-reject")
     }
 
     /// D-08a implausible-age rejection: a frame anchored beyond `GlucoseFreshness.futureSkewTolerance`
