@@ -41,7 +41,11 @@ enum FoodFinderCarbEstimate {
         let quantity = (servingQuantity.isFinite && servingQuantity > 0) ? servingQuantity : 100.0
         let raw = carbsPer100g * quantity / 100.0 * servings
         guard raw.isFinite else { return 0 }
-        return min(max(Int(raw.rounded()), 0), maxCarbGrams)
+        // Clamp in Double space BEFORE the Int() conversion: a finite value above Int.max (a garbled or
+        // malicious OFF nutriment, e.g. 1e19) would trap Int(_:) and crash the carb-estimate card.
+        // `maxCarbGrams` (1000) is exactly representable as a Double, so Int() of the capped value is safe.
+        let capped = min(max(raw.rounded(), 0), Double(maxCarbGrams))
+        return Int(capped)
     }
 
     /// The carb estimate for `servings` servings of a product: `.grams(N)` when the product carries a

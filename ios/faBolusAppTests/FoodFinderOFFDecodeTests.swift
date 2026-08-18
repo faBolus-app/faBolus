@@ -133,6 +133,42 @@ struct FoodFinderOFFDecodeTests {
         #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 30, servings: 0) == 0)
     }
 
+    /// CR-01 regression: an unbounded-but-finite carb value above Int.max (a garbled/malicious OFF
+    /// nutriment) must be clamped in Double space and NEVER trap the Int() conversion. Also covers the
+    /// non-finite guards (.infinity / .nan) on every argument.
+    @Test func gramsDoesNotTrapOnOverflowingOrNonFiniteInputs() {
+        // 1e19 > Int.max (~9.22e18): pre-fix this trapped in Int(raw.rounded()).
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 1e19, servingQuantity: 100, servings: 1)
+                == FoodFinderCarbEstimate.maxCarbGrams)
+        // A huge serving quantity or serving count is equally untrusted.
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 1e19, servings: 1)
+                == FoodFinderCarbEstimate.maxCarbGrams)
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 30, servings: 1e19)
+                == FoodFinderCarbEstimate.maxCarbGrams)
+        // Non-finite inputs route to the safe 0 fallback, never a crash.
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: .infinity, servingQuantity: 100, servings: 1) == 0)
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: .nan, servingQuantity: 100, servings: 1) == 0)
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: .infinity, servings: 1) == 50)
+        #expect(FoodFinderCarbEstimate.grams(carbsPer100g: 50, servingQuantity: 30, servings: .nan) == 0)
+    }
+
+    /// CR-03 regression: `servingSizeDisplay` converts an untrusted OFF `serving_quantity` Double to Int.
+    /// A finite value above Int.max (e.g. 1e19) must not trap the render; a non-finite value falls through
+    /// to the default. One malformed product must never take down the results list.
+    @Test func servingSizeDisplayDoesNotTrapOnOverflowingOrNonFiniteServing() {
+        func product(servingQuantity: Double?) -> OpenFoodFactsProduct {
+            OpenFoodFactsProduct(id: "x", productName: "P", brands: nil,
+                                 nutriments: Nutriments(carbohydrates: 50),
+                                 servingSize: nil, servingQuantity: servingQuantity, code: nil)
+        }
+        // 1e19 > Int.max: pre-fix this trapped in Int(servingQuantity).
+        #expect(product(servingQuantity: 1e19).servingSizeDisplay == "100000 g")
+        #expect(product(servingQuantity: 30).servingSizeDisplay == "30 g")
+        // Non-finite serving quantities fall through to the "100 g" default rather than trapping.
+        #expect(product(servingQuantity: .infinity).servingSizeDisplay == "100 g")
+        #expect(product(servingQuantity: .nan).servingSizeDisplay == "100 g")
+    }
+
     @Test func estimateForProductReturnsScaledGrams() throws {
         let product = try Self.product(from: Self.v3ProductJSON)
         #expect(FoodFinderCarbEstimate.estimate(for: product, servings: 1) == .grams(15))

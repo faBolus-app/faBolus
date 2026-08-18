@@ -136,18 +136,55 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
     @Published var cameraAuthorizationStatus: AVAuthorizationStatus = .notDetermined
     
     // MARK: - Scanning State Management
-    
-    /// Tracks recently scanned barcodes to prevent duplicates
-    private var recentlyScannedBarcodes: Set<String> = []
-    
+
+    // faBolus adapter delta (WR-01, 09.18c review): `recentlyScannedBarcodes`, `isProcessingScan`, and
+    // `lastValidFrameTime` are touched from BOTH the sample-buffer delegate queue (`sessionQueue`, via
+    // `captureOutput`/`handleDetectedBarcodes`) AND the main queue (`stopScanning`, `clearScanState`, the
+    // duplicate-prevention/health timers). The prior `@unchecked Sendable` note claimed queue confinement
+    // that did not hold — a genuine cross-queue data race. All three are now guarded by `stateLock`, which
+    // makes the `@unchecked Sendable` annotation honest without changing the ported pipeline's behavior.
+    private let stateLock = NSLock()
+
+    /// Tracks recently scanned barcodes to prevent duplicates (guarded by `stateLock`).
+    private var _recentlyScannedBarcodes: Set<String> = []
+
+    /// Flag to prevent multiple simultaneous scan processing (guarded by `stateLock`).
+    private var _isProcessingScan: Bool = false
+
+    /// Session health monitoring timestamp (guarded by `stateLock`).
+    private var _lastValidFrameTime: Date = Date()
+
+    private var isProcessingScan: Bool {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _isProcessingScan }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _isProcessingScan = newValue }
+    }
+
+    private var lastValidFrameTime: Date {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _lastValidFrameTime }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _lastValidFrameTime = newValue }
+    }
+
+    /// True iff `barcode` is already in the recent-scan dedup set (atomic read).
+    private func isRecentlyScanned(_ barcode: String) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _recentlyScannedBarcodes.contains(barcode)
+    }
+
+    /// Insert `barcode` into the recent-scan dedup set (atomic write).
+    private func markRecentlyScanned(_ barcode: String) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _recentlyScannedBarcodes.insert(barcode)
+    }
+
+    /// Clear the recent-scan dedup set (atomic write).
+    private func clearRecentlyScanned() {
+        stateLock.lock(); defer { stateLock.unlock() }
+        _recentlyScannedBarcodes.removeAll()
+    }
+
     /// Timer to clear recently scanned barcodes
     private var duplicatePreventionTimer: Timer?
-    
-    /// Flag to prevent multiple simultaneous scan processing
-    private var isProcessingScan: Bool = false
-    
-    /// Session health monitoring
-    private var lastValidFrameTime: Date = Date()
+
     private var sessionHealthTimer: Timer?
     
     // Camera session components
@@ -509,7 +546,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
             self.isScanning = false
             self.lastScanResult = nil
             self.isProcessingScan = false
-            self.recentlyScannedBarcodes.removeAll()
+            self.clearRecentlyScanned()
         }
         
         // Stop timers
@@ -613,7 +650,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
         
         // Clear recently scanned after a delay to allow for a fresh scan
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.recentlyScannedBarcodes.removeAll()
+            self.clearRecentlyScanned()
             #if DEBUG
             print("🔍 Ready for next scan")
             #endif
@@ -649,7 +686,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
                 self.lastScanResult = nil
                 self.isProcessingScan = false
                 self.scanError = nil
-                self.recentlyScannedBarcodes.removeAll()
+                self.clearRecentlyScanned()
                 
                 // Reset session health monitoring
                 self.lastValidFrameTime = Date()
@@ -1420,7 +1457,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
         }
         
         // Check for duplicates
-        guard !recentlyScannedBarcodes.contains(selectedBarcode.barcodeString) else {
+        guard !isRecentlyScanned(selectedBarcode.barcodeString) else {
             #if DEBUG
             print("🔍 Skipping duplicate barcode: \(selectedBarcode.barcodeString)")
             #endif
@@ -1435,7 +1472,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
         #endif
         
         // Add to recent scans to prevent duplicates
-        recentlyScannedBarcodes.insert(selectedBarcode.barcodeString)
+        markRecentlyScanned(selectedBarcode.barcodeString)
         
         // Publish result on main queue
         DispatchQueue.main.async { [weak self] in
@@ -1449,7 +1486,7 @@ final class BarcodeScannerService: NSObject, ObservableObject, @unchecked Sendab
             // Clear recently scanned after a longer delay to allow for duplicate detection
             self?.duplicatePreventionTimer?.invalidate()
             self?.duplicatePreventionTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
-                self?.recentlyScannedBarcodes.removeAll()
+                self?.clearRecentlyScanned()
                 #if DEBUG
                 print("🔍 Cleared recently scanned barcodes cache")
                 #endif

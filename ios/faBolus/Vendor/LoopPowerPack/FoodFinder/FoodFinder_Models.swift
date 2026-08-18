@@ -125,7 +125,9 @@ struct OpenFoodFactsProduct: Codable, Identifiable, Hashable {
             self.code = code
         } else {
             let name = productName ?? "unknown"
-            self.id = "synthetic_\(abs(name.hashValue))"
+            // WR-02: `abs(name.hashValue)` traps when hashValue == Int.min (no positive representation).
+            // A non-trapping unsigned bit-pattern gives a stable, always-valid synthetic id.
+            self.id = "synthetic_\(UInt(bitPattern: name.hashValue))"
             self.code = nil
         }
 
@@ -188,8 +190,13 @@ struct OpenFoodFactsProduct: Codable, Identifiable, Hashable {
     var servingSizeDisplay: String {
         if let servingSize, !servingSize.isEmpty {
             return servingSize
-        } else if let servingQuantity, servingQuantity > 0 {
-            return "\(Int(servingQuantity)) g"
+        } else if let servingQuantity, servingQuantity.isFinite, servingQuantity > 0 {
+            // Clamp in Double space BEFORE the Int() conversion: an unbounded OFF `serving_quantity`
+            // above Int.max (e.g. 1e19) would trap Int(_:) and crash the results-list / card render
+            // (every row calls this). Cap at a sane, safely-representable display bound (100 kg) —
+            // NOTE: `Double(Int.max)` is NOT a safe cap here (it rounds up to 2^63 > Int.max and traps).
+            let g = Int(min(servingQuantity.rounded(), 100_000))
+            return "\(g) g"
         } else {
             return "100 g"
         }
