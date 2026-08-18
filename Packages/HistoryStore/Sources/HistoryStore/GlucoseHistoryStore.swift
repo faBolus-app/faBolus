@@ -14,6 +14,11 @@ import faBolusCore
 /// `deleteGlucose(olderThan:)` powers the optional advanced auto-delete.
 @MainActor
 public final class GlucoseHistoryStore {
+    /// The single `sourceID` stamped on the benign LoopInsights caffeine/alcohol tracker entries so they
+    /// are attributable in export/backup (IN-02). Hoisted here — the one type both the vendored trackers
+    /// and `AppModel` already reference — so the literal is declared once instead of three times.
+    public static let loopInsightsTrackerSourceID = "app.loopInsightsTrackers"
+
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
