@@ -20,7 +20,13 @@ import faBolusDesign
 struct GraphDetailReadoutModel: Equatable {
     let date: Date
     let glucoseMgdl: Int?
-    // 09.18b-01 Task 2 adds: iob, bolusUnits, basalUnitsPerHour. 09.18b-02 adds: heartRate.
+    let iob: Double?
+    let bolusUnits: Double?
+    /// The current KNOWN basal rate (a single scalar from the pump snapshot) — faBolus has no
+    /// per-timestamp basal history, so this is not resolved against the scrub `Date`; it is the same
+    /// current rate at every scrub point. `nil` when the snapshot has none (→ "—"); never a fabricated
+    /// schedule. 09.18b-02 adds: heartRate.
+    let basalUnitsPerHour: Double?
 }
 
 // MARK: - ViewModel (rewritten over the faBolus feed, D-05)
@@ -31,16 +37,28 @@ struct GraphDetailReadoutModel: Equatable {
 /// readout at a scrubbed `Date` is display-only math delegated to `GraphDetailReadout` (faBolusCore).
 struct GraphDetailViewModel: Equatable {
     var glucose: [GlucoseReading]
-    // 09.18b-01 Task 2 adds: iob, boluses, currentBasalUnitsPerHour.
+    var iob: [IOBSample] = []
+    var boluses: [BolusMarker] = []
+    /// The pump snapshot's CURRENT basal rate (units/hr), or `nil` when unknown. faBolus has no
+    /// per-timestamp basal history, so this scalar is surfaced as-is at every scrub point (never a
+    /// synthesized schedule, D-06).
+    var currentBasalUnitsPerHour: Double? = nil
 
     /// "A sample counts as at this timestamp" window. Mirrors the app's `GlucoseFreshness` ~6-min
     /// staleness window so a scrub landing between CGM readings (~5-min cadence) still resolves the
     /// adjacent one, while a scrub over a genuine gap renders "—" rather than a far-away number.
     static let tolerance: TimeInterval = 6 * 60
+    /// Boluses are sparse events, so a wider window than the glucose cadence is honest here — a bolus
+    /// up to 10 min from the scrub point is still "the bolus around this time"; beyond that → "—".
+    static let bolusTolerance: TimeInterval = 10 * 60
 
     func readout(at date: Date) -> GraphDetailReadoutModel {
-        let g = GraphDetailReadout.nearest(to: date, in: glucose, key: \.date, within: Self.tolerance)
-        return GraphDetailReadoutModel(date: date, glucoseMgdl: g?.mgdl)
+        GraphDetailReadoutModel(
+            date: date,
+            glucoseMgdl: GraphDetailReadout.glucoseMgdl(at: date, in: glucose, within: Self.tolerance),
+            iob: GraphDetailReadout.iob(at: date, in: iob, within: Self.tolerance),
+            bolusUnits: GraphDetailReadout.bolusUnits(at: date, in: boluses, within: Self.bolusTolerance),
+            basalUnitsPerHour: currentBasalUnitsPerHour)
     }
 }
 
@@ -61,6 +79,9 @@ struct GraphDetailCard: View {
         return f
     }()
 
+    /// The em dash a missing value renders — a shown row is never blank and never a fabricated number.
+    private static let emDash = "—"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(Self.timeFormatter.string(from: readout.date))
@@ -68,10 +89,24 @@ struct GraphDetailCard: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
 
+            // Rows shown: glucose / IOB / bolus / basal (D-06). COB / override / AutoPreset are DROPPED
+            // (no faBolus data source). HR is added in 09.18b-02 — this row list is left open for it.
             row(icon: "drop.fill",
                 label: "Glucose",
-                value: readout.glucoseMgdl.map { unit.format(mgdl: $0) } ?? "—",
+                value: readout.glucoseMgdl.map { unit.format(mgdl: $0) } ?? Self.emDash,
                 tint: readout.glucoseMgdl.map { AppTheme.glucoseColor($0) } ?? .secondary)
+            row(icon: "syringe",
+                label: "IOB",
+                value: readout.iob.map { formatUnits($0) } ?? Self.emDash,
+                tint: readout.iob != nil ? AppTheme.insulin : .secondary)
+            row(icon: "chart.bar.fill",
+                label: "Bolus",
+                value: readout.bolusUnits.map { formatUnits($0) } ?? Self.emDash,
+                tint: readout.bolusUnits != nil ? AppTheme.insulin : .secondary)
+            row(icon: "waveform.path",
+                label: "Basal",
+                value: readout.basalUnitsPerHour.map { "\(formatUnits($0))/hr" } ?? Self.emDash,
+                tint: .secondary)
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))

@@ -116,7 +116,9 @@ struct DashboardView: View {
                                     GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                                      boluses: model.bolusMarkers, windowHours: windowHours,
                                                      showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                                     showBolusBars: settings.showBolusBars)
+                                                     showBolusBars: settings.showBolusBars,
+                                                     basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
+                                                         ? model.snapshot.basalRateUnitsPerHour : nil)
                                     Picker("Window", selection: $windowHours) {
                                         ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                                     }.pickerStyle(.segmented)
@@ -252,7 +254,9 @@ struct DashboardView: View {
                             GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                              boluses: model.bolusMarkers, windowHours: windowHours,
                                              showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                             showBolusBars: settings.showBolusBars)
+                                             showBolusBars: settings.showBolusBars,
+                                             basalUnitsPerHour: model.snapshot.basalRateUnitsPerHour > 0
+                                                 ? model.snapshot.basalRateUnitsPerHour : nil)
                             Picker("Window", selection: $windowHours) {
                                 ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                             }.pickerStyle(.segmented)

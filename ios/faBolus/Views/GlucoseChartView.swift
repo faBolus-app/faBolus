@@ -15,11 +15,20 @@ struct GlucoseChartView: View {
     var showGlucose: Bool = true
     var showIOB: Bool = true
     var showBolusBars: Bool = true
+    /// Phase 09.18b (D-06): the pump's CURRENT known basal rate (units/hr) for the scrubber readout's
+    /// basal row, or nil when unknown (→ "—"). faBolus has no per-timestamp basal history, so this is a
+    /// single scalar handed in by the caller — never a synthesized schedule. Default nil so callers that
+    /// don't surface basal (e.g. the slim remote chart) simply render "—".
+    var basalUnitsPerHour: Double? = nil
 
     // Phase 09.18b (D-05/D-06): the transient scrub x-position (in plot-area points) while the user
     // long-presses/drags the chart, or nil when idle. Read-only, never committed anywhere — cleared on
     // release. Each GlucoseChartView instance owns its own scrub state.
     @State private var scrubX: CGFloat? = nil
+    /// The date of the glucose data point the scrub currently resolves to (nil when idle). Drives the
+    /// haptic: a change fires `.selection` — on scrub start (nil → a point) and on crossing to a NEW
+    /// data point while dragging (UI-SPEC §1 long-press-active + dragging states).
+    @State private var scrubbedPointDate: Date? = nil
 
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
@@ -122,7 +131,7 @@ struct GlucoseChartView: View {
                 }
             }
         }
-        .sensoryFeedback(.selection, trigger: scrubX != nil)
+        .sensoryFeedback(.selection, trigger: scrubbedPointDate)
         .overlay(alignment: .topLeading) {
             // Owner-requested toggle: this axis caption is the only persistent unit label the chart
             // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
@@ -149,9 +158,13 @@ struct GlucoseChartView: View {
 
     // MARK: - GraphDetailView scrubber (Phase 09.18b, D-05/D-06)
 
-    /// The ViewModel is rewritten over faBolus's OWN feed — the same `visible` glucose array this chart
-    /// already renders — never Loop's stores (D-05). This plan feeds glucose only; Task 2 adds IOB/bolus/basal.
-    private var detailViewModel: GraphDetailViewModel { GraphDetailViewModel(glucose: visible) }
+    /// The ViewModel is rewritten over faBolus's OWN feed — the same `visible` glucose/IOB/bolus arrays
+    /// this chart already renders (`model.glucoseHistory`/`iobHistory`/`bolusMarkers`) plus the current
+    /// pump-snapshot basal scalar handed in — never Loop's stores (D-05).
+    private var detailViewModel: GraphDetailViewModel {
+        GraphDetailViewModel(glucose: visible, iob: visibleIOB, boluses: visibleBoluses,
+                             currentBasalUnitsPerHour: basalUnitsPerHour)
+    }
 
     /// The scrubber layer inside `.chartOverlay`: a full-plot transparent hit area carrying a
     /// `LongPressGesture` SEQUENCED with a `DragGesture(minimumDistance: 0)` so a plain tap/pan of the
@@ -166,10 +179,18 @@ struct GlucoseChartView: View {
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 if case .second(true, let drag?) = value {
-                    scrubX = min(max(drag.location.x, 0), size.width)
+                    let x = min(max(drag.location.x, 0), size.width)
+                    scrubX = x
+                    // Track which glucose data point the scrub resolves to, so the haptic fires only on
+                    // crossing to a NEW point (and on scrub start), not on every sub-pixel move.
+                    if let date: Date = proxy.value(atX: x) {
+                        scrubbedPointDate = GraphDetailReadout.nearest(
+                            to: date, in: visible, key: \.date,
+                            within: GraphDetailViewModel.tolerance)?.date
+                    }
                 }
             }
-            .onEnded { _ in scrubX = nil }
+            .onEnded { _ in scrubX = nil; scrubbedPointDate = nil }
 
         ZStack(alignment: .topLeading) {
             // Full-plot hit area (≥44px in both dimensions at 160px height) — the deliberate-press

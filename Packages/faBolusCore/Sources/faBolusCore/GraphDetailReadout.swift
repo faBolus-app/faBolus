@@ -47,4 +47,26 @@ public enum GraphDetailReadout {
         guard best != nil, bestDelta <= tolerance else { return nil }
         return best
     }
+
+    // MARK: - Typed value lookups (thin wrappers over `nearest`)
+
+    /// The mg/dL of the glucose reading nearest `date` within `tolerance`, or `nil` (→ "—") beyond it.
+    public static func glucoseMgdl(at date: Date, in readings: [GlucoseReading],
+                                   within tolerance: TimeInterval) -> Int? {
+        nearest(to: date, in: readings, key: \.date, within: tolerance)?.mgdl
+    }
+
+    /// The IOB units of the sample nearest `date` within `tolerance`, or `nil` (→ "—") beyond it.
+    public static func iob(at date: Date, in samples: [IOBSample],
+                           within tolerance: TimeInterval) -> Double? {
+        nearest(to: date, in: samples, key: \.date, within: tolerance)?.iob
+    }
+
+    /// The delivered units of the bolus marker nearest `date` within `tolerance`, or `nil` (→ "—")
+    /// beyond it. Bolus markers are sparse, so a gap (no bolus near the scrub point) is the norm — it
+    /// yields `nil` independent of any glucose/IOB value at the same instant.
+    public static func bolusUnits(at date: Date, in markers: [BolusMarker],
+                                  within tolerance: TimeInterval) -> Double? {
+        nearest(to: date, in: markers, key: \.date, within: tolerance)?.units
+    }
 }
