@@ -84,6 +84,9 @@ public final class AppModel {
     public func setWantHeartRate(_ on: Bool) {
         guard on != lastWantHR else { return }
         lastWantHR = on
+        // IN-03: drop the retained Garmin sample when HR is turned OFF so re-enabling starts clean rather
+        // than flashing an old value before a fresh sample arrives. Display-only state; touches no dose path.
+        if !on { latestGarminHeartRate = nil }
         onWantHeartRate?(on)
     }
 
