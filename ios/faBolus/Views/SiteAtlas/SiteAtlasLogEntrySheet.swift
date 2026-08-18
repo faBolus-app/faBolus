@@ -27,6 +27,13 @@ struct SiteAtlasLogEntrySheet: View {
                                normalizedX: normalizedX, normalizedY: normalizedY)
     }
 
+    /// IN-01: reuse-advisory timing phrase — "today" / singular "day" / plural "days" (never "0 days
+    /// ago" or "1 days ago"), matching `SiteHistoryRow.ageText`'s formatting.
+    private func reuseTimingPhrase(_ days: Int) -> String {
+        if days == 0 { return "You logged this area earlier today." }
+        return "You logged this area \(days) day\(days == 1 ? "" : "s") ago."
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -46,7 +53,7 @@ struct SiteAtlasLogEntrySheet: View {
                 if let nearby = nearbyRecent {
                     Section {
                         Label {
-                            Text("You logged this area \(nearby.daysSincePlaced) days ago. Rotating sites helps absorption.")
+                            Text("\(reuseTimingPhrase(nearby.daysSincePlaced)) Rotating sites helps absorption.")
                                 .font(.footnote)
                         } icon: {
                             Image(systemName: "exclamationmark.triangle.fill")
