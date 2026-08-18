@@ -38,8 +38,11 @@ enum FoodFinderAICarbParse {
         guard let value = extractNumber(from: text) else { return .manualEntryFallback }
         // Non-finite / negative are not usable estimates → manual-entry fallback (never a fabricated 0).
         guard value.isFinite, value >= 0 else { return .manualEntryFallback }
-        let clamped = min(max(Int(value.rounded()), 0), FoodFinderCarbEstimate.maxCarbGrams)
-        return .grams(clamped)
+        // Clamp in Double space BEFORE the Int() conversion: a hallucinated/adversarial value above
+        // Int.max (e.g. {"carbs_g": 1e19} or a 25-digit prose number) would trap Int(_:) and crash.
+        // `maxCarbGrams` is exactly representable as a Double, so Int() of the capped value is safe.
+        let capped = min(max(value.rounded(), 0), Double(FoodFinderCarbEstimate.maxCarbGrams))
+        return .grams(Int(capped))
     }
 
     // MARK: - Extraction
@@ -64,17 +67,31 @@ enum FoodFinderAICarbParse {
         for (rawKey, rawValue) in obj {
             let normalized = rawKey.lowercased().filter { $0.isLetter }
             guard carbKeys.contains(normalized) else { continue }
-            if let n = rawValue as? NSNumber { return n.doubleValue }
+            // WR-04: JSONSerialization represents JSON true/false as an NSNumber, so a naive
+            // `as? NSNumber` would coerce `{"carbs_g": true}` into 1.0. A boolean is not a carb value —
+            // skip it (→ manual-entry fallback) rather than fabricating a number.
+            if let n = rawValue as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() { return n.doubleValue }
             if let s = rawValue as? String, let d = Double(s.trimmingCharacters(in: .whitespaces)) { return d }
         }
         return nil
     }
 
-    /// The first signed decimal number appearing in the text (tolerant free-text fallback, e.g. "≈ 45 g").
+    /// The first signed decimal number that is directly attached to a grams unit (e.g. "45 g", "12g",
+    /// "3 grams") — NOT merely the first number anywhere in the text. WR-03: taking the first number
+    /// surfaced a leading NON-carb figure (a serving count in "2 servings, roughly 55 g", a percentage in
+    /// "12% sugar, about 40g carbs") as the estimate on a dose-adjacent surface. Requiring a grams unit
+    /// keeps the intended tolerant prose fallback while routing ambiguous, unit-less prose to manual entry.
     private static func firstNumber(in text: String) -> Double? {
-        guard let range = text.range(of: "[-+]?[0-9]*\\.?[0-9]+", options: .regularExpression) else {
+        let pattern = "([-+]?[0-9]*\\.?[0-9]+)\\s*g(?:ram(?:me)?s?)?\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
         }
-        return Double(text[range])
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges >= 2,
+              match.range(at: 1).location != NSNotFound else {
+            return nil
+        }
+        return Double(ns.substring(with: match.range(at: 1)))
     }
 }

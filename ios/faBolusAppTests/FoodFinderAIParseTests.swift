@@ -47,6 +47,42 @@ struct FoodFinderAIParseTests {
         #expect(FoodFinderAICarbParse.parse("negative -3 grams") == .manualEntryFallback)
     }
 
+    /// CR-02 regression: a hallucinated/adversarial value above Int.max must be clamped in Double space
+    /// and NEVER trap the Int() conversion — from a JSON number, a huge prose number, or a JSON string.
+    @Test func doesNotTrapOnOverflowingValue() {
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": 1e19}"#)
+                == .grams(FoodFinderCarbEstimate.maxCarbGrams))
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": "1e19"}"#)
+                == .grams(FoodFinderCarbEstimate.maxCarbGrams))
+        // A 25-digit prose number attached to a grams unit.
+        #expect(FoodFinderAICarbParse.parse("about 9999999999999999999999999 g of carbs")
+                == .grams(FoodFinderCarbEstimate.maxCarbGrams))
+    }
+
+    /// CR-02 regression: a non-finite AI number (Infinity/NaN arriving via a numeric string) is not a
+    /// usable estimate → manual-entry fallback, never a trap.
+    @Test func fallsBackOnNonFiniteValue() {
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": "inf"}"#) == .manualEntryFallback)
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": "nan"}"#) == .manualEntryFallback)
+    }
+
+    /// WR-03 regression: a prose response must not surface a leading NON-carb number (a serving count, a
+    /// percentage). Only a number directly attached to a grams unit is accepted; the wrong-number shapes
+    /// the reviewer called out now resolve to the carb figure, not the first integer in the text.
+    @Test func proseFallbackPrefersGramsAttachedNumber() {
+        #expect(FoodFinderAICarbParse.parse("2 servings, roughly 55 g of carbs") == .grams(55))
+        #expect(FoodFinderAICarbParse.parse("Contains 12% sugar, about 40g carbs") == .grams(40))
+        // Prose with a bare number and no grams unit is ambiguous → manual entry, not a guessed carb.
+        #expect(FoodFinderAICarbParse.parse("maybe around 25 of something") == .manualEntryFallback)
+    }
+
+    /// WR-04 regression: a JSON boolean must not be coerced into a carb number. `{"carbs_g": true}`
+    /// previously yielded .grams(1); it must now fall back to manual entry.
+    @Test func rejectsBooleanCarbValue() {
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": true}"#) == .manualEntryFallback)
+        #expect(FoodFinderAICarbParse.parse(#"{"carbs_g": false}"#) == .manualEntryFallback)
+    }
+
     // MARK: - FoodFinderAIServiceAdapter: HTTP-status → error mapping
 
     @Test func mapsSuccessStatusToNoError() {
