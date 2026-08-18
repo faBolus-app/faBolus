@@ -91,6 +91,21 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     /// advertised name suffix when several Dexcom sensors are in range; passive reads need no auth.
     private var transmitterID: String { (GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? "").uppercased() }
 
+    /// H-02: peripherals seen matching (with NO transmitter ID configured) during the current RSSI
+    /// collection window — cleared once a candidate is chosen (or `stop()` is called).
+    private var rssiCandidates: [(peripheral: CBPeripheral, rssi: Int)] = []
+    private var selectionTask: Task<Void, Never>?
+
+    /// H-02 collection window: once the FIRST Dexcom-advertising peripheral is seen with no
+    /// transmitter ID configured, wait this long for any OTHER real Dexcom transmitter simultaneously
+    /// in range (siblings, a clinic waiting room, a shared household with two T1D members) to also
+    /// advertise, so RSSI — not first-come-first-served — decides which one to connect to. Short
+    /// relative to the ~5-minute Dexcom wake/broadcast cycle, so it doesn't meaningfully delay the
+    /// common case (only one real sensor in range). Does not apply when a transmitter ID IS
+    /// configured — `matches()` already restricts to the exact suffix match in that case, so it
+    /// remains the primary disambiguator and connects immediately.
+    static let rssiCollectionWindow: TimeInterval = 3
+
     func start() async {
         guard central == nil else { return }
         status = .searching
@@ -112,6 +127,12 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
     func stop() {
         if let p = peripheral { central?.cancelPeripheralConnection(p) }
         central?.stopScan()
+        // H-02: don't let a pending RSSI-selection Task fire (and connect) after `stop()` — this is
+        // new state THIS fix introduced, so it's cleaned up here rather than left as a fresh leak on
+        // top of the pre-existing stop()/start() lifecycle gap tracked separately (W-02, deferred).
+        selectionTask?.cancel()
+        selectionTask = nil
+        rssiCandidates = []
         peripheral = nil
         status = .idle
         onChange?()
@@ -280,13 +301,60 @@ extension DexcomG6BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
         // Pull the advertised name out here so the non-Sendable [String: Any] isn't sent into the
         // main-actor closure (Swift 6).
         let advName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let rssiValue = RSSI.intValue
         MainActor.assumeIsolated {
             guard self.peripheral == nil, matches(peripheral, advName: advName) else { return }
-            self.peripheral = peripheral
-            peripheral.delegate = self
-            central.stopScan()
-            central.connect(peripheral)
+            guard transmitterID.count < 2 else {
+                // H-02: a transmitter ID IS configured and `matches()` already restricted to the
+                // exact suffix match above — it's already the primary disambiguator, so connect
+                // immediately, no RSSI collection window needed.
+                self.peripheral = peripheral
+                peripheral.delegate = self
+                central.stopScan()
+                central.connect(peripheral)
+                return
+            }
+            // H-02: no transmitter ID configured — `matches()` accepted ANY Dexcom-advertising
+            // peripheral. Rather than latch onto whichever one answers first, collect briefly and let
+            // RSSI (strongest/nearest) decide. `stopScan()` is deliberately deferred to
+            // `connectStrongestRSSICandidate()` below so other real transmitters get a chance to be seen.
+            if !rssiCandidates.contains(where: { $0.peripheral.identifier == peripheral.identifier }) {
+                rssiCandidates.append((peripheral, rssiValue))
+            }
+            if selectionTask == nil {
+                selectionTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(Self.rssiCollectionWindow * 1_000_000_000))
+                    self?.connectStrongestRSSICandidate()
+                }
+            }
         }
+    }
+
+    /// H-02: after the RSSI collection window elapses, connect to whichever candidate reported the
+    /// strongest signal (nearest transmitter) — see `strongestCandidateIndex` for the pure selection
+    /// logic. A no-op if something else already claimed `peripheral` in the meantime (e.g. a
+    /// transmitter-ID exact match, or `stop()` having already run).
+    private func connectStrongestRSSICandidate() {
+        selectionTask = nil
+        defer { rssiCandidates = [] }
+        guard peripheral == nil, let index = Self.strongestCandidateIndex(rssiCandidates.map(\.rssi)) else { return }
+        let chosen = rssiCandidates[index].peripheral
+        peripheral = chosen
+        chosen.delegate = self
+        central?.stopScan()
+        central?.connect(chosen)
+    }
+
+    /// Pure selection logic (H-02) — deliberately decoupled from `CBPeripheral` (which can't be
+    /// constructed outside CoreBluetooth) so it's directly unit-testable. CoreBluetooth RSSI is a
+    /// negative dBm value; closer to 0 means a stronger/nearer signal, so the numerically-highest
+    /// value wins. Ties keep the first-seen index (only replaced on a STRICTLY stronger reading),
+    /// since `rssiCandidates` preserves discovery order.
+    static func strongestCandidateIndex(_ rssiValues: [Int]) -> Int? {
+        guard !rssiValues.isEmpty else { return nil }
+        var bestIndex = 0
+        for i in rssiValues.indices where rssiValues[i] > rssiValues[bestIndex] { bestIndex = i }
+        return bestIndex
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

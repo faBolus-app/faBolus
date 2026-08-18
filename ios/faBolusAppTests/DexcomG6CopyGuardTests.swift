@@ -121,4 +121,17 @@ struct DexcomG6CopyGuardTests {
         #expect(corpus.contains("no transmitter ID"),
                 "an already-set-up single sensor must be documented as needing no transmitter ID")
     }
+
+    // MARK: (g) multi-Dexcom-nearby caveat is PRESENT (09.20-REVIEW.md H-02)
+    //
+    // The guided-setup copy must not just say the transmitter ID is optional for a single sensor —
+    // it must also disclose that leaving it blank with ANOTHER real Dexcom transmitter nearby means
+    // faBolus silently trusts whichever one answers first (a bolus-calc input-provenance risk, not a
+    // decode-integrity one — see 09.20-REVIEW.md H-02).
+
+    @Test func multiDexcomNearbyCaveatIsPresent() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("reads YOUR sensor, not theirs"),
+                "the guided-setup copy must disclose that leaving the transmitter ID blank with another real Dexcom nearby means silently trusting whichever transmitter answers first (H-02)")
+    }
 }

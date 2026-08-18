@@ -208,4 +208,69 @@ struct DexcomG6BLESourceTests {
         #expect(source.latest?.mgdl == 120, "a fresh anchor must still work even if the source has been connected a long time")
         #expect(source.status == .connected)
     }
+
+    // MARK: - H-02 (09.20-REVIEW.md) — RSSI tie-break selection
+    //
+    // `strongestCandidateIndex` is the pure, CoreBluetooth-free decision logic behind H-02's fix:
+    // when no transmitter ID is configured, `didDiscover` collects candidate RSSI values over a short
+    // window instead of connecting to the first Dexcom-advertising peripheral, then picks the
+    // strongest signal via this function. It's tested directly here (not via a live/simulated
+    // `CBCentralManager`, which can't be driven from XCTest/Swift Testing) because a real
+    // `CBPeripheral` can't be constructed outside CoreBluetooth.
+
+    /// CoreBluetooth RSSI is negative dBm; closer to 0 is stronger/nearer — the numerically-highest
+    /// value must win, regardless of discovery order.
+    @Test func strongestCandidateIndexPrefersHighestRSSIRegardlessOfOrder() {
+        #expect(DexcomG6BLESource.strongestCandidateIndex([-70, -40, -85]) == 1,
+                "the strongest (closest-to-zero) RSSI must win, not the first-discovered")
+        #expect(DexcomG6BLESource.strongestCandidateIndex([-40, -70, -85]) == 0,
+                "when the first-discovered candidate genuinely has the strongest signal, it still wins")
+    }
+
+    /// A tie keeps the first-seen candidate — a later reading must be STRICTLY stronger to displace
+    /// the current best, so discovery order is a stable, deterministic tie-break.
+    @Test func strongestCandidateIndexBreaksTiesByFirstSeen() {
+        #expect(DexcomG6BLESource.strongestCandidateIndex([-50, -50, -90]) == 0,
+                "equal RSSI values must keep the first-seen index, not the last")
+    }
+
+    /// No candidates observed yet (e.g. the collection window elapsed with nothing seen, or `stop()`
+    /// already cleared the list) must return nil, never crash or fabricate an index.
+    @Test func strongestCandidateIndexOnEmptyReturnsNil() {
+        #expect(DexcomG6BLESource.strongestCandidateIndex([]) == nil)
+    }
+
+    /// A single candidate is trivially "strongest" — the common case (only one real Dexcom nearby)
+    /// must not require a second reading to resolve.
+    @Test func strongestCandidateIndexWithSingleCandidateReturnsIt() {
+        #expect(DexcomG6BLESource.strongestCandidateIndex([-65]) == 0)
+    }
+
+    /// Source-scan wiring check: `strongestCandidateIndex` must actually be CALLED from `didDiscover`
+    /// (not just declared and dead) — otherwise the four behavioral tests above would be proving the
+    /// correctness of a function nothing in the delegate path ever invokes.
+    @Test func strongestCandidateIndexIsWiredIntoDidDiscover() throws {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var root: URL?
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("Shared")
+            if fm.fileExists(atPath: candidate.path) { root = candidate.deletingLastPathComponent(); break }
+            probe = probe.deletingLastPathComponent()
+        }
+        let sourcePath = "ios/faBolus/Data/Sources/DexcomG6BLESource.swift"
+        let code = try #require(root.flatMap { try? String(contentsOf: $0.appendingPathComponent(sourcePath), encoding: .utf8) },
+                                "could not resolve \(sourcePath) from #filePath=\(#filePath)")
+        guard let start = code.range(of: "func centralManager(_ central: CBCentralManager, didDiscover"),
+              let end = code.range(of: "func centralManager(_ central: CBCentralManager, didConnect",
+                                    range: start.upperBound..<code.endIndex) else {
+            Issue.record("could not isolate the didDiscover...didConnect span")
+            return
+        }
+        let span = String(code[start.upperBound..<end.lowerBound])
+        #expect(span.contains("strongestCandidateIndex("),
+                "didDiscover (or its RSSI-selection helper, defined in the same span) must call strongestCandidateIndex — otherwise the RSSI tie-break logic is dead code (H-02)")
+        #expect(span.contains("rssiCandidates"),
+                "didDiscover must collect RSSI candidates when no transmitter ID is configured (H-02)")
+    }
 }

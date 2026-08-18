@@ -93,9 +93,10 @@ uses (and its own setup docs treat as the standard way to connect), not a long s
   broadcasts. faBolus never authenticates or writes to the transmitter, so it can't disconnect the
   Dexcom app.
 - **A sensor already set up in the Dexcom app works as-is** — no re-pairing, no transmitter ID needed
-  for a single sensor. Optionally enter your **transmitter ID** under Settings → Glucose failover →
-  CGM account credentials only if you have several Dexcoms nearby and need to disambiguate. No login,
-  no cloud.
+  for a single sensor. **If anyone else nearby also wears a Dexcom** (a sibling, a clinic waiting room,
+  another household member), enter your **transmitter ID** under Settings → Glucose failover → CGM
+  account credentials so faBolus reads YOUR sensor, not theirs — without it, faBolus passively connects
+  to whichever real Dexcom transmitter answers first. No login, no cloud.
 - **The first reading can take up to ~5 minutes** — one Dexcom wake/connect cycle — after you enable
   the source. That's normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth
   off then on **inside the official Dexcom app** (not iOS Settings) — the documented xDrip4iOS remedy.
