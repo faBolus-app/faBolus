@@ -12,6 +12,11 @@ import faBolusCore
 import faBolusDesign
 import HistoryStore
 
+/// Sane ceiling for a single caffeine entry (mg). A finite value above this — or any non-finite paste
+/// (e.g. `1e400` → `+inf`) — is rejected at the entry sheet (H-01/M-01) and clamped on display via the
+/// shared `clampedInt` funnel, so even a legacy persisted bad value renders without tripping `Int(_:)`.
+private let maxCaffeineMilligrams = 100_000
+
 struct LoopInsights_CaffeineLogView: View {
     /// Optional to mirror the endo report view — a nil shared store degrades to the empty state
     /// rather than crashing.
@@ -46,7 +51,7 @@ struct LoopInsights_CaffeineLogView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             Spacer()
-                            Text("\(Int(entry.milligrams.rounded())) mg")
+                            Text("\(clampedInt(entry.milligrams, max: maxCaffeineMilligrams)) mg")
                                 .monospacedDigit()
                                 .foregroundStyle(AppTheme.carbs)
                             Text(entry.date, format: .dateTime.month().day().hour().minute())
@@ -134,8 +139,12 @@ private struct CaffeineEntrySheet: View {
     @State private var date = Date()
 
     private var amount: Double? {
-        let v = Double(amountText.trimmingCharacters(in: .whitespaces))
-        return (v ?? 0) > 0 ? v : nil
+        // H-01/M-01: reject non-finite (`.infinity` from a pasted `1e400`) and implausibly-large finite
+        // values (a value above `Int.max` would trap the log row's `Int(_:)`) AT THE SEAM, so garbage is
+        // never persisted, round-tripped into backup/export, or fed to any tracker math.
+        guard let v = Double(amountText.trimmingCharacters(in: .whitespaces)),
+              v.isFinite, v > 0, v <= Double(maxCaffeineMilligrams) else { return nil }
+        return v
     }
 
     var body: some View {

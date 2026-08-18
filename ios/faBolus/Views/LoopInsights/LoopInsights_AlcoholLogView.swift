@@ -13,6 +13,10 @@ import faBolusCore
 import faBolusDesign
 import HistoryStore
 
+/// Sane ceiling for a single alcohol entry (standard drinks). A finite value above this — or any
+/// non-finite paste — is rejected at the entry sheet (M-01), mirroring the caffeine mg cap.
+private let maxStandardDrinks = 100.0
+
 struct LoopInsights_AlcoholLogView: View {
     /// Optional to mirror the endo report view — a nil shared store degrades to the empty state.
     let historyStore: GlucoseHistoryStore?
@@ -94,10 +98,12 @@ struct LoopInsights_AlcoholLogView: View {
 
     private func reload() { entries = tracker.entries() }
 
-    /// "1 drink" / "1.5 drinks" — trimmed, no trailing zeros.
+    /// "1 drink" / "1.5 drinks" — trimmed, no trailing zeros. Non-finite (a legacy persisted `inf`/`nan`)
+    /// renders as "0 drinks" rather than "inf drinks" (M-01 defense-in-depth on read).
     private func drinksLabel(_ n: Double) -> String {
-        let s = String(format: "%g", n)
-        return "\(s) \(n == 1 ? "drink" : "drinks")"
+        let safe = n.isFinite ? n : 0
+        let s = String(format: "%g", safe)
+        return "\(s) \(safe == 1 ? "drink" : "drinks")"
     }
 }
 
@@ -110,8 +116,11 @@ private struct AlcoholEntrySheet: View {
     @State private var date = Date()
 
     private var amount: Double? {
-        let v = Double(amountText.trimmingCharacters(in: .whitespaces))
-        return (v ?? 0) > 0 ? v : nil
+        // M-01: reject non-finite and implausibly-large finite values AT THE SEAM (shared root cause with
+        // H-01) so garbage never persists, round-trips into backup/export, or feeds any tracker math.
+        guard let v = Double(amountText.trimmingCharacters(in: .whitespaces)),
+              v.isFinite, v > 0, v <= maxStandardDrinks else { return nil }
+        return v
     }
 
     var body: some View {
