@@ -122,7 +122,15 @@ public struct GlucoseSample: Sendable, Equatable {
     public let trend: GlucoseTrend?
     /// Stable id of the source that produced it (matches its `GlucoseSourceDescriptor.id`).
     public let sourceID: String
-    public init(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
+    /// D-05 shared plausibility gate: FAILS (returns `nil`) for a value outside the physiologic range
+    /// `[GlucosePlausibility.minimum, .maximum]` — REJECT, not clamp (clamping is fail-open, silently
+    /// substituting a dose input). This is the ONLY initializer, so every `GlucoseSource` is FORCED
+    /// through the gate at construction: no source's `latest` or `history` can ever hold an implausible
+    /// value, and the Test-flow UI (which reads `source.latest` directly, bypassing the arbiter) cannot
+    /// render garbage as a Test "success". `GlucoseReading` (shared with the pump's own ungated history)
+    /// is deliberately NOT gated — only `GlucoseSample`, the failover-only type (Pitfall 3).
+    public init?(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
+        guard GlucosePlausibility.isPlausible(mgdl: mgdl) else { return nil }
         self.mgdl = mgdl; self.date = date; self.trend = trend; self.sourceID = sourceID
     }
     public var reading: GlucoseReading { GlucoseReading(date: date, mgdl: mgdl) }

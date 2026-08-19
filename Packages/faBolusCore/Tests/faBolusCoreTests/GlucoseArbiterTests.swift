@@ -28,7 +28,8 @@ final class GlucoseArbiterTests: XCTestCase {
         return s
     }
     private func sample(_ mgdl: Int, ageSec: TimeInterval, trend: GlucoseTrend = .up) -> GlucoseSample {
-        GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")
+        // The failable init (D-05) never fails here — every caller passes an in-range mgdl (e.g. 120).
+        GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")!
     }
 
     func testFreshPumpKeepsPumpValue() {
