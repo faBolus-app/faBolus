@@ -12,16 +12,24 @@ import faBolusCore
 @MainActor
 struct CgmConnectionKindTests {
 
-    /// The expected classification for each of the 7 registered failover sources.
-    private static let expected: [String: GlucoseConnectionKind] = [
-        "dexcom-g7-ble": .localBLE,
-        "dexcom-g6-ble": .localBLE,
-        "librelinkup": .cloudPoll,
-        "nightscout": .cloudPoll,
-        "dexcom-share": .cloudPoll,
-        "healthkit": .localOnDevice,
-        "xdrip-appgroup": .localOnDevice,
-    ]
+    /// The expected classification for each registered failover source. "healthkit" only exists in
+    /// `GlucoseSourceRegistry.enabled` when `FABOLUS_HEALTHKIT` is ON (D-13, Phase 09.23) — gated
+    /// here too so the set-equality check below stays exact in both flag states, as an unavoidable
+    /// direct consequence of that gating (not itself part of the 09.23-01 plan's declared scope).
+    private static let expected: [String: GlucoseConnectionKind] = {
+        var table: [String: GlucoseConnectionKind] = [
+            "dexcom-g7-ble": .localBLE,
+            "dexcom-g6-ble": .localBLE,
+            "librelinkup": .cloudPoll,
+            "nightscout": .cloudPoll,
+            "dexcom-share": .cloudPoll,
+            "xdrip-appgroup": .localOnDevice,
+        ]
+        #if FABOLUS_HEALTHKIT
+        table["healthkit"] = .localOnDevice
+        #endif
+        return table
+    }()
 
     /// Every registered source classifies itself correctly (BLE / cloud / on-device). Iterates the
     /// registry's enabled descriptors so the set is exactly what the app ships, not a hand-copied list.
