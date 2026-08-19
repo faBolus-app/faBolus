@@ -137,4 +137,100 @@ struct HealthKitExporterTests {
         #expect(!source.lowercased().contains("heartrate"),
                 "D-08 violated — HealthKitExporter must never expose a heart-rate export method/type; HR is read-only")
     }
+
+    // MARK: - Task 2 Behavior 1: AppSettings per-type export toggles default to false, no HR toggle
+
+    @Test func healthKitExportTogglesDefaultToFalseAndNoHeartRateToggleExists() {
+        let suiteName = "HealthKitExporterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        #expect(settings.healthKitExportCarbsEnabled == false)
+        #expect(settings.healthKitExportInsulinEnabled == false)
+        #expect(settings.healthKitExportGlucoseEnabled == false)
+        #expect(settings.healthKitAutoExportEnabled == false, "D-12: automatic export defaults OFF")
+    }
+
+    @Test func healthKitExportTogglesPersistThroughUserDefaultsAcrossInstances() {
+        let suiteName = "HealthKitExporterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let first = AppSettings(defaults: defaults)
+        first.healthKitExportCarbsEnabled = true
+        first.healthKitAutoExportEnabled = true
+
+        let second = AppSettings(defaults: defaults)   // simulates a relaunch reading the same suite
+        #expect(second.healthKitExportCarbsEnabled == true)
+        #expect(second.healthKitExportInsulinEnabled == false)
+        #expect(second.healthKitAutoExportEnabled == true)
+    }
+
+    /// Source-scan companion to `exporterSourceContainsNoHeartRateExportPath` — AppSettings itself
+    /// must never grow a `healthKitExportHeartRate*` toggle either (D-08).
+    @Test func appSettingsSourceContainsNoHeartRateExportToggle() throws {
+        let root = try #require(Self.repoRootURL(),
+                                "could not resolve the repo root from #filePath=\(#filePath)")
+        let url = root.appendingPathComponent("ios/faBolus/Data/AppSettings.swift")
+        let source = try #require(try? String(contentsOf: url, encoding: .utf8),
+                                  "could not resolve ios/faBolus/Data/AppSettings.swift — path resolution likely broke")
+        #expect(!source.contains("healthKitExportHeartRate"),
+                "D-08 violated — AppSettings must never expose a healthKitExportHeartRate* toggle; HR is read-only")
+    }
+
+    // MARK: - Task 2 Behavior 2 (FABOLUS_HEALTHKIT only): go-forward export hook routes only
+    // enabled types' CURRENT values to HealthKitExporter, and never re-sends already-marked
+    // entries (proved via the exporter's own high-water-mark selector — Task 1's `newerThanMark`).
+
+    #if FABOLUS_HEALTHKIT
+    private func makeModel() -> (AppModel, MockBackend) {
+        let backend = MockBackend()
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        return (AppModel(source: backend, ledgerStoreURL: url), backend)
+    }
+
+    /// A fake `HealthKitExportDestination` — never touches real `HKHealthStore`. Records exactly
+    /// which per-type methods were called and with what candidates, proving the enabled-only subset
+    /// (and ONLY the enabled-only subset) reaches the seam (D-14), and that a never-called method
+    /// received nothing (a disabled type's data never reaches the exporter at all).
+    private final class FakeHealthKitExportDestination: HealthKitExportDestination {
+        private(set) var newCarbsCalls: [[(date: Date, grams: Double)]] = []
+        private(set) var newInsulinCalls: [[BolusMarker]] = []
+        private(set) var newGlucoseCalls: [[GlucoseReading]] = []
+        private(set) var historicalCarbsCalls: [[(date: Date, grams: Double)]] = []
+        private(set) var historicalInsulinCalls: [[BolusMarker]] = []
+        private(set) var historicalGlucoseCalls: [[GlucoseReading]] = []
+
+        func exportNewCarbs(_ candidates: [(date: Date, grams: Double)]) async { newCarbsCalls.append(candidates) }
+        func exportNewInsulin(_ candidates: [BolusMarker]) async { newInsulinCalls.append(candidates) }
+        func exportNewGlucose(_ candidates: [GlucoseReading]) async { newGlucoseCalls.append(candidates) }
+        func exportHistoricalCarbs(_ entries: [(date: Date, grams: Double)]) async { historicalCarbsCalls.append(entries) }
+        func exportHistoricalInsulin(_ markers: [BolusMarker]) async { historicalInsulinCalls.append(markers) }
+        func exportHistoricalGlucose(_ readings: [GlucoseReading]) async { historicalGlucoseCalls.append(readings) }
+    }
+
+    @Test func goForwardExportHookRoutesOnlyEnabledTypesToTheExporter() async throws {
+        let (model, _) = makeModel()
+        let store = try GlucoseHistoryStore(inMemory: true)
+        model.setHistoryStoreForTesting(store)
+
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        store.ingestCarbs([(date: t0, grams: 30)], sourceID: "fabolus")
+
+        AppSettings.shared.healthKitExportCarbsEnabled = true
+        AppSettings.shared.healthKitExportInsulinEnabled = false
+        AppSettings.shared.healthKitExportGlucoseEnabled = false
+        defer { AppSettings.shared.healthKitExportCarbsEnabled = false }
+
+        let fake = FakeHealthKitExportDestination()
+        model.setHealthKitExportDestinationForTesting(fake)
+
+        await model.runHealthKitAutoExport()
+
+        #expect(fake.newCarbsCalls.count == 1, "carbs export is enabled — the exporter must be called exactly once")
+        #expect(fake.newCarbsCalls.first?.map(\.grams) == [30])
+        #expect(fake.newInsulinCalls.isEmpty, "insulin export is disabled — the exporter must never be called")
+        #expect(fake.newGlucoseCalls.isEmpty, "glucose export is disabled — the exporter must never be called")
+    }
+    #endif
 }
