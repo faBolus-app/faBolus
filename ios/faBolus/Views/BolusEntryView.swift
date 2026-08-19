@@ -177,6 +177,24 @@ struct BolusEntryView: View {
         }
     }
 
+    /// D-13/F-15: the stale-CGM dialog TITLE — a THREE-way selection so "CGM unavailable" never sits
+    /// above a button offering to USE a stale-but-present reading. The `newBG == -1` sentinel alone
+    /// (the old two-way `newBG == -1 ? "CGM unavailable" : "CGM updated"`) conflates two very different
+    /// states: NO reading at all (carbs-only / cancel — genuinely "unavailable") vs a stale-but-real
+    /// reading that IS being passed via `staleBG` and CAN be included in the correction. Pure/static so
+    /// it's unit-testable (`StaleCgmDialogTitleTests`) without the SwiftUI view; `newBG == nil` maps to
+    /// the fresh-changed default (harmless — the dialog isn't shown when `cgmUpdate` is nil).
+    nonisolated static func staleCgmDialogTitle(newBG: Int?, staleBG: Int?) -> String {
+        guard let newBG else { return "CGM updated" }
+        if newBG != -1 { return "CGM updated" }                 // fresh-changed reading
+        if staleBG != nil { return "CGM reading is stale" }     // stale-but-present (includable)
+        return "CGM unavailable"                                 // no reading at all
+    }
+
+    private var staleCgmDialogTitle: String {
+        Self.staleCgmDialogTitle(newBG: cgmUpdate?.newBG, staleBG: cgmUpdate?.staleBG)
+    }
+
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
     /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
@@ -820,7 +838,7 @@ struct BolusEntryView: View {
         } message: {
             Text(confirmMessage)
         }
-        .confirmationDialog(cgmUpdate?.newBG == -1 ? "CGM unavailable" : "CGM updated",
+        .confirmationDialog(staleCgmDialogTitle,
                             isPresented: Binding(get: { cgmUpdate != nil },
                                                  set: { if !$0 { cgmUpdate = nil } }),
                             titleVisibility: .visible) {
