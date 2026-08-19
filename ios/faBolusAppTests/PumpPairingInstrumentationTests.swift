@@ -63,12 +63,17 @@ struct PumpPairingPostPairBootstrapOrderTests {
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
         b.startPollingForTesting()
-        #expect(dispatched.count == 17)   // Phase 09.9: fastRead() gained LoadStatusRequest (was 16)
+        // api25 static-registry hardening: op20 LoadStatusRequest is IDENTITY-GATED — deferred out of the
+        // pre-version burst (dispatched only after the op33/op85 version responses identify the pump), so the
+        // synchronous burst is 16 (trio 3 + fastRead's 6 non-gated + staticRead 7), not 17.
+        #expect(dispatched.count == 16)
         #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
                 "the reference-required bootstrap trio must be dispatched first, in this exact order")
         #expect(dispatched.prefix(3).map(\.opcode) == [32, 84, 54])
         #expect(dispatched[3].typeName == "ControlIQIOBRequest",
                 "fastRead()'s CURRENT_STATUS reads must follow the bootstrap trio, not precede it — capture #3's exact failure mode")
+        #expect(!dispatched.contains { $0.typeName == "LoadStatusRequest" },
+                "op20 LoadStatusRequest is identity-gated — it must NOT be in the pre-version burst")
     }
 
     /// The recurring `pollTimer` tick (`fastRead()`/`staticRead()` called directly, bypassing
@@ -79,7 +84,7 @@ struct PumpPairingPostPairBootstrapOrderTests {
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(dispatched.count == 14)   // Phase 09.9: fastRead() gained LoadStatusRequest (was 13)
+        #expect(dispatched.count == 14)   // api25 refinement: op20 LoadStatusRequest RESTORED to fastRead() (back to 14)
         #expect(dispatched.first?.typeName == "ControlIQIOBRequest",
                 "a recurring tick starts directly with fastRead()'s own first message — no bootstrap prepend")
     }
@@ -115,20 +120,20 @@ struct PumpPairingStaleTimerGuardTests {
         b.alertReadDelaySecForTesting = 0.05
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
-        b.startPollingForTesting()   // cycle 1: pollCycleGeneration = G1; dispatches its own 17 reads
+        b.startPollingForTesting()   // cycle 1: pollCycleGeneration = G1; dispatches its own 16 reads
                                       // synchronously; schedules alertRead() @ +0.05s under G1
         dispatched.removeAll()       // only care about what's dispatched from cycle 2 on
         b.startPollingForTesting()   // cycle 2 (reconnect + re-pair): bumps pollCycleGeneration to G2
                                       // BEFORE cycle 1's still-pending +0.05s alertRead call can fire;
-                                      // dispatches its own 17 reads synchronously right here
+                                      // dispatches its own 16 reads synchronously right here
         // ≫ cycle 1's stale 0.05s deadline (must no-op) + cycle 2's own LEGITIMATE scheduleAlertRead
         // (armed at cycle 2's startPolling(), firing +0.05s later) + its own 5-message dispatch.
         try? await Task.sleep(nanoseconds: 200_000_000)
-        // Exactly cycle 2's own 17 (bootstrap trio + fastRead[incl. Phase-09.9 LoadStatusRequest] +
-        // staticRead, all synchronous) + 5 (its own legitimate alertRead) = 22. A missing/broken guard
-        // would add cycle 1's stale extra 5 → 27.
-        #expect(dispatched.count == 22,
-                "cycle 2's own 22 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (27)")
+        // Exactly cycle 2's own 16 (bootstrap trio + fastRead's 6 non-gated [op20 identity-gated, api25
+        // static-registry hardening — deferred out of the pre-version burst] + staticRead, all synchronous) +
+        // 5 (its own legitimate alertRead) = 21. A missing/broken guard would add cycle 1's stale extra 5 → 26.
+        #expect(dispatched.count == 21,
+                "cycle 2's own 21 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (26)")
         #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
                 "cycle 2's bootstrap trio must still be dispatched FIRST — a stale cycle-1 alertRead landing before cycle 2's own startPolling() runs would corrupt this order, exactly matching the AlertStatusRequest-before-ApiVersionRequest corruption observed in on-device capture #4")
     }

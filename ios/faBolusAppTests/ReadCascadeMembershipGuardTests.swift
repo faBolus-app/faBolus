@@ -12,6 +12,7 @@ import TandemBLE
 ///   `fastRead()` (7)/`alertRead()` (5)/`staticRead()` (7) — a reorder or silent drop inside a tier could
 ///   still slip through a count-only check. This suite pins the exact ordered list per tier, split into
 ///   trio/fast/static/alert segments, straight from `TandemBackend.swift:314-318,1708-1736`.
+///   (fastRead restored op20 `LoadStatusRequest` to 7 — debug pump-pairing-loop-api25 refinement.)
 /// - B2: the recurring `pollTimer` tick's cadence gating (alerts every tick, fast on `tick%4`, static on
 ///   `tick%40`, `:1874-1878`) had NO guard at all — the existing
 ///   `simulateRecurringFastAndStaticReadTickForTesting()` seam calls `fastRead()`/`staticRead()` directly,
@@ -30,9 +31,23 @@ struct ReadCascadeMembershipGuardTests {
     // MARK: - Exact ordered tier membership (B1)
 
     private static let bootstrapTrio = ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"]
+    // Debug pump-pairing-loop-api25 (refinement): op20 `LoadStatusRequest` is RESTORED to `fastRead()`
+    // (tier back to 7) so the 09.9 `cartridgeReadyForBolus` pre-guard stays live on pumps that support it;
+    // the API-2.5 t:slim X2 that rejects op20 learns-and-skips it via the per-pump persisted `badOpcodes`
+    // set (one-drop-ever). See `PumpUnsupportedReadSelfHealTests` / `PumpLearnedOpcodePersistenceTests`.
     private static let fastReadTier = [
         "ControlIQIOBRequest", "CurrentEGVGuiDataRequest", "InsulinStatusRequest", "LastBolusStatusV2Request",
         "CurrentBatteryV2Request", "HomeScreenMirrorRequest", "LoadStatusRequest",
+    ]
+    // Debug pump-pairing-loop-api25 (STATIC-registry hardening): op20 `LoadStatusRequest` is now
+    // IDENTITY-GATED — held OUT of the pre-version `startPolling()` burst and dispatched only after the
+    // bootstrap op33/op85 version responses identify the pump (so a KNOWN-bad t:slim X2 sw-2.5 suppresses it
+    // before the first send). So the SYNCHRONOUS `startPolling()` fast tier is these 6 (op20 deferred); the
+    // recurring `pollTimer` tick still sends the full 7 (`fastReadTier` above), where the `badOpcodes` guard
+    // skips op20 only when statically/dynamically proven unsupported.
+    private static let fastReadTierPreVersion = [
+        "ControlIQIOBRequest", "CurrentEGVGuiDataRequest", "InsulinStatusRequest", "LastBolusStatusV2Request",
+        "CurrentBatteryV2Request", "HomeScreenMirrorRequest",
     ]
     private static let staticReadTier = [
         "CurrentBasalStatusRequest", "BolusCalcDataSnapshotRequest", "TimeSinceResetRequest",
@@ -43,10 +58,14 @@ struct ReadCascadeMembershipGuardTests {
         "MalfunctionStatusRequest",
     ]
 
-    /// `startPollingForTesting()` dispatches, synchronously: the bootstrap trio, then fastRead's 7, then
-    /// staticRead's 7 (17 total) — then, after `alertReadDelaySecForTesting`, alertRead's 5 (22 total).
-    /// This is the FULL exact-membership pin gap B1 asks for — a stronger check than the existing
-    /// count-only (17) + prefix(3)/[3] assertions in `PumpPairingPostPairBootstrapOrderTests`.
+    /// `startPollingForTesting()` dispatches, synchronously: the bootstrap trio, then fastRead's 6 NON-gated
+    /// reads (op20 deferred), then staticRead's 7 (16 total) — then, after `alertReadDelaySecForTesting`,
+    /// alertRead's 5 (21 total). Once the bootstrap version responses identify the pump, the deferred op20 is
+    /// dispatched (restored to the cascade after identity). This is the FULL exact-membership pin gap B1
+    /// asks for — a stronger check than the count-only (16) + prefix(3)/[3] assertions in
+    /// `PumpPairingPostPairBootstrapOrderTests`.
+    /// (debug pump-pairing-loop-api25 static-registry hardening: op20 is identity-gated — deferred out of the
+    /// pre-version burst, then dispatched after the op33/op85 version responses identify the pump.)
     @Test func startPollingDispatchesTheExactOrderedTrioThenFastThenStaticThenAlert() async {
         let b = backend()
         b.alertReadDelaySecForTesting = 0.05
@@ -54,14 +73,21 @@ struct ReadCascadeMembershipGuardTests {
         b.onReadDispatchedForTesting = { typeName, _ in dispatched.append(typeName) }
         b.startPollingForTesting()
 
-        #expect(dispatched.count == 17, "trio (3) + fastRead (7) + staticRead (7) must be synchronous")
+        #expect(dispatched.count == 16, "trio (3) + fastRead's 6 non-gated (op20 deferred) + staticRead (7) must be synchronous")
         #expect(Array(dispatched[0..<3]) == Self.bootstrapTrio, "bootstrap trio must be first, in this exact order")
-        #expect(Array(dispatched[3..<10]) == Self.fastReadTier, "fastRead's 7 must follow, in this exact order")
-        #expect(Array(dispatched[10..<17]) == Self.staticReadTier, "staticRead's 7 must follow, in this exact order")
+        #expect(Array(dispatched[3..<9]) == Self.fastReadTierPreVersion, "fastRead's 6 non-gated reads must follow, in this exact order (op20 deferred)")
+        #expect(Array(dispatched[9..<16]) == Self.staticReadTier, "staticRead's 7 must follow, in this exact order")
+        #expect(!dispatched.contains("LoadStatusRequest"), "op20 must NOT appear in the pre-version burst — it is identity-gated")
 
         try? await Task.sleep(nanoseconds: 200_000_000)   // let the delayed alertRead() burst land
-        #expect(dispatched.count == 22, "alertRead's 5 must follow after the alert-read delay")
-        #expect(Array(dispatched[17..<22]) == Self.alertReadTier, "alertRead's 5 must be in this exact order")
+        #expect(dispatched.count == 21, "alertRead's 5 must follow after the alert-read delay (op20 still deferred)")
+        #expect(Array(dispatched[16..<21]) == Self.alertReadTier, "alertRead's 5 must be in this exact order")
+
+        // Once the bootstrap version responses identify the pump (a SUPPORTED pump here — default identity),
+        // the deferred op20 IS dispatched, restoring it to the read cascade (owner req #2).
+        b.releaseIdentityGatedReadsForTesting()
+        #expect(dispatched.contains("LoadStatusRequest"),
+                "op20 must be dispatched once the version responses identify a supported pump")
     }
 
     /// `simulateRecurringFastAndStaticReadTickForTesting()` calls `fastRead()`/`staticRead()` directly with

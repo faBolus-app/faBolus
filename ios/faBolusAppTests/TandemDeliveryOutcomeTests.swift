@@ -305,17 +305,20 @@ struct TandemDeliveryOutcomeTests {
         #expect(fake.initiateWriteCount == 0)
     }
 
-    /// Freshness (RESEARCH Pitfall 1): `LoadStatusRequest` must be part of the routine fast-poll tier
-    /// (`fastRead()`), not only the on-demand wizard refresh — proven behaviorally via the
-    /// `onReadDispatchedForTesting` seam (mirrors `PumpPairingInstrumentationTests`' technique) so the
-    /// gate reads a value the pump actually keeps current during normal operation.
-    @Test func loadStatusRequestIsPartOfTheRoutineFastPollTier() {
+    /// Debug pump-pairing-loop-api25 REFINEMENT restores the Phase-09.9 invariant that op20
+    /// `LoadStatusRequest` rides the routine fast-poll tier: op20 feeds `cartridgeLoadState` → the 09.9
+    /// fail-closed `cartridgeReadyForBolus` pre-guard (whose `6` default fails OPEN), so it must stay live
+    /// on pumps that support it — an initial fix (commit 9f978a5) had removed it for ALL models, starving
+    /// that pre-guard on newer t:slim + Mobi. The API-2.5 t:slim X2 that rejects op20 no longer loops: it
+    /// learns-and-skips op20 via the per-pump persisted `badOpcodes` set (one-drop-ever; see
+    /// `PumpLearnedOpcodePersistenceTests`). Proven behaviorally via the `onReadDispatchedForTesting` seam.
+    @Test func loadStatusRequestRidesTheRoutineFastPollTier() {
         let (b, _) = make()
         var dispatchedTypeNames: [String] = []
         b.onReadDispatchedForTesting = { typeName, _ in dispatchedTypeNames.append(typeName) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
         #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
-                "fastRead() must include LoadStatusRequest so cartridgeLoadState never goes permanently stale")
+                "op20 LoadStatusRequest must ride the routine fast tier (api25 refinement) so cartridgeLoadState — and the 09.9 cartridgeReadyForBolus pre-guard — stays live on pumps that support it")
     }
 
     // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)

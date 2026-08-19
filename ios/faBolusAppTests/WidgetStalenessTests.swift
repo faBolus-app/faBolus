@@ -83,19 +83,31 @@ import faBolusCore
 
     // MARK: - Phase 09.9-04 (D-05): WidgetSnapshot.cartridgeReady
 
-    /// `makeSnapshot` maps the single `cartridgeReadyForBolus` predicate straight through — no bespoke
-    /// per-surface pump read. `MockBackend`'s default snapshot is idle (loadState 6) ⇒ ready.
-    @Test func makeSnapshotMapsCartridgeReadyFromTheSinglePredicate() {
+    /// WR-04 (debug pump-pairing-loop-api25, deep review): `makeSnapshot` now maps the Guardrail-B tri-state
+    /// — a positive widget "ready" is presented ONLY for a CONFIRMED `.ready` op-20 reply, never the
+    /// fail-open default. A CONFIRMED loading state maps to not-ready; an UNKNOWN/auto-excluded state maps
+    /// to the non-positive `false` ("omit the positive badge" — the Bool can't carry a third state), so a
+    /// state that was never read is never shown as a positive "ready". (Full WR-04 coverage — widget + the
+    /// `Bool?` remote wire — lives in `CartridgeReadinessRemotePresentationTests`.)
+    @Test func makeSnapshotMapsCartridgeReadyFromTheConfirmedTriState() {
         var pump = MockBackend().snapshot
-        pump.cartridgeLoadState = 6   // idle ⇒ ready
+        pump.cartridgeLoadState = 6                 // idle
+        pump.cartridgeLoadStateConfirmed = true     // a real op-20 reply → confirmed ready
         let ready = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
                                                  staleAfterSec: 5 * 60, hideAfterSec: nil)
         #expect(ready.cartridgeReady == true)
 
-        pump.cartridgeLoadState = 1   // LOAD_CARTRIDGE ⇒ not ready
+        pump.cartridgeLoadState = 1                 // LOAD_CARTRIDGE (confirmed loading) ⇒ not ready
         let notReady = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
                                                     staleAfterSec: 5 * 60, hideAfterSec: nil)
         #expect(notReady.cartridgeReady == false)
+
+        pump.cartridgeLoadState = 6
+        pump.cartridgeLoadStateConfirmed = false    // never read / op-20 auto-excluded ⇒ UNKNOWN
+        let unknown = WidgetPublisher.makeSnapshot(pump, history: [], alerts: [],
+                                                   staleAfterSec: 5 * 60, hideAfterSec: nil)
+        #expect(unknown.cartridgeReady == false,
+                "an unknown cartridge must not present a fail-open 'ready' on the widget (WR-04)")
     }
 
     /// A legacy App-Group payload written before this field existed decodes with `cartridgeReady ==

@@ -309,6 +309,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     // `PumpReadScheduler.badOpcodes`'s doc comment for the SEVENTH fix cycle history. The `ErrorResponse`
     // delegate case (moved to `responseApplier`, Phase 09 Wave 4, D-07) feeds it via
     // `readScheduler.insertBadOpcode(_:)`.
+    /// debug pump-pairing-loop-api25 (refinement): DURABLE, per-pump memory of the read opcodes THIS pump
+    /// has rejected, so the learned `badOpcodes` skip survives an app relaunch (not just a reconnect) and
+    /// is scoped to pump identity — a DIFFERENT pump never inherits it. Keyed by the pump's peripheral UUID
+    /// (`currentPumpKey()`), stamped with the firmware read from the pump so a firmware change re-tests.
+    /// Injectable so the test suite runs against an isolated `UserDefaults` suite, never `.standard`.
+    private var badOpcodeStore: PumpBadOpcodeStore = .standard
+    #if DEBUG
+    /// Test override for `currentPumpKey()` — lets a persistence test pin a stable pump identity without a
+    /// live CoreBluetooth peripheral. nil (default) uses the real `PumpPeripheralStore` identity.
+    private var injectedPumpKeyForTesting: String?
+    #endif
     /// P13: the pump's own capability bitmask (`PumpFeaturesV1Response`, op 79), projected to the
     /// neutral `PumpFeatureBits` at the decode boundary and consumed by `capabilities`. nil until the
     /// once-per-connect `staticRead` reply lands (or on firmware that never answers) → preset fallback.
@@ -374,6 +385,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// is a no-op receiver; no CoreBluetooth manager is created.
     func injectStatusFrameForTesting(_ frame: [UInt8]) {
         pumpClient(client, didReceiveFrame: frame, on: .currentStatus)
+    }
+    /// Test seam (CR-01/WR-01, debug pump-pairing-loop-api25 deep review): mirrors
+    /// `injectStatusFrameForTesting` but feeds the frame on the `.control` characteristic — so a test can
+    /// reproduce a NACKed control/delivery WRITE's op77 (which the pinned kit also decodes as `ErrorResponse`
+    /// on `.control`, and which reaches `apply` on `.opcodeFIFO` pumps) and assert it NEVER mutates the
+    /// read-only `badOpcodes` set.
+    func injectControlFrameForTesting(_ frame: [UInt8]) {
+        pumpClient(client, didReceiveFrame: frame, on: .control)
     }
     /// Test seam: mirrors `injectStatusFrameForTesting` but for the AUTHORIZATION characteristic —
     /// feeds a raw (CRC-16'd) pairing-response frame through the REAL `didReceiveFrame`/CRC-gate/
@@ -558,10 +577,74 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// right after `super.init()`, since Swift's two-phase init forbids a `[weak self]`-capturing
     /// closure inside the very expression that constructs the property holding it.
     private func wireReadScheduler() {
-        readScheduler.send = { [weak self] msg in try self?.client.send(msg) }
+        // Route through `tx` (== `client` in production, since `injectedTransport` is nil — so this is
+        // byte-identical to the prior `client.send(msg)`: same default authKey/pumpTimeSinceReset/no
+        // -delivery args) so the read's wire txId is captured for mechanism-B op77 correlation (debug
+        // pump-pairing-loop-api25). Under test `tx` is the injected `FakePumpTransport`, which yields an
+        // observable txId and records the send.
+        readScheduler.send = { [weak self] msg in
+            try self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false) ?? 0
+        }
         readScheduler.isConnected = { [weak self] in self?.snapshot.connection == .connected }
         readScheduler.pumpTimeAnchor = { [weak self] in self?.pumpTimeAnchor }
         readScheduler.onStartPollingCycleBegin = { [weak self] in self?.responseApplier.resetCycleState() }
+        // debug pump-pairing-loop-api25 (refinement): durable, per-pump learned-bad-opcode hydrate/persist.
+        readScheduler.loadPersistedBadOpcodes = { [weak self] in self?.persistedBadOpcodesForCurrentPump() ?? [] }
+        readScheduler.persistBadOpcode = { [weak self] opcode in self?.persistBadOpcodeForCurrentPump(opcode) }
+        // debug pump-pairing-loop-api25 (static-registry hardening): the pump identity that keys the STATIC
+        // known-unsupported-reads registry, read live off the snapshot the bootstrap op33/op85 responses
+        // populate — so the deferred identity-gated read (op20) is suppressed before the first send on a
+        // KNOWN-bad combo (t:slim X2 sw 2.5). Distinct from the per-pump LEARNED store above — never persisted.
+        readScheduler.pumpIdentityForStaticExclusion = { [weak self] in
+            (self?.snapshot.isMobi, self?.snapshot.softwareVersion ?? "")
+        }
+    }
+
+    // MARK: - Per-pump durable learned-bad-opcode persistence (debug pump-pairing-loop-api25 refinement)
+
+    /// The DURABLE identity key for the currently-adopted pump — its CoreBluetooth peripheral UUID, the same
+    /// identity `PumpPeripheralStore` persists at discovery (available BEFORE the first `fastRead()` of every
+    /// connection, so a learned skip can be applied from the very first poll). nil disables persistence (no
+    /// pump adopted yet). Under a test double there is no real peripheral, so persistence is off unless a
+    /// test explicitly pins an identity via `configurePersistedBadOpcodesForTesting`.
+    private func currentPumpKey() -> String? {
+        #if DEBUG
+        if let injected = injectedPumpKeyForTesting { return injected }
+        if injectedTransport != nil { return nil }
+        #endif
+        return PumpPeripheralStore.id()?.uuidString
+    }
+
+    /// The learned never-resend opcode set for the current pump, hydrated into `readScheduler` at each
+    /// `startPolling()`. If the pump's firmware read since the set was learned DIFFERS from the stored stamp,
+    /// the stale set is discarded and returned empty so the opcode is re-tested under the new firmware (a
+    /// firmware update that newly supports op20 must never keep the `cartridgeReadyForBolus` pre-guard
+    /// starved). `snapshot.softwareVersion` is the last firmware actually read from this pump; when it is
+    /// still empty (a fresh process — an app relaunch, before the first `ApiVersionResponse`) we trust the
+    /// UUID-keyed set as-is, so a relaunch never re-drops.
+    private func persistedBadOpcodesForCurrentPump() -> Set<UInt8> {
+        guard let key = currentPumpKey() else { return [] }
+        let entry = badOpcodeStore.entry(for: key)
+        let currentFirmware = snapshot.softwareVersion
+        if let learnedFirmware = entry.firmware, !currentFirmware.isEmpty, learnedFirmware != currentFirmware {
+            badOpcodeStore.reset(for: key)   // firmware changed → stale skip discarded; re-test under new fw
+            // WR-05 (deep review): also purge the entries learned under the OLD firmware from the scheduler's
+            // IN-MEMORY set. `badOpcodes` survives reconnects for the scheduler's lifetime, so on the SAME
+            // backend a firmware change would otherwise keep op20 skipped until relaunch even though the store
+            // was just reset. Clearing exactly `entry.opcodes` (what was persisted under the old firmware)
+            // re-tests them under the new firmware from the very next poll — the pre-guard is never starved.
+            readScheduler.clearLearned(entry.opcodes)
+            return []
+        }
+        return entry.opcodes
+    }
+
+    /// Persist one newly-learned rejected opcode for the current pump, stamped with the firmware read from
+    /// it (nil while still unknown). op0 is never persisted (never a real rejection).
+    private func persistBadOpcodeForCurrentPump(_ opcode: UInt8) {
+        guard opcode != 0, let key = currentPumpKey() else { return }
+        let firmware = snapshot.softwareVersion
+        badOpcodeStore.record(opcode, for: key, firmware: firmware.isEmpty ? nil : firmware)
     }
 
     /// Wires `responseApplier`'s injected closures (D-04 hook pattern, Phase 09 Wave 4) — called from
@@ -587,6 +670,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.schedulePredictiveBurst = { [weak self] date in self?.readScheduler.schedulePredictiveBurst(afterReadingAt: date) }
         responseApplier.cgmReadingDate = { [weak self] pumpSec, now in self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now) ?? now }
         responseApplier.insertBadOpcode = { [weak self] opcode in self?.readScheduler.insertBadOpcode(opcode) }
+        // Mechanism B (debug pump-pairing-loop-api25): resolve an inbound op77 to the true failing
+        // opcode (cargo requestCodeId when named, else the outstanding read correlated by echoed txId /
+        // FIFO), record it in `badOpcodes`, and return it for the standing diagnostic log line.
+        responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, txId in
+            self?.readScheduler.resolveErrorResponse(requestCodeId: requestCodeId, txId: txId)
+                ?? UInt8(truncatingIfNeeded: requestCodeId)
+        }
         responseApplier.beginGapSync = { [weak self] first, last in self?.beginGapSync(pumpFirst: first, pumpLast: last) }
         responseApplier.isBackfillActive = { [weak self] in self?.backfillActive ?? false }
         responseApplier.appendHistoryStreamFrame = { [weak self] m in
@@ -605,6 +695,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setPumpTimeAnchor = { [weak self] anchor in self?.pumpTimeAnchor = anchor }
         responseApplier.viewedProfileId = { [weak self] in self?.viewedProfileId ?? -1 }
         responseApplier.detectedIsMobi = { [weak self] in self?.detectedIsMobi }
+        // debug pump-pairing-loop-api25 (static-registry hardening): once op33 identifies the pump, let the
+        // scheduler consult the static registry and dispatch the deferred identity-gated read(s).
+        responseApplier.noteBootstrapVersionIdentified = { [weak self] in self?.readScheduler.noteBootstrapVersionIdentified() }
         responseApplier.setPumpFeatureBits = { [weak self] bits in self?.pumpFeatureBits = bits }
         responseApplier.setCalcSnapshot = { [weak self] snapshot in self?.calcSnapshot = snapshot }
         responseApplier.setSleepScheduleWriteError = { [weak self] error in self?.sleepScheduleWriteError = error }
@@ -650,6 +743,25 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// is private outside this file. Used to recreate a mid change/load/prime-tubing state that the
     /// no-cartridge fail-closed guard in `validateDeliver` blocks on.
     func setCartridgeLoadStateForTesting(_ state: Int) { snapshot.cartridgeLoadState = state }
+    /// Test-only (debug pump-pairing-loop-api25 refinement): point the durable per-pump learned-bad-opcode
+    /// persistence at an isolated store + a pinned pump identity, so a persistence/keying/firmware-re-test
+    /// test can run entirely off `UserDefaults.standard`. The wired `loadPersistedBadOpcodes`/
+    /// `persistBadOpcode` closures read these back dynamically, so calling this after construction is enough.
+    func configurePersistedBadOpcodesForTesting(store: PumpBadOpcodeStore, pumpKey: String) {
+        badOpcodeStore = store
+        injectedPumpKeyForTesting = pumpKey
+    }
+    /// Test-only (debug pump-pairing-loop-api25 refinement): set the last-known firmware/API version, since
+    /// `snapshot`'s setter is private outside this file. Used to exercise the firmware-change re-test path
+    /// in `persistedBadOpcodesForCurrentPump()` without building a full `ApiVersionResponse` frame.
+    func setSoftwareVersionForTesting(_ version: String) { snapshot.softwareVersion = version }
+    /// Test-only (debug pump-pairing-loop-api25 static-registry hardening): release the deferred
+    /// identity-gated read(s) (op20) as if this cycle's bootstrap op33 `ApiVersionResponse` had just
+    /// identified the pump — consulting the STATIC registry with whatever identity the test set (via
+    /// `setSoftwareVersionForTesting` / the default). Lets a persistence/self-heal test drive the
+    /// post-version dispatch without building a version frame; the REAL op33-frame path is covered
+    /// end-to-end by `PumpStaticUnsupportedReadRegistryTests`.
+    func releaseIdentityGatedReadsForTesting() { readScheduler.noteBootstrapVersionIdentified() }
     /// Test-only (Phase 09.9 D-02): directly set the last-known `reservoirUnits` reading, since
     /// `snapshot`'s setter is private outside this file. Used to recreate the "last known reading was
     /// below the requested total" precondition that the `.possiblyOutOfInsulin` nack enrichment reads.
@@ -729,6 +841,9 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { readScheduler.badOpcodesForTesting }
+    /// Test accessor (WR-03): the in-flight op77-correlation map (txId → opcode) recorded this cycle,
+    /// forwarded from `readScheduler` so a burst test can look up a specific read's real wire txId.
+    var outstandingReadsForTesting: [(txId: UInt8, opcode: UInt8)] { readScheduler.outstandingReadsForTesting }
 
     /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
     /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`.
@@ -1364,7 +1479,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     public func refreshLoadStatus() async {
         guard snapshot.connection == .connected else { return }
-        try? client.send(LoadStatusRequest())          // reply handled in didReceiveFrame
+        // Debug pump-pairing-loop-api25: op20 LoadStatus is gated OUT of `fastRead()`'s pre-capability
+        // burst (mechanism A); this on-demand path keeps the capability. Routed through the scheduler's
+        // guarded send (not a bare `client.send`) so it honours the `badOpcodes` never-resend guard and
+        // records the read for op77 correlation (mechanism B). Reply handled in didReceiveFrame.
+        readScheduler.sendOnDemandRead(LoadStatusRequest())
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
@@ -2144,7 +2263,13 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public var hasStoredPairing: Bool { PairingStore.hasAnyPairing }
-    public func forgetPairing() { PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = [] }
+    public func forgetPairing() {
+        // debug pump-pairing-loop-api25 (refinement): forget this pump's durable learned-bad-opcode set too
+        // (captured BEFORE clearing the peripheral identity, since the key derives from it) so a fresh pair
+        // re-tests every read rather than inheriting a prior pairing's skips.
+        if let key = currentPumpKey() { badOpcodeStore.reset(for: key) }
+        PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = []
+    }
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {
         if ch == .authorization {
@@ -2194,7 +2319,12 @@ extension TandemBackend: PumpBLEClientDelegate {
         // moved verbatim into `PumpResponseApplier` — see that type for the per-case fix-cycle doc-comment
         // history. This delegate keeps ONLY the `.authorization` CRC gate + `ResponseParser.parse`
         // boundary + the historyLog-unparseable error branch above, byte-identical.
-        responseApplier.apply(parsed.message)
+        // `parsed.txId` (frame[1]) is threaded through for the op77 correlation backstop — the pump
+        // echoes the failing request's txId there (debug pump-pairing-loop-api25, mechanism B). `ch` (the
+        // frame's characteristic) is threaded too so the op77 case can record into the read-only
+        // `badOpcodes` ONLY for a `.currentStatus` READ error — a `.control` WRITE NACK (which also decodes
+        // as ErrorResponse on `.opcodeFIFO` pumps) must never suppress a read (CR-01/WR-01, deep review).
+        responseApplier.apply(parsed.message, txId: parsed.txId, characteristic: ch)
         onChange?()
     }
 

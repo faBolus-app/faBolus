@@ -129,13 +129,16 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// re-check — an `.alarm` must never be offered (or receive) a snooze affordance.
     public var hasSnoozeEligibleAlert: Bool
 
-    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready status, mirrored from
-    /// `PumpSnapshot.cartridgeReadyForBolus` via `WidgetPublisher.makeSnapshot`. Additive, mirroring
-    /// `deliverySuspended`: default **true** ("ready") is the SAFE display default for a legacy
-    /// widget-extension binary that predates this field — absent must never render as a false
-    /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent (absent = no
-    /// signal, treated here as the non-alarming default rather than an alarming one, since a widget
-    /// can only show one boolean state, not a third "unknown").
+    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready DISPLAY signal. Additive, mirroring
+    /// `deliverySuspended`: default **true** ("ready") is the SAFE decode default for a legacy
+    /// widget-extension binary that predates this field — an ABSENT key must never render as a false
+    /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent.
+    /// WR-04 (debug pump-pairing-loop-api25, deep review): `WidgetPublisher.makeSnapshot` now sets this
+    /// from `PumpSnapshot.cartridgeReadiness == .ready` (a CONFIRMED reply), not the fail-open
+    /// `cartridgeReadyForBolus`, so a `.unknown` state (op-20 auto-excluded / never read) maps to the
+    /// non-positive `false` — the widget never presents a fail-open "ready" from a state that was never
+    /// read. The Bool can only carry two states (not a third "unknown"), so `false` here means "omit the
+    /// positive badge". Absent-key legacy decode still defaults to `true` (below), unchanged.
     public var cartridgeReady: Bool
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,

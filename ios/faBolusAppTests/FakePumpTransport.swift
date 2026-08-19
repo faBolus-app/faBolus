@@ -50,12 +50,19 @@ final class FakePumpTransport: PumpTransport {
         return try await body()
     }
 
+    /// Incrementing wire txId, mirroring the real `PumpBLEClient`'s `txIds.nextThenIncrement()`. Lets a
+    /// test exercise the op77 txId-echo correlation (debug pump-pairing-loop-api25, mechanism B): a read's
+    /// returned txId is what the pump echoes back in an inbound frame's frame[1].
+    private var nextTxId: UInt8 = 0
+
     @discardableResult
     func send(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
               allowInsulinDelivery: Bool) throws -> UInt8 {
         if let e = preWriteError[message.opCode] { throw e }
         sent.append((message.opCode, message.cargo, message.signed, allowInsulinDelivery))
-        return 0
+        let txId = nextTxId
+        nextTxId = nextTxId &+ 1
+        return txId
     }
 
     func sendAwaitingResponse(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
@@ -81,10 +88,14 @@ final class FakePumpTransport: PumpTransport {
 
     // MARK: - Response frame builders (valid, CRC'd; parser strips the 24-byte HMAC on signed responses)
 
-    static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool) -> [UInt8] {
+    /// `txId` sets frame[1] — the wire transaction id the pump echoes. Defaults to 0 (the historical
+    /// behavior). WR-03 (debug pump-pairing-loop-api25, deep review): the op77 correlation backstop keys on
+    /// this echoed txId, so a NON-vacuous correlation test must be able to set it to a SPECIFIC outstanding
+    /// read's txId (distinct from the FIFO-oldest) under a real multi-read burst.
+    static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool, txId: UInt8 = 0) -> [UInt8] {
         var body = cargo
         if signed { body += [UInt8](repeating: 0, count: 24) }   // fake HMAC (parser strips, doesn't verify)
-        var f: [UInt8] = [opCode, 0, UInt8(body.count)] + body
+        var f: [UInt8] = [opCode, txId, UInt8(body.count)] + body
         f += Bytes.calculateCRC16(f)
         return f
     }
@@ -163,11 +174,23 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: CurrentEGVGuiDataResponse.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-21 `LoadStatusResponse` (3 bytes: isLoadingActive@0, loadStateId@1, primeStatusId@2 — see the
+    /// kit's `ResponseDirectTests`). Reply to the op20 `LoadStatusRequest` poll; feeds
+    /// `PumpSnapshot.cartridgeLoadState` → the 09.9 `cartridgeReadyForBolus` pre-guard. loadStateId 0/1/2
+    /// (CHANGE_CARTRIDGE/LOAD_CARTRIDGE/PRIME_TUBING) ⇒ not ready; the idle/unknown default 6 ⇒ ready.
+    static func loadStatus(isLoadingActive: Bool, loadStateId: Int) -> [UInt8] {
+        frame(opCode: LoadStatusResponse.props.opCode,
+              cargo: [isLoadingActive ? 1 : 0, UInt8(truncatingIfNeeded: loadStateId), 0], signed: false)
+    }
+
     /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).
     /// errorCodeId 6 = BAD_OPCODE — what an older pump answers op192 with, right before tearing the
-    /// link down.
-    static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6) -> [UInt8] {
-        frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false)
+    /// link down. `requestOpCode: 0` + `errorCode: 0` is the opcode-less `[0,0]` currentStatus variant the
+    /// API-2.5 t:slim X2 sends (mechanism B correlates it back by txId). `txId` (frame[1]) echoes the
+    /// failing request's wire txId — WR-03: set it to a specific outstanding read's txId to prove the
+    /// correlation picks THAT read, not the FIFO-oldest.
+    static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6, txId: UInt8 = 0) -> [UInt8] {
+        frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false, txId: txId)
     }
 
     /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)
@@ -182,6 +205,26 @@ final class FakePumpTransport: PumpTransport {
         let cr = Bytes.toUint32(carbRatioMilliGramsPerUnit); for i in 0..<4 { c[14 + i] = cr[i] }  // carbRatio
         let mb = le2(maxBolusMilliunits); c[18] = mb[0]; c[19] = mb[1]                        // maxBolusAmount
         return frame(opCode: BolusCalcDataSnapshotResponse.props.opCode, cargo: c, signed: false)
+    }
+
+    /// op-33 `ApiVersionResponse` (4 bytes: majorVersion short@0, minorVersion short@2 — see the kit's
+    /// `Responses.swift`). The bootstrap version read that IDENTIFIES the pump: `softwareVersion` becomes
+    /// "major.minor" and `isMobi` is derived (`major>3 || (major==3 && minor>=5)`). Used by the STATIC
+    /// known-unsupported-reads registry (debug pump-pairing-loop-api25 static-registry hardening): the
+    /// evidenced bad combo is (isMobi=false, sw "2.5") ⇒ `apiVersion(major: 2, minor: 5)`.
+    static func apiVersion(major: Int, minor: Int) -> [UInt8] {
+        frame(opCode: ApiVersionResponse.props.opCode, cargo: le2(major) + le2(minor), signed: false)
+    }
+
+    /// op-85 `PumpVersionResponse` (48 bytes: armSwVer u32@0, mspSwVer u32@4, serialNum u32@16, partNum
+    /// u32@20, pumpRev string@24..31, modelNum u32@44 — see the kit's `Responses.swift`). The second
+    /// bootstrap version read; its `modelNum` is recorded for diagnostics / future registry refinement (the
+    /// current evidenced key needs only op33's fields).
+    static func pumpVersion(modelNum: UInt32 = 0, armSwVer: UInt32 = 0) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 48)
+        let arm = Bytes.toUint32(armSwVer); for i in 0..<4 { c[0 + i] = arm[i] }
+        let mn = Bytes.toUint32(modelNum);  for i in 0..<4 { c[44 + i] = mn[i] }
+        return frame(opCode: PumpVersionResponse.props.opCode, cargo: c, signed: false)
     }
 
     // MARK: - History-log frame builders (Phase 09.7-01 — gap-aware sync)

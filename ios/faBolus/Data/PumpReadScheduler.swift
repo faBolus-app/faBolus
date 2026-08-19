@@ -32,8 +32,10 @@ final class PumpReadScheduler {
 
     // MARK: - Injected seams (settable post-construction, D-04 hook pattern)
 
-    /// Bound to `client.send` (byte-identical wire path — this scheduler never touches BLE directly).
-    var send: (Message) throws -> Void = { _ in }
+    /// Bound to `client.send` via `tx` (byte-identical wire path — this scheduler never touches BLE
+    /// directly). Returns the wire txId so `sendStatusRead` can correlate an opcode-less op77
+    /// `ErrorResponse` back to the read that provoked it (debug pump-pairing-loop-api25, mechanism B).
+    var send: (Message) throws -> UInt8 = { _ in 0 }
     /// Bound to `snapshot.connection == .connected`.
     var isConnected: () -> Bool = { false }
     /// Bound to `pumpTimeAnchor` (the phone↔pump clock anchor TandemBackend owns).
@@ -44,6 +46,26 @@ final class PumpReadScheduler {
     /// reset atomic with the rest of `startPolling()`'s cycle-begin work, exactly as it ran inline before
     /// either move.
     var onStartPollingCycleBegin: () -> Void = {}
+    /// debug pump-pairing-loop-api25 (refinement): return this pump's DURABLE learned-bad-opcode set —
+    /// opcodes this specific pump rejected on a PRIOR connection (persisted across reconnects AND app
+    /// relaunches, keyed to pump identity). `startPolling()` folds it into `badOpcodes` BEFORE any read
+    /// goes out, so an opcode already proven unsupported by THIS pump is skipped from the very first
+    /// `fastRead()` of this cycle — the API-2.5 t:slim X2 drops op20 exactly once (first-ever connect),
+    /// never again, and never after a relaunch. Bound by `TandemBackend` to a peripheral-UUID-keyed
+    /// `PumpBadOpcodeStore`; the default (persistence off) returns nothing so a bare scheduler is unchanged.
+    var loadPersistedBadOpcodes: () -> Set<UInt8> = { [] }
+    /// debug pump-pairing-loop-api25 (refinement): persist one newly-learned rejected opcode durably,
+    /// keyed to the current pump, so it survives a reconnect and an app relaunch. Bound by `TandemBackend`;
+    /// the default is a no-op (persistence off). Never called with op0 (`insertBadOpcode` guards it).
+    var persistBadOpcode: (UInt8) -> Void = { _ in }
+    /// debug pump-pairing-loop-api25 (static-registry hardening): the current pump identity — model class
+    /// (`isMobi`) + `softwareVersion` — as populated by the bootstrap version responses (op33/op85) the
+    /// applier just processed. Consulted by `noteBootstrapVersionIdentified()` to key the STATIC
+    /// `PumpKnownUnsupportedReads` registry so a KNOWN-bad combo's identity-gated read (op20) is seeded into
+    /// `badOpcodes` BEFORE it is ever sent — including the first-ever connect with no persisted history.
+    /// Bound by `TandemBackend` to `(snapshot.isMobi, snapshot.softwareVersion)`; the default returns an
+    /// unknown identity (empty exclusion) so a bare scheduler is unchanged.
+    var pumpIdentityForStaticExclusion: () -> (isMobi: Bool?, softwareVersion: String) = { (nil, "") }
 
     // MARK: - Status read dispatch
     //
@@ -74,6 +96,14 @@ final class PumpReadScheduler {
     /// unsupported by THIS pump stays proven unsupported across a BLE reconnect to the same physical
     /// device — re-learning it every cycle would just reproduce one bad exchange (and its ~70ms drop
     /// risk) on every single reconnect.
+    ///
+    /// EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`, refinement): this in-memory set is
+    /// now also HYDRATED at each `startPolling()` from a DURABLE, per-pump store (`loadPersistedBadOpcodes`)
+    /// and every insertion is PERSISTED (`persistBadOpcode`), keyed to pump identity. So an opcode this pump
+    /// proved unsupported survives not just a reconnect but an app relaunch — the API-2.5 t:slim X2 drops
+    /// op20 exactly once, ever. The persistence is keyed to the pump (peripheral UUID + firmware stamp), so
+    /// a DIFFERENT pump/firmware never inherits this skip and keeps polling op20 (keeping the 09.9
+    /// `cartridgeReadyForBolus` pre-guard live on pumps that support it).
     private var badOpcodes: Set<UInt8> = []
     /// Sends one CURRENT_STATUS/pairing-adjacent read directly. Applies the `badOpcodes` never-resend
     /// guard every status read needs (see its own doc comment) and logs the type/opcode/send outcome as
@@ -95,8 +125,14 @@ final class PumpReadScheduler {
         }
         var sent = false
         do {
-            try send(message)
+            let txId = try send(message)
             Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=sent")
+            // Mechanism B (debug pump-pairing-loop-api25): remember this read's wire txId so an
+            // opcode-less op77 `ErrorResponse` (real 2-byte currentStatus cargo `[0,0]` on this
+            // API-2.5 t:slim X2) can be correlated back to the read that provoked it — see
+            // `resolveErrorResponse`. Only recorded on a genuine send (never on a throw), so a
+            // never-sent read can't poison the correlation.
+            recordOutstandingRead(txId: txId, opcode: opcode)
             sent = true
         } catch {
             Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=threw")
@@ -119,10 +155,162 @@ final class PumpReadScheduler {
     #endif
 
     /// Feed for the `ErrorResponse` delegate case (which stays in `TandemBackend` this wave) — records an
-    /// opcode the pump has just rejected so `sendStatusRead()` never re-sends it this connection-lifetime.
-    func insertBadOpcode(_ opcode: UInt8) { badOpcodes.insert(opcode) }
+    /// opcode the pump has just rejected so `sendStatusRead()` never re-sends it this connection-lifetime,
+    /// AND persists it durably for this pump (debug pump-pairing-loop-api25 refinement) so the skip survives
+    /// a reconnect and an app relaunch. op0 is never suppressed — it is the empty-cargo artifact / bootstrap
+    /// opcode; `resolveErrorResponse` never resolves to it, and this guard is the belt-and-suspenders.
+    func insertBadOpcode(_ opcode: UInt8) {
+        guard opcode != 0 else { return }
+        // Guardrail A (debug pump-pairing-loop-api25 hardening): the never-resend set governs ONLY
+        // CURRENT_STATUS reads (`sendStatusRead`). It must NEVER hold a pure delivery/control-WRITE opcode —
+        // otherwise an op77 whose cargo NAMES a delivery command (`resolveErrorResponse`'s `named` path)
+        // could record e.g. InitiateBolus here. `PumpReadCatalog.deliveryControlWriteOpcodes` deliberately
+        // EXCLUDES read-colliding opcodes (op164/op144), so a colliding READ still self-heals; the
+        // `.control` delivery path never consults this set, so this guard removes the only way a delivery
+        // opcode could ever enter it. Belt-and-suspenders with the same guard in `startPolling`'s hydration
+        // union and `PumpBadOpcodeStore.record`.
+        guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
+        badOpcodes.insert(opcode)
+        persistBadOpcode(opcode)
+    }
+
+    /// WR-05 (debug pump-pairing-loop-api25, deep review): drop opcodes from the IN-MEMORY never-resend set.
+    /// `badOpcodes` deliberately survives a reconnect for the scheduler's lifetime, so when the durable
+    /// per-pump store is reset on a firmware change (same UUID, new `softwareVersion`) the in-memory copy
+    /// learned under the OLD firmware must be purged too — otherwise a firmware update that newly supports
+    /// op20 keeps it skipped until the app is relaunched, longer than the "a firmware update must never keep
+    /// the pre-guard starved" invariant intends. Called by `TandemBackend`'s firmware-change detection (via
+    /// the `loadPersistedBadOpcodes` hydration path) BEFORE the fresh union in `startPolling`.
+    func clearLearned(_ opcodes: Set<UInt8>) {
+        badOpcodes.subtract(opcodes)
+    }
+
+    // MARK: - Static known-unsupported-reads registry (debug pump-pairing-loop-api25, static hardening)
+    //
+    // The dynamic op77 self-heal above learns an unsupported read AFTER the pump rejects it once (a
+    // ~2-3-drop / ~25 s cost on a first-ever connect). For a combo the app already KNOWS is bad
+    // (`PumpKnownUnsupportedReads`), that cost is avoidable entirely: hold the identity-gated read(s) (op20)
+    // OUT of the pre-version burst, and once the bootstrap version responses (op33/op85) identify the pump,
+    // seed the static exclusion into `badOpcodes` BEFORE the gated read is ever sent. Additive to the
+    // dynamic path (same `badOpcodes` set) and to the per-pump persisted store (this exclusion is re-derived
+    // from identity every connect, never persisted).
+
+    /// Set true once this connection's bootstrap version responses (op33 `ApiVersionResponse`, which carries
+    /// the model/firmware identity) have been processed. Reset each `startPolling()` cycle.
+    private var bootstrapVersionIdentified = false
+    /// Guards `runIdentityGatedReadsOnce()` so the deferred identity-gated read(s) go out exactly once per
+    /// connection cycle (op33 can arrive from both the bootstrap trio and the ~10-min `staticRead()`). Reset
+    /// each `startPolling()` cycle.
+    private var identityGatedReadsDispatchedThisCycle = false
+
+    /// Called by the applier the moment the bootstrap version response (op33) has populated the pump identity
+    /// (`snapshot.isMobi` + `softwareVersion`). Consults the STATIC registry with that identity, seeds any
+    /// known-unsupported read into `badOpcodes` (Guardrail-A filtered), then dispatches the deferred
+    /// identity-gated read(s) ONCE — so on a known-bad combo the gated read is already suppressed and never
+    /// sent, while on any other pump it goes out and keeps its pre-guard live.
+    func noteBootstrapVersionIdentified() {
+        bootstrapVersionIdentified = true
+        runIdentityGatedReadsOnce()
+    }
+
+    private func runIdentityGatedReadsOnce() {
+        guard bootstrapVersionIdentified, !identityGatedReadsDispatchedThisCycle else { return }
+        identityGatedReadsDispatchedThisCycle = true
+        // STATIC known-unsupported registry → seed the exclusion BEFORE the gated read is sent. Guardrail A:
+        // filter out any delivery/control-WRITE opcode (belt-and-suspenders — the registry only ever names
+        // reads, but the union bypasses `insertBadOpcode`'s guard, so mirror it here). NOT persisted: this is
+        // authoritative-per-identity, re-derived each connect, kept distinct from the learned store.
+        let id = pumpIdentityForStaticExclusion()
+        let staticExclusions = PumpKnownUnsupportedReads
+            .unsupportedReadOpcodes(isMobi: id.isMobi, softwareVersion: id.softwareVersion)
+            .subtracting(PumpReadCatalog.deliveryControlWriteOpcodes)
+        badOpcodes.formUnion(staticExclusions)
+        // Now send the deferred identity-gated reads; on a known-bad combo they are already in `badOpcodes`
+        // (either statically seeded just above, or from the dynamic/persisted set) → `sendStatusRead` skips
+        // them, so they are never sent even once.
+        for r in fastReadMessages() where PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode) {
+            sendStatusRead(r)
+        }
+    }
+
+    // MARK: - op77 correlation backstop (debug pump-pairing-loop-api25, mechanism B)
+    //
+    // The op192-era `badOpcodes` backstop assumed an inbound op77 `ErrorResponse` names the failing
+    // opcode in its cargo. It does for BAD_OPCODE (errorCodeId 6, requestCodeId = the opcode), but the
+    // API-2.5 non-Control-IQ t:slim X2 answers an unsupported currentStatus read (op20 LoadStatus, and
+    // possibly op40/op114/op178/op138) with a size-2 cargo of `[0,0]` — errorCode UNDEFINED_ERROR, NO
+    // opcode — then tears the BLE link down. Trusting that empty cargo records opcode 0 (useless), so the
+    // read is re-sent every reconnect → the loop. The true opcode is recoverable only by CORRELATION: the
+    // pump echoes the request txId in the inbound frame's frame[1] (kit's hardware-confirmed t:slim
+    // behavior), or, failing that, by in-order FIFO of the reads still outstanding this connection.
+
+    /// Reads sent this connection whose (non-error) reply may still be outstanding, most-recent last.
+    /// Deduped by opcode (an opcode re-sent refreshes its txId), so it stays bounded to the ~20 distinct
+    /// reads. Cleared at each fresh `startPolling()` cycle. NOT the `badOpcodes` set — this is the
+    /// transient in-flight map the op77 correlation consults, not the durable never-resend proof.
+    private var outstandingReads: [(txId: UInt8, opcode: UInt8)] = []
+    private func recordOutstandingRead(txId: UInt8, opcode: UInt8) {
+        outstandingReads.removeAll { $0.opcode == opcode }
+        outstandingReads.append((txId: txId, opcode: opcode))
+    }
+
+    /// Resolve an inbound op77 `ErrorResponse` to the TRUE failing opcode, record it in the never-resend
+    /// `badOpcodes` set, and RETURN it for the caller's standing diagnostic log line.
+    /// - When the cargo names the opcode (`requestCodeId != 0`, e.g. the op192 BAD_OPCODE case) that
+    ///   value is authoritative and used directly.
+    /// - When the cargo is opcode-less (`requestCodeId == 0`, the `[0,0]` currentStatus variant this
+    ///   firmware sends), correlate to the outstanding read: PRIMARY via the echoed request txId
+    ///   (frame[1]); if that matches nothing, use the exactly-one-outstanding shortcut (unambiguous even
+    ///   without an echo — the single-read on-demand `refreshLoadStatus()` case); otherwise FAIL CLOSED.
+    /// Returns 0 when nothing can be safely correlated — so opcode 0 (the empty-cargo artifact) is never
+    /// what gets suppressed, and no INNOCENT read is guessed at.
+    ///
+    /// WR-02 (debug pump-pairing-loop-api25, deep review): the old blind FIFO-oldest fallback
+    /// (`outstandingReads.first`) was DOUBLY wrong for the very read this fix targets — op20 is
+    /// `fastRead()`'s LAST send, so "oldest outstanding" is always a bootstrap/early read (ApiVersion,
+    /// ControlIQIOB), never op20. An echo-less op77 under a full burst would therefore durably blacklist an
+    /// innocent supported read (e.g. op109 ControlIQIOB, a dose input) AND leave op20 un-suppressed so the
+    /// loop persisted. Guessing the oldest is never safe: prefer the txId echo, accept only the
+    /// unambiguous single-outstanding case, else resolve to 0 (logged, nothing suppressed). The txId echo
+    /// is the mechanism the on-device `[0,0]` teardown relies on (kit's hardware-confirmed frame[1] echo).
+    @discardableResult
+    func resolveErrorResponse(requestCodeId: Int, txId: UInt8) -> UInt8 {
+        let named = UInt8(truncatingIfNeeded: requestCodeId)
+        let resolved: UInt8
+        if named != 0 {
+            resolved = named
+        } else if let byTxId = outstandingReads.last(where: { $0.txId == txId })?.opcode {
+            resolved = byTxId                                   // PRIMARY: the pump echoes the request txId in frame[1]
+        } else if outstandingReads.count == 1, let only = outstandingReads.first?.opcode {
+            resolved = only                                    // unambiguous: exactly one read outstanding (no guess)
+        } else {
+            resolved = 0                                       // WR-02: FAIL CLOSED — never guess the oldest
+        }
+        if resolved != 0 {
+            insertBadOpcode(resolved)   // in-memory never-resend skip + durable per-pump persist (refinement)
+            outstandingReads.removeAll { $0.opcode == resolved }
+        }
+        return resolved
+    }
+
+    /// On-demand single status read (e.g. the pump wizard's `refreshLoadStatus()`), routed through the
+    /// same guarded `sendStatusRead()` as the tiered polls so it (a) honours the `badOpcodes` never-resend
+    /// guard, (b) is observable via `onReadDispatchedForTesting`/`onReadSkippedForTesting`, and (c) records
+    /// the outstanding read for the op77 correlation above. op20 LoadStatus rides BOTH the recurring
+    /// `fastRead()` poll AND this on-demand path (debug pump-pairing-loop-api25 refinement restored it to
+    /// the poll); both consult the same per-pump persisted `badOpcodes` skip, so on the API-2.5 pump that
+    /// learned op20 is unsupported, neither re-sends it, while a supported pump keeps its load-state fresh.
+    @discardableResult
+    func sendOnDemandRead(_ message: Message) -> Bool { sendStatusRead(message) }
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { badOpcodes }
+    #if DEBUG
+    /// Test accessor (WR-03, debug pump-pairing-loop-api25 deep review): the in-flight op77-correlation map
+    /// (txId → opcode) as recorded by `sendStatusRead` this cycle. Lets a burst test look up a SPECIFIC
+    /// read's real wire txId (e.g. op20's) so it can inject an op77 echoing exactly that txId and prove the
+    /// correlation resolves to THAT read, not the FIFO-oldest.
+    var outstandingReadsForTesting: [(txId: UInt8, opcode: UInt8)] { outstandingReads }
+    #endif
     /// Production read accessor for the `[Capability/opcode]` diagnostics section — mirrors
     /// `badOpcodesForTesting` exactly (additive, internal, no new send/re-derivation). Consumed via
     /// `TandemBackend.badOpcodesForDiagnostics` → `AppModel.badOpcodesForDiagnostics`.
@@ -260,8 +448,15 @@ final class PumpReadScheduler {
             calcInputGotTherapy = false
             calcInputReadGeneration &+= 1
             let gen = calcInputReadGeneration
-            try? send(BolusCalcDataSnapshotRequest())
-            try? send(ControlIQIOBRequest())
+            // IN-02 (debug pump-pairing-loop-api25, deep review): route op-115/op-109 through the guarded
+            // `sendStatusRead` (not the raw `send` seam) so they honour the `badOpcodes` never-resend guard,
+            // record into `outstandingReads` for op77 correlation, and log — identical to every other status
+            // read (and to `refreshGlucoseNow`'s own EGV send). Previously the raw seam would have re-sent
+            // op-115/op-109 every cycle even if a pump rejected them (the exact pattern the fix eliminates
+            // elsewhere) and left them out of correlation. Fire-and-forget as before (the confirmation is
+            // driven by the op-109/op-115 response handlers via `noteCalcInputArrived`, unchanged).
+            sendStatusRead(BolusCalcDataSnapshotRequest())
+            sendStatusRead(ControlIQIOBRequest())
             // Safety timeout so a silent pump never hangs the compose. Tagged by generation, so a stale
             // timeout whose read already completed is a no-op.
             DispatchQueue.main.asyncAfter(deadline: .now() + calcInputRefreshTimeout) { [weak self] in
@@ -331,10 +526,42 @@ final class PumpReadScheduler {
     ///
     /// HomeScreenMirrorRequest belongs in the fast tier: it carries the pump's own CGM trend icon
     /// (C8 — the authoritative arrow), so it has to stay as fresh as the glucose value it annotates.
-    private func fastRead() {
-        for r: Message in [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           HomeScreenMirrorRequest(), LoadStatusRequest()] {
+    ///
+    /// EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`). op20 `LoadStatusRequest` IS in this
+    /// recurring fast-read burst — restored here by the owner refinement (2026-08-19) after an initial fix
+    /// (commit 9f978a5, mechanism A) had removed it for ALL models. Why it was restored: op20 feeds
+    /// `PumpSnapshot.cartridgeLoadState`, which drives the 09.9 fail-closed bolus pre-guard
+    /// `cartridgeReadyForBolus` (default `cartridgeLoadState=6` fails OPEN). Removing op20 from the poll for
+    /// every model left that defense-in-depth pre-guard stale/ready on newer t:slim + Mobi (which DO support
+    /// op20). So op20 is polled again; the API-2.5, non-Control-IQ t:slim X2 (sw 2.5) — which answers op20
+    /// with an opcode-less op77 `[0,0]` and tears the BLE link down ~90 ms later — is handled instead by the
+    /// mechanism-B op77 correlation backstop (`resolveErrorResponse`) plus DURABLE, per-pump persistence of
+    /// the learned skip (`loadPersistedBadOpcodes`/`persistBadOpcode`, hydrated in `startPolling()` before
+    /// this burst): that pump drops op20 exactly ONCE (first-ever connect), learns it, persists it keyed to
+    /// its peripheral UUID, and skips it on every later connect AND after an app relaunch — no re-drop.
+    /// A pump that supports op20 never adds it to the set, so its load-state (and the pre-guard) stays live.
+    /// The same backstop+persistence covers any op40/op114/op178/op138 this firmware might also reject
+    /// (unobservable from the capture, since the link tears down after the first error). op20 also stays
+    /// reachable on-demand via `TandemBackend.refreshLoadStatus()` (`sendOnDemandRead`) for the pump wizard.
+    /// The fast tier's exact ordered read list (single source of truth for both the recurring `fastRead()`
+    /// and the deferred identity-gated dispatch in `runIdentityGatedReadsOnce()`).
+    private func fastReadMessages() -> [Message] {
+        [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
+         InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+         HomeScreenMirrorRequest(), LoadStatusRequest()]
+    }
+
+    /// - Parameter includingIdentityGatedReads: when `false` (the pre-version burst inside `startPolling()`),
+    ///   reads in `PumpKnownUnsupportedReads.identityGatedReadOpcodes` (op20 `LoadStatusRequest`) are HELD
+    ///   BACK — not sent, not skipped — so a KNOWN-bad combo can suppress them via the static registry BEFORE
+    ///   the first send (see `runIdentityGatedReadsOnce()`); they are dispatched once the bootstrap version
+    ///   responses identify the pump. Every other path (the recurring `pollTimer` tick, the WR/refresh seams)
+    ///   passes `true`, so op20 rides the recurring poll and the `badOpcodes` guard skips it only when the
+    ///   pump (statically or dynamically) proved it unsupported — the pre-guard stays live on supported pumps.
+    private func fastRead(includingIdentityGatedReads: Bool = true) {
+        for r in fastReadMessages() {
+            if !includingIdentityGatedReads,
+               PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode) { continue }
             sendStatusRead(r)
         }
     }
@@ -444,10 +671,40 @@ final class PumpReadScheduler {
         // doc comment) recognizes it's stale and no-ops, instead of injecting `alertRead()`'s messages
         // ahead of this cycle's own bootstrap trio.
         pollCycleGeneration += 1
+        // Fresh connection cycle: drop any op77-correlation in-flight map from a prior cycle (unlike the
+        // durable `badOpcodes` set, this transient map must not survive a reconnect — debug
+        // pump-pairing-loop-api25, mechanism B).
+        outstandingReads.removeAll()
+        // Fresh connection cycle: the pump's identity has not been re-read yet, so the identity-gated read
+        // (op20) is held back until this cycle's op33 arrives (debug pump-pairing-loop-api25, static-registry
+        // hardening — see `noteBootstrapVersionIdentified()` / `runIdentityGatedReadsOnce()`).
+        bootstrapVersionIdentified = false
+        identityGatedReadsDispatchedThisCycle = false
+        // debug pump-pairing-loop-api25 (refinement): hydrate the never-resend set from THIS pump's durable
+        // store BEFORE any read goes out, so an opcode already proven unsupported by this pump — persisted
+        // across reconnects AND app relaunches, keyed to pump identity (peripheral UUID + firmware stamp) —
+        // is skipped from the very first `fastRead()` below (one-drop-ever; no re-drop after a relaunch). A
+        // union (not a replace) so an opcode learned in-memory earlier this session is preserved too, and so
+        // a pump that supports op20 (empty persisted set) keeps polling it and keeps its pre-guard live.
+        // Guardrail A (hardening): filter the hydrated set so a foreign/legacy persisted delivery/control-
+        // WRITE opcode can never be unioned straight into `badOpcodes` here (this union bypasses
+        // `insertBadOpcode`'s guard) — the never-resend set stays reads-only by construction.
+        // WR-05 (deep review): `loadPersistedBadOpcodes()` is evaluated into a local FIRST — on a firmware
+        // change its provider (`TandemBackend`) resets the store AND calls `clearLearned(...)` to purge the
+        // stale in-memory entries, so it must not run inside the `formUnion` argument (that would be a
+        // simultaneous-access-to-`badOpcodes` violation). The subsequent union is then a clean, separate
+        // mutation.
+        let persisted = loadPersistedBadOpcodes()
+        badOpcodes.formUnion(persisted.subtracting(PumpReadCatalog.deliveryControlWriteOpcodes))
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()
-        fastRead(); staticRead()
+        // debug pump-pairing-loop-api25 (static-registry hardening): the pre-version burst omits the
+        // identity-gated read (op20) — it is dispatched by `runIdentityGatedReadsOnce()` once this cycle's
+        // op33 `ApiVersionResponse` identifies the pump, so a KNOWN-bad combo suppresses it before the first
+        // send (owner req #2: gated fast reads go out AFTER the bootstrap version responses, never before).
+        // The bootstrap-trio-first invariant is preserved (the trio is still sent first, synchronously).
+        fastRead(includingIdentityGatedReads: false); staticRead()
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()

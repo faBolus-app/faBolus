@@ -64,6 +64,15 @@ final class PumpResponseApplier {
     var cgmReadingDate: (UInt32, Date) -> Date = { _, now in now }
     /// Bound to `readScheduler.insertBadOpcode(_:)`.
     var insertBadOpcode: (UInt8) -> Void = { _ in }
+    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)` (debug pump-pairing-loop-api25,
+    /// mechanism B). Resolves an inbound op77 `ErrorResponse` to the TRUE failing opcode — the cargo's
+    /// `requestCodeId` when the pump names it, else the outstanding read correlated by the echoed txId
+    /// (frame[1]) or in-order FIFO — records it in the never-resend `badOpcodes` set, and returns it for
+    /// the standing diagnostic log line (0 when unresolvable, so opcode 0 is never suppressed). The
+    /// default is the pre-mechanism-B behavior (trust the cargo), used only before wiring.
+    var resolveBadOpcodeForError: (_ requestCodeId: Int, _ txId: UInt8) -> UInt8 = { requestCodeId, _ in
+        UInt8(truncatingIfNeeded: requestCodeId)
+    }
     /// Bound to `TandemBackend.beginGapSync(pumpFirst:pumpLast:)`.
     var beginGapSync: (UInt32, UInt32) -> Void = { _, _ in }
     /// Bound to `{ backfillActive }`.
@@ -91,6 +100,12 @@ final class PumpResponseApplier {
     var viewedProfileId: () -> Int = { -1 }
     /// Bound to `{ detectedIsMobi }` — set at BLE-name discovery, read-only here.
     var detectedIsMobi: () -> Bool? = { nil }
+    /// debug pump-pairing-loop-api25 (static-registry hardening): called once the bootstrap
+    /// `ApiVersionResponse` (op33) has populated the pump identity (`snapshot.isMobi` + `softwareVersion`),
+    /// so `PumpReadScheduler` can consult the STATIC `PumpKnownUnsupportedReads` registry and dispatch the
+    /// deferred identity-gated read(s) — suppressing op20 BEFORE the first send on a KNOWN-bad combo. Bound
+    /// to `readScheduler.noteBootstrapVersionIdentified`; default no-op so a bare applier is unchanged.
+    var noteBootstrapVersionIdentified: () -> Void = {}
     /// Bound to `{ pumpFeatureBits = $0 }`.
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
     /// Bound to `{ calcSnapshot = $0 }` — read elsewhere (the dose-calculator path).
@@ -139,8 +154,17 @@ final class PumpResponseApplier {
 
     /// Apply one already-parsed, non-pairing pump message (D-07). `TandemBackend.didReceiveFrame` calls
     /// this with `parsed.message` after its `.authorization` CRC gate + `ResponseParser.parse` boundary —
-    /// both stay there, untouched.
-    func apply(_ message: Message) {
+    /// both stay there, untouched. `txId` is `parsed.txId` (frame[1]); consumed only by the op77
+    /// `ErrorResponse` correlation backstop (debug pump-pairing-loop-api25, mechanism B) and ignored by
+    /// every other case.
+    ///
+    /// `characteristic` is the BLE characteristic the frame arrived on (`parsed`'s source). It is consumed
+    /// ONLY by the op77 `ErrorResponse` case (CR-01/WR-01 fix): the pinned kit registers `ErrorResponse`
+    /// on BOTH `.currentStatus` and `.control`, so a NACKed control/delivery WRITE's op77 also reaches this
+    /// method on `.opcodeFIFO` pumps (Mobi/default). Such a `.control` op77 says NOTHING about read support
+    /// and must NEVER mutate the read-only `badOpcodes` set — only a `.currentStatus` op77 (a rejected READ)
+    /// is correlated + recorded. Every other case ignores it (behavior-identical to before this parameter).
+    func apply(_ message: Message, txId: UInt8, characteristic: Characteristic) {
         switch message {
         case let m as ControlIQIOBResponse:
             withSnapshot { snap in
@@ -172,6 +196,12 @@ final class PumpResponseApplier {
             withSnapshot { snap in
                 snap.cartridgeLoadState = m.loadStateId
                 snap.cartridgeLoadActive = m.isLoadingActive
+                // Guardrail B (debug pump-pairing-loop-api25 hardening): a genuine op-20 reply CONFIRMS the
+                // cartridge state, so `cartridgeReadiness` can report `.ready`/`.notReady` (a fact) instead
+                // of the fail-open `.unknown` default. On a pump that auto-excludes op-20 this line never
+                // runs, so readiness stays `.unknown` and the app discloses it relies on the pump's own
+                // protection rather than presenting confirmed-ready.
+                snap.cartridgeLoadStateConfirmed = true
             }
         case let m as ControlIQInfoV1Response:
             withSnapshot { snap in
@@ -336,18 +366,45 @@ final class PumpResponseApplier {
                 }
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
             }
+            // debug pump-pairing-loop-api25 (static-registry hardening): the pump is now IDENTIFIED (model
+            // class + firmware just written above), so the scheduler can consult the STATIC known-unsupported
+            // registry and dispatch the deferred identity-gated read(s) (op20) — suppressing op20 before the
+            // first send on the known-bad t:slim X2 sw-2.5 combo. Called AFTER the snapshot write so the
+            // scheduler reads the fresh identity. Idempotent per connection cycle (guarded scheduler-side).
+            noteBootstrapVersionIdentified()
         case let m as ErrorResponse:
             // SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the
             // pump replies with this when it rejects a request (e.g. BAD_OPCODE for an unsupported
             // opcode) — previously silently discarded by `default: break`, which is exactly why the
-            // pump's own explanation for the teardown that followed was invisible on-device. PHI-safe:
-            // requestCodeId/errorCodeId are protocol tokens (an opcode 0-255 and a small error-code
-            // enum ordinal), never payload/PHI. Logged PERMANENTLY (standing diagnostic, not
-            // debug-session scaffolding) so any FUTURE unsupported-opcode rejection on any pump is
-            // immediately visible, not just this session's op192 case.
-            let badOpcode = UInt8(truncatingIfNeeded: m.requestCodeId)
-            insertBadOpcode(badOpcode)
-            Self.pairingLog.log("pump error ← requestOpcode=\(badOpcode, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
+            // pump's own explanation for the teardown that followed was invisible on-device.
+            //
+            // EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`, mechanism B): the op192
+            // case named the failing opcode in the cargo (`requestCodeId != 0`), but the API-2.5 t:slim
+            // X2 answers an unsupported currentStatus read with a size-2 cargo of `[0,0]` — NO opcode —
+            // so the old `insertBadOpcode(m.requestCodeId)` recorded the useless opcode 0 and the read
+            // was re-sent every reconnect (the loop). `resolveBadOpcodeForError` recovers the true opcode
+            // by correlating the error to the outstanding read (echoed request txId in frame[1], else
+            // in-order FIFO) so the never-resend guard actually suppresses it — and never records opcode
+            // 0. PHI-safe: requestCodeId/errorCodeId/txId are protocol tokens, never payload/PHI. Logged
+            // PERMANENTLY (standing diagnostic) so any future unsupported-opcode rejection on any pump is
+            // immediately visible.
+            //
+            // CR-01/WR-01 (debug pump-pairing-loop-api25, deep review): `badOpcodes` governs ONLY the
+            // `.currentStatus` READ path. The pinned kit also registers `ErrorResponse` on `.control`, so a
+            // NACKed control/delivery WRITE's op77 reaches this case too on `.opcodeFIFO` pumps (it doesn't
+            // match a pending delivery transaction). Such a `.control` op77 identifies a failing WRITE, which
+            // says nothing about read support — correlating it (whether by the cargo's `named` opcode, which
+            // may collide with a supported read like op164/op144, or by txId/FIFO against outstanding READS)
+            // would durably blacklist an innocent supported read. So we RESOLVE + RECORD only for
+            // `.currentStatus`; a `.control` op77 is logged for diagnostics but never touches `badOpcodes`.
+            if characteristic == .currentStatus {
+                let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
+                Self.pairingLog.log("pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
+            } else {
+                // Diagnostic only — the pump rejected a control/delivery WRITE (or an error on another
+                // characteristic); never a READ, so `badOpcodes` is left untouched.
+                Self.pairingLog.log("pump error ← (\(characteristic.name, privacy: .public)) requestOpcode=\(m.requestCodeId, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — control/non-read error; read never-resend set untouched")
+            }
         case let m as PumpFeaturesV1Response:
             // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
             // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it
