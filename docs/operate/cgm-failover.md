@@ -45,6 +45,25 @@ Cloud sources are **battery-aware**: while the pump feed is healthy they check r
 up automatically the moment it goes stale. The Dexcom G7 direct link listens continuously (it's
 cheap) so failover is instant.
 
+### Per-source preconditions
+
+Each source in **Settings → CGM & failover → CGM credentials & testing** now has its own section
+explaining what it needs. In short:
+
+- **Dexcom G7 / ONE+ (direct BLE)** — no login or transmitter ID; a G7 already set up in the official
+  Dexcom app works as-is. **Keep the official Dexcom app installed, paired, and running** — without it
+  there are no readings. The first reading can take **up to ~5 minutes** (one sensor wake cycle), which
+  is normal, not a failure.
+- **Apple Health (xDrip / Eversense)** — selecting it triggers a one-time iOS **permission request**
+  (faBolus only *reads* glucose, never writes). **Prerequisite:** another app (xDrip4iOS or the
+  Eversense app) must already be **writing glucose to Apple Health** — faBolus reads what that app
+  records, not the sensor directly. If you deny the permission by mistake, iOS won't re-prompt; re-enable
+  it under **iOS Settings › Health › Data Access & Devices › faBolus**.
+- **xDrip4iOS — App Group (local)** — **self-compile only.** This local path requires faBolus and
+  xDrip4iOS to be built and signed under the **same Apple Team ID**; an App Store install of faBolus
+  **cannot** use it (App Groups are team-scoped). Use **Apple Health** or a cloud source instead unless
+  you compile both yourself.
+
 !!! note "Eversense / Apple Health is opt-in (HealthKit)"
     HealthKit is **off by default** so the app builds and signs on a free Apple account. To use the
     Eversense (Apple Health) source you need the **paid Apple Developer Program**, then enable
@@ -105,10 +124,13 @@ uses (and its own setup docs treat as the standard way to connect), not a long s
 !!! note "Experimental: validation-pending, not unreliable"
     This source is marked **experimental** in the source picker (behind a blocking untested-feature
     warning) because it hasn't completed its on-device UAT yet — NOT because the mechanism itself is
-    shaky. iOS fans out one physical Bluetooth link to every app that subscribes (there's no
-    per-app "connection slot" limit for this), and the "sometimes refused outright" framing this
-    warning used to carry was retracted after a deeper protocol re-check found no evidence for it.
-    Treat "experimental" here as "not yet confirmed on real hardware," not "expect it to fail."
+    shaky. Based on an Apple Developer Forums explanation and our own protocol re-check, iOS *appears*
+    to share a single physical Bluetooth link across every app subscribed to the same peripheral,
+    rather than enforcing a per-app "connection slot" limit — but treat that as **reported/observed
+    CoreBluetooth behavior, not a guarantee we've independently confirmed on-device** for this exact
+    topology. The earlier "sometimes refused outright" framing was retracted after that re-check found
+    no evidence for it. Treat "experimental" here as "not yet confirmed on real hardware," not "expect
+    it to fail."
 
 ## On the watch
 
