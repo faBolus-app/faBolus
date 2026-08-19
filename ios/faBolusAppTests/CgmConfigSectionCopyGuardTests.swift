@@ -57,8 +57,7 @@ struct CgmConfigSectionCopyGuardTests {
     @Test func everyRegistrySourceHasAConfigSection() {
         let registryIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
         #expect(CgmCredentialsView.configuredSectionSourceIds == registryIds,
-                "CgmCredentialsView.configuredSectionSourceIds must cover exactly the registry sources; "
-                + "diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))")
+                "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))")
         // The three D-11 additions must specifically be present.
         for id in ["dexcom-g7-ble", "healthkit", "xdrip-appgroup"] {
             #expect(CgmCredentialsView.configuredSectionSourceIds.contains(id),
@@ -109,15 +108,18 @@ struct CgmConfigSectionCopyGuardTests {
         let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
         #expect(code.contains("exclamationmark.triangle"),
                 "xDrip self-compile gate must use a warning icon (unmissable), not a plain footer")
-        // Locate the xDrip section header, then assert the caveat precedes the next `footer:` label.
-        guard let headerRange = code.range(of: "xDrip4iOS — App Group (local)") else {
-            Issue.record("could not locate the xDrip App Group section header in the source")
+        // Anchor on the section's definition. In a SwiftUI `Section { content } header: {} footer: {}`
+        // the CONTENT is emitted first in source, so the caveat must appear AFTER the section opens and
+        // BEFORE its `footer:` label — i.e. it is warning-styled section content, not a buried footer.
+        guard let defRange = code.range(of: "xdripAppGroupConfigSection: some View") else {
+            Issue.record("could not locate the xDrip App Group section definition in the source")
             return
         }
-        let afterHeader = code[headerRange.upperBound...]
-        let caveatIdx = afterHeader.range(of: "Self-compile only")?.lowerBound
-        let footerIdx = afterHeader.range(of: "footer:")?.lowerBound
-        #expect(caveatIdx != nil, "xDrip self-compile caveat not found after its section header")
+        let sectionBody = code[defRange.upperBound...]
+        let caveatIdx = sectionBody.range(of: "Self-compile only")?.lowerBound
+        let footerIdx = sectionBody.range(of: "footer:")?.lowerBound
+        #expect(caveatIdx != nil, "xDrip self-compile caveat not found in the section content")
+        #expect(footerIdx != nil, "xDrip section has no footer label — section structure changed")
         if let caveatIdx, let footerIdx {
             #expect(caveatIdx < footerIdx,
                     "xDrip self-compile caveat sits in the footer — it must be unmissable section content")

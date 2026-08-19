@@ -75,5 +75,13 @@ public enum GlucoseSourceRegistry {
     /// Build a specific source by id (for testing a not-necessarily-selected source). This is the
     /// ephemeral `CgmCredentialsView` "Test" path — always `restoreStateEnabled: false` (D-06), so it
     /// can never collide with the production instance's restore identifier.
+    ///
+    /// W-04 (D-14) — KEEP-WITH-COMMENT: this has ZERO remaining PRODUCTION call sites (the live Test
+    /// flow now observes the already-running `AppModel.glucoseSource` production instance via
+    /// `glucoseSourceProbe`, never a second ephemeral central). It is still exercised by
+    /// `DexcomG6RestoreIdentifierTests`, which pins the invariant that the by-id build path carries
+    /// `restoreStateEnabled: false` — the sole guard against the dup-restore-id SIGABRT. Keeping it
+    /// (and `CgmCredentialsView.sourcesToTest`) is the chosen low-risk option under full-hardening
+    /// scope; do NOT delete either without migrating those test call sites in the same change.
     public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make(false) }
 }

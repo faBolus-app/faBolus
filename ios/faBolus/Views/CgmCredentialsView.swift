@@ -35,10 +35,27 @@ struct CgmCredentialsView: View {
     /// E7: which sources the "Test" button exercises — ONLY the currently-selected fallback source (the
     /// one the app will actually use), never the whole set. Empty when no fallback is chosen yet. Pure so
     /// the selected-only contract is unit-testable without the SwiftUI view.
+    ///
+    /// W-04 (D-14) — KEEP-WITH-COMMENT: this helper has ZERO production call sites (the live Test flow
+    /// observes `AppModel.glucoseSourceProbe` directly), but it is still exercised by
+    /// `CgmSourceValidationTests.testExercisesOnlyTheSelectedSource`, which pins the selected-only
+    /// contract. Deleting it (and `GlucoseSourceRegistry.make(id:)`) is the lower-value / higher-risk
+    /// option under full-hardening scope; do NOT remove either without migrating those test call sites in
+    /// the same change. Kept deliberately.
     static func sourcesToTest(selectedId: String?) -> [String] {
         guard let id = selectedId, !id.isEmpty else { return [] }
         return [id]
     }
+
+    /// D-11: the set of source ids that have a dedicated config section in this view. Pinned by
+    /// `CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection` to equal the full
+    /// `GlucoseSourceRegistry` id set — adding a registry source without a section (or dropping one)
+    /// turns that guard RED, so a source with a hard, non-obvious precondition can never become
+    /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
+    static let configuredSectionSourceIds: Set<String> = [
+        "librelinkup", "dexcom-share", "nightscout", "dexcom-g6-ble",
+        "dexcom-g7-ble", "healthkit", "xdrip-appgroup",
+    ]
 
     // MARK: - Test flow (change 3, D-13 UX): determinate, observes the live production source
 
@@ -166,6 +183,62 @@ struct CgmCredentialsView: View {
         }
     }
 
+    // MARK: - D-11 per-source config sections (G7 / HealthKit / xDrip App Group)
+    //
+    // The three sources that previously had NO section here now each get a short explainer + a
+    // precondition list even though none has editable credential fields — a source with a hard,
+    // non-obvious precondition (xDrip self-compile, HealthKit "another app must write glucose") must
+    // never be selectable with no explanation (D-11; closes F-01/F-02/F-03). Extracted into small
+    // `@ViewBuilder` vars so the `Form` body stays well within the SwiftUI type-check budget (the
+    // same discipline Plan 04 applied), and mirroring the disclosure/gate framing rather than a
+    // one-off inline alert. Coverage is pinned by `configuredSectionSourceIds`.
+
+    /// G7 / ONE+ direct BLE — mode explainer + the keep-the-Dexcom-app-running precondition + the
+    /// ~5-min first-reading timing (F-03). Same confident "Read from Dexcom app" framing as the G6
+    /// section and Plan 04's connectionKind-keyed copy.
+    @ViewBuilder private var g7ConfigSection: some View {
+        Section {
+            Text("No login or transmitter ID is needed — a Dexcom G7 / ONE+ already set up in the official Dexcom app works as-is. faBolus listens to the same sensor broadcast passively, alongside the Dexcom app; it never takes over the connection.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Dexcom G7 / ONE+ — Read from Dexcom app")
+        } footer: {
+            Text("Keep the official Dexcom app installed, paired, and running — without it there are no readings (that's when **Dexcom Share**, above, is the fallback). The first reading can take up to ~5 minutes — one sensor wake cycle — which is normal, not a failure. Experimental: untested until validated on-device.")
+        }
+    }
+
+    /// Apple Health (HealthKit) — the system permission request, iOS-Settings recovery if denied, and
+    /// the non-obvious prerequisite that ANOTHER app must already be writing glucose to Health (F-02).
+    @ViewBuilder private var healthKitConfigSection: some View {
+        Section {
+            Text("When you select Apple Health as your failover source, iOS shows a one-time permission request to let faBolus READ glucose from Health. faBolus only reads — it never writes glucose.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Apple Health (xDrip / Eversense)")
+        } footer: {
+            Text("**Prerequisite:** another app — xDrip4iOS or the Eversense app — must already be writing glucose to Apple Health. faBolus does not read your sensor directly on this path; it reads whatever that app records. If you denied the permission by mistake, iOS never re-prompts — re-enable it in **iOS Settings › Health › Data Access & Devices › faBolus**.")
+        }
+    }
+
+    /// xDrip4iOS App Group (local) — an UNMISSABLE self-compile-only / same-Apple-Team-ID gate shown
+    /// as warning-styled content at the TOP of the section, BEFORE the how-to footer (CRIT F-01: an
+    /// App-Store user literally cannot make this work — App Groups are team-scoped). Mirrors the
+    /// UnverifiedFeatureGate warning treatment rather than a buried footer note.
+    @ViewBuilder private var xdripAppGroupConfigSection: some View {
+        Section {
+            Label {
+                Text("⚠️ **Self-compile only.** This local path requires faBolus and xDrip4iOS to be built and signed under the **same Apple Team ID**. An App Store install of faBolus **cannot** use this source — there is no way to share an App Group across different teams. Use **Apple Health** or a cloud source instead.")
+                    .font(.footnote).fontWeight(.semibold)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+        } header: {
+            Text("xDrip4iOS — App Group (local)")
+        } footer: {
+            Text("If you self-compile both apps under one team: set xDrip's “Share to Loop” type and enable the matching App Group in `project.yml`. Then this feed is near-instant and fully local — no cloud, no internet.")
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -244,6 +317,11 @@ struct CgmCredentialsView: View {
                 // hasn't run yet.
                 Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor — but if anyone else nearby also wears a Dexcom (a sibling, a clinic waiting room, another household member), enter your transmitter ID above so faBolus reads YOUR sensor, not theirs. The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
             }
+
+            // D-11: the three sources that previously had no section (G7 / HealthKit / xDrip App Group).
+            g7ConfigSection
+            healthKitConfigSection
+            xdripAppGroupConfigSection
 
             Section {
                 Button {
