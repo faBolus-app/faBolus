@@ -65,21 +65,51 @@ struct CgmCredentialsView: View {
         return .waiting
     }
 
-    private func waitingHeadline() -> String {
-        switch GlucoseSourceRegistry.selectedId() {
-        case "dexcom-g6-ble", "dexcom-g7-ble":
-            return "Waiting for the next Dexcom reading — up to ~5 min. You can leave this screen; we'll keep listening."
-        default:
-            return "Waiting for a reading from \(selectedSourceName ?? "the selected source"). You can leave this screen; we'll keep listening."
+    /// The live production source's typed `connectionKind` (D-06), sourced from the running instance's
+    /// probe — the Test-flow copy/window branch on THIS, never on `id`-string literals (D-09).
+    private var probeKind: GlucoseConnectionKind? { model.glucoseSourceProbe?.connectionKind }
+
+    // MARK: - Source-appropriate Test-flow copy (D-09), keyed on the typed connectionKind
+    //
+    // Pure/static so the per-category copy is unit-testable (`CgmTestFlowStateTests`) without the
+    // SwiftUI view — the same discipline as `testOutcome`/`sourcesToTest`. `.localBLE` keeps the
+    // already-correct confident BLE copy verbatim; `.cloudPoll`/`.localOnDevice` get their own
+    // auth-network / on-device-sync framing and NEVER reuse the BLE "sensor wake cycle" language
+    // (F-12). `nonisolated` so the guards are callable from a non-@MainActor test.
+
+    nonisolated static func waitingHeadline(kind: GlucoseConnectionKind, sourceName: String) -> String {
+        switch kind {
+        case .localBLE:
+            return "Waiting for the next Dexcom reading — up to ~5 min. Keep the Dexcom app running; you can leave this screen and we'll keep listening."
+        case .cloudPoll:
+            return "Checking your credentials and connection to \(sourceName)… this usually takes a few seconds."
+        case .localOnDevice:
+            return "Checking whether \(sourceName) is syncing readings on this device… this is usually near-instant."
         }
     }
 
-    private func successHeadline() -> String {
-        switch GlucoseSourceRegistry.selectedId() {
-        case "dexcom-g6-ble": return "✓ Received a reading from your G6"
-        case "dexcom-g7-ble": return "✓ Received a reading from your G7"
-        default: return "✓ Received a reading from \(selectedSourceName ?? "the selected source")"
+    nonisolated static func timeoutHeadline(kind: GlucoseConnectionKind, sourceName: String, elapsedSeconds: Int) -> String {
+        switch kind {
+        case .localBLE:
+            let minutes = max(1, elapsedSeconds / 60)
+            return "No reading yet after \(minutes) min — make sure the Dexcom app is running; try toggling its Bluetooth."
+        case .cloudPoll:
+            return "No reading after \(max(1, elapsedSeconds))s from \(sourceName) — check your username/password and internet connection."
+        case .localOnDevice:
+            return "No reading yet from \(sourceName) — make sure the upstream app (e.g. xDrip or Eversense) is installed and actively syncing glucose on this device."
         }
+    }
+
+    private func waitingHeadline() -> String {
+        let name = selectedSourceName ?? "the selected source"
+        guard let kind = probeKind else {
+            return "Waiting for a reading from \(name). You can leave this screen; we'll keep listening."
+        }
+        return Self.waitingHeadline(kind: kind, sourceName: name)
+    }
+
+    private func successHeadline() -> String {
+        "✓ Received a reading from \(selectedSourceName ?? "the selected source")"
     }
 
     private func successDetail(_ sample: GlucoseSample) -> String {
@@ -94,17 +124,46 @@ struct CgmCredentialsView: View {
     }
 
     private func timeoutHeadline(elapsedSeconds: Int) -> String {
-        let minutes = max(1, elapsedSeconds / 60)
-        switch GlucoseSourceRegistry.selectedId() {
-        case "dexcom-g6-ble", "dexcom-g7-ble":
-            return "No reading yet after \(minutes) min — make sure the Dexcom app is running; try toggling its Bluetooth."
-        default:
-            return "No reading yet after \(minutes) min from \(selectedSourceName ?? "the selected source") — check the connection/credentials."
+        let name = selectedSourceName ?? "the selected source"
+        guard let kind = probeKind else {
+            let minutes = max(1, elapsedSeconds / 60)
+            return "No reading yet after \(minutes) min from \(name) — check the connection/credentials."
         }
+        return Self.timeoutHeadline(kind: kind, sourceName: name, elapsedSeconds: elapsedSeconds)
     }
 
     private func elapsedLabel(seconds: Int) -> String {
         seconds < 60 ? "\(seconds)s elapsed" : "\(seconds / 60)m \(seconds % 60)s elapsed"
+    }
+
+    /// D-13/F-13: map a source's RAW error text (e.g. `SourceError.errorDescription`'s "HTTP 401",
+    /// "Unexpected response") to source-aware, ACTIONABLE guidance — never surfacing a bare technical
+    /// status/status-code to the operator. Keyed on the typed `connectionKind` for the fallback framing
+    /// (a cloud source's "check your credentials/connection" vs an on-device source's "is the upstream
+    /// app syncing"). Pure/`nonisolated` so it's unit-testable without the SwiftUI view.
+    nonisolated static func actionableErrorCopy(_ raw: String, kind: GlucoseConnectionKind) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("401") || lower.contains("403") || lower.contains("unauthorized")
+            || lower.contains("forbidden") {
+            return "Sign-in was rejected — check your username and password for this source."
+        }
+        if lower.contains("http 5") || lower.contains("timed out") || lower.contains("timeout")
+            || lower.contains("network") || lower.contains("offline")
+            || lower.contains("could not connect") || lower.contains("not connected to the internet") {
+            return "Couldn't reach the service — check your internet connection, then try again."
+        }
+        if lower.contains("http 4") || lower.contains("unexpected response") || lower.contains("bad") {
+            return "The service returned an unexpected response — check the site URL and your settings."
+        }
+        if lower.contains("invalid") || lower.contains("check settings") || lower.contains("not configured") {
+            return "This source isn't fully configured — check its URL / region / credentials in the fields above."
+        }
+        // Fallback: NEVER echo the raw technical string; give category-appropriate next steps.
+        switch kind {
+        case .cloudPoll:     return "Couldn't get a reading — check your credentials and internet connection."
+        case .localOnDevice: return "Couldn't get a reading — make sure the upstream app is installed and syncing on this device."
+        case .localBLE:      return "Couldn't get a reading — make sure the official Dexcom app is running."
+        }
     }
 
     var body: some View {
@@ -130,6 +189,9 @@ struct CgmCredentialsView: View {
                 Picker("Region", selection: $shareRegion) {
                     Text("US").tag("us")
                     Text("Outside US").tag("ous")
+                    // D-13: APAC region (writes "apac" → KnownShareServers.APAC / share.dexcom.jp,
+                    // whose source-side mapping landed in Plan 03).
+                    Text("Asia-Pacific (Japan)").tag("apac")
                 }
             } header: {
                 Text("Dexcom Share (last resort)")
@@ -223,7 +285,11 @@ struct CgmCredentialsView: View {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(timeoutHeadline(elapsedSeconds: model.cgmTestElapsedSeconds)).font(.subheadline)
-                                if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                // D-13/F-13: humanize the raw source error (never a bare "HTTP 401").
+                                if let detail {
+                                    Text(Self.actionableErrorCopy(detail, kind: probeKind ?? .cloudPoll))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }

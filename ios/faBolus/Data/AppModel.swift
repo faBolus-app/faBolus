@@ -957,9 +957,9 @@ public final class AppModel {
     /// Read-only probe of the selected failover source's live production instance — id, latest,
     /// status — mirroring `glucoseSourceDiagnosticsInfo`'s pattern (`glucoseSource` stays private,
     /// never widened). nil when no failover source is selected, or the crash guard auto-disabled it.
-    public var glucoseSourceProbe: (id: String, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
+    public var glucoseSourceProbe: (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
         guard let glucoseSource else { return nil }
-        return (glucoseSource.id, glucoseSource.latest, glucoseSource.status)
+        return (glucoseSource.id, glucoseSource.connectionKind, glucoseSource.latest, glucoseSource.status)
     }
 
     /// True while a Test run is polling for an outcome; drives the "Testing…" button label / disabled
@@ -979,12 +979,27 @@ public final class AppModel {
     private(set) var cgmTestOutcome: CgmCredentialsView.CgmTestOutcome?
     private var cgmTestPollTask: Task<Void, Never>?
 
-    /// How long the Test flow waits before concluding TIMEOUT. Dexcom direct-BLE sources (G6/G7) get
-    /// one full wake/connect cycle (~5 min, RESEARCH "Already-paired-sensor first-run behavior") plus
-    /// margin; cloud/local pollers get a shorter window since they don't wait on a transmitter's radio
-    /// cycle.
-    public static func cgmTestTimeout(forSourceId id: String) -> TimeInterval {
-        (id == "dexcom-g6-ble" || id == "dexcom-g7-ble") ? 6 * 60 : 45
+    /// How long the Test flow waits before concluding TIMEOUT — keyed on the source's typed
+    /// `connectionKind` (D-06/D-09), NOT on `id`-string literals. `.localBLE` (Dexcom G6/G7) gets one
+    /// full wake/connect cycle (~5 min, RESEARCH "Already-paired-sensor first-run behavior") plus
+    /// margin — the already-correct BLE window, PRESERVED. `.cloudPoll` waits only for an auth + one
+    /// network round-trip (it doesn't wait on a transmitter's radio cycle); `.localOnDevice` reads a
+    /// shared on-device store, so it's near-instant. A new source can't be silently mis-timed: it must
+    /// classify its `connectionKind`, and this switch is exhaustive.
+    public static func cgmTestTimeout(for kind: GlucoseConnectionKind) -> TimeInterval {
+        switch kind {
+        case .localBLE:      return 6 * 60   // one full Dexcom wake/connect cycle (~5 min) + margin
+        case .cloudPoll:     return 20        // auth handshake + one network round-trip (~15–20s)
+        case .localOnDevice: return 10        // near-instant read of the shared on-device store
+        }
+    }
+
+    /// W-03: the Test poll loop must ABORT (clearing BOTH the in-progress flag AND the outcome) when
+    /// the live probe no longer matches the source the Test STARTED against — the user switched or
+    /// cleared the failover source mid-Test. Pure so the abort condition is unit-testable without
+    /// driving the async loop; a `nil` current id (source deselected) also aborts.
+    static func cgmTestShouldAbort(startedSourceId: String, currentProbeId: String?) -> Bool {
+        currentProbeId != startedSourceId
     }
 
     /// Start (or restart) the Test flow. OBSERVES `glucoseSourceProbe` on a 1s poll instead of
@@ -1003,7 +1018,7 @@ public final class AppModel {
             return
         }
         let sourceId = probe.id
-        let timeout = Self.cgmTestTimeout(forSourceId: sourceId)
+        let timeout = Self.cgmTestTimeout(for: probe.connectionKind)
         cgmTestInProgress = true
         cgmTestOutcome = nil
         cgmTestElapsedSeconds = 0
@@ -1011,8 +1026,14 @@ public final class AppModel {
         let startedAt = Date()
         cgmTestPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self, let probe = self.glucoseSourceProbe, probe.id == sourceId else {
-                    self?.cgmTestInProgress = false
+                guard let self else { return }
+                guard let probe = self.glucoseSourceProbe,
+                      !Self.cgmTestShouldAbort(startedSourceId: sourceId, currentProbeId: probe.id) else {
+                    // W-03: source changed/cleared mid-Test — clear BOTH the in-progress flag AND the
+                    // outcome so no frozen stale `.waiting` screen is left behind (was: only cleared
+                    // in-progress, leaving the last `.waiting` outcome rendered forever).
+                    self.cgmTestInProgress = false
+                    self.cgmTestOutcome = nil
                     return
                 }
                 let elapsed = Date().timeIntervalSince(startedAt)
