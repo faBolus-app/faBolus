@@ -44,6 +44,19 @@ struct DexcomG7BLESourceTests {
         return Data(d)
     }
 
+    // Backfill frame (9 bytes) per `G7BackfillMessage.init(data:)`:
+    //   [0..3]=timestamp(LE u24)  [4..6]=glucose(LE u16)  [6]=algorithmState  [7]=display-only  [8]=trend
+    private static func backfillFrame(timestamp: UInt32, glucose: UInt16, state: UInt8 = 0x06) -> Data {
+        var d = [UInt8](repeating: 0, count: 9)
+        let ts = withUnsafeBytes(of: timestamp.littleEndian) { Array($0) }
+        d[0] = ts[0]; d[1] = ts[1]; d[2] = ts[2]
+        let gl = withUnsafeBytes(of: glucose.littleEndian) { Array($0) }
+        d[4] = gl[0]; d[5] = gl[1]
+        d[6] = state
+        d[8] = 0x00
+        return Data(d)
+    }
+
     private static func stalePumpSnapshot(_ glucose: Int, ageSec: TimeInterval) -> PumpSnapshot {
         var s = PumpSnapshot()
         s.glucose = glucose
@@ -131,6 +144,39 @@ struct DexcomG7BLESourceTests {
         let (snap, _, prov) = GlucoseArbiter.merge(pumpSnapshot: pump, pumpHistory: [], source: source)
         #expect(prov == .pump, "arbiter must not fail over to a source reporting no usable value")
         #expect(snap.glucose == 100)
+    }
+
+    // MARK: - D-03 physiologic-range gate (latest + history)
+
+    /// An out-of-physiologic-range G7 glucose frame (reliable state but 900 mg/dL) is rejected by the
+    /// decode-time range gate BEFORE anchor math and never becomes `latest` (D-03).
+    @Test func outOfRangeGlucoseFrameNeverBecomesLatest() {
+        let source = DexcomG7BLESource()
+        source.ingest(glucoseFrame: Self.glucoseFrame(messageTimestamp: 1000, age: 0, glucose: 900))
+        #expect(source.latest == nil, "an out-of-range G7 frame must never become the trusted latest (D-03)")
+    }
+
+    /// Pitfall 1: an out-of-range backfill/history entry is DROPPED, not charted — G7 history is
+    /// derived via the gated GlucoseSample, not a raw GlucoseReading from the decoded value.
+    @Test func outOfRangeBackfillEntryIsDroppedFromHistory() {
+        let source = DexcomG7BLESource()
+        // Bootstrap a valid anchor + latest first.
+        source.ingest(glucoseFrame: Self.glucoseFrame(messageTimestamp: 1000, age: 0, glucose: 120))
+        let before = source.history.count
+        // An out-of-range backfill entry (900) at a plausible sensor time must be dropped.
+        source.ingest(backfillFrame: Self.backfillFrame(timestamp: 700, glucose: 900))
+        #expect(source.history.count == before,
+                "an out-of-range backfill entry must be dropped from charted history (Pitfall 1)")
+        #expect(!source.history.contains { $0.mgdl == 900 })
+    }
+
+    /// The gate does not over-reject: an in-range backfill entry IS charted in history.
+    @Test func inRangeBackfillEntryIsChartedInHistory() {
+        let source = DexcomG7BLESource()
+        source.ingest(glucoseFrame: Self.glucoseFrame(messageTimestamp: 1000, age: 0, glucose: 120))
+        source.ingest(backfillFrame: Self.backfillFrame(timestamp: 700, glucose: 110))
+        #expect(source.history.contains { $0.mgdl == 110 },
+                "an in-range backfill entry must be charted in history")
     }
 
     // MARK: - Task 3: stop() lifecycle reset (D-14 / W-02)
