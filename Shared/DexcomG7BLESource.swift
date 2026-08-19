@@ -105,8 +105,10 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     }
 
     private func handleGlucose(_ msg: G7GlucoseMessage) {
-        // Require reliability first — an unreliable/absent glucose frame never anchors or publishes.
-        guard let mgdl = msg.glucose, msg.hasReliableGlucose else {
+        // D-03: require reliability AND physiologic range FIRST, before any anchor math — an unreliable,
+        // absent, or out-of-[40,400] glucose frame never anchors or publishes (decode-time reject,
+        // defense-in-depth alongside the GlucoseSample construction gate below).
+        guard let mgdl = msg.glucose, msg.hasPlausibleGlucose else {
             status = .connected
             notify()
             return
@@ -146,18 +148,30 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
             notify()
             return
         }
-        latest = GlucoseSample(mgdl: Int(mgdl), date: date,
-                               trend: Self.trend(msg.trendDirection), sourceID: id)
-        merge([GlucoseReading(date: date, mgdl: Int(mgdl))])
+        // D-05 construction gate (belt-and-suspenders with the decode gate above): route through the
+        // failable GlucoseSample, and derive history from that SAME gated sample's `.reading` — never a
+        // raw GlucoseReading(...) from the decoded value (Pitfall 1).
+        guard let sample = GlucoseSample(mgdl: Int(mgdl), date: date,
+                                         trend: Self.trend(msg.trendDirection), sourceID: id) else {
+            status = .connected
+            notify()
+            return
+        }
+        latest = sample
+        merge([sample.reading])
         drainPendingBackfill()
         status = .connected
         notify()
     }
 
     private func handleBackfill(_ msg: G7BackfillMessage) {
-        guard let mgdl = msg.glucose, msg.hasReliableGlucose else { return }
+        // D-03/Pitfall 1: gate the history/backfill path on the SAME decode-time range check, and derive
+        // the charted reading from a gated GlucoseSample's `.reading` — never a raw GlucoseReading(...)
+        // from the decoded value, so backfilled chart history is gated exactly like `latest`.
+        guard let mgdl = msg.glucose, msg.hasPlausibleGlucose else { return }
         if let date = wallTime(forSensor: msg.timestamp) {
-            merge([GlucoseReading(date: date, mgdl: Int(mgdl))])
+            guard let sample = GlucoseSample(mgdl: Int(mgdl), date: date, sourceID: id) else { return }
+            merge([sample.reading])
             notify()
         } else {
             pendingBackfill.append(msg)   // no wall anchor yet; convert once a live message lands
@@ -167,9 +181,10 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     private func drainPendingBackfill() {
         guard !pendingBackfill.isEmpty else { return }
         let readings = pendingBackfill.compactMap { m -> GlucoseReading? in
-            guard let g = m.glucose, m.hasReliableGlucose, let d = wallTime(forSensor: m.timestamp)
+            guard let g = m.glucose, m.hasPlausibleGlucose, let d = wallTime(forSensor: m.timestamp),
+                  let sample = GlucoseSample(mgdl: Int(g), date: d, sourceID: id)
             else { return nil }
-            return GlucoseReading(date: d, mgdl: Int(g))
+            return sample.reading
         }
         pendingBackfill.removeAll()
         merge(readings)

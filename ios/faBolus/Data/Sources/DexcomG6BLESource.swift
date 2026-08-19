@@ -163,7 +163,13 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
             // A corrupt/wrong-opcode time frame fails to decode and simply doesn't refresh the
             // anchor — it must NOT fall through to a `GlucoseRxMessage` attempt (opcode mismatch
             // would reject it anyway, but this keeps the routing explicit).
-            if let time = TransmitterTimeRxMessage(data: data) {
+            // W-01 (D-14): only refresh the sensor-time anchor from a time frame that reports a VALID
+            // sensor session (`hasValidSensorSession`: a session is active AND sessionStartTime <=
+            // currentTime). A no-session sentinel (UInt32.max) or an inconsistent start time would
+            // poison the anchor with a wrong `currentTime`; the decoded-but-previously-unconsulted
+            // `hasValidSensorSession` closes that defense-in-depth gap (alongside the glucose frame's
+            // own `hasPlausibleGlucose` gate in `handle`).
+            if let time = TransmitterTimeRxMessage(data: data), time.hasValidSensorSession {
                 activationDate = Date(timeIntervalSinceNow: -TimeInterval(time.currentTime))
             }
             return
@@ -217,8 +223,15 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         // the implausible-age gate above and by the existing GlucoseFreshness/CalcInputFreshness
         // staleness policy downstream (D-07) — not duplicated here.
 
-        let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
-                                   trend: Self.trend(msg.trendDirection), sourceID: id)
+        // D-05 construction gate — redundant-but-harmless here (the frame already passed the
+        // decode-time `hasPlausibleGlucose` gate above), but routes G6 through the same failable init
+        // as every other source so no raw path bypasses it.
+        guard let sample = GlucoseSample(mgdl: msg.glucoseMgdl, date: date,
+                                         trend: Self.trend(msg.trendDirection), sourceID: id) else {
+            status = .connected
+            onChange?()
+            return
+        }
         latest = sample
         var byBucket: [Int: GlucoseReading] = [:]
         for r in history + [sample.reading] { byBucket[Int(r.date.timeIntervalSince1970 / 300)] = r }

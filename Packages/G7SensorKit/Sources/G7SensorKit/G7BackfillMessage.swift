@@ -12,6 +12,12 @@ public struct G7BackfillMessage: Equatable {
     public let data: Data
 
     public var hasReliableGlucose: Bool { algorithmState.hasReliableGlucose }
+    /// D-03 decode-time physiologic-range gate (REJECT posture — same as `G7GlucoseMessage`): a
+    /// reliable backfill entry carrying an out-of-range decoded value is dropped, never charted.
+    public var hasPlausibleGlucose: Bool {
+        guard hasReliableGlucose, let glucose else { return false }
+        return glucose >= GlucoseLimits.minimum && glucose <= GlucoseLimits.maximum
+    }
     public var trendDirection: G7TrendDirection? { G7TrendDirection(rate: trend) }
 
     public init?(data: Data) {

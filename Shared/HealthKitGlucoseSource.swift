@@ -92,8 +92,12 @@ final class HealthKitGlucoseSource: GlucoseSource {
         anchor = result.1   // set on the main actor, after the query completes
         let samples = result.0
         guard !samples.isEmpty else { return }
-        let readings = samples.map {
-            GlucoseReading(date: $0.startDate, mgdl: Int($0.quantity.doubleValue(for: unit).rounded()))
+        // D-05 / Pitfall 1 (Assumption A4): route the history-building loop through the gated
+        // GlucoseSample too — an out-of-[40,400] Health value is DROPPED from BOTH `history` and
+        // `latest`, never charted via a raw GlucoseReading(...).
+        let readings = samples.compactMap { s -> GlucoseReading? in
+            let mgdl = Int(s.quantity.doubleValue(for: unit).rounded())
+            return GlucoseSample(mgdl: mgdl, date: s.startDate, sourceID: id)?.reading
         }
         var byBucket: [Int: GlucoseReading] = [:]
         for r in history + readings { byBucket[Int(r.date.timeIntervalSince1970 / 300)] = r }
@@ -101,7 +105,8 @@ final class HealthKitGlucoseSource: GlucoseSource {
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
         if let newest = history.last {
             // C8: HealthKit hands us values with no trend, so we report none. This said `.flat`, which
-            // rendered a steady arrow the source never claimed.
+            // rendered a steady arrow the source never claimed. `history` is already gated, so the
+            // failable init here always succeeds for `newest`.
             latest = GlucoseSample(mgdl: newest.mgdl, date: newest.date, sourceID: id)
             status = latest?.isStale == true ? .stale : .connected
         }

@@ -30,7 +30,8 @@ struct CgmTestFlowStateTests {
     }
 
     private func sample(_ mgdl: Int = 120) -> GlucoseSample {
-        GlucoseSample(mgdl: mgdl, date: Date(), trend: .flat, sourceID: "stub")
+        // The failable init (D-05) never fails here — the default mgdl (120) is in-range.
+        GlucoseSample(mgdl: mgdl, date: Date(), trend: .flat, sourceID: "stub")!
     }
 
     // MARK: - .success — a reading is already buffered
