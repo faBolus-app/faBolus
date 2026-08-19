@@ -27,6 +27,7 @@ public final class GlucoseHistoryStore {
         container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
                                        StoredSite.self,
                                        StoredCaffeine.self, StoredAlcohol.self,
+                                       StoredHeartRate.self,
                                        configurations: config)
         if !inMemory { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -165,6 +166,28 @@ public final class GlucoseHistoryStore {
         try? context.save()
     }
 
+    // MARK: Heart-rate history (09.23-02, D-14 — extends the 09.18b ephemeral chart-context reader)
+
+    /// Persist imported/recorded heart-rate samples. `entryID` defaults to a fresh UUID string per
+    /// sample; callers needing delete/backup identity should ingest one at a time with a stable id.
+    public func ingestHeartRate(_ samples: [(date: Date, bpm: Double)], sourceID: String,
+                                source: String? = nil, recordedAt: Date = Date()) {
+        for s in samples {
+            context.insert(StoredHeartRate(entryID: UUID().uuidString, bpm: s.bpm,
+                                           source: source ?? sourceID,
+                                           date: s.date, sourceID: sourceID, recordedAt: recordedAt))
+        }
+        try? context.save()
+    }
+
+    /// Heart-rate rows whose `date` falls in `range`, most-recent first.
+    public func heartRate(in range: ClosedRange<Date>) -> [StoredHeartRate] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredHeartRate>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
     // MARK: Query (conflict-resolved)
 
     /// Glucose in range, de-duplicated to one reading per 5-min slot (priority, then recency).
@@ -229,6 +252,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredSite.self)
         try? context.delete(model: StoredCaffeine.self)
         try? context.delete(model: StoredAlcohol.self)
+        try? context.delete(model: StoredHeartRate.self)
         try? context.save()
     }
 }
