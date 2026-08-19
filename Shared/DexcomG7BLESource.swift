@@ -22,6 +22,31 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
 
+    /// D-08: the ONE stable restore identifier used by the production instance
+    /// (`GlucoseSourceRegistry.makeSelected()`). Textually stable — a literal, never a timestamp/UUID —
+    /// so it survives relaunches unchanged (a requirement of CoreBluetooth state restoration).
+    /// DISTINCT from every other restore id in the process: pump `com.fabolus.app.pump`, watch
+    /// `com.fabolus.app.watch.pump`, BLELink `com.fabolus.ble.central`, G6
+    /// `com.fabolus.cgm.dexcom-g6-ble` — no collision.
+    static let productionRestoreIdentifier = "com.fabolus.cgm.dexcom-g7-ble"
+
+    /// Set at construction (nil for the ephemeral `CgmCredentialsView` "Test" instance,
+    /// `productionRestoreIdentifier` for the one production instance — see `GlucoseSourceRegistry`).
+    /// CoreBluetooth SIGABRTs when the SAME restore-identifier string is used by more than one live
+    /// manager in the process, so scoping it to the production instance only — and reattaching via
+    /// `willRestoreState` below — restores background failover without reintroducing that crash (the
+    /// same constraint `DexcomG6BLESource` solved, D-08).
+    private let restoreIdentifier: String?
+
+    init(restoreIdentifier: String? = nil) {
+        self.restoreIdentifier = restoreIdentifier
+        super.init()
+    }
+
+    /// Read-only accessor for the construction-time restore-identifier scoping test (D-08) — no live
+    /// `CBCentralManager` required.
+    var restoreIdentifierForTesting: String? { restoreIdentifier }
+
     // Sensor clock → wall clock. G7 timestamps are "seconds since pairing"; we anchor them to the
     // wall time a live message arrived: wall(s) = receivedAt + (s - messageTimestamp). Unlike G6, G7
     // has NO transmitterTimeRx-equivalent broadcast, so the glucose message itself carries the anchor
@@ -50,9 +75,17 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
     func start() async {
         guard central == nil else { return }
         status = .searching
-        // No restore identifier — see DexcomG6BLESource: a duplicate restore id (launch source +
-        // test source) makes CBCentralManager.init assert. Passive failover needs no restoration.
-        central = CBCentralManager(delegate: self, queue: .main)
+        // D-08: pass CBCentralManagerOptionRestoreIdentifierKey ONLY when this instance was built with
+        // a restore identifier (the production instance — see `GlucoseSourceRegistry`). The ephemeral
+        // "Test" instance is built with `restoreIdentifier == nil` and gets no options at all, so the
+        // two never share a restore-identifier string (the SIGABRT G6 also solved). Background relaunch
+        // then reattaches via `centralManager(_:willRestoreState:)` below, so the production instance
+        // re-arms for overnight failover parity with G6 instead of getting no relaunch at all.
+        var options: [String: Any]?
+        if let restoreIdentifier {
+            options = [CBCentralManagerOptionRestoreIdentifierKey: restoreIdentifier]
+        }
+        central = CBCentralManager(delegate: self, queue: .main, options: options)
     }
 
     func stop() {
@@ -216,6 +249,38 @@ final class DexcomG7BLESource: NSObject, GlucoseSource {
 // CoreBluetooth delegate callbacks run on `queue: .main`, so `MainActor.assumeIsolated` hops into the
 // main actor to touch our state — matching TandemBLE's `PumpBLEClient`.
 extension DexcomG7BLESource: CBCentralManagerDelegate, CBPeripheralDelegate {
+    /// D-08 completion: background relaunch reattachment, mirroring `DexcomG6BLESource`'s
+    /// `willRestoreState` — reattach the delegate on the restored peripheral (and re-issue `connect`
+    /// if CoreBluetooth hasn't already re-established the link) so the production instance re-arms
+    /// without waiting for a fresh scan. Only ever fires for the production instance (the Test instance
+    /// is built with no restore identifier, so CoreBluetooth never restores state for it). Never
+    /// touches the auth/control characteristics — read-only, same as every other path here (D-12a).
+    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        // Pull the restored peripheral out here, same as `didDiscover`'s `advName` extraction: the
+        // non-Sendable `[String: Any]` dict itself must not cross into the main-actor closure.
+        // `nonisolated(unsafe)` is safe here — CoreBluetooth invokes this delegate on `queue: .main`
+        // (see `start()`), so there is no actual concurrent access, only the strict-concurrency
+        // checker's Sendable requirement on `[CBPeripheral]` (unmet because `CBPeripheral` predates
+        // Sendable) to satisfy (same pattern as `DexcomG6BLESource`).
+        nonisolated(unsafe) let restoredPeripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]
+        MainActor.assumeIsolated {
+            guard let restored = restoredPeripherals?.first else { return }
+            peripheral = restored
+            restored.delegate = self
+            if restored.state == .connected {
+                // Force fresh discovery ourselves (mirror G6's H-01 fix): a relaunched process has a
+                // brand-new source instance with no in-memory record of previously-discovered
+                // characteristics or notify subscriptions — CoreBluetooth's restoration covers the
+                // peripheral object + raw link state, not this fresh delegate's own subscriptions.
+                // Passive read-only (D-12a): only discoverServices → discoverCharacteristics →
+                // setNotifyValue follow from this, never a characteristic write.
+                restored.discoverServices([SensorServiceUUID.cgmService.cbUUID])
+            } else {
+                central.connect(restored)
+            }
+        }
+    }
+
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         MainActor.assumeIsolated {
             guard central.state == .poweredOn else { status = .searching; notify(); return }

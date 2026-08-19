@@ -11,8 +11,14 @@ public enum GlucoseSourceRegistry {
     /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
     /// (last resort), and HealthKit (Eversense).
     public static let enabled: [GlucoseSourceDescriptor] = [
+        // D-08: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
+        // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
+        // gets nil — two CBCentralManagers sharing a restore-identifier string in one process is a
+        // CoreBluetooth SIGABRT (mirror of the G6 descriptor's scoping).
         GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
-                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { _ in DexcomG7BLESource() },
+                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
+            DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
+        },
         // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
         // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
         // gets nil. Two CBCentralManagers sharing a restore-identifier string in one process is a
