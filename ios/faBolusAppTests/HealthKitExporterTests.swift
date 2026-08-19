@@ -233,5 +233,68 @@ struct HealthKitExporterTests {
         #expect(fake.newInsulinCalls.isEmpty, "insulin export is disabled — the exporter must never be called")
         #expect(fake.newGlucoseCalls.isEmpty, "glucose export is disabled — the exporter must never be called")
     }
+
+    // MARK: - CR-01: the bidirectional echo-guard — a HealthKit-*imported* entry (sourceID
+    // "healthkit-import") must NEVER be handed to the exporter, on EITHER the automatic go-forward
+    // path OR the manual historical backfill. Mirrors `goForwardExportHookRoutesOnlyEnabledTypesTo
+    // TheExporter`'s shape; proves the fix at `GlucoseHistoryStore.carbs/boluses/glucose(in:
+    // excludingSourceIDs:)` + `AppModel.healthKitImportSourceIDs` actually closes the loop.
+
+    @Test func goForwardAutoExportNeverReExportsAHealthKitImportedCarbEntry() async throws {
+        let (model, _) = makeModel()
+        let store = try GlucoseHistoryStore(inMemory: true)
+        model.setHistoryStoreForTesting(store)
+
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        // Simulates `runHealthKitImport` having just ingested a carb entry FROM Apple Health.
+        store.ingestCarbs([(date: t0, grams: 30)], sourceID: "healthkit-import")
+
+        AppSettings.shared.healthKitExportCarbsEnabled = true
+        AppSettings.shared.healthKitExportInsulinEnabled = false
+        AppSettings.shared.healthKitExportGlucoseEnabled = false
+        defer { AppSettings.shared.healthKitExportCarbsEnabled = false }
+
+        let fake = FakeHealthKitExportDestination()
+        model.setHealthKitExportDestinationForTesting(fake)
+
+        await model.runHealthKitAutoExport()
+
+        #expect(fake.newCarbsCalls.count == 1, "carbs export is enabled — the exporter is still invoked")
+        #expect(fake.newCarbsCalls.first?.isEmpty == true,
+                "the ONLY candidate was HealthKit-imported — it must never reach the exporter (CR-01)")
+    }
+
+    @Test func manualExportToAppleHealthNeverReExportsHealthKitImportedEntries() async throws {
+        let (model, _) = makeModel()
+        let store = try GlucoseHistoryStore(inMemory: true)
+        model.setHistoryStoreForTesting(store)
+
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        // Simulates `runHealthKitImport` having just ingested carbs/insulin/glucose FROM Apple Health.
+        store.ingestCarbs([(date: t0, grams: 30)], sourceID: "healthkit-import")
+        store.ingestBoluses([BolusMarker(date: t0, units: 2.4)], sourceID: "healthkit-import")
+        store.ingestGlucose([GlucoseReading(date: t0, mgdl: 130)], sourceID: "healthkit-import", priority: 10)
+
+        AppSettings.shared.healthKitExportCarbsEnabled = true
+        AppSettings.shared.healthKitExportInsulinEnabled = true
+        AppSettings.shared.healthKitExportGlucoseEnabled = true
+        defer {
+            AppSettings.shared.healthKitExportCarbsEnabled = false
+            AppSettings.shared.healthKitExportInsulinEnabled = false
+            AppSettings.shared.healthKitExportGlucoseEnabled = false
+        }
+
+        let fake = FakeHealthKitExportDestination()
+        model.setHealthKitExportDestinationForTesting(fake)
+
+        await model.exportToAppleHealth(since: t0.addingTimeInterval(-60))
+
+        #expect(fake.historicalCarbsCalls.first?.isEmpty == true,
+                "the ONLY carb candidate was HealthKit-imported — it must never be re-exported (CR-01)")
+        #expect(fake.historicalInsulinCalls.first?.isEmpty == true,
+                "the ONLY bolus candidate was HealthKit-imported — it must never be re-exported (CR-01)")
+        #expect(fake.historicalGlucoseCalls.first?.isEmpty == true,
+                "the ONLY glucose candidate was HealthKit-imported — it must never be re-exported (CR-01)")
+    }
     #endif
 }

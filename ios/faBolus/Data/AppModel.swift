@@ -1501,6 +1501,18 @@ public final class AppModel {
     @ObservationIgnored private lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
     private var lastHealthKitAutoExport = Date.distantPast
 
+    /// CR-01: the `sourceID`s `runHealthKitImport` stamps on ingested rows (`"healthkit-import"` for
+    /// carbs/insulin/glucose-gap-fill — see `HealthKitHistoryImporter.glucoseImportSourceID` and the
+    /// literal ingest calls above; `"healthkit"` for the heart-rate importer, which is never exported
+    /// anyway per D-08). Passed as `excludingSourceIDs` to EVERY HealthKit *export* read path below —
+    /// `HealthKitOriginTag`/`filterOutOwnWrites` already stop faBolus from re-*importing* its own
+    /// exported writes; this is the missing other half of the echo-guard, stopping faBolus from
+    /// re-*exporting* an entry that was itself just imported FROM Apple Health (which would create a
+    /// second, duplicate Health sample rather than update the original — a clinical-confusion risk).
+    /// Deliberately NOT applied to `runHealthKitImport`'s `existingSlots` computation (line ~1487) —
+    /// that read is for import-side gap-fill dedup, not export, and must keep seeing every source.
+    static let healthKitImportSourceIDs: Set<String> = ["healthkit-import", "healthkit"]
+
     #if DEBUG
     /// Test seam: substitute the HealthKit export destination (a fake) so a test can assert the
     /// go-forward hook's enabled-type routing without touching real HealthKit. Mirrors
@@ -1520,13 +1532,16 @@ public final class AppModel {
         let range = since...Date()
         let destination = healthKitExportDestination
         if settings.healthKitExportCarbsEnabled {
-            await destination.exportHistoricalCarbs(history?.carbs(in: range) ?? [])
+            await destination.exportHistoricalCarbs(
+                history?.carbs(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
         }
         if settings.healthKitExportInsulinEnabled {
-            await destination.exportHistoricalInsulin(history?.boluses(in: range) ?? [])
+            await destination.exportHistoricalInsulin(
+                history?.boluses(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
         }
         if settings.healthKitExportGlucoseEnabled {
-            await destination.exportHistoricalGlucose(history?.glucose(in: range) ?? [])
+            await destination.exportHistoricalGlucose(
+                history?.glucose(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
         }
     }
 
@@ -1557,7 +1572,11 @@ public final class AppModel {
         let settings = AppSettings.shared
         let destination = healthKitExportDestination
         if settings.healthKitExportCarbsEnabled {
-            let carbs = history?.carbs(in: Date.distantPast...Date()) ?? []
+            // CR-01: exclude HealthKit-imported carbs — this window is the app's ENTIRE carb
+            // history (unbounded), so without the exclusion a carb imported from Health on the
+            // last import cycle would look "never exported" and get written straight back out.
+            let carbs = history?.carbs(in: Date.distantPast...Date(),
+                                       excludingSourceIDs: Self.healthKitImportSourceIDs) ?? []
             await destination.exportNewCarbs(carbs)
         }
         if settings.healthKitExportInsulinEnabled {

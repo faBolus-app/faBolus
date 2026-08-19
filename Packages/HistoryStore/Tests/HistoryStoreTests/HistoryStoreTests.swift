@@ -77,6 +77,45 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(c.first?.grams, 45)
     }
 
+    // MARK: - CR-01: excludingSourceIDs — the HealthKit-export echo-guard's building block
+
+    func testCarbsExcludingSourceIDsDropsMatchingRowsOnly() throws {
+        let store = try makeStore()
+        store.ingestCarbs([(date: t0, grams: 30)], sourceID: "healthkit-import")
+        store.ingestCarbs([(date: t0.addingTimeInterval(60), grams: 45)], sourceID: "fabolus")
+        let range = t0.addingTimeInterval(-60)...t0.addingTimeInterval(300)
+
+        let unfiltered = store.carbs(in: range)
+        XCTAssertEqual(unfiltered.count, 2, "default excludingSourceIDs is empty — existing callers unchanged")
+
+        let filtered = store.carbs(in: range, excludingSourceIDs: ["healthkit-import"])
+        XCTAssertEqual(filtered.map(\.grams), [45], "the healthkit-import row must be excluded, the rest kept")
+    }
+
+    func testBolusesExcludingSourceIDsDropsMatchingRowsOnly() throws {
+        let store = try makeStore()
+        store.ingestBoluses([BolusMarker(date: t0, units: 2.4)], sourceID: "healthkit-import")
+        store.ingestBoluses([BolusMarker(date: t0.addingTimeInterval(60), units: 4.5)], sourceID: "pump")
+        let range = t0.addingTimeInterval(-60)...t0.addingTimeInterval(300)
+
+        XCTAssertEqual(store.boluses(in: range).count, 2)
+        let filtered = store.boluses(in: range, excludingSourceIDs: ["healthkit-import"])
+        XCTAssertEqual(filtered.map(\.units), [4.5], "the healthkit-import row must be excluded, the rest kept")
+    }
+
+    func testGlucoseExcludingSourceIDsDropsMatchingRowsBeforeThePrioritySlotMerge() throws {
+        let store = try makeStore()
+        // Distinct 5-min slots so both rows would otherwise survive the merge independently.
+        store.ingestGlucose([GlucoseReading(date: t0, mgdl: 130)], sourceID: "healthkit-import", priority: 10)
+        store.ingestGlucose([GlucoseReading(date: t0.addingTimeInterval(600), mgdl: 145)], sourceID: "dexcomG7",
+                            priority: 100)
+        let range = t0.addingTimeInterval(-60)...t0.addingTimeInterval(900)
+
+        XCTAssertEqual(store.glucose(in: range).count, 2)
+        let filtered = store.glucose(in: range, excludingSourceIDs: ["healthkit-import"])
+        XCTAssertEqual(filtered.map(\.mgdl), [145], "the healthkit-import reading must be excluded, the rest kept")
+    }
+
     // MARK: SiteAtlas (09.18a-01, D-10)
 
     func testSiteRoundTrip() throws {
