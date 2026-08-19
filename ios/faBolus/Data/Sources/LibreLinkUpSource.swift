@@ -108,14 +108,18 @@ final class LibreLinkUpSource: PollingGlucoseSource {
         var samples: [GlucoseSample] = []
         // C8: an absent `TrendArrow` means no trend reported → `nil` (no arrow). Do NOT default it to
         // 3 ("Flat"), which would fabricate a steady reading the source never sent.
-        if let m = graph.data?.connection?.glucoseMeasurement, let d = parseUTC(m.FactoryTimestamp) {
-            samples.append(GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
-                                         trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id))
+        // D-05: route through the failable GlucoseSample init — an out-of-[40,400] value is DROPPED,
+        // never published.
+        if let m = graph.data?.connection?.glucoseMeasurement, let d = parseUTC(m.FactoryTimestamp),
+           let sample = GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
+                                      trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id) {
+            samples.append(sample)
         }
         for m in graph.data?.graphData ?? [] {
-            if let d = parseUTC(m.FactoryTimestamp) {
-                samples.append(GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
-                                             trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id))
+            if let d = parseUTC(m.FactoryTimestamp),
+               let sample = GlucoseSample(mgdl: m.ValueInMgPerDl, date: d,
+                                          trend: m.TrendArrow.flatMap(CgmTrend.libre), sourceID: id) {
+                samples.append(sample)
             }
         }
         if samples.isEmpty { throw SourceError.badResponse }

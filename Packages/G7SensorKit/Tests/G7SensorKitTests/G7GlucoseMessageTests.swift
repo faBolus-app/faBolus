@@ -29,4 +29,60 @@ final class G7GlucoseMessageTests: XCTestCase {
         XCTAssertEqual(msg.trend ?? 0, -0.4, accuracy: 0.0001) // 0xfc = -4 → -0.4
         XCTAssertEqual(msg.trendDirection, .flat)         // |rate| < 1.0
     }
+
+    // MARK: - D-03 decode-time physiologic-range gate (hasPlausibleGlucose, REJECT posture)
+
+    /// Real-time glucose frame (opcode 0x4e) with an arbitrary in-band glucose + algorithm state.
+    private func glucoseFrame(glucose: UInt16, state: UInt8 = 0x06) -> Data {
+        var d = [UInt8](repeating: 0, count: 19)
+        d[0] = 0x4e; d[1] = 0x00
+        d[2] = 0xd5; d[3] = 0x07                  // messageTimestamp = 2005 (arbitrary)
+        d[9] = 0x01
+        d[10] = 0x05                              // age = 5
+        let gl = withUnsafeBytes(of: glucose.littleEndian) { Array($0) }
+        d[12] = gl[0]; d[13] = gl[1]
+        d[14] = state
+        d[15] = 0x01                              // trend 0.1
+        d[16] = 0xff; d[17] = 0xff                // predicted nil
+        d[18] = 0x00
+        return Data(d)
+    }
+
+    /// Backfill frame (9 bytes) with an arbitrary in-band glucose + algorithm state.
+    private func backfillFrame(glucose: UInt16, state: UInt8 = 0x06) -> Data {
+        var d = [UInt8](repeating: 0, count: 9)
+        d[0] = 0x45; d[1] = 0xa1; d[2] = 0x00     // timestamp (arbitrary)
+        let gl = withUnsafeBytes(of: glucose.littleEndian) { Array($0) }
+        d[4] = gl[0]; d[5] = gl[1]
+        d[6] = state
+        d[7] = 0x00
+        d[8] = 0xfc                               // trend
+        return Data(d)
+    }
+
+    /// The gate finally consumes the vendored GlucoseLimits (40/400): boundaries accepted, out-of-range
+    /// (500 / 20) rejected — REJECT posture, mirroring DexcomG6Kit.GlucoseRxMessage.hasPlausibleGlucose.
+    func testGlucoseMessageHasPlausibleGlucoseRangeCeiling() throws {
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 40))?.hasPlausibleGlucose, true)
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 400))?.hasPlausibleGlucose, true)
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 120))?.hasPlausibleGlucose, true)
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 500))?.hasPlausibleGlucose, false)
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 20))?.hasPlausibleGlucose, false)
+    }
+
+    /// hasPlausibleGlucose also requires reliability — an in-range but non-.ok frame is unusable.
+    func testGlucoseMessageHasPlausibleGlucoseFalseWhenUnreliable() throws {
+        XCTAssertEqual(G7GlucoseMessage(data: glucoseFrame(glucose: 120, state: 0x02))?.hasPlausibleGlucose, false)
+    }
+
+    func testBackfillMessageHasPlausibleGlucoseRangeCeiling() throws {
+        XCTAssertEqual(G7BackfillMessage(data: backfillFrame(glucose: 40))?.hasPlausibleGlucose, true)
+        XCTAssertEqual(G7BackfillMessage(data: backfillFrame(glucose: 400))?.hasPlausibleGlucose, true)
+        XCTAssertEqual(G7BackfillMessage(data: backfillFrame(glucose: 500))?.hasPlausibleGlucose, false)
+        XCTAssertEqual(G7BackfillMessage(data: backfillFrame(glucose: 20))?.hasPlausibleGlucose, false)
+    }
+
+    func testBackfillMessageHasPlausibleGlucoseFalseWhenUnreliable() throws {
+        XCTAssertEqual(G7BackfillMessage(data: backfillFrame(glucose: 120, state: 0x02))?.hasPlausibleGlucose, false)
+    }
 }

@@ -6,6 +6,7 @@ import XCTest
 private final class MockGlucoseSource: GlucoseSource {
     let id = "mock"
     let priority = 100
+    let connectionKind: GlucoseConnectionKind = .localBLE   // D-06: conformers must classify
     var latest: GlucoseSample?
     var history: [GlucoseReading]
     var status: GlucoseSourceStatus = .connected
@@ -27,7 +28,8 @@ final class GlucoseArbiterTests: XCTestCase {
         return s
     }
     private func sample(_ mgdl: Int, ageSec: TimeInterval, trend: GlucoseTrend = .up) -> GlucoseSample {
-        GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")
+        // The failable init (D-05) never fails here — every caller passes an in-range mgdl (e.g. 120).
+        GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")!
     }
 
     func testFreshPumpKeepsPumpValue() {

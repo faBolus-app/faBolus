@@ -11,8 +11,14 @@ public enum GlucoseSourceRegistry {
     /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
     /// (last resort), and HealthKit (Eversense).
     public static let enabled: [GlucoseSourceDescriptor] = [
+        // D-08: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
+        // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
+        // gets nil — two CBCentralManagers sharing a restore-identifier string in one process is a
+        // CoreBluetooth SIGABRT (mirror of the G6 descriptor's scoping).
         GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
-                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { _ in DexcomG7BLESource() },
+                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
+            DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
+        },
         // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
         // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
         // gets nil. Two CBCentralManagers sharing a restore-identifier string in one process is a
@@ -69,5 +75,13 @@ public enum GlucoseSourceRegistry {
     /// Build a specific source by id (for testing a not-necessarily-selected source). This is the
     /// ephemeral `CgmCredentialsView` "Test" path — always `restoreStateEnabled: false` (D-06), so it
     /// can never collide with the production instance's restore identifier.
+    ///
+    /// W-04 (D-14) — KEEP-WITH-COMMENT: this has ZERO remaining PRODUCTION call sites (the live Test
+    /// flow now observes the already-running `AppModel.glucoseSource` production instance via
+    /// `glucoseSourceProbe`, never a second ephemeral central). It is still exercised by
+    /// `DexcomG6RestoreIdentifierTests`, which pins the invariant that the by-id build path carries
+    /// `restoreStateEnabled: false` — the sole guard against the dup-restore-id SIGABRT. Keeping it
+    /// (and `CgmCredentialsView.sourcesToTest`) is the chosen low-risk option under full-hardening
+    /// scope; do NOT delete either without migrating those test call sites in the same change.
     public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make(false) }
 }

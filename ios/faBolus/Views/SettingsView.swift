@@ -629,6 +629,9 @@ struct CgmSettingsView: View {
                     }
                 }
                 NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
+                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
+                // the place per-source live status/age/provenance exists — F-08/F-09).
+                NavigationLink("CGM source status") { CgmStatusView(model: model) }
             } header: { Text("Glucose failover") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
             }

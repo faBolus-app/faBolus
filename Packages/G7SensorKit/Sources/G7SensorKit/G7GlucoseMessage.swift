@@ -17,6 +17,16 @@ public struct G7GlucoseMessage: Equatable {
     public let age: UInt16
 
     public var hasReliableGlucose: Bool { algorithmState.hasReliableGlucose }
+    /// D-03 decode-time physiologic-range gate (REJECT posture, mirroring
+    /// `DexcomG6Kit.GlucoseRxMessage.hasPlausibleGlucose`): `hasReliableGlucose` PLUS the decoded glucose
+    /// falling inside the vendored `GlucoseLimits` `[40, 400]`. Finally consumes the previously-unused
+    /// `GlucoseLimits`. A reliable frame carrying an out-of-range value (e.g. 500 or 20 mg/dL) is
+    /// decode/transport corruption, not real physiology, and is NOT usable — the caller REJECTS it
+    /// outright, never clamps it into range.
+    public var hasPlausibleGlucose: Bool {
+        guard hasReliableGlucose, let glucose else { return false }
+        return glucose >= GlucoseLimits.minimum && glucose <= GlucoseLimits.maximum
+    }
     /// Sensor-clock timestamp (seconds since pairing) of the glucose reading itself. Guard the unsigned
     /// subtraction: a malformed sensor frame where `age > messageTimestamp` would otherwise underflow
     /// and trap (audit A-07).

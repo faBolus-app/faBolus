@@ -24,6 +24,7 @@ import faBolusCore
 final class XDripAppGroupSource: GlucoseSource {
     let id = "xdrip-appgroup"
     let priority = 90              // local + near-instant; just below native G7 BLE, above cloud
+    let connectionKind: GlucoseConnectionKind = .localOnDevice   // D-06
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle

@@ -8,6 +8,8 @@ import faBolusCore
 class PollingGlucoseSource: GlucoseSource {
     let id: String
     let priority: Int
+    /// D-06: cloud pollers (Dexcom Share / Nightscout / LibreLinkUp) inherit this classification.
+    let connectionKind: GlucoseConnectionKind = .cloudPoll
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle
@@ -21,6 +23,31 @@ class PollingGlucoseSource: GlucoseSource {
     private var task: Task<Void, Never>?
     private var started = false
     private var primaryHealthy = false
+
+    /// D-07: exponential backoff on consecutive poll failures. A sustained outage or credential
+    /// problem must NOT keep re-hitting the endpoint at the fixed `activeInterval` (as often as every
+    /// 60s during failover) — for Dexcom Share that is the self-inflicted `SSO_Authenticate` lockout
+    /// risk at the exact moment failover is needed. The retry cadence widens with each consecutive
+    /// failure (capped) and resets on the first success. Generalized here so every cloud poller
+    /// inherits it, not just Dexcom Share.
+    private(set) var consecutiveFailures = 0
+
+    /// Cap the widening so the retry interval can't grow unbounded (e.g. 60s base → at most 8×).
+    static let maxBackoffMultiplier = 8
+
+    /// Update the consecutive-failure counter that drives backoff. Extracted so a test can assert the
+    /// widen-on-failure / reset-on-success behavior without a live poll loop.
+    func recordPollOutcome(success: Bool) {
+        consecutiveFailures = success ? 0 : consecutiveFailures + 1
+    }
+
+    /// The effective wait before the next poll: the base cadence widened by `2^failures` (capped at
+    /// `maxBackoffMultiplier`). Pure so a test can assert the widening directly. `failures == 0` leaves
+    /// the base cadence unchanged.
+    func effectiveInterval(base: TimeInterval, failures: Int) -> TimeInterval {
+        let mult = min(Self.maxBackoffMultiplier, 1 << min(max(failures, 0), 20))
+        return base * Double(mult)
+    }
 
     init(id: String, priority: Int, activeInterval: TimeInterval = 60, idleInterval: TimeInterval = 600) {
         self.id = id; self.priority = priority
@@ -54,7 +81,10 @@ class PollingGlucoseSource: GlucoseSource {
             guard let self else { return }
             if pollNow { await self.tick() }
             while !Task.isCancelled {
-                let delay = self.primaryHealthy ? self.idleInterval : self.activeInterval
+                let base = self.primaryHealthy ? self.idleInterval : self.activeInterval
+                // D-07: widen the wait on consecutive failures so a broken/locked-out feed isn't
+                // hammered at the fixed cadence; a success (below) resets `consecutiveFailures` to 0.
+                let delay = self.effectiveInterval(base: base, failures: self.consecutiveFailures)
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 if Task.isCancelled { break }
                 await self.tick()
@@ -65,10 +95,13 @@ class PollingGlucoseSource: GlucoseSource {
     private func tick() async {
         do {
             let readings = try await poll()   // newest-last
+            recordPollOutcome(success: true)   // D-07: a good poll resets the backoff
             ingest(readings)
         } catch SourceError.needsSetup {
+            // A missing config is not an endpoint failure — don't widen the backoff for it.
             status = .needsSetup; onChange?()
         } catch let e {
+            recordPollOutcome(success: false)   // D-07: repeated auth/fetch failure widens the cadence
             status = .error((e as? LocalizedError)?.errorDescription ?? "\(e)")
             onChange?()
         }

@@ -23,6 +23,23 @@ import Foundation
         }
     }
 
+    /// D-13: `NightscoutBackfill` (treatments/carbs/insulin) shares the user-entered `nightscout.url`
+    /// but used to force-unwrap `URLComponents(string:)!` / `comps.url!`, trapping on a malformed URL
+    /// that `NightscoutSource` (glucose) already validates. Pins that the treatments-URL builder now
+    /// throws instead of trapping — and still builds a well-formed URL correctly. Offline, no network.
+    @Test func nightscoutBackfillMalformedURLThrowsInsteadOfTrapping() throws {
+        for bad in ["not a url", "ht tp://host", "://nohost", "ftp://host", "  ", "javascript:alert(1)"] {
+            #expect(throws: SourceError.self, "\(bad.debugDescription) must throw, not trap") {
+                _ = try NightscoutBackfill.treatmentsURL(root: bad, token: nil, days: 30)
+            }
+        }
+        // A well-formed URL still builds correctly (scheme/host/path preserved).
+        let url = try NightscoutBackfill.treatmentsURL(root: "https://ns.example.com", token: "tok", days: 30)
+        #expect(url.scheme == "https")
+        #expect(url.host == "ns.example.com")
+        #expect(url.path == "/api/v1/treatments.json")
+    }
+
     /// The LibreLinkUp regional-host builder accepts only a short token region, so a free-text settings
     /// value (or a garbled server redirect) can never build a host that traps `URL(string:)!`.
     @Test func libreRegionHostAcceptsOnlySafeTokens() {

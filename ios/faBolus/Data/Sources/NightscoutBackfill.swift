@@ -24,15 +24,30 @@ enum NightscoutBackfill {
 
     private struct Treatment: Decodable { let created_at: String?; let carbs: Double?; let insulin: Double? }
 
-    private static func fetchTreatments(root: String, token: String?, days: Int)
-        async throws -> (carbs: [(date: Date, grams: Double)], insulin: [(date: Date, units: Double)]) {
-        var comps = URLComponents(string: root + "/api/v1/treatments.json")!
+    /// Build + validate the treatments URL (D-13). Validates via `URLComponents` (scheme/host checks)
+    /// instead of force-unwrapping `URLComponents(string:)!` / `comps.url!` — a malformed
+    /// `nightscout.url` (a space, no scheme, junk) would otherwise trap/crash, exactly the crash-safety
+    /// bug `NightscoutSource` already avoids. Extracted `static` (throwing) so it's testable offline
+    /// without a network call. ASVS V5.
+    static func treatmentsURL(root: String, token: String?, days: Int) throws -> URL {
+        guard var comps = URLComponents(string: root + "/api/v1/treatments.json"),
+              let scheme = comps.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              comps.host?.isEmpty == false else {
+            throw SourceError.invalidConfig("Nightscout URL")
+        }
         let since = Date().addingTimeInterval(-Double(days) * 86400)
         var items = [URLQueryItem(name: "count", value: "50000"),
                      URLQueryItem(name: "find[created_at][$gte]", value: ISO8601DateFormatter().string(from: since))]
         if let token { items.append(URLQueryItem(name: "token", value: token)) }
         comps.queryItems = items
-        let (data, _) = try await URLSession.shared.data(from: comps.url!)
+        guard let url = comps.url else { throw SourceError.invalidConfig("Nightscout URL") }
+        return url
+    }
+
+    private static func fetchTreatments(root: String, token: String?, days: Int)
+        async throws -> (carbs: [(date: Date, grams: Double)], insulin: [(date: Date, units: Double)]) {
+        let url = try treatmentsURL(root: root, token: token, days: days)
+        let (data, _) = try await URLSession.shared.data(from: url)
         let ts = (try? JSONDecoder().decode([Treatment].self, from: data)) ?? []
         var carbs: [(Date, Double)] = [], insulin: [(Date, Double)] = []
         for t in ts {

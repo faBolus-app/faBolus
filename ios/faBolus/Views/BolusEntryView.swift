@@ -177,6 +177,24 @@ struct BolusEntryView: View {
         }
     }
 
+    /// D-13/F-15: the stale-CGM dialog TITLE — a THREE-way selection so "CGM unavailable" never sits
+    /// above a button offering to USE a stale-but-present reading. The `newBG == -1` sentinel alone
+    /// (the old two-way `newBG == -1 ? "CGM unavailable" : "CGM updated"`) conflates two very different
+    /// states: NO reading at all (carbs-only / cancel — genuinely "unavailable") vs a stale-but-real
+    /// reading that IS being passed via `staleBG` and CAN be included in the correction. Pure/static so
+    /// it's unit-testable (`StaleCgmDialogTitleTests`) without the SwiftUI view; `newBG == nil` maps to
+    /// the fresh-changed default (harmless — the dialog isn't shown when `cgmUpdate` is nil).
+    nonisolated static func staleCgmDialogTitle(newBG: Int?, staleBG: Int?) -> String {
+        guard let newBG else { return "CGM updated" }
+        if newBG != -1 { return "CGM updated" }                 // fresh-changed reading
+        if staleBG != nil { return "CGM reading is stale" }     // stale-but-present (includable)
+        return "CGM unavailable"                                 // no reading at all
+    }
+
+    private var staleCgmDialogTitle: String {
+        Self.staleCgmDialogTitle(newBG: cgmUpdate?.newBG, staleBG: cgmUpdate?.staleBG)
+    }
+
     private var carbs: Double { Double(carbsText) ?? 0 }
     private var units: Double { Double(unitsText) ?? 0 }
     /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
@@ -472,202 +490,235 @@ struct BolusEntryView: View {
     }
 
     private var formContent: some View {
-        Form {
-            // Carbs entry only when the active backend supports the pump's bolus calculator.
-            if model.capabilities.supportsCarbEntry {
-                Picker("Mode", selection: $mode) {
-                    Text("Carbs").tag(BolusMode.carbs)
-                    Text("Units").tag(BolusMode.units)
-                }
-                .pickerStyle(.segmented)
-                .disabled(delivering || preparingDeliver)
-            }
+        withBolusConfirmationDialogs(formSections)
+    }
 
-            if mode == .carbs {
-                Section("Entry") {
-                    HStack(spacing: 6) {
-                        // The value + unit share one large tap target that focuses the field — the
-                        // TextField itself is only ~one glyph wide (.fixedSize), so tapping the empty
-                        // row space used to miss. Visuals are unchanged; only the hit area grows.
-                        HStack(spacing: 6) {
-                            TextField("0", text: $carbsText)
-                                .keyboardType(.numberPad)
-                                .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
-                                .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
-                                .accessibilityLabel("Carbs, grams")
-                            Text("g carbs").foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { focus = .carbs }
-                        Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
-                            .accessibilityLabel("Carbs")
-                    }
-                    LabeledContent("Blood glucose") {
-                        TextField(Self.bgPlaceholder(for: settings.glucoseDisplayUnit), text: bgField)
-                            .keyboardType(Self.bgKeyboardType(for: settings.glucoseDisplayUnit))
-                            .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
-                            .accessibilityLabel(Self.bgAccessibilityLabel(for: settings.glucoseDisplayUnit))
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { focus = .bg }
-                    // Live CGM readout — refreshed on open and kept current while the screen is up.
-                    if let readout = cgmReadout {
-                        let stale = model.snapshot.isGlucoseStale
-                        Label(readout, systemImage: stale ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
-                            .font(.caption)
-                            .foregroundStyle(stale ? .orange : .secondary)
-                    }
-                    // 09.18c-01 (D-12/D-13): non-destructive entry point to the FoodFinder carb estimator.
-                    // A plain tap-only row (no hardware-key binding — the D-08 dose-surface guard must stay
-                    // green); it only presents a sheet.
-                    Button {
-                        showFoodFinder = true
-                    } label: {
-                        Label("Find food", systemImage: "magnifyingglass")
-                    }
-                    .accessibilityHint("Search a food to estimate carbs and add them to the carb field")
+    // Phase (CI type-check): `formContent`'s single `Form { … }` + modifier-chain expression exceeded the
+    // CI runner's Swift type-checker budget. Each Form Section is extracted into its own `@ViewBuilder`
+    // sub-view below so the result-builder combinatorial search stays small — pure view-extraction, no
+    // behavior/layout/logic change (each sub-view's body is byte-identical to its former inline form).
+    @ViewBuilder private var bolusModePicker: some View {
+        Picker("Mode", selection: $mode) {
+            Text("Carbs").tag(BolusMode.carbs)
+            Text("Units").tag(BolusMode.units)
+        }
+        .pickerStyle(.segmented)
+        .disabled(delivering || preparingDeliver)
+    }
+
+    @ViewBuilder private var carbsEntrySection: some View {
+        Section("Entry") {
+            HStack(spacing: 6) {
+                // The value + unit share one large tap target that focuses the field — the
+                // TextField itself is only ~one glyph wide (.fixedSize), so tapping the empty
+                // row space used to miss. Visuals are unchanged; only the hit area grows.
+                HStack(spacing: 6) {
+                    TextField("0", text: $carbsText)
+                        .keyboardType(.numberPad)
+                        .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
+                        .font(.title3.weight(.semibold)).focused($focus, equals: .carbs)
+                        .accessibilityLabel("Carbs, grams")
+                    Text("g carbs").foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                if let rec = recommendation {
-                    Section("Recommended") {
-                        if rec.displaysNumericDose {
-                            LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
-                            if settings.showBolusReasoning {
-                                DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
-                                    LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                                    // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
-                                    // age is unknown), via the shared `CalcInputFreshness` presentation — so the
-                                    // term the dose subtracts reads the same as a stale glucose row.
-                                    let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
-                                    let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
-                                    LabeledContent {
-                                        Text(String(format: "−%.2f U", rec.iobUnits))
-                                            .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
-                                    } label: {
-                                        if iobStalePresent, let a = iobAge {
-                                            Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
-                                        } else {
-                                            Text("Active insulin (IOB)")
-                                        }
-                                    }
+                .contentShape(Rectangle())
+                .onTapGesture { focus = .carbs }
+                Stepper("", value: carbsStep, in: 0...300, step: settings.carbIncrement).labelsHidden()
+                    .accessibilityLabel("Carbs")
+            }
+            LabeledContent("Blood glucose") {
+                TextField(Self.bgPlaceholder(for: settings.glucoseDisplayUnit), text: bgField)
+                    .keyboardType(Self.bgKeyboardType(for: settings.glucoseDisplayUnit))
+                    .multilineTextAlignment(.trailing).focused($focus, equals: .bg)
+                    .accessibilityLabel(Self.bgAccessibilityLabel(for: settings.glucoseDisplayUnit))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { focus = .bg }
+            // Live CGM readout — refreshed on open and kept current while the screen is up.
+            if let readout = cgmReadout {
+                let stale = model.snapshot.isGlucoseStale
+                Label(readout, systemImage: stale ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
+                    .font(.caption)
+                    .foregroundStyle(stale ? .orange : .secondary)
+            }
+            // 09.18c-01 (D-12/D-13): non-destructive entry point to the FoodFinder carb estimator.
+            // A plain tap-only row (no hardware-key binding — the D-08 dose-surface guard must stay
+            // green); it only presents a sheet.
+            Button {
+                showFoodFinder = true
+            } label: {
+                Label("Find food", systemImage: "magnifyingglass")
+            }
+            .accessibilityHint("Search a food to estimate carbs and add them to the carb field")
+        }
+    }
+
+    @ViewBuilder private var recommendedSection: some View {
+        if let rec = recommendation {
+            Section("Recommended") {
+                if rec.displaysNumericDose {
+                    LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
+                    if settings.showBolusReasoning {
+                        DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
+                            LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
+                            // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
+                            // age is unknown), via the shared `CalcInputFreshness` presentation — so the
+                            // term the dose subtracts reads the same as a stale glucose row.
+                            let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
+                            let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
+                            LabeledContent {
+                                Text(String(format: "−%.2f U", rec.iobUnits))
+                                    .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
+                            } label: {
+                                if iobStalePresent, let a = iobAge {
+                                    Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
+                                } else {
+                                    Text("Active insulin (IOB)")
                                 }
                             }
-                        } else {
-                            // §13 Rule-1 (A1): the pump's bolus settings (carb ratio / correction factor /
-                            // target) have NOT been read this session, so any recommendation would be sized off
-                            // a hardcoded CR 10 / ISF 40 / target 110 guess — an uncited literal. Suppress the
-                            // numeric dose entirely (`rec.displaysNumericDose == false`) and prompt to wait for
-                            // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy). DRAFT
-                            // copy, §13-pending.
-                            Label(BolusEntryView.awaitingPumpSettingsCopy, systemImage: "hourglass")
-                                .font(.callout).foregroundStyle(.secondary)
                         }
-                    }
-                }
-            }
-
-            Section("Deliver") {
-                if delivering {
-                    HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
-                    if model.capabilities.supportsBolusCancel {
-                        Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                            HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
-                        }.buttonStyle(.borderedProminent).tint(.red)
-                        .accessibilityLabel("Cancel bolus")
                     }
                 } else {
-                    // T1-5 (D-06 "never adjacent to a dose CTA"): the countdown bar renders FIRST in
-                    // this disclosure block, ABOVE the amount entry — the SAME visual separation from
-                    // the Deliver button `autoCorrectionAmbient`/`autoCorrectionLockout` already have
-                    // (both render in the warnings list below, well before the Deliver button), only
-                    // MORE separated (it's now the very first row in the section). Fail-closed: nil
-                    // fraction ⇒ no bar at all.
-                    if let fraction = lockoutCountdownFraction, let availableAt = lockoutAvailableAt {
-                        LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
-                    }
-                    HStack(spacing: 6) {
-                        // Enlarged tap target (see the carbs field) — visuals unchanged.
-                        HStack(spacing: 6) {
-                            TextField("0", text: $unitsText)
-                                .keyboardType(.decimalPad)
-                                .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
-                                .font(.title3.weight(.semibold)).focused($focus, equals: .units)
-                                .foregroundStyle(overMax ? AppTheme.low : .primary)
-                                .accessibilityLabel("Bolus, units")
-                                .accessibilityValue(unitsText.isEmpty ? "0 units" : "\(unitsText) units")
-                            Text("U").foregroundStyle(.secondary)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture { focus = .units }
-                        Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
-                            .accessibilityLabel("Bolus units")
-                    }
-                    // §11 + Addendum B awareness: units mode showed NO CGM value/age (the readout lives in
-                    // the carbs Entry section). A user dosing by units off a stale reading they mentally
-                    // treat as current is a real hazard, so surface the same stale-styled readout here —
-                    // ambient awareness, NOT a blocking confirm (nothing is silently dropped in units mode,
-                    // and a modal on every units bolus would be alert fatigue).
-                    if mode == .units, let readout = cgmReadout {
-                        let staleR = model.snapshot.isGlucoseStale
-                        Label(readout, systemImage: staleR ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
-                            .font(.caption)
-                            .foregroundStyle(staleR ? .orange : .secondary)
-                    }
-                    // 09.2-04 (Fix 4/D-04): the DOSE-BLOCKING conditions (overMax, pumpNotLinked/
-                    // bolusInFlight, child-mode) must always be visually dominant — ranked ABOVE the
-                    // advisory-only disclosures below, never lost among them. `Self.rankedWarnings(...)`
-                    // classifies + reorders from the SAME already-computed conditions that drive
-                    // `canBolus`/the Deliver button's `.disabled(...)` below — presentation ORDER only,
-                    // the block SET and the dose are untouched (D-05). Each rendered Label is visually
-                    // byte-identical to its prior inline form (icon/color/font) — only on-screen ORDER
-                    // changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
-                    ForEach(Self.rankedWarnings(
-                        overMax: overMax, maxUnits: maxUnits,
-                        sg2Message: sg2Disclosure?.message,
-                        childBlocked: !settings.childAllows(.bolus),
-                        pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
-                        bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
-                        carbOverride: carbOverrideWarning,
-                        autoAmbient: autoCorrectionAmbient,
-                        autoLockout: autoCorrectionLockout,
-                        sg1Message: sg1Disclosure?.message,
-                        // Preserve the pre-existing sg3a==sg1 dedup guard: only a confirmExtra/reenter-tier
-                        // message (which differs from SG1's) renders as an additional line.
-                        sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil },
-                        insufficientReservoirMessage: insufficientReservoirDisclosure?.message
-                    )) { item in
-                        Label(item.text, systemImage: item.systemImage)
-                            .font(item.tone.font)
-                            .foregroundStyle(item.tone.color)
-                    }
-                    Button { confirming = true } label: {
-                        HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
-                    }
-                    .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
-                    .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
-                    // N12: the button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
-                    .accessibilityLabel(preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
+                    // §13 Rule-1 (A1): the pump's bolus settings (carb ratio / correction factor /
+                    // target) have NOT been read this session, so any recommendation would be sized off
+                    // a hardcoded CR 10 / ISF 40 / target 110 guess — an uncited literal. Suppress the
+                    // numeric dose entirely (`rec.displaysNumericDose == false`) and prompt to wait for
+                    // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy). DRAFT
+                    // copy, §13-pending.
+                    Label(BolusEntryView.awaitingPumpSettingsCopy, systemImage: "hourglass")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    /// The ranked warning/disclosure list — extracted from `deliverSection` because the
+    /// `Self.rankedWarnings(…)` call (11 labeled args + trailing ForEach closure) is the single most
+    /// expensive sub-expression to type-check. Identical to its former inline form.
+    @ViewBuilder private var deliverWarnings: some View {
+        // 09.2-04 (Fix 4/D-04): the DOSE-BLOCKING conditions (overMax, pumpNotLinked/
+        // bolusInFlight, child-mode) must always be visually dominant — ranked ABOVE the
+        // advisory-only disclosures below, never lost among them. `Self.rankedWarnings(...)`
+        // classifies + reorders from the SAME already-computed conditions that drive
+        // `canBolus`/the Deliver button's `.disabled(...)` below — presentation ORDER only,
+        // the block SET and the dose are untouched (D-05). Each rendered Label is visually
+        // byte-identical to its prior inline form (icon/color/font) — only on-screen ORDER
+        // changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
+        ForEach(Self.rankedWarnings(
+            overMax: overMax, maxUnits: maxUnits,
+            sg2Message: sg2Disclosure?.message,
+            childBlocked: !settings.childAllows(.bolus),
+            pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
+            bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
+            carbOverride: carbOverrideWarning,
+            autoAmbient: autoCorrectionAmbient,
+            autoLockout: autoCorrectionLockout,
+            sg1Message: sg1Disclosure?.message,
+            // Preserve the pre-existing sg3a==sg1 dedup guard: only a confirmExtra/reenter-tier
+            // message (which differs from SG1's) renders as an additional line.
+            sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil },
+            insufficientReservoirMessage: insufficientReservoirDisclosure?.message
+        )) { item in
+            Label(item.text, systemImage: item.systemImage)
+                .font(item.tone.font)
+                .foregroundStyle(item.tone.color)
+        }
+    }
+
+    @ViewBuilder private var deliverSection: some View {
+        Section("Deliver") {
+            if delivering {
+                HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
+                if model.capabilities.supportsBolusCancel {
+                    Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
+                        HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
+                    }.buttonStyle(.borderedProminent).tint(.red)
+                    .accessibilityLabel("Cancel bolus")
+                }
+            } else {
+                // T1-5 (D-06 "never adjacent to a dose CTA"): the countdown bar renders FIRST in
+                // this disclosure block, ABOVE the amount entry — the SAME visual separation from
+                // the Deliver button `autoCorrectionAmbient`/`autoCorrectionLockout` already have
+                // (both render in the warnings list below, well before the Deliver button), only
+                // MORE separated (it's now the very first row in the section). Fail-closed: nil
+                // fraction ⇒ no bar at all.
+                if let fraction = lockoutCountdownFraction, let availableAt = lockoutAvailableAt {
+                    LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
+                }
+                HStack(spacing: 6) {
+                    // Enlarged tap target (see the carbs field) — visuals unchanged.
+                    HStack(spacing: 6) {
+                        TextField("0", text: $unitsText)
+                            .keyboardType(.decimalPad)
+                            .compactFixedSize(dynamicTypeSize.isAccessibilitySize)
+                            .font(.title3.weight(.semibold)).focused($focus, equals: .units)
+                            .foregroundStyle(overMax ? AppTheme.low : .primary)
+                            .accessibilityLabel("Bolus, units")
+                            .accessibilityValue(unitsText.isEmpty ? "0 units" : "\(unitsText) units")
+                        Text("U").foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { focus = .units }
+                    Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
+                        .accessibilityLabel("Bolus units")
+                }
+                // §11 + Addendum B awareness: units mode showed NO CGM value/age (the readout lives in
+                // the carbs Entry section). A user dosing by units off a stale reading they mentally
+                // treat as current is a real hazard, so surface the same stale-styled readout here —
+                // ambient awareness, NOT a blocking confirm (nothing is silently dropped in units mode,
+                // and a modal on every units bolus would be alert fatigue).
+                if mode == .units, let readout = cgmReadout {
+                    let staleR = model.snapshot.isGlucoseStale
+                    Label(readout, systemImage: staleR ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
+                        .font(.caption)
+                        .foregroundStyle(staleR ? .orange : .secondary)
+                }
+                deliverWarnings
+                Button { confirming = true } label: {
+                    HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
+                }
+                .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
+                .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
+                // N12: the button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
+                .accessibilityLabel(preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
+            }
+        }
+    }
+
+    @ViewBuilder private var extendedBolusSection: some View {
+        // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple) AND the
+        // pump supports it (P13c-5 capability gate: don't offer a combo bolus a pump can't deliver).
+        if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
+            Section("Extended (combo) bolus") {
+                Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
+                Stepper("Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
+                let now = units * Double(extendedNowPercent) / 100
+                Text("\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Button { confirmingExtended = true } label: {
+                    HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
+                }
+                .buttonStyle(.bordered).tint(AppTheme.insulin)
+                .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
+                .accessibilityLabel("Deliver extended \(String(format: "%.2f", units)) units")
+            }
+        }
+    }
+
+    @ViewBuilder private var formSections: some View {
+        Form {
+            // Carbs entry only when the active backend supports the pump's bolus calculator.
+            if model.capabilities.supportsCarbEntry { bolusModePicker }
+
+            if mode == .carbs {
+                carbsEntrySection
+                recommendedSection
             }
 
-            // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple) AND the
-            // pump supports it (P13c-5 capability gate: don't offer a combo bolus a pump can't deliver).
-            if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
-                Section("Extended (combo) bolus") {
-                    Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
-                    Stepper("Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
-                    let now = units * Double(extendedNowPercent) / 100
-                    Text("\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total.")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Button { confirmingExtended = true } label: {
-                        HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
-                    }
-                    .buttonStyle(.bordered).tint(AppTheme.insulin)
-                    .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
-                    .accessibilityLabel("Deliver extended \(String(format: "%.2f", units)) units")
-                }
-            }
+            deliverSection
+
+            extendedBolusSection
         }
         // Phase 09.4 D-06: a floating top toast, NOT a Form Section — it never permanently consumes
         // Form space. `.overlay` (not a sibling in a ZStack) so it draws above the Form without
@@ -769,6 +820,17 @@ struct BolusEntryView: View {
                 Button("Done") { focus = nil }
             }
         }
+    }
+
+    /// The bolus confirm / CGM-update / extended / calc-input dialogs, applied as a SEPARATE modifier
+    /// group (same idiom as `withSG3aFriction` below) so `formSections`' modifier chain stays within the
+    /// Swift type-checker's reach — the full chain in one expression previously exceeded the CI runner's
+    /// type-check budget. Presentation modifiers (`.confirmationDialog`/`.alert`) attach via the view
+    /// hierarchy regardless of which ancestor applies them, so this is a pure regrouping: identical
+    /// rendered output and identical dialog/gating/confirm/delivery behavior.
+    @ViewBuilder
+    private func withBolusConfirmationDialogs<V: View>(_ view: V) -> some View {
+        view
         .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
                             isPresented: $confirming, titleVisibility: .visible) {
             Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { handleStandardConfirm() }
@@ -776,7 +838,7 @@ struct BolusEntryView: View {
         } message: {
             Text(confirmMessage)
         }
-        .confirmationDialog(cgmUpdate?.newBG == -1 ? "CGM unavailable" : "CGM updated",
+        .confirmationDialog(staleCgmDialogTitle,
                             isPresented: Binding(get: { cgmUpdate != nil },
                                                  set: { if !$0 { cgmUpdate = nil } }),
                             titleVisibility: .visible) {

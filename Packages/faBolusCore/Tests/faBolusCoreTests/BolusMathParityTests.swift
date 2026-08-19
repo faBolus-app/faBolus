@@ -89,4 +89,18 @@ final class BolusMathParityTests: XCTestCase {
         XCTAssertTrue(r.sanityFailed)
         XCTAssertEqual(r.totalUnits, 0)
     }
+
+    /// D-04 dose-path backstop: an implausible `bgMgdl` (900) with an IN-RANGE target/ISF is REJECTED —
+    /// it contributes NOTHING to the dose (carbs-only total preserved), and it is NOT a sanity failure
+    /// (valid carbs still compute). This is the "reject → treat as no reading, never a silent transform"
+    /// behavior D-04 mandates, and a genuinely NEW scenario the oracle fixture grid never isolates
+    /// (every out-of-range bg row in the grid also has an out-of-range target, so the existing target
+    /// check zeros those — the new bg guard is a THIRD branch ordered AFTER it, preserving 563/563).
+    func testImplausibleBgIsRejectedNotCorrected() {
+        let p = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40, targetBgMgdl: 110, iobUnits: 0)
+        let r = BolusMath.estimate(carbsGrams: 30, bgMgdl: 900, profile: p)
+        XCTAssertEqual(r.totalUnits, 3.0, accuracy: 0.0001)   // carbs-only; the 900 contributes nothing
+        XCTAssertFalse(r.sanityFailed)                        // NOT a sanity failure — carbs still computed
+        XCTAssertEqual(r.fromBG, 0.0, accuracy: 0.0001)       // implausible reading → no BG correction
+    }
 }

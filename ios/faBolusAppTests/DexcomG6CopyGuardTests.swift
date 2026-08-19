@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import faBolusCore
 @testable import faBolus
 
 /// Phase 09.20-04 (D-03/D-05/D-14): pins the honest "Read from Dexcom app" copy for the G6/G5/ONE
@@ -133,5 +134,71 @@ struct DexcomG6CopyGuardTests {
         let corpus = Self.combinedCorpus()
         #expect(corpus.contains("reads YOUR sensor, not theirs"),
                 "the guided-setup copy must disclose that leaving the transmitter ID blank with another real Dexcom nearby means silently trusting whichever transmitter answers first (H-02)")
+    }
+
+    // MARK: (h) D-10 wave-ordering decision — G7 is NOT flagged experimental
+    //
+    // Waves 1-2 CLOSE G7's anchor + range integrity gaps THIS phase, so adding the G7 registry id to
+    // `experimentalCgmSourceIds` would fire a scary "unaddressed integrity gap" warning for a source
+    // that no longer has that gap — re-introducing exactly the stale/contradictory disclosure D-10
+    // exists to prevent. Pinned by a text-scan of the `experimentalCgmSourceIds` declaration so a
+    // future edit can't silently add G7 without tripping this guard.
+
+    @Test func g7IsNotInTheExperimentalCgmSourceSet() throws {
+        guard let settings = Self.readSource("ios/faBolus/Views/SettingsView.swift") else {
+            Issue.record("could not read SettingsView.swift"); return
+        }
+        // Isolate the experimentalCgmSourceIds declaration line(s).
+        let decl = settings
+            .split(separator: "\n")
+            .first { $0.contains("experimentalCgmSourceIds") && $0.contains("Set<String>") }
+            .map(String.init)
+        #expect(decl != nil, "experimentalCgmSourceIds declaration must be present")
+        if let decl {
+            #expect(decl.contains("dexcom-g6-ble"),
+                    "G6 must remain flagged experimental (its on-device validation is still pending, D-14)")
+            #expect(!decl.contains("dexcom-g7-ble"),
+                    "G7 must NOT be in experimentalCgmSourceIds — its integrity gaps are closed by Waves 1-2 (D-10)")
+        }
+    }
+
+    // MARK: (i) D-13/F-13 — raw source errors map to actionable, non-leaking copy
+
+    @Test func http401MapsToCredentialsGuidanceNotRawStatus() {
+        let copy = CgmCredentialsView.actionableErrorCopy("HTTP 401", kind: .cloudPoll)
+        #expect(!copy.contains("401"), "the raw status code must not leak to the user")
+        #expect(!copy.uppercased().contains("HTTP"), "the raw 'HTTP' technical token must not leak")
+        #expect(copy.lowercased().contains("password") && copy.lowercased().contains("username"),
+                "a 401 must guide the user to check their credentials")
+    }
+
+    @Test func http500MapsToConnectivityGuidance() {
+        let copy = CgmCredentialsView.actionableErrorCopy("HTTP 503", kind: .cloudPoll)
+        #expect(!copy.contains("503"))
+        #expect(copy.lowercased().contains("connection") || copy.lowercased().contains("reach"),
+                "a 5xx must guide the user toward connectivity / retry")
+    }
+
+    @Test func badResponseMapsToActionableCopy() {
+        let copy = CgmCredentialsView.actionableErrorCopy("Unexpected response", kind: .cloudPoll)
+        #expect(copy.lowercased().contains("check"), "an unexpected response must give a next step")
+    }
+
+    @Test func unknownErrorFallsBackToCategoryCopyNeverRaw() {
+        let raw = "some totally opaque internal token 0xDEADBEEF"
+        let cloud = CgmCredentialsView.actionableErrorCopy(raw, kind: .cloudPoll)
+        #expect(!cloud.contains("0xDEADBEEF"), "an unknown raw error must never be echoed verbatim")
+        let local = CgmCredentialsView.actionableErrorCopy(raw, kind: .localOnDevice)
+        #expect(local.lowercased().contains("syncing"), "the on-device fallback must reference syncing")
+    }
+
+    // MARK: (j) D-13 — the Dexcom Share region picker offers APAC (writes the "apac" config string)
+
+    @Test func dexcomShareRegionPickerOffersApac() throws {
+        guard let creds = Self.readSource("ios/faBolus/Views/CgmCredentialsView.swift") else {
+            Issue.record("could not read CgmCredentialsView.swift"); return
+        }
+        #expect(creds.contains(".tag(\"apac\")"),
+                "the Dexcom Share region picker must offer an APAC option writing the \"apac\" config string (D-13)")
     }
 }

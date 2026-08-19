@@ -134,6 +134,17 @@ jobs:
         working-directory: repos/faBolus
         run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 
+      # Align CI to the toolchain the team develops/ships on (Xcode 26.x / Swift 6.2). The runner's
+      # default was Xcode 16.4 (Swift 6.1), whose region-isolation ("sending") checker has known
+      # false-positives that 6.2 relaxed — a source of local-green/CI-red divergence. Self-adjusting:
+      # picks the newest installed Xcode and prints the inventory so a missing 26.x is visible.
+      - name: Select newest available Xcode (align to dev toolchain — Swift 6.2)
+        run: |
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          echo "Selected Xcode:"; xcodebuild -version
+
       - name: Build iOS app (Simulator, signing off)
         working-directory: repos/faBolus
         run: |
@@ -151,9 +162,21 @@ jobs:
       # family current Xcodes actually install — so it silently fell back to a hardcoded "iPhone 16"
       # that may not exist on the runner. scripts/test-ios.sh already solved this; two copies of a
       # destination-selection rule is one copy too many.
+      # Snapshot suites are pixel-golden tests recorded against a specific Xcode/simulator, so they
+      # are environment-brittle across toolchains — the 16.x-recorded baselines fail on the 26.x
+      # runner even for views nobody changed (e.g. SettingsSnapshotTests). They never gated CI
+      # historically (the iOS build failed before tests ever ran). Per owner decision (2026-08-19)
+      # they are NON-GATING in CI: still run locally for visual-regression, skipped here. To make
+      # them CI-gating later, re-record baselines in the CI toolchain + add a perceptualPrecision
+      # tolerance (tracked follow-up).
       - name: Run app behavioral tests (Simulator)
         working-directory: repos/faBolus
-        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh
+        run: |
+          FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
+            -skip-testing:faBolusAppTests/BolusEntrySnapshotTests \
+            -skip-testing:faBolusAppTests/PumpControlSnapshotTests \
+            -skip-testing:faBolusAppTests/SettingsSnapshotTests \
+            -skip-testing:faBolusAppTests/DashboardSnapshotTests
 
   watch-build:
     name: watchOS app + complication build

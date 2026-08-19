@@ -220,6 +220,34 @@ feature is untested and "will likely not work" before they run — not just the 
   `transmitterTimeRx` observed; if 0x25 proves rare in practice, tune `noAnchorBound` (and possibly the
   first-reading-latency expectation) to match.
 
+## 11. G7 stable per-connection anchor thresholds (bootstrap-once) — Phase 09.22-01 (D-02)
+
+The G7 sensor-time anchor was rewritten (D-02, closing the A2 self-defeat) to bootstrap ONCE per
+connection from a near-real-time glucose message and then hold stable — never re-derived per message.
+Three thresholds gate that bootstrap/accept path; all are owner/bench-adjustable `static var`s in
+`Shared/DexcomG7BLESource.swift`, deferred to on-device UAT (Wave 5) / Phase-11 bench.
+
+- **(a) `anchorBootstrapMaxAge = 60s`** — only a message whose self-reported `age` (seconds from
+  sensor reading to BLE transmission) is at or below this may (re-)establish the anchor. A larger
+  value risks bootstrapping off a batched/old first frame; a smaller value risks never bootstrapping
+  if the first observed frame is slightly delayed. **Risk:** availability-only, fail-closed — an
+  un-bootstrapped source publishes nothing (never a wrong reading).
+- **(b) `plausibleFrameAgeCeiling = 900s` (~3 G7 wake cycles)** — a frame whose own `age` exceeds this
+  is rejected outright as stale-at-transmission, independent of anchor arithmetic. **Risk:**
+  fail-closed — an over-tight ceiling drops otherwise-usable delayed frames; it never admits a bad one.
+- **(c) The "bootstrap once, never re-refresh" assumption (Assumption A1)** — that G7's sensor RTC
+  drift is negligible over a single connection, so one legitimately-bootstrapped anchor stays valid
+  for the connection's life. **Not verified against a G7 spec sheet.** If wrong, the symptom is
+  increasing false `.stale` classifications over very long uninterrupted connections — which fails
+  CLOSED via `GlucoseFreshness` (a genuinely drifted reading ages out), never a silent wrong-dose.
+
+- **Where:** `Shared/DexcomG7BLESource.swift` (`anchorBootstrapMaxAge`, `plausibleFrameAgeCeiling`,
+  `implausibleAgeBound`, `handleGlucose`); mirrors G6's entries 9/10 above.
+- **Verify (D-13 on-device UAT / Phase-11 bench):** confirm the first live G7 frame bootstraps the
+  anchor promptly, that a delayed/batched frame is rejected (not shown as fresh), and that glucose
+  keeps dating correctly across a long uninterrupted session with the anchor held stable — tune the
+  three thresholds to the observed wake cadence if needed.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to
