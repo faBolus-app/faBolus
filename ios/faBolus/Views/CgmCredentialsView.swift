@@ -52,10 +52,19 @@ struct CgmCredentialsView: View {
     /// `GlucoseSourceRegistry` id set — adding a registry source without a section (or dropping one)
     /// turns that guard RED, so a source with a hard, non-obvious precondition can never become
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
-    static let configuredSectionSourceIds: Set<String> = [
-        "librelinkup", "dexcom-share", "nightscout", "dexcom-g6-ble",
-        "dexcom-g7-ble", "healthkit", "xdrip-appgroup",
-    ]
+    static let configuredSectionSourceIds: Set<String> = {
+        var ids: Set<String> = [
+            "librelinkup", "dexcom-share", "nightscout", "dexcom-g6-ble",
+            "dexcom-g7-ble", "xdrip-appgroup",
+        ]
+        // D-13 (Phase 09.23): "healthkit" only exists in GlucoseSourceRegistry.enabled when
+        // FABOLUS_HEALTHKIT is ON — keep this set equal to the registry's id set in BOTH flag
+        // states (pinned by CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection).
+        #if FABOLUS_HEALTHKIT
+        ids.insert("healthkit")
+        #endif
+        return ids
+    }()
 
     // MARK: - Test flow (change 3, D-13 UX): determinate, observes the live production source
 

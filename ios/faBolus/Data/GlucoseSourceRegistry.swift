@@ -10,40 +10,51 @@ public enum GlucoseSourceRegistry {
     /// Sources compiled into this build. Empty selection = pump-relayed glucose only (no failover).
     /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
     /// (last resort), and HealthKit (Eversense).
-    public static let enabled: [GlucoseSourceDescriptor] = [
-        // D-08: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
-        // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
-        // gets nil — two CBCentralManagers sharing a restore-identifier string in one process is a
-        // CoreBluetooth SIGABRT (mirror of the G6 descriptor's scoping).
-        GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
-                                sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
-            DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
-        },
-        // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected()) gets
-        // the stable restore identifier; the CgmCredentialsView "Test" instance (make(id:)) always
-        // gets nil. Two CBCentralManagers sharing a restore-identifier string in one process is a
-        // CoreBluetooth SIGABRT — this is the only thing standing between the two call sites and that
-        // crash, so do not default this to true.
-        // D-03/D-05 (Plan 04): renamed from the earlier "(direct BLE, passive — experimental)"
-        // framing, which hedged the mechanism itself as unreliable. It's the SAME reliable "Read
-        // from Dexcom app" path (see 09.20-RESEARCH.md's "D-05 reliability re-check" section, which
-        // walked that earlier framing back); only the on-device validation is pending (D-14), which
-        // is why "experimental" stays in the name.
-        GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)",
-                                sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { restoreStateEnabled in
-            DexcomG6BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG6BLESource.productionRestoreIdentifier : nil)
-        },
-        GlucoseSourceDescriptor(id: "librelinkup", name: "FreeStyle Libre 2/3 (LibreLinkUp)",
-                                sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { _ in LibreLinkUpSource() },
-        GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
-                                sensors: ["Any"]) { _ in NightscoutSource() },
-        GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
-                                sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
-        GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
-                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() },
-        GlucoseSourceDescriptor(id: "xdrip-appgroup", name: "xDrip4iOS — App Group (local)",
-                                sensors: ["xDrip4iOS (any sensor, local)"]) { _ in XDripAppGroupSource() },
-    ]
+    public static let enabled: [GlucoseSourceDescriptor] = {
+        var list: [GlucoseSourceDescriptor] = [
+            // D-08: only the production instance (restoreStateEnabled == true, i.e. makeSelected())
+            // gets the stable restore identifier; the CgmCredentialsView "Test" instance
+            // (make(id:)) always gets nil — two CBCentralManagers sharing a restore-identifier
+            // string in one process is a CoreBluetooth SIGABRT (mirror of the G6 descriptor's
+            // scoping).
+            GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
+                                    sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
+                DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
+            },
+            // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected())
+            // gets the stable restore identifier; the CgmCredentialsView "Test" instance
+            // (make(id:)) always gets nil. Two CBCentralManagers sharing a restore-identifier
+            // string in one process is a CoreBluetooth SIGABRT — this is the only thing standing
+            // between the two call sites and that crash, so do not default this to true.
+            // D-03/D-05 (Plan 04): renamed from the earlier "(direct BLE, passive — experimental)"
+            // framing, which hedged the mechanism itself as unreliable. It's the SAME reliable "Read
+            // from Dexcom app" path (see 09.20-RESEARCH.md's "D-05 reliability re-check" section, which
+            // walked that earlier framing back); only the on-device validation is pending (D-14), which
+            // is why "experimental" stays in the name.
+            GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)",
+                                    sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { restoreStateEnabled in
+                DexcomG6BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG6BLESource.productionRestoreIdentifier : nil)
+            },
+            GlucoseSourceDescriptor(id: "librelinkup", name: "FreeStyle Libre 2/3 (LibreLinkUp)",
+                                    sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { _ in LibreLinkUpSource() },
+            GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
+                                    sensors: ["Any"]) { _ in NightscoutSource() },
+            GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
+                                    sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
+        ]
+        // D-13 (Phase 09.23): the existing HealthKit CGM source is part of the WHOLE HealthKit
+        // surface the single FABOLUS_HEALTHKIT toggle gates — a free/unprovisioned build must not
+        // register it at all, not just skip selecting it, so the entitlement-stripped build never
+        // even references HealthKitGlucoseSource. Gate the call site here, not the Shared/ class
+        // definition (which compiles unconditionally as long as nothing references it).
+        #if FABOLUS_HEALTHKIT
+        list.append(GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
+                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() })
+        #endif
+        list.append(GlucoseSourceDescriptor(id: "xdrip-appgroup", name: "xDrip4iOS — App Group (local)",
+                                sensors: ["xDrip4iOS (any sensor, local)"]) { _ in XDripAppGroupSource() })
+        return list
+    }()
 
     /// Every descriptor — used for id lookups.
     private static var all: [GlucoseSourceDescriptor] { enabled }

@@ -42,7 +42,12 @@ struct GlucoseChartView: View {
     @State private var a11yIndex: Int? = nil
     /// Phase 09.18b-02 (D-07): the on-demand reader for the Apple-Health `.heartRate` sample nearest the
     /// scrub point. Owned per-chart; queried only while scrubbing with HR on (costs nothing otherwise).
+    /// Phase 09.23 (D-13): gated behind FABOLUS_HEALTHKIT — the whole HealthKit surface, including
+    /// this pre-existing HR reader, compiles out of a free/unprovisioned build. `refreshScrubbedHealthKitHR`
+    /// falls back to a no-op under OFF; the row still renders via `latestGarminHeartRate` when present.
+    #if FABOLUS_HEALTHKIT
     @State private var healthKitHR = HealthKitHeartRateSource()
+    #endif
     /// The Apple-Health HR (bpm) resolved for the current scrubbed data point, or nil. Refreshed by the
     /// `.task(id:)` below as the scrub crosses to a new point; cleared when HR is off or scrubbing ends.
     @State private var scrubbedHealthKitHR: Double? = nil
@@ -307,6 +312,7 @@ struct GlucoseChartView: View {
     /// HR ON — when HR is off or the scrub ends, it clears the value and issues NO HealthKit query (D-09).
     private func refreshScrubbedHealthKitHR() async {
         guard heartRateContextEnabled, let date = scrubbedPointDate else { scrubbedHealthKitHR = nil; return }
+        #if FABOLUS_HEALTHKIT
         await healthKitHR.requestAuthorizationIfNeeded()
         // WR-01 stale-race guard: the HealthKit read is async and a superseded `.task(id:)` (an old
         // scrub point) can still resume its continuation and win the last write — painting a PRIOR
@@ -316,5 +322,11 @@ struct GlucoseChartView: View {
         let bpm = await healthKitHR.heartRate(at: date)
         guard scrubbedPointDate == date else { return }
         scrubbedHealthKitHR = bpm
+        #else
+        // D-13: FABOLUS_HEALTHKIT OFF compiles the Apple-Health HR query out entirely. The readout
+        // row still renders via `resolvedHeartRate`'s Garmin ambient-HR fallback (independent of
+        // HealthKit) — this only means "no Apple-Health-sourced HR", not "no HR row at all".
+        scrubbedHealthKitHR = nil
+        #endif
     }
 }
