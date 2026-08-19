@@ -501,8 +501,12 @@ public final class AppModel {
         cmd.bolusBlockReason = avail.reason?.wireToken
         // Phase 09.9-04 (D-05): the pump's cartridge-ready DISPLAY status, distinct from canBolus (which
         // only reflects the block at bolus-attempt time) — lets a remote show cartridge state even when
-        // not attempting a bolus. Single source of truth: PumpSnapshot.cartridgeReadyForBolus.
-        cmd.cartridgeReady = s.cartridgeReadyForBolus
+        // not attempting a bolus.
+        // WR-04 (debug pump-pairing-loop-api25, deep review): use the tri-state `cartridgeReadyRemoteWire`
+        // (`.unknown` ⇒ nil = NO SIGNAL) instead of the fail-open `cartridgeReadyForBolus` bool — so an
+        // op-20-excluded pump never relays a fail-open "ready" to Garmin/Watch/Mac. The dose gate above
+        // (`cmd.canBolus` via `BolusGate.evaluate(cartridgeReady: s.cartridgeReadyForBolus)`) is unchanged.
+        cmd.cartridgeReady = s.cartridgeReadyRemoteWire
         // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
         // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
         // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a

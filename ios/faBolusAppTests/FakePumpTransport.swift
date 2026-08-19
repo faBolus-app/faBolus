@@ -88,10 +88,14 @@ final class FakePumpTransport: PumpTransport {
 
     // MARK: - Response frame builders (valid, CRC'd; parser strips the 24-byte HMAC on signed responses)
 
-    static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool) -> [UInt8] {
+    /// `txId` sets frame[1] — the wire transaction id the pump echoes. Defaults to 0 (the historical
+    /// behavior). WR-03 (debug pump-pairing-loop-api25, deep review): the op77 correlation backstop keys on
+    /// this echoed txId, so a NON-vacuous correlation test must be able to set it to a SPECIFIC outstanding
+    /// read's txId (distinct from the FIFO-oldest) under a real multi-read burst.
+    static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool, txId: UInt8 = 0) -> [UInt8] {
         var body = cargo
         if signed { body += [UInt8](repeating: 0, count: 24) }   // fake HMAC (parser strips, doesn't verify)
-        var f: [UInt8] = [opCode, 0, UInt8(body.count)] + body
+        var f: [UInt8] = [opCode, txId, UInt8(body.count)] + body
         f += Bytes.calculateCRC16(f)
         return f
     }
@@ -181,9 +185,12 @@ final class FakePumpTransport: PumpTransport {
 
     /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).
     /// errorCodeId 6 = BAD_OPCODE — what an older pump answers op192 with, right before tearing the
-    /// link down.
-    static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6) -> [UInt8] {
-        frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false)
+    /// link down. `requestOpCode: 0` + `errorCode: 0` is the opcode-less `[0,0]` currentStatus variant the
+    /// API-2.5 t:slim X2 sends (mechanism B correlates it back by txId). `txId` (frame[1]) echoes the
+    /// failing request's wire txId — WR-03: set it to a specific outstanding read's txId to prove the
+    /// correlation picks THAT read, not the FIFO-oldest.
+    static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6, txId: UInt8 = 0) -> [UInt8] {
+        frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false, txId: txId)
     }
 
     /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)

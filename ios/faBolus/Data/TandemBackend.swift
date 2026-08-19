@@ -386,6 +386,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     func injectStatusFrameForTesting(_ frame: [UInt8]) {
         pumpClient(client, didReceiveFrame: frame, on: .currentStatus)
     }
+    /// Test seam (CR-01/WR-01, debug pump-pairing-loop-api25 deep review): mirrors
+    /// `injectStatusFrameForTesting` but feeds the frame on the `.control` characteristic — so a test can
+    /// reproduce a NACKed control/delivery WRITE's op77 (which the pinned kit also decodes as `ErrorResponse`
+    /// on `.control`, and which reaches `apply` on `.opcodeFIFO` pumps) and assert it NEVER mutates the
+    /// read-only `badOpcodes` set.
+    func injectControlFrameForTesting(_ frame: [UInt8]) {
+        pumpClient(client, didReceiveFrame: frame, on: .control)
+    }
     /// Test seam: mirrors `injectStatusFrameForTesting` but for the AUTHORIZATION characteristic —
     /// feeds a raw (CRC-16'd) pairing-response frame through the REAL `didReceiveFrame`/CRC-gate/
     /// `coordinator?.handle(frame:)` path, so a test can drive `beginPairingForTesting` all the way to
@@ -613,6 +621,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         let currentFirmware = snapshot.softwareVersion
         if let learnedFirmware = entry.firmware, !currentFirmware.isEmpty, learnedFirmware != currentFirmware {
             badOpcodeStore.reset(for: key)   // firmware changed → stale skip discarded; re-test under new fw
+            // WR-05 (deep review): also purge the entries learned under the OLD firmware from the scheduler's
+            // IN-MEMORY set. `badOpcodes` survives reconnects for the scheduler's lifetime, so on the SAME
+            // backend a firmware change would otherwise keep op20 skipped until relaunch even though the store
+            // was just reset. Clearing exactly `entry.opcodes` (what was persisted under the old firmware)
+            // re-tests them under the new firmware from the very next poll — the pre-guard is never starved.
+            readScheduler.clearLearned(entry.opcodes)
             return []
         }
         return entry.opcodes
@@ -810,6 +824,9 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { readScheduler.badOpcodesForTesting }
+    /// Test accessor (WR-03): the in-flight op77-correlation map (txId → opcode) recorded this cycle,
+    /// forwarded from `readScheduler` so a burst test can look up a specific read's real wire txId.
+    var outstandingReadsForTesting: [(txId: UInt8, opcode: UInt8)] { readScheduler.outstandingReadsForTesting }
 
     /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
     /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`.
@@ -2286,8 +2303,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         // history. This delegate keeps ONLY the `.authorization` CRC gate + `ResponseParser.parse`
         // boundary + the historyLog-unparseable error branch above, byte-identical.
         // `parsed.txId` (frame[1]) is threaded through for the op77 correlation backstop — the pump
-        // echoes the failing request's txId there (debug pump-pairing-loop-api25, mechanism B).
-        responseApplier.apply(parsed.message, txId: parsed.txId)
+        // echoes the failing request's txId there (debug pump-pairing-loop-api25, mechanism B). `ch` (the
+        // frame's characteristic) is threaded too so the op77 case can record into the read-only
+        // `badOpcodes` ONLY for a `.currentStatus` READ error — a `.control` WRITE NACK (which also decodes
+        // as ErrorResponse on `.opcodeFIFO` pumps) must never suppress a read (CR-01/WR-01, deep review).
+        responseApplier.apply(parsed.message, txId: parsed.txId, characteristic: ch)
         onChange?()
     }
 

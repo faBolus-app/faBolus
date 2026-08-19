@@ -151,7 +151,14 @@ final class PumpResponseApplier {
     /// both stay there, untouched. `txId` is `parsed.txId` (frame[1]); consumed only by the op77
     /// `ErrorResponse` correlation backstop (debug pump-pairing-loop-api25, mechanism B) and ignored by
     /// every other case.
-    func apply(_ message: Message, txId: UInt8) {
+    ///
+    /// `characteristic` is the BLE characteristic the frame arrived on (`parsed`'s source). It is consumed
+    /// ONLY by the op77 `ErrorResponse` case (CR-01/WR-01 fix): the pinned kit registers `ErrorResponse`
+    /// on BOTH `.currentStatus` and `.control`, so a NACKed control/delivery WRITE's op77 also reaches this
+    /// method on `.opcodeFIFO` pumps (Mobi/default). Such a `.control` op77 says NOTHING about read support
+    /// and must NEVER mutate the read-only `badOpcodes` set — only a `.currentStatus` op77 (a rejected READ)
+    /// is correlated + recorded. Every other case ignores it (behavior-identical to before this parameter).
+    func apply(_ message: Message, txId: UInt8, characteristic: Characteristic) {
         switch message {
         case let m as ControlIQIOBResponse:
             withSnapshot { snap in
@@ -369,8 +376,23 @@ final class PumpResponseApplier {
             // 0. PHI-safe: requestCodeId/errorCodeId/txId are protocol tokens, never payload/PHI. Logged
             // PERMANENTLY (standing diagnostic) so any future unsupported-opcode rejection on any pump is
             // immediately visible.
-            let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
-            Self.pairingLog.log("pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
+            //
+            // CR-01/WR-01 (debug pump-pairing-loop-api25, deep review): `badOpcodes` governs ONLY the
+            // `.currentStatus` READ path. The pinned kit also registers `ErrorResponse` on `.control`, so a
+            // NACKed control/delivery WRITE's op77 reaches this case too on `.opcodeFIFO` pumps (it doesn't
+            // match a pending delivery transaction). Such a `.control` op77 identifies a failing WRITE, which
+            // says nothing about read support — correlating it (whether by the cargo's `named` opcode, which
+            // may collide with a supported read like op164/op144, or by txId/FIFO against outstanding READS)
+            // would durably blacklist an innocent supported read. So we RESOLVE + RECORD only for
+            // `.currentStatus`; a `.control` op77 is logged for diagnostics but never touches `badOpcodes`.
+            if characteristic == .currentStatus {
+                let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
+                Self.pairingLog.log("pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
+            } else {
+                // Diagnostic only — the pump rejected a control/delivery WRITE (or an error on another
+                // characteristic); never a READ, so `badOpcodes` is left untouched.
+                Self.pairingLog.log("pump error ← (\(characteristic.name, privacy: .public)) requestOpcode=\(m.requestCodeId, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — control/non-read error; read never-resend set untouched")
+            }
         case let m as PumpFeaturesV1Response:
             // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
             // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it

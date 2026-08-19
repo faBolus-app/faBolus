@@ -38,6 +38,13 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let storageKey: String
 
+    /// IN-03 (debug pump-pairing-loop-api25, deep review): cap the number of DISTINCT pumps retained, so a
+    /// user who pairs many pumps over time never accumulates stale entries indefinitely (only the
+    /// currently-adopted pump is otherwise pruned, via `forgetPairing` → `reset(for:)`). Each entry is
+    /// bounded (≤ ~21 read opcodes), so this is a small map; the cap is generous. Least-recently-UPDATED
+    /// pumps are evicted first (`Persisted.seq`, a monotonic counter — deterministic, not wall-clock).
+    static let maxRetainedPumps = 16
+
     init(defaults: UserDefaults = .standard, storageKey: String = "learnedBadOpcodesByPump") {
         self.defaults = defaults
         self.storageKey = storageKey
@@ -82,9 +89,27 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         }
         if let firmware { p.fw = firmware }
         if !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
+        // IN-03: stamp this pump as most-recently-updated (monotonic, deterministic) and evict the
+        // least-recently-updated pumps if we now exceed the cap.
+        p.seq = (map.values.compactMap { $0.seq }.max() ?? 0) + 1
         map[pumpKey] = p
+        map = prunedToCap(map)
         saveMap(map)
     }
+
+    /// IN-03: keep at most `maxRetainedPumps` entries, evicting the lowest `seq` (least-recently-updated)
+    /// first. A missing `seq` (a pre-IN-03 persisted entry) sorts oldest, so legacy entries are shed first.
+    private func prunedToCap(_ map: [String: Persisted]) -> [String: Persisted] {
+        guard map.count > Self.maxRetainedPumps else { return map }
+        let keep = map.sorted { ($0.value.seq ?? 0) > ($1.value.seq ?? 0) }
+            .prefix(Self.maxRetainedPumps)
+        return Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
+    }
+
+    #if DEBUG
+    /// Test accessor (IN-03): how many distinct pumps the store currently retains.
+    var retainedPumpCountForTesting: Int { loadMap().count }
+    #endif
 
     /// Forget everything learned for one pump (e.g. on unpair, or when its firmware changed so the learned
     /// set is stale). A different pump's entry is untouched.
@@ -99,7 +124,9 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
 
     // MARK: - Codable persistence
 
-    private struct Persisted: Codable { var fw: String?; var ops: [Int] }
+    /// `seq` (IN-03): a monotonic last-updated stamp for LRU eviction. Optional so a pre-IN-03 persisted
+    /// payload decodes cleanly (nil ⇒ sorts oldest ⇒ evicted first). `fw`/`ops` unchanged.
+    private struct Persisted: Codable { var fw: String?; var ops: [Int]; var seq: Int? = nil }
 
     private func loadMap() -> [String: Persisted] {
         guard let data = defaults.data(forKey: storageKey),

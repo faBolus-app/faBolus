@@ -59,9 +59,15 @@ enum WidgetPublisher {
             // Owner-requested toggle — stamped straight from the setting so the widget/complication/
             // Live Activity gate their persistent unit CAPTION the same way the phone does.
             showUnitLabel: AppSettings.shared.showGlucoseUnitLabels,
-            // Phase 09.9-04 (D-05) — the single snapshot predicate, mirrored straight to the widget so
-            // it can show cartridge state without a bespoke per-surface pump read.
-            cartridgeReady: s.cartridgeReadyForBolus)
+            // Phase 09.9-04 (D-05) — the pump's cartridge-ready DISPLAY signal for the widget.
+            // WR-04 (debug pump-pairing-loop-api25, deep review): present a positive "ready" ONLY for a
+            // CONFIRMED `.ready` reply — `.unknown` (op-20 never answered / auto-excluded) maps to the
+            // non-positive `false`, never a fail-open "ready" from a state that was never read (the widget
+            // Bool can't carry a third "unknown", so `false` = "omit the positive badge"; Guardrail B's
+            // transparency contract, Models.swift). The legacy App-Group DECODE default (absent ⇒ true)
+            // is unchanged, so an older widget binary never renders a false "not ready" from a missing key.
+            // Dose-path unaffected — the gate reads `cartridgeReadyForBolus`, not this display flag.
+            cartridgeReady: s.cartridgeReadiness == .ready)
     }
 
     @MainActor

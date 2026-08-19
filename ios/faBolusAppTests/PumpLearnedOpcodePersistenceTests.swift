@@ -199,4 +199,54 @@ struct PumpLearnedOpcodePersistenceTests {
                 "on a fresh launch (firmware unknown) the UUID-keyed persisted op20 skip must apply — no re-drop")
         #expect(!dispatched.contains(loadStatusOpcode))
     }
+
+    // MARK: - WR-05: a mid-session firmware change purges the IN-MEMORY learned set (same backend)
+
+    /// WR-05 (deep review): the durable store resets on a firmware change, but `badOpcodes` survives
+    /// reconnects for the scheduler's lifetime. On the SAME backend (no relaunch) a firmware change must
+    /// ALSO purge the in-memory op20, so op20 is re-polled under the new firmware — not kept skipped until
+    /// the app is relaunched. `aFirmwareChangeReTestsLoadStatus` above uses a FRESH backend and so does not
+    /// exercise this in-memory retention.
+    @Test func aFirmwareChangeOnTheSameBackendClearsInMemoryLearnedAndRePolls() async {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "pump-A-\(UUID().uuidString)"
+
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
+        b.setSoftwareVersionForTesting("2.5")
+        await b.refreshLoadStatus()                                   // op20 out (txId 0)
+        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0))
+        #expect(b.badOpcodesForTesting.contains(loadStatusOpcode), "op20 learned IN-MEMORY under fw 2.5")
+        #expect(store.learnedOpcodes(for: key).contains(loadStatusOpcode), "and persisted")
+
+        // Firmware changes on the SAME backend (no relaunch).
+        b.setSoftwareVersionForTesting("3.0")
+        var dispatched: [UInt8] = []; var skipped: [UInt8] = []
+        b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
+        b.onReadSkippedForTesting = { _, op in skipped.append(op) }
+        b.startPollingForTesting()
+        #expect(!b.badOpcodesForTesting.contains(loadStatusOpcode),
+                "a firmware change must clear the IN-MEMORY learned op20 on the same backend (WR-05)")
+        #expect(dispatched.contains(loadStatusOpcode),
+                "op20 must be re-polled under the new firmware, not stay skipped until relaunch (WR-05)")
+        #expect(!skipped.contains(loadStatusOpcode), "op20 is no longer skipped after the firmware change")
+    }
+
+    // MARK: - IN-03: the store LRU-caps the number of retained pumps
+
+    /// IN-03 (deep review): pairing many pumps over time must not grow the persisted map unbounded — the
+    /// store caps retained pumps and evicts the least-recently-updated first.
+    @Test func theStoreLruCapsRetainedPumps() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cap = PumpBadOpcodeStore.maxRetainedPumps
+        for i in 0...(cap + 3) { store.record(loadStatusOpcode, for: "pump-\(i)", firmware: "2.5") }
+        #expect(store.retainedPumpCountForTesting <= cap,
+                "the store must cap the number of retained pumps (IN-03)")
+        #expect(store.learnedOpcodes(for: "pump-\(cap + 3)").contains(loadStatusOpcode),
+                "the most-recently-updated pump is retained")
+        #expect(store.learnedOpcodes(for: "pump-0").isEmpty,
+                "the least-recently-updated pump is evicted once the cap is exceeded (LRU) (IN-03)")
+    }
 }

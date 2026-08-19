@@ -294,6 +294,25 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// "never read / auto-excluded" from a confirmed `.ready`, so a fail-open default is never presented as
     /// a positive readiness fact.
     public enum CartridgeReadiness: Sendable, Equatable { case ready, notReady, unknown }
+
+    /// WR-04 (debug pump-pairing-loop-api25, deep review): the cartridge value for the REMOTE wire
+    /// (`RemoteCommand.cartridgeReady`, a `Bool?`), so a remote (Garmin/Watch/Mac) never PRESENTS a
+    /// fail-open "ready" from a state that was never read — Guardrail B's transparency contract
+    /// (`cartridgeReadiness`, above) must hold on the remote surfaces too, not just the phone Debug menu.
+    ///  - `.ready`    → `true`  (a CONFIRMED non-loading op-20 reply — safe to show ready)
+    ///  - `.notReady` → `false` (a CONFIRMED loading state — show not-ready)
+    ///  - `.unknown`  → `nil`   (op-20 never answered / auto-excluded — NO SIGNAL: the remote shows no
+    ///    cartridge badge, never a false "ready" and never a false "not ready", matching the field's own
+    ///    "absent ⇒ no signal" contract).
+    /// DISPLAY signal ONLY — the dose-path BLOCK still reads `cartridgeReadyForBolus` (which ALLOWS
+    /// `.unknown`), unchanged. Distinct from `RemoteCommand.canBolus` (the bolus-attempt gate).
+    public var cartridgeReadyRemoteWire: Bool? {
+        switch cartridgeReadiness {
+        case .ready:    return true
+        case .notReady: return false
+        case .unknown:  return nil
+        }
+    }
     /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
     public var controlIQWeightLbs: Int = 0
     public var controlIQTotalDailyInsulin: Int = 0

@@ -67,15 +67,9 @@ enum CapabilityDiagnostics {
             // Transparency 4a (debug pump-pairing-loop-api25 hardening): render each auto-excluded read with
             // its human-readable name via the shared `PumpReadCatalog` (now accurate — mechanism B's fixed
             // op77 correlation records the TRUE opcode, not 0), e.g. "Cartridge/load status (op-20)".
-            // Transparency 4a (debug pump-pairing-loop-api25 hardening): render each auto-excluded read with
-            // its human-readable name via the shared `PumpReadCatalog` (now accurate — mechanism B's fixed
-            // op77 correlation records the TRUE opcode, not 0), e.g. "Cartridge/load status (op-20)".
             lines.append("Rejected opcodes: "
                 + badOpcodes.sorted().map(PumpReadCatalog.rejectedOpcodeLabel(for:)).joined(separator: ", "))
         }
-        // Transparency 4b: when a SAFETY-relevant read (e.g. the op-20 cartridge pre-check) is auto-excluded,
-        // disclose that the app is relying on the pump's own protection for that capability — a degraded
-        // guard must never be silent.
         // Transparency 4b: when a SAFETY-relevant read (e.g. the op-20 cartridge pre-check) is auto-excluded,
         // disclose that the app is relying on the pump's own protection for that capability — a degraded
         // guard must never be silent.
