@@ -429,6 +429,26 @@ public final class AppSettings {
     /// available regardless of this toggle (D-11: manual = baseline, auto = opt-in).
     public var healthKitAutoImportEnabled: Bool { didSet { d.set(healthKitAutoImportEnabled, forKey: "healthKitAutoImportEnabled") } }
 
+    /// Phase 09.23-03 (D-12/D-14): per-type Apple Health EXPORT toggles — each export type (carbs,
+    /// insulin/bolus, glucose) is individually user-selectable. All **default OFF**. Deliberately NO
+    /// heart-rate export toggle exists (D-08 — HR is read-only, originates from the user's own
+    /// sensors, and is never written back to Health). Same shape/deferral rationale as the import
+    /// toggles immediately above: unconditional (not `#if FABOLUS_HEALTHKIT`) so the settings MODEL
+    /// compiles/tests under the default OFF build, and — even though this plan's Task 3 gives them a
+    /// `CgmCredentialsView` UI reference — deliberately NOT yet added to `SettingsCatalog`/
+    /// `backupSnapshot`/`applyBackup`: `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot`
+    /// requires a backed-up key to be a catalog row AND vice-versa is not required, so a UI reference
+    /// alone doesn't force catalog participation, and adding it is a separate, deliberate decision
+    /// (iCloud-sync/backup semantics) left to a future wave rather than bundled into this one.
+    public var healthKitExportCarbsEnabled: Bool { didSet { d.set(healthKitExportCarbsEnabled, forKey: "healthKitExportCarbsEnabled") } }
+    public var healthKitExportInsulinEnabled: Bool { didSet { d.set(healthKitExportInsulinEnabled, forKey: "healthKitExportInsulinEnabled") } }
+    public var healthKitExportGlucoseEnabled: Bool { didSet { d.set(healthKitExportGlucoseEnabled, forKey: "healthKitExportGlucoseEnabled") } }
+    /// D-12: automatic go-forward Apple Health export (each newly-logged carb/insulin/bolus/glucose
+    /// written out as logged). **Default OFF** — the manual "Export to Apple Health" backfill action
+    /// is always available regardless of this toggle (mirrors D-11's manual=baseline, auto=opt-in
+    /// split already established for import).
+    public var healthKitAutoExportEnabled: Bool { didSet { d.set(healthKitAutoExportEnabled, forKey: "healthKitAutoExportEnabled") } }
+
     /// Opt-in (default OFF, N21) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
@@ -867,6 +887,13 @@ public final class AppSettings {
         healthKitImportHeartRateEnabled = (d.object(forKey: "healthKitImportHeartRateEnabled") as? Bool) ?? false
         healthKitImportGlucoseEnabled = (d.object(forKey: "healthKitImportGlucoseEnabled") as? Bool) ?? false
         healthKitAutoImportEnabled = (d.object(forKey: "healthKitAutoImportEnabled") as? Bool) ?? false
+        // 09.23-03 (D-08/D-12/D-14): every Apple Health EXPORT toggle — per-type + automatic —
+        // defaults OFF, so a fresh install (and any device with no stored value) never silently
+        // exports. No heart-rate export toggle exists (D-08).
+        healthKitExportCarbsEnabled = (d.object(forKey: "healthKitExportCarbsEnabled") as? Bool) ?? false
+        healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
+        healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
+        healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
         extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         stackingGuardFrictionEnabled = (d.object(forKey: "stackingGuardFrictionEnabled") as? Bool) ?? true

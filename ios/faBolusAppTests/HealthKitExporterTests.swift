@@ -2,6 +2,7 @@ import Testing
 import Foundation
 import HealthKit
 import faBolusCore
+import HistoryStore
 @testable import faBolus
 
 /// Phase 09.23-03 (Task 1, D-08/D-12/D-14): pure-logic proof for the full multi-type exporter —

@@ -7,6 +7,25 @@ import AlertIntelligenceKit
 #endif
 import Observation
 
+#if FABOLUS_HEALTHKIT
+/// Phase 09.23-03 (D-08/D-12/D-14): the seam `AppModel`'s export hook calls through — lets a test
+/// substitute a fake (never touching real `HKHealthStore`) to verify enabled-type routing, mirroring
+/// `HealthKitImportSource`'s role on the import side (`Shared/HealthKitHistoryImporter.swift`).
+/// `HealthKitExporter` conforms below; `AppModel`'s `#if FABOLUS_HEALTHKIT` property is typed as
+/// this protocol, swappable via `setHealthKitExportDestinationForTesting`.
+@MainActor
+protocol HealthKitExportDestination {
+    func exportNewCarbs(_ candidates: [(date: Date, grams: Double)]) async
+    func exportNewInsulin(_ candidates: [BolusMarker]) async
+    func exportNewGlucose(_ candidates: [GlucoseReading]) async
+    func exportHistoricalCarbs(_ entries: [(date: Date, grams: Double)]) async
+    func exportHistoricalInsulin(_ markers: [BolusMarker]) async
+    func exportHistoricalGlucose(_ readings: [GlucoseReading]) async
+}
+
+extension HealthKitExporter: HealthKitExportDestination {}
+#endif
+
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
 @MainActor
 @Observable
@@ -1472,6 +1491,82 @@ public final class AppModel {
             history?.ingestGlucose(glucose, sourceID: HealthKitHistoryImporter.glucoseImportSourceID, priority: 10)
         }
     }
+
+    // MARK: - Apple Health (HealthKit) export (09.23-03, D-08/D-12/D-14) — gated per D-13: the whole
+    // export hook compiles out of the free/CI build. Export reads already-computed faBolus values
+    // (`glucoseHistory`/`bolusMarkers`/`history?.carbs(in:)`) and writes them OUT to Apple Health —
+    // never a dose-path/signed-message change (SC3). Every write HealthKitExporter makes is
+    // origin-tagged, so the importer's echo-guard never re-imports it (D-12, closes the loop).
+
+    @ObservationIgnored private lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
+    private var lastHealthKitAutoExport = Date.distantPast
+
+    #if DEBUG
+    /// Test seam: substitute the HealthKit export destination (a fake) so a test can assert the
+    /// go-forward hook's enabled-type routing without touching real HealthKit. Mirrors
+    /// `setHealthKitImportSourceForTesting`. Production never calls this.
+    func setHealthKitExportDestinationForTesting(_ destination: HealthKitExportDestination) {
+        healthKitExportDestination = destination
+    }
+    #endif
+
+    /// D-12b: manual on-demand "Export to Apple Health" backfill over an explicit historical
+    /// `[since, Date()]` range — ALWAYS available regardless of the D-12 automatic toggle below.
+    /// Exports exactly the per-type-enabled subset (D-14), reusing `HealthKitExporter`'s historical
+    /// write methods (independent of the go-forward high-water marks). Awaitable so a caller — or a
+    /// test — observes completion.
+    public func exportToAppleHealth(since: Date) async {
+        let settings = AppSettings.shared
+        let range = since...Date()
+        let destination = healthKitExportDestination
+        if settings.healthKitExportCarbsEnabled {
+            await destination.exportHistoricalCarbs(history?.carbs(in: range) ?? [])
+        }
+        if settings.healthKitExportInsulinEnabled {
+            await destination.exportHistoricalInsulin(history?.boluses(in: range) ?? [])
+        }
+        if settings.healthKitExportGlucoseEnabled {
+            await destination.exportHistoricalGlucose(history?.glucose(in: range) ?? [])
+        }
+    }
+
+    /// D-12a: throttled (mirrors `NightscoutUploader`'s 60 s cadence — this is a near-real-time
+    /// "as logged" export, unlike the hourly import backfill), best-effort automatic go-forward
+    /// export — fire-and-forget from `refresh()`. Runs ONLY when `healthKitAutoExportEnabled` is
+    /// true (default OFF); the manual backfill above always runs regardless of this gate.
+    private func maybeAutoExportAppleHealth() {
+        guard AppSettings.shared.healthKitAutoExportEnabled,
+              Date().timeIntervalSince(lastHealthKitAutoExport) >= 60 else { return }
+        lastHealthKitAutoExport = Date()
+        Task { [weak self] in await self?.runHealthKitAutoExport() }
+    }
+
+    /// Shared go-forward export routine (D-12a): for each enabled export type, hands the CURRENTLY
+    /// KNOWN faBolus values (mirrors the `NightscoutUploader.shared.sync(...)` call site's shape —
+    /// passing the live in-memory `glucoseHistory`/`bolusMarkers`, plus a wide `history?.carbs(in:)`
+    /// window) to `HealthKitExporter`'s `exportNew*` methods, which internally filter to entries
+    /// newer than that type's persisted high-water mark and advance it on success — so a relaunch
+    /// never re-sends an already-written entry. The carbs window is deliberately WIDE (not a short
+    /// recent scrub) because — unlike `glucoseHistory`/`bolusMarkers`, which AppModel already keeps
+    /// live in memory — carbs have no equivalent in-memory list; `HealthKitExporter`'s own high-water
+    /// mark (not this window) is what does the actual dedup, so passing a superset here is safe and
+    /// correct (mirrors `NightscoutUploader.sync`'s own "pass everything, let the mark filter" shape).
+    /// Test-observable via `setHealthKitExportDestinationForTesting`; production only reaches this
+    /// through the throttled `maybeAutoExportAppleHealth()` fire-and-forget wrapper above.
+    func runHealthKitAutoExport() async {
+        let settings = AppSettings.shared
+        let destination = healthKitExportDestination
+        if settings.healthKitExportCarbsEnabled {
+            let carbs = history?.carbs(in: Date.distantPast...Date()) ?? []
+            await destination.exportNewCarbs(carbs)
+        }
+        if settings.healthKitExportInsulinEnabled {
+            await destination.exportNewInsulin(bolusMarkers)
+        }
+        if settings.healthKitExportGlucoseEnabled {
+            await destination.exportNewGlucose(glucoseHistory)
+        }
+    }
     #endif
 
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
@@ -1671,6 +1766,7 @@ public final class AppModel {
         maybeBackfillNightscout()
         #if FABOLUS_HEALTHKIT
         maybeAutoImportAppleHealth()   // D-11b: default-OFF, throttled hourly like the Nightscout backfill
+        maybeAutoExportAppleHealth()   // D-12a: default-OFF, throttled ~60s like the Nightscout upload
         #endif
         updateEatingNudge()
         reconcileHeartRateWanted()   // 09.18b (D-09): keep the watch HR-send in sync with the in-app toggle
