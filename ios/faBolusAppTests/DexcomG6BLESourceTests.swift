@@ -197,6 +197,33 @@ struct DexcomG6BLESourceTests {
         #expect(source.status == .stale, "beyond the no-anchor bound with no anchor ever observed, status must be .stale")
     }
 
+    /// W-05 (D-14): the no-anchor `.stale` fail-safe must fire even during a warmup where every frame
+    /// FAILS the plausibility gate first (out-of-range) and no anchor is ever observed — status must
+    /// NOT stay stuck at `.connected` indefinitely. Evaluated independently of the plausibility-gate
+    /// ordering.
+    @Test func reportsStaleAfterNoAnchorBoundEvenWhenWarmupFramesFailPlausibilityGate() {
+        let source = DexcomG6BLESource()
+        source.setConnectedAtForTesting(Date().addingTimeInterval(-(DexcomG6BLESource.noAnchorBound + 30)))
+        // A run of gate-failing (out-of-[40,400]) frames during warmup; never anchored.
+        for i in 0..<3 {
+            source.ingest(controlFrame: Self.glucoseFrame(sequence: UInt32(i), timestamp: UInt32(100 + i * 10), glucose: 500))
+        }
+        #expect(source.latest == nil, "an out-of-range, un-anchored frame must never become `latest`")
+        #expect(source.status == .stale,
+                "W-05: the no-anchor bound must fire even when warmup frames fail the plausibility gate first")
+    }
+
+    /// W-05 companion: BELOW the no-anchor bound, gate-failing warmup frames leave status at
+    /// `.connected` (still trying) — the fail-safe must not trip early.
+    @Test func staysConnectedBelowNoAnchorBoundWhenWarmupFramesFailPlausibilityGate() {
+        let source = DexcomG6BLESource()
+        source.setConnectedAtForTesting(Date())   // just started; well within the bound
+        source.ingest(controlFrame: Self.glucoseFrame(timestamp: 100, glucose: 500))
+        #expect(source.latest == nil)
+        #expect(source.status == .connected,
+                "below the no-anchor bound, a gate-failing frame must keep status .connected, not prematurely .stale")
+    }
+
     /// Regression guard for the happy path: once a FRESH anchor has been observed (within the bound),
     /// glucose anchors normally — the bound must not fire just because the source has been connected a
     /// while if an anchor did in fact arrive.

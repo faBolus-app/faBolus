@@ -182,7 +182,13 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         // D-08b physiologic-range gate (decode-time, Task-1 sign-off `reject-and-stable`): a
         // CRC-valid-but-out-of-[40,400]-or-unreliable frame is REJECTED, never clamped, and never
         // becomes `latest`.
-        guard msg.hasPlausibleGlucose else { status = .connected; onChange?(); return }
+        // W-05 (D-14): report the pre-anchor status via `statusWhenUnanchored()` — NOT a bare
+        // `.connected` — so the no-anchor `.stale` fail-safe fires INDEPENDENTLY of this gate's
+        // ordering. During an extended warmup a run of frames can fail `hasPlausibleGlucose` FIRST;
+        // returning a bare `.connected` here would mean the no-anchor branch below is never reached,
+        // leaving status stuck at `.connected` forever with no anchor ever observed. (Status-reporting
+        // only — NOT dose-path: `GlucoseArbiter.merge` never reads `source.status`.)
+        guard msg.hasPlausibleGlucose else { status = statusWhenUnanchored(); onChange?(); return }
         guard let activationDate else {
             // FAIL-CLOSED pre-anchor (D-08a/D-10, Warning 1 — finalized here): no sensor-time anchor
             // has ever been observed, so this frame's true age is unknowable. Do NOT fall back to
@@ -192,11 +198,7 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
             // ever leaves `latest` untouched). Once the source has been listening longer than
             // `noAnchorBound` with STILL no anchor observed, flip to `.stale` so the UI stops implying
             // "still trying" forever; below the bound, stay `.connected` (matches Plan 01's behavior).
-            if let connectedAt, Date().timeIntervalSince(connectedAt) > Self.noAnchorBound {
-                status = .stale
-            } else {
-                status = .connected
-            }
+            status = statusWhenUnanchored()
             onChange?()
             return
         }
@@ -239,6 +241,18 @@ final class DexcomG6BLESource: NSObject, GlucoseSource {
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
         status = .connected
         onChange?()
+    }
+
+    /// Pre-anchor status (W-05/D-14): `.stale` once we've been listening past `noAnchorBound` with
+    /// STILL no sensor-time anchor ever observed, else `.connected`. Factored out so BOTH the
+    /// plausibility-gate-fail branch and the no-anchor branch in `handle` report the same fail-safe —
+    /// the no-anchor bound is evaluated independently of whether a frame passed the plausibility gate,
+    /// so a warmup run of gate-failing frames can't leave status stuck at `.connected` forever.
+    /// (If an anchor already exists this is never the "unanchored" situation, so it stays `.connected`.)
+    private func statusWhenUnanchored() -> GlucoseSourceStatus {
+        guard activationDate == nil else { return .connected }
+        if let connectedAt, Date().timeIntervalSince(connectedAt) > Self.noAnchorBound { return .stale }
+        return .connected
     }
 
     /// Test seam: overrides `connectedAt` directly, mirroring `TandemBackend`'s `set...ForTesting`
