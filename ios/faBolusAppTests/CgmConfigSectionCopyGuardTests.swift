@@ -102,6 +102,44 @@ struct CgmConfigSectionCopyGuardTests {
         #expect(code.contains("another app") && code.contains("writing glucose to Apple Health"),
                 "HealthKit section missing the 'another app must be writing glucose to Health' prerequisite")
     }
+
+    // Phase 09.23-03 (D-08/D-12/D-14): the section must now truthfully advertise the per-type
+    // EXPORT capability (it shipped this plan) and must no longer carry the stale "faBolus only
+    // reads — it never writes glucose" claim that predates the export feature.
+    @Test func healthKitSectionAdvertisesExportAndDropsTheStaleReadOnlyClaim() throws {
+        let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
+        #expect(code.contains("Export to Apple Health"),
+                "HealthKit section missing a discoverable export-capability header/copy")
+        #expect(code.contains("WRITE your carb, insulin, and glucose entries") || code.contains("write your carb, insulin, and glucose entries"),
+                "HealthKit section missing copy describing WHAT faBolus exports")
+        #expect(!code.contains("faBolus only reads") && !code.contains("it never writes glucose"),
+                "HealthKit section still carries the stale pre-export 'only reads, never writes' claim")
+    }
+
+    // The per-type import/export toggle rows (D-14) must be bound to the corresponding AppSettings
+    // properties — every enabled type is individually user-selectable, and no HR export row exists
+    // (D-08).
+    @Test func healthKitSectionBindsEveryPerTypeToggleAndHasNoHeartRateExportRow() throws {
+        let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
+        let expectedImportBindings = [
+            "$settings.healthKitImportCarbsEnabled",
+            "$settings.healthKitImportInsulinEnabled",
+            "$settings.healthKitImportHeartRateEnabled",
+            "$settings.healthKitImportGlucoseEnabled",
+            "$settings.healthKitAutoImportEnabled",
+        ]
+        let expectedExportBindings = [
+            "$settings.healthKitExportCarbsEnabled",
+            "$settings.healthKitExportInsulinEnabled",
+            "$settings.healthKitExportGlucoseEnabled",
+            "$settings.healthKitAutoExportEnabled",
+        ]
+        for binding in expectedImportBindings + expectedExportBindings {
+            #expect(code.contains(binding), "HealthKit section missing the toggle row bound to \(binding)")
+        }
+        #expect(!code.contains("healthKitExportHeartRate"),
+                "D-08 violated — no heart-rate EXPORT toggle/row may exist; HR is read-only")
+    }
     #endif
 
     @Test func xdripSectionCarriesSelfCompileTeamIdGate() throws {

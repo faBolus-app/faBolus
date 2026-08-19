@@ -9,6 +9,10 @@ struct CgmCredentialsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var readingTxId = false
     @State private var readTxIdError: String?
+    // 09.23-03 (D-14): reactive access to the per-type Apple Health import/export toggles the
+    // healthKitConfigSection rows below bind to — mirrors SettingsView's `@State private var
+    // settings = AppSettings.shared` idiom.
+    @State private var settings = AppSettings.shared
 
     // LibreLinkUp (Libre 2/3)
     @State private var libreUser = ""
@@ -216,17 +220,49 @@ struct CgmCredentialsView: View {
         }
     }
 
-    /// Apple Health (HealthKit) — the system permission request, iOS-Settings recovery if denied, and
-    /// the non-obvious prerequisite that ANOTHER app must already be writing glucose to Health (F-02).
+    /// Apple Health (HealthKit) — the system permission request, iOS-Settings recovery if denied,
+    /// the non-obvious prerequisite that ANOTHER app must already be writing glucose to Health for
+    /// the failover-source READ path (F-02), and — Phase 09.23-03 (D-08/D-12/D-14) — the per-type
+    /// import/export toggle rows. Only rendered when `FABOLUS_HEALTHKIT` is ON (D-13): the
+    /// "healthkit" registry entry (and this whole feature) doesn't exist under the default build,
+    /// so there is nothing here to configure. Emits THREE sections (explainer, import toggles,
+    /// export toggles) rather than one — the explainer copy must truthfully describe BOTH
+    /// directions now that export ships, and the per-type toggles are grouped for scannability
+    /// rather than crammed into the explainer section.
     @ViewBuilder private var healthKitConfigSection: some View {
+        #if FABOLUS_HEALTHKIT
         Section {
-            Text("When you select Apple Health as your failover source, iOS shows a one-time permission request to let faBolus READ glucose from Health. faBolus only reads — it never writes glucose.")
+            Text("faBolus can both READ glucose from Apple Health (as a failover CGM source, below) and — opt-in, per type — WRITE your carb, insulin, and glucose entries out to Health so other apps and your clinic can see them. Nothing is written until you turn on an export toggle below; heart rate is never exported, only ever read (faBolus doesn't originate it).")
                 .font(.caption).foregroundStyle(.secondary)
         } header: {
             Text("Apple Health (xDrip / Eversense)")
         } footer: {
-            Text("**Prerequisite:** another app — xDrip4iOS or the Eversense app — must already be writing glucose to Apple Health. faBolus does not read your sensor directly on this path; it reads whatever that app records. If you denied the permission by mistake, iOS never re-prompts — re-enable it in **iOS Settings › Health › Data Access & Devices › faBolus**.")
+            Text("**Prerequisite:** another app — xDrip4iOS or the Eversense app — must already be writing glucose to Apple Health for faBolus to read it as a failover source. faBolus does not read your sensor directly on this path; it reads whatever that app records. If you denied the permission by mistake, iOS never re-prompts — re-enable it in **iOS Settings › Health › Data Access & Devices › faBolus**.")
         }
+
+        Section {
+            Toggle("Carbs", isOn: $settings.healthKitImportCarbsEnabled)
+            Toggle("Insulin / bolus", isOn: $settings.healthKitImportInsulinEnabled)
+            Toggle("Heart rate", isOn: $settings.healthKitImportHeartRateEnabled)
+            Toggle("Glucose (gap-fill)", isOn: $settings.healthKitImportGlucoseEnabled)
+            Toggle("Import automatically", isOn: $settings.healthKitAutoImportEnabled)
+        } header: {
+            Text("Import from Apple Health")
+        } footer: {
+            Text("Each history type faBolus pulls in from Apple Health is off until you turn it on. Glucose only fills gaps in faBolus's own CGM history — it never double-counts a reading faBolus already has. \"Import automatically\" adds an hourly background pull on top of the manual import, which is always available regardless.")
+        }
+
+        Section {
+            Toggle("Carbs", isOn: $settings.healthKitExportCarbsEnabled)
+            Toggle("Insulin / bolus", isOn: $settings.healthKitExportInsulinEnabled)
+            Toggle("Glucose", isOn: $settings.healthKitExportGlucoseEnabled)
+            Toggle("Export automatically", isOn: $settings.healthKitAutoExportEnabled)
+        } header: {
+            Text("Export to Apple Health")
+        } footer: {
+            Text("Each faBolus entry type written out to Apple Health is off until you turn it on. Heart rate is never exported — faBolus only ever reads it, since it originates from your own sensors. \"Export automatically\" writes new entries out as you log them, on top of the manual export, which is always available regardless.")
+        }
+        #endif
     }
 
     /// xDrip4iOS App Group (local) — an UNMISSABLE self-compile-only / same-Apple-Team-ID gate shown
