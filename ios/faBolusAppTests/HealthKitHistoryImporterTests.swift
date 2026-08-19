@@ -22,14 +22,17 @@ struct HealthKitHistoryImporterTests {
     private let bpmUnit = HKUnit(from: "count/min")
     private let mgdlUnit = HKUnit(from: "mg/dL")
 
-    private func insulinSample(units: Double, reason: HKInsulinDeliveryReason?, date: Date = Date(),
+    /// `reason` is required (not optional) — HealthKit's own runtime validation REJECTS
+    /// constructing an `.insulinDelivery` `HKQuantitySample` with no `HKMetadataKeyInsulinDeliveryReason`
+    /// at all (`_HKObjectValidationFailureException`, confirmed by an isolated crash before this test
+    /// file's final form), so "delivery with no reason metadata" isn't a real-world constructible
+    /// object to test against; `.basal` alone proves the bolus-only filter excludes non-bolus reasons.
+    private func insulinSample(units: Double, reason: HKInsulinDeliveryReason, date: Date = Date(),
                                origin: Bool? = nil) -> HKQuantitySample {
-        var metadata: [String: Any] = [:]
-        if let reason { metadata[HKMetadataKeyInsulinDeliveryReason] = reason.rawValue }
+        var metadata: [String: Any] = [HKMetadataKeyInsulinDeliveryReason: reason.rawValue]
         if let origin { metadata[HealthKitOriginTag.key] = origin }
         let quantity = HKQuantity(unit: unitsUnit, doubleValue: units)
-        return HKQuantitySample(type: insulinType, quantity: quantity, start: date, end: date,
-                                metadata: metadata.isEmpty ? nil : metadata)
+        return HKQuantitySample(type: insulinType, quantity: quantity, start: date, end: date, metadata: metadata)
     }
 
     private func heartRateSample(bpm: Double, date: Date = Date(), origin: Bool? = nil) -> HKQuantitySample {
@@ -49,14 +52,12 @@ struct HealthKitHistoryImporterTests {
     @Test func insulinImportKeepsOnlyBolusReasonSamples() {
         let bolus = insulinSample(units: 3.2, reason: .bolus)
         let basal = insulinSample(units: 0.8, reason: .basal)
-        let automated = insulinSample(units: 0.5, reason: nil)   // no reason metadata at all
 
-        let kept = HealthKitHistoryImporter.filterBolusReason([bolus, basal, automated])
+        let kept = HealthKitHistoryImporter.filterBolusReason([bolus, basal])
 
         #expect(kept.count == 1)
         #expect(kept.contains { $0 === bolus })
         #expect(!kept.contains { $0 === basal })
-        #expect(!kept.contains { $0 === automated })
     }
 
     @Test func insulinBolusSampleMapsToDateUnitsTuple() {
