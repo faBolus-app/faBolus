@@ -143,6 +143,37 @@ struct HealthKitHistoryImporterTests {
         #expect(HealthKitHistoryImporter.readTypes(for: []).isEmpty)
     }
 
+    // MARK: - WR-02: the query timeout race's double-resume guard allows exactly one winner, no
+    // matter how many concurrent callers race it (`HKSampleQuery`'s completion handler and the
+    // timeout `Task` in `HealthKitHistoryImporter.query` are the two real racers; a real stuck
+    // `HKSampleQuery`/timing race isn't reproducible in a unit test without an entitlement, so this
+    // proves the underlying concurrency primitive the fix depends on instead — see the doc comment
+    // on `query(store:type:since:timeoutSeconds:)` for why the full end-to-end hang scenario is not
+    // unit-testable here).
+
+    @Test func queryResumeGuardAllowsExactlyOneWinnerUnderConcurrentAccess() async {
+        let resumeGuard = HealthKitQueryResumeGuard()
+
+        let winners = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<50 {
+                group.addTask { resumeGuard.tryResume() }
+            }
+            var collected: [Bool] = []
+            for await result in group { collected.append(result) }
+            return collected
+        }
+
+        #expect(winners.filter { $0 }.count == 1,
+                "exactly one of any number of concurrent callers must win the resume race")
+        #expect(winners.filter { !$0 }.count == 49)
+    }
+
+    @Test func queryResumeGuardSecondSequentialCallLoses() {
+        let resumeGuard = HealthKitQueryResumeGuard()
+        #expect(resumeGuard.tryResume() == true, "first caller (e.g. the real HKSampleQuery completion) wins")
+        #expect(resumeGuard.tryResume() == false, "second caller (e.g. the timeout) must lose — no double-resume")
+    }
+
     // MARK: - Behavior 6: the shared echo-guard filter holds for every import type, not just carbs
 
     @Test func echoGuardFilterHoldsAcrossAllFourTypes() {

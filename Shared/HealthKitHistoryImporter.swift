@@ -129,14 +129,35 @@ final class HealthKitHistoryImporter {
     /// `HKSampleQuery` over an explicit `[since, Date()]` range — the manual/backfill import shape
     /// (D-11a), widened from `HealthKitHeartRateSource`'s ±5-min scrub window. Shared by every
     /// `import*History` method so each adds only its own type-specific filter/mapping.
-    private static func query(store: HKHealthStore, type: HKQuantityType, since: Date) async -> [HKQuantitySample] {
+    ///
+    /// WR-02: races the query's completion against a `timeoutSeconds` sleep. `HKSampleQuery` never
+    /// GUARANTEES its completion handler fires (a real possibility under degraded system
+    /// conditions — low storage, a corrupted Health database, …); without this race a stuck query
+    /// would hang the `await` here forever, and every caller above (including the UI's manual
+    /// "Import from Apple Health" button, which awaits `importFromAppleHealth()`) would hang with
+    /// it, with no user-visible failure state. On timeout: stop the query and degrade to `[]`
+    /// (empty) rather than leaving the caller hung. `resumeGuard` (a plain, thread-safe, NOT
+    /// `private` type so it stays independently testable under concurrency — see
+    /// `HealthKitHistoryImporterTests`) ensures exactly one of {completion, timeout} ever resumes
+    /// the continuation; resuming a `CheckedContinuation` a second time is a fatal runtime error, so
+    /// the loser of the race is a silent no-op rather than a crash.
+    private static func query(store: HKHealthStore, type: HKQuantityType, since: Date,
+                              timeoutSeconds: Double = 20) async -> [HKQuantitySample] {
         let predicate = HKQuery.predicateForSamples(withStart: since, end: Date(), options: [])
         return await withCheckedContinuation { cont in
+            let resumeGuard = HealthKitQueryResumeGuard()
             let q = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
                                   sortDescriptors: nil) { _, samples, _ in
+                guard resumeGuard.tryResume() else { return }
                 cont.resume(returning: (samples as? [HKQuantitySample]) ?? [])
             }
             store.execute(q)
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                guard resumeGuard.tryResume() else { return }
+                store.stop(q)
+                cont.resume(returning: [])
+            }
         }
     }
 
@@ -212,3 +233,25 @@ final class HealthKitHistoryImporter {
 }
 
 extension HealthKitHistoryImporter: HealthKitImportSource {}
+
+/// WR-02: thread-safe single-resume guard. `HKSampleQuery`'s completion handler (called from an
+/// arbitrary HealthKit-internal queue, NOT necessarily `HealthKitHistoryImporter`'s `@MainActor`)
+/// and `query(store:type:since:timeoutSeconds:)`'s timeout `Task` race to resume the SAME
+/// `CheckedContinuation`; a lock (rather than actor isolation, since the racing callback isn't
+/// actor-isolated at all) is what makes "exactly one winner" hold under real concurrency.
+/// Deliberately NOT `private` — a plain top-level type so `HealthKitHistoryImporterTests` can
+/// exercise the race directly, without needing a real `HKHealthStore`/entitlement.
+final class HealthKitQueryResumeGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    /// Returns `true` for exactly the FIRST caller across any number of concurrent callers (from
+    /// any thread); every subsequent caller gets `false`.
+    func tryResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if resumed { return false }
+        resumed = true
+        return true
+    }
+}
