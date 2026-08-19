@@ -58,8 +58,15 @@ struct DexcomG6RestoreIdentifierTests {
 
     /// Every OTHER descriptor closure ignores the flag (mechanical `_ in` edit, per the plan — no
     /// `DexcomG7BLESource` source change, D-11) and still builds successfully with either value.
+    /// "healthkit" only has a descriptor when `FABOLUS_HEALTHKIT` is ON (D-13, Phase 09.23) — gated
+    /// here too, an unavoidable direct consequence of that gating (not itself part of the 09.23-01
+    /// plan's declared scope).
     @Test func everyOtherDescriptorClosureIgnoresTheFlag() throws {
-        for id in ["dexcom-g7-ble", "librelinkup", "nightscout", "dexcom-share", "healthkit", "xdrip-appgroup"] {
+        var ids = ["dexcom-g7-ble", "librelinkup", "nightscout", "dexcom-share", "xdrip-appgroup"]
+        #if FABOLUS_HEALTHKIT
+        ids.append("healthkit")
+        #endif
+        for id in ids {
             let descriptor = try #require(GlucoseSourceRegistry.descriptor(id: id), "missing descriptor: \(id)")
             #expect(descriptor.make(true).id == id)
             #expect(descriptor.make(false).id == id)

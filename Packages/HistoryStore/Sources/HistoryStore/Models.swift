@@ -100,3 +100,28 @@ import SwiftData
         self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
     }
 }
+
+/// Persisted heart-rate HISTORY (09.23-02, D-14) — extends the 09.18b ephemeral chart-context
+/// HealthKit HR reader into stored history. Same "value + source + date + sourceID + recordedAt +
+/// entryID" shape as `StoredCaffeine`/`StoredAlcohol` (swap `milligrams`→`bpm`); `source` is
+/// free-text provenance (e.g. "healthkit" vs. "garmin-ambient"), `sourceID` is the ingest caller's
+/// source id. `entryID` is a stable UUID string for delete/backup identity, mirroring the trackers.
+///
+/// A plain ADDITIVE SwiftData table, NOT a `VersionedSchema`/`SchemaMigrationPlan` (no such migration
+/// framework exists anywhere in this codebase — the 09.18d-02 `StoredCaffeine`/`StoredAlcohol`
+/// precedent). Deliberately NOT added to `FaBolusBackup` — HR history is re-importable from Apple
+/// Health at any time, so `FaBolusBackup.currentSchema` stays 3 rather than growing a backup section
+/// for data that costs nothing to re-fetch.
+@Model public final class StoredHeartRate {
+    public var entryID: String
+    public var bpm: Double
+    public var source: String
+    public var date: Date
+    public var sourceID: String
+    public var recordedAt: Date
+    public init(entryID: String, bpm: Double, source: String,
+                date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.bpm = bpm; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}

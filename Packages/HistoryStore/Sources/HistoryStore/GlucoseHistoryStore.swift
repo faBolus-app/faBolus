@@ -27,6 +27,7 @@ public final class GlucoseHistoryStore {
         container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
                                        StoredSite.self,
                                        StoredCaffeine.self, StoredAlcohol.self,
+                                       StoredHeartRate.self,
                                        configurations: config)
         if !inMemory { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -165,16 +166,43 @@ public final class GlucoseHistoryStore {
         try? context.save()
     }
 
+    // MARK: Heart-rate history (09.23-02, D-14 — extends the 09.18b ephemeral chart-context reader)
+
+    /// Persist imported/recorded heart-rate samples. `entryID` defaults to a fresh UUID string per
+    /// sample; callers needing delete/backup identity should ingest one at a time with a stable id.
+    public func ingestHeartRate(_ samples: [(date: Date, bpm: Double)], sourceID: String,
+                                source: String? = nil, recordedAt: Date = Date()) {
+        for s in samples {
+            context.insert(StoredHeartRate(entryID: UUID().uuidString, bpm: s.bpm,
+                                           source: source ?? sourceID,
+                                           date: s.date, sourceID: sourceID, recordedAt: recordedAt))
+        }
+        try? context.save()
+    }
+
+    /// Heart-rate rows whose `date` falls in `range`, most-recent first.
+    public func heartRate(in range: ClosedRange<Date>) -> [StoredHeartRate] {
+        let lo = range.lowerBound, hi = range.upperBound
+        var desc = FetchDescriptor<StoredHeartRate>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        return (try? context.fetch(desc)) ?? []
+    }
+
     // MARK: Query (conflict-resolved)
 
     /// Glucose in range, de-duplicated to one reading per 5-min slot (priority, then recency).
-    public func glucose(in range: ClosedRange<Date>) -> [GlucoseReading] {
+    /// `excludingSourceIDs` (CR-01, default empty so every existing caller — import gap-fill's
+    /// `existingSlots` computation, the logbook/chart reads, `statistics(in:)` — is unaffected) drops
+    /// rows whose `sourceID` is in the set BEFORE the per-slot merge, so a HealthKit-imported reading
+    /// can never win a slot and be handed to a HealthKit *export* read path (which would re-write it
+    /// to Apple Health as a brand-new, duplicate sample).
+    public func glucose(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [GlucoseReading] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredGlucose>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
         let rows = (try? context.fetch(desc)) ?? []
         var best: [Int: StoredGlucose] = [:]
-        for r in rows {
+        for r in rows where !excludingSourceIDs.contains(r.sourceID) {
             let slot = Int(r.date.timeIntervalSince1970 / 300)
             if let cur = best[slot] {
                 if r.priority > cur.priority || (r.priority == cur.priority && r.recordedAt >= cur.recordedAt) {
@@ -185,18 +213,30 @@ public final class GlucoseHistoryStore {
         return best.values.sorted { $0.date < $1.date }.map { GlucoseReading(date: $0.date, mgdl: $0.mgdl) }
     }
 
-    public func boluses(in range: ClosedRange<Date>) -> [BolusMarker] {
+    /// `excludingSourceIDs` (CR-01, default empty — existing callers unchanged) drops rows whose
+    /// `sourceID` is in the set, so a HealthKit-imported bolus marker never reaches a HealthKit
+    /// *export* read path.
+    public func boluses(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [BolusMarker] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredBolus>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
-        return ((try? context.fetch(desc)) ?? []).map { BolusMarker(date: $0.date, units: $0.units) }
+        return ((try? context.fetch(desc)) ?? [])
+            .filter { !excludingSourceIDs.contains($0.sourceID) }
+            .map { BolusMarker(date: $0.date, units: $0.units) }
     }
 
-    public func carbs(in range: ClosedRange<Date>) -> [(date: Date, grams: Double)] {
+    /// `excludingSourceIDs` (CR-01, default empty — existing callers unchanged) drops rows whose
+    /// `sourceID` is in the set, so a HealthKit-imported carb entry never reaches a HealthKit
+    /// *export* read path (closing the loop on the echo-guard: the importer already refuses to
+    /// re-import faBolus's own exported writes via `HealthKitOriginTag`/`filterOutOwnWrites`; this
+    /// is the missing other half — the exporter refusing to re-export what was just imported).
+    public func carbs(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [(date: Date, grams: Double)] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredCarb>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
-        return ((try? context.fetch(desc)) ?? []).map { (date: $0.date, grams: $0.grams) }
+        return ((try? context.fetch(desc)) ?? [])
+            .filter { !excludingSourceIDs.contains($0.sourceID) }
+            .map { (date: $0.date, grams: $0.grams) }
     }
 
     /// Time-in-range / GMI / CV over the window, using faBolusCore's stats on the merged readings.
@@ -229,6 +269,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredSite.self)
         try? context.delete(model: StoredCaffeine.self)
         try? context.delete(model: StoredAlcohol.self)
+        try? context.delete(model: StoredHeartRate.self)
         try? context.save()
     }
 }

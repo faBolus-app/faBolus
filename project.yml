@@ -176,12 +176,16 @@ targets:
         # unmodified clone signs on a free account; enable on a provisioned account with FABOLUS_TIME_SENSITIVE=1.
         com.apple.developer.usernotifications.time-sensitive: true
         # <<< TIME_SENSITIVE
-        # HealthKit (the Apple Health CGM source — xDrip4iOS in real time, or Eversense) is OPT-IN:
-        # it needs the paid Apple Developer Program to enable the capability, so it's off by default
-        # and the app builds/signs on a free account. To use it, uncomment the two keys below (and
-        # enable HealthKit under Signing & Capabilities). See docs/operate/cgm-failover.md.
-        # com.apple.developer.healthkit: true
-        # com.apple.developer.healthkit.access: []
+        # HealthKit (Phase 09.23, D-10/D-13): the Apple Health CGM source (xDrip4iOS in real time, or
+        # Eversense) + on-demand HR reader, PLUS the retrospective carbs/insulin import and the bolus
+        # export, all need the paid Apple Developer Program to enable this capability, so it's off by
+        # default and the app builds/signs on a free account. scripts/generate-project.sh strips the
+        # tagged block below (and the FABOLUS_HEALTHKIT compile flag) unless FABOLUS_HEALTHKIT=1. See
+        # docs/operate/cgm-failover.md.
+        # >>> HEALTHKIT (stripped by scripts/generate-project.sh unless FABOLUS_HEALTHKIT=1)
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        # <<< HEALTHKIT
         # Automatic iCloud backup of app settings (Backup & restore) is OPT-IN for the same reason:
         # iCloud needs the paid Apple Developer Program. Default OFF: scripts/generate-project.sh strips
         # the block below AND the FABOLUS_ICLOUD compile flag unless FABOLUS_ICLOUD=1, so an unmodified
@@ -220,6 +224,12 @@ targets:
         # 09.18b (D-07): also read heart rate on demand as OPTIONAL chart context for the glucose detail
         # readout (never a dosing/meal input) — additive to the glucose read, never gating it.
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed (e.g. from xDrip4iOS or Eversense) when the pump's glucose is unavailable. faBolus may also read your heart rate to show it as optional chart context in the glucose detail readout — heart rate is never used for dosing."
+        # Phase 09.23 (D-10/D-13): write-out usage string for the bolus/carbs/insulin export feature,
+        # stripped in lockstep with the entitlement block above (same FABOLUS_HEALTHKIT tag, a second
+        # tagged block — strip_block handles multiple blocks per tag, same as DATA_PROTECTION's two).
+        # >>> HEALTHKIT (stripped by scripts/generate-project.sh unless FABOLUS_HEALTHKIT=1)
+        NSHealthUpdateUsageDescription: "faBolus can write your carb, insulin, and glucose entries to Apple Health so other apps and your clinic can see them. You choose which types to export."
+        # <<< HEALTHKIT
         # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
         # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
         LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
@@ -261,9 +271,9 @@ targets:
         # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
         # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # It also embeds the glucose complication extension (faBolusWatchWidgets) as a target dependency now
@@ -606,7 +616,10 @@ targets:
         # own copy of the flag here to compile in under the same opt-in. Dropped by the same
         # generate-project.sh `drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` default-OFF strip (scoped to
         # every SWIFT_ACTIVE_COMPILATION_CONDITIONS line in the spec, not just the app target's).
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+        # Phase 09.23 (D-13): same reasoning for FABOLUS_HEALTHKIT — HealthKitBuildGateGuardTests /
+        # CgmConfigSectionCopyGuardTests's `#if FABOLUS_HEALTHKIT`-gated members need this target's own
+        # copy of the flag to compile in under the same opt-in.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
 
 schemes:
   # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
