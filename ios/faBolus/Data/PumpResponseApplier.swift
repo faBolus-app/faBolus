@@ -183,6 +183,12 @@ final class PumpResponseApplier {
             withSnapshot { snap in
                 snap.cartridgeLoadState = m.loadStateId
                 snap.cartridgeLoadActive = m.isLoadingActive
+                // Guardrail B (debug pump-pairing-loop-api25 hardening): a genuine op-20 reply CONFIRMS the
+                // cartridge state, so `cartridgeReadiness` can report `.ready`/`.notReady` (a fact) instead
+                // of the fail-open `.unknown` default. On a pump that auto-excludes op-20 this line never
+                // runs, so readiness stays `.unknown` and the app discloses it relies on the pump's own
+                // protection rather than presenting confirmed-ready.
+                snap.cartridgeLoadStateConfirmed = true
             }
         case let m as ControlIQInfoV1Response:
             withSnapshot { snap in

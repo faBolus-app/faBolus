@@ -254,6 +254,15 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// tubing, 3 prime cannula, 4 prime nudge, 5 invalid, 6 unknown.
     public var cartridgeLoadState: Int = 6
     public var cartridgeLoadActive: Bool = false
+    /// Guardrail B (debug pump-pairing-loop-api25 hardening): whether `cartridgeLoadState` reflects a value
+    /// actually READ from the pump (op-20 `LoadStatusResponse`) vs the fail-open default (6). Mirrors
+    /// `basalRateKnown` (WR-03), which distinguishes a genuine 0 U/hr from "never read". Set true by
+    /// `PumpResponseApplier` on a real op-20 reply. When false the cartridge pre-check is UNKNOWN — e.g. on
+    /// a pump that auto-excludes op-20 (the API-2.5 t:slim X2) — and the app must NOT present a fail-open
+    /// "confirmed ready"; the dose path relies transparently on the pump's own rejection + the reservoir/
+    /// `possiblyOutOfInsulin` guard instead (see `cartridgeReadiness`). Display/gating input, never a dose
+    /// value.
+    public var cartridgeLoadStateConfirmed: Bool = false
     /// The single source of truth for "is the cartridge in a state where a bolus can be attempted?"
     /// (Phase 09.9 D-01). `false` while `cartridgeLoadState` is CHANGE_CARTRIDGE(0) / LOAD_CARTRIDGE(1) /
     /// PRIME_TUBING(2) — Tandem's own `getIsInLoadingState()` triad. PRIME_CANNULA(3)/PRIME_NUDGE(4) are
@@ -261,8 +270,30 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// Phase-11 bench-verification item). The idle/unknown default (6) allows, so a bolus is never
     /// blocked purely because the state hasn't been read yet. Every guard (BolusGate, TandemBackend,
     /// MockBackend) reads THIS property — the `{0,1,2}` set must never be re-declared at a call site.
-    public var cartridgeReadyForBolus: Bool { !Self.cartridgeLoadingStates.contains(cartridgeLoadState) }
+    /// Guardrail B: the dose-path BLOCK decision — allow unless the cartridge is in a CONFIRMED loading
+    /// state (0/1/2). It deliberately still ALLOWS the `.unknown` case (default 6 / op-20 auto-excluded) so
+    /// an op-20-excluded pump is NEVER permanently blocked from dosing; the pump's own rejection + the
+    /// reservoir/`possiblyOutOfInsulin` guard are the backstop there. For the CONFIRMED-ready PRESENTATION
+    /// (a UI/remote "ready" badge, or a safety-degraded disclosure), read `cartridgeReadiness` — never this
+    /// bool — so the fail-open default is never shown as a positive "ready" fact. Byte-identical block
+    /// behavior to before (`.notReady` ⇔ a loading state), so every existing pre-guard is unchanged.
+    public var cartridgeReadyForBolus: Bool { cartridgeReadiness != .notReady }
+
+    /// Guardrail B tri-state for the dose-path pre-guard + transparency UX:
+    ///  - `.notReady`: a CONFIRMED loading state (0/1/2) — the pre-guard BLOCKS (fail-closed).
+    ///  - `.ready`: a CONFIRMED non-loading state — safe to present as ready.
+    ///  - `.unknown`: op-20 never answered, or was auto-excluded on this pump — the pre-guard still ALLOWS
+    ///    (relying on the pump's own rejection + the reservoir guard), but the UI must disclose it is
+    ///    relying on the pump's own protection, never a fail-open "ready".
+    public var cartridgeReadiness: CartridgeReadiness {
+        if Self.cartridgeLoadingStates.contains(cartridgeLoadState) { return .notReady }
+        return cartridgeLoadStateConfirmed ? .ready : .unknown
+    }
     private static let cartridgeLoadingStates: Set<Int> = [0, 1, 2]
+    /// Guardrail B tri-state cartridge readiness (see `cartridgeReadiness`). `.unknown` distinguishes
+    /// "never read / auto-excluded" from a confirmed `.ready`, so a fail-open default is never presented as
+    /// a positive readiness fact.
+    public enum CartridgeReadiness: Sendable, Equatable { case ready, notReady, unknown }
     /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
     public var controlIQWeightLbs: Int = 0
     public var controlIQTotalDailyInsulin: Int = 0

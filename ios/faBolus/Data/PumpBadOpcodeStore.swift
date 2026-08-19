@@ -1,4 +1,5 @@
 import Foundation
+import TandemMessages
 
 /// Durable, PER-PUMP memory of the CURRENT_STATUS read opcodes a specific pump has rejected with an op77
 /// `ErrorResponse` (debug pump-pairing-loop-api25 refinement).
@@ -67,6 +68,13 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     /// stamp.
     func record(_ opcode: UInt8, for pumpKey: String, firmware: String?) {
         guard opcode != 0 else { return }
+        // Guardrail A (debug pump-pairing-loop-api25 hardening): defense-in-depth mirror of the op0 guard —
+        // never PERSIST a pure delivery/control-WRITE opcode. `PumpReadScheduler.insertBadOpcode` already
+        // refuses these before calling `persistBadOpcode`, so this is a second, independent choke point so a
+        // future direct caller of the durable store can never seed a delivery opcode that would later
+        // hydrate into `badOpcodes`. Read-colliding opcodes (op164/op144) are NOT in this set, so a
+        // legitimately-learned READ still persists.
+        guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {

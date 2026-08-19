@@ -76,6 +76,9 @@ struct DebugMenuView: View {
             // MARK: F7 — BLE-session log (in-memory ring buffer), read-only
             bleSessionLogSection
 
+            // MARK: Pump read exclusions + safety-degraded disclosure (debug pump-pairing-loop-api25 4a/4b)
+            pumpReadExclusionsSection
+
             Section("Alerts (raw)") {
                 Text(model.alertDebug.isEmpty ? "—" : model.alertDebug)
                     .font(.caption.monospaced()).textSelection(.enabled)
@@ -203,6 +206,46 @@ struct DebugMenuView: View {
             Text("BLE session log (last \(model.bleSessionLog.capacity))")
         } footer: {
             Text("In-memory only — connect/disconnect edges since launch, forgotten on restart. Never uploaded.")
+        }
+    }
+
+    /// Debug pump-pairing-loop-api25 transparency (4a/4b): surface the reads this pump has auto-excluded —
+    /// with human-readable names via the shared `PumpReadCatalog` (accurate now that mechanism B records the
+    /// TRUE failing opcode) — plus the confirmed/unknown cartridge pre-check state (Guardrail B) and a
+    /// user-facing safety-degraded note whenever a SAFETY-relevant read (the op-20 cartridge pre-check) is
+    /// unavailable. Ungated on-screen like the "Live snapshot" rows above (local device state, no PHI); the
+    /// same content flows into the opt-in-gated diagnostics export via `CapabilityDiagnostics.section`.
+    @ViewBuilder private var pumpReadExclusionsSection: some View {
+        let excluded = model.badOpcodesForDiagnostics
+        let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: excluded)
+        Section {
+            if excluded.isEmpty {
+                row("Rejected reads", "none")
+            } else {
+                ForEach(excluded.sorted(), id: \.self) { op in
+                    row(PumpReadCatalog.readName(for: op), "op-\(op)")
+                }
+            }
+            row("Cartridge pre-check", cartridgeReadinessLabel(model.snapshot.cartridgeReadiness))
+            ForEach(notes, id: \.self) { note in
+                Label(note, systemImage: "exclamationmark.shield")
+                    .font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
+            }
+        } header: {
+            Text("Pump read exclusions")
+        } footer: {
+            Text("Reads this pump rejected and the app has stopped sending (learned per pump). When a "
+                 + "safety-relevant read like the cartridge pre-check is unavailable, faBolus relies on the "
+                 + "pump's own protection for that check.")
+        }
+    }
+
+    /// Human-readable label for the Guardrail B tri-state cartridge readiness (4b).
+    private func cartridgeReadinessLabel(_ readiness: PumpSnapshot.CartridgeReadiness) -> String {
+        switch readiness {
+        case .ready:    return "ready (confirmed)"
+        case .notReady: return "not ready — cartridge change/load in progress"
+        case .unknown:  return "unknown — relying on the pump's own protection"
         }
     }
 

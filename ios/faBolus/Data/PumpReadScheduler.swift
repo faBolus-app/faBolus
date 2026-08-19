@@ -153,6 +153,15 @@ final class PumpReadScheduler {
     /// opcode; `resolveErrorResponse` never resolves to it, and this guard is the belt-and-suspenders.
     func insertBadOpcode(_ opcode: UInt8) {
         guard opcode != 0 else { return }
+        // Guardrail A (debug pump-pairing-loop-api25 hardening): the never-resend set governs ONLY
+        // CURRENT_STATUS reads (`sendStatusRead`). It must NEVER hold a pure delivery/control-WRITE opcode —
+        // otherwise an op77 whose cargo NAMES a delivery command (`resolveErrorResponse`'s `named` path)
+        // could record e.g. InitiateBolus here. `PumpReadCatalog.deliveryControlWriteOpcodes` deliberately
+        // EXCLUDES read-colliding opcodes (op164/op144), so a colliding READ still self-heals; the
+        // `.control` delivery path never consults this set, so this guard removes the only way a delivery
+        // opcode could ever enter it. Belt-and-suspenders with the same guard in `startPolling`'s hydration
+        // union and `PumpBadOpcodeStore.record`.
+        guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
         badOpcodes.insert(opcode)
         persistBadOpcode(opcode)
     }
@@ -566,7 +575,10 @@ final class PumpReadScheduler {
         // is skipped from the very first `fastRead()` below (one-drop-ever; no re-drop after a relaunch). A
         // union (not a replace) so an opcode learned in-memory earlier this session is preserved too, and so
         // a pump that supports op20 (empty persisted set) keeps polling it and keeps its pre-guard live.
-        badOpcodes.formUnion(loadPersistedBadOpcodes())
+        // Guardrail A (hardening): filter the hydrated set so a foreign/legacy persisted delivery/control-
+        // WRITE opcode can never be unioned straight into `badOpcodes` here (this union bypasses
+        // `insertBadOpcode`'s guard) — the never-resend set stays reads-only by construction.
+        badOpcodes.formUnion(loadPersistedBadOpcodes().subtracting(PumpReadCatalog.deliveryControlWriteOpcodes))
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()
