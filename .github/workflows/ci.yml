@@ -134,6 +134,17 @@ jobs:
         working-directory: repos/faBolus
         run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 
+      # Align CI to the toolchain the team develops/ships on (Xcode 26.x / Swift 6.2). The runner's
+      # default was Xcode 16.4 (Swift 6.1), whose region-isolation ("sending") checker has known
+      # false-positives that 6.2 relaxed — a source of local-green/CI-red divergence. Self-adjusting:
+      # picks the newest installed Xcode and prints the inventory so a missing 26.x is visible.
+      - name: Select newest available Xcode (align to dev toolchain — Swift 6.2)
+        run: |
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          echo "Selected Xcode:"; xcodebuild -version
+
       - name: Build iOS app (Simulator, signing off)
         working-directory: repos/faBolus
         run: |
