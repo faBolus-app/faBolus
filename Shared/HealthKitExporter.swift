@@ -38,9 +38,17 @@ final class HealthKitExporter {
     private let unitsUnit = HKUnit.internationalUnit()
     private let gramUnit = HKUnit.gram()
     private let mgdlUnit = HKUnit(from: "mg/dL")
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
 
-    init() {}
+    init() { d = .standard }
+
+    #if DEBUG
+    /// Test seam (WR-01): inject an isolated `UserDefaults` suite so a test can exercise the
+    /// per-type high-water-mark seeding/dedup logic in isolation, without polluting the real
+    /// `UserDefaults.standard` a production instance reads/writes (mirrors `AppSettings
+    /// (defaults:)`'s injectable-suite idiom). Production never calls this.
+    init(defaults: UserDefaults) { d = defaults }
+    #endif
 
     /// Additively request WRITE (share) access to exactly the given type(s) — never a read type.
     /// Requested lazily on each export attempt (not a persisted one-shot guard, so a permission that
@@ -127,8 +135,14 @@ final class HealthKitExporter {
 
     /// D-12a: writes ONLY carb entries newer than the carb high-water mark, advancing the mark to
     /// the newest exported entry on any success (mirrors `NightscoutUploader.run`'s "filter-newer,
-    /// advance-on-success" shape).
+    /// advance-on-success" shape). WR-01: on the type's very first-ever auto-export cycle (mark
+    /// still unset), seeds the mark to "now" and exports nothing THIS cycle — see
+    /// `firstCycleSeedMark`.
     func exportNewCarbs(_ candidates: [(date: Date, grams: Double)]) async {
+        if let seed = Self.firstCycleSeedMark(currentMark: lastCarbExportEpoch) {
+            lastCarbExportEpoch = seed
+            return
+        }
         let (kept, newMark) = Self.newerThanMark(candidates, mark: lastCarbExportEpoch) { $0.date.timeIntervalSince1970 }
         guard !kept.isEmpty else { return }
         var anySucceeded = false
@@ -139,8 +153,13 @@ final class HealthKitExporter {
     }
 
     /// D-12a: writes ONLY bolus markers newer than the insulin high-water mark, advancing the mark
-    /// on any success. Same shape as `exportNewCarbs`, driving the Wave 1 `exportBolus` writer.
+    /// on any success. Same shape as `exportNewCarbs` (incl. the WR-01 first-cycle seed), driving
+    /// the Wave 1 `exportBolus` writer.
     func exportNewInsulin(_ candidates: [BolusMarker]) async {
+        if let seed = Self.firstCycleSeedMark(currentMark: lastInsulinExportEpoch) {
+            lastInsulinExportEpoch = seed
+            return
+        }
         let (kept, newMark) = Self.newerThanMark(candidates, mark: lastInsulinExportEpoch) { $0.date.timeIntervalSince1970 }
         guard !kept.isEmpty else { return }
         var anySucceeded = false
@@ -151,8 +170,12 @@ final class HealthKitExporter {
     }
 
     /// D-12a: writes ONLY glucose readings newer than the glucose high-water mark, advancing the
-    /// mark on any success. Same shape as `exportNewCarbs`.
+    /// mark on any success. Same shape as `exportNewCarbs` (incl. the WR-01 first-cycle seed).
     func exportNewGlucose(_ candidates: [GlucoseReading]) async {
+        if let seed = Self.firstCycleSeedMark(currentMark: lastGlucoseExportEpoch) {
+            lastGlucoseExportEpoch = seed
+            return
+        }
         let (kept, newMark) = Self.newerThanMark(candidates, mark: lastGlucoseExportEpoch) { $0.date.timeIntervalSince1970 }
         guard !kept.isEmpty else { return }
         var anySucceeded = false
@@ -243,5 +266,19 @@ final class HealthKitExporter {
         let kept = candidates.filter { epoch($0) > mark }
         let newMark = kept.map(epoch).max() ?? mark
         return (kept, newMark)
+    }
+
+    // MARK: - WR-01: go-forward-only guard for a type's first-ever auto-export cycle — unit-testable
+    // without the entitlement, same PURE `nonisolated static` shape as `newerThanMark`.
+
+    /// `UserDefaults.double(forKey:)`'s unset default is `0`, which `newerThanMark` would otherwise
+    /// read as "every existing entry is newer than the mark" — silently backfilling a type's ENTIRE
+    /// history the first time its auto-export toggle is enabled (WR-01: auto-export must be
+    /// go-forward only per D-12; historical backfill is the explicit MANUAL `exportHistorical*`
+    /// action). Returns the value to seed the mark to (== `now`, exporting nothing this cycle) when
+    /// `currentMark` is still at that unset default; returns `nil` when a real mark already exists
+    /// (a later cycle), so the caller falls through to `newerThanMark` as normal.
+    nonisolated static func firstCycleSeedMark(currentMark: Double, now: Double = Date().timeIntervalSince1970) -> Double? {
+        currentMark == 0 ? now : nil
     }
 }

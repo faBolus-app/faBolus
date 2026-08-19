@@ -86,6 +86,50 @@ struct HealthKitExporterTests {
         #expect(newMark == mark)
     }
 
+    // MARK: - WR-01: first-ever auto-export cycle seeds the mark to "now" instead of treating the
+    // unset default (0) as "everything is newer" — go-forward only, no silent backfill.
+
+    @Test func firstCycleSeedMarkSeedsToNowOnlyWhenTheMarkIsStillUnset() {
+        let now: Double = 2_000_000_000
+        #expect(HealthKitExporter.firstCycleSeedMark(currentMark: 0, now: now) == now,
+                "an unset (0) mark means this type has never auto-exported — seed to now")
+        #expect(HealthKitExporter.firstCycleSeedMark(currentMark: 1_000, now: now) == nil,
+                "a real, already-persisted mark means this is NOT the first cycle")
+    }
+
+    @Test func exportNewCarbsOnFirstCycleSeedsTheMarkWithoutExportingPreExistingHistory() async {
+        let suiteName = "HealthKitExporterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let exporter = HealthKitExporter(defaults: defaults)
+
+        // A "pre-existing" carb entry logged long before the export toggle was ever enabled — must
+        // NOT be exported on the very first auto-export cycle (WR-01: go-forward only; historical
+        // backfill is the explicit MANUAL `exportHistoricalCarbs` action, per D-12).
+        let preExisting = (date: Date(timeIntervalSince1970: 1_000), grams: 30.0)
+        #expect(defaults.double(forKey: "hk.export.lastCarbEpoch") == 0, "precondition: mark starts unset")
+
+        await exporter.exportNewCarbs([preExisting])
+
+        let seededMark = defaults.double(forKey: "hk.export.lastCarbEpoch")
+        #expect(seededMark > preExisting.date.timeIntervalSince1970,
+                "the mark must seed to ~now (not stay unset, and not adopt the pre-existing entry's epoch)")
+    }
+
+    @Test func exportNewInsulinAndGlucoseAlsoSeedOnFirstCycleWithoutExporting() async {
+        let suiteName = "HealthKitExporterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let exporter = HealthKitExporter(defaults: defaults)
+
+        let oldDate = Date(timeIntervalSince1970: 1_000)
+        await exporter.exportNewInsulin([BolusMarker(date: oldDate, units: 2.4)])
+        await exporter.exportNewGlucose([GlucoseReading(date: oldDate, mgdl: 130)])
+
+        #expect(defaults.double(forKey: "hk.export.lastInsulinEpoch") > oldDate.timeIntervalSince1970)
+        #expect(defaults.double(forKey: "hk.export.lastGlucoseEpoch") > oldDate.timeIntervalSince1970)
+    }
+
     // MARK: - Behavior 4: echo closure — an exporter-built carb/glucose sample is dropped by the
     // importer's echo-guard filter (uses the same shared origin constant)
 
