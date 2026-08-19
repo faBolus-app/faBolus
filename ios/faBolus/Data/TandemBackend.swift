@@ -558,7 +558,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// right after `super.init()`, since Swift's two-phase init forbids a `[weak self]`-capturing
     /// closure inside the very expression that constructs the property holding it.
     private func wireReadScheduler() {
-        readScheduler.send = { [weak self] msg in try self?.client.send(msg) }
+        // Route through `tx` (== `client` in production, since `injectedTransport` is nil — so this is
+        // byte-identical to the prior `client.send(msg)`: same default authKey/pumpTimeSinceReset/no
+        // -delivery args) so the read's wire txId is captured for mechanism-B op77 correlation (debug
+        // pump-pairing-loop-api25). Under test `tx` is the injected `FakePumpTransport`, which yields an
+        // observable txId and records the send.
+        readScheduler.send = { [weak self] msg in
+            try self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false) ?? 0
+        }
         readScheduler.isConnected = { [weak self] in self?.snapshot.connection == .connected }
         readScheduler.pumpTimeAnchor = { [weak self] in self?.pumpTimeAnchor }
         readScheduler.onStartPollingCycleBegin = { [weak self] in self?.responseApplier.resetCycleState() }
@@ -587,6 +594,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.schedulePredictiveBurst = { [weak self] date in self?.readScheduler.schedulePredictiveBurst(afterReadingAt: date) }
         responseApplier.cgmReadingDate = { [weak self] pumpSec, now in self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now) ?? now }
         responseApplier.insertBadOpcode = { [weak self] opcode in self?.readScheduler.insertBadOpcode(opcode) }
+        // Mechanism B (debug pump-pairing-loop-api25): resolve an inbound op77 to the true failing
+        // opcode (cargo requestCodeId when named, else the outstanding read correlated by echoed txId /
+        // FIFO), record it in `badOpcodes`, and return it for the standing diagnostic log line.
+        responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, txId in
+            self?.readScheduler.resolveErrorResponse(requestCodeId: requestCodeId, txId: txId)
+                ?? UInt8(truncatingIfNeeded: requestCodeId)
+        }
         responseApplier.beginGapSync = { [weak self] first, last in self?.beginGapSync(pumpFirst: first, pumpLast: last) }
         responseApplier.isBackfillActive = { [weak self] in self?.backfillActive ?? false }
         responseApplier.appendHistoryStreamFrame = { [weak self] m in
@@ -1364,7 +1378,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     public func refreshLoadStatus() async {
         guard snapshot.connection == .connected else { return }
-        try? client.send(LoadStatusRequest())          // reply handled in didReceiveFrame
+        // Debug pump-pairing-loop-api25: op20 LoadStatus is gated OUT of `fastRead()`'s pre-capability
+        // burst (mechanism A); this on-demand path keeps the capability. Routed through the scheduler's
+        // guarded send (not a bare `client.send`) so it honours the `badOpcodes` never-resend guard and
+        // records the read for op77 correlation (mechanism B). Reply handled in didReceiveFrame.
+        readScheduler.sendOnDemandRead(LoadStatusRequest())
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
@@ -2194,7 +2212,9 @@ extension TandemBackend: PumpBLEClientDelegate {
         // moved verbatim into `PumpResponseApplier` — see that type for the per-case fix-cycle doc-comment
         // history. This delegate keeps ONLY the `.authorization` CRC gate + `ResponseParser.parse`
         // boundary + the historyLog-unparseable error branch above, byte-identical.
-        responseApplier.apply(parsed.message)
+        // `parsed.txId` (frame[1]) is threaded through for the op77 correlation backstop — the pump
+        // echoes the failing request's txId there (debug pump-pairing-loop-api25, mechanism B).
+        responseApplier.apply(parsed.message, txId: parsed.txId)
         onChange?()
     }
 

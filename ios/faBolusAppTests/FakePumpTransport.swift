@@ -50,12 +50,19 @@ final class FakePumpTransport: PumpTransport {
         return try await body()
     }
 
+    /// Incrementing wire txId, mirroring the real `PumpBLEClient`'s `txIds.nextThenIncrement()`. Lets a
+    /// test exercise the op77 txId-echo correlation (debug pump-pairing-loop-api25, mechanism B): a read's
+    /// returned txId is what the pump echoes back in an inbound frame's frame[1].
+    private var nextTxId: UInt8 = 0
+
     @discardableResult
     func send(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
               allowInsulinDelivery: Bool) throws -> UInt8 {
         if let e = preWriteError[message.opCode] { throw e }
         sent.append((message.opCode, message.cargo, message.signed, allowInsulinDelivery))
-        return 0
+        let txId = nextTxId
+        nextTxId = nextTxId &+ 1
+        return txId
     }
 
     func sendAwaitingResponse(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,

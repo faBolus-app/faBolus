@@ -64,6 +64,15 @@ final class PumpResponseApplier {
     var cgmReadingDate: (UInt32, Date) -> Date = { _, now in now }
     /// Bound to `readScheduler.insertBadOpcode(_:)`.
     var insertBadOpcode: (UInt8) -> Void = { _ in }
+    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)` (debug pump-pairing-loop-api25,
+    /// mechanism B). Resolves an inbound op77 `ErrorResponse` to the TRUE failing opcode — the cargo's
+    /// `requestCodeId` when the pump names it, else the outstanding read correlated by the echoed txId
+    /// (frame[1]) or in-order FIFO — records it in the never-resend `badOpcodes` set, and returns it for
+    /// the standing diagnostic log line (0 when unresolvable, so opcode 0 is never suppressed). The
+    /// default is the pre-mechanism-B behavior (trust the cargo), used only before wiring.
+    var resolveBadOpcodeForError: (_ requestCodeId: Int, _ txId: UInt8) -> UInt8 = { requestCodeId, _ in
+        UInt8(truncatingIfNeeded: requestCodeId)
+    }
     /// Bound to `TandemBackend.beginGapSync(pumpFirst:pumpLast:)`.
     var beginGapSync: (UInt32, UInt32) -> Void = { _, _ in }
     /// Bound to `{ backfillActive }`.
@@ -139,8 +148,10 @@ final class PumpResponseApplier {
 
     /// Apply one already-parsed, non-pairing pump message (D-07). `TandemBackend.didReceiveFrame` calls
     /// this with `parsed.message` after its `.authorization` CRC gate + `ResponseParser.parse` boundary —
-    /// both stay there, untouched.
-    func apply(_ message: Message) {
+    /// both stay there, untouched. `txId` is `parsed.txId` (frame[1]); consumed only by the op77
+    /// `ErrorResponse` correlation backstop (debug pump-pairing-loop-api25, mechanism B) and ignored by
+    /// every other case.
+    func apply(_ message: Message, txId: UInt8) {
         switch message {
         case let m as ControlIQIOBResponse:
             withSnapshot { snap in
@@ -340,14 +351,20 @@ final class PumpResponseApplier {
             // SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the
             // pump replies with this when it rejects a request (e.g. BAD_OPCODE for an unsupported
             // opcode) — previously silently discarded by `default: break`, which is exactly why the
-            // pump's own explanation for the teardown that followed was invisible on-device. PHI-safe:
-            // requestCodeId/errorCodeId are protocol tokens (an opcode 0-255 and a small error-code
-            // enum ordinal), never payload/PHI. Logged PERMANENTLY (standing diagnostic, not
-            // debug-session scaffolding) so any FUTURE unsupported-opcode rejection on any pump is
-            // immediately visible, not just this session's op192 case.
-            let badOpcode = UInt8(truncatingIfNeeded: m.requestCodeId)
-            insertBadOpcode(badOpcode)
-            Self.pairingLog.log("pump error ← requestOpcode=\(badOpcode, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
+            // pump's own explanation for the teardown that followed was invisible on-device.
+            //
+            // EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`, mechanism B): the op192
+            // case named the failing opcode in the cargo (`requestCodeId != 0`), but the API-2.5 t:slim
+            // X2 answers an unsupported currentStatus read with a size-2 cargo of `[0,0]` — NO opcode —
+            // so the old `insertBadOpcode(m.requestCodeId)` recorded the useless opcode 0 and the read
+            // was re-sent every reconnect (the loop). `resolveBadOpcodeForError` recovers the true opcode
+            // by correlating the error to the outstanding read (echoed request txId in frame[1], else
+            // in-order FIFO) so the never-resend guard actually suppresses it — and never records opcode
+            // 0. PHI-safe: requestCodeId/errorCodeId/txId are protocol tokens, never payload/PHI. Logged
+            // PERMANENTLY (standing diagnostic) so any future unsupported-opcode rejection on any pump is
+            // immediately visible.
+            let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
+            Self.pairingLog.log("pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
         case let m as PumpFeaturesV1Response:
             // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
             // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it

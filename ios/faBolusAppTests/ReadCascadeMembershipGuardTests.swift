@@ -9,9 +9,10 @@ import TandemBLE
 ///
 /// - B1: `PumpPairingPostPairBootstrapOrderTests`/`PumpEgvPollTests` already pin the bootstrap-trio-FIRST
 ///   invariant and total dispatch COUNTS (17 / 14), but never assert the exact ordered MEMBERSHIP of
-///   `fastRead()` (7)/`alertRead()` (5)/`staticRead()` (7) — a reorder or silent drop inside a tier could
+///   `fastRead()` (6)/`alertRead()` (5)/`staticRead()` (7) — a reorder or silent drop inside a tier could
 ///   still slip through a count-only check. This suite pins the exact ordered list per tier, split into
 ///   trio/fast/static/alert segments, straight from `TandemBackend.swift:314-318,1708-1736`.
+///   (fastRead dropped op20 `LoadStatusRequest` to 6 — debug pump-pairing-loop-api25, mechanism A.)
 /// - B2: the recurring `pollTimer` tick's cadence gating (alerts every tick, fast on `tick%4`, static on
 ///   `tick%40`, `:1874-1878`) had NO guard at all — the existing
 ///   `simulateRecurringFastAndStaticReadTickForTesting()` seam calls `fastRead()`/`staticRead()` directly,
@@ -30,9 +31,12 @@ struct ReadCascadeMembershipGuardTests {
     // MARK: - Exact ordered tier membership (B1)
 
     private static let bootstrapTrio = ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"]
+    // Debug pump-pairing-loop-api25 (mechanism A): op20 `LoadStatusRequest` was removed from `fastRead()`
+    // (the API-2.5 t:slim X2 rejects it in the pre-capability burst) — the tier is now 6, reachable
+    // on-demand via `refreshLoadStatus()`. See `PumpUnsupportedReadSelfHealTests`.
     private static let fastReadTier = [
         "ControlIQIOBRequest", "CurrentEGVGuiDataRequest", "InsulinStatusRequest", "LastBolusStatusV2Request",
-        "CurrentBatteryV2Request", "HomeScreenMirrorRequest", "LoadStatusRequest",
+        "CurrentBatteryV2Request", "HomeScreenMirrorRequest",
     ]
     private static let staticReadTier = [
         "CurrentBasalStatusRequest", "BolusCalcDataSnapshotRequest", "TimeSinceResetRequest",
@@ -43,10 +47,11 @@ struct ReadCascadeMembershipGuardTests {
         "MalfunctionStatusRequest",
     ]
 
-    /// `startPollingForTesting()` dispatches, synchronously: the bootstrap trio, then fastRead's 7, then
-    /// staticRead's 7 (17 total) — then, after `alertReadDelaySecForTesting`, alertRead's 5 (22 total).
+    /// `startPollingForTesting()` dispatches, synchronously: the bootstrap trio, then fastRead's 6, then
+    /// staticRead's 7 (16 total) — then, after `alertReadDelaySecForTesting`, alertRead's 5 (21 total).
     /// This is the FULL exact-membership pin gap B1 asks for — a stronger check than the existing
-    /// count-only (17) + prefix(3)/[3] assertions in `PumpPairingPostPairBootstrapOrderTests`.
+    /// count-only (16) + prefix(3)/[3] assertions in `PumpPairingPostPairBootstrapOrderTests`.
+    /// (fastRead dropped op20 to 6 — debug pump-pairing-loop-api25, mechanism A.)
     @Test func startPollingDispatchesTheExactOrderedTrioThenFastThenStaticThenAlert() async {
         let b = backend()
         b.alertReadDelaySecForTesting = 0.05
@@ -54,14 +59,14 @@ struct ReadCascadeMembershipGuardTests {
         b.onReadDispatchedForTesting = { typeName, _ in dispatched.append(typeName) }
         b.startPollingForTesting()
 
-        #expect(dispatched.count == 17, "trio (3) + fastRead (7) + staticRead (7) must be synchronous")
+        #expect(dispatched.count == 16, "trio (3) + fastRead (6) + staticRead (7) must be synchronous")
         #expect(Array(dispatched[0..<3]) == Self.bootstrapTrio, "bootstrap trio must be first, in this exact order")
-        #expect(Array(dispatched[3..<10]) == Self.fastReadTier, "fastRead's 7 must follow, in this exact order")
-        #expect(Array(dispatched[10..<17]) == Self.staticReadTier, "staticRead's 7 must follow, in this exact order")
+        #expect(Array(dispatched[3..<9]) == Self.fastReadTier, "fastRead's 6 must follow, in this exact order")
+        #expect(Array(dispatched[9..<16]) == Self.staticReadTier, "staticRead's 7 must follow, in this exact order")
 
         try? await Task.sleep(nanoseconds: 200_000_000)   // let the delayed alertRead() burst land
-        #expect(dispatched.count == 22, "alertRead's 5 must follow after the alert-read delay")
-        #expect(Array(dispatched[17..<22]) == Self.alertReadTier, "alertRead's 5 must be in this exact order")
+        #expect(dispatched.count == 21, "alertRead's 5 must follow after the alert-read delay")
+        #expect(Array(dispatched[16..<21]) == Self.alertReadTier, "alertRead's 5 must be in this exact order")
     }
 
     /// `simulateRecurringFastAndStaticReadTickForTesting()` calls `fastRead()`/`staticRead()` directly with
@@ -72,9 +77,9 @@ struct ReadCascadeMembershipGuardTests {
         b.onReadDispatchedForTesting = { typeName, _ in dispatched.append(typeName) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
 
-        #expect(dispatched.count == 14, "fastRead (7) + staticRead (7), no bootstrap trio")
-        #expect(Array(dispatched[0..<7]) == Self.fastReadTier, "fastRead's 7 must be in this exact order")
-        #expect(Array(dispatched[7..<14]) == Self.staticReadTier, "staticRead's 7 must be in this exact order")
+        #expect(dispatched.count == 13, "fastRead (6) + staticRead (7), no bootstrap trio")
+        #expect(Array(dispatched[0..<6]) == Self.fastReadTier, "fastRead's 6 must be in this exact order")
+        #expect(Array(dispatched[6..<13]) == Self.staticReadTier, "staticRead's 7 must be in this exact order")
         #expect(dispatched.first != "ApiVersionRequest",
                 "no bootstrap-trio prepend — the first dispatch must be fastRead's own ControlIQIOBRequest")
     }

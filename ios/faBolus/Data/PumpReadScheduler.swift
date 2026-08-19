@@ -32,8 +32,10 @@ final class PumpReadScheduler {
 
     // MARK: - Injected seams (settable post-construction, D-04 hook pattern)
 
-    /// Bound to `client.send` (byte-identical wire path — this scheduler never touches BLE directly).
-    var send: (Message) throws -> Void = { _ in }
+    /// Bound to `client.send` via `tx` (byte-identical wire path — this scheduler never touches BLE
+    /// directly). Returns the wire txId so `sendStatusRead` can correlate an opcode-less op77
+    /// `ErrorResponse` back to the read that provoked it (debug pump-pairing-loop-api25, mechanism B).
+    var send: (Message) throws -> UInt8 = { _ in 0 }
     /// Bound to `snapshot.connection == .connected`.
     var isConnected: () -> Bool = { false }
     /// Bound to `pumpTimeAnchor` (the phone↔pump clock anchor TandemBackend owns).
@@ -95,8 +97,14 @@ final class PumpReadScheduler {
         }
         var sent = false
         do {
-            try send(message)
+            let txId = try send(message)
             Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=sent")
+            // Mechanism B (debug pump-pairing-loop-api25): remember this read's wire txId so an
+            // opcode-less op77 `ErrorResponse` (real 2-byte currentStatus cargo `[0,0]` on this
+            // API-2.5 t:slim X2) can be correlated back to the read that provoked it — see
+            // `resolveErrorResponse`. Only recorded on a genuine send (never on a throw), so a
+            // never-sent read can't poison the correlation.
+            recordOutstandingRead(txId: txId, opcode: opcode)
             sent = true
         } catch {
             Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=threw")
@@ -121,6 +129,64 @@ final class PumpReadScheduler {
     /// Feed for the `ErrorResponse` delegate case (which stays in `TandemBackend` this wave) — records an
     /// opcode the pump has just rejected so `sendStatusRead()` never re-sends it this connection-lifetime.
     func insertBadOpcode(_ opcode: UInt8) { badOpcodes.insert(opcode) }
+
+    // MARK: - op77 correlation backstop (debug pump-pairing-loop-api25, mechanism B)
+    //
+    // The op192-era `badOpcodes` backstop assumed an inbound op77 `ErrorResponse` names the failing
+    // opcode in its cargo. It does for BAD_OPCODE (errorCodeId 6, requestCodeId = the opcode), but the
+    // API-2.5 non-Control-IQ t:slim X2 answers an unsupported currentStatus read (op20 LoadStatus, and
+    // possibly op40/op114/op178/op138) with a size-2 cargo of `[0,0]` — errorCode UNDEFINED_ERROR, NO
+    // opcode — then tears the BLE link down. Trusting that empty cargo records opcode 0 (useless), so the
+    // read is re-sent every reconnect → the loop. The true opcode is recoverable only by CORRELATION: the
+    // pump echoes the request txId in the inbound frame's frame[1] (kit's hardware-confirmed t:slim
+    // behavior), or, failing that, by in-order FIFO of the reads still outstanding this connection.
+
+    /// Reads sent this connection whose (non-error) reply may still be outstanding, most-recent last.
+    /// Deduped by opcode (an opcode re-sent refreshes its txId), so it stays bounded to the ~20 distinct
+    /// reads. Cleared at each fresh `startPolling()` cycle. NOT the `badOpcodes` set — this is the
+    /// transient in-flight map the op77 correlation consults, not the durable never-resend proof.
+    private var outstandingReads: [(txId: UInt8, opcode: UInt8)] = []
+    private func recordOutstandingRead(txId: UInt8, opcode: UInt8) {
+        outstandingReads.removeAll { $0.opcode == opcode }
+        outstandingReads.append((txId: txId, opcode: opcode))
+    }
+
+    /// Resolve an inbound op77 `ErrorResponse` to the TRUE failing opcode, record it in the never-resend
+    /// `badOpcodes` set, and RETURN it for the caller's standing diagnostic log line.
+    /// - When the cargo names the opcode (`requestCodeId != 0`, e.g. the op192 BAD_OPCODE case) that
+    ///   value is authoritative and used directly.
+    /// - When the cargo is opcode-less (`requestCodeId == 0`, the `[0,0]` currentStatus variant this
+    ///   firmware sends), correlate to the outstanding read: PRIMARY via the echoed request txId
+    ///   (frame[1]); FALLBACK to the oldest outstanding read (in-order FIFO).
+    /// Returns 0 only when nothing can be correlated — so opcode 0 (the empty-cargo artifact) is never
+    /// what gets suppressed.
+    @discardableResult
+    func resolveErrorResponse(requestCodeId: Int, txId: UInt8) -> UInt8 {
+        let named = UInt8(truncatingIfNeeded: requestCodeId)
+        let resolved: UInt8
+        if named != 0 {
+            resolved = named
+        } else if let byTxId = outstandingReads.last(where: { $0.txId == txId })?.opcode {
+            resolved = byTxId
+        } else if let oldest = outstandingReads.first?.opcode {
+            resolved = oldest
+        } else {
+            resolved = 0
+        }
+        if resolved != 0 {
+            badOpcodes.insert(resolved)
+            outstandingReads.removeAll { $0.opcode == resolved }
+        }
+        return resolved
+    }
+
+    /// On-demand single status read (e.g. the pump wizard's `refreshLoadStatus()`), routed through the
+    /// same guarded `sendStatusRead()` as the tiered polls so it (a) honours the `badOpcodes` never-resend
+    /// guard, (b) is observable via `onReadDispatchedForTesting`/`onReadSkippedForTesting`, and (c) records
+    /// the outstanding read for the op77 correlation above. Mechanism A (debug pump-pairing-loop-api25)
+    /// moved op20 LoadStatus OUT of `fastRead()`'s pre-capability burst; this path keeps the capability.
+    @discardableResult
+    func sendOnDemandRead(_ message: Message) -> Bool { sendStatusRead(message) }
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { badOpcodes }
     /// Production read accessor for the `[Capability/opcode]` diagnostics section — mirrors
@@ -260,8 +326,8 @@ final class PumpReadScheduler {
             calcInputGotTherapy = false
             calcInputReadGeneration &+= 1
             let gen = calcInputReadGeneration
-            try? send(BolusCalcDataSnapshotRequest())
-            try? send(ControlIQIOBRequest())
+            _ = try? send(BolusCalcDataSnapshotRequest())
+            _ = try? send(ControlIQIOBRequest())
             // Safety timeout so a silent pump never hangs the compose. Tagged by generation, so a stale
             // timeout whose read already completed is a no-op.
             DispatchQueue.main.asyncAfter(deadline: .now() + calcInputRefreshTimeout) { [weak self] in
@@ -331,10 +397,23 @@ final class PumpReadScheduler {
     ///
     /// HomeScreenMirrorRequest belongs in the fast tier: it carries the pump's own CGM trend icon
     /// (C8 — the authoritative arrow), so it has to stay as fresh as the glucose value it annotates.
+    ///
+    /// EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`, mechanism A): op20
+    /// `LoadStatusRequest` is NO LONGER in this pre-capability post-pair burst. On the API-2.5,
+    /// non-Control-IQ t:slim X2 (sw 2.5) the pump answers op20 (position 10 of the burst) with an op77
+    /// `ErrorResponse` whose real 2-byte currentStatus cargo is `[0,0]` (no opcode) and then tears the
+    /// BLE link down ~90 ms later — the reconnect loop. op20 has `minApi=none` in the oracle (the pump
+    /// is proven ≥ API_V2_5 by op164/op144 succeeding), so there is NO version signal to gate it on;
+    /// like op192 before it, the fix is simply to NOT send it in the fatal pre-capability burst. The
+    /// cartridge load-state capability is NOT lost — it stays reachable via the dedicated on-demand
+    /// `TandemBackend.refreshLoadStatus()` (`sendOnDemandRead`), used by the pump wizard. The mechanism-B
+    /// op77 correlation backstop (`resolveErrorResponse`) covers op20 AND any op40/op114/op178/op138 that
+    /// this firmware might also reject (unobservable from the capture, since the link tears down after the
+    /// first error) — so the loop self-heals for the general case, not just op20.
     private func fastRead() {
         for r: Message in [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
                            InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           HomeScreenMirrorRequest(), LoadStatusRequest()] {
+                           HomeScreenMirrorRequest()] {
             sendStatusRead(r)
         }
     }
@@ -444,6 +523,10 @@ final class PumpReadScheduler {
         // doc comment) recognizes it's stale and no-ops, instead of injecting `alertRead()`'s messages
         // ahead of this cycle's own bootstrap trio.
         pollCycleGeneration += 1
+        // Fresh connection cycle: drop any op77-correlation in-flight map from a prior cycle (unlike the
+        // durable `badOpcodes` set, this transient map must not survive a reconnect — debug
+        // pump-pairing-loop-api25, mechanism B).
+        outstandingReads.removeAll()
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()

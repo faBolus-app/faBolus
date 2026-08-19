@@ -305,17 +305,22 @@ struct TandemDeliveryOutcomeTests {
         #expect(fake.initiateWriteCount == 0)
     }
 
-    /// Freshness (RESEARCH Pitfall 1): `LoadStatusRequest` must be part of the routine fast-poll tier
-    /// (`fastRead()`), not only the on-demand wizard refresh — proven behaviorally via the
-    /// `onReadDispatchedForTesting` seam (mirrors `PumpPairingInstrumentationTests`' technique) so the
-    /// gate reads a value the pump actually keeps current during normal operation.
-    @Test func loadStatusRequestIsPartOfTheRoutineFastPollTier() {
+    /// Debug pump-pairing-loop-api25 (mechanism A) CONSCIOUSLY REVERSES the prior Phase-09.9 invariant
+    /// (which required `LoadStatusRequest` in the routine fast-poll tier): op20 is the read the API-2.5
+    /// t:slim X2 rejects in the pre-capability post-pair burst — answering it with an opcode-less op77 and
+    /// tearing the BLE link down — so it must NOT ride the routine fast/static tiers. The cartridge
+    /// load-state capability is not lost: it stays reachable via the on-demand `refreshLoadStatus()` path
+    /// (pinned in `PumpUnsupportedReadSelfHealTests`). A never-polled `cartridgeLoadState` defaults to the
+    /// idle/unknown 6, which the delivery guard treats as non-blocking (see the idle-default test above),
+    /// so the reversal costs no dose-path safety. Proven behaviorally via the `onReadDispatchedForTesting`
+    /// seam (mirrors `PumpPairingInstrumentationTests`' technique).
+    @Test func loadStatusRequestIsGatedOutOfTheRoutineFastPollTier() {
         let (b, _) = make()
         var dispatchedTypeNames: [String] = []
         b.onReadDispatchedForTesting = { typeName, _ in dispatchedTypeNames.append(typeName) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
-                "fastRead() must include LoadStatusRequest so cartridgeLoadState never goes permanently stale")
+        #expect(!dispatchedTypeNames.contains("LoadStatusRequest"),
+                "op20 LoadStatusRequest must be gated out of the routine fast/static tiers (api25 fix); it stays reachable on-demand via refreshLoadStatus()")
     }
 
     // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)
