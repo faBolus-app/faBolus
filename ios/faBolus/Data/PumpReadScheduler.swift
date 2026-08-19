@@ -58,6 +58,14 @@ final class PumpReadScheduler {
     /// keyed to the current pump, so it survives a reconnect and an app relaunch. Bound by `TandemBackend`;
     /// the default is a no-op (persistence off). Never called with op0 (`insertBadOpcode` guards it).
     var persistBadOpcode: (UInt8) -> Void = { _ in }
+    /// debug pump-pairing-loop-api25 (static-registry hardening): the current pump identity — model class
+    /// (`isMobi`) + `softwareVersion` — as populated by the bootstrap version responses (op33/op85) the
+    /// applier just processed. Consulted by `noteBootstrapVersionIdentified()` to key the STATIC
+    /// `PumpKnownUnsupportedReads` registry so a KNOWN-bad combo's identity-gated read (op20) is seeded into
+    /// `badOpcodes` BEFORE it is ever sent — including the first-ever connect with no persisted history.
+    /// Bound by `TandemBackend` to `(snapshot.isMobi, snapshot.softwareVersion)`; the default returns an
+    /// unknown identity (empty exclusion) so a bare scheduler is unchanged.
+    var pumpIdentityForStaticExclusion: () -> (isMobi: Bool?, softwareVersion: String) = { (nil, "") }
 
     // MARK: - Status read dispatch
     //
@@ -175,6 +183,54 @@ final class PumpReadScheduler {
     /// the `loadPersistedBadOpcodes` hydration path) BEFORE the fresh union in `startPolling`.
     func clearLearned(_ opcodes: Set<UInt8>) {
         badOpcodes.subtract(opcodes)
+    }
+
+    // MARK: - Static known-unsupported-reads registry (debug pump-pairing-loop-api25, static hardening)
+    //
+    // The dynamic op77 self-heal above learns an unsupported read AFTER the pump rejects it once (a
+    // ~2-3-drop / ~25 s cost on a first-ever connect). For a combo the app already KNOWS is bad
+    // (`PumpKnownUnsupportedReads`), that cost is avoidable entirely: hold the identity-gated read(s) (op20)
+    // OUT of the pre-version burst, and once the bootstrap version responses (op33/op85) identify the pump,
+    // seed the static exclusion into `badOpcodes` BEFORE the gated read is ever sent. Additive to the
+    // dynamic path (same `badOpcodes` set) and to the per-pump persisted store (this exclusion is re-derived
+    // from identity every connect, never persisted).
+
+    /// Set true once this connection's bootstrap version responses (op33 `ApiVersionResponse`, which carries
+    /// the model/firmware identity) have been processed. Reset each `startPolling()` cycle.
+    private var bootstrapVersionIdentified = false
+    /// Guards `runIdentityGatedReadsOnce()` so the deferred identity-gated read(s) go out exactly once per
+    /// connection cycle (op33 can arrive from both the bootstrap trio and the ~10-min `staticRead()`). Reset
+    /// each `startPolling()` cycle.
+    private var identityGatedReadsDispatchedThisCycle = false
+
+    /// Called by the applier the moment the bootstrap version response (op33) has populated the pump identity
+    /// (`snapshot.isMobi` + `softwareVersion`). Consults the STATIC registry with that identity, seeds any
+    /// known-unsupported read into `badOpcodes` (Guardrail-A filtered), then dispatches the deferred
+    /// identity-gated read(s) ONCE — so on a known-bad combo the gated read is already suppressed and never
+    /// sent, while on any other pump it goes out and keeps its pre-guard live.
+    func noteBootstrapVersionIdentified() {
+        bootstrapVersionIdentified = true
+        runIdentityGatedReadsOnce()
+    }
+
+    private func runIdentityGatedReadsOnce() {
+        guard bootstrapVersionIdentified, !identityGatedReadsDispatchedThisCycle else { return }
+        identityGatedReadsDispatchedThisCycle = true
+        // STATIC known-unsupported registry → seed the exclusion BEFORE the gated read is sent. Guardrail A:
+        // filter out any delivery/control-WRITE opcode (belt-and-suspenders — the registry only ever names
+        // reads, but the union bypasses `insertBadOpcode`'s guard, so mirror it here). NOT persisted: this is
+        // authoritative-per-identity, re-derived each connect, kept distinct from the learned store.
+        let id = pumpIdentityForStaticExclusion()
+        let staticExclusions = PumpKnownUnsupportedReads
+            .unsupportedReadOpcodes(isMobi: id.isMobi, softwareVersion: id.softwareVersion)
+            .subtracting(PumpReadCatalog.deliveryControlWriteOpcodes)
+        badOpcodes.formUnion(staticExclusions)
+        // Now send the deferred identity-gated reads; on a known-bad combo they are already in `badOpcodes`
+        // (either statically seeded just above, or from the dynamic/persisted set) → `sendStatusRead` skips
+        // them, so they are never sent even once.
+        for r in fastReadMessages() where PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode) {
+            sendStatusRead(r)
+        }
     }
 
     // MARK: - op77 correlation backstop (debug pump-pairing-loop-api25, mechanism B)
@@ -487,10 +543,25 @@ final class PumpReadScheduler {
     /// The same backstop+persistence covers any op40/op114/op178/op138 this firmware might also reject
     /// (unobservable from the capture, since the link tears down after the first error). op20 also stays
     /// reachable on-demand via `TandemBackend.refreshLoadStatus()` (`sendOnDemandRead`) for the pump wizard.
-    private func fastRead() {
-        for r: Message in [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
-                           InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-                           HomeScreenMirrorRequest(), LoadStatusRequest()] {
+    /// The fast tier's exact ordered read list (single source of truth for both the recurring `fastRead()`
+    /// and the deferred identity-gated dispatch in `runIdentityGatedReadsOnce()`).
+    private func fastReadMessages() -> [Message] {
+        [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
+         InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+         HomeScreenMirrorRequest(), LoadStatusRequest()]
+    }
+
+    /// - Parameter includingIdentityGatedReads: when `false` (the pre-version burst inside `startPolling()`),
+    ///   reads in `PumpKnownUnsupportedReads.identityGatedReadOpcodes` (op20 `LoadStatusRequest`) are HELD
+    ///   BACK — not sent, not skipped — so a KNOWN-bad combo can suppress them via the static registry BEFORE
+    ///   the first send (see `runIdentityGatedReadsOnce()`); they are dispatched once the bootstrap version
+    ///   responses identify the pump. Every other path (the recurring `pollTimer` tick, the WR/refresh seams)
+    ///   passes `true`, so op20 rides the recurring poll and the `badOpcodes` guard skips it only when the
+    ///   pump (statically or dynamically) proved it unsupported — the pre-guard stays live on supported pumps.
+    private func fastRead(includingIdentityGatedReads: Bool = true) {
+        for r in fastReadMessages() {
+            if !includingIdentityGatedReads,
+               PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode) { continue }
             sendStatusRead(r)
         }
     }
@@ -604,6 +675,11 @@ final class PumpReadScheduler {
         // durable `badOpcodes` set, this transient map must not survive a reconnect — debug
         // pump-pairing-loop-api25, mechanism B).
         outstandingReads.removeAll()
+        // Fresh connection cycle: the pump's identity has not been re-read yet, so the identity-gated read
+        // (op20) is held back until this cycle's op33 arrives (debug pump-pairing-loop-api25, static-registry
+        // hardening — see `noteBootstrapVersionIdentified()` / `runIdentityGatedReadsOnce()`).
+        bootstrapVersionIdentified = false
+        identityGatedReadsDispatchedThisCycle = false
         // debug pump-pairing-loop-api25 (refinement): hydrate the never-resend set from THIS pump's durable
         // store BEFORE any read goes out, so an opcode already proven unsupported by this pump — persisted
         // across reconnects AND app relaunches, keyed to pump identity (peripheral UUID + firmware stamp) —
@@ -623,7 +699,12 @@ final class PumpReadScheduler {
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()
-        fastRead(); staticRead()
+        // debug pump-pairing-loop-api25 (static-registry hardening): the pre-version burst omits the
+        // identity-gated read (op20) — it is dispatched by `runIdentityGatedReadsOnce()` once this cycle's
+        // op33 `ApiVersionResponse` identifies the pump, so a KNOWN-bad combo suppresses it before the first
+        // send (owner req #2: gated fast reads go out AFTER the bootstrap version responses, never before).
+        // The bootstrap-trio-first invariant is preserved (the trio is still sent first, synchronously).
+        fastRead(includingIdentityGatedReads: false); staticRead()
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()

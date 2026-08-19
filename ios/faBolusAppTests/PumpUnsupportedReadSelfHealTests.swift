@@ -48,15 +48,18 @@ struct PumpUnsupportedReadSelfHealTests {
                 "the fast tier must carry op20 so the cartridge pre-guard stays live on supported pumps")
     }
 
-    /// The full post-pair startup burst (bootstrap trio + fastRead + staticRead) sends op20 on a pump with
-    /// no learned rejection — the pre-guard is fed from the very first poll.
+    /// The full post-pair startup burst sends op20 on a pump with no learned rejection — the pre-guard is fed
+    /// from the first poll. api25 static-registry hardening: op20 is IDENTITY-GATED (deferred out of the
+    /// pre-version burst), so it is dispatched once the bootstrap version responses identify the pump — here
+    /// a SUPPORTED pump (default identity, not the t:slim X2 sw-2.5 bad combo), released via the test seam.
     @Test func postPairStartupBurstSendsLoadStatusOnAPumpWithNoLearnedRejection() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         var dispatchedOps: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatchedOps.append(op) }
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify a supported pump → deferred op20 goes out
         #expect(dispatchedOps.contains(loadStatusOpcode),
-                "op20 must appear in the post-pair burst on a pump with no persisted op20 rejection")
+                "op20 must be polled (after version identity) on a pump with no persisted op20 rejection")
     }
 
     /// op20 also stays reachable via the on-demand `refreshLoadStatus()` path (the pump wizard), which must

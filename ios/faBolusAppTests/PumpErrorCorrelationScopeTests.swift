@@ -122,6 +122,9 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aBurstOp77EchoingLoadStatusTxIdBlacklistsLoadStatusNotTheOldest() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.startPollingForTesting()
+        // api25 static-registry hardening: op20 is identity-gated — released here (default/supported identity)
+        // so it is outstanding as fastRead()'s LAST send, exactly as before the deferral.
+        b.releaseIdentityGatedReadsForTesting()
         let op20 = loadStatusOpcode
         guard let op20TxId = b.outstandingReadsForTesting.first(where: { $0.opcode == op20 })?.txId else {
             Issue.record("op20 must be one of the outstanding reads after the burst"); return
@@ -142,6 +145,7 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aBurstOp77EchoingAnEarlierReadsTxIdDoesNotBlacklistLoadStatus() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // op20 identity-gated → released so it is outstanding too
         let op20 = loadStatusOpcode
         guard let earlier = b.outstandingReadsForTesting.first(where: { $0.opcode != op20 }) else {
             Issue.record("expected at least one non-op20 outstanding read"); return

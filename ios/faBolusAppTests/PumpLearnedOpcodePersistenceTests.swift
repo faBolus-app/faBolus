@@ -111,6 +111,10 @@ struct PumpLearnedOpcodePersistenceTests {
         s2.onReadSkippedForTesting = { _, op in skipped.append(op) }
         s2.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         s2.startPollingForTesting()
+        // api25 static-registry hardening: op20 is identity-gated — released once this cycle's op33 identifies
+        // the pump (firmware unknown "" here → static registry empty; the SKIP comes purely from the persisted
+        // per-pump hydration, proving the two mechanisms are additive).
+        s2.releaseIdentityGatedReadsForTesting()
         #expect(skipped.contains(loadStatusOpcode),
                 "after a relaunch, op20 must be skipped from the first poll — no re-drop")
         #expect(!dispatched.contains(loadStatusOpcode),
@@ -127,6 +131,7 @@ struct PumpLearnedOpcodePersistenceTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify a supported pump → deferred op20 goes out
         #expect(dispatched.contains(loadStatusOpcode),
                 "a pump with no learned op20 rejection must keep polling op20 (pre-guard stays live)")
         // op20 succeeds → LoadStatusResponse feeds cartridgeLoadState. loadStateId 0 = CHANGE_CARTRIDGE (a
@@ -155,6 +160,7 @@ struct PumpLearnedOpcodePersistenceTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify pump B → its deferred op20 goes out
         #expect(dispatched.contains(loadStatusOpcode),
                 "a DIFFERENT pump must never inherit pump A's op20 skip — the persisted set is identity-scoped")
         #expect(store.learnedOpcodes(for: keyB).isEmpty)
@@ -175,6 +181,7 @@ struct PumpLearnedOpcodePersistenceTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // firmware 3.0 → static registry empty → deferred op20 re-tested
         #expect(dispatched.contains(loadStatusOpcode),
                 "a firmware change must discard the stale op20 skip and re-test op20")
         #expect(store.learnedOpcodes(for: key).isEmpty,
@@ -195,6 +202,9 @@ struct PumpLearnedOpcodePersistenceTests {
         b.onReadSkippedForTesting = { _, op in skipped.append(op) }
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
+        // api25 static-registry hardening: op20 identity-gated — released here (firmware unknown "" → static
+        // registry empty; the SKIP comes purely from the UUID-keyed persisted hydration).
+        b.releaseIdentityGatedReadsForTesting()
         #expect(skipped.contains(loadStatusOpcode),
                 "on a fresh launch (firmware unknown) the UUID-keyed persisted op20 skip must apply — no re-drop")
         #expect(!dispatched.contains(loadStatusOpcode))
@@ -226,6 +236,7 @@ struct PumpLearnedOpcodePersistenceTests {
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.onReadSkippedForTesting = { _, op in skipped.append(op) }
         b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // firmware 3.0 → static registry empty → deferred op20 re-polled
         #expect(!b.badOpcodesForTesting.contains(loadStatusOpcode),
                 "a firmware change must clear the IN-MEMORY learned op20 on the same backend (WR-05)")
         #expect(dispatched.contains(loadStatusOpcode),

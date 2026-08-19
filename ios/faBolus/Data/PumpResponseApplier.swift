@@ -100,6 +100,12 @@ final class PumpResponseApplier {
     var viewedProfileId: () -> Int = { -1 }
     /// Bound to `{ detectedIsMobi }` — set at BLE-name discovery, read-only here.
     var detectedIsMobi: () -> Bool? = { nil }
+    /// debug pump-pairing-loop-api25 (static-registry hardening): called once the bootstrap
+    /// `ApiVersionResponse` (op33) has populated the pump identity (`snapshot.isMobi` + `softwareVersion`),
+    /// so `PumpReadScheduler` can consult the STATIC `PumpKnownUnsupportedReads` registry and dispatch the
+    /// deferred identity-gated read(s) — suppressing op20 BEFORE the first send on a KNOWN-bad combo. Bound
+    /// to `readScheduler.noteBootstrapVersionIdentified`; default no-op so a bare applier is unchanged.
+    var noteBootstrapVersionIdentified: () -> Void = {}
     /// Bound to `{ pumpFeatureBits = $0 }`.
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
     /// Bound to `{ calcSnapshot = $0 }` — read elsewhere (the dose-calculator path).
@@ -360,6 +366,12 @@ final class PumpResponseApplier {
                 }
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
             }
+            // debug pump-pairing-loop-api25 (static-registry hardening): the pump is now IDENTIFIED (model
+            // class + firmware just written above), so the scheduler can consult the STATIC known-unsupported
+            // registry and dispatch the deferred identity-gated read(s) (op20) — suppressing op20 before the
+            // first send on the known-bad t:slim X2 sw-2.5 combo. Called AFTER the snapshot write so the
+            // scheduler reads the fresh identity. Idempotent per connection cycle (guarded scheduler-side).
+            noteBootstrapVersionIdentified()
         case let m as ErrorResponse:
             // SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the
             // pump replies with this when it rejects a request (e.g. BAD_OPCODE for an unsupported

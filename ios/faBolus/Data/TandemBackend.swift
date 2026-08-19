@@ -591,6 +591,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         // debug pump-pairing-loop-api25 (refinement): durable, per-pump learned-bad-opcode hydrate/persist.
         readScheduler.loadPersistedBadOpcodes = { [weak self] in self?.persistedBadOpcodesForCurrentPump() ?? [] }
         readScheduler.persistBadOpcode = { [weak self] opcode in self?.persistBadOpcodeForCurrentPump(opcode) }
+        // debug pump-pairing-loop-api25 (static-registry hardening): the pump identity that keys the STATIC
+        // known-unsupported-reads registry, read live off the snapshot the bootstrap op33/op85 responses
+        // populate — so the deferred identity-gated read (op20) is suppressed before the first send on a
+        // KNOWN-bad combo (t:slim X2 sw 2.5). Distinct from the per-pump LEARNED store above — never persisted.
+        readScheduler.pumpIdentityForStaticExclusion = { [weak self] in
+            (self?.snapshot.isMobi, self?.snapshot.softwareVersion ?? "")
+        }
     }
 
     // MARK: - Per-pump durable learned-bad-opcode persistence (debug pump-pairing-loop-api25 refinement)
@@ -688,6 +695,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setPumpTimeAnchor = { [weak self] anchor in self?.pumpTimeAnchor = anchor }
         responseApplier.viewedProfileId = { [weak self] in self?.viewedProfileId ?? -1 }
         responseApplier.detectedIsMobi = { [weak self] in self?.detectedIsMobi }
+        // debug pump-pairing-loop-api25 (static-registry hardening): once op33 identifies the pump, let the
+        // scheduler consult the static registry and dispatch the deferred identity-gated read(s).
+        responseApplier.noteBootstrapVersionIdentified = { [weak self] in self?.readScheduler.noteBootstrapVersionIdentified() }
         responseApplier.setPumpFeatureBits = { [weak self] bits in self?.pumpFeatureBits = bits }
         responseApplier.setCalcSnapshot = { [weak self] snapshot in self?.calcSnapshot = snapshot }
         responseApplier.setSleepScheduleWriteError = { [weak self] error in self?.sleepScheduleWriteError = error }
@@ -745,6 +755,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `snapshot`'s setter is private outside this file. Used to exercise the firmware-change re-test path
     /// in `persistedBadOpcodesForCurrentPump()` without building a full `ApiVersionResponse` frame.
     func setSoftwareVersionForTesting(_ version: String) { snapshot.softwareVersion = version }
+    /// Test-only (debug pump-pairing-loop-api25 static-registry hardening): release the deferred
+    /// identity-gated read(s) (op20) as if this cycle's bootstrap op33 `ApiVersionResponse` had just
+    /// identified the pump — consulting the STATIC registry with whatever identity the test set (via
+    /// `setSoftwareVersionForTesting` / the default). Lets a persistence/self-heal test drive the
+    /// post-version dispatch without building a version frame; the REAL op33-frame path is covered
+    /// end-to-end by `PumpStaticUnsupportedReadRegistryTests`.
+    func releaseIdentityGatedReadsForTesting() { readScheduler.noteBootstrapVersionIdentified() }
     /// Test-only (Phase 09.9 D-02): directly set the last-known `reservoirUnits` reading, since
     /// `snapshot`'s setter is private outside this file. Used to recreate the "last known reading was
     /// below the requested total" precondition that the `.possiblyOutOfInsulin` nack enrichment reads.

@@ -207,6 +207,26 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: BolusCalcDataSnapshotResponse.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-33 `ApiVersionResponse` (4 bytes: majorVersion short@0, minorVersion short@2 — see the kit's
+    /// `Responses.swift`). The bootstrap version read that IDENTIFIES the pump: `softwareVersion` becomes
+    /// "major.minor" and `isMobi` is derived (`major>3 || (major==3 && minor>=5)`). Used by the STATIC
+    /// known-unsupported-reads registry (debug pump-pairing-loop-api25 static-registry hardening): the
+    /// evidenced bad combo is (isMobi=false, sw "2.5") ⇒ `apiVersion(major: 2, minor: 5)`.
+    static func apiVersion(major: Int, minor: Int) -> [UInt8] {
+        frame(opCode: ApiVersionResponse.props.opCode, cargo: le2(major) + le2(minor), signed: false)
+    }
+
+    /// op-85 `PumpVersionResponse` (48 bytes: armSwVer u32@0, mspSwVer u32@4, serialNum u32@16, partNum
+    /// u32@20, pumpRev string@24..31, modelNum u32@44 — see the kit's `Responses.swift`). The second
+    /// bootstrap version read; its `modelNum` is recorded for diagnostics / future registry refinement (the
+    /// current evidenced key needs only op33's fields).
+    static func pumpVersion(modelNum: UInt32 = 0, armSwVer: UInt32 = 0) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 48)
+        let arm = Bytes.toUint32(armSwVer); for i in 0..<4 { c[0 + i] = arm[i] }
+        let mn = Bytes.toUint32(modelNum);  for i in 0..<4 { c[44 + i] = mn[i] }
+        return frame(opCode: PumpVersionResponse.props.opCode, cargo: c, signed: false)
+    }
+
     // MARK: - History-log frame builders (Phase 09.7-01 — gap-aware sync)
 
     /// op-59 `HistoryLogStatusResponse` (12 bytes: numEntries/firstSequenceNum/lastSequenceNum, all
