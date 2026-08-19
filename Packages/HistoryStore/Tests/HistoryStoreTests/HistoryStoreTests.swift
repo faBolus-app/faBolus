@@ -214,4 +214,33 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.caffeine(in: window).count, 0, "clear() wipes caffeine PHI too")
         XCTAssertEqual(store.alcohol(in: window).count, 0, "clear() wipes alcohol PHI too")
     }
+
+    // MARK: - StoredHeartRate (09.23-02, D-14) — additive @Model, mirrors StoredCaffeine's shape
+
+    func testHeartRateRoundTrip() throws {
+        let store = try makeStore()
+        store.ingestHeartRate([(date: t0, bpm: 72), (date: t0.addingTimeInterval(300), bpm: 81)],
+                              sourceID: "healthkit")
+        let rows = store.heartRate(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(600))
+        XCTAssertEqual(rows.count, 2)
+        // heartRate(in:) returns most-recent first, mirroring caffeine(in:)/alcohol(in:).
+        XCTAssertEqual(rows.map(\.bpm), [81, 72])
+        XCTAssertEqual(rows.first?.sourceID, "healthkit")
+    }
+
+    func testClearWipesHeartRate() throws {
+        let store = try makeStore()
+        store.ingestHeartRate([(date: t0, bpm: 72)], sourceID: "healthkit")
+        let window = t0.addingTimeInterval(-60)...t0.addingTimeInterval(60)
+        XCTAssertEqual(store.heartRate(in: window).count, 1)
+        store.clear()
+        XCTAssertEqual(store.heartRate(in: window).count, 0, "clear() wipes heart-rate history too")
+    }
+
+    func testHeartRateModelContainerConstructsWithoutError() throws {
+        // A fresh in-memory store must construct without throwing now that StoredHeartRate.self is
+        // registered in the ModelContainer's type list (proves the additive registration, not just
+        // the ingest/query methods).
+        XCTAssertNoThrow(try makeStore())
+    }
 }
