@@ -75,6 +75,14 @@ DIRECT_PUMP="${FABOLUS_WATCH_DIRECT_PUMP:-0}"
 # entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
 # unmodified clone signs on a free account. Enable on a paid account with FABOLUS_ICLOUD=1.
 ICLOUD="${FABOLUS_ICLOUD:-0}"
+# Apple Health (HealthKit) import/export (Phase 09.23, D-10/D-13): the WHOLE HealthKit surface — the
+# existing HealthKit CGM source + on-demand HR reader, PLUS the new retrospective carbs/insulin
+# import and the new bolus export — needs the paid Apple Developer Program to provision the
+# `com.apple.developer.healthkit` capability, so it defaults OFF and an unmodified clone (and CI)
+# signs on a free account. When off, the tagged entitlement + NSHealthUpdateUsageDescription block(s)
+# and the FABOLUS_HEALTHKIT compile flag are stripped, so the whole HealthKit surface compiles out.
+# Enable on a paid account with FABOLUS_HEALTHKIT=1.
+HEALTHKIT="${FABOLUS_HEALTHKIT:-0}"
 # Phase 09.5 D-02: the experimental Control-IQ+ temp-rate overturn (see AppModel.swift setTempBasal).
 # Defaults OFF: the `#if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` precondition compiles into every normal
 # build (default/shipping behavior byte-identical — CIQ-off is still required to set a temp rate). When
@@ -159,6 +167,10 @@ if [ "$ICLOUD" = 0 ]; then
   strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
   drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
 fi
+if [ "$HEALTHKIT" = 0 ]; then
+  strip_block HEALTHKIT                    # com.apple.developer.healthkit(+.access) + usage string → free-account signs
+  drop_flag FABOLUS_HEALTHKIT              # drop the compile flag → the whole HealthKit surface compiles out
+fi
 if [ "$TEMPRATE_CIQ_EXPERIMENTAL" = 0 ]; then
   drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL   # drop the compile flag → the CIQ-off precondition stays enforced
 fi
@@ -179,7 +191,7 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
@@ -189,6 +201,8 @@ echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge
 [ "$DIRECT_PUMP" = 1 ] && echo "  → ⚠️  watch DIRECT-TO-PUMP path ON (FABOLUS_WATCH_DIRECT_PUMP=1) — violates C9, evicts the phone's pairing, BENCH ONLY. Do not wear this build."
 [ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
 [ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
+[ "$HEALTHKIT" = 0 ] && echo "  → building WITHOUT Apple Health (HealthKit) — the CGM source, HR reader, carbs/insulin import, and bolus export all compile out (needs a paid account; set FABOLUS_HEALTHKIT=1 to enable)"
+[ "$HEALTHKIT" = 1 ] && echo "  → Apple Health (HealthKit) ON (FABOLUS_HEALTHKIT=1) — requires the HealthKit capability on a paid account"
 [ "$DATA_PROTECTION" = 0 ] && echo "  → building WITHOUT the §13 Data Protection entitlement (needs the capability provisioned on the App ID; set FABOLUS_DATA_PROTECTION=1 to enable) — on-device protection unchanged (iOS default level)"
 [ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
 [ "$TIME_SENSITIVE" = 0 ] && echo "  → building WITHOUT the Time-Sensitive Notifications entitlement (needs the capability provisioned on the App ID; set FABOLUS_TIME_SENSITIVE=1 to enable) — .timeSensitive is set in code but iOS downgrades it to .active until the capability is provisioned"
