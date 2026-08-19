@@ -170,6 +170,15 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: CurrentEGVGuiDataResponse.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-21 `LoadStatusResponse` (3 bytes: isLoadingActive@0, loadStateId@1, primeStatusId@2 — see the
+    /// kit's `ResponseDirectTests`). Reply to the op20 `LoadStatusRequest` poll; feeds
+    /// `PumpSnapshot.cartridgeLoadState` → the 09.9 `cartridgeReadyForBolus` pre-guard. loadStateId 0/1/2
+    /// (CHANGE_CARTRIDGE/LOAD_CARTRIDGE/PRIME_TUBING) ⇒ not ready; the idle/unknown default 6 ⇒ ready.
+    static func loadStatus(isLoadingActive: Bool, loadStateId: Int) -> [UInt8] {
+        frame(opCode: LoadStatusResponse.props.opCode,
+              cargo: [isLoadingActive ? 1 : 0, UInt8(truncatingIfNeeded: loadStateId), 0], signed: false)
+    }
+
     /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).
     /// errorCodeId 6 = BAD_OPCODE — what an older pump answers op192 with, right before tearing the
     /// link down.

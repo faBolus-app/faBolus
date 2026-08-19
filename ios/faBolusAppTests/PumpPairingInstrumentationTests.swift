@@ -63,7 +63,7 @@ struct PumpPairingPostPairBootstrapOrderTests {
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
         b.startPollingForTesting()
-        #expect(dispatched.count == 16)   // api25: fastRead() dropped op20 LoadStatusRequest (was 17)
+        #expect(dispatched.count == 17)   // api25 refinement: op20 LoadStatusRequest RESTORED to fastRead() (back to 17)
         #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
                 "the reference-required bootstrap trio must be dispatched first, in this exact order")
         #expect(dispatched.prefix(3).map(\.opcode) == [32, 84, 54])
@@ -79,7 +79,7 @@ struct PumpPairingPostPairBootstrapOrderTests {
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(dispatched.count == 13)   // api25: fastRead() dropped op20 LoadStatusRequest (was 14)
+        #expect(dispatched.count == 14)   // api25 refinement: op20 LoadStatusRequest RESTORED to fastRead() (back to 14)
         #expect(dispatched.first?.typeName == "ControlIQIOBRequest",
                 "a recurring tick starts directly with fastRead()'s own first message — no bootstrap prepend")
     }
@@ -115,20 +115,20 @@ struct PumpPairingStaleTimerGuardTests {
         b.alertReadDelaySecForTesting = 0.05
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
-        b.startPollingForTesting()   // cycle 1: pollCycleGeneration = G1; dispatches its own 16 reads
+        b.startPollingForTesting()   // cycle 1: pollCycleGeneration = G1; dispatches its own 17 reads
                                       // synchronously; schedules alertRead() @ +0.05s under G1
         dispatched.removeAll()       // only care about what's dispatched from cycle 2 on
         b.startPollingForTesting()   // cycle 2 (reconnect + re-pair): bumps pollCycleGeneration to G2
                                       // BEFORE cycle 1's still-pending +0.05s alertRead call can fire;
-                                      // dispatches its own 16 reads synchronously right here
+                                      // dispatches its own 17 reads synchronously right here
         // ≫ cycle 1's stale 0.05s deadline (must no-op) + cycle 2's own LEGITIMATE scheduleAlertRead
         // (armed at cycle 2's startPolling(), firing +0.05s later) + its own 5-message dispatch.
         try? await Task.sleep(nanoseconds: 200_000_000)
-        // Exactly cycle 2's own 16 (bootstrap trio + fastRead[op20 dropped, api25] + staticRead, all
-        // synchronous) + 5 (its own legitimate alertRead) = 21. A missing/broken guard would add cycle
-        // 1's stale extra 5 → 26.
-        #expect(dispatched.count == 21,
-                "cycle 2's own 21 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (26)")
+        // Exactly cycle 2's own 17 (bootstrap trio + fastRead[op20 restored, api25 refinement] + staticRead,
+        // all synchronous) + 5 (its own legitimate alertRead) = 22. A missing/broken guard would add cycle
+        // 1's stale extra 5 → 27.
+        #expect(dispatched.count == 22,
+                "cycle 2's own 22 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (27)")
         #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
                 "cycle 2's bootstrap trio must still be dispatched FIRST — a stale cycle-1 alertRead landing before cycle 2's own startPolling() runs would corrupt this order, exactly matching the AlertStatusRequest-before-ApiVersionRequest corruption observed in on-device capture #4")
     }

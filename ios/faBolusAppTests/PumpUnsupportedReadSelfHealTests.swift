@@ -4,89 +4,82 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// RED tests for debug session `pump-pairing-loop-api25` (owner decision: fix shape A+B, app-side only,
-/// TandemKit pin HELD). Confirmed two-goal diagnosis: `.planning/debug/pump-pairing-loop-api25.md`.
+/// Tests for debug session `pump-pairing-loop-api25` mechanism B (the op77 correlation backstop) — the
+/// app-side, pin-HELD self-heal that recovers the TRUE failing opcode from an opcode-less op77. Confirmed
+/// two-goal diagnosis + owner refinement: `.planning/debug/pump-pairing-loop-api25.md`.
 ///
-/// On the API-2.5, non-Control-IQ t:slim X2 (sw 2.5) the app sends op20 `LoadStatusRequest` as the 10th
-/// message of the pre-capability post-pair burst (`PumpReadScheduler.fastRead()`'s last read). This pump
-/// answers it with an op77 `ErrorResponse` whose REAL 2-byte currentStatus cargo is `[0,0]` — it does NOT
-/// embed the failing opcode — then tears the BLE link down ~90ms later (CBErrorDomain#7). Because the
-/// op192-era `badOpcodes` never-resend backstop reads the failing opcode from that (empty) cargo, it
-/// records opcode 0 (useless) and re-sends op20 on every reconnect → endless connect/pair/drop loop.
+/// On the API-2.5, non-Control-IQ t:slim X2 (sw 2.5) the app sends op20 `LoadStatusRequest` in the post-pair
+/// burst; this pump answers it with an op77 `ErrorResponse` whose REAL 2-byte currentStatus cargo is `[0,0]`
+/// — it does NOT embed the failing opcode — then tears the BLE link down ~90ms later (CBErrorDomain#7).
+/// Because the op192-era `badOpcodes` never-resend backstop read the failing opcode from that (empty) cargo,
+/// it recorded opcode 0 (useless) and re-sent op20 on every reconnect → endless connect/pair/drop loop.
 ///
-/// The fix is two co-operating, app-side-only mechanisms (pin stays HELD; `PumpTransactionCoordinator` is
-/// OUT of scope — that is 09.11):
-///  - A — op20 is gated OUT of the pre-capability `fastRead()` burst so it is never sent before the pump's
-///        supported-capability set is known (mirrors op192's "just don't send it there" precedent), while
-///        load-state stays reachable via the on-demand `refreshLoadStatus()` path — the capability is not
-///        lost, it just stops riding the fatal pre-capability burst.
-///  - B — an app-side correlation backstop that recovers the TRUE failing opcode from an opcode-less op77
-///        by correlating the error to the outstanding request (the pump echoes the request txId in
-///        frame[1] — kit's hardware-confirmed t:slim behavior — or, failing that, in-order FIFO of
-///        outstanding reads) and feeds it to `insertBadOpcode(...)` so the existing never-resend guard
-///        actually suppresses it. This self-heals for op20 AND any other read this firmware rejects with
-///        an opcode-less error.
+/// Mechanism B (this suite) — an app-side correlation backstop that recovers the TRUE failing opcode from an
+/// opcode-less op77 by correlating the error to the outstanding request (the pump echoes the request txId in
+/// frame[1] — kit's hardware-confirmed t:slim behavior — or, failing that, in-order FIFO of outstanding
+/// reads) and feeds it to `insertBadOpcode(...)` so the existing never-resend guard actually suppresses it.
+/// Self-heals for op20 AND any other read this firmware rejects with an opcode-less error.
 ///
-/// Every assertion below FAILS against the current (unfixed) tree:
-///  - A: `fastRead()` still sends op20, and the on-demand refresh bypasses the observable scheduler send.
-///  - B: the op77 handler records `requestCodeId` (= 0, from the empty cargo), so op20 never enters
-///       `badOpcodes` and is re-sent forever.
+/// NOTE (owner refinement 2026-08-19): op20 RIDES the recurring `fastRead()` poll again (an initial fix,
+/// commit 9f978a5, had gated it out for ALL models, which starved the 09.9 `cartridgeReadyForBolus`
+/// pre-guard on pumps that DO support op20). op20 stays reachable on-demand too (A/on-demand below). The
+/// DURABLE, per-pump persistence of the learned skip — so the API-2.5 pump drops op20 exactly once, ever —
+/// is covered in `PumpLearnedOpcodePersistenceTests`.
 @Suite(.serialized) @MainActor
 struct PumpUnsupportedReadSelfHealTests {
 
     /// op20 — the read this API-2.5 t:slim X2 rejects.
     private var loadStatusOpcode: UInt8 { LoadStatusRequest.props.opCode }
 
-    // MARK: - Mechanism A — op20 gated out of the pre-capability burst, still reachable on-demand
+    // MARK: - op20 is polled (refinement) AND reachable on-demand
 
-    /// A/1: the recurring fast-read burst (`fastRead()`) must NOT send op20 `LoadStatusRequest`. It is the
-    /// read the pump rejects before its capability set is known, triggering the teardown loop, so it must
-    /// not ride the pre-capability burst.
-    @Test func fastReadBurstDoesNotSendLoadStatus() {
+    /// op20 rides the recurring fast-read burst again (refinement) so `cartridgeLoadState` — and the 09.9
+    /// `cartridgeReadyForBolus` pre-guard it feeds — stays live on a pump that supports it. (A pump that
+    /// REJECTS op20 learns-and-skips it durably — see `PumpLearnedOpcodePersistenceTests`.)
+    @Test func fastReadBurstSendsLoadStatusOnAPumpWithNoLearnedRejection() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         var dispatchedNames: [String] = []
         var dispatchedOps: [UInt8] = []
         b.onReadDispatchedForTesting = { name, op in dispatchedNames.append(name); dispatchedOps.append(op) }
         b.simulateRecurringFastAndStaticReadTickForTesting()   // real fastRead() + staticRead()
-        #expect(!dispatchedNames.contains("LoadStatusRequest"),
-                "op20 LoadStatusRequest must be gated out of the pre-capability fast-read burst")
-        #expect(!dispatchedOps.contains(loadStatusOpcode),
-                "no message in the fast/static tiers may carry op20")
+        #expect(dispatchedNames.contains("LoadStatusRequest"),
+                "op20 LoadStatusRequest must ride the recurring fast-read burst (refinement restored it)")
+        #expect(dispatchedOps.contains(loadStatusOpcode),
+                "the fast tier must carry op20 so the cartridge pre-guard stays live on supported pumps")
     }
 
-    /// A/2: the full post-pair startup burst (bootstrap trio + fastRead + staticRead) — the exact sequence
-    /// that reproduced the on-device loop — must not send op20 anywhere.
-    @Test func postPairStartupBurstDoesNotSendLoadStatus() {
+    /// The full post-pair startup burst (bootstrap trio + fastRead + staticRead) sends op20 on a pump with
+    /// no learned rejection — the pre-guard is fed from the very first poll.
+    @Test func postPairStartupBurstSendsLoadStatusOnAPumpWithNoLearnedRejection() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         var dispatchedOps: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatchedOps.append(op) }
         b.startPollingForTesting()
-        #expect(!dispatchedOps.contains(loadStatusOpcode),
-                "op20 must not appear anywhere in the pre-capability post-pair burst")
+        #expect(dispatchedOps.contains(loadStatusOpcode),
+                "op20 must appear in the post-pair burst on a pump with no persisted op20 rejection")
     }
 
-    /// A/3: removing op20 from the burst must NOT lose the capability — load-state stays reachable via the
-    /// on-demand `refreshLoadStatus()` path, which must route through the guarded scheduler send so it is
-    /// (a) observable via the same dispatch seam and (b) subject to the `badOpcodes` never-resend guard.
+    /// op20 also stays reachable via the on-demand `refreshLoadStatus()` path (the pump wizard), which must
+    /// route through the guarded scheduler send so it is (a) observable via the same dispatch seam and (b)
+    /// subject to the `badOpcodes` never-resend guard.
     @Test func loadStatusRemainsReachableViaOnDemandRefresh() async {
         let b = TandemBackend(testTransport: FakePumpTransport())   // testTransport init → connection == .connected
         var dispatchedOps: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatchedOps.append(op) }
         await b.refreshLoadStatus()
         #expect(dispatchedOps.contains(loadStatusOpcode),
-                "the on-demand refresh must still send op20 — the capability must survive its removal from the burst")
+                "the on-demand refresh must send op20 — the load-state capability stays reachable on demand")
     }
 
     // MARK: - Mechanism B — opcode-less op77 correlated back to the outstanding op20
 
     /// B/1: an op77 `ErrorResponse` whose real 2-byte currentStatus cargo is `[0,0]` (the on-wire shape
     /// this pump sends — it does not embed the failing opcode) must be correlated back to the outstanding
-    /// op20 (via the txId echo in frame[1], or in-order FIFO) and marked bad. Today the handler trusts the
-    /// empty cargo and records opcode 0, so op20 never enters `badOpcodes`.
+    /// op20 (via the txId echo in frame[1], or in-order FIFO) and marked bad — never opcode 0.
     @Test func opcodeLessErrorResponseCorrelatesToOutstandingLoadStatus() async {
         let b = TandemBackend(testTransport: FakePumpTransport())   // connected
-        // op20 is the SOLE outstanding read (post-A the burst no longer sends it) — so both correlation
-        // strategies (txId echo / in-order FIFO) resolve to op20 unambiguously.
+        // Drive op20 out on the on-demand path so it is the sole outstanding read (txId 0) — both
+        // correlation strategies (txId echo / in-order FIFO) then resolve to op20 unambiguously.
         await b.refreshLoadStatus()
         // Real 7-byte on-wire frame: [op77, txId=0, len=2, cargo 0,0, crc, crc]. The cargo names no opcode;
         // frame[1] (txId) echoes op20's request — the only correlation signal the pump provides.
