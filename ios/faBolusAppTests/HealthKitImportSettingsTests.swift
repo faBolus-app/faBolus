@@ -29,30 +29,21 @@ struct HealthKitImportSettingsTests {
         #expect(settings.healthKitAutoImportEnabled == false, "D-11b: automatic import defaults OFF")
     }
 
-    @Test func healthKitImportTogglesRoundTripThroughBackup() {
+    @Test func healthKitImportTogglesPersistThroughUserDefaultsAcrossInstances() {
+        // Not a SettingsCatalog row / not in backupSnapshot THIS WAVE (no UI surface yet — see the
+        // property doc comments), but they still must survive a plain relaunch via the same
+        // UserDefaults idiom every other toggle in this file uses.
         let suiteName = "HealthKitImportSettingsTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = AppSettings(defaults: defaults)
+        let first = AppSettings(defaults: defaults)
+        first.healthKitImportCarbsEnabled = true
+        first.healthKitAutoImportEnabled = true
 
-        settings.healthKitImportCarbsEnabled = true
-        settings.healthKitImportInsulinEnabled = true
-        settings.healthKitImportHeartRateEnabled = true
-        settings.healthKitImportGlucoseEnabled = true
-        settings.healthKitAutoImportEnabled = true
-        let snapshot = settings.backupSnapshot()
-
-        let restoreSuite = "HealthKitImportSettingsTests.restore.\(UUID().uuidString)"
-        let restoreDefaults = UserDefaults(suiteName: restoreSuite)!
-        defer { restoreDefaults.removePersistentDomain(forName: restoreSuite) }
-        let restored = AppSettings(defaults: restoreDefaults)
-        restored.applyBackup(snapshot)
-
-        #expect(restored.healthKitImportCarbsEnabled == true)
-        #expect(restored.healthKitImportInsulinEnabled == true)
-        #expect(restored.healthKitImportHeartRateEnabled == true)
-        #expect(restored.healthKitImportGlucoseEnabled == true)
-        #expect(restored.healthKitAutoImportEnabled == true)
+        let second = AppSettings(defaults: defaults)   // simulates a relaunch reading the same suite
+        #expect(second.healthKitImportCarbsEnabled == true)
+        #expect(second.healthKitImportInsulinEnabled == false)
+        #expect(second.healthKitAutoImportEnabled == true)
     }
 
     // MARK: - Behavior 2 (FABOLUS_HEALTHKIT only): manual import routes enabled types to history ONLY

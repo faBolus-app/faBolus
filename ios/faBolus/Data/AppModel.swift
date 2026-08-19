@@ -1400,6 +1400,80 @@ public final class AppModel {
         }
     }
 
+    // MARK: - Apple Health (HealthKit) import (09.23-02, D-05/D-11/D-14) — gated per D-13: the whole
+    // import hook compiles out of the free/CI build. Imported values reach ONLY GlucoseHistoryStore
+    // .ingest* — never GlucoseArbiter/BolusMath (D-05; enforced by HealthKitImportDosePathGuardTests).
+    #if FABOLUS_HEALTHKIT
+    @ObservationIgnored private lazy var healthKitImportSource: HealthKitImportSource = HealthKitHistoryImporter()
+    private var lastHealthKitAutoImport = Date.distantPast
+
+    #if DEBUG
+    /// Test seam: substitute the HealthKit import source (a fake) so a test can assert
+    /// `importFromAppleHealth()`'s routing without touching real HealthKit. Mirrors
+    /// `setHistoryStoreForTesting`. Production never calls this.
+    func setHealthKitImportSourceForTesting(_ source: HealthKitImportSource) {
+        healthKitImportSource = source
+    }
+    #endif
+
+    /// D-11a: manual on-demand "Import from Apple Health" — ALWAYS available regardless of the
+    /// D-11b automatic toggle below. Imports exactly the per-type-enabled subset (D-14) over a
+    /// 30-day lookback, routing results ONLY into `GlucoseHistoryStore.ingest*` — never
+    /// `GlucoseArbiter`/`BolusMath` (D-05). Awaitable (unlike the fire-and-forget automatic path)
+    /// so a caller — or a test — observes completion.
+    public func importFromAppleHealth() async {
+        await runHealthKitImport(since: Date().addingTimeInterval(-30 * 86400))
+    }
+
+    /// D-11b: throttled (hourly), best-effort automatic import — fire-and-forget from `refresh()`,
+    /// mirroring `maybeBackfillNightscout`'s shape. Runs ONLY when `healthKitAutoImportEnabled` is
+    /// true (default OFF); the manual path above always runs regardless of this gate.
+    private func maybeAutoImportAppleHealth() {
+        guard AppSettings.shared.healthKitAutoImportEnabled,
+              Date().timeIntervalSince(lastHealthKitAutoImport) > 3600 else { return }
+        lastHealthKitAutoImport = Date()
+        Task { [weak self] in await self?.runHealthKitImport(since: Date().addingTimeInterval(-30 * 86400)) }
+    }
+
+    /// Shared import routine (D-14): imports exactly the per-type-enabled subset over
+    /// `[since, Date()]` and routes results ONLY into `GlucoseHistoryStore.ingest*` (D-05). Never
+    /// registers `healthKitImportSource` with `GlucoseArbiter`/`GlucoseSourceRegistry`'s live set —
+    /// this is history ingest only. Glucose gap-fill's `existingSlots` comes from the store's own
+    /// merged `glucose(in:)` (already occupied by ANY existing source, live or imported) so an
+    /// imported Health reading never double-counts against faBolus's own CGM history (D-14).
+    private func runHealthKitImport(since: Date) async {
+        let settings = AppSettings.shared
+        var enabled: Set<HealthKitHistoryImporter.HealthKitImportType> = []
+        if settings.healthKitImportCarbsEnabled { enabled.insert(.carbs) }
+        if settings.healthKitImportInsulinEnabled { enabled.insert(.insulin) }
+        if settings.healthKitImportHeartRateEnabled { enabled.insert(.heartRate) }
+        if settings.healthKitImportGlucoseEnabled { enabled.insert(.glucose) }
+        guard !enabled.isEmpty else { return }
+        let source = healthKitImportSource
+        await source.requestAuthorizationIfNeeded(enabledTypes: enabled)
+        if enabled.contains(.carbs) {
+            let carbs = await source.importCarbHistory(since: since)
+            history?.ingestCarbs(carbs, sourceID: "healthkit-import")
+        }
+        if enabled.contains(.insulin) {
+            let insulin = await source.importInsulinHistory(since: since)
+            history?.ingestBoluses(insulin.map { BolusMarker(date: $0.date, units: $0.units) },
+                                   sourceID: "healthkit-import")
+        }
+        if enabled.contains(.heartRate) {
+            let hr = await source.importHeartRateHistory(since: since)
+            history?.ingestHeartRate(hr, sourceID: "healthkit")
+        }
+        if enabled.contains(.glucose) {
+            let existingSlots = Set((history?.glucose(in: since...Date()) ?? [])
+                .map { Int($0.date.timeIntervalSince1970 / 300) })
+            let glucose = await source.importGlucoseGapFill(since: since, existingSlots: existingSlots,
+                                                             sourceID: HealthKitHistoryImporter.glucoseImportSourceID)
+            history?.ingestGlucose(glucose, sourceID: HealthKitHistoryImporter.glucoseImportSourceID, priority: 10)
+        }
+    }
+    #endif
+
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
     #if FABOLUS_NUDGE
     @ObservationIgnored private var alertIntel = AppModel.loadAlertIntel()
@@ -1595,6 +1669,9 @@ public final class AppModel {
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
+        #if FABOLUS_HEALTHKIT
+        maybeAutoImportAppleHealth()   // D-11b: default-OFF, throttled hourly like the Nightscout backfill
+        #endif
         updateEatingNudge()
         reconcileHeartRateWanted()   // 09.18b (D-09): keep the watch HR-send in sync with the in-app toggle
         evaluateSavePinOffer()

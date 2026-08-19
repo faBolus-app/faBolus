@@ -2,6 +2,20 @@ import Foundation
 import HealthKit
 import faBolusCore
 
+/// Phase 09.23-02: the seam `AppModel`'s import hook calls through — lets a test substitute a fake
+/// (never touching real `HKHealthStore`) to verify routing/type-selection without an entitlement.
+/// `HealthKitHistoryImporter` conforms below; `AppModel`'s `#if FABOLUS_HEALTHKIT` property is typed
+/// as this protocol, swappable via `setHealthKitImportSourceForTesting` (mirrors
+/// `setHistoryStoreForTesting`'s injectable-store idiom).
+@MainActor
+protocol HealthKitImportSource {
+    func requestAuthorizationIfNeeded(enabledTypes: Set<HealthKitHistoryImporter.HealthKitImportType>) async
+    func importCarbHistory(since: Date) async -> [(date: Date, grams: Double)]
+    func importInsulinHistory(since: Date) async -> [(date: Date, units: Double)]
+    func importHeartRateHistory(since: Date) async -> [(date: Date, bpm: Double)]
+    func importGlucoseGapFill(since: Date, existingSlots: Set<Int>, sourceID: String) async -> [GlucoseReading]
+}
+
 /// Phase 09.23 (D-05/D-08/D-11/D-12/D-14): retrospective HISTORY import from Apple Health into
 /// faBolus's logbook — NEVER a live dosing input (D-05; the boundary is test-enforced by
 /// `HealthKitImportDosePathGuardTests`). Wave 1 (09.23-01) shipped the tracer's ONE read type
@@ -196,3 +210,5 @@ final class HealthKitHistoryImporter {
         return types
     }
 }
+
+extension HealthKitHistoryImporter: HealthKitImportSource {}
