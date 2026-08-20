@@ -34,14 +34,6 @@ struct WatchGlanceView: View {
                                 Text(model.trend).font(.title2)
                                     .foregroundStyle(stale ? .gray : .primary)
                             }
-                            // Icon+word non-color band channel (WCAG 1.4.1), fresh readings only — the
-                            // number is grey when stale, no band color to duplicate. Hidden from
-                            // VoiceOver: glanceGlucoseLabel already speaks the band word (see below).
-                            if present == .fresh {
-                                BandIndicator(band: GlucoseRange.classify(g), announcesOwnLabel: false)
-                                    .font(.caption2)
-                                    .foregroundStyle(AppTheme.glucoseColor(g))
-                            }
                             Text(model.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: ctx.date) } ?? unitLabel)
                                 .font(.caption2)
                                 .fontWeight(stale ? .semibold : .regular)
