@@ -350,8 +350,8 @@ enum SettingsIndex {
         .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         .init(title: "Allow bolusing from Watch & Garmin", keywords: "allow enable remote bolus watch garmin deliver read only view only", category: .remotes),
         .init(title: "Remote bolus size limit", keywords: "ceiling cap max units remote bolus limit dose watch garmin", category: .remotes),
-        .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share", category: .cgm),
-        .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
+        .init(title: "Failover CGM source", keywords: "dexcom nightscout share", category: .cgm),
+        .init(title: "CGM account credentials", keywords: "login share nightscout", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
@@ -658,64 +658,24 @@ struct CgmSettingsView: View {
     let model: AppModel
     @Bindable var settings: AppSettings
     @State private var selectedGlucoseSource = GlucoseSourceRegistry.selectedId() ?? ""
-    @State private var showExperimentalCgmWarning = false
-    /// FB-07: an experimental source is NOT committed to the registry until the user accepts the warning.
-    /// `pendingExperimentalId` holds the not-yet-committed choice; `lastCommittedSource` is what we roll
-    /// the picker back to on Cancel; `isReverting` suppresses the re-entrant onChange from that rollback.
-    @State private var pendingExperimentalId: String?
-    @State private var lastCommittedSource = GlucoseSourceRegistry.selectedId() ?? ""
-    @State private var isReverting = false
-    /// Failover sources that are experimental / validation-pending (docs/UNVERIFIED-GUESSES.md #5,
-    /// D-14): selecting one raises a blocking warning that it hasn't been verified on-device yet.
-    /// D-03/D-05 (09.20-RESEARCH.md "D-05 reliability re-check"): the mechanism itself — passively
-    /// reading alongside an already-running official Dexcom app — is confident, not a guess; only the
-    /// on-device confirmation (D-13) is still pending.
-    private static let experimentalCgmSourceIds: Set<String> = ["dexcom-g6-ble"]
     var body: some View {
         Form {
             Section {
                 // 09.3-03 (D-05/SC3): intentional, documented exception to the unified Bool guardedToggle
                 // idiom — this picker is String/GlucoseSourceRegistry-backed, not an AppSettings Bool, so
-                // guardedToggle cannot type-check it (09.3-RESEARCH.md Open Question 1, Pitfall 3). Its
-                // own pending/lastCommitted/isReverting confirm-and-rollback shape below is left as-is.
+                // guardedToggle cannot type-check it (09.3-RESEARCH.md Open Question 1, Pitfall 3).
+                // Phase 1, Plan 02 (CGM-03/CGM-04): the experimental-warning confirm-and-rollback flow
+                // (pendingExperimentalId/lastCommittedSource/isReverting/showExperimentalCgmWarning) was
+                // removed with `dexcom-g6-ble` — it was the flow's ONLY trigger source.
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
                 }
                 .onChange(of: selectedGlucoseSource) { _, id in
-                    if isReverting { isReverting = false; return }   // programmatic rollback, don't re-handle
-                    if Self.experimentalCgmSourceIds.contains(id) {
-                        // FB-07: defer the commit until the warning is accepted; roll back on Cancel.
-                        pendingExperimentalId = id
-                        showExperimentalCgmWarning = true
-                    } else {
-                        GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
-                        lastCommittedSource = id
-                    }
+                    GlucoseSourceRegistry.select(id.isEmpty ? nil : id)
                 }
             } header: { Text("1. Choose a source") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
-            }
-            .alert("Untested source", isPresented: $showExperimentalCgmWarning) {
-                Button("Use it anyway", role: .destructive) {
-                    if let id = pendingExperimentalId {
-                        GlucoseSourceRegistry.select(id)   // commit only now
-                        lastCommittedSource = id
-                    }
-                    pendingExperimentalId = nil
-                }
-                Button("Cancel", role: .cancel) {
-                    // Nothing was committed; roll the picker back to the last accepted source.
-                    pendingExperimentalId = nil
-                    isReverting = true
-                    selectedGlucoseSource = lastCommittedSource
-                }
-            } message: {
-                // D-03/D-05 (gap-closure, 09.20-VERIFICATION.md): honest "Read from Dexcom app" framing,
-                // matching CgmCredentialsView's footer copy — this is the point-of-selection gate a user
-                // hits BEFORE ever reaching that screen, so it must carry the same confident-but-untested
-                // message, not the earlier retracted hedge about the connection not succeeding.
-                Text("⚠️ This reads your sensor passively alongside the official Dexcom app — keep that app installed, paired, and running (a sensor already set up there needs no re-pairing and no transmitter ID). The first reading can take up to ~5 minutes (one Dexcom wake cycle) — that's normal, not a failure. This mode hasn't been verified on-device yet. See docs/operate/cgm-failover.md.")
             }
             Section {
                 NavigationLink { CgmCredentialsView(model: model) } label: {

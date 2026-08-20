@@ -123,8 +123,8 @@ TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
 # they are gated via the APP_SOURCE_EXCLUDES excludes: list (see the app-source strip logic below), not a
 # whole-block strip. FABOLUS_CGM_G6=0 ADDITIONALLY drops the DexcomG6Kit SPM package + the app-target
 # dependency on it (D-06: prove a single CGM SPM product can be dropped while G7SensorKit/ShareClient stay).
-CGM_G6="${FABOLUS_CGM_G6:-1}"
-CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-1}"
+CGM_G6="${FABOLUS_CGM_G6:-0}"
+CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-0}"
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
 CGM_XDRIP="${FABOLUS_CGM_XDRIP:-0}"
 # Phone-peer remote compile gate (TOPO-03/D-03; name per PER-SURFACE-CHECKLIST §B). Default 1 = the

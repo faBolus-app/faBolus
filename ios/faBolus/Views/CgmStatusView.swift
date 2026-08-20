@@ -120,15 +120,14 @@ struct CgmStatusView: View {
     // MARK: - View wiring (reads already-tracked model state only)
 
     /// Sources considered "configured": the selected source, the armed source, and any source with
-    /// saved cloud credentials — presented in registry order. Credential-less sources (G7/G6/HealthKit/
-    /// xDrip) only appear once selected/armed, since they have nothing to configure until chosen.
+    /// saved cloud credentials — presented in registry order. Credential-less sources (G7/HealthKit)
+    /// only appear once selected/armed, since they have nothing to configure until chosen.
     private func configuredSources() -> [(id: String, name: String)] {
         var ids = Set<String>()
         if let s = GlucoseSourceRegistry.selectedId(), !s.isEmpty { ids.insert(s) }
         if let armed = model.glucoseSourceProbe?.id { ids.insert(armed) }
         if GlucoseSourceConfig.string("nightscout.url") != nil { ids.insert("nightscout") }
         if GlucoseSourceConfig.string("dexcomshare.username") != nil { ids.insert("dexcom-share") }
-        if GlucoseSourceConfig.string("librelinkup.username") != nil { ids.insert("librelinkup") }
         return GlucoseSourceRegistry.enabled
             .filter { ids.contains($0.id) }
             .map { (id: $0.id, name: $0.name) }

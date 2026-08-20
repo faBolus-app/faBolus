@@ -7,17 +7,11 @@ import faBolusCore
 struct CgmCredentialsView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var readingTxId = false
-    @State private var readTxIdError: String?
     // 09.23-03 (D-14): reactive access to the per-type Apple Health import/export toggles the
     // healthKitConfigSection rows below bind to — mirrors SettingsView's `@State private var
     // settings = AppSettings.shared` idiom.
     @State private var settings = AppSettings.shared
 
-    // LibreLinkUp (Libre 2/3)
-    @State private var libreUser = ""
-    @State private var librePass = ""
-    @State private var libreRegion = ""
     // Dexcom Share (G6 / last-resort)
     @State private var shareUser = ""
     @State private var sharePass = ""
@@ -26,11 +20,6 @@ struct CgmCredentialsView: View {
     @State private var nsURL = ""
     @State private var nsToken = ""
     @State private var nsApiSecret = ""
-    // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
-    @State private var g6TransmitterID = ""
-    // 09.24-01 (D-05): collapsed by default; auto-expanded in `load()` when a saved ID exists so a
-    // returning user's existing disambiguation setting is never hidden from them.
-    @State private var g6AdvancedExpanded = false
 
     /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
     /// "Test <name>" button label and the empty-state guidance.
@@ -61,8 +50,7 @@ struct CgmCredentialsView: View {
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
     static let configuredSectionSourceIds: Set<String> = {
         var ids: Set<String> = [
-            "librelinkup", "dexcom-share", "nightscout", "dexcom-g6-ble",
-            "dexcom-g7-ble",
+            "dexcom-share", "nightscout", "dexcom-g7-ble",
         ]
         // D-13 (Phase 09.23): "healthkit" only exists in GlucoseSourceRegistry.enabled when
         // FABOLUS_HEALTHKIT is ON — keep this set equal to the registry's id set in BOTH flag
@@ -272,19 +260,6 @@ struct CgmCredentialsView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Email", text: $libreUser)
-                    .textContentType(.username).keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("Password", text: $librePass)
-                TextField("Region (optional, e.g. us, eu)", text: $libreRegion)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-            } header: {
-                Text("FreeStyle Libre 2/3 — LibreLinkUp")
-            } footer: {
-                Text("Your LibreLinkUp follower account (share from the LibreLink app). Region is auto-detected on first login if left blank.")
-            }
-
-            Section {
                 TextField("Username", text: $shareUser)
                     .textContentType(.username)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -314,47 +289,10 @@ struct CgmCredentialsView: View {
                 Text("A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**.")
             }
 
-            Section {
-                DisclosureGroup("Advanced — multiple sensors nearby", isExpanded: $g6AdvancedExpanded) {
-                    Text("Only needed if another Dexcom transmitter is broadcasting nearby (e.g. a sibling, a clinic waiting room, another household member). A single sensor already set up in the Dexcom app needs none of this.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextField("Transmitter ID (6 chars, optional — disambiguates multiple sensors)", text: $g6TransmitterID)
-                        .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                    Button {
-                        Task {
-                            readingTxId = true; readTxIdError = nil
-                            if let id = await model.readG6TransmitterId() {
-                                g6TransmitterID = id; save()
-                            } else {
-                                readTxIdError = "Couldn't read the transmitter ID — connect to the pump first (it reports the paired G6 transmitter)."
-                            }
-                            readingTxId = false
-                        }
-                    } label: {
-                        HStack {
-                            Label("Read transmitter ID from pump", systemImage: "arrow.down.circle")
-                            if readingTxId { Spacer(); ProgressView() }
-                        }
-                    }
-                    .disabled(readingTxId)
-                    if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
-                }
-                .accessibilityHint("Only needed when more than one Dexcom sensor is nearby")
-            } header: {
-                Text("Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)")
-            } footer: {
-                // D-03/D-05 (Plan 04): confident guided-setup copy, replacing the earlier hedging
-                // framing that this document's "D-05 reliability re-check" section walked back
-                // (09.20-RESEARCH.md — the re-check found no evidence for it). "Read from Dexcom
-                // app" is the DEFAULT mode: reliable whenever its one hard precondition holds (the
-                // official Dexcom app installed, paired, and running). The experimental / untested
-                // marker stays (D-14) — the mechanism is confident, but on-device validation (D-13)
-                // hasn't run yet.
-                Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor — but if anyone else nearby also wears a Dexcom (a sibling, a clinic waiting room, another household member), enter your transmitter ID under **Advanced** below so faBolus reads YOUR sensor, not theirs. The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
-            }
-
             // D-11: the sources that previously had no section (G7 / HealthKit). xDrip App Group's
-            // section was removed with the source (Phase 1, Plan 01 — CGM-05).
+            // section was removed with the source (Phase 1, Plan 01 — CGM-05); the LibreLinkUp and
+            // Dexcom G6 sections/descriptors were removed with their sources (Phase 1, Plan 02 —
+            // CGM-03/CGM-04, D-10).
             g7ConfigSection
             healthKitConfigSection
 
@@ -424,19 +362,12 @@ struct CgmCredentialsView: View {
     }
 
     private func load() {
-        libreUser = GlucoseSourceConfig.string("librelinkup.username") ?? ""
-        librePass = CredentialStore.get(account: "librelinkup.password") ?? ""
-        libreRegion = GlucoseSourceConfig.string("librelinkup.region") ?? ""
         shareUser = GlucoseSourceConfig.string("dexcomshare.username") ?? ""
         sharePass = CredentialStore.get(account: "dexcomshare.password") ?? ""
         shareRegion = GlucoseSourceConfig.string("dexcomshare.region") ?? "us"
         nsURL = GlucoseSourceConfig.string("nightscout.url") ?? ""
         nsToken = CredentialStore.get(account: "nightscout.token") ?? ""
         nsApiSecret = CredentialStore.get(account: "nightscout.apisecret") ?? ""
-        g6TransmitterID = GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? ""
-        // 09.24-01 (D-05): a returning user who already saved a disambiguation ID never has it
-        // hidden behind the collapsed-by-default Advanced disclosure.
-        g6AdvancedExpanded = !g6TransmitterID.isEmpty
     }
 
     private func save() {
@@ -444,10 +375,6 @@ struct CgmCredentialsView: View {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? nil : t
         }
-        GlucoseSourceConfig.set(trimmed(libreUser), "librelinkup.username")
-        CredentialStore.set(trimmed(librePass), account: "librelinkup.password")
-        GlucoseSourceConfig.set(trimmed(libreRegion)?.lowercased(), "librelinkup.region")
-
         GlucoseSourceConfig.set(trimmed(shareUser), "dexcomshare.username")
         CredentialStore.set(trimmed(sharePass), account: "dexcomshare.password")
         GlucoseSourceConfig.set(shareRegion, "dexcomshare.region")
@@ -455,7 +382,6 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(nsURL), "nightscout.url")
         CredentialStore.set(trimmed(nsToken), account: "nightscout.token")
         CredentialStore.set(trimmed(nsApiSecret), account: "nightscout.apisecret")
-        GlucoseSourceConfig.set(trimmed(g6TransmitterID)?.uppercased(), "dexcomg6.transmitterId")
     }
 
 }

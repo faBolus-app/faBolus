@@ -21,22 +21,10 @@ public enum GlucoseSourceRegistry {
                                     sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
                 DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
             },
-            // D-06: only the production instance (restoreStateEnabled == true, i.e. makeSelected())
-            // gets the stable restore identifier; the CgmCredentialsView "Test" instance
-            // (make(id:)) always gets nil. Two CBCentralManagers sharing a restore-identifier
-            // string in one process is a CoreBluetooth SIGABRT — this is the only thing standing
-            // between the two call sites and that crash, so do not default this to true.
-            // D-03/D-05 (Plan 04): renamed from the earlier "(direct BLE, passive — experimental)"
-            // framing, which hedged the mechanism itself as unreliable. It's the SAME reliable "Read
-            // from Dexcom app" path (see 09.20-RESEARCH.md's "D-05 reliability re-check" section, which
-            // walked that earlier framing back); only the on-device validation is pending (D-14), which
-            // is why "experimental" stays in the name.
-            GlucoseSourceDescriptor(id: "dexcom-g6-ble", name: "Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)",
-                                    sensors: ["Dexcom G6", "Dexcom G5", "Dexcom ONE"]) { restoreStateEnabled in
-                DexcomG6BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG6BLESource.productionRestoreIdentifier : nil)
-            },
-            GlucoseSourceDescriptor(id: "librelinkup", name: "FreeStyle Libre 2/3 (LibreLinkUp)",
-                                    sensors: ["FreeStyle Libre 2", "FreeStyle Libre 3"]) { _ in LibreLinkUpSource() },
+            // dexcom-g6-ble (DexcomG6BLESource) and librelinkup (LibreLinkUpSource) removed from
+            // narrow `main` — Phase 1, Plan 02 (CGM-03/CGM-04). Compile-excluded via
+            // FABOLUS_CGM_G6=0 / FABOLUS_CGM_LIBRELINKUP=0 in scripts/generate-project.sh; the
+            // source files themselves stay checked in (still built on dev/cgm-extra at =1).
             GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
                                     sensors: ["Any"]) { _ in NightscoutSource() },
             GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
