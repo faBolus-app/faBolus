@@ -7,6 +7,40 @@ import faBolusCore
 /// for the 45 persisted `AppSettings` keys; these tests pin the four hand-maintained lists to it so they
 /// can never drift silently — the mirror-plus-guard idiom used by `PumpControlBoundsMirrorTests` and
 /// `WidgetGlucoseThresholdsMirrorTests`, applied to the settings surface instead of a wire/firmware bound.
+/// Phase 00-04 (INV-02 §6c). Reusable no-dangling-refs / cohesive-UX completeness helper.
+///
+/// The narrow-main topology removes surfaces one at a time; when a surface is compiled OUT, every
+/// user-facing reference to it must go with it (settings rows, search entries, nav, deep-links) or the
+/// UX is left incoherent — a search hit that routes nowhere. This helper is the reusable §6c backstop
+/// each later removal phase parametrizes: it asks, for a set of search tokens owned by a gated-OFF
+/// feature, which `SettingsIndex` rows still advertise it. Phase 0 removes nothing, so on the current
+/// build the gated-off token set is empty and the answer is `[]` (vacuous-green, by design). Each later
+/// phase adds its surface's token(s) to `gatedOffSearchTokens` under the matching `#if`, plus one
+/// assertion for the surface it removes. It lives in the test target (not product code) so the
+/// dose/signed + settings product sources stay byte-identical across branches (INV-01).
+enum CompileGateAudit {
+    /// Search tokens owned by every feature that is compile-gated OFF on the CURRENT build. EMPTY on
+    /// `main` today: Phase 0 authors the `FABOLUS_*` gates but flips NONE (all default present). Each
+    /// later removal phase inserts its surface's token(s) guarded by the matching `#if` so a token is
+    /// only expected-orphaned when the feature is genuinely compiled out, e.g.:
+    ///   `#if !FABOLUS_MAC` → `tokens.insert("Set up a Mac remote")` (Phase 3)
+    static var gatedOffSearchTokens: Set<String> {
+        var tokens: Set<String> = []
+        // Phase 0: no surface removed → no gated-off tokens.
+        return tokens
+    }
+
+    /// The `SettingsIndex` rows that still advertise a gated-off feature — a §6c dangling ref. A
+    /// non-empty result means a removed feature left a live, findable settings row behind.
+    /// `Entry.matches` is the exact predicate `SettingsView` uses for search, so "advertised" here means
+    /// precisely "the user could still find it". Non-tautological: given no tokens it returns `[]`; given
+    /// a token owned by a present row it returns that row (see `orphanDetectorIsNonVacuous`).
+    static func orphanedSettingsIndexEntries(forGatedOffTokens tokens: Set<String>) -> [SettingsIndex.Entry] {
+        guard !tokens.isEmpty else { return [] }
+        return SettingsIndex.entries.filter { entry in tokens.contains { entry.matches($0) } }
+    }
+}
+
 struct SettingsCatalogTests {
 
     /// The four backup keys `backupSnapshot()` emits only when their value is present (two optionals — an
