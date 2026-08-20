@@ -61,8 +61,10 @@ import Foundation
     }
 
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
-        // Maximally hostile config for EVERY category: disabled, all-day quiet, huge rate-limit, AND
-        // break-through OFF — proving the new toggle has zero effect on the never-suppressible trio (D-05).
+        // 09.25-01 (D-07): re-specified — "a trio delivers UNLESS the user acknowledged the
+        // safety-disable warning." Maximally hostile config for EVERY category: disabled, all-day
+        // quiet, huge rate-limit, AND break-through OFF — proving the config alone (without the
+        // paired acknowledgment) has zero effect on the never-suppressible trio (D-05).
         let settings = Dictionary(uniqueKeysWithValues: C.allCases.map {
             ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
                                     minIntervalSeconds: 99_999, allowCriticalBreakthrough: false))
@@ -72,13 +74,26 @@ import Foundation
         for c in C.allCases where c.neverSuppressible {
             let d = B.decide(msg(c), settings: settings, state: state,
                              budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
-            #expect(d.deliver, "\(c.rawValue) must always deliver")
+            #expect(d.deliver, "\(c.rawValue) must always deliver when the ack flag is unset")
             #expect(d.nextState.deliveredToday == 1000, "\(c.rawValue) must still be recorded")
         }
         // A governed category in the SAME config is suppressed (proves the config really is hostile).
         let g = B.decide(msg(.pumpAlert), settings: settings, state: state,
                          budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
         #expect(!g.deliver)
+        // NEW arm (D-07): the SAME maximally hostile config, but with the paired acknowledgment
+        // ALSO set — this is the one and only condition under which a trio member suppresses.
+        let acknowledged = Dictionary(uniqueKeysWithValues: C.allCases.map {
+            ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
+                                    minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
+                                    userAcknowledgedSafetyDisable: true))
+        })
+        for c in C.allCases where c.neverSuppressible {
+            let d = B.decide(msg(c), settings: acknowledged, state: state,
+                             budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+            #expect(!d.deliver && d.reason == .categoryDisabled,
+                    "\(c.rawValue) must suppress once the user acknowledged disabling it")
+        }
     }
 
     @Test func disabledGovernedCategoryIsSuppressed() {
@@ -172,6 +187,8 @@ import Foundation
     }
 
     @Test func snoozeSuppressesGovernedUntilTheDeadlineButNeverSafety() {
+        // 09.25-01 (D-07): re-specified — distinguishes a TRANSIENT snooze (never silences a trio,
+        // no matter how it's forced) from the DELIBERATE acknowledged disable (the one path that does).
         // Snooze pumpAlert until 10:00: suppressed before, delivers after.
         let s = B.snooze(B.State(), category: .pumpAlert, until: at(10, 0))
         #expect(B.decide(msg(.pumpAlert), settings: enabled(.pumpAlert), state: s, now: at(9, 0), calendar: cal).reason == .snoozed)
@@ -181,7 +198,19 @@ import Foundation
         // …and even a hand-forged snooze map can't silence one (the read side bypasses it above the check).
         let forged = B.State(snoozedUntil: ["pumpDisconnect": at(10, 0), "cgmDataLoss": at(10, 0), "bolusReconciliation": at(10, 0)])
         for c in C.allCases where c.neverSuppressible {
-            #expect(B.decide(msg(c), settings: [:], state: forged, now: at(9, 0), calendar: cal).deliver)
+            #expect(B.decide(msg(c), settings: [:], state: forged, now: at(9, 0), calendar: cal).deliver,
+                   "a transient snooze — even hand-forged — can never silence a trio")
+        }
+        // NEW arm: the SAME forged-snooze state, but now with the deliberate acknowledged disable ALSO
+        // set — THIS is the one path that suppresses, proving snooze and acknowledged-disable are
+        // distinct mechanisms (a transient snooze is refused; a deliberate acknowledgment is honored).
+        let ackedWhileForged = Dictionary(uniqueKeysWithValues: C.allCases.map {
+            ($0, B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true))
+        })
+        for c in C.allCases where c.neverSuppressible {
+            let d = B.decide(msg(c), settings: ackedWhileForged, state: forged, now: at(9, 0), calendar: cal)
+            #expect(!d.deliver && d.reason == .categoryDisabled,
+                   "\(c.rawValue): the acknowledged disable — not the forged snooze — is what suppresses")
         }
     }
 
@@ -252,5 +281,40 @@ import Foundation
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
+        // 09.25-01 (D-07): userAcknowledgedSafetyDisable round-trips when set…
+        let cfg3 = B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
+        #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3))) == cfg3)
+        #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3))).userAcknowledgedSafetyDisable == true)
+        // …AND a pre-this-field blob (the shape persisted since Phase 8.1, missing the new key
+        // entirely) decodes with the ack field defaulting to nil — back-compat, per the Future-field
+        // warning: a missing key must never fail the whole decode.
+        let preFieldJSON = """
+        {"enabled":true,"quietStartMinuteOfDay":0,"quietEndMinuteOfDay":0,"minIntervalSeconds":0,"allowCriticalBreakthrough":true}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(B.CategorySettings.self, from: preFieldJSON)
+        #expect(decoded.userAcknowledgedSafetyDisable == nil, "a pre-field blob must decode with the ack flag nil, not fail")
+        #expect(decoded.enabled == true)
+    }
+
+    /// 09.25-01 (D-03/D-07): focused decide() coverage — for every trio category, suppression requires
+    /// BOTH `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
+    @Test func trioSuppressedOnlyByAcknowledgedDisable() {
+        for c in C.allCases where c.neverSuppressible {
+            // enabled:false, ack:nil → delivers (the mandatory gate is unmet).
+            let notAcked = B.decide(msg(c), settings: [c: B.CategorySettings(enabled: false)],
+                                    state: B.State(), now: at(9, 0), calendar: cal)
+            #expect(notAcked.deliver, "\(c.rawValue): enabled==false alone (ack nil) must still deliver")
+            // enabled:true, ack:true → delivers (enabled must ALSO be false).
+            let enabledButAcked = B.decide(msg(c),
+                                           settings: [c: B.CategorySettings(enabled: true, userAcknowledgedSafetyDisable: true)],
+                                           state: B.State(), now: at(9, 0), calendar: cal)
+            #expect(enabledButAcked.deliver, "\(c.rawValue): enabled==true must still deliver even if ack is set")
+            // enabled:false, ack:true → suppressed (the AND-gate is satisfied).
+            let suppressed = B.decide(msg(c),
+                                      settings: [c: B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)],
+                                      state: B.State(), now: at(9, 0), calendar: cal)
+            #expect(!suppressed.deliver && suppressed.reason == .categoryDisabled,
+                   "\(c.rawValue): enabled==false AND ack==true must suppress")
+        }
     }
 }

@@ -316,7 +316,12 @@ public enum NotificationBroker {
 
     /// Record a "snooze this category until `until`" into `state`, returning the next state. **Refuses a
     /// `neverSuppressible` category** — the write side guards the safety invariant in addition to `decide`
-    /// bypassing it on the read side, so no code path (or corrupt input) can ever snooze a safety alert.
+    /// bypassing it on the read side, so no TRANSIENT snooze (or corrupt/forged snooze map) can ever
+    /// suppress a safety alert. **(D-07, 09.25-01):** this is no longer an absolute "no code path can
+    /// ever suppress a safety alert" — the user CAN deliberately disable a trio category, but only
+    /// through the explicit, acknowledged path `decide()` reads at the trio short-circuit
+    /// (`CategorySettings.userAcknowledgedSafetyDisable`), never through this snooze mechanism. A
+    /// transient snooze/quiet-hour/rate-limit/budget still cannot suppress a trio member.
     public static func snooze(_ state: State, category: Category, until: Date) -> State {
         guard !category.neverSuppressible else { return state }
         var out = state
