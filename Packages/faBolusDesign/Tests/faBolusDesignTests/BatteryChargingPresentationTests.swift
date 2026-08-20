@@ -11,6 +11,9 @@ struct BatteryChargingPresentationTests {
         #expect(p.symbolName == "battery.100percent.bolt")
         #expect(p.showsChargingText)
         #expect(!p.usesLowTint)
+        // WR-02 review fix: `valueText` is the single formatted string every consuming surface
+        // (incl. the Watch details row) now reads instead of re-interpolating its own copy.
+        #expect(p.valueText == "80% · Charging")
     }
 
     @Test func chargingLowBatteryOverridesTheLowTintWarning() {
@@ -19,6 +22,7 @@ struct BatteryChargingPresentationTests {
         let p = BatteryChargingPresentation.make(percent: 10, charging: true)
         #expect(!p.usesLowTint)
         #expect(p.showsChargingText)
+        #expect(p.valueText == "10% · Charging")
     }
 
     @Test func notChargingHighBatteryRendersByteIdenticalToToday() {
@@ -27,12 +31,14 @@ struct BatteryChargingPresentationTests {
         #expect(p.symbolName == "battery.75")
         #expect(!p.showsChargingText, "fail-closed: no false Charging text (D-03)")
         #expect(!p.usesLowTint)
+        #expect(p.valueText == "80%")
     }
 
     @Test func notChargingLowBatteryKeepsTheUnchangedLowWarning() {
         let p = BatteryChargingPresentation.make(percent: 10, charging: false)
         #expect(p.usesLowTint)
         #expect(!p.showsChargingText)
+        #expect(p.valueText == "10%")
     }
 
     /// The level->glyph mapping stays byte-identical to the pre-09.27 `StatusPillsView.batteryIcon`

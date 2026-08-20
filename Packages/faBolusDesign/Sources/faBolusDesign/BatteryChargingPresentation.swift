@@ -14,6 +14,14 @@ public struct BatteryPresentation: Equatable, Sendable {
     /// overrides this — charging is never shown as a warning state (D-04) — so this is `false`
     /// whenever `charging` is `true`, regardless of `percent`.
     public let usesLowTint: Bool
+    /// Review fix WR-02 — the SINGLE formatted display string ("N%" or "N% · Charging") every
+    /// battery-rendering surface should consume instead of re-interpolating its own copy of this
+    /// text. Before this field existed, the exact same `showsChargingText ? "\(percent)% ·
+    /// Charging" : "\(percent)%"` expression was duplicated verbatim across 4 call sites (and a
+    /// 5th, the Watch details row, needed the identical text) — a future wording change (a
+    /// different separator, a localized "Charging" string) would have required editing all of them
+    /// in lockstep. Equal to `showsChargingText ? "\(percent)% · Charging" : "\(percent)%"`.
+    public let valueText: String
 }
 
 /// SINGLE source of truth for the battery-charging glyph/text/tint decision (Phase 09.27, D-01
@@ -45,6 +53,7 @@ public enum BatteryChargingPresentation {
             showsChargingText: charging,
             // D-04: charging OVERRIDES the low-battery warning color — never a warning state while
             // charging, even at a low percent.
-            usesLowTint: percent <= 20 && !charging)
+            usesLowTint: percent <= 20 && !charging,
+            valueText: charging ? "\(percent)% · Charging" : "\(percent)%")
     }
 }

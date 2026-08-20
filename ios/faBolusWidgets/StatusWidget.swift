@@ -91,8 +91,9 @@ struct StatusWidgetView: View {
                     // surface uses, instead of the hardcoded "battery.100" icon; not-charging renders
                     // byte-identically to today (fail-closed).
                     let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
-                    let value = battery.showsChargingText ? "\(snap.batteryPercent)% · Charging" : "\(snap.batteryPercent)%"
-                    metric(battery.symbolName, "Battery", value)
+                    // WR-02 review fix: consume the centralized `valueText` instead of
+                    // re-interpolating the "N% · Charging" string here.
+                    metric(battery.symbolName, "Battery", battery.valueText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

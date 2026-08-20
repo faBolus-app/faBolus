@@ -42,8 +42,9 @@ struct StatusPillsView: View {
                                                              charging: snapshot.batteryCharging)
             pill(icon: battery.symbolName,
                  tint: battery.usesLowTint ? AppTheme.low : .green,
-                 value: battery.showsChargingText
-                    ? "\(snapshot.batteryPercent)% · Charging" : "\(snapshot.batteryPercent)%",
+                 // WR-02 review fix: consume the centralized `valueText` instead of re-interpolating
+                 // the "N% · Charging" string here (single source of truth for the formatted label).
+                 value: battery.valueText,
                  label: "Pump")
         case "cgm":
             cgmPill(now: now)

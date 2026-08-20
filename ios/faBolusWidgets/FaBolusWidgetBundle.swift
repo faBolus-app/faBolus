@@ -133,8 +133,9 @@ enum WidgetUI {
     static func batteryChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
         let battery = BatteryChargingPresentation.make(percent: state.batteryPercent, charging: state.batteryCharging)
         let tint = state.pumpLinkStale ? Color.gray : (battery.usesLowTint ? AppTheme.low : .green)
-        let value = battery.showsChargingText ? "\(state.batteryPercent)% · Charging" : "\(state.batteryPercent)%"
-        return PumpChip(icon: battery.symbolName, tint: tint, value: value)
+        // WR-02 review fix: consume the centralized `valueText` instead of re-interpolating the
+        // "N% · Charging" string here.
+        return PumpChip(icon: battery.symbolName, tint: tint, value: battery.valueText)
     }
 
     /// Basal/suspended chip — `waveform.path.ecg` (running) or `pause.circle.fill` (suspended),
