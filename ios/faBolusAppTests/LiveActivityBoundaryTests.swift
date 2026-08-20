@@ -173,6 +173,48 @@ struct LiveActivityBoundaryTests {
                 "boundary test could not locate ios/faBolus/App.swift — path resolution broke (#filePath=\(#filePath))")
     }
 
+    // MARK: - Phase 09.26-07 (D-22) — the optional Bolus-shortcut pill is nav-only, no delivery seam
+
+    /// Resolve `ios/faBolusWidgets/GlucoseLiveActivity.swift` — the presentation file the
+    /// `LABolusShortcutPill` lives in — the same `#filePath`-walk-up technique `intentsFileURL()`/
+    /// `appSwiftURL()` use above.
+    private static func glucoseLiveActivityFileURL() -> URL? {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("ios/faBolusWidgets/GlucoseLiveActivity.swift")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+            probe = probe.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    /// A path-resolution bug for the presentation-file scan must fail loudly too.
+    @Test func fileResolutionActuallyFoundGlucoseLiveActivitySwift() {
+        #expect(Self.glucoseLiveActivityFileURL() != nil,
+                "boundary test could not locate ios/faBolusWidgets/GlucoseLiveActivity.swift — path resolution broke (#filePath=\(#filePath))")
+    }
+
+    /// D-22: the optional Bolus-shortcut pill is a NAV-ONLY affordance — it must wire to the
+    /// EXISTING `LAOpenBolusIntent` (never a new interactive `LiveActivityIntent` that doses) and the
+    /// presentation file it lives in must carry NONE of the `forbiddenDeliverySymbols`. Comment-
+    /// stripped for the same reason `sourceScanContainsNoDeliverySeamSymbols` strips
+    /// `LiveActivityIntents.swift` — this file's own doc comments legitimately name the concepts in
+    /// prose.
+    @Test func bolusShortcutPillWiresToOpenBolusIntentAndPresentationFileHasNoDeliverySeam() throws {
+        guard let url = Self.glucoseLiveActivityFileURL() else {
+            Issue.record("could not resolve ios/faBolusWidgets/GlucoseLiveActivity.swift from #filePath=\(#filePath)")
+            return
+        }
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        let stripped = Self.stripLineComments(raw)
+        #expect(stripped.contains("LAOpenBolusIntent"),
+                "GlucoseLiveActivity.swift must wire the Bolus-shortcut pill to the existing nav-only LAOpenBolusIntent")
+        let violations = Self.forbiddenDeliverySymbols.filter { stripped.contains($0) }
+        #expect(violations.isEmpty,
+                "Phase 7 boundary violated — GlucoseLiveActivity.swift references delivery-seam symbol(s): \(violations.sorted().joined(separator: ", "))")
+    }
+
     // MARK: - Behavioral: open-to-bolus carries no dose/carb
 
     @Test func openBolusIntentSetsOnlyTheNavRequestAndCreatesNoPendingBolus() async throws {

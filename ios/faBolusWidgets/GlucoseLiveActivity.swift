@@ -196,6 +196,10 @@ private func fullBleedDIExpandedTrailing(
 /// ceiling) the Lock Screen full-bleed body passes, so a Settings change is visible on EVERY
 /// full-bleed presentation, not just the Lock Screen — plus the always-available compact action row
 /// beneath it (D-18, unchanged from Classic's `.bottom`).
+///
+/// Phase 09.26-07 (D-22): when `showBolusShortcut` is on, the compact `LABolusShortcutPill` renders
+/// LEADING of the compact action row, which itself passes `showOpenBolus: false` — the pill becomes
+/// the single bolus entry point here too (de-dup), matching the Lock Screen full-bleed body.
 @MainActor
 @ViewBuilder
 private func fullBleedDIExpandedBottom(
@@ -215,7 +219,12 @@ private func fullBleedDIExpandedBottom(
             showYAxisTicks: context.state.showYAxisTicks,
             showRangeLines: context.state.showRangeLines)
             .frame(height: 44)
-        LAActionRow(context: context, compact: true)
+        HStack(spacing: 8) {
+            if context.state.showBolusShortcut {
+                LABolusShortcutPill(compact: true)
+            }
+            LAActionRow(context: context, compact: true, showOpenBolus: false)
+        }
     }
 }
 
@@ -381,9 +390,15 @@ private struct MinimalFallbackView: View {
 /// (never re-derived here) that is false whenever the only active alert is a non-snoozeable `.alarm`
 /// (`PumpAlertKind.isAutoRuleEligible`). `compact` trims to icon-only glyphs for the Dynamic Island's
 /// tight `.bottom` region; the Lock Screen banner has room for the full label.
+///
+/// Phase 09.26-07 (D-22/de-dup) — `showOpenBolus` (default `true`) gates the "Open Bolus" button.
+/// EVERY Classic call site is byte-identical (they never pass this parameter, so it stays `true`);
+/// the full-bleed render paths pass `false` because the new `LABolusShortcutPill` becomes the SINGLE
+/// bolus entry point there — Snooze/Refresh are unaffected either way.
 private struct LAActionRow: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var compact: Bool = false
+    var showOpenBolus: Bool = true
 
     var body: some View {
         Group {
@@ -400,8 +415,10 @@ private struct LAActionRow: View {
 
     @ViewBuilder private var buttons: some View {
         HStack(spacing: compact ? 14 : 20) {
-            Button(intent: LAOpenBolusIntent()) {
-                Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
+            if showOpenBolus {
+                Button(intent: LAOpenBolusIntent()) {
+                    Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
+                }
             }
             if context.state.hasSnoozeEligibleAlert {
                 Button(intent: LASnoozeAlertIntent()) {
@@ -411,6 +428,37 @@ private struct LAActionRow: View {
             Button(intent: LAReconnectIntent()) {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+        }
+    }
+}
+
+/// D-22 — the optional nav-only "Bolus" shortcut pill. Reuses the EXISTING `LAOpenBolusIntent`
+/// verbatim (open-only, zero `@Parameter`, `openAppWhenRun=true`) — introduces NO new
+/// `LiveActivityIntent` conformer. Styled as a DISTINCT tinted/filled action pill (`.borderedProminent`
+/// + accent tint) so it reads differently from the passive `PumpChipView` info chips it sits beside.
+/// `compact` trims to an icon-only glyph for the Dynamic Island's tighter `.bottom` region — mirrors
+/// `LAActionRow`'s own `compact` icon-only/titleAndIcon split.
+private struct LABolusShortcutPill: View {
+    var compact: Bool = false
+
+    var body: some View {
+        Group {
+            if compact {
+                label.labelStyle(.iconOnly)
+            } else {
+                label.labelStyle(.titleAndIcon)
+            }
+        }
+        .font(compact ? .caption2 : .caption)
+        .buttonStyle(.borderedProminent)
+        .tint(.accentColor)
+        .accessibilityLabel("Bolus")
+        .accessibilityHint("Opens the bolus entry screen. No dose is sent from here.")
+    }
+
+    private var label: some View {
+        Button(intent: LAOpenBolusIntent()) {
+            Label("Bolus", systemImage: "syringe")
         }
     }
 }
@@ -470,8 +518,14 @@ private struct LockScreenLiveActivityView: View {
                 Spacer(minLength: 0)
                 // Bottom row (D-13, 09.26-UI-SPEC.md "Bottom row") — the retained customizable
                 // field-selection composer, rendered ABOVE the always-available action row.
-                if !fullBleedBottomRowFields.isEmpty {
+                // Phase 09.26-07 (D-22): when the optional Bolus-shortcut pill is on, it takes the
+                // LEFTMOST slot of this SAME row and the customizable chips offset (shift right);
+                // when off, the chips use the full row exactly as before.
+                if context.state.showBolusShortcut || !fullBleedBottomRowFields.isEmpty {
                     HStack(spacing: 8) {
+                        if context.state.showBolusShortcut {
+                            LABolusShortcutPill()
+                        }
                         ForEach(fullBleedBottomRowFields, id: \.id) { f in
                             if let chip = WidgetUI.chip(for: f.id, context.state) {
                                 PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
@@ -479,8 +533,10 @@ private struct LockScreenLiveActivityView: View {
                         }
                     }
                 }
-                // D-18 (05-05) — always available, unchanged from Classic.
-                LAActionRow(context: context)
+                // D-18 (05-05) — always available, unchanged from Classic. Phase 09.26-07 (D-22/
+                // de-dup): full-bleed passes showOpenBolus: false — the pill above (when on) is the
+                // SINGLE bolus entry point here; Snooze/Refresh stay.
+                LAActionRow(context: context, showOpenBolus: false)
             }
         }
         // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the outer ZStack's

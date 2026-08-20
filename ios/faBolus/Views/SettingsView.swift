@@ -639,6 +639,14 @@ struct FullBleedLiveActivitySettingsView: View {
             } footer: {
                 Text("The Live Activity plot range is independent of the watch/phone chart's own range. 6h shows more history when available; a freshly started Live Activity may only have a shorter window collected yet.")
             }
+            // Phase 09.26-07 (D-22) — the optional nav-only Bolus shortcut. Off by default; when on,
+            // it becomes the SINGLE bolus entry point in the full-bleed style (the "Open Bolus"
+            // action-row button folds into this pill).
+            Section {
+                Toggle("Show bolus shortcut", isOn: $settings.liveActivityShowBolusShortcut)
+            } footer: {
+                Text("Adds a Bolus button to the Live Activity. It opens the bolus screen in the app — no dose is sent from the Live Activity.")
+            }
         }
         .navigationTitle("Full-bleed layout")
     }
