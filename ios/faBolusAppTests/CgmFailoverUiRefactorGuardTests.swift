@@ -69,15 +69,26 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("Selected: "))
     }
 
+    /// WR-01/IN-02 fix (09.24 review): the "no selection" copy now lives at its single source of
+    /// truth — the shared `CgmStatusView.selectionStatusSubtitle` pure helper — rather than being
+    /// duplicated as a literal in `SettingsView.swift`'s Section-3 subtitle. Pin it there instead.
     @Test func section3NoSelectionSubtitleIsPresent() throws {
-        let source = try #require(Self.readSource(Self.settingsViewPath))
+        let source = try #require(Self.readSource(Self.statusViewPath))
         #expect(source.contains("Pump only — no failover source selected"))
     }
 
+    /// WR-01/IN-02 fix (09.24 review): Section 3 now calls ONE shared helper
+    /// (`CgmStatusView.selectionStatusSubtitle`) instead of calling `classify`/`classificationLabel`
+    /// directly and independently from `statusSubtitleColor` (the IN-02 duplication that let WR-01's
+    /// divergence go unnoticed). Assert `SettingsView.swift` reuses that single helper, and that the
+    /// helper itself is still built on the pure `classify`/`classificationLabel` primitives rather
+    /// than reimplementing the classification logic inline.
     @Test func section3SubtitleReusesThePureStatusHelpers() throws {
-        let source = try #require(Self.readSource(Self.settingsViewPath))
-        #expect(source.contains("CgmStatusView.classificationLabel("))
-        #expect(source.contains("CgmStatusView.classify("))
+        let settingsSource = try #require(Self.readSource(Self.settingsViewPath))
+        #expect(settingsSource.contains("CgmStatusView.selectionStatusSubtitle("))
+        let statusSource = try #require(Self.readSource(Self.statusViewPath))
+        #expect(statusSource.contains("classify(sourceId:"))
+        #expect(statusSource.contains("classificationLabel(cls)"))
     }
 
     // MARK: - Task 1: row labels stay byte-identical

@@ -91,6 +91,25 @@ struct CgmStatusView: View {
         }
     }
 
+    /// WR-01/IN-02/IN-03 (09.24 review): the single, shared, pure basis for `CgmSettingsView`'s
+    /// Section-2 "Configure & test" subtitle and Section-3 "Status" subtitle. Both MUST agree on
+    /// whether a source is selected for the SAME underlying state — before this helper existed,
+    /// Section 3 read the raw, unvalidated `GlucoseSourceRegistry.selectedId()` while Section 2
+    /// validated against `GlucoseSourceRegistry.selected()`, so a stale/invalid persisted id (one
+    /// that no longer resolves to a descriptor in `enabled`) made the two sections contradict each
+    /// other. Callers must pass the ALREADY-VALIDATED selection — i.e. `GlucoseSourceRegistry
+    /// .selected()` (not the raw id) — so `nil` here always means "not selected" to both call sites.
+    /// `nonisolated static` and pure (mirrors `classify`), so it's directly unit-testable (closes
+    /// IN-03) without a live view or a live `AppModel`.
+    nonisolated static func selectionStatusSubtitle(selected: (id: String, name: String)?, armedId: String?,
+                                                     provenance: GlucoseProvenance) -> (text: String, isActive: Bool) {
+        guard let selected else {
+            return ("Pump only — no failover source selected", false)
+        }
+        let cls = classify(sourceId: selected.id, selectedId: selected.id, armedId: armedId, provenance: provenance)
+        return (classificationLabel(cls), cls == .activeFailover)
+    }
+
     /// Live status + age line for the armed source.
     nonisolated static func rowDetail(statusCaseName: String, ageSeconds: Int?) -> String {
         guard let a = ageSeconds else { return "\(statusCaseName) · no reading yet" }

@@ -707,25 +707,26 @@ struct CgmSettingsView: View {
         return "Selected: \(selected.name)"
     }
 
-    /// 09.24-01 (D-02): Section-3 subtitle — reuses `CgmStatusView.classify`/`classificationLabel`
-    /// verbatim (no new pure helper). Because `sourceId == selectedId` here, `classify` can only ever
-    /// resolve to `.activeFailover`, `.armedPumpLive`, or `.selectedNotArmed`.
-    private var statusSubtitle: String {
-        guard let selectedId = GlucoseSourceRegistry.selectedId(), !selectedId.isEmpty else {
-            return "Pump only — no failover source selected"
-        }
-        let cls = CgmStatusView.classify(sourceId: selectedId, selectedId: selectedId,
-                                          armedId: model.glucoseSourceProbe?.id,
-                                          provenance: model.glucoseProvenance)
-        return CgmStatusView.classificationLabel(cls)
+    /// 09.24-01 (D-02); WR-01/IN-02/IN-03 fix (09.24 review): Section-3 subtitle. Previously this
+    /// guarded only on the raw, unvalidated `GlucoseSourceRegistry.selectedId()`, unlike Section 2's
+    /// `configureAndTestSubtitle` above, which validates against `GlucoseSourceRegistry.selected()`.
+    /// A stale/invalid persisted id (e.g. a source id left over from a build-flag toggle) made this
+    /// section say "Selected — reopen the app to arm" while Section 2 correctly said "Not selected"
+    /// for the exact same underlying state. Both subtitles now read from the SAME validated basis
+    /// through one shared, pure, unit-tested helper (`CgmStatusView.selectionStatusSubtitle` — closes
+    /// IN-02's duplicate-classification note and IN-03's missing test coverage), computed once per
+    /// render here so `statusSubtitle`/`statusSubtitleColor` can never disagree with each other either.
+    private var currentSelectionSubtitle: (text: String, isActive: Bool) {
+        let selected = GlucoseSourceRegistry.selected().map { (id: $0.id, name: $0.name) }
+        return CgmStatusView.selectionStatusSubtitle(selected: selected,
+                                                      armedId: model.glucoseSourceProbe?.id,
+                                                      provenance: model.glucoseProvenance)
     }
 
+    private var statusSubtitle: String { currentSelectionSubtitle.text }
+
     private var statusSubtitleColor: Color {
-        guard let selectedId = GlucoseSourceRegistry.selectedId(), !selectedId.isEmpty else { return .secondary }
-        let cls = CgmStatusView.classify(sourceId: selectedId, selectedId: selectedId,
-                                          armedId: model.glucoseSourceProbe?.id,
-                                          provenance: model.glucoseProvenance)
-        return cls == .activeFailover ? AppTheme.inRange : .secondary
+        currentSelectionSubtitle.isActive ? AppTheme.inRange : .secondary
     }
 }
 
