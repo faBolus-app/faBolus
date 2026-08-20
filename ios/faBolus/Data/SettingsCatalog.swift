@@ -97,7 +97,8 @@ enum SettingsCatalog {
     /// `siteAtlasEnabled` added; 58 → 59, Phase 09.26-01 (D-11/D-21): `liveActivityStyle` added; 59 →
     /// 66, Phase 09.26-02 (D-15/D-18/D-19): `liveActivityTopRightField`, `liveActivityPlotRangeHours`,
     /// `liveActivityShowXAxisLine`, `liveActivityShowYAxisLine`, `liveActivityShowXAxisTicks`,
-    /// `liveActivityShowYAxisTicks`, `liveActivityShowRangeLines` added).
+    /// `liveActivityShowYAxisTicks`, `liveActivityShowRangeLines` added; 66 → 67, Phase 09.26-07
+    /// (D-22): `liveActivityShowBolusShortcut` added).
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -157,6 +158,9 @@ enum SettingsCatalog {
         .init("liveActivityShowXAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
         .init("liveActivityShowYAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
         .init("liveActivityShowRangeLines", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 09.26-07 (D-22): the optional nav-only Bolus-shortcut pill toggle. Same per-device
+        // ambient-surface reasoning as the rows above — syncsToICloud: false.
+        .init("liveActivityShowBolusShortcut", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
         // command-adjacent — but the same per-device ambient-surface reasoning as liveActivityEnabled
         // applies (a home-screen badge on one device should not silently light up on another), so it is

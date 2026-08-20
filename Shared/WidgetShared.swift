@@ -450,6 +450,20 @@ public enum WidgetStore {
         }
     }
 
+    /// Phase 09.26-07 (D-22) — the optional nav-only Bolus-shortcut pill toggle mirror. `nil` when
+    /// absent — the manager falls back to `false` (pill OFF), matching the owner-approved default-OFF
+    /// opt-in.
+    public static var liveActivityShowBolusShortcut: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowBolusShortcut") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowBolusShortcut")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowBolusShortcut")
+        }
+    }
+
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
     /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
     public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }

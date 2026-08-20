@@ -182,6 +182,11 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         public var showXAxisTicks: Bool
         public var showYAxisTicks: Bool
         public var showRangeLines: Bool
+        /// Phase 09.26-07 (D-22) — whether the full-bleed style's optional nav-only "Bolus" shortcut
+        /// pill renders on the Lock Screen expanded + Dynamic Island expanded. Additive/decode-
+        /// defaulted to `false` (OFF), baked by `GlucoseLiveActivityManager.makeContent` from
+        /// `WidgetStore.liveActivityShowBolusShortcut`.
+        public var showBolusShortcut: Bool
 
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
@@ -206,7 +211,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     showYAxisLine: Bool = false,
                     showXAxisTicks: Bool = false,
                     showYAxisTicks: Bool = false,
-                    showRangeLines: Bool = false) {
+                    showRangeLines: Bool = false,
+                    showBolusShortcut: Bool = false) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
@@ -243,6 +249,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.showXAxisTicks = showXAxisTicks
             self.showYAxisTicks = showYAxisTicks
             self.showRangeLines = showRangeLines
+            self.showBolusShortcut = showBolusShortcut
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -254,7 +261,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                  iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel,
                  liveActivityStyle, plotFloorMgdl, plotCeilingMgdl,
                  topRightField, plotRangeHours, showXAxisLine, showYAxisLine, showXAxisTicks,
-                 showYAxisTicks, showRangeLines
+                 showYAxisTicks, showRangeLines, showBolusShortcut
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -325,7 +332,11 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 showYAxisLine: try c.decodeIfPresent(Bool.self, forKey: .showYAxisLine) ?? false,
                 showXAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showXAxisTicks) ?? false,
                 showYAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showYAxisTicks) ?? false,
-                showRangeLines: try c.decodeIfPresent(Bool.self, forKey: .showRangeLines) ?? false
+                showRangeLines: try c.decodeIfPresent(Bool.self, forKey: .showRangeLines) ?? false,
+                // Phase 09.26-07 (D-22): a legacy/missing key falls back to the SAME default the
+                // memberwise `init` above declares — false (pill OFF) — never a thrown decode for a
+                // Live Activity started before this plan shipped.
+                showBolusShortcut: try c.decodeIfPresent(Bool.self, forKey: .showBolusShortcut) ?? false
             )
         }
     }

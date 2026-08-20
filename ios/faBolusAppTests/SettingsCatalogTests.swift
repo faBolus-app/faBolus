@@ -40,8 +40,9 @@ struct SettingsCatalogTests {
         // Phase 09.26-02 (D-15/D-18/D-19): 59 → 66 (liveActivityTopRightField, liveActivityPlotRangeHours,
         // liveActivityShowXAxisLine, liveActivityShowYAxisLine, liveActivityShowXAxisTicks,
         // liveActivityShowYAxisTicks, liveActivityShowRangeLines added).
-        #expect(SettingsCatalog.descriptors.count == 66)
-        #expect(SettingsCatalog.byKey.count == 66)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 09.26-07 (D-22): 66 → 67 (liveActivityShowBolusShortcut added).
+        #expect(SettingsCatalog.descriptors.count == 67)
+        #expect(SettingsCatalog.byKey.count == 67)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -68,7 +69,8 @@ struct SettingsCatalogTests {
         // Phase 09.26-01 tracer (D-11/D-21): 53 → 54 (liveActivityStyle, unconditional).
         // Phase 09.26-02 (D-15/D-18/D-19): 54 → 61 (the 7 new full-bleed display settings, all
         // unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 61)                      // 55 unconditional + 6 conditional
+        // Phase 09.26-07 (D-22): 61 → 62 (liveActivityShowBolusShortcut, unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 62)                      // 56 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

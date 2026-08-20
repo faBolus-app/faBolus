@@ -75,6 +75,8 @@ enum GlucoseLiveActivityManager {
         let showXAxisTicks = WidgetStore.liveActivityShowXAxisTicks ?? false
         let showYAxisTicks = WidgetStore.liveActivityShowYAxisTicks ?? false
         let showRangeLines = WidgetStore.liveActivityShowRangeLines ?? false
+        // Phase 09.26-07 (D-22) — the optional Bolus-shortcut pill mirror; absent ⇒ false (OFF).
+        let showBolusShortcut = WidgetStore.liveActivityShowBolusShortcut ?? false
         // Phase 09.26-04 (D-14/D-07) — the LA plot honors its OWN plot-range setting, independent of
         // the phone/watch chart windows: the 2h default path is UNCHANGED (`suffix(24)`, tighter cap
         // than the widget's 96); 6h carries up to ~6h of history, windowed by TIMESTAMP and
@@ -113,7 +115,8 @@ enum GlucoseLiveActivityManager {
             showYAxisLine: showYAxisLine,
             showXAxisTicks: showXAxisTicks,
             showYAxisTicks: showYAxisTicks,
-            showRangeLines: showRangeLines
+            showRangeLines: showRangeLines,
+            showBolusShortcut: showBolusShortcut
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)

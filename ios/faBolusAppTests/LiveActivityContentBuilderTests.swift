@@ -348,6 +348,10 @@ struct LiveActivityContentBuilderTests {
         #expect(decoded.showXAxisTicks == false)
         #expect(decoded.showYAxisTicks == false)
         #expect(decoded.showRangeLines == false)
+        // Phase 09.26-07 (D-22): the optional Bolus-shortcut pill falls back to the SAME default the
+        // memberwise `init` declares — false (OFF) — never a thrown decode for a Live Activity
+        // started before this plan shipped.
+        #expect(decoded.showBolusShortcut == false)
     }
 
     // MARK: - Phase 09.26-01 tracer (D-11/D-21/D-02/D-03) — full-bleed style + plot-bounds baking
@@ -438,6 +442,7 @@ struct LiveActivityContentBuilderTests {
         let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
         let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
         let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
         defer {
             WidgetStore.liveActivityTopRightField = previousTopRight
             WidgetStore.liveActivityPlotRangeHours = previousRangeHours
@@ -446,6 +451,7 @@ struct LiveActivityContentBuilderTests {
             WidgetStore.liveActivityShowXAxisTicks = previousXTicks
             WidgetStore.liveActivityShowYAxisTicks = previousYTicks
             WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
         }
         WidgetStore.liveActivityTopRightField = "controlIQZone"
         WidgetStore.liveActivityPlotRangeHours = 6
@@ -454,6 +460,9 @@ struct LiveActivityContentBuilderTests {
         WidgetStore.liveActivityShowXAxisTicks = true
         WidgetStore.liveActivityShowYAxisTicks = true
         WidgetStore.liveActivityShowRangeLines = true
+        // Phase 09.26-07 (D-22): the newest additive field, at its non-default value — the plan's own
+        // re-verify acceptance criterion.
+        WidgetStore.liveActivityShowBolusShortcut = true
 
         let now = Date(timeIntervalSince1970: 16_000_000)
         let points = (0..<48).map {
@@ -480,11 +489,13 @@ struct LiveActivityContentBuilderTests {
         #expect(state.showXAxisTicks == true)
         #expect(state.showYAxisTicks == true)
         #expect(state.showRangeLines == true)
+        #expect(state.showBolusShortcut == true)
         let data = try JSONEncoder().encode(state)
         #expect(data.count < 4096)
     }
 
-    /// `makeContent` bakes all 7 full-bleed display settings from their `WidgetStore` mirrors.
+    /// `makeContent` bakes all 8 full-bleed display settings from their `WidgetStore` mirrors
+    /// (7 from 09.26-02 + `showBolusShortcut` from 09.26-07/D-22).
     @Test func makeContentBakesFullBleedDisplaySettingsFromWidgetStoreMirror() {
         let previousTopRight = WidgetStore.liveActivityTopRightField
         let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
@@ -493,6 +504,7 @@ struct LiveActivityContentBuilderTests {
         let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
         let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
         let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
         defer {
             WidgetStore.liveActivityTopRightField = previousTopRight
             WidgetStore.liveActivityPlotRangeHours = previousRangeHours
@@ -501,6 +513,7 @@ struct LiveActivityContentBuilderTests {
             WidgetStore.liveActivityShowXAxisTicks = previousXTicks
             WidgetStore.liveActivityShowYAxisTicks = previousYTicks
             WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
         }
         WidgetStore.liveActivityTopRightField = "battery"
         WidgetStore.liveActivityPlotRangeHours = 6
@@ -509,6 +522,7 @@ struct LiveActivityContentBuilderTests {
         WidgetStore.liveActivityShowXAxisTicks = true
         WidgetStore.liveActivityShowYAxisTicks = false
         WidgetStore.liveActivityShowRangeLines = true
+        WidgetStore.liveActivityShowBolusShortcut = true
 
         let now = Date(timeIntervalSince1970: 17_000_000)
         let s = snap(glucoseDate: now)
@@ -520,10 +534,11 @@ struct LiveActivityContentBuilderTests {
         #expect(state.showXAxisTicks == true)
         #expect(state.showYAxisTicks == false)
         #expect(state.showRangeLines == true)
+        #expect(state.showBolusShortcut == true)
     }
 
-    /// An unset (nil) mirror for every one of the 7 full-bleed display settings bakes the documented
-    /// defaults — iobDelta / 2h / all chrome OFF — never a blank/crash.
+    /// An unset (nil) mirror for every one of the 8 full-bleed display settings bakes the documented
+    /// defaults — iobDelta / 2h / all chrome OFF / Bolus shortcut OFF — never a blank/crash.
     @Test func makeContentDefaultsFullBleedDisplaySettingsWhenWidgetStoreMirrorIsAbsent() {
         let previousTopRight = WidgetStore.liveActivityTopRightField
         let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
@@ -532,6 +547,7 @@ struct LiveActivityContentBuilderTests {
         let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
         let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
         let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
         defer {
             WidgetStore.liveActivityTopRightField = previousTopRight
             WidgetStore.liveActivityPlotRangeHours = previousRangeHours
@@ -540,6 +556,7 @@ struct LiveActivityContentBuilderTests {
             WidgetStore.liveActivityShowXAxisTicks = previousXTicks
             WidgetStore.liveActivityShowYAxisTicks = previousYTicks
             WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
         }
         WidgetStore.liveActivityTopRightField = nil
         WidgetStore.liveActivityPlotRangeHours = nil
@@ -548,6 +565,7 @@ struct LiveActivityContentBuilderTests {
         WidgetStore.liveActivityShowXAxisTicks = nil
         WidgetStore.liveActivityShowYAxisTicks = nil
         WidgetStore.liveActivityShowRangeLines = nil
+        WidgetStore.liveActivityShowBolusShortcut = nil
 
         let now = Date(timeIntervalSince1970: 18_000_000)
         let s = snap(glucoseDate: now)
@@ -559,6 +577,7 @@ struct LiveActivityContentBuilderTests {
         #expect(state.showXAxisTicks == false)
         #expect(state.showYAxisTicks == false)
         #expect(state.showRangeLines == false)
+        #expect(state.showBolusShortcut == false)
     }
 
     /// D-15: an unrecognized `liveActivityTopRightField` mirror token (a downgrade, or a value from a

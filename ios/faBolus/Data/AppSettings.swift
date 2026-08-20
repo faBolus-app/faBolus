@@ -648,6 +648,18 @@ public final class AppSettings {
             GlucoseLiveActivityManager.refreshForSelectionChange()
         }
     }
+    /// Phase 09.26-07 (D-22) — the optional nav-only "Bolus" shortcut pill on the full-bleed Live
+    /// Activity's Lock Screen expanded + Dynamic Island expanded. **Default OFF**. Same additive/
+    /// per-device ambient-surface reasoning as the axis/range-line toggles above — NOT iCloud-synced.
+    /// The pill reuses the EXISTING nav-only `LAOpenBolusIntent` (zero `@Parameter`,
+    /// `openAppWhenRun=true`) — it never carries a dose/carb.
+    public var liveActivityShowBolusShortcut: Bool {
+        didSet {
+            d.set(liveActivityShowBolusShortcut, forKey: "liveActivityShowBolusShortcut")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
     /// Phase 5 (D-13/D-14, 05-03; UI reachability + unit-awareness closed in 05-06/WR-01/CR-01) —
     /// master opt-in for the app-icon glucose badge. **Default OFF** (opt-in, matching every other
     /// device-capability switch in this file). Reachable via the "Glucose badge" toggle in Display &
@@ -790,6 +802,9 @@ public final class AppSettings {
         WidgetStore.liveActivityShowXAxisTicks = liveActivityShowXAxisTicks
         WidgetStore.liveActivityShowYAxisTicks = liveActivityShowYAxisTicks
         WidgetStore.liveActivityShowRangeLines = liveActivityShowRangeLines
+        // Phase 09.26-07 (D-22): mirror the optional Bolus-shortcut toggle — same App-Group-mirror
+        // rationale as the axis/range-line mirrors above.
+        WidgetStore.liveActivityShowBolusShortcut = liveActivityShowBolusShortcut
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
@@ -1055,6 +1070,8 @@ public final class AppSettings {
         liveActivityShowXAxisTicks = (d.object(forKey: "liveActivityShowXAxisTicks") as? Bool) ?? false
         liveActivityShowYAxisTicks = (d.object(forKey: "liveActivityShowYAxisTicks") as? Bool) ?? false
         liveActivityShowRangeLines = (d.object(forKey: "liveActivityShowRangeLines") as? Bool) ?? false
+        // Phase 09.26-07 (D-22): default OFF — the Bolus shortcut pill is opt-in.
+        liveActivityShowBolusShortcut = (d.object(forKey: "liveActivityShowBolusShortcut") as? Bool) ?? false
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
@@ -1122,6 +1139,7 @@ public final class AppSettings {
             "liveActivityShowXAxisTicks": .bool(liveActivityShowXAxisTicks),
             "liveActivityShowYAxisTicks": .bool(liveActivityShowYAxisTicks),
             "liveActivityShowRangeLines": .bool(liveActivityShowRangeLines),
+            "liveActivityShowBolusShortcut": .bool(liveActivityShowBolusShortcut),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
             // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
             "siteAtlasEnabled": .bool(siteAtlasEnabled),
@@ -1217,6 +1235,7 @@ public final class AppSettings {
         if let v = b("liveActivityShowXAxisTicks") { liveActivityShowXAxisTicks = v }
         if let v = b("liveActivityShowYAxisTicks") { liveActivityShowYAxisTicks = v }
         if let v = b("liveActivityShowRangeLines") { liveActivityShowRangeLines = v }
+        if let v = b("liveActivityShowBolusShortcut") { liveActivityShowBolusShortcut = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
         if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
