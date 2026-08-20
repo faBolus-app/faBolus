@@ -77,11 +77,14 @@ packages:
     # TandemMessages/Auth/BLE), which changed the products faBolus requests by name — a
     # revision bump was REQUIRED here (not optional), since the old pinned commit's Package.swift
     # still declares the pre-rename product names.
-    # Pin hygiene (09.14 D-05, todo #15): this SHA should be re-pinned to a fresh TandemKit `main`
-    # SHA once the v0.4.0 Phase-11 saline bench validates the changes it currently carries. No pin
-    # change is made now — this SHA is reachable from TandemKit `main` and safe to keep until then.
-    # See .planning/OWNER-DECISIONS.md for the matching dated entry.
-    revision: 1a09dba67de2d45f2f26f408dccb4bccb9749e6c
+    # Pin BUMP 2026-08-20 (owner decision, debug session pump-background-disconnect): advanced from
+    # 1a09dba -> TandemKit `main` @ 89c208e to land the H1 background-reconnect fix (PR #22). This bump is
+    # NOT dose-path byte-identical vs 1a09dba — it also integrates the intervening merged PRs #17–21 (JPAKE
+    # round-4 constant-time compare, 09.21 codec hardening, bolus-request device/API send-gating), which
+    # changed signed files. Owner chose "bump to kit main + H1" and to re-verify #17–21 under Phase-11
+    # discipline. STILL bench-pending: NO-GO for real insulin until the v0.4.0 Phase-11 saline bench
+    # validates the dose-path changes this SHA now carries. See .planning/OWNER-DECISIONS.md + the debug session.
+    revision: 89c208e12474ee97470a111c6d818426773866b8
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:

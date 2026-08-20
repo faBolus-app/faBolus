@@ -69,6 +69,12 @@ struct FaBolusApp: App {
                         if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                     } else if phase == .background {
                         ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD
+                        // debug pump-background-disconnect: no app-side action needed on background. A drop
+                        // that happens while suspended is recovered by the kit's INLINE background-safe
+                        // connect (H1, PumpBLEClient.planUnintendedDropRecovery); the app-side belt-and-
+                        // suspenders bg window is armed by the reconnect-ladder delegate (onWillRetryReconnect
+                        // → PumpBackgroundSession.willAttemptReconnect), not from here. H2 (link stays warm)
+                        // is battery-neutral: the kit keeps its notification subscriptions across background.
                     }
                 }
                 .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }

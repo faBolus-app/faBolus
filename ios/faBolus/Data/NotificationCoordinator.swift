@@ -518,13 +518,31 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 enum SafetyEdge: Equatable {
     case none, raise, clear
 
-    /// Pump link: raise when a *live* link (connected / bolusing) drops to disconnected / error; clear
-    /// when it returns to connected. A `nil` previous state (the first observation) never raises, so a
-    /// cold launch that starts disconnected isn't reported as a "drop".
+    /// Pump link: raise when the link enters a genuinely-down / gave-up state; clear when it returns to
+    /// connected. A `nil` previous state (the first observation) never raises, so a cold launch that starts
+    /// disconnected isn't reported as a "drop".
+    ///
+    /// debug pump-background-disconnect (CRITERION 1, 2026-08-20): the kit now recovers an unintended drop
+    /// silently in the background — a genuine drop goes `.connected → .connecting` (the kit skips the
+    /// `.disconnected` flicker; see `PumpBLEClient.didDisconnectPeripheral`) and reconnects without ever
+    /// surfacing a down state. So the raise must NOT fire on the transient `.connecting` reconnect window;
+    /// it fires only when the link reaches a TERMINAL down state:
+    ///   • `.error` (the reconnect ladder GAVE UP → `.reconnectExhausted`). This is reached from the
+    ///     recovering `.connecting`/`.scanning` state, NOT directly from a live one, so it must raise even
+    ///     though the immediately-preceding state wasn't live — otherwise the drop→reconnect→exhaust path
+    ///     would never alarm. This is the "escalation only at exhaustion" behavior.
+    ///   • `.disconnected` reached DIRECTLY from a live link (`.connected`/`.bolusing`) — a hard / radio
+    ///     powered-off / user disconnect. A merely-recovering `.connecting`/`.scanning` sliding to
+    ///     `.disconnected` is the throttled auto-reconnect ladder and recovers silently (its give-up is the
+    ///     `.error` case above), so it does NOT raise — this is what keeps a momentary background drop quiet.
     static func connection(prev: PumpConnectionState?, now: PumpConnectionState) -> SafetyEdge {
-        let wasLive = prev == .connected || prev == .bolusing
-        if wasLive && (now == .disconnected || now == .error) { return .raise }
-        if let prev, prev != .connected, now == .connected { return .clear }
+        guard let prev else { return .none }   // first observation (cold launch) is never a "drop"
+        let prevDown = prev == .disconnected || prev == .error
+        // Terminal "gave up" — always alarm unless we were already down (no re-fire on a steady down state).
+        if now == .error && !prevDown { return .raise }
+        // A live link dropping straight to a plain disconnect (hard / powered-off / user).
+        if (prev == .connected || prev == .bolusing) && now == .disconnected { return .raise }
+        if prev != .connected, now == .connected { return .clear }
         return .none
     }
 
