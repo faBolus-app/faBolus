@@ -67,6 +67,23 @@ struct NotificationSettingsView: View {
     /// Pure so it's directly testable without driving the view or a real notification center.
     static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
 
+    /// 09.25-02 (D-01/D-02): the break-through row's computed effective-state caption — the direct fix
+    /// for the D-01 override ambiguity (break-through used to silently override a disabled category).
+    /// Pure so it's directly testable without driving the view.
+    static func breakThroughCaption(enabled: Bool, allow: Bool) -> String {
+        guard enabled else { return "Off — category is disabled, so break-through has no effect." }
+        return allow
+            ? "On — this category's urgent/critical alerts always break through quiet hours and limits."
+            : "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below."
+    }
+
+    /// 09.25-02 (D-06): the silence-pump-alarms row's effective-state caption — non-nil ONLY when the
+    /// pump section's master is off (the row has no effect while `pumpAlert` is disabled); `nil`
+    /// otherwise, since the existing section footer already explains the row while it's live.
+    static func silenceMirrorCaption(pumpEnabled: Bool) -> String? {
+        pumpEnabled ? nil : "No effect — pump alerts are disabled."
+    }
+
     // MARK: - Per-category bindings
 
     private func enabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
@@ -301,15 +318,33 @@ struct NotificationSettingsView: View {
     /// break-through controls PLUS the relocated pump-alarm mirror opt-out. Exactly one bucket — no
     /// per-alarm-type enumeration.
     private var pumpSection: some View {
-        Section {
+        // 09.25-02 (D-02): the section's `Enabled` master governs every member control below — greyed
+        // via native `.disabled(true)` (never manual `.opacity()`) when off.
+        let masterOn = enabledBinding(for: .pumpAlert).wrappedValue
+        let breakThroughCaption = Self.breakThroughCaption(
+            enabled: masterOn, allow: categorySettings[.pumpAlert]?.allowCriticalBreakthrough ?? true)
+        return Section {
             Toggle(NotificationBroker.Category.pumpAlert.label, isOn: enabledBinding(for: .pumpAlert))
             Toggle("Quiet hours", isOn: quietHoursEnabledBinding(for: .pumpAlert))
+                .disabled(!masterOn)
             if quietHoursEnabledBinding(for: .pumpAlert).wrappedValue {
                 DatePicker("From", selection: quietStartBinding(for: .pumpAlert), displayedComponents: .hourAndMinute)
+                    .disabled(!masterOn)
                 DatePicker("To", selection: quietEndBinding(for: .pumpAlert), displayedComponents: .hourAndMinute)
+                    .disabled(!masterOn)
             }
-            Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
-            Toggle("Silence pump alarms in the app", isOn: suppressBinding)
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
+                    .disabled(!masterOn)
+                Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Silence pump alarms in the app", isOn: suppressBinding)
+                    .disabled(!masterOn)
+                if let silenceCaption = Self.silenceMirrorCaption(pumpEnabled: masterOn) {
+                    Text(silenceCaption).font(.caption).foregroundStyle(.secondary)
+                }
+            }
         } header: { Text("Pump alerts") } footer: {
             Text("Alerts and alarms relayed from your pump. Critical break-through covers pump alarms (occlusion, low insulin, etc. — always critical-severity). \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
         }
@@ -354,14 +389,26 @@ struct NotificationSettingsView: View {
     /// critical break-through (confirm-gated OFF).
     @ViewBuilder
     private func categorySection(for category: NotificationBroker.Category) -> some View {
+        // 09.25-02 (D-02): the section's `Enabled` master governs every member control below — greyed
+        // via native `.disabled(true)` (never manual `.opacity()`) when off.
+        let masterOn = enabledBinding(for: category).wrappedValue
+        let breakThroughCaption = Self.breakThroughCaption(
+            enabled: masterOn, allow: categorySettings[category]?.allowCriticalBreakthrough ?? true)
         Section {
             Toggle("Enabled", isOn: enabledBinding(for: category))
             Toggle("Quiet hours", isOn: quietHoursEnabledBinding(for: category))
+                .disabled(!masterOn)
             if quietHoursEnabledBinding(for: category).wrappedValue {
                 DatePicker("From", selection: quietStartBinding(for: category), displayedComponents: .hourAndMinute)
+                    .disabled(!masterOn)
                 DatePicker("To", selection: quietEndBinding(for: category), displayedComponents: .hourAndMinute)
+                    .disabled(!masterOn)
             }
-            Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
+                    .disabled(!masterOn)
+                Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
+            }
         } header: {
             Text(category.label)
         } footer: {
