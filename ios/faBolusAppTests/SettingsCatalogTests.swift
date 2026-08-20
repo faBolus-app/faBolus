@@ -28,7 +28,9 @@ enum CompileGateAudit {
         var tokens: Set<String> = []
         // Phase 1, Plan 01 (CGM-05): xDrip App Group removed from narrow `main` (unconditional —
         // permanent removal, no `#if` guard per D-01).
-        tokens.formUnion(["xdrip"])
+        // Phase 1, Plan 02 (CGM-03/CGM-04): Dexcom G6 direct-BLE + LibreLinkUp removed from narrow
+        // `main` (unconditional — permanent removal, no `#if` guard per D-01).
+        tokens.formUnion(["xdrip", "libre"])
         return tokens
     }
 
@@ -475,5 +477,15 @@ struct SettingsCatalogTests {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: ["xdrip"])
         #expect(orphans.isEmpty,
                 "xDrip was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
+    }
+
+    /// Phase 1, Plan 02 (CGM-03/CGM-04) — the §6c non-vacuous proof for the G6 + LibreLinkUp removal:
+    /// the "libre" token was part of the "CGM account credentials" row's keyword string before the
+    /// trim (RED) and is gone after it (GREEN), generalizing the check to both gated-off tokens this
+    /// phase has removed so far.
+    @Test func g6AndLibreLinkUpRemovalLeavesNoOrphanedSettingsIndexEntry() {
+        let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: ["libre", "xdrip"])
+        #expect(orphans.isEmpty,
+                "G6/LibreLinkUp were removed but a SettingsIndex row still advertises them: \(orphans.map(\.title))")
     }
 }
