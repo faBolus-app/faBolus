@@ -397,6 +397,32 @@ public enum LATopRightFieldVocabulary {
     public static let defaultId = "iobDelta"
 }
 
+/// Phase 09.26-04 (D-20) — the four intentional states for the full-bleed plot's sparse/not-fully-
+/// populated history: never a misleading full-width fill/line across time for which there is no
+/// data. Pure classifier (no ActivityKit/SwiftUI, same purity discipline as `LiveActivityComposer`)
+/// so it's unit-testable from the app target and usable by `FullBleedGlucosePlot`'s render in the
+/// `faBolusWidgets` extension. See `FullBleedGlucosePlot` for what each state actually draws.
+public enum FullBleedPlotState: Equatable, Sendable {
+    /// No points at all (after the future-point guard) — caption only, no dot/line/fill.
+    case empty
+    /// Exactly one point — now-dot + caption, no line/fill (a single fact can't draw a line).
+    case single
+    /// 2+ points, but the real data span is LESS than the selected plot range — the curve draws
+    /// only across the real span, anchored right (now), with a faint baseline + caption filling the
+    /// uncovered left region.
+    case partial
+    /// 2+ points whose span covers (or exceeds) the selected plot range — normal full-width curve.
+    case full
+
+    // STUB (RED phase, 09.26-04 Task 2) — replaced with the real boundary math in the GREEN commit.
+    /// Classifies `points` for the given `plotRangeHours` window as of `now`. Future-dated points
+    /// (`t > now`) are excluded BEFORE classification (mirrors the Plan-01 render-time guard) — a
+    /// fast-clock artifact must never count toward "the data covers the range."
+    public static func classify(points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date) -> FullBleedPlotState {
+        .full
+    }
+}
+
 /// Phase 09.26-03 (D-05/D-13/D-15) — pure derivation helpers for the full-bleed top-right slot and
 /// the opt-in "delta"/"tir" bottom-row fields. No ActivityKit, no SwiftUI (same purity discipline as
 /// `LiveActivityComposer` above) so this compiles into BOTH the app target (unit-testable) and the
