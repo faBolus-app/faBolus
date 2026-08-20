@@ -201,4 +201,37 @@ struct DexcomG6CopyGuardTests {
         #expect(creds.contains(".tag(\"apac\")"),
                 "the Dexcom Share region picker must offer an APAC option writing the \"apac\" config string (D-13)")
     }
+
+    // MARK: (k) 09.24-01 (D-05) — G6 transmitter-ID Advanced disclosure copy
+
+    @Test func g6AdvancedDisclosureLabelIsPresent() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("Advanced — multiple sensors nearby"),
+                "the G6 transmitter-ID field must be relabeled behind an 'Advanced — multiple sensors nearby' disclosure (D-05)")
+    }
+
+    @Test func g6AdvancedDisclosureExplainerIsPresent() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("Only needed if another Dexcom transmitter is broadcasting nearby"),
+                "the disclosure needs an explainer stating the field is only needed with multiple sensors nearby")
+    }
+
+    @Test func g6NewPlaceholderIsPresent() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("Transmitter ID (6 chars, optional — disambiguates multiple sensors)"),
+                "the field placeholder must no longer read as a required credential (D-05)")
+    }
+
+    @Test func g6FooterPointsAtAdvancedDisclosure() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("under **Advanced** below"),
+                "the footer sentence must point at the now-collapsed Advanced disclosure location")
+    }
+
+    /// Regression (locality): the H-02 caveat stays byte-for-byte present after the footer edit.
+    @Test func multiDexcomNearbyCaveatSurvivesTheAdvancedFooterEdit() throws {
+        let corpus = Self.combinedCorpus()
+        #expect(corpus.contains("reads YOUR sensor, not theirs"),
+                "the H-02 caveat must be preserved verbatim after the 'above'→'under Advanced below' edit")
+    }
 }
