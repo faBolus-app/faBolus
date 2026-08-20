@@ -41,21 +41,13 @@ struct GlucoseWidgetView: View {
         return unit.format(mgdl: g)
     }
     private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
-    /// Phase 09.1 (D-04) — the classified band for the redundant icon(+word) non-color channel,
-    /// `nil` while stale/unknown (the number is already greyed then; no band color to duplicate,
-    /// mirroring `StatusRingView`).
-    private var band: GlucoseRange? {
-        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose else { return nil }
-        return GlucoseRange.classify(g)
-    }
 
     var body: some View {
         switch family {
         case .accessoryInline:
-            // The single line the system places under the clock — only one leading glyph fits, so
-            // the band's own symbol (icon-only backstop, UI-SPEC #4) replaces the generic drop icon
-            // instead of adding a second element this family can't render.
-            Label("\(bg) \(arrow)", systemImage: band?.symbolName ?? "drop.fill")
+            // The single line the system places under the clock — only one leading glyph fits;
+            // this is a neutral, non-status icon (D-02), not a good/bad band glyph.
+            Label("\(bg) \(arrow)", systemImage: "drop.fill")
 
         case .accessoryCircular:
             ZStack {
@@ -63,10 +55,6 @@ struct GlucoseWidgetView: View {
                 VStack(spacing: 0) {
                     Text(bg).font(.system(size: 22, weight: .bold, design: .rounded)).minimumScaleFactor(0.5)
                     HStack(spacing: 2) {
-                        if let band {
-                            BandIndicator(band: band, showWord: false)
-                                .font(.system(size: 10))
-                        }
                         // Owner-requested toggle: keep showing the arrow always; only the unitLabel-
                         // as-fallback (when there's no arrow to show) is gated — an empty string when
                         // off, never the unit.
@@ -78,13 +66,9 @@ struct GlucoseWidgetView: View {
 
         case .accessoryRectangular:
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: band?.symbolName ?? "drop.fill").font(.title3)
+                Image(systemName: "drop.fill").font(.title3)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(bg) \(arrow)").font(.system(size: 22, weight: .semibold, design: .rounded))
-                    if let band {
-                        BandIndicator(band: band, showWord: true)
-                            .font(.caption2)
-                    }
                     Text("IOB \(String(format: "%.1f U", snap.iobUnits))").font(.caption2)
                 }
             }
@@ -96,10 +80,6 @@ struct GlucoseWidgetView: View {
                     Text(bg).font(.system(size: 44, weight: .bold, design: .rounded)).foregroundStyle(color)
                     Text(arrow).font(.title2).foregroundStyle(color)
                     Spacer()
-                }
-                if let band {
-                    BandIndicator(band: band, showWord: true)
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 // Owner-requested toggle: this is the systemSmall tile's only persistent unit caption.
                 if snap.showUnitLabel {
