@@ -270,10 +270,16 @@ struct FullBleedGlucosePlot: View {
 
     // MARK: - `.partial`'s uncovered-left-region gap (D-20)
 
-    /// The faint baseline + "Collecting history…" hint that fills the un-covered LEFT region for
-    /// `.partial` — from the canvas's left edge (x=0) out to where the real data begins. NEVER a
-    /// fill/line drawn across this region (only a faint 1pt hairline at the earliest point's OWN
-    /// value, distinct from the colored curve fill/stroke above).
+    /// The faint baseline that fills the un-covered LEFT region for `.partial` — from the canvas's
+    /// left edge (x=0) out to where the real data begins. NEVER a fill/line drawn across this region
+    /// (only a faint 1pt hairline at the earliest point's OWN value, distinct from the colored curve
+    /// fill/stroke above).
+    ///
+    /// Phase 09.26 (UAT fix, Defect 2): this used to ALSO render the "Collecting history…" caption
+    /// here, meaning a genuinely partial curve and the "collecting" hint showed SIMULTANEOUSLY —
+    /// which reads as broken/overlapping, not "still gathering data." The hint is now reserved
+    /// EXCLUSIVELY for `.empty`/`.single` (genuinely no plottable points) via `collectingHistoryHint`
+    /// — never alongside a real partial curve. (`FullBleedPlotState.classify` itself needs no change.)
     @ViewBuilder
     private func partialGapOverlay(in size: CGSize) -> some View {
         if let earliest = curvePoints.first {
@@ -284,13 +290,6 @@ struct FullBleedGlucosePlot: View {
                 p.addLine(to: CGPoint(x: earliestX, y: baselineY))
             }
             .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            Text("Collecting history…")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .frame(width: max(1, earliestX), alignment: .leading)
-                .position(x: earliestX / 2, y: size.height / 2)
         }
     }
 
