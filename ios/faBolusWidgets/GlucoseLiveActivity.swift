@@ -70,49 +70,184 @@ private func glucoseDynamicIslandConfiguration(
     context: ActivityViewContext<FaBolusGlucoseAttributes>
 ) -> DynamicIsland {
     DynamicIsland {
+        // Phase 09.26-05 (D-06/UI-SPEC "Dynamic Island — expanded") — EACH expanded sub-region
+        // branches on `liveActivityStyle`. "classic" (or unrecognized) renders the EXISTING
+        // composer-driven tree verbatim; "fullBleed" distributes per the UI-SPEC's 4-slot table
+        // (center = BG+arrow, leading = time-since + 1st bottom-row field, trailing = top-right
+        // slot + 2nd bottom-row field, bottom = the 44pt plot + compact action row).
         DynamicIslandExpandedRegion(.leading) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(composed.dropFirst().prefix(2)), id: \.id) { field in
-                    ComposedFieldView(context: context, field: field, role: .label)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedLeading(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(composed.dropFirst().prefix(2)), id: \.id) { field in
+                        ComposedFieldView(context: context, field: field, role: .label)
+                    }
                 }
             }
         }
         DynamicIslandExpandedRegion(.trailing) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            VStack(alignment: .trailing, spacing: 8) {
-                ForEach(Array(composed.dropFirst(3).prefix(2)), id: \.id) { field in
-                    ComposedFieldView(context: context, field: field, role: .label)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedTrailing(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                VStack(alignment: .trailing, spacing: 8) {
+                    ForEach(Array(composed.dropFirst(3).prefix(2)), id: \.id) { field in
+                        ComposedFieldView(context: context, field: field, role: .label)
+                    }
                 }
             }
         }
         DynamicIslandExpandedRegion(.center) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            if let first = composed.first {
-                ComposedFieldView(context: context, field: first, role: .display)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedCenter(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                if let first = composed.first {
+                    ComposedFieldView(context: context, field: first, role: .display)
+                }
             }
         }
         DynamicIslandExpandedRegion(.bottom) {
-            let bottom = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .bottom)
-            VStack(spacing: 6) {
-                if bottom.first?.id == "sparkline" {
-                    Sparkline(points: context.state.recentPoints).frame(height: 40)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedBottom(context: context)
+            } else {
+                let bottom = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .bottom)
+                VStack(spacing: 6) {
+                    if bottom.first?.id == "sparkline" {
+                        Sparkline(points: context.state.recentPoints).frame(height: 40)
+                    }
+                    LAActionRow(context: context, compact: true)
                 }
-                LAActionRow(context: context, compact: true)
             }
         }
     } compactLeading: {
+        // INVARIANT (D-06/09.26-UI-SPEC "compact leading/trailing + minimal"): these capacity-1
+        // regions render byte-identically regardless of `liveActivityStyle` — too small (~20x20pt)
+        // for a legible curve, so full-bleed's differentiator (the plot) is reserved for the
+        // surfaces with room for it (DI expanded + Lock Screen expanded). Do NOT branch this on
+        // style; that would be "fixing" a deliberate design decision, not a bug.
         CompactLeadingView(context: context)
     } compactTrailing: {
+        // Style-agnostic — see `compactLeading` invariant comment above.
         CompactTrailingView(context: context)
     } minimal: {
+        // Style-agnostic — see `compactLeading` invariant comment above.
         MinimalRegionView(context: context)
     }
     .widgetURL(FaBolusDeepLink.open)
+}
+
+// MARK: - DI-expanded full-bleed distribution (Phase 09.26-05, D-06/D-16/D-17)
+
+/// `.center` (09.26-UI-SPEC "Dynamic Island — expanded" table): the BG numeral + trend arrow ONLY —
+/// no time-since caption or band here (those live in `.leading`/aren't shown at this scale; DI has
+/// no room for a second stacked line under `.center` the way the Lock Screen's top-left block does).
+/// Zone-colored, greys/drops the arrow when stale via the SAME `context.glucoseColor`/`context.arrow`
+/// extension every other presentation reuses verbatim (D-04 — no second staleness rule).
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedCenter(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+        Text(context.glucoseText)
+            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .foregroundStyle(context.glucoseColor)
+        if !context.arrow.isEmpty {
+            Text(context.arrow)
+                .font(.title3)
+                .foregroundStyle(context.glucoseColor)
+        }
+    }
+}
+
+/// `.leading` (capacity 2): 1) the time-since-CGM caption (D-16, relocated here — DI's `.center` has
+/// no room for a second stacked line, unlike the Lock Screen's "directly below the BG" placement);
+/// 2) the first full-bleed customizable bottom-row field (`composeFullBleedBottomRowFields`, shared
+/// with the Lock Screen bottom row).
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedLeading(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+        if let d = context.state.glucoseDate {
+            Text(d, style: .relative).font(.caption2)
+                .foregroundStyle(context.isStale ? .orange : .secondary)
+        }
+        if let field = composeFullBleedBottomRowFields(context: context).first {
+            ComposedFieldView(context: context, field: field, role: .label)
+        }
+    }
+}
+
+/// `.trailing` (capacity 2): 1) the top-right selectable slot's content (D-05/D-15) — the SAME
+/// `LAMetrics.topRightText` derivation the Lock Screen top-right overlay uses; 2) the second
+/// full-bleed customizable bottom-row field.
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedTrailing(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(alignment: .trailing, spacing: 8) {
+        if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
+            Text(text).font(.system(size: 15, weight: .bold, design: .rounded))
+        }
+        if let field = composeFullBleedBottomRowFields(context: context).dropFirst().first {
+            ComposedFieldView(context: context, field: field, role: .label)
+        }
+    }
+}
+
+/// `.bottom`: `FullBleedGlucosePlot` at the expanded-island width, 44pt tall (up from Classic's
+/// fixed 40pt `Sparkline`) — passed the SAME parameter surface (chrome toggles, plot range, floor/
+/// ceiling) the Lock Screen full-bleed body passes, so a Settings change is visible on EVERY
+/// full-bleed presentation, not just the Lock Screen — plus the always-available compact action row
+/// beneath it (D-18, unchanged from Classic's `.bottom`).
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedBottom(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(spacing: 6) {
+        FullBleedGlucosePlot(
+            points: context.state.recentPoints,
+            floorMgdl: context.state.plotFloorMgdl,
+            ceilingMgdl: context.state.plotCeilingMgdl,
+            currentGlucose: context.state.glucose,
+            isStale: context.isStale,
+            plotRangeHours: context.state.plotRangeHours,
+            showXAxisLine: context.state.showXAxisLine,
+            showYAxisLine: context.state.showYAxisLine,
+            showXAxisTicks: context.state.showXAxisTicks,
+            showYAxisTicks: context.state.showYAxisTicks,
+            showRangeLines: context.state.showRangeLines)
+            .frame(height: 44)
+        LAActionRow(context: context, compact: true)
+    }
+}
+
+/// The full-bleed bottom row's composed fields (D-13, 09.26-UI-SPEC.md "Bottom row") — shared by the
+/// Lock Screen bottom row AND the DI-expanded `.leading`/`.trailing` full-bleed slots above (09.26-05).
+/// The SAME `LiveActivityComposer.compose(...)` the Classic style uses, minus the structural
+/// "glucose"/"sparkline"/"minimal" pseudo-ids (BG is top-left/center, the curve is the background —
+/// always shown, not optional composed fields in full-bleed) and minus whatever id is currently bound
+/// to the top-right slot (dedupe — never show the same fact twice).
+private func composeFullBleedBottomRowFields(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> [LAField] {
+    let composed = LiveActivityComposer.compose(
+        selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+    return composed.filter {
+        $0.id != "glucose" && $0.id != "sparkline" && $0.id != "minimal"
+            && $0.id != context.state.topRightField
+    }
 }
 
 /// Convenience readers shared by every region below — ALL derive staleness from `context.isStale`
@@ -375,12 +510,7 @@ private struct LockScreenLiveActivityView: View {
     /// "minimal" is filtered defensively too, though by construction of `hasGlucoseReading` gating
     /// entry into `fullBleedBody` it can't actually appear here alongside other fields).
     private var fullBleedBottomRowFields: [LAField] {
-        let composed = LiveActivityComposer.compose(
-            selection: context.state.selectedFields, state: context.state, region: .lockScreen)
-        return composed.filter {
-            $0.id != "glucose" && $0.id != "sparkline" && $0.id != "minimal"
-                && $0.id != context.state.topRightField
-        }
+        composeFullBleedBottomRowFields(context: context)
     }
 
     /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
