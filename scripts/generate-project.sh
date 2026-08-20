@@ -138,6 +138,14 @@ PHONE_PEER="${FABOLUS_PHONE_PEER:-1}"
 # Vendor/LoopPowerPack/FoodFinder) are excluded via the APP_SOURCE_EXCLUDES list — a nested-directory excludes:
 # shape validated with a real xcodegen generate at both default and =0. The removal flip is Phase 7's job.
 FOODFINDER="${FABOLUS_FOODFINDER:-1}"
+# Mobi capability-model placeholder (TOPO-03/D-03, RESEARCH Pattern 3 + Pitfall 5). Mobi support is NOT a
+# strippable block — it is an `enum PumpModel` case + a `.mobiAdvanced` capability floor threaded through
+# dose-adjacent faBolusCore / AccessPolicy / GatedPumpWrite. Phase 0 reserves ONLY the env-var plumbing here
+# (default 1, a documented no-op TODAY); it adds ZERO `#if FABOLUS_MOBI` call sites — doing so would reach
+# into the byte-identity-protected dose-adjacent code before Phase 9's careful capability-model surgery +
+# oracle/parity re-run. The eventual home is the dev/mobi sub-branch (cut in 00-02); the real implementation
+# is Phase 9. TandemKit needs no Mobi gate (it ships mobi-tagged messages unconditionally — RESEARCH §H).
+MOBI="${FABOLUS_MOBI:-1}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -260,6 +268,7 @@ echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=
 [ "$CGM_XDRIP" = 0 ] && echo "  → building WITHOUT the xDrip App-Group CGM source (FABOLUS_CGM_XDRIP=0)"
 [ "$PHONE_PEER" = 0 ] && echo "  → building WITHOUT the phone-peer remote surface (FABOLUS_PHONE_PEER=0) — only the peer files excluded; the shared PhoneRemoteHost.swift core is preserved"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
+echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
