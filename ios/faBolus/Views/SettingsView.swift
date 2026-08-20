@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 // MARK: - Shared helpers
 
@@ -628,11 +629,7 @@ struct CgmSettingsView: View {
                         lastCommittedSource = id
                     }
                 }
-                NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
-                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
-                // the place per-source live status/age/provenance exists — F-08/F-09).
-                NavigationLink("CGM source status") { CgmStatusView(model: model) }
-            } header: { Text("Glucose failover") } footer: {
+            } header: { Text("1. Choose a source") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
             }
             .alert("Untested source", isPresented: $showExperimentalCgmWarning) {
@@ -657,6 +654,33 @@ struct CgmSettingsView: View {
                 Text("⚠️ This reads your sensor passively alongside the official Dexcom app — keep that app installed, paired, and running (a sensor already set up there needs no re-pairing and no transmitter ID). The first reading can take up to ~5 minutes (one Dexcom wake cycle) — that's normal, not a failure. This mode hasn't been verified on-device yet. See docs/operate/cgm-failover.md.")
             }
             Section {
+                NavigationLink { CgmCredentialsView(model: model) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("CGM credentials & testing", systemImage: "key.fill")
+                        Text(configureAndTestSubtitle)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: { Text("2. Configure & test") } footer: {
+                Text("Enter credentials for the selected source (if it needs any) and confirm it can get a reading.")
+            }
+            Section {
+                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
+                // the place per-source live status/age/provenance exists — F-08/F-09).
+                NavigationLink { CgmStatusView(model: model) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("CGM source status", systemImage: "chart.line.uptrend.xyaxis")
+                        Text(statusSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(statusSubtitleColor)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: { Text("3. Status") } footer: {
+                Text("See live status, freshness, and the last test result for every configured source.")
+            }
+            Section {
                 Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
             } header: { Text("Nightscout upload") } footer: {
                 Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to your Nightscout site. **Off by default — this sends your health data off-device.** Set the site URL, token, and (optional) API secret under **CGM credentials & testing**.")
@@ -673,6 +697,35 @@ struct CgmSettingsView: View {
             }
         }
         .navigationTitle("CGM & failover")
+    }
+
+    /// 09.24-01 (D-02): Section-2 subtitle — the current selection, or explicit guidance to step 1.
+    private var configureAndTestSubtitle: String {
+        guard let selected = GlucoseSourceRegistry.selected() else {
+            return "Not selected — pick a source in step 1"
+        }
+        return "Selected: \(selected.name)"
+    }
+
+    /// 09.24-01 (D-02): Section-3 subtitle — reuses `CgmStatusView.classify`/`classificationLabel`
+    /// verbatim (no new pure helper). Because `sourceId == selectedId` here, `classify` can only ever
+    /// resolve to `.activeFailover`, `.armedPumpLive`, or `.selectedNotArmed`.
+    private var statusSubtitle: String {
+        guard let selectedId = GlucoseSourceRegistry.selectedId(), !selectedId.isEmpty else {
+            return "Pump only — no failover source selected"
+        }
+        let cls = CgmStatusView.classify(sourceId: selectedId, selectedId: selectedId,
+                                          armedId: model.glucoseSourceProbe?.id,
+                                          provenance: model.glucoseProvenance)
+        return CgmStatusView.classificationLabel(cls)
+    }
+
+    private var statusSubtitleColor: Color {
+        guard let selectedId = GlucoseSourceRegistry.selectedId(), !selectedId.isEmpty else { return .secondary }
+        let cls = CgmStatusView.classify(sourceId: selectedId, selectedId: selectedId,
+                                          armedId: model.glucoseSourceProbe?.id,
+                                          provenance: model.glucoseProvenance)
+        return cls == .activeFailover ? AppTheme.inRange : .secondary
     }
 }
 

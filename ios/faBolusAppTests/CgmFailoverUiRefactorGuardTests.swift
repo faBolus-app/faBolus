@@ -92,10 +92,12 @@ struct CgmFailoverUiRefactorGuardTests {
 
     @Test func statusSectionComesBeforeNightscoutBeforeStaleness() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
-        guard let statusIdx = source.range(of: "3. Status")?.lowerBound,
-              let nightscoutIdx = source.range(of: "Nightscout upload")?.lowerBound,
-              let stalenessIdx = source.range(of: "Glucose staleness")?.lowerBound else {
-            Issue.record("could not locate all three markers in SettingsView.swift")
+        // Header-specific markers (`Text("…")`) to avoid matching the unrelated
+        // `SettingsIndex.entries` "Glucose staleness" keyword string, which appears earlier in the file.
+        guard let statusIdx = source.range(of: "Text(\"3. Status\")")?.lowerBound,
+              let nightscoutIdx = source.range(of: "Text(\"Nightscout upload\")")?.lowerBound,
+              let stalenessIdx = source.range(of: "Text(\"Glucose staleness\")")?.lowerBound else {
+            Issue.record("could not locate all three header markers in SettingsView.swift")
             return
         }
         #expect(statusIdx < nightscoutIdx,
