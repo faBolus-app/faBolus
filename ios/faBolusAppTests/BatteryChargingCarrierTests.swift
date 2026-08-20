@@ -9,7 +9,11 @@ import faBolusCore
 /// .contentStateSuspendFieldsRoundTripAndDefaultFailClosedOnALegacyPayload`'s round-trip + legacy-
 /// payload pattern exactly. A legacy/older snapshot that predates this field must decode to
 /// `batteryCharging == false` — never a fabricated charging badge on an old payload (D-05).
-@Suite struct BatteryChargingCarrierTests {
+/// `.serialized`: the two `publishSnapshot()` tests added for the Watch-render gap closure write to
+/// the SAME real App-Group `WidgetStore` key other tests could theoretically share — mirrors
+/// `WidgetStalenessTests`/`ModeAutomationPrecedenceTests`'s `.serialized` precedent for any suite
+/// that touches `WidgetStore` directly.
+@Suite(.serialized) struct BatteryChargingCarrierTests {
 
     // MARK: - ContentState (Live Activity)
 
@@ -58,5 +62,50 @@ import faBolusCore
     @Test func widgetSnapshotMemberwiseInitDefaultsBatteryChargingFalse() {
         let snap = WidgetSnapshot(glucose: 120)
         #expect(snap.batteryCharging == false)
+    }
+
+    // MARK: - RemoteClientModel.publishSnapshot() forwarding (Watch-render gap closure)
+
+    /// Minimal in-memory transport so a `RemoteClientModel` can be exercised without a real link —
+    /// mirrors `CrossSurfaceStalenessTests.FakeLink` / `ControllerDisclosureWireTests.FakeLink`.
+    private final class FakeLink: RemoteTransport {
+        var onReceive: (@MainActor (RemoteCommand) -> Void)?
+        var onReachabilityChange: (@MainActor (Bool) -> Void)?
+        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
+        var isReachable: Bool = true
+        func send(_ command: RemoteCommand) {}
+    }
+
+    /// 09.27-VERIFICATION.md Truth #11 gap closure: the BASE `RemoteClientModel.publishSnapshot()`
+    /// (which the Watch relies on — it does not override `publishSnapshot`, unlike `MacRemoteModel`)
+    /// must forward the ingested `batteryCharging` into the `WidgetSnapshot` it writes to the App
+    /// Group, not silently drop it back to the `false` default.
+    @MainActor
+    @Test func remoteClientModelPublishSnapshotForwardsBatteryChargingIntoWidgetSnapshot() {
+        let model = RemoteClientModel(link: FakeLink())
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.batteryPercent = 42
+        cmd.batteryCharging = true
+        model.handle(cmd)
+        #expect(model.batteryCharging == true)   // sanity: ingest side already verified by WR-01 tests
+
+        model.publishSnapshot()
+        let snap = WidgetStore.load()
+        #expect(snap?.batteryPercent == 42)
+        #expect(snap?.batteryCharging == true, "the Watch's WidgetSnapshot must carry the real charging state, not the false default")
+    }
+
+    /// The fail-closed counterpart: a legacy/absent wire key must publish `batteryCharging == false`,
+    /// never a stale `true` (mirrors the WR-01 fail-closed fix on the ingest side).
+    @MainActor
+    @Test func remoteClientModelPublishSnapshotPublishesFalseWhenNeverToldCharging() {
+        let model = RemoteClientModel(link: FakeLink())
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.batteryPercent = 17
+        model.handle(cmd)   // batteryCharging absent on the wire
+
+        model.publishSnapshot()
+        let snap = WidgetStore.load()
+        #expect(snap?.batteryCharging == false)
     }
 }

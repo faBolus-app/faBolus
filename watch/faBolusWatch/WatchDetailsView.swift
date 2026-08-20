@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Details page: everything the pump reports, matching the phone's details card + Garmin details
 /// screen — active insulin, reservoir, battery, CGM, last bolus, carb ratio, correction factor,
@@ -42,7 +43,16 @@ struct WatchDetailsView: View {
         switch id {
         case "iob": return String(format: "%.2f U", model.iobUnits)
         case "reservoir": return "\(Int(model.reservoirUnits)) U"
-        case "battery": return model.batteryPercent > 0 ? "\(model.batteryPercent)%" : "—"
+        case "battery":
+            // Verifier gap closure (09.27-VERIFICATION.md Truth #11): the Watch's own details row
+            // never rendered the charging state, even though `model.batteryCharging` was already
+            // ingested fail-closed via `RemoteClientModel.handle`'s `if let c = cmd.batteryCharging`
+            // — a missing RENDER, not a missing/broken wire. Routes through the SAME
+            // `BatteryChargingPresentation` helper every other battery surface uses (WR-02), so this
+            // row can never drift from the phone/widget/Garmin treatment. The `> 0` guard (never
+            // showing "0%") is unchanged from before this fix.
+            guard model.batteryPercent > 0 else { return "—" }
+            return BatteryChargingPresentation.make(percent: model.batteryPercent, charging: model.batteryCharging).valueText
         case "cgm": return model.cgmActive ? "Active" : "Inactive"
         case "lastBolus": return model.lastBolusUnits.map { String(format: "%.2f U", $0) }
         case "carbRatio": return model.carbRatio > 0 ? String(format: "%.0f g/U", model.carbRatio) : "—"

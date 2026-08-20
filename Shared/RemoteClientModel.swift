@@ -595,9 +595,15 @@ class RemoteClientModel {
     /// Publish the latest glucose/pump state to the App Group so this device's widgets/complication
     /// can show it. Reuses `WidgetSnapshot`/`WidgetStore` (a device-local App Group container).
     func publishSnapshot() {
+        // Verifier gap closure (09.27-VERIFICATION.md Truth #11): forward `batteryCharging` into
+        // the App-Group snapshot here on the BASE class, same as `MacRemoteModel.publishSnapshot`'s
+        // override already does — this is what makes the Watch (which does not override
+        // `publishSnapshot`) also carry the fail-closed charging state into its own `WidgetSnapshot`
+        // instead of silently defaulting to `false` regardless of the real value.
         let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
                                   iobUnits: iobUnits, reservoirUnits: reservoirUnits,
-                                  batteryPercent: batteryPercent, lastBolusUnits: lastBolusUnits,
+                                  batteryPercent: batteryPercent, batteryCharging: batteryCharging,
+                                  lastBolusUnits: lastBolusUnits,
                                   connected: reachable, updatedAt: Date(),
                                   cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
                                   targetBg: targetBg, maxBolusUnits: maxBolusUnits)
