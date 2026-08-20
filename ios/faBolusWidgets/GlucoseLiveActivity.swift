@@ -254,14 +254,25 @@ private func fullBleedDIExpandedBottom(
 /// "glucose"/"sparkline"/"minimal" pseudo-ids (BG is top-left/center, the curve is the background —
 /// always shown, not optional composed fields in full-bleed) and minus whatever id is currently bound
 /// to the top-right slot (dedupe — never show the same fact twice).
+///
+/// Phase 09.26 (WR-02 review fix): when `topRightField == "iobDelta"` (the default,
+/// `LATopRightFieldVocabulary.defaultId`), the top-right slot is a COMPOSITE that actually renders
+/// BOTH the `"iob"` and `"delta"` component facts (`LAMetrics.topRightText`'s `"iobDelta"` case) —
+/// excluding only the literal string `"iobDelta"` from the bottom row (which is never a real field
+/// id a `selectedFields` selection can carry) left `"iob"` un-deduped, so a completely untouched
+/// fresh install (default `topRightField` "iobDelta" + default `selectedFields` including "iob")
+/// rendered the SAME IOB fact twice: once in the top-right corner, once as a bottom-row chip. The
+/// dedupe set now names the composite's actual rendered components, not just the composite's own id.
 private func composeFullBleedBottomRowFields(
     context: ActivityViewContext<FaBolusGlucoseAttributes>
 ) -> [LAField] {
     let composed = LiveActivityComposer.compose(
         selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+    let topRightComponents: Set<String> = context.state.topRightField == "iobDelta"
+        ? ["iob", "delta"] : [context.state.topRightField]
     return composed.filter {
         $0.id != "glucose" && $0.id != "sparkline" && $0.id != "minimal"
-            && $0.id != context.state.topRightField
+            && !topRightComponents.contains($0.id)
     }
 }
 
