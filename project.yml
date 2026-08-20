@@ -124,7 +124,31 @@ targets:
           # >>> CGM_XDRIP (kept only when FABOLUS_CGM_XDRIP=0 → excludes the xDrip App-Group source; stripped by default)
           - Data/Sources/XDripAppGroupSource.swift
           # <<< CGM_XDRIP
+          # >>> PHONE_PEER (kept only when FABOLUS_PHONE_PEER=0 → excludes ONLY the phone-peer remote files;
+          #   stripped by default. CRITICAL: this list must NEVER include PhoneRemoteHost.swift — that is the
+          #   SHARED Garmin/widget receiver core (REMOTE-02 / MILESTONE-PREP §2) kept on main unconditionally.
+          #   PeerRemoteHost.swift vs PhoneRemoteHost.swift are DIFFERENT files — do not confuse them.)
+          - Data/PeerRemoteHost.swift
+          - Data/PhoneRemoteClientModel.swift
+          - Data/RemotePeerPolicyStore.swift
+          - Views/RemoteControlView.swift
+          - Views/RemoteRootView.swift
+          - Views/RemoteSettingsView.swift
+          # <<< PHONE_PEER
+          # >>> FOODFINDER (kept only when FABOLUS_FOODFINDER=0 → excludes exactly the 3 FoodFinder source dirs;
+          #   stripped by default. The foodFinderAIEnabled runtime flag gates the AI sub-path separately and is
+          #   unaffected. First nested-directory excludes: shape in this repo — validated by real xcodegen generate.)
+          - Data/FoodFinder
+          - Views/FoodFinder
+          - Vendor/LoopPowerPack/FoodFinder
+          # <<< FOODFINDER
         # <<< APP_SOURCE_EXCLUDES
+      # >>> PHONE_PEER_KEEP (kept only when FABOLUS_PHONE_PEER=0 — an explicit, redundant retention of the shared
+      #   PhoneRemoteHost.swift core so the peer strip provably does NOT drop it (REMOTE-02). Stripped by default,
+      #   and inert when present: ios/faBolus already compiles this file, and XcodeGen dedupes the overlap
+      #   (verified: no duplicate build file). This is the non-comment token the peer-strip verify asserts survives.)
+      - path: ios/faBolus/Data/PhoneRemoteHost.swift
+      # <<< PHONE_PEER_KEEP
       # WidgetBolusIntents belongs to the widget extensions only (the app uses WidgetBolusReceiver).
       - path: Shared
         excludes:

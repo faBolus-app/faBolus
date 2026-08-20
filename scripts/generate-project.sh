@@ -127,6 +127,17 @@ CGM_G6="${FABOLUS_CGM_G6:-1}"
 CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-1}"
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
 CGM_XDRIP="${FABOLUS_CGM_XDRIP:-1}"
+# Phone-peer remote compile gate (TOPO-03/D-03; name per PER-SURFACE-CHECKLIST §B). Default 1 = the
+# phone-as-a-remote surface is PRESENT (today's behavior). At 0, ONLY the peer-remote files are excluded
+# (PeerRemoteHost, PhoneRemoteClientModel, RemotePeerPolicyStore, Remote{Control,Root,Settings}View); the
+# SHARED PhoneRemoteHost.swift Garmin/widget receiver core is NEVER touched (REMOTE-02) — and is explicitly
+# re-listed via the PHONE_PEER_KEEP block so the strip provably preserves it. The removal flip is Phase 3's job.
+PHONE_PEER="${FABOLUS_PHONE_PEER:-1}"
+# FoodFinder compile gate (TOPO-03/D-03, RESEARCH Pattern 2). Default 1 = the barcode/food-carb surface is
+# PRESENT. At 0, exactly the three FoodFinder source dirs (Data/FoodFinder, Views/FoodFinder,
+# Vendor/LoopPowerPack/FoodFinder) are excluded via the APP_SOURCE_EXCLUDES list — a nested-directory excludes:
+# shape validated with a real xcodegen generate at both default and =0. The removal flip is Phase 7's job.
+FOODFINDER="${FABOLUS_FOODFINDER:-1}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -218,13 +229,21 @@ fi
 # list, not a whole-block strip. When EVERY gate is at its default (=1, surface PRESENT) the entire
 # excludes: block is removed so the app target is byte-identical to today; otherwise the block is kept and
 # only the still-present (=1) surfaces' exclude lines are dropped, leaving the =0 surface(s) excluded.
-if [ "$CGM_G6" = 1 ] && [ "$CGM_LIBRELINKUP" = 1 ] && [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$CGM_XDRIP" = 1 ]; then
+if [ "$CGM_G6" = 1 ] && [ "$CGM_LIBRELINKUP" = 1 ] && [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$CGM_XDRIP" = 1 ] && [ "$PHONE_PEER" = 1 ] && [ "$FOODFINDER" = 1 ]; then
   strip_block APP_SOURCE_EXCLUDES   # all app-source surfaces present → drop the whole excludes: block (today's byte-identical spec)
 else
   [ "$CGM_G6" = 1 ]          && strip_block CGM_G6            # present → drop its exclude line so the source compiles in
   [ "$CGM_LIBRELINKUP" = 1 ] && strip_block CGM_LIBRELINKUP
   [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
   [ "$CGM_XDRIP" = 1 ]       && strip_block CGM_XDRIP
+  [ "$PHONE_PEER" = 1 ]      && strip_block PHONE_PEER        # present → drop the peer-file exclude lines
+  [ "$FOODFINDER" = 1 ]      && strip_block FOODFINDER        # present → drop the FoodFinder-dir exclude lines
+fi
+# The shared PhoneRemoteHost.swift core is explicitly re-listed (redundant, inert — XcodeGen dedupes) only
+# when the peer surface is gated off, proving the strip removes ONLY the peer files. Stripped by default so
+# the spec is byte-identical to today. Distinct tag from PHONE_PEER (word-boundary anchored — Pitfall 2).
+if [ "$PHONE_PEER" = 1 ]; then
+  strip_block PHONE_PEER_KEEP
 fi
 # FABOLUS_CGM_G6=0 additionally drops the DexcomG6Kit SPM package + the app-target dependency on it
 # (normal strip direction: removed at =0, present at default). Distinct tag from CGM_G6 (word-boundary
@@ -234,11 +253,13 @@ if [ "$CGM_G6" = 0 ]; then
 fi
 
 echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmXDrip=$CGM_XDRIP (default 1=present; Phase 0 authors gates only — flips nothing off)"
+echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmXDrip=$CGM_XDRIP PhonePeer=$PHONE_PEER FoodFinder=$FOODFINDER (default 1=present; Phase 0 authors gates only — flips nothing off)"
 [ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the Dexcom G5/G6/ONE CGM source (FABOLUS_CGM_G6=0) — DexcomG6BLESource + the DexcomG6Kit package/dependency stripped; G7SensorKit/ShareClient kept"
 [ "$CGM_LIBRELINKUP" = 0 ] && echo "  → building WITHOUT the LibreLinkUp CGM source (FABOLUS_CGM_LIBRELINKUP=0)"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
 [ "$CGM_XDRIP" = 0 ] && echo "  → building WITHOUT the xDrip App-Group CGM source (FABOLUS_CGM_XDRIP=0)"
+[ "$PHONE_PEER" = 0 ] && echo "  → building WITHOUT the phone-peer remote surface (FABOLUS_PHONE_PEER=0) — only the peer files excluded; the shared PhoneRemoteHost.swift core is preserved"
+[ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
