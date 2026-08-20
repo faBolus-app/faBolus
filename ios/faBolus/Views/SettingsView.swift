@@ -563,6 +563,16 @@ struct DisplaySettingsView: View {
                         Text("Full-bleed plot").tag("fullBleed")
                         Text("Classic").tag("classic")
                     }
+                    // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed-only display-options sub-screen
+                    // (top-right slot, plot range, axis chrome, range lines). Classic has no axis
+                    // chrome/top-right slot of its own, so this link only appears for the full-bleed
+                    // style — placed between the style Picker and "Fields shown" per the UI-SPEC's
+                    // Settings Surface layout.
+                    if settings.liveActivityStyle == "fullBleed" {
+                        NavigationLink {
+                            FullBleedLiveActivitySettingsView(settings: settings)
+                        } label: { Text("Full-bleed layout") }
+                    }
                     NavigationLink {
                         CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
                                           label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
@@ -591,6 +601,46 @@ struct DisplaySettingsView: View {
             }
         }
         .navigationTitle("Display & chart")
+    }
+}
+
+// MARK: - Live Activity full-bleed layout (09.26-02, D-15/D-18/D-19)
+
+/// The full-bleed Live Activity's dedicated display-options sub-screen — reachable only when
+/// `settings.liveActivityStyle == "fullBleed"` (`09.26-UI-SPEC.md`'s "Settings Surface" table). Every
+/// control binds straight to an `AppSettings` property that already persists, mirrors to the App
+/// Group, and bakes into `ContentState` via `GlucoseLiveActivityManager.makeContent` — this view adds
+/// no state of its own.
+struct FullBleedLiveActivitySettingsView: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Top-right info", selection: $settings.liveActivityTopRightField) {
+                    Text("IOB + Δ").tag("iobDelta")
+                    Text("IOB").tag("iob")
+                    Text("Δ").tag("delta")
+                    Text("Time in range").tag("tir")
+                    Text("Control-IQ zone").tag("controlIQZone")
+                    Text("Battery").tag("battery")
+                    Text("Reservoir").tag("reservoir")
+                    Text("None").tag("none")
+                }
+                Picker("Live Activity plot range", selection: $settings.liveActivityPlotRangeHours) {
+                    Text("2h").tag(2)
+                    Text("6h").tag(6)
+                }
+                Toggle("X-axis line", isOn: $settings.liveActivityShowXAxisLine)
+                Toggle("Y-axis line", isOn: $settings.liveActivityShowYAxisLine)
+                Toggle("X-axis ticks", isOn: $settings.liveActivityShowXAxisTicks)
+                Toggle("Y-axis ticks", isOn: $settings.liveActivityShowYAxisTicks)
+                Toggle("High/low range lines", isOn: $settings.liveActivityShowRangeLines)
+            } footer: {
+                Text("The Live Activity plot range is independent of the watch/phone chart's own range. 6h shows more history when available; a freshly started Live Activity may only have a shorter window collected yet.")
+            }
+        }
+        .navigationTitle("Full-bleed layout")
     }
 }
 
