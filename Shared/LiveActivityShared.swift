@@ -509,6 +509,22 @@ public enum LAMetrics {
         }
     }
 
+    /// A human-friendly age string for a sample/reading timestamp — "now" (< 60s old), "Nm" (< 60m
+    /// old), "Nh" (else). Phase 09.26 (UAT fix, Defect 5): SwiftUI's built-in `Text(date, style:
+    /// .relative)` never emits "now"/"just now" and uses long unit words ("0 sec", "3 min") — for a
+    /// just-arrived reading (`date ≈ now`) it showed the confusing "0 sec". This is a STATIC string
+    /// computed at render time (does not auto-tick like the `.relative` style does) — an acceptable
+    /// trade-off since Live Activities re-publish on every real glucose update. A future-dated `date`
+    /// (fast-clock artifact) never produces a negative age — clamped to 0 ("now").
+    public static func friendlyAge(date: Date, now: Date) -> String {
+        let secs = max(0, Int(now.timeIntervalSince(date)))
+        if secs < 60 { return "now" }
+        let mins = secs / 60
+        if mins < 60 { return "\(mins)m" }
+        let hrs = mins / 60
+        return "\(hrs)h"
+    }
+
     /// Time-in-range percent (rounded to the nearest whole percent) over `points`, count-based on the
     /// SAME closed `[WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.high]` (70...180) convention
     /// `faBolusCore.GlucoseStatistics.timeInRangePct` uses (T-09.26-10) — this file can't link

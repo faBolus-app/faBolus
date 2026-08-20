@@ -111,4 +111,31 @@ struct LAMetricsTests {
     @Test func tirIsZeroForEmptyInput() {
         #expect(LAMetrics.tir(points: []) == 0)
     }
+
+    // MARK: - friendlyAge: human-friendly age string (Phase 09.26 UAT fix, Defect 5 — replaces the
+    // built-in `Text(date, style: .relative)`, which showed "0 sec" for a just-arrived reading)
+
+    @Test func friendlyAgeIsNowForAnAgeUnderSixtySeconds() {
+        let now = Date()
+        #expect(LAMetrics.friendlyAge(date: now, now: now) == "now")
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-59), now: now) == "now")
+    }
+
+    @Test func friendlyAgeSwitchesToMinutesAtTheSixtySecondBoundary() {
+        let now = Date()
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-60), now: now) == "1m")
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-179), now: now) == "2m")
+    }
+
+    @Test func friendlyAgeSwitchesToHoursAtTheSixtyMinuteBoundary() {
+        let now = Date()
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-59 * 60), now: now) == "59m")
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-60 * 60), now: now) == "1h")
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(-125 * 60), now: now) == "2h")
+    }
+
+    @Test func friendlyAgeNeverGoesNegativeForAFutureDatedTimestamp() {
+        let now = Date()
+        #expect(LAMetrics.friendlyAge(date: now.addingTimeInterval(600), now: now) == "now")
+    }
 }
