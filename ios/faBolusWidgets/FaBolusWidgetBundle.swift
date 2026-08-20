@@ -124,18 +124,17 @@ enum WidgetUI {
                  value: String(format: "%.0f U", state.reservoirUnits))
     }
 
-    /// Battery chip — level-matched `battery.*` glyph, dateless: greys off `pumpLinkStale`.
+    /// Battery chip — level-matched `battery.*` glyph, dateless: greys off `pumpLinkStale`. Phase
+    /// 09.27-02 (D-04/D-05) — routes the glyph + low-tint-override decision through the SAME
+    /// `BatteryChargingPresentation.make` helper `StatusPillsView.pillFor("battery")` uses, instead
+    /// of a second copy of the level->glyph switch, so this chip stays byte-identical to the phone
+    /// HUD's charging treatment. `pumpLinkStale` is checked FIRST and wins over the charging tint —
+    /// a stale link's charging claim is not trustworthy, so staleness greys regardless of `charging`.
     static func batteryChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
-        let icon: String
-        switch state.batteryPercent {
-        case ...5: icon = "battery.0"
-        case ...37: icon = "battery.25"
-        case ...62: icon = "battery.50"
-        case ...87: icon = "battery.75"
-        default: icon = "battery.100"
-        }
-        let tint = state.pumpLinkStale ? Color.gray : (state.batteryPercent <= 20 ? AppTheme.low : .green)
-        return PumpChip(icon: icon, tint: tint, value: "\(state.batteryPercent)%")
+        let battery = BatteryChargingPresentation.make(percent: state.batteryPercent, charging: state.batteryCharging)
+        let tint = state.pumpLinkStale ? Color.gray : (battery.usesLowTint ? AppTheme.low : .green)
+        let value = battery.showsChargingText ? "\(state.batteryPercent)% · Charging" : "\(state.batteryPercent)%"
+        return PumpChip(icon: battery.symbolName, tint: tint, value: value)
     }
 
     /// Basal/suspended chip — `waveform.path.ecg` (running) or `pause.circle.fill` (suspended),

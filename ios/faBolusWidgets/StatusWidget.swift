@@ -86,7 +86,13 @@ struct StatusWidgetView: View {
                     metric("clock.arrow.circlepath", "Last bolus",
                            "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .numeric)))")
                 } else {
-                    metric("battery.100", "Battery", "\(snap.batteryPercent)%")
+                    // Phase 09.27-02 (D-04/D-05) — routes the glyph + "Charging" text through the
+                    // SAME `BatteryChargingPresentation.make` helper every other battery-rendering
+                    // surface uses, instead of the hardcoded "battery.100" icon; not-charging renders
+                    // byte-identically to today (fail-closed).
+                    let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
+                    let value = battery.showsChargingText ? "\(snap.batteryPercent)% · Charging" : "\(snap.batteryPercent)%"
+                    metric(battery.symbolName, "Battery", value)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
