@@ -28,6 +28,9 @@ struct CgmCredentialsView: View {
     @State private var nsApiSecret = ""
     // Dexcom G5/G6/ONE (direct, passive "follow the Dexcom app")
     @State private var g6TransmitterID = ""
+    // 09.24-01 (D-05): collapsed by default; auto-expanded in `load()` when a saved ID exists so a
+    // returning user's existing disambiguation setting is never hidden from them.
+    @State private var g6AdvancedExpanded = false
 
     /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
     /// "Test <name>" button label and the empty-state guidance.
@@ -330,26 +333,31 @@ struct CgmCredentialsView: View {
             }
 
             Section {
-                TextField("Transmitter ID (6 chars, optional)", text: $g6TransmitterID)
-                    .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                Button {
-                    Task {
-                        readingTxId = true; readTxIdError = nil
-                        if let id = await model.readG6TransmitterId() {
-                            g6TransmitterID = id; save()
-                        } else {
-                            readTxIdError = "Couldn't read the transmitter ID — connect to the pump first (it reports the paired G6 transmitter)."
+                DisclosureGroup("Advanced — multiple sensors nearby", isExpanded: $g6AdvancedExpanded) {
+                    Text("Only needed if another Dexcom transmitter is broadcasting nearby (e.g. a sibling, a clinic waiting room, another household member). A single sensor already set up in the Dexcom app needs none of this.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField("Transmitter ID (6 chars, optional — disambiguates multiple sensors)", text: $g6TransmitterID)
+                        .textInputAutocapitalization(.characters).autocorrectionDisabled()
+                    Button {
+                        Task {
+                            readingTxId = true; readTxIdError = nil
+                            if let id = await model.readG6TransmitterId() {
+                                g6TransmitterID = id; save()
+                            } else {
+                                readTxIdError = "Couldn't read the transmitter ID — connect to the pump first (it reports the paired G6 transmitter)."
+                            }
+                            readingTxId = false
                         }
-                        readingTxId = false
+                    } label: {
+                        HStack {
+                            Label("Read transmitter ID from pump", systemImage: "arrow.down.circle")
+                            if readingTxId { Spacer(); ProgressView() }
+                        }
                     }
-                } label: {
-                    HStack {
-                        Label("Read transmitter ID from pump", systemImage: "arrow.down.circle")
-                        if readingTxId { Spacer(); ProgressView() }
-                    }
+                    .disabled(readingTxId)
+                    if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
                 }
-                .disabled(readingTxId)
-                if let e = readTxIdError { Text(e).font(.caption).foregroundStyle(.orange) }
+                .accessibilityHint("Only needed when more than one Dexcom sensor is nearby")
             } header: {
                 Text("Dexcom G5 / G6 / ONE — Read from Dexcom app (experimental)")
             } footer: {
@@ -360,7 +368,7 @@ struct CgmCredentialsView: View {
                 // official Dexcom app installed, paired, and running). The experimental / untested
                 // marker stays (D-14) — the mechanism is confident, but on-device validation (D-13)
                 // hasn't run yet.
-                Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor — but if anyone else nearby also wears a Dexcom (a sibling, a clinic waiting room, another household member), enter your transmitter ID above so faBolus reads YOUR sensor, not theirs. The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
+                Text("This is the default **Read from Dexcom app** mode: faBolus reads your sensor passively, alongside the official Dexcom app — it never takes over the connection. Keep the official Dexcom app installed, paired, and running; without it there are no readings (that's when **Dexcom Share**, above, is the fallback). A sensor already set up in the Dexcom app works as-is: no re-pairing and no transmitter ID needed for a single sensor — but if anyone else nearby also wears a Dexcom (a sibling, a clinic waiting room, another household member), enter your transmitter ID under **Advanced** below so faBolus reads YOUR sensor, not theirs. The first reading can take up to ~5 minutes — one Dexcom wake cycle — which is normal, not a failure. If nothing arrives after 5–10 minutes, toggle Bluetooth off then on inside the official Dexcom app. Experimental: untested until validated on-device.")
             }
 
             // D-11: the three sources that previously had no section (G7 / HealthKit / xDrip App Group).
@@ -444,6 +452,9 @@ struct CgmCredentialsView: View {
         nsToken = CredentialStore.get(account: "nightscout.token") ?? ""
         nsApiSecret = CredentialStore.get(account: "nightscout.apisecret") ?? ""
         g6TransmitterID = GlucoseSourceConfig.string("dexcomg6.transmitterId") ?? ""
+        // 09.24-01 (D-05): a returning user who already saved a disambiguation ID never has it
+        // hidden behind the collapsed-by-default Advanced disclosure.
+        g6AdvancedExpanded = !g6TransmitterID.isEmpty
     }
 
     private func save() {
