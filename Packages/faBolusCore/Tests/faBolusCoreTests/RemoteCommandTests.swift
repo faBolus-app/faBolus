@@ -208,4 +208,26 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertNil(bare.cartridgeReady)
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
+
+    // MARK: - Phase 09.27-03 (D-04/D-05): batteryCharging remote-wire propagation
+
+    /// The additive-optional `batteryCharging` field round-trips (JSON + dictionary) when true, and
+    /// never touches `schemaVersion` — mirrors `cartridgeReady` exactly.
+    func testBatteryChargingRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.batteryCharging = true
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.batteryCharging, true)
+        XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.batteryCharging, true)
+    }
+
+    /// A legacy/bare payload without the `batteryCharging` key decodes to `nil` — a remote must map
+    /// this to NOT charging (fail-closed), never a fabricated charging state (D-05).
+    func testBatteryChargingAbsentOnLegacyPayloadDecodesToNil() throws {
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.batteryCharging)
+        XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
+    }
 }

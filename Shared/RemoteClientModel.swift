@@ -24,6 +24,10 @@ class RemoteClientModel {
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var batteryPercent: Int = 0
+    /// Phase 09.27-03 (D-04/D-05) — mirrors `RemoteCommand.batteryCharging`. Default false = fail-closed
+    /// (a cold launch / legacy host shows plain battery, never a fabricated charging state). The on-wire
+    /// `chargingStatus == 1` semantics remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md).
+    var batteryCharging: Bool = false
     var lastBolusUnits: Double?
     var basalRate: Double = 0          // units/hr, mirrored from the host
     var connection: String = ""
@@ -401,6 +405,9 @@ class RemoteClientModel {
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }
             if let b = cmd.batteryPercent { batteryPercent = Int(b) }
+            // Phase 09.27-03 (D-04/D-05): adopt only when present — a legacy host that predates the
+            // field, or a dropped key, leaves the last-known value rather than fabricating a flip.
+            if let c = cmd.batteryCharging { batteryCharging = c }
             if let cr = cmd.carbRatio { carbRatio = cr }
             if let i = cmd.isf { isf = Int(i) }
             if let tb = cmd.targetBg { targetBg = Int(tb) }

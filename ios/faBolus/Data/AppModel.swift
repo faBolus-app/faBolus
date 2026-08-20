@@ -514,6 +514,11 @@ public final class AppModel {
         // op-20-excluded pump never relays a fail-open "ready" to Garmin/Watch/Mac. The dose gate above
         // (`cmd.canBolus` via `BolusGate.evaluate(cartridgeReady: s.cartridgeReadyForBolus)`) is unchanged.
         cmd.cartridgeReady = s.cartridgeReadyRemoteWire
+        // Phase 09.27-03 (D-04/D-05): mirror the pump's charging state to remotes on the same
+        // additive-optional wire shape as cartridgeReady. Absent on a legacy remote ⇒ NOT charging
+        // (fail-closed, never a fabricated charging state) — the on-wire chargingStatus==1 semantics
+        // remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md), display-only, no dose-path input.
+        cmd.batteryCharging = s.batteryCharging
         // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
         // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
         // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a
