@@ -339,7 +339,12 @@ struct PumpDetailsCard: View {
         switch id {
         case "iob": return String(format: "%.2f U", snapshot.iobUnits)
         case "reservoir": return "\(Int(snapshot.reservoirUnits)) U"
-        case "battery": return "\(snapshot.batteryPercent)%"
+        case "battery":
+            // Phase 09.27-02 (D-04) — reuse BatteryChargingPresentation.showsChargingText for the
+            // decision (never re-derived inline), same "N% · Charging" convention as
+            // StatusPillsView.pillFor("battery"); not-charging renders byte-identically to today.
+            let battery = BatteryChargingPresentation.make(percent: snapshot.batteryPercent, charging: snapshot.batteryCharging)
+            return battery.showsChargingText ? "\(snapshot.batteryPercent)% · Charging" : "\(snapshot.batteryPercent)%"
         case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
         case "lastBolus":
             guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
