@@ -414,12 +414,20 @@ public enum FullBleedPlotState: Equatable, Sendable {
     /// 2+ points whose span covers (or exceeds) the selected plot range — normal full-width curve.
     case full
 
-    // STUB (RED phase, 09.26-04 Task 2) — replaced with the real boundary math in the GREEN commit.
     /// Classifies `points` for the given `plotRangeHours` window as of `now`. Future-dated points
     /// (`t > now`) are excluded BEFORE classification (mirrors the Plan-01 render-time guard) — a
-    /// fast-clock artifact must never count toward "the data covers the range."
+    /// fast-clock artifact must never count toward "the data covers the range." The `.full`/`.partial`
+    /// boundary is RELATIVE to `plotRangeHours` (2h vs 6h classify the SAME absolute span
+    /// differently) — never a fixed absolute threshold; `span >= rangeSeconds` counts as `.full`
+    /// (inclusive of the exact-equal boundary, matching the UI-SPEC's "span covers the full selected
+    /// plot range").
     public static func classify(points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date) -> FullBleedPlotState {
-        .full
+        let valid = points.filter { $0.t <= now }
+        guard let first = valid.first, let last = valid.last else { return .empty }
+        guard valid.count >= 2 else { return .single }
+        let span = last.t.timeIntervalSince(first.t)
+        let rangeSeconds = Double(max(plotRangeHours, 1)) * 3600
+        return span >= rangeSeconds ? .full : .partial
     }
 }
 

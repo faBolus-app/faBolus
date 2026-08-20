@@ -8,10 +8,12 @@ import faBolusDesign
 /// to-timestamp math (gaps stay gaps, never compressed) — NOT Swift Charts, which ActivityKit
 /// forbids (gestures/scroll/`@State`/`.chartOverlay` scrubber, D-03).
 ///
-/// Phase 09.26-04 (D-18/D-19) adds an OPTIONAL chrome layer — axis hairlines/ticks + dashed high/low
-/// range lines, each independently toggled, ALL default OFF (the owner-approved clean full-bleed
-/// look). Sparse/collecting-history handling (D-20) and the LA-specific plot range (D-14) are later
-/// tasks in this same plan.
+/// Phase 09.26-04 adds:
+/// - (D-18/D-19) an OPTIONAL chrome layer — axis hairlines/ticks + dashed high/low range lines, each
+///   independently toggled, ALL default OFF (the owner-approved clean full-bleed look).
+/// - (D-20) the four-branch sparse/not-fully-populated render (`FullBleedPlotState`) — the curve's
+///   canvas maps to the FULL selected `plotRangeHours` window (not just the data's own extent), so a
+///   short history naturally anchors right (now) instead of being stretched to fill the width.
 ///
 /// Display-only (D-11 lineage) — this view never reads or writes a dose/delivery/signed-path type;
 /// it only decides WHERE on a Y-axis a glucose fact renders.
@@ -29,6 +31,10 @@ struct FullBleedGlucosePlot: View {
     /// `context.isStale`, re-checked at render time by the caller (D-04) — greys the now-dot only;
     /// the historical segments/fill below never grey, since they render facts, not the live value.
     let isStale: Bool
+    /// Phase 09.26-04 (D-14) — the LA-specific plot time-range (`ContentState.plotRangeHours`, 2h
+    /// default or 6h) this plot's canvas represents. Drives the D-20 anchor-right math below —
+    /// independent of the phone/watch chart's own range setting.
+    var plotRangeHours: Int = 2
     // Phase 09.26-04 (D-18/D-19) — optional chrome, each an INDEPENDENT toggle, ALL default OFF (the
     // owner-approved clean full-bleed look). None of these ever draws a filled band rectangle
     // (D-12/D-19 — the dashed range lines REPLACE the old hard in-range band).
@@ -52,17 +58,39 @@ struct FullBleedGlucosePlot: View {
     /// Future-point guard (D-04, UI-SPEC "Future-point guard") — filter BEFORE building any Path, so
     /// a fast-clock artifact is never plotted as real history, mirroring `futureSkewTolerance`'s
     /// intent applied to the whole series rather than just the single live value.
-    private var plottedPoints: [WidgetSnapshot.Point] {
+    private var validPoints: [WidgetSnapshot.Point] {
         points.filter { $0.t <= now }
     }
 
-    // Reuses `Sparkline`'s exact x-proportional-to-timestamp math (`StatusWidget.swift:114-120`).
-    private var t0: TimeInterval { (plottedPoints.first?.t ?? now).timeIntervalSinceReferenceDate }
-    private var tSpan: TimeInterval {
-        max(1, (plottedPoints.last?.t ?? plottedPoints.first?.t ?? now).timeIntervalSinceReferenceDate - t0)
+    /// Phase 09.26-04 (D-20) — the pure four-branch sparse/not-fully-populated classification for
+    /// `validPoints` at the selected `plotRangeHours`. Drives which of the four render branches below
+    /// actually draws.
+    private var plotState: FullBleedPlotState {
+        FullBleedPlotState.classify(points: points, plotRangeHours: plotRangeHours, now: now)
     }
+
+    /// The start of the FULL selected plot-range window (e.g. "6h ago") — the canvas's LEFT edge.
+    /// Using the WINDOW's bounds (not the data's own min/max) is what makes `.partial` anchor right:
+    /// a short history's points land at their real proportional position within this wider window,
+    /// leaving the uncovered left region genuinely empty rather than stretched to fill the width.
+    private var windowStart: Date {
+        now.addingTimeInterval(-Double(max(plotRangeHours, 1)) * 3600)
+    }
+
+    /// `validPoints` further restricted to the selected window — the points the curve itself draws.
+    /// (Task 3's `makeContent` already sizes `recentPoints` to roughly this window at the source; this
+    /// filter is a defensive belt-and-suspenders trim, not the primary sizing mechanism.)
+    private var curvePoints: [WidgetSnapshot.Point] {
+        validPoints.filter { $0.t >= windowStart }
+    }
+
+    // x() maps the FULL [windowStart, now] domain to [0, width] — NOT the data's own min/max — so a
+    // short/partial history anchors right instead of being stretched edge-to-edge (D-20).
     private func x(_ pt: WidgetSnapshot.Point, _ width: CGFloat) -> CGFloat {
-        width * CGFloat((pt.t.timeIntervalSinceReferenceDate - t0) / tSpan)
+        let start = windowStart.timeIntervalSinceReferenceDate
+        let span = max(1, now.timeIntervalSinceReferenceDate - start)
+        let raw = width * CGFloat((pt.t.timeIntervalSinceReferenceDate - start) / span)
+        return min(width, max(0, raw))
     }
     /// Y-position from the shared `GlucosePlotScale.clamp` (D-03) — a reading outside
     /// `[floorMgdl, ceilingMgdl]` pins to the nearer bound rather than drawing off-canvas.
@@ -76,7 +104,7 @@ struct FullBleedGlucosePlot: View {
     /// must "stay colored while the live value is stale" (D-04 must-have); only the now-dot below
     /// follows the staleness gate.
     private var lastZoneColor: Color {
-        guard let last = plottedPoints.last else { return AppTheme.stale }
+        guard let last = curvePoints.last else { return AppTheme.stale }
         return AppTheme.glucoseColor(last.mgdl, stale: false)
     }
 
@@ -91,31 +119,26 @@ struct FullBleedGlucosePlot: View {
         GeometryReader { geo in
             let size = geo.size
             ZStack {
-                if plottedPoints.count >= 2 {
-                    // Edge-to-edge silhouette fill (D-11) — from the plotted line down to the bottom
-                    // edge of the card, not a mid-widget sparkline.
-                    fillPath(in: size)
-                        .fill(LinearGradient(
-                            colors: [lastZoneColor.opacity(0.30), lastZoneColor.opacity(0.04)],
-                            startPoint: .top, endPoint: .bottom))
-                    // Zone-segmented stroke (D-17): N-1 short Path segments, each colored by the
-                    // LATER point's `GlucoseRange.classify` — historical segments are facts and are
-                    // never greyed by the live-value staleness gate (D-04).
-                    ForEach(Array(strokeSegments(in: size).enumerated()), id: \.offset) { _, segment in
-                        segment.path.stroke(
-                            segment.color,
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    }
-                    // Now-dot: 6pt, current-zone color (greys when stale), inset 10pt from the right
-                    // edge so the system corner radius never clips it (D-17a) — note this is a fixed
-                    // inset from the edge, NOT the last point's timestamp-derived x (which sits
-                    // exactly at the edge by construction of `tSpan` above).
-                    if let last = plottedPoints.last {
+                switch plotState {
+                case .empty:
+                    // No dot, no line, no fill — only the hint (D-20). The BG numeral/overlays still
+                    // render independently from `state.glucose` (the curve and the live value are
+                    // independent facts) — that's the CALLER's job, not this view's.
+                    collectingHistoryHint
+                case .single:
+                    // A single fact can't draw a line — now-dot + hint only, no line/fill.
+                    if let only = curvePoints.last ?? validPoints.last {
                         Circle()
                             .fill(nowDotColor)
                             .frame(width: 6, height: 6)
-                            .position(x: max(0, size.width - 10), y: y(last.mgdl, size.height))
+                            .position(x: max(0, size.width - 10), y: y(only.mgdl, size.height))
                     }
+                    collectingHistoryHint
+                case .partial:
+                    curveLayer(in: size)
+                    partialGapOverlay(in: size)
+                case .full:
+                    curveLayer(in: size)
                 }
                 chromeLayer(in: size)
             }
@@ -125,11 +148,53 @@ struct FullBleedGlucosePlot: View {
         .accessibilityHidden(true)
     }
 
+    /// The `.empty`/`.single` caption — plain, centered text (ZStack's default alignment), spanning
+    /// the plot's width (UI-SPEC "Sparse/not-fully-populated history").
+    private var collectingHistoryHint: some View {
+        Text("Collecting history…")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+    }
+
+    // MARK: - Curve (fill + zone-segmented stroke + now-dot), shared by `.partial`/`.full`
+
+    /// Draws the curve ONLY across `curvePoints` — the REAL data span. For `.full` this happens to
+    /// span (approximately) the full canvas; for `.partial` it draws only the right-hand portion the
+    /// data actually covers, by construction of the window-based `x()` above — never a fill/line
+    /// stretched into time for which there is no data (D-20).
+    @ViewBuilder
+    private func curveLayer(in size: CGSize) -> some View {
+        if curvePoints.count >= 2 {
+            // Edge-to-edge silhouette fill (D-11) — from the plotted line down to the bottom edge of
+            // the card, not a mid-widget sparkline.
+            fillPath(in: size)
+                .fill(LinearGradient(
+                    colors: [lastZoneColor.opacity(0.30), lastZoneColor.opacity(0.04)],
+                    startPoint: .top, endPoint: .bottom))
+            // Zone-segmented stroke (D-17): N-1 short Path segments, each colored by the LATER
+            // point's `GlucoseRange.classify` — historical segments are facts and are never greyed by
+            // the live-value staleness gate (D-04).
+            ForEach(Array(strokeSegments(in: size).enumerated()), id: \.offset) { _, segment in
+                segment.path.stroke(
+                    segment.color,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            }
+        }
+        // Now-dot: 6pt, current-zone color (greys when stale), inset 10pt from the right edge so the
+        // system corner radius never clips it (D-17a).
+        if let last = curvePoints.last {
+            Circle()
+                .fill(nowDotColor)
+                .frame(width: 6, height: 6)
+                .position(x: max(0, size.width - 10), y: y(last.mgdl, size.height))
+        }
+    }
+
     private func fillPath(in size: CGSize) -> Path {
         Path { p in
-            guard let first = plottedPoints.first, let last = plottedPoints.last else { return }
+            guard let first = curvePoints.first, let last = curvePoints.last else { return }
             p.move(to: CGPoint(x: x(first, size.width), y: y(first.mgdl, size.height)))
-            for pt in plottedPoints.dropFirst() {
+            for pt in curvePoints.dropFirst() {
                 p.addLine(to: CGPoint(x: x(pt, size.width), y: y(pt.mgdl, size.height)))
             }
             p.addLine(to: CGPoint(x: x(last, size.width), y: size.height))
@@ -140,12 +205,12 @@ struct FullBleedGlucosePlot: View {
 
     private struct StrokeSegment { let path: Path; let color: Color }
     private func strokeSegments(in size: CGSize) -> [StrokeSegment] {
-        guard plottedPoints.count >= 2 else { return [] }
+        guard curvePoints.count >= 2 else { return [] }
         var result: [StrokeSegment] = []
-        result.reserveCapacity(plottedPoints.count - 1)
-        for i in 1..<plottedPoints.count {
-            let a = plottedPoints[i - 1]
-            let b = plottedPoints[i]
+        result.reserveCapacity(curvePoints.count - 1)
+        for i in 1..<curvePoints.count {
+            let a = curvePoints[i - 1]
+            let b = curvePoints[i]
             var path = Path()
             path.move(to: CGPoint(x: x(a, size.width), y: y(a.mgdl, size.height)))
             path.addLine(to: CGPoint(x: x(b, size.width), y: y(b.mgdl, size.height)))
@@ -154,6 +219,32 @@ struct FullBleedGlucosePlot: View {
             result.append(StrokeSegment(path: path, color: AppTheme.glucoseColor(b.mgdl, stale: false)))
         }
         return result
+    }
+
+    // MARK: - `.partial`'s uncovered-left-region gap (D-20)
+
+    /// The faint baseline + "Collecting history…" hint that fills the un-covered LEFT region for
+    /// `.partial` — from the canvas's left edge (x=0) out to where the real data begins. NEVER a
+    /// fill/line drawn across this region (only a faint 1pt hairline at the earliest point's OWN
+    /// value, distinct from the colored curve fill/stroke above).
+    @ViewBuilder
+    private func partialGapOverlay(in size: CGSize) -> some View {
+        if let earliest = curvePoints.first {
+            let earliestX = x(earliest, size.width)
+            let baselineY = y(earliest.mgdl, size.height)
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: baselineY))
+                p.addLine(to: CGPoint(x: earliestX, y: baselineY))
+            }
+            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            Text("Collecting history…")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: max(1, earliestX), alignment: .leading)
+                .position(x: earliestX / 2, y: size.height / 2)
+        }
     }
 
     // MARK: - Optional chrome (D-18/D-19)
