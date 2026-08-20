@@ -21,7 +21,8 @@ struct MacStatusView: View {
     // N12 (Dynamic Type): the big glucose number scales instead of a fixed 44 pt.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
 
-    /// Phase 09.1 (D-04) — the classified band for the icon+word non-color channel. `nil` while
+    /// Phase 09.1 (D-04) / Phase 09.29 (D-03) — the classified band, kept ONLY for the VoiceOver word
+    /// (`statusA11yLabel` below); the visual glyph this used to feed was removed in 09.29. `nil` while
     /// hidden/stale/missing (the number is already greyed/hidden then; no band color to duplicate,
     /// mirroring `StatusRingView`/`WatchHUDView`).
     private var band: GlucoseRange? {
@@ -43,11 +44,6 @@ struct MacStatusView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if let band {
-                // announcesOwnLabel: false — statusA11yLabel already speaks the band word below.
-                BandIndicator(band: band, showWord: true, announcesOwnLabel: false)
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
             if let age = model.ageLabel {
                 Text(age).font(.caption).foregroundStyle(.secondary)
             }
@@ -65,9 +61,9 @@ struct MacStatusView: View {
     }
 
     /// N12: spoken description of the Mac status block, including "stale" when de-emphasized.
-    /// Phase 09.1 (D-04): also speaks the band word for a fresh reading (mirrors
-    /// `StatusRingView.a11yLabel` / `WatchHUDView.glanceGlucoseLabel`) — `BandIndicator` above sets
-    /// `announcesOwnLabel: false` to avoid double-announcement.
+    /// Phase 09.1 (D-04) / Phase 09.29 (D-03): also speaks the band word for a fresh reading (mirrors
+    /// `StatusRingView.a11yLabel` / `WatchHUDView.glanceGlucoseLabel`) — the visual band glyph was
+    /// removed in 09.29, but the VoiceOver band word is preserved here.
     private var statusA11yLabel: String {
         var parts: [String] = []
         if model.glucoseHidden { parts.append("Glucose unavailable") }
