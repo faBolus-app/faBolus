@@ -231,6 +231,13 @@ public final class AppModel {
     /// Withdraw delivered notifications by dedupe key — used when a safety condition resolves (pump
     /// reconnects, CGM feed resumes) so a stale banner doesn't linger.
     public var notificationWithdrawSink: (([String]) -> Void)?
+    /// 09.25 WR-01: withdraw EVERY OS-outstanding notification for a whole category — used when the user
+    /// disables a safety-trio category (`pumpDisconnect`/`cgmDataLoss`/`bolusReconciliation`) via the
+    /// confirm-on-disable dialog, so an already-scheduled/delivered alert for it doesn't fire/linger after
+    /// the user explicitly turned it off. Distinct from `notificationWithdrawSink` above, which only knows
+    /// a fixed list of dedupe keys (insufficient for `bolusReconciliation`'s per-attempt dynamic keys).
+    /// Nil when no coordinator is installed (unit tests, an out-of-process intent) — a no-op then.
+    public var notificationWithdrawCategorySink: ((NotificationBroker.Category) -> Void)?
     /// S7: schedule the pump-disconnect escalation ladder (delayed re-notifications) when the link drops.
     /// The coordinator turns each step into an OS-scheduled `UNNotificationRequest` so it fires even while
     /// the app is suspended. Like the other sinks, nil when no coordinator is installed (unit tests, an

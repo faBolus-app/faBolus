@@ -13,6 +13,11 @@ import faBolusCore
 /// [[NotificationRuntime]].`updateSettings(_:for:)` (Plan 01's persistence seam) so it survives a
 /// relaunch and is honored by every out-of-process poster.
 struct NotificationSettingsView: View {
+    /// 09.25 WR-01: read-only handle used ONLY to reach `model.notificationWithdrawCategorySink` when the
+    /// user disables a safety-trio category (`setSafetyEnabled`) — nothing else in this view reads
+    /// `model`, so `let` (not `@Bindable`) mirrors `DisplaySettingsView`/`CgmSettingsView`'s convention for
+    /// a model handle that's never bound into a control.
+    let model: AppModel
     @Bindable var settings: AppSettings
     @State private var runtime: NotificationRuntime
     /// Local mirror of `runtime.settings` for reactive rendering — `NotificationRuntime` is a plain
@@ -32,7 +37,8 @@ struct NotificationSettingsView: View {
     /// confirm dialog is currently showing (`nil` ⇒ no dialog).
     @State private var safetyDisableOffCategory: NotificationBroker.Category?
 
-    init(settings: AppSettings) {
+    init(model: AppModel, settings: AppSettings) {
+        self.model = model
         self.settings = settings
         let rt = NotificationRuntime()
         _runtime = State(initialValue: rt)
@@ -87,7 +93,17 @@ struct NotificationSettingsView: View {
     // MARK: - Per-category bindings
 
     private func enabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        Binding(
+        // 09.25 WR-02: this setter writes `cfg.enabled` WITHOUT touching `userAcknowledgedSafetyDisable`,
+        // so a trio category routed through here would desync the pair `decide()`'s AND-gate depends on
+        // (the caption/toggle would then show "Off" while `decide()` still correctly delivers). Every
+        // trio category must go through `safetyEnabledBinding(for:)` instead, which writes both fields
+        // together. Fail LOUDLY (not just in DEBUG — `precondition`, not `assert`) so a future call site
+        // can never silently reintroduce the desync this file's own WR-02 fix closed.
+        precondition(!category.neverSuppressible,
+                     "enabledBinding(for:) must never be used for a never-suppressible trio category "
+                     + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
+                     + "`enabled` and `userAcknowledgedSafetyDisable` paired (09.25 WR-02).")
+        return Binding(
             get: { categorySettings[category]?.enabled ?? category.defaultEnabled },
             set: { on in
                 var cfg = categorySettings[category] ?? .defaults(for: category)
@@ -186,10 +202,27 @@ struct NotificationSettingsView: View {
     /// gate elsewhere in this app (D-08) — that pattern writes a therapy acknowledgment and would
     /// breach the no-dose-path boundary this phase must not cross.
     private func safetyEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
+        Self.safetyTrioToggleBinding(
+            enabled: { categorySettings[category]?.enabled ?? true },
+            setEnabled: { on in setSafetyEnabled(on, for: category) },
+            requestConfirmDisable: { safetyDisableOffCategory = category }
+        )
+    }
+
+    /// 09.25 IN-01: the safety-trio toggle's double-inversion wiring, extracted verbatim out of
+    /// `safetyEnabledBinding` into a standalone (non-`private`) factory over plain closures — so its
+    /// Cancel/snap-back contract (turning OFF requests confirm and does NOT write `enabled` until the
+    /// confirm button fires) is directly unit-testable with spy closures, without a live view or
+    /// `@State`. Mirrors `breakThroughBinding`'s same double-inversion shape.
+    static func safetyTrioToggleBinding(
+        enabled: @escaping () -> Bool,
+        setEnabled: @escaping (Bool) -> Void,
+        requestConfirmDisable: @escaping () -> Void
+    ) -> Binding<Bool> {
         let offToggle = guardedToggle(
-            get: { !(categorySettings[category]?.enabled ?? true) },
-            set: { off in setSafetyEnabled(!off, for: category) },
-            requestConfirm: { safetyDisableOffCategory = category }
+            get: { !enabled() },
+            set: { off in setEnabled(!off) },
+            requestConfirm: requestConfirmDisable
         )
         return Binding(
             get: { !offToggle.wrappedValue },
@@ -206,6 +239,15 @@ struct NotificationSettingsView: View {
         cfg.enabled = on
         cfg.userAcknowledgedSafetyDisable = on ? nil : true
         updateCategorySettings(cfg, for: category)
+        // 09.25 WR-01: disabling doesn't just change future governance — an escalation step scheduled
+        // BEFORE this write (or an already-delivered banner) is still sitting in `UNUserNotificationCenter`
+        // and would otherwise fire/linger AFTER the user just confirmed "turn off protection", contradicting
+        // the confirm dialog's own "faBolus will no longer alert you" promise. Withdraw everything
+        // outstanding for this category right now so the promise is immediately true. Re-enabling needs no
+        // symmetric action — there is nothing pending to reinstate; the NEXT event simply posts normally.
+        if !on {
+            model.notificationWithdrawCategorySink?(category)
+        }
     }
 
     /// The confirm dialog's per-category title (D-06 UI-SPEC "Interaction Contract — Confirm Dialogs")
@@ -225,16 +267,27 @@ struct NotificationSettingsView: View {
     /// feed the SAME value into `.accessibilityValue` on the governing Toggle — VoiceOver announces
     /// exactly what's on screen, never a separately-authored a11y string.
     private func safetyEffectiveStateCaptionText(for category: NotificationBroker.Category) -> String {
-        (categorySettings[category]?.enabled ?? true)
-            ? "On — always delivered, even during quiet hours or Do Not Disturb."
-            : "⚠ Off — you turned off this safety protection."
+        Self.trioIsSuppressed(cfg: categorySettings[category])
+            ? "⚠ Off — you turned off this safety protection."
+            : "On — always delivered, even during quiet hours or Do Not Disturb."
+    }
+
+    /// 09.25 WR-02: mirrors `NotificationBroker.decide()`'s trio AND-gate EXACTLY (`!cfg.enabled &&
+    /// cfg.userAcknowledgedSafetyDisable == true`) — the single source of truth this view's caption/toggle
+    /// must read, never `cfg.enabled` alone. A nil `cfg` (category not yet in the local mirror) reads as
+    /// "on"/not-suppressed, matching every other read site's `?? true`/`?? category.defaultEnabled`
+    /// fallback in this file. Kept here (not in faBolusCore) since it's a UI-display mirror of `decide()`,
+    /// not a second governance point — `decide()` alone still decides delivery.
+    static func trioIsSuppressed(cfg: NotificationBroker.CategorySettings?) -> Bool {
+        guard let cfg else { return false }
+        return !cfg.enabled && cfg.userAcknowledgedSafetyDisable == true
     }
 
     /// The trio's computed effective-state caption (D-06 UI-SPEC "Copy → Caption Mapping"), rendered
     /// below each trio row.
     @ViewBuilder
     private func safetyEffectiveStateCaption(for category: NotificationBroker.Category) -> some View {
-        if categorySettings[category]?.enabled ?? true {
+        if !Self.trioIsSuppressed(cfg: categorySettings[category]) {
             Text(safetyEffectiveStateCaptionText(for: category))
                 .font(.caption).foregroundStyle(.secondary)
         } else {

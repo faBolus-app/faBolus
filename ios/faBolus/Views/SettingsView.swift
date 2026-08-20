@@ -275,7 +275,7 @@ struct SettingsView: View {
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
         case .alerts:  AlertRulesView(settings: settings)
-        case .notifications: NotificationSettingsView(settings: settings)
+        case .notifications: NotificationSettingsView(model: model, settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
