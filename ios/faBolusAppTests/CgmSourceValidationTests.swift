@@ -40,17 +40,6 @@ import Foundation
         #expect(url.path == "/api/v1/treatments.json")
     }
 
-    /// The LibreLinkUp regional-host builder accepts only a short token region, so a free-text settings
-    /// value (or a garbled server redirect) can never build a host that traps `URL(string:)!`.
-    @Test func libreRegionHostAcceptsOnlySafeTokens() {
-        #expect(LibreLinkUpSource.regionHost("us") == "https://api-us.libreview.io")
-        #expect(LibreLinkUpSource.regionHost("eu2") == "https://api-eu2.libreview.io")
-        #expect(LibreLinkUpSource.regionHost("ap") == "https://api-ap.libreview.io")
-        for bad in ["us east", "", "a", "eu/../x", "eu.libreview.io", "toolongregion", "US", "e u", "eu\n"] {
-            #expect(LibreLinkUpSource.regionHost(bad) == nil, "\(bad.debugDescription) must be rejected")
-        }
-    }
-
     /// E7 (A3): the "Test" button exercises ONLY the currently-selected fallback source — the one the app
     /// will actually use — not the old whole-set sweep. Empty when no fallback has been chosen yet (button
     /// disabled). This pins the selected-only contract independent of the SwiftUI view.

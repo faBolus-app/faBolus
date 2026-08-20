@@ -55,16 +55,17 @@ struct DexcomG7RestoreIdentifierTests {
         #expect(first.restoreIdentifierForTesting == DexcomG7BLESource.productionRestoreIdentifier)
     }
 
-    /// No collision: the G7 restore id differs from the pump, watch, BLELink, and G6 identifiers — the
-    /// four other stable restore-id strings in the process (D-08).
+    /// No collision: the G7 restore id differs from the pump, watch, and BLELink identifiers, plus the
+    /// (removed, Phase 1 Plan 02) G6 identifier string — the other stable restore-id strings that have
+    /// existed in the process (D-08). `DexcomG6BLESource` itself is compile-excluded on narrow `main`
+    /// (FABOLUS_CGM_G6=0), so this pins the literal string rather than the now-absent type.
     @Test func restoreIdentifierDoesNotCollideWithAnyOtherRestoreId() {
         let g7 = DexcomG7BLESource.productionRestoreIdentifier
         #expect(g7 == "com.fabolus.cgm.dexcom-g7-ble")
         #expect(g7 != "com.fabolus.app.pump", "must not collide with the pump restore id")
         #expect(g7 != "com.fabolus.app.watch.pump", "must not collide with the watch pump restore id")
         #expect(g7 != "com.fabolus.ble.central", "must not collide with the BLELink restore id")
-        #expect(g7 != DexcomG6BLESource.productionRestoreIdentifier, "must not collide with the G6 restore id")
-        #expect(g7 != "com.fabolus.cgm.dexcom-g6-ble")
+        #expect(g7 != "com.fabolus.cgm.dexcom-g6-ble", "must not collide with the (removed) G6 restore id")
     }
 
     // MARK: willRestoreState reattachment (source-scan; CB restoration isn't simulatable)

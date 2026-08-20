@@ -19,11 +19,10 @@ struct CgmConnectionKindTests {
     private static let expected: [String: GlucoseConnectionKind] = {
         var table: [String: GlucoseConnectionKind] = [
             "dexcom-g7-ble": .localBLE,
-            "dexcom-g6-ble": .localBLE,
-            "librelinkup": .cloudPoll,
             "nightscout": .cloudPoll,
             "dexcom-share": .cloudPoll,
             // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
+            // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
         ]
         #if FABOLUS_HEALTHKIT
         table["healthkit"] = .localOnDevice
