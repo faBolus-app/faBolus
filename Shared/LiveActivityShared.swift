@@ -393,6 +393,59 @@ public enum LATopRightFieldVocabulary {
     public static let defaultId = "iobDelta"
 }
 
+/// Phase 09.26-03 (D-05/D-13/D-15) — pure derivation helpers for the full-bleed top-right slot and
+/// the opt-in "delta"/"tir" bottom-row fields. No ActivityKit, no SwiftUI (same purity discipline as
+/// `LiveActivityComposer` above) so this compiles into BOTH the app target (unit-testable) and the
+/// `faBolusWidgets` extension (rendering), and is callable from plain (non-`@MainActor`) test
+/// contexts. `delta`/`tir` are GROUNDED facts derived from `recentPoints`/`iobUnits` — never a
+/// forecast/ETA (D-05 explicitly out of scope). The delta is a WINDOWED fact over the last 30
+/// minutes of `recentPoints`, deliberately distinct from `ContentState.trendArrow` (the CGM's own
+/// instantaneous slope classifier, carried verbatim from the sensor) — the two may legitimately
+/// disagree; this type never conflates them.
+public enum LAMetrics {
+    /// The 30-minute windowed glucose delta (mg/dL), or `nil` when `points` spans LESS than 10
+    /// minutes — too little history to compute a meaningful 30-minute delta, so the caller must omit
+    /// the clause entirely rather than render a fabricated/zero-filled delta (D-05/D-20, T-09.26-08).
+    /// `= last(points).mgdl - nearest(points, to: now - 30min).mgdl`, where "nearest" is the point
+    /// with the smallest absolute time distance to `now - 30min` (ties broken toward the earlier
+    /// point via `min(by:)`'s stable first-match semantics).
+    public static func delta(points: [WidgetSnapshot.Point], now: Date) -> Int? {
+        nil   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+    }
+
+    /// The delta glyph, reusing the SAME Unicode trend-arrow set already carried on `trendArrow`
+    /// (`faBolusCore.TrendArrow`'s raw values) — no new glyphs introduced. Boundaries: `>= +10` is a
+    /// full up arrow, `> 0` (but `< 10`) is up-right, `== 0` is flat, `< 0` (but `> -10`) is
+    /// down-right, `<= -10` is a full down arrow.
+    public static func deltaGlyph(_ d: Int) -> String {
+        ""   // RED stub (09.26-03 Task 1) — real mapping lands in the GREEN commit.
+    }
+
+    /// Time-in-range percent (rounded to the nearest whole percent) over `points`, count-based on the
+    /// SAME closed `[WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.high]` (70...180) convention
+    /// `faBolusCore.GlucoseStatistics.timeInRangePct` uses (T-09.26-10) — this file can't link
+    /// faBolusCore directly (compiles into the widget extension too), so it re-derives the same count
+    /// via the drift-guarded `WidgetGlucoseThresholds` mirror instead of a second literal 70/180.
+    /// Empty input → 0 (never a divide-by-zero crash, never a fabricated 100%).
+    public static func tir(points: [WidgetSnapshot.Point]) -> Int {
+        0   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+    }
+
+    /// The composite top-right slot copy for `field` (one of `LATopRightFieldVocabulary.all`), or
+    /// `nil` when the slot should render NOTHING (field == "none" — the corner is handed back to the
+    /// plain curve, D-15). An unrecognized token falls back to the "iobDelta" composite, matching
+    /// `LATopRightFieldVocabulary`'s own unrecognized-token-resolves-to-default rule (never a
+    /// blank/crash slot). The IOB half is formatted EXACTLY as `WidgetUI.chip(for: "iob", state)`
+    /// does today (`String(format: "%.2f U", ...)`), including honoring `iobStale` — this function
+    /// does not grey/color, it only produces the copy string; the caller applies tint via the same
+    /// `iobStale` flag it already reads for every other chip (T-09.26-09).
+    public static func topRightText(
+        field: String, state: FaBolusGlucoseAttributes.ContentState, now: Date
+    ) -> String? {
+        nil   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+    }
+}
+
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target
 /// (unit tests) and the `faBolusWidgets` extension (rendering). See 05-UI-SPEC.md's Surface
 /// Inventory & Layout Contract for the per-region capacity/priority/fallback rules implemented here.
