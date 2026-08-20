@@ -8,9 +8,10 @@ import faBolusDesign
 /// to-timestamp math (gaps stay gaps, never compressed) — NOT Swift Charts, which ActivityKit
 /// forbids (gestures/scroll/`@State`/`.chartOverlay` scrubber, D-03).
 ///
-/// **This tracer's scope is the normal case only** (`points.count >= 2` after the future-point
-/// guard): sparse/collecting-history (D-20), optional axis chrome (D-18/D-19, range lines), and
-/// on-curve extrema labels (deliberately dropped, D-10) are later plans / out of scope here.
+/// Phase 09.26-04 (D-18/D-19) adds an OPTIONAL chrome layer — axis hairlines/ticks + dashed high/low
+/// range lines, each independently toggled, ALL default OFF (the owner-approved clean full-bleed
+/// look). Sparse/collecting-history handling (D-20) and the LA-specific plot range (D-14) are later
+/// tasks in this same plan.
 ///
 /// Display-only (D-11 lineage) — this view never reads or writes a dose/delivery/signed-path type;
 /// it only decides WHERE on a Y-axis a glucose fact renders.
@@ -28,6 +29,21 @@ struct FullBleedGlucosePlot: View {
     /// `context.isStale`, re-checked at render time by the caller (D-04) — greys the now-dot only;
     /// the historical segments/fill below never grey, since they render facts, not the live value.
     let isStale: Bool
+    // Phase 09.26-04 (D-18/D-19) — optional chrome, each an INDEPENDENT toggle, ALL default OFF (the
+    // owner-approved clean full-bleed look). None of these ever draws a filled band rectangle
+    // (D-12/D-19 — the dashed range lines REPLACE the old hard in-range band).
+    /// 1pt hairline along the bottom edge of the plot area.
+    var showXAxisLine: Bool = false
+    /// 1pt hairline along the left edge of the plot area.
+    var showYAxisLine: Bool = false
+    /// Short (4pt) UNLABELED perpendicular hairlines along the bottom edge — chrome, not a labeled
+    /// axis (UI-SPEC [RESOLVED]: no numeric text is ever drawn at a tick).
+    var showXAxisTicks: Bool = false
+    /// Short (4pt) UNLABELED perpendicular hairlines along the left edge.
+    var showYAxisTicks: Bool = false
+    /// Dashed high/low threshold hairlines, at the unit-aware `WidgetGlucoseThresholds.low`/`.high`
+    /// mapped through the SAME `y()` the curve uses.
+    var showRangeLines: Bool = false
     /// Injected so tests can pin "now" instead of the view silently reading `Date()` — mirrors the
     /// `GlucoseLiveActivityManager.makeContent(from:now:)` injection idiom already used in this
     /// codebase for the same reason (deterministic tests).
@@ -74,8 +90,8 @@ struct FullBleedGlucosePlot: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            if plottedPoints.count >= 2 {
-                ZStack {
+            ZStack {
+                if plottedPoints.count >= 2 {
                     // Edge-to-edge silhouette fill (D-11) — from the plotted line down to the bottom
                     // edge of the card, not a mid-widget sparkline.
                     fillPath(in: size)
@@ -101,6 +117,7 @@ struct FullBleedGlucosePlot: View {
                             .position(x: max(0, size.width - 10), y: y(last.mgdl, size.height))
                     }
                 }
+                chromeLayer(in: size)
             }
         }
         // Decorative Path — VoiceOver reads the BG numeral/top-right/bottom-row overlays, never this
@@ -137,5 +154,69 @@ struct FullBleedGlucosePlot: View {
             result.append(StrokeSegment(path: path, color: AppTheme.glucoseColor(b.mgdl, stale: false)))
         }
         return result
+    }
+
+    // MARK: - Optional chrome (D-18/D-19)
+
+    /// Axis hairlines/ticks + dashed high/low range lines — each independently gated on its own
+    /// toggle. NEVER a filled band rectangle (D-12/D-19 — the range lines REPLACE the old hard band
+    /// idiom; that band is Classic-only, `StatusWidget.swift`'s `Sparkline`, and is never reused
+    /// here).
+    @ViewBuilder
+    private func chromeLayer(in size: CGSize) -> some View {
+        if showXAxisLine {
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: size.height))
+                p.addLine(to: CGPoint(x: size.width, y: size.height))
+            }
+            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+        }
+        if showYAxisLine {
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 0))
+                p.addLine(to: CGPoint(x: 0, y: size.height))
+            }
+            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+        }
+        if showXAxisTicks {
+            ForEach(axisTickFractions, id: \.self) { f in
+                Path { p in
+                    let tx = size.width * f
+                    p.move(to: CGPoint(x: tx, y: size.height))
+                    p.addLine(to: CGPoint(x: tx, y: size.height - 4))
+                }
+                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+            }
+        }
+        if showYAxisTicks {
+            ForEach(axisTickFractions, id: \.self) { f in
+                Path { p in
+                    let ty = size.height * f
+                    p.move(to: CGPoint(x: 0, y: ty))
+                    p.addLine(to: CGPoint(x: 4, y: ty))
+                }
+                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+            }
+        }
+        if showRangeLines {
+            rangeLine(mgdl: WidgetGlucoseThresholds.low, in: size)
+            rangeLine(mgdl: WidgetGlucoseThresholds.high, in: size)
+        }
+    }
+
+    /// Four evenly-spaced interior tick positions (chrome, not a labeled axis — no numeric text is
+    /// ever drawn at these positions, UI-SPEC [RESOLVED] "ticks carry no numeric labels").
+    private let axisTickFractions: [CGFloat] = [0.2, 0.4, 0.6, 0.8]
+
+    /// A single dashed hairline at `mgdl`'s y-position, mapped through the SAME `y()` the curve uses
+    /// (so a range line always lines up with the curve's own Y-scale/floor/ceiling) — no numeric
+    /// label on the line (chrome, not annotation, matching the tick rule above).
+    private func rangeLine(mgdl: Int, in size: CGSize) -> some View {
+        let ypos = y(mgdl, size.height)
+        return Path { p in
+            p.move(to: CGPoint(x: 0, y: ypos))
+            p.addLine(to: CGPoint(x: size.width, y: ypos))
+        }
+        .stroke(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
     }
 }
