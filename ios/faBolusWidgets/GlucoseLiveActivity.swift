@@ -295,11 +295,6 @@ private extension ActivityViewContext<FaBolusGlucoseAttributes> {
         guard let g = state.glucose else { return .gray }
         return AppTheme.glucoseColor(g, stale: isStale)
     }
-    /// The classified band (Phase 09.1, Task 2) for the redundant icon+word non-color channel — `nil`
-    /// when there is no reading to classify (mirrors `glucoseColor`'s grey-on-missing fallback).
-    var glucoseBand: GlucoseRange? {
-        state.glucose.map(GlucoseRange.classify)
-    }
     /// C8 — never synthesized. "" whenever `isStale`, else the state's carried arrow verbatim
     /// (the state itself already suppressed it at publish time; this re-applies the SAME rule at
     /// render time, since staleness can advance past `staleDate` without a new publish).
@@ -355,12 +350,6 @@ private struct ComposedFieldView: View {
 /// The glucose numeral + trend arrow, sized per `role` (Display 34pt vs. Heading 16pt,
 /// 05-UI-SPEC.md Typography). Includes the sample-age caption below it ONLY at `.display` role —
 /// the compact/minimal regions have no room for a second line.
-///
-/// Phase 09.1 (D-04) — every presentation this view backs (Lock Screen banner + DI expanded-center
-/// at `.display`, DI compact-leading/minimal/CarPlay-small at `.heading`) also carries the
-/// `BandIndicator` non-color channel: `.display` (roomy) shows icon+word, `.heading` (space-
-/// constrained) shows icon-only (UI-SPEC #3/#4). Only rendered for a fresh reading — the number is
-/// already greyed when stale, so there is no band color to duplicate (mirrors `StatusRingView`).
 private struct GlucoseNumeralView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var role: ComposedFieldView.FieldRole = .heading
@@ -376,11 +365,6 @@ private struct GlucoseNumeralView: View {
                         .font(role == .display ? .title3 : .system(size: 16, weight: .bold))
                         .foregroundStyle(context.glucoseColor)
                 }
-            }
-            if !context.isStale, let band = context.glucoseBand {
-                BandIndicator(band: band, showWord: role == .display)
-                    .font(role == .display ? .caption2 : .system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
             }
             if role == .display {
                 if let d = context.state.glucoseDate {
