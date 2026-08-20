@@ -85,13 +85,6 @@ struct GlucoseComplicationView: View {
     }
     private var arrow: String { snap.isStale(asOf: now) ? "" : snap.trendArrow }
 
-    /// Band classification for the current snapshot (nil when unknown/invalid/stale) — feeds both the
-    /// glucose number's color and the icon-only BandIndicator. Classifies via `faBolusCore.GlucoseRange`
-    /// through `faBolusDesign.AppTheme` (D-03) instead of the old local color switch.
-    private var band: GlucoseRange? {
-        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return nil }
-        return GlucoseRange.classify(g)
-    }
     /// Number color: gray when unknown/invalid/stale, else via faBolusDesign — byte-identical to the
     /// deleted local switch for every input.
     private var bandColor: Color {
@@ -102,11 +95,9 @@ struct GlucoseComplicationView: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            // The single line the system places under the clock — only one leading glyph fits, so
-            // the band's own symbol (icon-only backstop, UI-SPEC #4) replaces the generic drop icon
-            // instead of adding a second element this family can't render (mirrors the iOS Home/Lock
-            // Screen widget's accessoryInline, 09.1-02).
-            Label("\(value) \(arrow)", systemImage: band?.symbolName ?? "drop.fill")
+            // The single line the system places under the clock — only one leading glyph fits; a
+            // neutral drop icon replaces the band glyph (no confusable good/bad symbol here).
+            Label("\(value) \(arrow)", systemImage: "drop.fill")
         #if os(watchOS)
         case .accessoryCorner:
             // Extremely tight face (a single glyph in the ring's corner) — no room for a second
@@ -116,13 +107,7 @@ struct GlucoseComplicationView: View {
                 .widgetLabel { Text("Glucose \(value) \(arrow)") }
         #endif
         case .accessoryRectangular:
-            // Has room for a small icon — the non-color channel MUST survive on this family
-            // (UI-SPEC #4).
             HStack(spacing: 6) {
-                if let band {
-                    BandIndicator(band: band, showWord: false)
-                        .font(.title3)
-                }
                 Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
                 VStack(alignment: .leading) {
                     Text(arrow.isEmpty ? "—" : arrow)
@@ -142,10 +127,6 @@ struct GlucoseComplicationView: View {
             VStack(spacing: 0) {
                 Text(value).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
                 HStack(spacing: 2) {
-                    if let band {
-                        BandIndicator(band: band, showWord: false)
-                            .font(.system(size: 9))
-                    }
                     if !arrow.isEmpty { Text(arrow).font(.caption2) }
                 }
             }
