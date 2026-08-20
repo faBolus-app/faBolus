@@ -420,6 +420,38 @@ public enum LATopRightFieldVocabulary {
     public static let defaultId = "iobDelta"
 }
 
+/// Phase 09.26 (UAT fix — the "Live Activity not appearing" regression) — the full-bleed Lock Screen
+/// body's height budget, made an explicit, unit-guarded contract instead of a bare magic number in the
+/// view.
+///
+/// WHY THIS EXISTS: a Lock Screen Live Activity has a HARD system maximum presentation height of ~160pt.
+/// Content taller than that is SILENTLY not displayed (no crash, no error). 09.26's Defect-1/3 layout
+/// fix gave the full-bleed plot a fixed height and kept the body's outer padding; at the original
+/// `fullBleedPlotHeight = 190` + `.padding(16)` the body was 190 + 2*16 = 222pt — 62pt over budget — so
+/// the DEFAULT full-bleed style silently stopped appearing entirely. These constants keep the full-bleed
+/// Lock Screen content provably within budget (`fullBleedTotalHeight <= maxHeight`, asserted in
+/// `LALockScreenLayoutTests`) so the limit can never be silently blown again. The `.overlay(alignment:)`
+/// composition of the top-left/top-right/bottom regions onto the sized plot (the Defect-1/3 fix) is
+/// unchanged — only the numbers shrink. Pure (no SwiftUI/ActivityKit) so both the widget-extension render
+/// and the app test target read the SAME values (no drift). CGFloat via Foundation.
+public enum LALockScreenLayout {
+    /// Apple's documented Lock Screen Live Activity maximum presentation height (points). Content taller
+    /// than this is silently truncated / not displayed.
+    public static let maxHeight: CGFloat = 160
+    /// The full-bleed plot's fixed height (points) — the sized canvas the top-left / top-right / bottom
+    /// overlays anchor onto (Defect 1/3). Reduced from the original 190 (which put the body at 222pt,
+    /// over the 160pt Lock Screen limit — the "LA not appearing" regression) to keep `fullBleedTotalHeight`
+    /// comfortably under `maxHeight`. Exact value is a judgment call pending on-device UAT re-tune; the top
+    /// overlay block (~66pt) + bottom chip row (~30pt) still fit without overlap at this height.
+    public static let fullBleedPlotHeight: CGFloat = 120
+    /// The full-bleed body's outer padding (points), applied on every edge (was a bare `.padding(16)`).
+    /// Trimmed to 12 alongside the plot-height reduction so the total stays under the Lock Screen budget.
+    public static let fullBleedContentPadding: CGFloat = 12
+    /// The total height the full-bleed Lock Screen body occupies: the sized plot plus top+bottom padding.
+    /// MUST stay `<= maxHeight` or the whole card silently disappears (the 09.26 regression).
+    public static var fullBleedTotalHeight: CGFloat { fullBleedPlotHeight + 2 * fullBleedContentPadding }
+}
+
 /// Phase 09.26-04 (D-20) — the four intentional states for the full-bleed plot's sparse/not-fully-
 /// populated history: never a misleading full-width fill/line across time for which there is no
 /// data. Pure classifier (no ActivityKit/SwiftUI, same purity discipline as `LiveActivityComposer`)

@@ -539,10 +539,15 @@ private struct LockScreenLiveActivityView: View {
     /// the chips/basal-chip floated mid-widget over the curve. Giving the plot an explicit height and
     /// compositing the overlays onto it via `.overlay(alignment:)` (below) — instead of sharing a
     /// self-sizing `VStack` + `Spacer` with the plot — makes top-left/top-right/bottom independently
-    /// anchored regardless of content height. This exact value is a judgment call (09.26-UI-SPEC.md
-    /// specifies a fixed height only for the DI's 44pt plot, not the Lock Screen's) — chosen to
-    /// comfortably fit the top overlay block + curve + bottom row without overlap; re-verify on-device.
-    private static let fullBleedPlotHeight: CGFloat = 190
+    /// anchored regardless of content height.
+    ///
+    /// Phase 09.26 (UAT fix — "Live Activity not appearing" regression): the plot height + the body's
+    /// outer padding MUST keep the whole full-bleed Lock Screen body under the ~160pt Lock Screen LA
+    /// maximum, or iOS SILENTLY drops the card (no crash, no error). The first cut of this fix used
+    /// `.frame(height: 190)` + `.padding(16)` = 222pt — over budget — which made the DEFAULT full-bleed
+    /// style vanish entirely. Both numbers now come from `LALockScreenLayout` (a pure, unit-guarded
+    /// budget in `Shared/LiveActivityShared.swift`: `LALockScreenLayoutTests` asserts
+    /// `fullBleedTotalHeight <= maxHeight`) so the limit can never be silently blown again.
 
     /// Z-order back→front (09.26-UI-SPEC.md "Lock Screen Expanded", as amended by the UAT fix above):
     /// a darkening backing (Defect 6), `FullBleedGlucosePlot` filling the sized content area, then the
@@ -570,7 +575,7 @@ private struct LockScreenLiveActivityView: View {
                 showYAxisTicks: context.state.showYAxisTicks,
                 showRangeLines: context.state.showRangeLines)
         }
-        .frame(height: Self.fullBleedPlotHeight)
+        .frame(height: LALockScreenLayout.fullBleedPlotHeight)
         .overlay(alignment: .topLeading) { fullBleedTopLeadingOverlay }
         // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the top-left block,
         // since the two are independently sized.
@@ -580,7 +585,7 @@ private struct LockScreenLiveActivityView: View {
         // on, it takes the LEFTMOST slot of this SAME row and the customizable chips offset (shift
         // right); when off, the chips use the full row exactly as before.
         .overlay(alignment: .bottomLeading) { fullBleedBottomRow }
-        .padding(16)
+        .padding(LALockScreenLayout.fullBleedContentPadding)
         .containerBackground(.fill.tertiary, for: .widget)
     }
 
