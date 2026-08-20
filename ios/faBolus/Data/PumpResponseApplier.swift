@@ -189,7 +189,14 @@ final class PumpResponseApplier {
         case let m as InsulinStatusResponse:
             withSnapshot { $0.reservoirUnits = Double(m.currentInsulinAmount) }
         case let m as CurrentBatteryV2Response:
-            withSnapshot { $0.batteryPercent = m.batteryPercent }
+            withSnapshot { snap in
+                snap.batteryPercent = m.batteryPercent
+                // Phase 09.27 D-01/D-02/D-03: mirror the oracle's `isCharging()` — only a POSITIVE
+                // `chargingStatus == 1` reads as charging; any other/unknown value fails closed to
+                // `false` (no false charging badge). Unconditional assign (never "if let"-preserved),
+                // same shape as `batteryPercent` on this same frame.
+                snap.batteryCharging = (m.chargingStatus == 1)
+            }
         case let m as CGMStatusResponse:
             withSnapshot { $0.cgmSessionActive = m.sessionActive }
         case let m as LoadStatusResponse:

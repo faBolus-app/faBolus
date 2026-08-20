@@ -34,9 +34,17 @@ struct StatusPillsView: View {
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         case "battery":
-            pill(icon: batteryIcon(snapshot.batteryPercent),
-                 tint: snapshot.batteryPercent <= 20 ? AppTheme.low : .green,
-                 value: "\(snapshot.batteryPercent)%", label: "Pump")
+            // Phase 09.27 (D-01/D-04, tracer) — the ONE source of truth for the glyph/"Charging"
+            // text/tint-override decision; routes through `BatteryChargingPresentation` instead of a
+            // second copy of the level->glyph switch, so every surface that reuses this helper
+            // (Plans 02/03) stays byte-identical to this pill.
+            let battery = BatteryChargingPresentation.make(percent: snapshot.batteryPercent,
+                                                             charging: snapshot.batteryCharging)
+            pill(icon: battery.symbolName,
+                 tint: battery.usesLowTint ? AppTheme.low : .green,
+                 value: battery.showsChargingText
+                    ? "\(snapshot.batteryPercent)% · Charging" : "\(snapshot.batteryPercent)%",
+                 label: "Pump")
         case "cgm":
             cgmPill(now: now)
         case "basal":
@@ -220,17 +228,6 @@ struct StatusPillsView: View {
     private func calcAgedLabel(_ base: String, date: Date?, stale: Bool, now: Date) -> String {
         guard stale, let d = date else { return base }
         return "\(base) · \(CalcInputFreshness.ageLabel(for: d, now: now))"
-    }
-
-    /// SF Symbol whose fill level tracks the battery percentage.
-    private func batteryIcon(_ pct: Int) -> String {
-        switch pct {
-        case ...5:   return "battery.0"
-        case ...37:  return "battery.25"
-        case ...62:  return "battery.50"
-        case ...87:  return "battery.75"
-        default:     return "battery.100"
-        }
     }
 
     private func pill(icon: String, tint: Color, value: String, label: String, stale: Bool = false) -> some View {

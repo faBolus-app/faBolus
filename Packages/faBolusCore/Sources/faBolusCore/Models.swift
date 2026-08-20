@@ -136,6 +136,12 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var iobDate: Date? = nil
     public var reservoirUnits: Double = 0
     public var batteryPercent: Int = 0
+    /// Phase 09.27 D-01/D-02/D-03 — the pump POSITIVELY reported it is charging (op-145
+    /// `CurrentBatteryV2Response.chargingStatus == 1`). Fail-closed default `false`: any other/
+    /// unknown value AND "never read this op-145 reply yet" both read identically as not-charging —
+    /// never a false charging badge (mirrors `deliverySuspended`'s fail-closed-Bool shape). Display-only
+    /// pump status telemetry; never a dose-path input (D-06).
+    public var batteryCharging: Bool = false
     public var cgmActive: Bool = false
     public var lastBolusUnits: Double? = nil
     public var lastBolusDate: Date? = nil
