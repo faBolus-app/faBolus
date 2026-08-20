@@ -332,5 +332,86 @@ struct LiveActivityContentBuilderTests {
         #expect(decoded.pumpLinkStale == false)
         #expect(decoded.selectedFields == [])
         #expect(decoded.hasSnoozeEligibleAlert == false)
+        // Phase 09.26-01 tracer (D-11/D-21/D-02/D-03): the three newest additive fields also fall
+        // back to the SAME defaults the memberwise `init` declares — "fullBleed"/40/300 — never a
+        // thrown decode for an in-flight Live Activity started before this tracer shipped.
+        #expect(decoded.liveActivityStyle == "fullBleed")
+        #expect(decoded.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(decoded.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+    }
+
+    // MARK: - Phase 09.26-01 tracer (D-11/D-21/D-02/D-03) — full-bleed style + plot-bounds baking
+
+    /// The 4KB ceiling holds with the three newest additive fields populated (non-default values, the
+    /// worst case for encoded size) alongside a 24-point series — the plan's own acceptance criterion,
+    /// distinct from the two pre-existing budget tests above.
+    @Test func encodedContentStateStaysUnderFourKBWithStyleAndPlotBoundsPopulated() throws {
+        let now = Date(timeIntervalSince1970: 13_000_000)
+        let points = (0..<48).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 48) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.recentPoints.count == 24)
+        #expect(state.liveActivityStyle == "fullBleed")   // default when no WidgetStore mirror is set
+        #expect(state.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(state.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// `makeContent` bakes `WidgetStore.liveActivityStyle`/`liveActivityPlotFloor`/
+    /// `liveActivityPlotCeiling` into `ContentState`, resolving the bounds through
+    /// `GlucosePlotScale.resolve` (snapping to the nearest valid preset) rather than carrying the
+    /// stored mirror through unresolved. Mutates the shared App-Group `UserDefaults` suite for the
+    /// duration of the test only, restoring it in a `defer` so this doesn't leak into any other test.
+    @Test func makeContentBakesStyleAndResolvedPlotBoundsFromWidgetStoreMirror() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        let previousFloor = WidgetStore.liveActivityPlotFloor
+        let previousCeiling = WidgetStore.liveActivityPlotCeiling
+        defer {
+            WidgetStore.liveActivityStyle = previousStyle
+            WidgetStore.liveActivityPlotFloor = previousFloor
+            WidgetStore.liveActivityPlotCeiling = previousCeiling
+        }
+
+        WidgetStore.liveActivityStyle = "classic"
+        WidgetStore.liveActivityPlotFloor = 50
+        WidgetStore.liveActivityPlotCeiling = 350
+
+        let now = Date(timeIntervalSince1970: 14_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.liveActivityStyle == "classic")
+        #expect(state.plotFloorMgdl == 50)
+        #expect(state.plotCeilingMgdl == 350)
+    }
+
+    /// An unset (nil) App-Group mirror — the legacy-install / never-synced case — bakes the documented
+    /// defaults, never a blank style or a 0/0 bound pair.
+    @Test func makeContentDefaultsToFullBleedAndDefaultBoundsWhenWidgetStoreMirrorIsAbsent() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        let previousFloor = WidgetStore.liveActivityPlotFloor
+        let previousCeiling = WidgetStore.liveActivityPlotCeiling
+        defer {
+            WidgetStore.liveActivityStyle = previousStyle
+            WidgetStore.liveActivityPlotFloor = previousFloor
+            WidgetStore.liveActivityPlotCeiling = previousCeiling
+        }
+
+        WidgetStore.liveActivityStyle = nil
+        WidgetStore.liveActivityPlotFloor = nil
+        WidgetStore.liveActivityPlotCeiling = nil
+
+        let now = Date(timeIntervalSince1970: 15_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.liveActivityStyle == "fullBleed")
+        #expect(state.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(state.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
     }
 }

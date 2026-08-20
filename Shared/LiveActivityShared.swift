@@ -1,5 +1,6 @@
 import Foundation
 import ActivityKit
+import faBolusCore
 
 /// Shared Live Activity attributes/content-state for the glucose Live Activity + Dynamic Island
 /// (Phase 5, D-01/D-02). Compiled into BOTH the app target and the `faBolusWidgets` extension —
@@ -152,6 +153,21 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// be silenced even if this flag were somehow wrong.
         public var hasSnoozeEligibleAlert: Bool
 
+        // Phase 09.26 tracer (D-11/D-21) — the Live Activity STYLE switch (additive). "fullBleed"
+        // (default) or "classic"; an unrecognized/legacy-absent token resolves to "fullBleed" at
+        // render (never blank/crash — mirrors `displayUnitToken`'s "carry the string verbatim, only
+        // the renderer maps unknown -> a safe default" pattern). Baked by `GlucoseLiveActivityManager
+        // .makeContent` from `WidgetStore.liveActivityStyle`.
+        public var liveActivityStyle: String
+        // Phase 09.26 tracer (D-02/D-03) — the plot Y-axis bounds (mg/dL), resolved at publish time
+        // via `GlucosePlotScale.resolve(storedFloor:storedCeiling:)` over the phone's own
+        // `AppSettings.glucosePlotFloor`/`glucosePlotCeiling` mirror, so the full-bleed LA curve
+        // matches whatever floor/ceiling the phone's own glucose chart uses. Defaulted to
+        // `GlucosePlotScale.defaultFloor`/`defaultCeiling` (40/300) so a legacy decode never leaves
+        // these at a nonsensical 0/0.
+        public var plotFloorMgdl: Int
+        public var plotCeilingMgdl: Int
+
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
@@ -165,7 +181,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     connected: Bool = false,
                     updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
-                    hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
+                    hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
+                    liveActivityStyle: String = "fullBleed",
+                    plotFloorMgdl: Int = GlucosePlotScale.defaultFloor,
+                    plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
@@ -192,6 +211,9 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.pumpLinkStale = pumpLinkStale
             self.selectedFields = selectedFields
             self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
+            self.liveActivityStyle = liveActivityStyle
+            self.plotFloorMgdl = plotFloorMgdl
+            self.plotCeilingMgdl = plotCeilingMgdl
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -200,7 +222,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                  controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
                  lockoutUntilDate, exerciseTimeRemainingSec,
                  connected, updatedAt,
-                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
+                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel,
+                 liveActivityStyle, plotFloorMgdl, plotCeilingMgdl
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -255,7 +278,13 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 hasSnoozeEligibleAlert: try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false,
                 // Owner-requested toggle: missing key ⇒ false (labels hidden), same default-OFF rule
                 // every other additive field above follows.
-                showUnitLabel: try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
+                showUnitLabel: try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false,
+                // Phase 09.26 tracer (D-11/D-21/D-02/D-03): a legacy/missing key falls back to the
+                // SAME defaults the memberwise `init` above declares — "fullBleed"/40/300 — never a
+                // thrown decode for an in-flight Live Activity started under an older build.
+                liveActivityStyle: try c.decodeIfPresent(String.self, forKey: .liveActivityStyle) ?? "fullBleed",
+                plotFloorMgdl: try c.decodeIfPresent(Int.self, forKey: .plotFloorMgdl) ?? GlucosePlotScale.defaultFloor,
+                plotCeilingMgdl: try c.decodeIfPresent(Int.self, forKey: .plotCeilingMgdl) ?? GlucosePlotScale.defaultCeiling
             )
         }
     }

@@ -323,6 +323,49 @@ public enum WidgetStore {
         }
     }
 
+    /// Phase 09.26 tracer (D-11/D-21) — the Live Activity style mirror ("fullBleed"|"classic"),
+    /// written by `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent`
+    /// when baking `ContentState.liveActivityStyle` (the extension's SwiftUI views never observe
+    /// App-Group changes directly — pump-surface research §2b). `nil` when absent (a legacy install,
+    /// or before the first `syncWidgetConfig()` call) — the manager falls back to "fullBleed" rather
+    /// than baking in a blank style.
+    public static var liveActivityStyle: String? {
+        get { defaults?.string(forKey: "liveActivityStyle") }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityStyle")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityStyle")
+        }
+    }
+
+    /// Phase 09.26 tracer (D-02/D-03) — the phone's own glucose-plot Y-axis floor/ceiling mirror
+    /// (`AppSettings.glucosePlotFloor`/`glucosePlotCeiling`), so the full-bleed LA curve resolves the
+    /// SAME bounds via `GlucosePlotScale.resolve(storedFloor:storedCeiling:)` the phone's own chart
+    /// uses. `nil` when absent (legacy install / not yet synced) — `resolve` already treats a `nil`
+    /// pair as "use the defaults", so no separate fallback is needed here.
+    public static var liveActivityPlotFloor: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotFloor") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotFloor")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotFloor")
+        }
+    }
+    public static var liveActivityPlotCeiling: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotCeiling") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotCeiling")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotCeiling")
+        }
+    }
+
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
     /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
     public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }

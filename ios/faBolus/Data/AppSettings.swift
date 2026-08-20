@@ -559,6 +559,19 @@ public final class AppSettings {
             GlucoseLiveActivityManager.refreshForSelectionChange()
         }
     }
+    /// Phase 09.26 tracer (D-21) — the Live Activity STYLE: `"fullBleed"` (new default, the edge-to-
+    /// edge zone-colored plot) or `"classic"` (today's chip HUD, unchanged). Additive, same per-device
+    /// ambient-surface reasoning as `liveActivityEnabled`/`liveActivityFields` — `didSet` mirrors +
+    /// force-refreshes exactly like those two, so a style change applies at once rather than waiting
+    /// for the next pump reading. Backed up, but **not** iCloud-synced (`SettingsCatalog`
+    /// `syncsToICloud: false`) — a Lock Screen presentation choice is a per-device decision.
+    public var liveActivityStyle: String {
+        didSet {
+            d.set(liveActivityStyle, forKey: "liveActivityStyle")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
     /// Phase 5 (D-13/D-14, 05-03; UI reachability + unit-awareness closed in 05-06/WR-01/CR-01) —
     /// master opt-in for the app-icon glucose badge. **Default OFF** (opt-in, matching every other
     /// device-capability switch in this file). Reachable via the "Glucose badge" toggle in Display &
@@ -681,6 +694,12 @@ public final class AppSettings {
         // `GlucoseLiveActivityManager.makeContent` can bake it into `ContentState` — the extension's
         // SwiftUI views never observe App-Group changes directly (pump-surface research §2b).
         WidgetStore.liveActivityFields = liveActivityFields
+        // Phase 09.26 tracer (D-11/D-21/D-02/D-03): mirror the style + plot bounds so
+        // `GlucoseLiveActivityManager.makeContent` can bake them into `ContentState` — same
+        // App-Group-mirror rationale as `liveActivityFields` above.
+        WidgetStore.liveActivityStyle = liveActivityStyle
+        WidgetStore.liveActivityPlotFloor = glucosePlotFloor
+        WidgetStore.liveActivityPlotCeiling = glucosePlotCeiling
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
@@ -924,6 +943,11 @@ public final class AppSettings {
         liveActivityFields = Self.restoreOrder(
             d.array(forKey: "liveActivityFields") as? [String] ?? Self.defaultLiveActivityFields,
             all: Self.laFieldItems, emptyMeansEmpty: true)
+        // Phase 09.26 tracer (D-21): default "fullBleed" for a fresh install/not-yet-set key; an
+        // unrecognized persisted token (a downgrade scenario, or corrupt defaults) also falls back to
+        // "fullBleed" rather than carrying an invalid string forward.
+        let storedStyle = d.string(forKey: "liveActivityStyle")
+        liveActivityStyle = (storedStyle == "classic") ? "classic" : "fullBleed"
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
@@ -983,6 +1007,7 @@ public final class AppSettings {
             "childModeEnabled": .bool(childModeEnabled),
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
+            "liveActivityStyle": .string(liveActivityStyle),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
             // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
             "siteAtlasEnabled": .bool(siteAtlasEnabled),
@@ -1066,6 +1091,7 @@ public final class AppSettings {
         if let v = b("childModeEnabled") { childModeEnabled = v }
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
+        if let v = s("liveActivityStyle"), v == "fullBleed" || v == "classic" { liveActivityStyle = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
         if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }

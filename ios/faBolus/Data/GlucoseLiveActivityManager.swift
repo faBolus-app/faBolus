@@ -53,6 +53,15 @@ enum GlucoseLiveActivityManager {
         // yet (a legacy install, or before `AppSettings.syncWidgetConfig()` has ever run) rather than
         // baking in an empty selection that would render the empty-selection fallback for no reason.
         let selection = WidgetStore.liveActivityFields ?? LAFieldVocabulary.all
+        // Phase 09.26 tracer (D-11/D-21) — the style mirror; an absent mirror (legacy install, or
+        // before the first syncWidgetConfig() call) defaults to "fullBleed", never a blank style.
+        let style = WidgetStore.liveActivityStyle ?? "fullBleed"
+        // Phase 09.26 tracer (D-02/D-03) — resolve the SAME floor/ceiling the phone's own glucose
+        // chart uses (GlucosePlotScale.resolve already treats an absent/out-of-set mirror as "use the
+        // defaults" — 40/300 — so no separate fallback is needed here).
+        let plotBounds = GlucosePlotScale.resolve(
+            storedFloor: WidgetStore.liveActivityPlotFloor,
+            storedCeiling: WidgetStore.liveActivityPlotCeiling)
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
@@ -73,7 +82,10 @@ enum GlucoseLiveActivityManager {
             pumpLinkStale: pumpLinkStale,
             selectedFields: selection,
             hasSnoozeEligibleAlert: snap.hasSnoozeEligibleAlert,
-            showUnitLabel: snap.showUnitLabel                     // owner-requested toggle, carried verbatim
+            showUnitLabel: snap.showUnitLabel,                    // owner-requested toggle, carried verbatim
+            liveActivityStyle: style,
+            plotFloorMgdl: plotBounds.floor,
+            plotCeilingMgdl: plotBounds.ceiling
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)

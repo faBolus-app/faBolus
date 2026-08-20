@@ -557,6 +557,12 @@ struct DisplaySettingsView: View {
             Section {
                 Toggle("Live Activity", isOn: $settings.liveActivityEnabled)
                 if settings.liveActivityEnabled {
+                    // Phase 09.26-01 tracer (D-11/D-21) — the full-bleed-plot vs. classic style switch,
+                    // placed above "Fields shown" per the UI-SPEC's Settings Surface layout.
+                    Picker("Live Activity style", selection: $settings.liveActivityStyle) {
+                        Text("Full-bleed plot").tag("fullBleed")
+                        Text("Classic").tag("classic")
+                    }
                     NavigationLink {
                         CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
                                           label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
@@ -565,7 +571,7 @@ struct DisplaySettingsView: View {
                     } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
                 }
             } header: { Text("Live Activity") } footer: {
-                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display.")
+                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display. Full-bleed plot shows an edge-to-edge glucose curve; Classic shows the original compact layout.")
             }
             // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
             // default OFF, SettingsCatalog descriptor) but had no reachable UI — mirrors the "Live
