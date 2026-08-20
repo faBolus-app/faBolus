@@ -95,6 +95,7 @@ enum GlucoseLiveActivityManager {
             iobDate: snap.iobDate,
             reservoirUnits: snap.reservoirUnits,
             batteryPercent: snap.batteryPercent,
+            batteryCharging: snap.batteryCharging,                // D-04/D-05 — carried verbatim, fail-closed decode
             basalRateUnitsPerHour: snap.basalRateUnitsPerHour,    // effective U/hr — never a synthesized temp-rate %
             deliverySuspended: snap.deliverySuspended,
             controlIQMode: snap.controlIQMode,

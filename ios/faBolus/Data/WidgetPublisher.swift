@@ -33,6 +33,9 @@ enum WidgetPublisher {
             iobUnits: s.iobUnits,
             reservoirUnits: s.reservoirUnits,
             batteryPercent: s.batteryPercent,
+            // Phase 09.27-02 (D-04/D-05) — carried verbatim from the host snapshot; fail-closed
+            // decode default (`false`) on the App-Group carrier handles the legacy/absent case.
+            batteryCharging: s.batteryCharging,
             lastBolusUnits: s.lastBolusUnits,
             lastBolusDate: s.lastBolusDate,
             connected: s.connection == .connected || s.connection == .bolusing,

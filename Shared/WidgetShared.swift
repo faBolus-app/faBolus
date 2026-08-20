@@ -73,6 +73,12 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
+    /// Phase 09.27-02 (D-04/D-05) — whether the pump is currently charging (op-145
+    /// `chargingStatus == 1`, mirrored verbatim from `PumpSnapshot.batteryCharging`). Additive,
+    /// fail-closed default `false` (matches `deliverySuspended`'s own non-optional shape):
+    /// absent/legacy key ⇒ never a fabricated charging badge on an old widget/complication snapshot
+    /// (D-05). Routed through `BatteryChargingPresentation` at render — never re-derived inline.
+    public var batteryCharging: Bool
     public var lastBolusUnits: Double?
     public var lastBolusDate: Date?
     public var connected: Bool
@@ -142,7 +148,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var cartridgeReady: Bool
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
-                reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
+                reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
+                lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
@@ -152,7 +159,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
                 hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
                 cartridgeReady: Bool = true) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
-        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
+        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent; self.batteryCharging = batteryCharging
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
         self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
         self.activeAlerts = activeAlerts
@@ -169,7 +176,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
+        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging, lastBolusUnits,
              lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
              targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
              basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
@@ -191,6 +198,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
         reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
         batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
+        // Phase 09.27-02 (D-05): a legacy/missing key falls back to `false` (not charging) — mirrors
+        // `deliverySuspended`'s own fail-closed default; an older widget-extension binary never shows
+        // a fabricated charging badge from a missing key.
+        batteryCharging = try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false
         lastBolusUnits = try c.decodeIfPresent(Double.self, forKey: .lastBolusUnits)
         lastBolusDate = try c.decodeIfPresent(Date.self, forKey: .lastBolusDate)
         connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false

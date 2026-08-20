@@ -54,6 +54,12 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         public var iobDate: Date?
         public var reservoirUnits: Double
         public var batteryPercent: Int
+        /// Phase 09.27-02 (D-04/D-05) — whether the pump is currently charging (op-145
+        /// `chargingStatus == 1`, mirrored verbatim from `PumpSnapshot.batteryCharging`). Additive,
+        /// fail-closed default `false` (matches `deliverySuspended`'s own non-optional shape):
+        /// absent/legacy ⇒ never a fabricated charging badge on an old payload (D-05). Routed through
+        /// `BatteryChargingPresentation` at render — never re-derived inline.
+        public var batteryCharging: Bool
         /// Effective basal rate (U/hr) — never an invented temp-rate percent.
         public var basalRateUnitsPerHour: Double
         public var deliverySuspended: Bool
@@ -191,7 +197,8 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
-                    batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
+                    batteryPercent: Int = 0, batteryCharging: Bool = false,
+                    basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
                     controlIQEnabled: Bool = false, ciqZone: String? = nil,
                     ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
@@ -223,6 +230,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.iobDate = iobDate
             self.reservoirUnits = reservoirUnits
             self.batteryPercent = batteryPercent
+            self.batteryCharging = batteryCharging
             self.basalRateUnitsPerHour = basalRateUnitsPerHour
             self.deliverySuspended = deliverySuspended
             self.controlIQMode = controlIQMode
@@ -254,7 +262,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
 
         private enum CodingKeys: String, CodingKey {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
-                 reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
+                 reservoirUnits, batteryPercent, batteryCharging, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
                  controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
                  lockoutUntilDate, exerciseTimeRemainingSec,
                  connected, updatedAt,
@@ -286,6 +294,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 iobDate: try c.decodeIfPresent(Date.self, forKey: .iobDate),
                 reservoirUnits: try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0,
                 batteryPercent: try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0,
+                // Phase 09.27-02 (D-05): a legacy/missing key falls back to `false` (not charging) —
+                // mirrors `deliverySuspended`'s own fail-closed default; an in-flight Live Activity
+                // started before this plan shipped never shows a fabricated charging badge.
+                batteryCharging: try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false,
                 basalRateUnitsPerHour: try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0,
                 deliverySuspended: try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false,
                 controlIQMode: try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0,
