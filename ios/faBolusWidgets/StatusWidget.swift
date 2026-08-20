@@ -36,14 +36,6 @@ struct StatusWidgetView: View {
         guard let g = snap.glucose, g > 0 else { return "--" }
         return unit.format(mgdl: g)
     }
-    /// Phase 09.1 (D-04) — the classified band for the redundant icon+word non-color channel (this
-    /// family is roomy — `systemMedium` — so the word always shows). `nil` while stale/unknown (the
-    /// number is already greyed then; no band color to duplicate, mirroring `StatusRingView`).
-    private var band: GlucoseRange? {
-        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose else { return nil }
-        return GlucoseRange.classify(g)
-    }
-
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
@@ -52,10 +44,6 @@ struct StatusWidgetView: View {
                     Text(bg)
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
                     Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
-                }
-                if let band {
-                    BandIndicator(band: band, showWord: true)
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 // The SAMPLE age (orange once stale), replacing a static unit label — so a stale relay
                 // is visible on the overview, not silently shown as current (group A / C7).
