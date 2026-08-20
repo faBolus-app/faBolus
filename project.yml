@@ -485,6 +485,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
 
+  # >>> MAC (scripts/generate-project.sh strips this block when FABOLUS_MAC=0; default 1 = Mac remote present)
   # macOS remote app — a remote for the iPhone host over Bluetooth LE (works when the phone is
   # locked/backgrounded). It never touches the pump: it displays the status the phone relays and sends
   # bolus/cancel/dismiss commands the phone executes. Menu-bar item + window.
@@ -582,6 +583,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_VERSION: "6.0"
         CODE_SIGN_STYLE: Automatic
+  # <<< MAC
 
   # Behavioral e2e suite (audit C-08 / T-01). A hosted unit-test bundle that drives the real
   # AppModel remote-delivery decision logic — the divergence guard, freeze-before-approve

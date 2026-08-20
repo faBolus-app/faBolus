@@ -47,6 +47,12 @@ else
   GARMIN=1; [ -d "$SDK_DIR" ] || GARMIN=0
 fi
 WATCH="${FABOLUS_WATCH:-1}"
+
+# FABOLUS_MAC (default 1 = the macOS menu-bar remote is present — today's shipped behavior, byte-identical).
+# Set FABOLUS_MAC=0 to strip the faBolusMac + faBolusMacWidgets targets. Phase-0 (v0.5.0) authors this gate
+# only; the removal flip to 0 on narrow main is Phase 3's job (Mac → experimental). Whole-target strip — no
+# SWIFT_ACTIVE_COMPILATION_CONDITIONS flag to drop (mirrors GARMIN/NUDGE, not WATCH's embed flag).
+MAC="${FABOLUS_MAC:-1}"
 # faBolusNudge advisory SDK (Smart Assist: on-device eating detection + meal-detection intelligence).
 # Auto-detected: if the (private) repo isn't reachable, the package + its 6 products + the
 # FABOLUS_NUDGE compile flag are stripped and those Smart Assist features compile out — the app still
@@ -142,6 +148,9 @@ if [ "$WATCH" = 0 ]; then
   strip_block WATCH
   sed -i '' 's/ WATCH_EMBEDDED//g' "$SPEC"
 fi
+if [ "$MAC" = 0 ]; then
+  strip_block MAC                          # the faBolusMac + faBolusMacWidgets targets (no compile flag to drop)
+fi
 if [ "$ONWATCH" = 0 ]; then
   # Strip every paid-account-only piece so the app builds/installs on a free account.
   strip_block ONWATCH_EATING
@@ -191,10 +200,11 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
+[ "$MAC" = 0 ] && echo "  → building WITHOUT the macOS menu-bar remote (FABOLUS_MAC=0) — faBolusMac + faBolusMacWidgets targets stripped"
 [ "$ONWATCH" = 0 ] && echo "  → building WITHOUT on-watch eating detection (needs paid HealthKit; set FABOLUS_ONWATCH_EATING=1 to enable)"
 [ "$ONWATCH" = 1 ] && echo "  → on-watch eating detection ON (FABOLUS_ONWATCH_EATING=1) — requires HealthKit on a paid account"
 [ "$DIRECT_PUMP" = 0 ] && echo "  → building WITHOUT the watch direct-to-pump path (C9) — the watch links no pump BLE stack"

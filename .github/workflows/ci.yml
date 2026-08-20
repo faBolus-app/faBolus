@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, experimental]
+    branches: [main, experimental, 'experimental/**']
   pull_request:
   # Manual re-validation. Required, not a convenience: this repo's CI fires only on ITS OWN pushes and
   # PRs, but TandemKit is a local package dependency — so when a sibling repo merges, nothing here
