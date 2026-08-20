@@ -33,9 +33,11 @@ packages:
   G7SensorKit:
     # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
     path: Packages/G7SensorKit
+  # >>> CGM_G6_KIT (scripts/generate-project.sh strips this package when FABOLUS_CGM_G6=0; default 1 = present)
   DexcomG6Kit:
     # Dexcom G5/G6/ONE passive glucose-message decoders, vendored from LoopKit/CGMBLEKit (MIT).
     path: Packages/DexcomG6Kit
+  # <<< CGM_G6_KIT
   HistoryStore:
     # faBolus-owned persistent glucose/insulin/carb history (SwiftData) — powers TIR/plotting and
     # feeds the advisory tools. In-repo local package. See MIGRATION.md.
@@ -100,7 +102,29 @@ targets:
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - ios/faBolus
+      - path: ios/faBolus
+        # >>> APP_SOURCE_EXCLUDES (Phase-0 per-surface compile gates — D-03/TOPO-03. These sources live INSIDE
+        #   the unconditional ios/faBolus include, so they are gated via this excludes: list rather than a
+        #   whole-block strip. generate-project.sh removes this ENTIRE block when every gate below is at its
+        #   default (=1, surface PRESENT) so the app target is byte-identical to today's shipped build; when any
+        #   FABOLUS_* gate is set to 0 the block is KEPT and only the still-present (=1) surfaces' exclude lines
+        #   are dropped, leaving the =0 surface excluded. Phase 0 AUTHORS these gates and flips NOTHING off — the
+        #   removal flip is the owning per-surface phase's job (CGM → Phase 1).)
+        excludes:
+          # >>> CGM_G6 (kept only when FABOLUS_CGM_G6=0 → excludes the Dexcom G5/G6/ONE source; stripped by default)
+          - Data/Sources/DexcomG6BLESource.swift
+          # <<< CGM_G6
+          # >>> CGM_LIBRELINKUP (kept only when FABOLUS_CGM_LIBRELINKUP=0 → excludes the LibreLinkUp source; stripped by default)
+          - Data/Sources/LibreLinkUpSource.swift
+          # <<< CGM_LIBRELINKUP
+          # >>> CGM_NIGHTSCOUT (kept only when FABOLUS_CGM_NIGHTSCOUT=0 → excludes the Nightscout source + backfill; stripped by default)
+          - Data/Sources/NightscoutSource.swift
+          - Data/Sources/NightscoutBackfill.swift
+          # <<< CGM_NIGHTSCOUT
+          # >>> CGM_XDRIP (kept only when FABOLUS_CGM_XDRIP=0 → excludes the xDrip App-Group source; stripped by default)
+          - Data/Sources/XDripAppGroupSource.swift
+          # <<< CGM_XDRIP
+        # <<< APP_SOURCE_EXCLUDES
       # WidgetBolusIntents belongs to the widget extensions only (the app uses WidgetBolusReceiver).
       - path: Shared
         excludes:
@@ -112,8 +136,10 @@ targets:
         product: faBolusDesign
       - package: G7SensorKit
         product: G7SensorKit
+      # >>> CGM_G6_KIT (scripts/generate-project.sh strips this dependency when FABOLUS_CGM_G6=0; default 1 = present)
       - package: DexcomG6Kit
         product: DexcomG6Kit
+      # <<< CGM_G6_KIT
       - package: HistoryStore
         product: HistoryStore
       - package: ShareClient

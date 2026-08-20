@@ -114,6 +114,19 @@ TIME_SENSITIVE="${FABOLUS_TIME_SENSITIVE:-0}"
 # version-pin, D-01). FABOLUS_TANDEM_LOCAL=1 swaps in the sibling path (../TandemKit) for day-to-day
 # co-development (never for a build you keep — see project.yml comment on the TandemKit package).
 TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
+# Phase-0 (v0.5.0) per-CGM-source compile gates (TOPO-03/D-03). Four CGM sources have NO gate today —
+# DexcomG6BLESource, LibreLinkUpSource, NightscoutSource(+Backfill), XDripAppGroupSource. (The 5th,
+# `healthkit`, is already covered by FABOLUS_HEALTHKIT — not duplicated here. The kept sources
+# dexcom-g7-ble / dexcom-share get NO toggle here; Phase 1 authors its own G7 toggle.) Each DEFAULTS to
+# 1 = source PRESENT (today's byte-identical behavior); Phase 0 AUTHORS the gates and flips NOTHING off —
+# the removal flip is Phase 1's job. These sources live inside the unconditional ios/faBolus include, so
+# they are gated via the APP_SOURCE_EXCLUDES excludes: list (see the app-source strip logic below), not a
+# whole-block strip. FABOLUS_CGM_G6=0 ADDITIONALLY drops the DexcomG6Kit SPM package + the app-target
+# dependency on it (D-06: prove a single CGM SPM product can be dropped while G7SensorKit/ShareClient stay).
+CGM_G6="${FABOLUS_CGM_G6:-1}"
+CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-1}"
+CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
+CGM_XDRIP="${FABOLUS_CGM_XDRIP:-1}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -200,7 +213,32 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
+# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). The CGM sources gated here live INSIDE the
+# unconditional ios/faBolus directory include, so they are removed via the APP_SOURCE_EXCLUDES excludes:
+# list, not a whole-block strip. When EVERY gate is at its default (=1, surface PRESENT) the entire
+# excludes: block is removed so the app target is byte-identical to today; otherwise the block is kept and
+# only the still-present (=1) surfaces' exclude lines are dropped, leaving the =0 surface(s) excluded.
+if [ "$CGM_G6" = 1 ] && [ "$CGM_LIBRELINKUP" = 1 ] && [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$CGM_XDRIP" = 1 ]; then
+  strip_block APP_SOURCE_EXCLUDES   # all app-source surfaces present → drop the whole excludes: block (today's byte-identical spec)
+else
+  [ "$CGM_G6" = 1 ]          && strip_block CGM_G6            # present → drop its exclude line so the source compiles in
+  [ "$CGM_LIBRELINKUP" = 1 ] && strip_block CGM_LIBRELINKUP
+  [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
+  [ "$CGM_XDRIP" = 1 ]       && strip_block CGM_XDRIP
+fi
+# FABOLUS_CGM_G6=0 additionally drops the DexcomG6Kit SPM package + the app-target dependency on it
+# (normal strip direction: removed at =0, present at default). Distinct tag from CGM_G6 (word-boundary
+# anchored in strip_block, so CGM_G6 never matches CGM_G6_KIT and vice-versa — Pitfall 2).
+if [ "$CGM_G6" = 0 ]; then
+  strip_block CGM_G6_KIT
+fi
+
 echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmXDrip=$CGM_XDRIP (default 1=present; Phase 0 authors gates only — flips nothing off)"
+[ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the Dexcom G5/G6/ONE CGM source (FABOLUS_CGM_G6=0) — DexcomG6BLESource + the DexcomG6Kit package/dependency stripped; G7SensorKit/ShareClient kept"
+[ "$CGM_LIBRELINKUP" = 0 ] && echo "  → building WITHOUT the LibreLinkUp CGM source (FABOLUS_CGM_LIBRELINKUP=0)"
+[ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
+[ "$CGM_XDRIP" = 0 ] && echo "  → building WITHOUT the xDrip App-Group CGM source (FABOLUS_CGM_XDRIP=0)"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
