@@ -350,12 +350,20 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// The relocated `criticalAlertsEnabled` control (D-07) with Phase 8's honest-status caption
-    /// preserved verbatim, placed near the critical-tuning UI so the entitlement coupling reads
-    /// coherently.
+    /// 09.25-02 (D-02c): the relocated `criticalAlertsEnabled` control (D-07), honestly reframed as an
+    /// interruption-STRENGTH descriptor — NOT a disable master. Apple's own control name (`Use Critical
+    /// Alerts`) and the `criticalAlertsEnabled` binding stay verbatim (kept reachable for
+    /// `SettingsReachabilityGuardTests`); only the section's FRAMING changes. This section must gate NO
+    /// other row on screen — no `.disabled(...)` anywhere in this view may read `criticalAlertsEnabled`
+    /// (pinned by `interruptionStrengthSectionGatesNoOtherRow`). Phase 8's conditional honest-status
+    /// caption is preserved verbatim, unchanged, below the NEW always-visible caption.
     private var criticalAlertsSection: some View {
         Section {
             Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
+            Text("Makes safety alerts break through Silence and Do Not Disturb. Does not turn any alert "
+                + "on or off — use Safety Alerts and the category sections above to control what's "
+                + "delivered.")
+                .font(.caption).foregroundStyle(.secondary)
             if Self.shouldShowHonestStatus(enabled: settings.criticalAlertsEnabled,
                                            grantActive: settings.criticalAlertGrantActive) {
                 Text("Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
@@ -363,7 +371,7 @@ struct NotificationSettingsView: View {
                     + "time-sensitive delivery.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        } header: { Text("Critical Alerts") } footer: {
+        } header: { Text("Interruption Strength") } footer: {
             Text("Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your quiet hours and limits — the safety alerts above are never affected by those toggles.")
         }
     }

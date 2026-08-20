@@ -284,6 +284,63 @@ import UserNotifications
         #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
     }
 
+    /// 09.25-02 Task 2 (D-02c): resolves `NotificationSettingsView.swift` by walking up from
+    /// `#filePath`, mirroring `SettingsReachabilityGuardTests.viewsDirURL()` — same technique, scoped to
+    /// one file rather than a whole directory.
+    private static func notificationSettingsViewFileURL() -> URL? {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("ios/faBolus/Views/NotificationSettingsView.swift")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+            probe = probe.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    /// 09.25-02 Task 2 (D-02c/T-09.25-06): the Interruption Strength section (relabel of "Critical
+    /// Alerts") must gate NOTHING else on screen — no `.disabled(...)` call anywhere in the view may
+    /// read `criticalAlertsEnabled`. Scans every `.disabled(` occurrence's balanced-parenthesis argument
+    /// for the flag token; the plain toggle binding (`$settings.criticalAlertsEnabled`) and
+    /// `shouldShowHonestStatus(...)` references are allowed since neither is a `.disabled(...)` call.
+    /// Fails loudly (non-vacuously) if the file can't be resolved/read or if greying has regressed to
+    /// zero `.disabled(` sites.
+    @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
+        guard let url = Self.notificationSettingsViewFileURL(),
+              let source = try? String(contentsOf: url, encoding: .utf8) else {
+            Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
+            return
+        }
+        #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+
+        var searchStart = source.startIndex
+        var disabledSitesFound = 0
+        while let range = source.range(of: ".disabled(", range: searchStart..<source.endIndex) {
+            disabledSitesFound += 1
+            // Extract the parenthesized argument up to its own matching close paren — every
+            // `.disabled(...)` call site in this file is a simple boolean expression, so a single-level
+            // balance counter is sufficient (no need for a full expression parser).
+            var depth = 0
+            var i = range.upperBound
+            var argEnd = i
+            while i < source.endIndex {
+                let ch = source[i]
+                if ch == "(" { depth += 1 }
+                if ch == ")" {
+                    if depth == 0 { argEnd = i; break }
+                    depth -= 1
+                }
+                i = source.index(after: i)
+            }
+            let arg = String(source[range.upperBound..<argEnd])
+            #expect(!arg.contains("criticalAlertsEnabled"),
+                    "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
+            searchStart = source.index(after: range.lowerBound)
+        }
+        #expect(disabledSitesFound > 0,
+                "found zero .disabled( occurrences in NotificationSettingsView.swift — parent-master greying may have regressed")
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
