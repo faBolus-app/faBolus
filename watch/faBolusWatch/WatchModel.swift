@@ -4,13 +4,15 @@ import WatchKit
 
 /// Watch-side remote state. A thin subclass of the shared `RemoteClientModel` (which owns the
 /// phone↔remote command handling over `RemoteLink`) that adds the watch's direct-CGM failover:
-/// when the iPhone is out of range the watch reads glucose itself, phone-independent — a Dexcom
-/// G7/ONE+ over BLE, and/or xDrip4iOS via Apple Health (synced from the phone). The watch never
-/// touches the pump (TandemKit runs on the phone).
+/// when the iPhone is out of range the watch reads glucose itself, phone-independent — xDrip4iOS
+/// via Apple Health (synced from the phone). The watch never touches the pump (TandemKit runs on
+/// the phone). (Phase 1, Plan 03, D-03: Dexcom G7/ONE+ direct-BLE removed from BOTH the iOS and
+/// watch targets on narrow `main` — an out-of-range watch now shows only phone-relayed Share
+/// glucose unless FABOLUS_HEALTHKIT is on; see the phase SUMMARY's owner-visibility note.)
 @MainActor
 final class WatchModel: RemoteClientModel {
     /// Direct sources reuse the shared implementations; started only while unreachable, to save power.
-    private let directSources: [any GlucoseSource] = [DexcomG7BLESource(), HealthKitGlucoseSource()]
+    private let directSources: [any GlucoseSource] = [HealthKitGlucoseSource()]
 
     /// Phase 4 (mmol/L display-unit support) — the phone's active glucose display-unit setting,
     /// mirrored from the statusRead reply's `glucoseDisplayUnit` wire token. Watch-only (not on the

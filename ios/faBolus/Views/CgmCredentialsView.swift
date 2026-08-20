@@ -50,7 +50,7 @@ struct CgmCredentialsView: View {
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
     static let configuredSectionSourceIds: Set<String> = {
         var ids: Set<String> = [
-            "dexcom-share", "nightscout", "dexcom-g7-ble",
+            "dexcom-share", "nightscout",
         ]
         // D-13 (Phase 09.23): "healthkit" only exists in GlucoseSourceRegistry.enabled when
         // FABOLUS_HEALTHKIT is ON — keep this set equal to the registry's id set in BOTH flag
@@ -187,30 +187,16 @@ struct CgmCredentialsView: View {
         }
     }
 
-    // MARK: - D-11 per-source config sections (G7 / HealthKit)
+    // MARK: - D-11 per-source config sections (HealthKit)
     //
-    // These sources previously had NO section here and each get a short explainer + a precondition
-    // list even though neither has editable credential fields — a source with a hard, non-obvious
-    // precondition (HealthKit "another app must write glucose") must never be selectable with no
-    // explanation (D-11; closes F-01/F-02/F-03). (The xDrip App Group section — the third D-11
-    // addition — was removed with the source in Phase 1, Plan 01, CGM-05.) Extracted into small
-    // `@ViewBuilder` vars so the `Form` body stays well within the SwiftUI type-check budget (the
-    // same discipline Plan 04 applied), and mirroring the disclosure/gate framing rather than a
-    // one-off inline alert. Coverage is pinned by `configuredSectionSourceIds`.
-
-    /// G7 / ONE+ direct BLE — mode explainer + the keep-the-Dexcom-app-running precondition + the
-    /// ~5-min first-reading timing (F-03). Same confident "Read from Dexcom app" framing as the G6
-    /// section and Plan 04's connectionKind-keyed copy.
-    @ViewBuilder private var g7ConfigSection: some View {
-        Section {
-            Text("No login or transmitter ID is needed — a Dexcom G7 / ONE+ already set up in the official Dexcom app works as-is. faBolus listens to the same sensor broadcast passively, alongside the Dexcom app; it never takes over the connection.")
-                .font(.caption).foregroundStyle(.secondary)
-        } header: {
-            Text("Dexcom G7 / ONE+ — Read from Dexcom app")
-        } footer: {
-            Text("Keep the official Dexcom app installed, paired, and running — without it there are no readings (that's when **Dexcom Share**, above, is the fallback). The first reading can take up to ~5 minutes — one sensor wake cycle — which is normal, not a failure. Experimental: untested until validated on-device.")
-        }
-    }
+    // HealthKit previously had NO section here and gets a short explainer + a precondition list even
+    // though it has no editable credential fields — a source with a hard, non-obvious precondition
+    // (HealthKit "another app must write glucose") must never be selectable with no explanation
+    // (D-11; closes F-01/F-02/F-03). (The G7 section — Phase 1, Plan 03, CGM-01/CGM-02 — and the
+    // xDrip App Group section — Phase 1, Plan 01, CGM-05 — were removed with their sources.)
+    // Extracted into a small `@ViewBuilder` var so the `Form` body stays well within the SwiftUI
+    // type-check budget (the same discipline Plan 04 applied), and mirroring the disclosure/gate
+    // framing rather than a one-off inline alert. Coverage is pinned by `configuredSectionSourceIds`.
 
     /// Apple Health (HealthKit) — the system permission request, iOS-Settings recovery if denied,
     /// the non-obvious prerequisite that ANOTHER app must already be writing glucose to Health for
@@ -289,11 +275,11 @@ struct CgmCredentialsView: View {
                 Text("A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**.")
             }
 
-            // D-11: the sources that previously had no section (G7 / HealthKit). xDrip App Group's
-            // section was removed with the source (Phase 1, Plan 01 — CGM-05); the LibreLinkUp and
-            // Dexcom G6 sections/descriptors were removed with their sources (Phase 1, Plan 02 —
-            // CGM-03/CGM-04, D-10).
-            g7ConfigSection
+            // D-11: HealthKit is the one remaining source that previously had no section. The G7
+            // section was removed with the source (Phase 1, Plan 03 — CGM-01/CGM-02); xDrip App
+            // Group's section was removed with the source (Phase 1, Plan 01 — CGM-05); the
+            // LibreLinkUp and Dexcom G6 sections/descriptors were removed with their sources (Phase
+            // 1, Plan 02 — CGM-03/CGM-04, D-10).
             healthKitConfigSection
 
             Section {
@@ -350,7 +336,7 @@ struct CgmCredentialsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Credentials save automatically (applied the next time the app launches, like the fallback selection itself). **Test** observes the fallback source that's already running in the background, so a reading it already has shows instantly. Direct-BLE Dexcom sources (G7/G6) wait up to ~5 minutes for the sensor's next wake cycle — you can leave this screen; it keeps listening.")
+                Text("Credentials save automatically (applied the next time the app launches, like the fallback selection itself). **Test** observes the fallback source that's already running in the background, so a reading it already has shows instantly.")
             }
         }
         .navigationTitle("CGM credentials & testing")

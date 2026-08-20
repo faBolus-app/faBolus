@@ -18,11 +18,12 @@ struct CgmConnectionKindTests {
     /// direct consequence of that gating (not itself part of the 09.23-01 plan's declared scope).
     private static let expected: [String: GlucoseConnectionKind] = {
         var table: [String: GlucoseConnectionKind] = [
-            "dexcom-g7-ble": .localBLE,
             "nightscout": .cloudPoll,
             "dexcom-share": .cloudPoll,
             // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
             // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
+            // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
+            // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
         ]
         #if FABOLUS_HEALTHKIT
         table["healthkit"] = .localOnDevice
@@ -52,14 +53,16 @@ struct CgmConnectionKindTests {
         }
     }
 
-    /// The BLE and cloud-poll categories are always populated — proves the typed enum actually
-    /// differentiates the physical connection classes (not everything collapsing into one case).
-    /// `.localOnDevice` was xDrip App Group's category; it was removed from `main` in Phase 1, Plan 01
-    /// (CGM-05), so `.localOnDevice` is only expected when the last remaining `.localOnDevice` source
-    /// (HealthKit) is compiled in.
+    /// The cloud-poll category is always populated — proves the typed enum actually differentiates
+    /// the physical connection classes (not everything collapsing into one case). `.localBLE` was
+    /// Dexcom G7's category; it was removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02), so
+    /// narrow `main` has NO remaining `.localBLE` source at all (D-03: zero direct-BLE CGM on any
+    /// surface). `.localOnDevice` was xDrip App Group's category; it was removed from `main` in
+    /// Phase 1, Plan 01 (CGM-05), so `.localOnDevice` is only expected when the last remaining
+    /// `.localOnDevice` source (HealthKit) is compiled in.
     @Test func allThreeConnectionKindsArePresentAcrossTheRegistry() {
         let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
-        #expect(kinds.contains(.localBLE))
+        #expect(!kinds.contains(.localBLE), "no direct-BLE CGM source remains on narrow main (D-03)")
         #expect(kinds.contains(.cloudPoll))
         #if FABOLUS_HEALTHKIT
         #expect(kinds.contains(.localOnDevice))

@@ -5,8 +5,9 @@ import faBolusCore
 
 /// Phase 09.22-05 (Task 1, D-11 / D-14): pins that EVERY failover source has a discoverable config
 /// section in `CgmCredentialsView`, and that the sources that previously had none — Dexcom G7 and
-/// Apple Health (HealthKit) — carry their required precondition copy. (The xDrip App Group section's
-/// own copy-presence tests were removed with the source in Phase 1, Plan 01 — CGM-05; the core
+/// Apple Health (HealthKit) — carry their required precondition copy. (The G7 copy-presence test was
+/// removed with the source in Phase 1, Plan 03 — CGM-01/CGM-02; the xDrip App Group section's own
+/// copy-presence tests were removed with the source in Phase 1, Plan 01 — CGM-05; the core
 /// `configuredSectionSourceIds == registryIds` equality assertion below still covers the shrunk set.)
 /// Mirrors `WatchDirectBleScopeGuardTests`' `#filePath`-rooted source scan (no simulator, no live source).
 ///
@@ -61,8 +62,9 @@ struct CgmConfigSectionCopyGuardTests {
         // The D-11 additions that remain on `main` must specifically be present. "healthkit" only
         // exists in the registry (and this required set) when FABOLUS_HEALTHKIT is ON (D-13, Phase
         // 09.23) — under OFF neither side has it, so the equality check above already covers that
-        // state. "xdrip-appgroup" was removed in Phase 1, Plan 01 (CGM-05).
-        var requiredIds = ["dexcom-g7-ble"]
+        // state. "dexcom-g7-ble" was removed in Phase 1, Plan 03 (CGM-01/CGM-02); "xdrip-appgroup"
+        // was removed in Phase 1, Plan 01 (CGM-05).
+        var requiredIds: [String] = []
         #if FABOLUS_HEALTHKIT
         requiredIds.append("healthkit")
         #endif
@@ -82,15 +84,10 @@ struct CgmConfigSectionCopyGuardTests {
         #expect(source.count > 2000, "resolved source is implausibly short — path resolution likely broke")
     }
 
-    // MARK: - Required precondition copy for the three new sections (non-comment code)
-
-    @Test func g7SectionCarriesKeepDexcomAppAndFirstReadingTimingCopy() throws {
-        let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
-        #expect(code.contains("Read from Dexcom app"), "G7 section missing its mode explainer")
-        #expect(code.contains("Keep the official Dexcom app installed, paired, and running"),
-                "G7 section missing the keep-the-Dexcom-app-running precondition")
-        #expect(code.contains("up to ~5 minutes"), "G7 section missing the ~5-min first-reading timing")
-    }
+    // MARK: - Required precondition copy for the remaining new section (non-comment code)
+    //
+    // The G7 copy-presence test (g7SectionCarriesKeepDexcomAppAndFirstReadingTimingCopy) was deleted
+    // here in Phase 1, Plan 03 (CGM-01/CGM-02) along with the g7ConfigSection it pinned.
 
     // D-13 (Phase 09.23): the healthKit-specific copy expectation is scoped to the FABOLUS_HEALTHKIT
     // ON build, matching the "healthkit" id being scoped to that same flag in the loop above — the

@@ -274,7 +274,7 @@ targets:
           - INAlternativeAppNameKey: "faBolus"
           - INAlternativeAppNameKey: "Pump Remote"
           - INAlternativeAppNameKey: "Fabolus"
-        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses."
+        NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
         # Scan a host phone's pairing QR code when using this phone as a remote, AND scan food barcodes
         # in FoodFinder for a carb estimate the user reviews (09.18c-02, D-13) — never a dose.
         NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you."
@@ -428,10 +428,12 @@ targets:
         WKApplication: true
         # Marks this as the companion of the iPhone app so it installs alongside it.
         WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
-        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app and can read a CGM directly over Bluetooth when the phone is out of range."
+        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
         # Read glucose from Apple Health (e.g. xDrip4iOS) as a phone-independent failover on the watch.
         NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed when your iPhone is out of range."
-        # Keep a direct CGM (G7) BLE link alive in the background as a failover when the phone is unreachable.
+        # Phase 1, Plan 03 (D-03): the direct CGM (G7) BLE failover this background mode existed for is
+        # now removed from the watch target. Left declared (discretionary/A2, low-risk per RESEARCH) —
+        # not independently verified to have zero other consumer, so not removed this phase.
         UIBackgroundModes: [bluetooth-central]
         # >>> ONWATCH_EATING (stripped unless FABOLUS_ONWATCH_EATING=1)
         # On-device eating sensing keeps CoreMotion alive via a workout session while sensing.

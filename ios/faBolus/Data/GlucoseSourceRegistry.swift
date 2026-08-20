@@ -12,19 +12,12 @@ public enum GlucoseSourceRegistry {
     /// (last resort), and HealthKit (Eversense).
     public static let enabled: [GlucoseSourceDescriptor] = {
         var list: [GlucoseSourceDescriptor] = [
-            // D-08: only the production instance (restoreStateEnabled == true, i.e. makeSelected())
-            // gets the stable restore identifier; the CgmCredentialsView "Test" instance
-            // (make(id:)) always gets nil — two CBCentralManagers sharing a restore-identifier
-            // string in one process is a CoreBluetooth SIGABRT (mirror of the G6 descriptor's
-            // scoping).
-            GlucoseSourceDescriptor(id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)",
-                                    sensors: ["Dexcom G7", "Dexcom ONE+"]) { restoreStateEnabled in
-                DexcomG7BLESource(restoreIdentifier: restoreStateEnabled ? DexcomG7BLESource.productionRestoreIdentifier : nil)
-            },
-            // dexcom-g6-ble (DexcomG6BLESource) and librelinkup (LibreLinkUpSource) removed from
-            // narrow `main` — Phase 1, Plan 02 (CGM-03/CGM-04). Compile-excluded via
-            // FABOLUS_CGM_G6=0 / FABOLUS_CGM_LIBRELINKUP=0 in scripts/generate-project.sh; the
-            // source files themselves stay checked in (still built on dev/cgm-extra at =1).
+            // dexcom-g7-ble (DexcomG7BLESource), dexcom-g6-ble (DexcomG6BLESource), and librelinkup
+            // (LibreLinkUpSource) removed from narrow `main` — Phase 1, Plan 03 (G7, CGM-01/CGM-02)
+            // and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04). Compile-excluded via
+            // FABOLUS_CGM_G7=0 / FABOLUS_CGM_G6=0 / FABOLUS_CGM_LIBRELINKUP=0 in
+            // scripts/generate-project.sh; the source files themselves stay checked in (still built
+            // on dev/cgm-extra at =1).
             GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
                                     sensors: ["Any"]) { _ in NightscoutSource() },
             GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",

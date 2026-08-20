@@ -67,7 +67,7 @@
 	<key>LoopAppGroupIdentifier</key>
 	<string>group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>faBolus connects to your pump and (optionally) a CGM over Bluetooth to read status and deliver boluses.</string>
+	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you.</string>
 	<key>NSHealthShareUsageDescription</key>
