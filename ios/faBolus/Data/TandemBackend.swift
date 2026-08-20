@@ -5,6 +5,9 @@ import TandemMessages
 import TandemAuth
 import TandemBLE
 import os
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Observable sync state for the "Pump history sync" UI section (D-01/D-05, Phase 09.7-02).
 /// `TandemBackend`-concrete only (mirrors the `onCommandLatency`/`onWillRetryReconnect` pattern — the
@@ -229,6 +232,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// boundary + the historyLog-unparseable error branch itself, then hands the parsed message to
     /// `responseApplier.apply(_:)`.
     private let responseApplier = PumpResponseApplier()
+    /// debug pump-background-disconnect (owner-authorized 2026-08-20, re-scoped): app-side belt-and-
+    /// suspenders for the kit's background reconnect. When a reconnect attempt is scheduled while the app is
+    /// backgrounded, it holds ONE `beginBackgroundTask` window open so the kit's main-RunLoop
+    /// `reconnectTick()` gets the runtime to establish/observe the pending `central.connect()` (which the
+    /// kit now issues INLINE on a genuine drop — see `PumpBLEClient.planUnintendedDropRecovery` — and which
+    /// CoreBluetooth completes while suspended). It never issues connect itself and never resets the kit's
+    /// flap-throttle ladder. H2 (keeping the link warm across a suspend) is battery-neutral by construction —
+    /// the kit keeps its notification subscriptions across background — so NO polling keep-alive read is
+    /// issued (owner constraint: no battery drain). See `PumpBackgroundSession`. Wired with the real UIKit
+    /// seams in the production `init()` only; the test-transport init leaves it inert (default seams).
+    private let bgSession = PumpBackgroundSession()
 
     // MARK: - Status read dispatch + post-pair bootstrap order (Phase 09 Wave 3, D-06)
     //
@@ -571,6 +585,25 @@ public final class TandemBackend: NSObject, PumpBackend {
         client.delegate = self
         wireReadScheduler()
         wireResponseApplier()
+        wireBackgroundSession()
+    }
+
+    /// Wire `bgSession`'s injected seams to the real UIKit background-task API. Called from the production
+    /// `init()` ONLY — the `#if DEBUG init(testTransport:)` path deliberately leaves `bgSession` on its
+    /// inert defaults (no `UIApplication`, `isForeground` → `true`, so it never arms a task under test).
+    /// H2 keeps the link warm with no app-side radio activity (the kit keeps its notifications subscribed),
+    /// so there is no keep-alive seam to wire. debug pump-background-disconnect.
+    private func wireBackgroundSession() {
+        #if canImport(UIKit)
+        bgSession.beginTask = { name, onExpire in
+            let id = UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: onExpire)
+            return id == .invalid ? nil : id.rawValue
+        }
+        bgSession.endTask = { token in
+            UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: token))
+        }
+        bgSession.isForeground = { UIApplication.shared.applicationState == .active }
+        #endif
     }
 
     /// Wires `readScheduler`'s injected closures (D-04 hook pattern) — called from BOTH initializers
@@ -2083,11 +2116,14 @@ extension TandemBackend: PumpBLEClientDelegate {
         switch state {
         case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
         case .connecting, .discovering: snapshot.connection = .connecting; snapshot.connectionDetail = nil
-        case .ready: snapshot.connection = .connected; snapshot.connectionDetail = nil
+        case .ready:
+            snapshot.connection = .connected; snapshot.connectionDetail = nil
+            bgSession.linkDidBecomeReady()   // debug pump-background-disconnect: reconnect recovered → release the H1 window
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
             snapshot.connectionDetail = Self.linkDetail(for: state)
             linkDroppedCleanup()
+            bgSession.linkDidTerminate()   // debug pump-background-disconnect: link down & NOT retrying → release the H1 window
         case .reconnectExhausted:
             // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that never
             // held `.ready` long enough to count as recovered — see `PumpBLEClient.readyStabilityWindow`).
@@ -2100,6 +2136,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.connection = .error
             snapshot.connectionDetail = "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
             linkDroppedCleanup()
+            bgSession.linkDidTerminate()   // debug pump-background-disconnect: ladder gave up → release the H1 window
         default:
             // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
             // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
@@ -2338,6 +2375,12 @@ extension TandemBackend: PumpBLEClientDelegate {
     /// sink shape) rather than reaching into a shared session-log store directly, since `TandemBackend`
     /// has no reference to the app's `BLESessionLog` (owned by `AppModel`).
     public func pumpClient(_ c: PumpBLEClient, willRetryReconnect attempt: Int, after delay: TimeInterval) {
+        // debug pump-background-disconnect (H1): the PINNED kit just scheduled a throttled reconnect on its
+        // main-RunLoop Timer. If we're backgrounded, hold a background-execution window open so that Timer
+        // can actually fire and re-issue `central.connect()` (which CoreBluetooth then completes while
+        // suspended). This grants the EXISTING, already-throttled ladder runtime — it never issues connect
+        // itself and never resets the ladder, so the pairing-window flap throttle is untouched.
+        bgSession.willAttemptReconnect(after: delay)
         onWillRetryReconnect?(attempt, delay)
         onChange?()
     }
@@ -2360,15 +2403,34 @@ extension TandemBackend: PumpBLEClientDelegate {
             failPumpWaiters(error)
             return
         }
-        snapshot.connection = .disconnected
-        // D-03: capture the stable machine token (domain + code), not just the human-readable
-        // description — `CBError`/`NSError` bridging always succeeds for any Swift `Error`, so this
-        // survives into `ConnectionTelemetryStore.reasonToken` and the diagnostics dump richer than the
-        // old bare "error" bucket. `localizedDescription` is still appended for the human-readable tail.
-        let ns = error as NSError
-        snapshot.connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"
+        // debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20): a transport error must NEVER change
+        // the connection STATE. `applyClientState` (the kit's authoritative `didChange`) is the SOLE owner of
+        // it: a genuine drop always arrives there as `.connecting` (recovering — the kit deliberately skips the
+        // `.disconnected` flicker and goes straight to reconnecting, see `PumpBLEClient.didDisconnectPeripheral`),
+        // `.disconnected` (hard / radio powered-off / user), or `.reconnectExhausted` → `.error` (the ladder
+        // gave up), each carrying its own detail. Pre-fix this method forced `snapshot.connection = .disconnected`
+        // on ANY error; since the kit fires `didError` BEFORE its paired `didChange(.connecting)` on a drop (and
+        // fires `didError` with NO state change at all on a bare read/notify error — `didUpdateValueFor` /
+        // `didUpdateNotificationStateFor` — while still `.ready`), that transient `.disconnected` tripped
+        // `SafetyEdge.raise` (via `AppModel.refresh`, which runs synchronously per `onChange`), firing a
+        // SPURIOUS `.pumpDisconnect` banner + escalation on EVERY momentary drop (CRITERION 1) and on a
+        // transient read hiccup (CRITERION 2 — the H2 read-path state-churn hazard). We now only ENRICH the
+        // reason on a link that is ALREADY showing a plain `.disconnected` (for the passive HUD viewer) — never
+        // downgrading a live/recovering link, and never clobbering the terminal `.error` t:connect guidance.
+        if snapshot.connection == .disconnected {
+            // D-03: capture the stable machine token (domain + code), not just the human-readable
+            // description — `CBError`/`NSError` bridging always succeeds for any Swift `Error`, so this
+            // survives into `ConnectionTelemetryStore.reasonToken` and the diagnostics dump richer than the
+            // old bare "error" bucket. `localizedDescription` is still appended for the human-readable tail.
+            let ns = error as NSError
+            snapshot.connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"
+        }
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
         // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
+        // UNCONDITIONAL (independent of the connection-state decision above): the dose path must always fail
+        // closed on a transport error, even when we leave the displayed link untouched because the kit is
+        // recovering it. `failPumpWaiters` never touches `snapshot.connection`, so this cannot re-introduce
+        // the spurious edge.
         readScheduler.completeGlucoseRead()
         readScheduler.completeCalcInputRead()
         failPumpWaiters(error)

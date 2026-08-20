@@ -55,14 +55,75 @@ struct TandemConnectionStateTests {
     @Test func transportErrorPreservesItsReason() {
         struct LinkErr: LocalizedError { var errorDescription: String? { "Peer removed pairing" } }
         let b = backend()
+        // debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20): `applyClientError` no longer
+        // DOWNGRADES the connection state — `applyClientState` owns it, and a live/recovering link must never
+        // be flipped to `.disconnected` by a transport error (that fired a spurious disconnect banner on every
+        // momentary drop). It now only ENRICHES the reason on a link that is ALREADY down, for the passive HUD
+        // viewer. So drive it from a plain `.disconnected` (the state a real terminal drop lands in via
+        // `applyClientState`) and pin that the machine-token reason is still captured. The "must NOT downgrade
+        // a live/recovering link" half is pinned by `transportErrorNeverDowngradesALiveOrRecoveringLink`.
+        b.setConnectionForTesting(.disconnected)
         b.applyClientError(LinkErr())
         #expect(b.snapshot.connection == .disconnected)
-        // D-03 (01.1-01): `applyClientError` now prefixes the localized description with the bridged
-        // NSError `domain#code` (e.g. "CBErrorDomain#6 ..." for a real CoreBluetooth error) so the reason
-        // is a stable, bucketable token instead of a bare human string — the original description still
-        // appears verbatim as the suffix, which is the "preserves its reason" behavior this test pins.
+        // D-03 (01.1-01): `applyClientError` prefixes the localized description with the bridged NSError
+        // `domain#code` (e.g. "CBErrorDomain#6 ..." for a real CoreBluetooth error) so the reason is a
+        // stable, bucketable token instead of a bare human string — the original description still appears
+        // verbatim as the suffix, which is the "preserves its reason" behavior this test pins.
         #expect(b.snapshot.connectionDetail?.hasSuffix("Peer removed pairing") == true)
         #expect(b.snapshot.connectionDetail?.contains("#") == true)
+    }
+
+    /// debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20). The kit fires `didError` on an
+    /// unintended drop BEFORE its paired `didChange(.connecting)`, and fires `didError` with NO state change
+    /// at all on a bare read/notify error while still `.ready`. `applyClientError` must therefore NOT
+    /// downgrade a LIVE or RECOVERING link to `.disconnected` — doing so would surface a transient
+    /// `.disconnected` that trips `SafetyEdge.raise` on every momentary drop (CRITERION 1) and promotes a
+    /// transient read/notify hiccup into a spurious disconnect (CRITERION 2, the H2 read-path). The kit's
+    /// `applyClientState` is the sole authority for the connection state.
+    @Test func transportErrorNeverDowngradesALiveOrRecoveringLink() {
+        let b = backend()
+        struct LinkErr: LocalizedError { var errorDescription: String? { "read failed" } }
+        // Live link + a transport error (e.g. a read/notify hiccup that does NOT tear the link down): the
+        // displayed connection must stay `.connected` — the kit still owns the live link.
+        b.setConnectionForTesting(.connected)
+        b.applyClientError(LinkErr())
+        #expect(b.snapshot.connection == .connected, "a read/notify error must NOT fabricate a disconnect while linked")
+        // Mid-reconnect (`.connecting`) + a transport error (the kit's didError-before-didChange ordering on
+        // a drop): must NOT flip to `.disconnected` — the reconnect window has to stay `.connecting`.
+        b.setConnectionForTesting(.connecting)
+        b.applyClientError(LinkErr())
+        #expect(b.snapshot.connection == .connecting, "the reconnect window must stay .connecting, never flicker .disconnected")
+    }
+
+    /// The reconnect-window ordering the kit actually produces on a genuine drop: `applyClientError` (the
+    /// kit's `didError`) fires FIRST while still `.connected`, then `applyClientState(.connecting)`. The
+    /// observed `snapshot.connection` sequence must never pass through `.disconnected`/`.error`, so
+    /// `SafetyEdge` (fed the consecutive pairs) never raises during the reconnect window — and a recovery
+    /// (`.ready`) clears while an exhaustion (`.reconnectExhausted`) is the one edge that raises.
+    @Test func genuineDropSequenceStaysConnectingAndOnlyExhaustionRaises() {
+        let b = backend()
+        struct DropErr: LocalizedError { var errorDescription: String? { "peer disconnected" } }
+        b.setConnectionForTesting(.connected)
+        var observed: [PumpConnectionState] = [b.snapshot.connection]
+        b.applyClientError(DropErr())            // kit's didError — fires before the .connecting didChange
+        observed.append(b.snapshot.connection)
+        b.applyClientState(.connecting)          // kit's didChange(.connecting)
+        observed.append(b.snapshot.connection)
+        // No down state anywhere in the reconnect window…
+        #expect(!observed.contains(.disconnected))
+        #expect(!observed.contains(.error))
+        #expect(b.snapshot.connection == .connecting)
+        // …so every consecutive edge is quiet until a terminal transition.
+        var prev = observed.first
+        for now in observed.dropFirst() {
+            #expect(SafetyEdge.connection(prev: prev, now: now) != .raise)
+            prev = now
+        }
+        // Recovery clears; a from-scratch drop→exhaust raises exactly once at the give-up.
+        #expect(SafetyEdge.connection(prev: .connecting, now: .connected) == .clear)
+        b.applyClientState(.reconnectExhausted)
+        #expect(b.snapshot.connection == .error)
+        #expect(SafetyEdge.connection(prev: .connecting, now: .error) == .raise)
     }
 
     /// `.reconnectExhausted` (the kit's reconnect ladder gave up — `.planning/debug/pump-pairing-loop.md`)

@@ -28,6 +28,33 @@ import TandemMessages
         #expect(SafetyEdge.connection(prev: .disconnected, now: .connected) == .clear)
     }
 
+    /// debug pump-background-disconnect (CRITERION 1). The kit now recovers an unintended drop silently in
+    /// the background: a genuine drop is surfaced as `.connected → .connecting` (never a `.disconnected`
+    /// flicker) and reconnects without alarming. The `.pumpDisconnect` banner + escalation must therefore
+    /// fire ONLY at the ladder's terminal give-up (`.error` / `.reconnectExhausted`), reached FROM the
+    /// transient `.connecting` state — not on the momentary drop itself — while a live→plain-disconnect
+    /// (hard / powered-off / user) still raises, and recovery still clears.
+    @Test func connectionEdgeIsSilentThroughReconnectButRaisesAtExhaustion() {
+        // Momentary drop → the kit's reconnecting window: MUST stay silent (this is the whole fix).
+        #expect(SafetyEdge.connection(prev: .connected, now: .connecting) == .none)
+        #expect(SafetyEdge.connection(prev: .bolusing, now: .connecting) == .none)
+        #expect(SafetyEdge.connection(prev: .connecting, now: .connecting) == .none)
+        #expect(SafetyEdge.connection(prev: .connecting, now: .scanning) == .none)
+        // A recovering link sliding to a PLAIN disconnect (not the terminal give-up) is still the throttled
+        // ladder — it recovers silently, so no alarm (net expectation: never INCREASE disconnect notices).
+        #expect(SafetyEdge.connection(prev: .connecting, now: .disconnected) == .none)
+        #expect(SafetyEdge.connection(prev: .scanning, now: .disconnected) == .none)
+        // The ladder GIVES UP (reconnectExhausted → .error) after the transient `.connecting`: MUST raise,
+        // even though the immediately-preceding state was the reconnect state, not a live link.
+        #expect(SafetyEdge.connection(prev: .connecting, now: .error) == .raise)
+        #expect(SafetyEdge.connection(prev: .scanning, now: .error) == .raise)
+        // Recovery from the reconnect window clears any (future) escalation.
+        #expect(SafetyEdge.connection(prev: .connecting, now: .connected) == .clear)
+        // A steady terminal state never re-fires.
+        #expect(SafetyEdge.connection(prev: .error, now: .error) == .none)
+        #expect(SafetyEdge.connection(prev: .error, now: .connected) == .clear)
+    }
+
     @Test func freshnessEdgeRaisesOnLossClearsOnResumeNeverAtStartup() {
         #expect(SafetyEdge.freshness(wasFresh: false, isFresh: false) == .none)   // no data yet ≠ data lost
         #expect(SafetyEdge.freshness(wasFresh: true, isFresh: false) == .raise)   // had readings, lost them
