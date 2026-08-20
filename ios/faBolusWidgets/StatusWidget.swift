@@ -88,8 +88,13 @@ struct StatusWidgetView: View {
                 } else {
                     // Phase 09.27-02 (D-04/D-05) — routes the glyph + "Charging" text through the
                     // SAME `BatteryChargingPresentation.make` helper every other battery-rendering
-                    // surface uses, instead of the hardcoded "battery.100" icon; not-charging renders
-                    // byte-identically to today (fail-closed).
+                    // surface uses. IN-01 review fix: this is NOT byte-identical to the pre-09.27
+                    // code for every percent — the prior fallback here was hardcoded to
+                    // `metric("battery.100", "Battery", "\(snap.batteryPercent)%")`, i.e. always the
+                    // full-battery glyph regardless of the actual level. Routing through the shared
+                    // helper also fixes that pre-existing bug: a not-charging medium widget now
+                    // correctly renders the level-appropriate glyph (`battery.0/.25/.50/.75/.100`)
+                    // instead of always showing a full battery below 88%.
                     let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
                     // WR-02 review fix: consume the centralized `valueText` instead of
                     // re-interpolating the "N% · Charging" string here.
