@@ -455,12 +455,19 @@ public enum LAMetrics {
     /// The 30-minute windowed glucose delta (mg/dL), or `nil` when `points` spans LESS than 10
     /// minutes — too little history to compute a meaningful 30-minute delta, so the caller must omit
     /// the clause entirely rather than render a fabricated/zero-filled delta (D-05/D-20, T-09.26-08).
+    /// ALSO `nil` when the freshest point (`last`) is itself more than 10 minutes stale relative to
+    /// `now` (CR-01, 09.26-review) — without this guard, a CGM feed that has been down for >~30
+    /// minutes leaves `nearest` mathematically degenerating to `last` itself (every other candidate
+    /// point is farther from `target` than `last` is), which fabricates a "flat" `0` delta instead of
+    /// truthfully reporting "no real 30-minute comparison exists." This mirrors the `context.isStale`/
+    /// "never present stale as current" contract already enforced on the BG numeral/arrow.
     /// `= last(points).mgdl - nearest(points, to: now - 30min).mgdl`, where "nearest" is the point
     /// with the smallest absolute time distance to `now - 30min` (ties broken toward the earlier
     /// point via `min(by:)`'s stable first-match semantics).
     public static func delta(points: [WidgetSnapshot.Point], now: Date) -> Int? {
         guard let first = points.first, let last = points.last else { return nil }
         guard last.t.timeIntervalSince(first.t) >= 10 * 60 else { return nil }
+        guard now.timeIntervalSince(last.t) <= 10 * 60 else { return nil }
         let target = now.addingTimeInterval(-30 * 60)
         let nearest = points.min { abs($0.t.timeIntervalSince(target)) < abs($1.t.timeIntervalSince(target)) }
         guard let nearest else { return nil }

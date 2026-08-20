@@ -55,6 +55,24 @@ struct LAMetricsTests {
         #expect(LAMetrics.delta(points: points, now: now) == 25)  // 130 - 105 (31min is nearer to 30 than 20min)
     }
 
+    // MARK: - delta: nil on a stale feed (CR-01, 09.26-review) — the freshest point itself must be
+    // recent, otherwise `nearest` degenerates to `last` (a fabricated "0" flat delta).
+
+    @Test func deltaIsNilWhenTheFreshestPointIsStaleEvenWithAWideSpan() {
+        let now = Date()
+        // Long span (45 min) so the OLD 10-minute short-history guard alone would pass; but `last`
+        // itself is 45 minutes stale (feed down) — must still be nil, never a fabricated 0.
+        let points = [pt(45, 90, now: now), pt(30, 100, now: now), pt(15, 110, now: now)]
+        #expect(LAMetrics.delta(points: points, now: now) == nil)
+    }
+
+    @Test func deltaIsNonNilExactlyAtTheStalenessBoundary() {
+        // `last` is EXACTLY 10 minutes stale (<= 10 passes) — the boundary itself is still valid.
+        let now = Date()
+        let points = [pt(40, 90, now: now), pt(25, 100, now: now), pt(10, 120, now: now)]
+        #expect(LAMetrics.delta(points: points, now: now) != nil)
+    }
+
     // MARK: - deltaGlyph: boundary mapping (±10 / 0)
 
     @Test func deltaGlyphMapsTheDocumentedBoundaries() {
