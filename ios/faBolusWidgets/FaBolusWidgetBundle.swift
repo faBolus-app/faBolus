@@ -14,27 +14,17 @@ struct FaBolusWidgetBundle: WidgetBundle {
         BolusWidget()     // Tap-to-bolus shortcut (deep-links into the app)
         QuickBolusWidget() // Preset bolus with a 1-2-3 confirm (delivers via the app)
         // Phase 5 (D-01) — Lock Screen + Dynamic Island glucose Live Activity. Registered
-        // UNCONDITIONALLY: this is the iOS-17-floor widget (D-11) and every SDK version this app
-        // supports has it.
+        // UNCONDITIONALLY (every OS version this app supports has it — the whole app's floor is
+        // 18.0). 09.26-06 (D-08): this single widget ALSO carries `.supplementalActivityFamilies
+        // ([.small])` for the CarPlay `.small` presentation (D-10) — a previous separate
+        // `@available(iOS 18.0, *) GlucoseLiveActivityCarPlay` conformer, picked here via a
+        // `WidgetBundleBuilder.buildOptional`/`if #available` branch, existed only to work around a
+        // MIXED-floor extension (base widget iOS-17, CarPlay addition iOS-18); now that
+        // `faBolusWidgets`' deployment target is unconditionally 18.0 (project.yml), that mixed-floor
+        // problem doesn't exist, so `GlucoseLiveActivity` itself unconditionally registers both the
+        // Lock Screen/Dynamic Island presentation AND the CarPlay `.small` family — no bundle-level
+        // conditional needed at all.
         GlucoseLiveActivity()
-        // Phase 5 (D-10, 05-04) — the CarPlay `.small` supplemental presentation, additively
-        // registered when the SDK/OS supports it. `WidgetBundleBuilder` only provides `buildOptional`
-        // (a single-branch `if #available(...)` check via `buildLimitedAvailability`) — there is NO
-        // `buildEither`, so `if #available {} else {}` does not compile (confirmed: "closure
-        // containing control flow statement cannot be used with result builder 'WidgetBundleBuilder'"),
-        // and `if #unavailable(...)` used as the sole/negating branch triggers an internal compiler
-        // crash in this toolchain ("failed to produce diagnostic for expression") rather than a clean
-        // rejection — reported upstream is out of scope here; the additive single-branch form below is
-        // the only shape that compiles. `GlucoseLiveActivityCarPlay` shares the IDENTICAL Dynamic
-        // Island region tree and its Lock-Screen closure falls back to the SAME
-        // `LockScreenLiveActivityView` off-CarPlay, so registering both configurations for
-        // `FaBolusGlucoseAttributes` on iOS 18+ renders identically everywhere except the
-        // CarPlay-only `.small` presentation this one adds — see the Task-4 checkpoint for on-device
-        // confirmation that iOS resolves the dual registration as expected (05-RESEARCH.md §
-        // Environment Availability: CarPlay/dual-config behavior can't be verified off-device).
-        if #available(iOS 18.0, *) {
-            GlucoseLiveActivityCarPlay()
-        }
     }
 }
 

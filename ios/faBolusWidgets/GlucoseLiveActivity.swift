@@ -17,40 +17,26 @@ import faBolusDesign
 // Portions adapted from Loop (github.com/LoopKit/Loop), MIT License.
 // Copyright (c) 2015 Nathan Racklyeft. Copyright (c) 2016 LoopKit Authors.
 //
-// The iOS-18 CarPlay `.small` gating below (`@available(iOS 18.0, *)` branch reading
-// `@Environment(\.activityFamily)`) adapts Loop's `GlucoseLiveActivityConfiguration`
-// `AdaptiveLockScreenView` availability-branch pattern — content is faBolus-original, not copied,
-// and none of Loop's named color assets / `SwiftCharts` are used (05-UI-SPEC.md Registry Safety).
+// The CarPlay `.small` gating below (reading `@Environment(\.activityFamily)`) adapts Loop's
+// `GlucoseLiveActivityConfiguration` `AdaptiveLockScreenView` split pattern — content is
+// faBolus-original, not copied, and none of Loop's named color assets / `SwiftCharts` are used
+// (05-UI-SPEC.md Registry Safety).
 
 /// The glucose Live Activity + Dynamic Island (D-01). Every region below renders through
 /// `LiveActivityComposer.compose(selection:state:region:)` (05-04, D-17a) so the Lock Screen /
 /// Dynamic Island / CarPlay layout adapts to ANY 0..N user-selected field subset, with a documented
 /// empty-selection fallback — never a fixed field set.
 ///
-/// `Widget.body` has no `@available`-branching result builder (unlike `View`/`WidgetBundle`), so an
-/// iOS-18-only `.supplementalActivityFamilies` call cannot live in a conditional branch of ONE
-/// widget's `body` — the CarPlay `.small` presentation instead ships as a SEPARATE `Widget` conformer
-/// (`GlucoseLiveActivityCarPlay`, `@available(iOS 18.0, *)`), and `FaBolusWidgetBundle` picks exactly
-/// one of the two via `if #available` at the BUNDLE level, which `WidgetBundleBuilder` DOES support.
-/// Both widgets share the identical Dynamic Island region tree (`glucoseDynamicIslandConfiguration`)
-/// so there is no duplicated region logic between the iOS-17 floor and the iOS-18 CarPlay variant.
+/// 09.26-06 (D-08): `faBolusWidgets`' deployment target is unconditionally 18.0 (`project.yml`), the
+/// SAME floor as the host app — there is no iOS-17 build of this extension to keep a `@available`
+/// split for. `CarPlayGatedView` below (which reads `@Environment(\.activityFamily)`, an iOS-18
+/// environment key) and `.supplementalActivityFamilies([.small])` are therefore called
+/// UNCONDITIONALLY from this single `Widget` conformer — the previous two-widget split
+/// (`GlucoseLiveActivity` iOS-17-floor + a separate `@available(iOS 18.0, *) GlucoseLiveActivityCarPlay`,
+/// picked via a bundle-level `if #available`) existed only to work around `Widget.body` having no
+/// `@available`-branching result builder for a MIXED-floor extension; with a single 18.0 floor for the
+/// whole extension that mixed-floor problem no longer exists, so the split collapsed into one widget.
 struct GlucoseLiveActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
-            LockScreenLiveActivityView(context: context)
-                .widgetURL(FaBolusDeepLink.open)
-        } dynamicIsland: { context in
-            glucoseDynamicIslandConfiguration(context: context)
-        }
-    }
-}
-
-/// CarPlay `.small` presentation (iOS 18+, D-10) — identical Lock Screen + Dynamic Island content to
-/// `GlucoseLiveActivity` above, plus `.supplementalActivityFamilies([.small])` so the SAME Activity
-/// additionally renders on CarPlay. `.medium` is NOT built (D-10: `.small` ONLY for v1). Display-only
-/// — no CarPlay entitlement, no CarPlay app.
-@available(iOS 18.0, *)
-struct GlucoseLiveActivityCarPlay: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
             CarPlayGatedView(context: context)
@@ -62,9 +48,9 @@ struct GlucoseLiveActivityCarPlay: Widget {
     }
 }
 
-/// The Dynamic Island region tree, factored out so it is written exactly once and shared by both
-/// `GlucoseLiveActivity` (iOS 17 floor) and `GlucoseLiveActivityCarPlay` (iOS 18+) — see the type
-/// doc comment above for why this can't be a single `if #available` branch inside one widget's body.
+/// The Dynamic Island region tree, factored out so it is written exactly once and shared by every
+/// presentation of this single widget (Lock Screen, Dynamic Island, and the CarPlay `.small`
+/// supplemental family all resolve through the same `ActivityConfiguration`'s `dynamicIsland` closure).
 @MainActor
 private func glucoseDynamicIslandConfiguration(
     context: ActivityViewContext<FaBolusGlucoseAttributes>
@@ -685,14 +671,17 @@ private struct MinimalRegionView: View {
     }
 }
 
-// MARK: - CarPlay `.small` (iOS 18+, D-10) — adapts Loop's AdaptiveLockScreenView split
+// MARK: - CarPlay `.small` (D-10) — adapts Loop's AdaptiveLockScreenView split
+//
+// 09.26-06 (D-08): `@Environment(\.activityFamily)` is an iOS-18 API, but `faBolusWidgets`' floor is
+// unconditionally 18.0 (project.yml), so it — and `CarPlaySmallView` below — need no `@available`
+// gate: every build of this extension already meets the requirement. `GlucoseLiveActivity` is now
+// this view's ONLY caller (the previous separate `@available(iOS 18.0, *)` CarPlay widget conformer
+// was removed as part of the same reconciliation).
 
-/// The `GlucoseLiveActivityCarPlay` widget's Lock-Screen closure — reads `@Environment
-/// (\.activityFamily)` (iOS-18-only) to branch between the CarPlay `.small` layout and the SAME
-/// full Lock Screen content `GlucoseLiveActivity` (the iOS-17-floor widget) renders. `GlucoseLiveActivity`
-/// itself never sees this type — only the `@available(iOS 18.0, *)`-gated CarPlay widget does, so the
-/// iOS-17-only build path never references the iOS-18-only `activityFamily` environment key.
-@available(iOS 18.0, *)
+/// `GlucoseLiveActivity`'s Lock-Screen closure — reads `@Environment(\.activityFamily)` to branch
+/// between the CarPlay `.small` layout and the SAME full Lock Screen content every other family
+/// (Lock Screen, Dynamic Island's own presentation) renders.
 private struct CarPlayGatedView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     @Environment(\.activityFamily) private var activityFamily
@@ -709,7 +698,6 @@ private struct CarPlayGatedView: View {
 /// The CarPlay `.small` glanceable field — a single highest-priority selected field, plain padding
 /// (NO `SmartStackMargins`, NO Loop named color assets — 05-UI-SPEC.md Registry Safety caveat).
 /// Display-only: no CarPlay entitlement, no CarPlay app (D-10).
-@available(iOS 18.0, *)
 private struct CarPlaySmallView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
