@@ -523,6 +523,24 @@ public enum LAMetrics {
     }
 }
 
+/// Phase 09.26-04 (D-14/D-07) — the LA-specific plot-range `recentPoints` windowing/downsampling.
+/// Pure (no ActivityKit/WidgetKit) so the boundary math is unit-testable from
+/// `GlucoseLiveActivityManager.makeContent`'s tests without a running Activity.
+public enum LAPlotWindow {
+    // STUB (RED phase, 09.26-04 Task 3) — replaced with the real trailing-window filter + evenly-
+    // spaced downsample in the GREEN commit. Currently a no-op passthrough.
+    /// Filters `points` to the trailing `plotRangeHours` window (by TIMESTAMP, not a fixed array-
+    /// suffix count, since cadence isn't a guaranteed constant), then, if the windowed count exceeds
+    /// `capForBudget`, evenly thins it — ALWAYS keeping the first and last point — so the caller
+    /// stays comfortably under the ~4KB ActivityKit `ContentState` ceiling even at the widest
+    /// selectable range (T-09.26-11).
+    public static func recentPoints(
+        from points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date, capForBudget: Int = 72
+    ) -> [WidgetSnapshot.Point] {
+        points
+    }
+}
+
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target
 /// (unit tests) and the `faBolusWidgets` extension (rendering). See 05-UI-SPEC.md's Surface
 /// Inventory & Layout Contract for the per-region capacity/priority/fallback rules implemented here.

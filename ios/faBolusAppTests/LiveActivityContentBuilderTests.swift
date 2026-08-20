@@ -567,4 +567,91 @@ struct LiveActivityContentBuilderTests {
         let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
         #expect(state.topRightField == "iobDelta")
     }
+
+    // MARK: - Phase 09.26-04 (Task 3, D-14/D-07) — LA-specific plot-range window + 4KB budget re-verify
+
+    /// The 2h default path is UNCHANGED by this plan: `plotRangeHours == 2` still caps at the
+    /// existing 24-point ~2h window (`suffix(24)`), independent of how much history the (now-widened)
+    /// snapshot actually carries.
+    @Test func plotRangeHoursTwoPreservesTheExistingTwoHourWindow() {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = 2
+
+        let now = Date(timeIntervalSince1970: 21_000_000)
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, points: points)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.plotRangeHours == 2)
+        #expect(state.recentPoints.count == 24)
+        #expect(state.recentPoints == Array(points.suffix(24)))
+    }
+
+    /// MANDATORY 6h budget re-verify (D-14/D-07, the plan's own hard acceptance criterion,
+    /// T-09.26-11): a snapshot carrying a fully-populated series spanning MORE than 6h (so the
+    /// trailing-window filter is genuinely exercised, not just a full passthrough) plus every
+    /// full-bleed field populated at a non-default value still encodes under the ActivityKit ~4KB
+    /// `ContentState` ceiling.
+    @Test func encodedContentStateStaysUnderFourKBWithASixHourPopulatedSeries() throws {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = 6
+
+        let now = Date(timeIntervalSince1970: 22_000_000)
+        // 8h of 5-minute-cadence points (96 samples) — wider than the OLD 48-point widget cap (proving
+        // the snapshot side was actually widened to feed the 6h option) and wider than the 6h window
+        // itself (so the trailing-window filter is genuinely exercised, not a full passthrough).
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + ($0 % 40))
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.plotRangeHours == 6)
+        let sixHoursAgo = now.addingTimeInterval(-6 * 3600)
+        #expect(state.recentPoints.allSatisfy { $0.t >= sixHoursAgo })   // the 6h window is honored
+        #expect(state.recentPoints.count > 24)   // denser than the 2h/24-point default path
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// D-14: the 6h path never widens the phone/watch chart windows — it is entirely independent,
+    /// keyed off `WidgetStore.liveActivityPlotRangeHours` (the LA-only mirror), not any watch/phone
+    /// plot-range setting.
+    @Test func sixHourWindowIsScopedToTheLAOnlyPlotRangeMirror() {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = nil   // legacy/never-synced ⇒ documented default (2h)
+
+        let now = Date(timeIntervalSince1970: 23_000_000)
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, points: points)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.plotRangeHours == 2)
+        #expect(state.recentPoints.count == 24)
+    }
+
+    /// `WidgetPublisher.makeSnapshot` retains enough history in the App-Group snapshot to feed the
+    /// LA's 6h option — widened beyond the OLD 48-point/~4h cap. Additive/snapshot-only; no
+    /// pump/dose logic change (the App-Group `WidgetSnapshot` budget is NOT the ActivityKit 4KB
+    /// `ContentState` ceiling this plan re-verifies above).
+    @MainActor
+    @Test func widgetPublisherMakeSnapshotRetainsEnoughHistoryForTheSixHourLAOption() {
+        let now = Date()
+        let history = (0..<200).map {
+            GlucoseReading(date: now.addingTimeInterval(Double($0 - 200) * 300), mgdl: 100)
+        }
+        let widgetSnap = WidgetPublisher.makeSnapshot(PumpSnapshot(), history: history, alerts: [],
+                                                       staleAfterSec: 360, hideAfterSec: nil)
+        // At least 72 points (~6h @ 5-min cadence) must be retained for the LA's 6h option to have
+        // enough raw material to window/downsample from.
+        #expect(widgetSnap.recentPoints.count >= 72)
+    }
 }
