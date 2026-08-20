@@ -18,7 +18,14 @@ enum WidgetPublisher {
     static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
                              staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
                              hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
-        let points = history.suffix(48).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
+        // Phase 09.26-04 (D-14) — widened from 48 (~4h @ 5-min cadence) to 96 (~8h) so the App-Group
+        // snapshot carries enough raw history to feed the Live Activity's OWN 6h plot-range option
+        // (`GlucoseLiveActivityManager.makeContent`'s `LAPlotWindow.recentPoints`, which further
+        // windows/downsamples down to the ActivityKit ~4KB `ContentState` budget). Additive/
+        // snapshot-only — the App-Group `WidgetSnapshot` isn't subject to that 4KB ceiling (it's a
+        // different serialization target than `ContentState`), so widening it here is safe; the Home
+        // Screen widget's own `Sparkline` just renders a denser line, no behavior change there.
+        let points = history.suffix(96).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         return WidgetSnapshot(
             glucose: s.glucose,
             glucoseDate: s.glucoseDate,

@@ -465,7 +465,14 @@ struct LiveActivityContentBuilderTests {
                      controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
         let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
 
-        #expect(state.recentPoints.count == 24)
+        // Phase 09.26-04 (D-14/D-07): at `plotRangeHours == 6`, the LA now honors its OWN wider
+        // window instead of the fixed 24-point 2h cap — all 48 of this test's points fall within the
+        // trailing 6h window (their span is only 4h) and stay under the 72-point budget cap, so none
+        // are dropped/downsampled. This UPDATES the pre-09.26-04 assertion (which pinned the
+        // then-current "always 24 regardless of plotRangeHours" behavior this plan's Task 3 exists to
+        // change) — see `plotRangeHoursTwoPreservesTheExistingTwoHourWindow` and
+        // `encodedContentStateStaysUnderFourKBWithASixHourPopulatedSeries` for the new 2h/6h contract.
+        #expect(state.recentPoints.count == 48)
         #expect(state.topRightField == "controlIQZone")
         #expect(state.plotRangeHours == 6)
         #expect(state.showXAxisLine == true)

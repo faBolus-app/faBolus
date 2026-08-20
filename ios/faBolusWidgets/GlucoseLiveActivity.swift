@@ -334,7 +334,13 @@ private struct LockScreenLiveActivityView: View {
                 floorMgdl: context.state.plotFloorMgdl,
                 ceilingMgdl: context.state.plotCeilingMgdl,
                 currentGlucose: context.state.glucose,
-                isStale: context.isStale)
+                isStale: context.isStale,
+                plotRangeHours: context.state.plotRangeHours,
+                showXAxisLine: context.state.showXAxisLine,
+                showYAxisLine: context.state.showYAxisLine,
+                showXAxisTicks: context.state.showXAxisTicks,
+                showYAxisTicks: context.state.showYAxisTicks,
+                showRangeLines: context.state.showRangeLines)
             VStack(alignment: .leading, spacing: 8) {
                 fullBleedTopLeadingOverlay
                 Spacer(minLength: 0)

@@ -75,11 +75,19 @@ enum GlucoseLiveActivityManager {
         let showXAxisTicks = WidgetStore.liveActivityShowXAxisTicks ?? false
         let showYAxisTicks = WidgetStore.liveActivityShowYAxisTicks ?? false
         let showRangeLines = WidgetStore.liveActivityShowRangeLines ?? false
+        // Phase 09.26-04 (D-14/D-07) — the LA plot honors its OWN plot-range setting, independent of
+        // the phone/watch chart windows: the 2h default path is UNCHANGED (`suffix(24)`, tighter cap
+        // than the widget's 96); 6h carries up to ~6h of history, windowed by TIMESTAMP and
+        // downsampled if necessary so the encoded `ContentState` stays under the ~4KB ceiling
+        // (`LAPlotWindow.recentPoints`'s own doc comment has the measured budget numbers).
+        let recentPoints: [WidgetSnapshot.Point] = plotRangeHours >= 6
+            ? LAPlotWindow.recentPoints(from: snap.recentPoints, plotRangeHours: plotRangeHours, now: now)
+            : Array(snap.recentPoints.suffix(24))
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
             trendArrow: stale ? "" : snap.trendArrow,             // C8 — never synthesize a trend
-            recentPoints: Array(snap.recentPoints.suffix(24)),    // tighter cap than the widget's 48
+            recentPoints: recentPoints,
             displayUnitToken: snap.displayUnit,                   // D-09 — carried verbatim, no inline conversion
             iobUnits: snap.iobUnits,
             iobDate: snap.iobDate,

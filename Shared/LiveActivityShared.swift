@@ -527,17 +527,30 @@ public enum LAMetrics {
 /// Pure (no ActivityKit/WidgetKit) so the boundary math is unit-testable from
 /// `GlucoseLiveActivityManager.makeContent`'s tests without a running Activity.
 public enum LAPlotWindow {
-    // STUB (RED phase, 09.26-04 Task 3) — replaced with the real trailing-window filter + evenly-
-    // spaced downsample in the GREEN commit. Currently a no-op passthrough.
     /// Filters `points` to the trailing `plotRangeHours` window (by TIMESTAMP, not a fixed array-
     /// suffix count, since cadence isn't a guaranteed constant), then, if the windowed count exceeds
     /// `capForBudget`, evenly thins it — ALWAYS keeping the first and last point — so the caller
     /// stays comfortably under the ~4KB ActivityKit `ContentState` ceiling even at the widest
-    /// selectable range (T-09.26-11).
+    /// selectable range (T-09.26-11; measured empirically: 72 points + every other full-bleed field
+    /// populated encodes to ~2.8KB, comfortably under the ~4KB ceiling with margin to spare — see the
+    /// plan's own 6h budget test). `capForBudget`'s default (72) is a defensive safety valve, not the
+    /// expected count under normal ~5-min CGM cadence (which already yields ≈72 points for a 6h
+    /// window) — it only actually thins if the source data is denser than assumed.
     public static func recentPoints(
         from points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date, capForBudget: Int = 72
     ) -> [WidgetSnapshot.Point] {
-        points
+        let windowStart = now.addingTimeInterval(-Double(max(plotRangeHours, 1)) * 3600)
+        let windowed = points.filter { $0.t >= windowStart && $0.t <= now }
+        guard windowed.count > capForBudget, capForBudget > 1 else { return windowed }
+        var result: [WidgetSnapshot.Point] = []
+        result.reserveCapacity(capForBudget)
+        let lastIndex = windowed.count - 1
+        let step = Double(lastIndex) / Double(capForBudget - 1)
+        for i in 0..<capForBudget {
+            let idx = min(lastIndex, Int((Double(i) * step).rounded()))
+            result.append(windowed[idx])
+        }
+        return result
     }
 }
 
