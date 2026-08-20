@@ -433,6 +433,9 @@ private struct LAActionRow: View {
 
 private struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    /// Phase 09.26-05 (D-06 "Always-on") — drives the flat-scrim swap below; `FullBleedGlucosePlot`
+    /// reads this SAME environment key independently for its own fill/chrome flattening.
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     /// Phase 09.26-01 tracer (D-11/D-21) — the additive style branch. "classic" (or any
     /// unrecognized/legacy token, decode-defaulted to "fullBleed" upstream but re-checked here
@@ -513,14 +516,23 @@ private struct LockScreenLiveActivityView: View {
         composeFullBleedBottomRowFields(context: context)
     }
 
+    /// Phase 09.26-05 (D-06 "Always-on") — swaps `.thinMaterial` for a flat, very-low-opacity
+    /// rectangle under `isLuminanceReduced` (materials can render inconsistently on some OS versions
+    /// under AOD, UI-SPEC "[RESOLVED, flagged as a research item below — non-blocking]"). Used by
+    /// BOTH full-bleed scrims below — never a second scrim style introduced elsewhere.
+    private var scrimStyle: AnyShapeStyle {
+        isLuminanceReduced ? AnyShapeStyle(Color.black.opacity(0.15)) : AnyShapeStyle(.thinMaterial)
+    }
+
     /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
     /// directly below it — `GlucoseNumeralView(role: .display)` already renders exactly this
     /// (angled Unicode arrow + relative-age caption), reused verbatim rather than re-derived. A
-    /// `.thinMaterial` scrim keeps the block legible over the busy curve.
+    /// `scrimStyle` scrim (`.thinMaterial`, or a flat rect under always-on) keeps the block legible
+    /// over the busy curve.
     private var fullBleedTopLeadingOverlay: some View {
         GlucoseNumeralView(context: context, role: .display)
             .padding(8)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .background(scrimStyle, in: RoundedRectangle(cornerRadius: 10))
     }
 
     /// Top-right overlay (D-05/D-15, 09.26-UI-SPEC.md "Top-right overlay") — the user-selectable
@@ -535,7 +547,7 @@ private struct LockScreenLiveActivityView: View {
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .padding(8)
                 .padding(.trailing, 6)   // extra room so the corner glyph never overlaps the text
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .background(scrimStyle, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(alignment: .topTrailing) {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 8))

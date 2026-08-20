@@ -15,6 +15,12 @@ import faBolusDesign
 ///   canvas maps to the FULL selected `plotRangeHours` window (not just the data's own extent), so a
 ///   short history naturally anchors right (now) instead of being stretched to fill the width.
 ///
+/// Phase 09.26-05 adds (D-06 "Always-on"): reads `@Environment(\.isLuminanceReduced)` independently
+/// of its caller — under AOD, the fill flattens to a flat low-opacity tint (no gradient stops) and
+/// ALL chrome (axis lines/ticks/range lines) is forced off regardless of the user's own toggles.
+/// This view never carries the load-bearing facts (BG numeral/arrow/time-since/top-right slot,
+/// `BandIndicator`) — those are the CALLER's job and are unaffected by anything in this file.
+///
 /// Display-only (D-11 lineage) — this view never reads or writes a dose/delivery/signed-path type;
 /// it only decides WHERE on a Y-axis a glucose fact renders.
 struct FullBleedGlucosePlot: View {
@@ -54,6 +60,14 @@ struct FullBleedGlucosePlot: View {
     /// `GlucoseLiveActivityManager.makeContent(from:now:)` injection idiom already used in this
     /// codebase for the same reason (deterministic tests).
     var now: Date = Date()
+
+    /// Phase 09.26-05 (D-06 "Always-on") — when the display is Always-On (`isLuminanceReduced`),
+    /// the fill flattens to a single flat low-opacity tint (no `LinearGradient` stops, avoids a
+    /// muddy/banded gradient under AOD's reduced palette + reduces the burn-in/power surface) and
+    /// ALL axis/range chrome is forced off below, regardless of the user's own toggles. This view
+    /// reads the environment key independently of its caller, so BOTH the Lock Screen and DI-
+    /// expanded `.bottom` presentations get the same treatment with no extra wiring.
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     /// Future-point guard (D-04, UI-SPEC "Future-point guard") — filter BEFORE building any Path, so
     /// a fast-clock artifact is never plotted as real history, mirroring `futureSkewTolerance`'s
@@ -140,7 +154,13 @@ struct FullBleedGlucosePlot: View {
                 case .full:
                     curveLayer(in: size)
                 }
-                chromeLayer(in: size)
+                // Phase 09.26-05 (D-06) — ALL chrome forced off under always-on, regardless of the
+                // user's own toggles (reduce visual noise + power draw); the load-bearing facts
+                // rendered by the CALLER (BG numeral, arrow, time-since, top-right slot) and the
+                // non-color `BandIndicator` channel are unaffected — this view never touches them.
+                if !isLuminanceReduced {
+                    chromeLayer(in: size)
+                }
             }
         }
         // Decorative Path — VoiceOver reads the BG numeral/top-right/bottom-row overlays, never this
@@ -166,11 +186,17 @@ struct FullBleedGlucosePlot: View {
     private func curveLayer(in size: CGSize) -> some View {
         if curvePoints.count >= 2 {
             // Edge-to-edge silhouette fill (D-11) — from the plotted line down to the bottom edge of
-            // the card, not a mid-widget sparkline.
-            fillPath(in: size)
-                .fill(LinearGradient(
-                    colors: [lastZoneColor.opacity(0.30), lastZoneColor.opacity(0.04)],
-                    startPoint: .top, endPoint: .bottom))
+            // the card, not a mid-widget sparkline. Phase 09.26-05 (D-06): under always-on, the
+            // gradient flattens to a single flat low-opacity tint (no `LinearGradient` stops) —
+            // avoids a muddy/banded look under AOD's reduced palette and trims the burn-in surface.
+            if isLuminanceReduced {
+                fillPath(in: size).fill(lastZoneColor.opacity(0.12))
+            } else {
+                fillPath(in: size)
+                    .fill(LinearGradient(
+                        colors: [lastZoneColor.opacity(0.30), lastZoneColor.opacity(0.04)],
+                        startPoint: .top, endPoint: .bottom))
+            }
             // Zone-segmented stroke (D-17): N-1 short Path segments, each colored by the LATER
             // point's `GlucoseRange.classify` — historical segments are facts and are never greyed by
             // the live-value staleness gate (D-04).
