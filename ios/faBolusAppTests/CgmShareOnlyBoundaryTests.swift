@@ -11,6 +11,27 @@ import faBolusCore
 /// intended RED→GREEN convergence for a multi-plan removal, not a regression: each plan narrows the
 /// registry further and this file's expectations do not change. Mirrors `CgmSourceValidationTests`'
 /// registry-enumeration style (construction-time, no live source, no simulator).
+///
+/// A stand-in `GlucoseSource` for the arbiter-contract test (Task 2, D-05) — mirrors
+/// `GlucoseArbiterTests.MockGlucoseSource` in `Packages/faBolusCore`, reproduced here (not imported —
+/// that type is `private` to its own test target) so this app-target test consumes ONLY the public
+/// `faBolusCore` API, never a removed/renamed concrete source type.
+@MainActor
+private final class MockShareLikeGlucoseSource: GlucoseSource {
+    let id: String
+    let priority = 90
+    let connectionKind: GlucoseConnectionKind = .cloudPoll   // Share-shaped: a cloud-polled source
+    var latest: GlucoseSample?
+    var history: [GlucoseReading]
+    var status: GlucoseSourceStatus = .connected
+    var onChange: (@MainActor () -> Void)?
+    init(id: String = "dexcom-share", latest: GlucoseSample?, history: [GlucoseReading] = []) {
+        self.id = id; self.latest = latest; self.history = history
+    }
+    func start() async {}
+    func stop() {}
+}
+
 @MainActor
 struct CgmShareOnlyBoundaryTests {
 
@@ -42,14 +63,27 @@ struct CgmShareOnlyBoundaryTests {
 
     /// D-05/D-06: `GlucoseArbiter.merge` is source-agnostic and stays byte-identical across every
     /// removal in this phase — a fresh Share-shaped `GlucoseSample` must still beat a stale
-    /// `PumpSnapshot` exactly as it does for every other source. Uses ONLY the public
-    /// `Packages/faBolusCore` API — never names a removed concrete type.
-    ///
-    /// TODO (Plan 01, Task 2): replace this stub with a real fixture-backed assertion mirroring
-    /// `GlucoseArbiterTests` (stale pump snapshot vs. fresh Share-shaped sample through
-    /// `GlucoseArbiter.merge`, asserting the fresher source wins and the provenance is as expected).
-    /// GREEN now because it asserts nothing about the (unchanged) arbiter yet.
-    @Test func shareReadingFlowsThroughArbiterMerge() {
-        #expect(Bool(true))
+    /// `PumpSnapshot` exactly as it does for every other source. Mirrors
+    /// `GlucoseArbiterTests.testFailsOverWhenPumpStale`: a 10-min-stale pump snapshot vs. a
+    /// 30-second-fresh Share-shaped sample, through the real `GlucoseArbiter.merge`. Uses ONLY the
+    /// public `Packages/faBolusCore` API (`GlucoseArbiter`, `PumpSnapshot`, `GlucoseSample`,
+    /// `GlucoseProvenance`, `GlucoseSource`) — never names a removed concrete source type.
+    @Test func shareReadingFlowsThroughArbiterMerge() throws {
+        var stalePump = PumpSnapshot()
+        stalePump.glucose = 100
+        stalePump.glucoseDate = Date().addingTimeInterval(-10 * 60)   // 10 min old → stale (>6 min)
+        stalePump.trend = GlucoseTrend.flat.rawValue
+
+        let freshShareSample = try #require(
+            GlucoseSample(mgdl: 145, date: Date().addingTimeInterval(-30), trend: .up, sourceID: "dexcom-share"))
+        let shareSource = MockShareLikeGlucoseSource(id: "dexcom-share", latest: freshShareSample)
+
+        let (merged, _, provenance) = GlucoseArbiter.merge(
+            pumpSnapshot: stalePump, pumpHistory: [], source: shareSource)
+
+        #expect(merged.glucose == 145, "the fresher Share reading must win over the stale pump value")
+        #expect(merged.trend == GlucoseTrend.up.rawValue)
+        #expect(merged.cgmActive)
+        #expect(provenance == .failover(sourceID: "dexcom-share", reason: .pumpStale))
     }
 }
