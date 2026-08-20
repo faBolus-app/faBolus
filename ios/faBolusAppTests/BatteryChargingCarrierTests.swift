@@ -108,4 +108,49 @@ import faBolusCore
         let snap = WidgetStore.load()
         #expect(snap?.batteryCharging == false)
     }
+
+    // MARK: - WR-01: RemoteClientModel.handle ingest is fail-closed, never keep-last, on an absent key
+
+    /// The regression this review fix targets: previously `if let c = cmd.batteryCharging {
+    /// batteryCharging = c }` kept the LAST-KNOWN value when a later `statusRead` omitted the key —
+    /// so a true->absent transition left a STALE "Charging" claim on iPhone-remote/Mac. It must now
+    /// reset to `false`, mirroring `faBolusGarmin/source/app/AppState.mc`'s unconditional re-evaluate.
+    @MainActor
+    @Test func absentBatteryChargingKeyResetsAPreviouslyTrueValueToFalse() {
+        let model = RemoteClientModel(link: FakeLink())
+        var chargingCmd = RemoteCommand(kind: .statusRead)
+        chargingCmd.batteryCharging = true
+        model.handle(chargingCmd)
+        #expect(model.batteryCharging == true)
+
+        var droppedKeyCmd = RemoteCommand(kind: .statusRead)   // batteryCharging left nil (dropped/legacy)
+        droppedKeyCmd.batteryPercent = 55
+        model.handle(droppedKeyCmd)
+        #expect(model.batteryCharging == false, "an absent key must NOT keep the last-known 'Charging' claim (WR-01 fail-closed fix)")
+    }
+
+    /// A fresh model that never received the field stays fail-closed `false` (D-03's default,
+    /// unaffected by this fix — kept as an explicit regression pin).
+    @MainActor
+    @Test func absentBatteryChargingKeyOnAFreshModelStaysFalse() {
+        let model = RemoteClientModel(link: FakeLink())
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.batteryPercent = 90
+        model.handle(cmd)
+        #expect(model.batteryCharging == false)
+    }
+
+    /// An explicit `false` on the wire must still read as not-charging (not just "absent -> false").
+    @MainActor
+    @Test func explicitFalseBatteryChargingKeyReadsAsNotCharging() {
+        let model = RemoteClientModel(link: FakeLink())
+        var chargingCmd = RemoteCommand(kind: .statusRead)
+        chargingCmd.batteryCharging = true
+        model.handle(chargingCmd)
+
+        var offCmd = RemoteCommand(kind: .statusRead)
+        offCmd.batteryCharging = false
+        model.handle(offCmd)
+        #expect(model.batteryCharging == false)
+    }
 }

@@ -405,9 +405,18 @@ class RemoteClientModel {
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }
             if let b = cmd.batteryPercent { batteryPercent = Int(b) }
-            // Phase 09.27-03 (D-04/D-05): adopt only when present — a legacy host that predates the
-            // field, or a dropped key, leaves the last-known value rather than fabricating a flip.
-            if let c = cmd.batteryCharging { batteryCharging = c }
+            // Review fix WR-01 (was: `if let c = cmd.batteryCharging { batteryCharging = c }`, which
+            // kept the last-known value on an absent key — a stale "Charging" claim, the exact
+            // false-positive badge D-03's fail-closed intent exists to prevent). Unlike most optional
+            // fields in this handler, batteryCharging does NOT keep-last on an absent key — it
+            // mirrors `faBolusGarmin/source/app/AppState.mc`'s `(bc instanceof Lang.Boolean) && bc`,
+            // which re-evaluates unconditionally on every statusRead specifically "so a dropped key
+            // or a legacy phone can never leave a stale 'charging' claim on screen." A stale
+            // "Charging" claim is judged worse than a stale battery percent (which DOES legitimately
+            // keep-last, same as every other field here), so this field alone is deliberately
+            // fail-closed rather than sticky. Harmless behavior change for a bare/legacy
+            // `RemoteCommand`: it now explicitly reports "not charging" instead of the last value.
+            batteryCharging = (cmd.batteryCharging == true)
             if let cr = cmd.carbRatio { carbRatio = cr }
             if let i = cmd.isf { isf = Int(i) }
             if let tb = cmd.targetBg { targetBg = Int(tb) }
