@@ -108,7 +108,7 @@ private func glucoseDynamicIslandConfiguration(
                     if bottom.first?.id == "sparkline" {
                         Sparkline(points: context.state.recentPoints).frame(height: 40)
                     }
-                    LAActionRow(context: context, compact: true)
+                    LAActionRow(compact: true)
                 }
             }
         }
@@ -164,7 +164,9 @@ private func fullBleedDIExpandedLeading(
 ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
         if let d = context.state.glucoseDate {
-            Text(d, style: .relative).font(.caption2)
+            // Phase 09.26 (UAT fix, Defect 5) — see `GlucoseNumeralView`'s own call site below for
+            // the full rationale; `Text(_, style: .relative)` showed "0 sec" for a fresh reading.
+            Text(LAMetrics.friendlyAge(date: d, now: Date())).font(.caption2)
                 .foregroundStyle(context.isStale ? .orange : .secondary)
         }
         if let field = composeFullBleedBottomRowFields(context: context).first {
@@ -214,12 +216,14 @@ private func fullBleedDIExpandedTrailing(
 /// `.bottom`: `FullBleedGlucosePlot` at the expanded-island width, 44pt tall (up from Classic's
 /// fixed 40pt `Sparkline`) — passed the SAME parameter surface (chrome toggles, plot range, floor/
 /// ceiling) the Lock Screen full-bleed body passes, so a Settings change is visible on EVERY
-/// full-bleed presentation, not just the Lock Screen — plus the always-available compact action row
-/// beneath it (D-18, unchanged from Classic's `.bottom`).
+/// full-bleed presentation, not just the Lock Screen — plus the optional Bolus-shortcut pill beneath
+/// it.
 ///
 /// Phase 09.26-07 (D-22): when `showBolusShortcut` is on, the compact `LABolusShortcutPill` renders
-/// LEADING of the compact action row, which itself passes `showOpenBolus: false` — the pill becomes
-/// the single bolus entry point here too (de-dup), matching the Lock Screen full-bleed body.
+/// beneath the plot, matching the Lock Screen full-bleed body. Phase 09.26 (UAT fix, Defect 7 —
+/// owner directive): the always-available `LAActionRow` (Snooze/Refresh) that used to render
+/// alongside the pill is REMOVED — the pill (when on) is this region's only interactive control; an
+/// ambient glucose card has no reason to surface Snooze/Refresh.
 @MainActor
 @ViewBuilder
 private func fullBleedDIExpandedBottom(
@@ -239,11 +243,8 @@ private func fullBleedDIExpandedBottom(
             showYAxisTicks: context.state.showYAxisTicks,
             showRangeLines: context.state.showRangeLines)
             .frame(height: 44)
-        HStack(spacing: 8) {
-            if context.state.showBolusShortcut {
-                LABolusShortcutPill(compact: true)
-            }
-            LAActionRow(context: context, compact: true, showOpenBolus: false)
+        if context.state.showBolusShortcut {
+            LABolusShortcutPill(compact: true)
         }
     }
 }
@@ -390,7 +391,12 @@ private struct GlucoseNumeralView: View {
             .accessibilityLabel(numeralA11yLabel)
             if role == .display {
                 if let d = context.state.glucoseDate {
-                    Text(d, style: .relative).font(.caption2)
+                    // Phase 09.26 (UAT fix, Defect 5) — `Text(_, style: .relative)` renders a live-
+                    // ticking numeric duration ("0 sec", "1 min") and never emits "now"; for a
+                    // just-arrived reading it showed the confusing "0 sec". `LAMetrics.friendlyAge`
+                    // is a static "now"/"Nm"/"Nh" string instead — it doesn't auto-tick between LA
+                    // re-publishes, an acceptable trade-off given the re-publish cadence.
+                    Text(LAMetrics.friendlyAge(date: d, now: Date())).font(.caption2)
                         .foregroundStyle(context.isStale ? .orange : .secondary)
                 } else if context.state.showUnitLabel {
                     // Owner-requested toggle: this fallback caption (no reading yet, so no age to
@@ -420,20 +426,23 @@ private struct MinimalFallbackView: View {
     }
 }
 
-// MARK: - D-18 interactive row (05-05) — Open Bolus / (conditional) Snooze / Refresh
+// MARK: - D-18 interactive row (05-05) — Open Bolus only
 
-/// The three safe, NON-DOSING `LiveActivityIntent` buttons (05-UI-SPEC.md Interaction Contract).
-/// "Snooze" is shown ONLY when `context.state.hasSnoozeEligibleAlert` is true — an app-computed flag
-/// (never re-derived here) that is false whenever the only active alert is a non-snoozeable `.alarm`
-/// (`PumpAlertKind.isAutoRuleEligible`). `compact` trims to icon-only glyphs for the Dynamic Island's
-/// tight `.bottom` region; the Lock Screen banner has room for the full label.
+/// The single safe, NON-DOSING `LiveActivityIntent` button this ambient glucose card offers
+/// (05-UI-SPEC.md Interaction Contract). `compact` trims to an icon-only glyph for the Dynamic
+/// Island's tight `.bottom` region; the Lock Screen banner has room for the full label.
+///
+/// Phase 09.26 (UAT fix, Defect 7 — owner directive): "Snooze" (`LASnoozeAlertIntent`) and "Refresh"
+/// (`LAReconnectIntent`) are REMOVED from this row entirely — an ambient glucose Live Activity has
+/// no business surfacing either action, in NEITHER the full-bleed NOR the Classic style. The two
+/// intents themselves stay defined in `Shared/LiveActivityIntents.swift` (no other consumers break),
+/// and the separate notification-category "Snooze 2h"/"Clear" system
+/// (`NotificationCoordinator.swift`) is UNRELATED and untouched — only this row's button set changed.
 ///
 /// Phase 09.26-07 (D-22/de-dup) — `showOpenBolus` (default `true`) gates the "Open Bolus" button.
 /// EVERY Classic call site is byte-identical (they never pass this parameter, so it stays `true`);
-/// the full-bleed render paths pass `false` because the new `LABolusShortcutPill` becomes the SINGLE
-/// bolus entry point there — Snooze/Refresh are unaffected either way.
+/// full-bleed no longer calls this view at all — the `LABolusShortcutPill` is its sole control.
 private struct LAActionRow: View {
-    let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var compact: Bool = false
     var showOpenBolus: Bool = true
 
@@ -451,19 +460,11 @@ private struct LAActionRow: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        HStack(spacing: compact ? 14 : 20) {
-            if showOpenBolus {
+        if showOpenBolus {
+            HStack(spacing: compact ? 14 : 20) {
                 Button(intent: LAOpenBolusIntent()) {
                     Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
                 }
-            }
-            if context.state.hasSnoozeEligibleAlert {
-                Button(intent: LASnoozeAlertIntent()) {
-                    Label("Snooze", systemImage: "bell.slash.fill")
-                }
-            }
-            Button(intent: LAReconnectIntent()) {
-                Label("Refresh", systemImage: "arrow.clockwise")
             }
         }
     }
@@ -531,13 +532,31 @@ private struct LockScreenLiveActivityView: View {
 
     // MARK: - Full-bleed (D-11/D-16/D-17, Phase 09.26-01 tracer)
 
-    /// Z-order back→front (09.26-UI-SPEC.md "Lock Screen Expanded"): system material background,
-    /// `FullBleedGlucosePlot` filling the content area, then the top-left BG overlay + the always-
-    /// available action row. Chrome (axis lines/ticks/range-lines), the top-right selectable slot,
-    /// and the bottom customizable-fields row are later plans — this tracer proves the vertical
-    /// slice end-to-end, not the full per-presentation layout.
+    /// Phase 09.26 (UAT fix, Defect 1/3 — the layout-collapse root cause): a Lock Screen Live
+    /// Activity is content-height self-sizing. The plot previously had NO explicit height, so the
+    /// outer `ZStack` collapsed to the overlay `VStack`'s own natural height, which in turn collapsed
+    /// its `Spacer(minLength: 0)` — the "pin the bottom row to the bottom" intent silently failed and
+    /// the chips/basal-chip floated mid-widget over the curve. Giving the plot an explicit height and
+    /// compositing the overlays onto it via `.overlay(alignment:)` (below) — instead of sharing a
+    /// self-sizing `VStack` + `Spacer` with the plot — makes top-left/top-right/bottom independently
+    /// anchored regardless of content height. This exact value is a judgment call (09.26-UI-SPEC.md
+    /// specifies a fixed height only for the DI's 44pt plot, not the Lock Screen's) — chosen to
+    /// comfortably fit the top overlay block + curve + bottom row without overlap; re-verify on-device.
+    private static let fullBleedPlotHeight: CGFloat = 190
+
+    /// Z-order back→front (09.26-UI-SPEC.md "Lock Screen Expanded", as amended by the UAT fix above):
+    /// a darkening backing (Defect 6), `FullBleedGlucosePlot` filling the sized content area, then the
+    /// top-left BG overlay, the top-right selectable slot, and the bottom customizable-fields row —
+    /// all independently anchored onto the sized plot. Phase 09.26 (UAT fix, Defect 7 — owner
+    /// directive): the always-available action row (Snooze/Refresh) is REMOVED here — the optional
+    /// Bolus-shortcut pill (when on) is this card's only interactive control.
     @ViewBuilder private var fullBleedBody: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack {
+            // Defect 6 (UAT fix) — a darkening backing as the BOTTOM-MOST layer so the curve + BG/
+            // chip overlays stay legible over ANY Lock Screen wallpaper; `.containerBackground(.fill
+            // .tertiary, for: .widget)` below is a translucent system fill that alone let a photo
+            // wallpaper bleed through (the "muddy fill" defect).
+            Rectangle().fill(Color.black.opacity(0.35))
             FullBleedGlucosePlot(
                 points: context.state.recentPoints,
                 floorMgdl: context.state.plotFloorMgdl,
@@ -550,37 +569,34 @@ private struct LockScreenLiveActivityView: View {
                 showXAxisTicks: context.state.showXAxisTicks,
                 showYAxisTicks: context.state.showYAxisTicks,
                 showRangeLines: context.state.showRangeLines)
-            VStack(alignment: .leading, spacing: 8) {
-                fullBleedTopLeadingOverlay
-                Spacer(minLength: 0)
-                // Bottom row (D-13, 09.26-UI-SPEC.md "Bottom row") — the retained customizable
-                // field-selection composer, rendered ABOVE the always-available action row.
-                // Phase 09.26-07 (D-22): when the optional Bolus-shortcut pill is on, it takes the
-                // LEFTMOST slot of this SAME row and the customizable chips offset (shift right);
-                // when off, the chips use the full row exactly as before.
-                if context.state.showBolusShortcut || !fullBleedBottomRowFields.isEmpty {
-                    HStack(spacing: 8) {
-                        if context.state.showBolusShortcut {
-                            LABolusShortcutPill()
-                        }
-                        ForEach(fullBleedBottomRowFields, id: \.id) { f in
-                            if let chip = WidgetUI.chip(for: f.id, context.state) {
-                                PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
-                            }
-                        }
-                    }
-                }
-                // D-18 (05-05) — always available, unchanged from Classic. Phase 09.26-07 (D-22/
-                // de-dup): full-bleed passes showOpenBolus: false — the pill above (when on) is the
-                // SINGLE bolus entry point here; Snooze/Refresh stay.
-                LAActionRow(context: context, showOpenBolus: false)
-            }
         }
-        // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the outer ZStack's
-        // `.topLeading`, since the top-left block above and this one are independently sized.
+        .frame(height: Self.fullBleedPlotHeight)
+        .overlay(alignment: .topLeading) { fullBleedTopLeadingOverlay }
+        // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the top-left block,
+        // since the two are independently sized.
         .overlay(alignment: .topTrailing) { fullBleedTopTrailingOverlay }
+        // Bottom row (D-13, 09.26-UI-SPEC.md "Bottom row") — the retained customizable
+        // field-selection composer. Phase 09.26-07 (D-22): when the optional Bolus-shortcut pill is
+        // on, it takes the LEFTMOST slot of this SAME row and the customizable chips offset (shift
+        // right); when off, the chips use the full row exactly as before.
+        .overlay(alignment: .bottomLeading) { fullBleedBottomRow }
         .padding(16)
         .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder private var fullBleedBottomRow: some View {
+        if context.state.showBolusShortcut || !fullBleedBottomRowFields.isEmpty {
+            HStack(spacing: 8) {
+                if context.state.showBolusShortcut {
+                    LABolusShortcutPill()
+                }
+                ForEach(fullBleedBottomRowFields, id: \.id) { f in
+                    if let chip = WidgetUI.chip(for: f.id, context.state) {
+                        PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
+                    }
+                }
+            }
+        }
     }
 
     /// The full-bleed bottom row's composed fields (D-13, 09.26-UI-SPEC.md "Bottom row") — the SAME
@@ -595,19 +611,20 @@ private struct LockScreenLiveActivityView: View {
         composeFullBleedBottomRowFields(context: context)
     }
 
-    /// Phase 09.26-05 (D-06 "Always-on") — swaps `.thinMaterial` for a flat, very-low-opacity
-    /// rectangle under `isLuminanceReduced` (materials can render inconsistently on some OS versions
-    /// under AOD, UI-SPEC "[RESOLVED, flagged as a research item below — non-blocking]"). Used by
-    /// BOTH full-bleed scrims below — never a second scrim style introduced elsewhere.
+    /// Phase 09.26 (UAT fix, Defect 4): `.thinMaterial` cannot sample/blur the Lock Screen wallpaper
+    /// (a Live Activity composites separately from it), so over a photo it degraded to a flat
+    /// opaque-ish grey plate — a harsh "grey blob" rather than a subtle scrim. Unify on a flat dark
+    /// tint for BOTH states (the always-on branch already used one, at a lower opacity since AOD's
+    /// palette is already reduced) rather than reintroducing a second scrim style. Used by BOTH
+    /// full-bleed scrims below — never a third scrim style introduced elsewhere.
     private var scrimStyle: AnyShapeStyle {
-        isLuminanceReduced ? AnyShapeStyle(Color.black.opacity(0.15)) : AnyShapeStyle(.thinMaterial)
+        AnyShapeStyle(Color.black.opacity(isLuminanceReduced ? 0.15 : 0.25))
     }
 
     /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
     /// directly below it — `GlucoseNumeralView(role: .display)` already renders exactly this
-    /// (angled Unicode arrow + relative-age caption), reused verbatim rather than re-derived. A
-    /// `scrimStyle` scrim (`.thinMaterial`, or a flat rect under always-on) keeps the block legible
-    /// over the busy curve.
+    /// (angled Unicode arrow + friendly-age caption), reused verbatim rather than re-derived. A flat
+    /// dark `scrimStyle` scrim (Defect 4 UAT fix) keeps the block legible over the busy curve.
     private var fullBleedTopLeadingOverlay: some View {
         GlucoseNumeralView(context: context, role: .display)
             .padding(8)
@@ -683,8 +700,8 @@ private struct LockScreenLiveActivityView: View {
                 }
             }
             // D-18 (05-05) — always available regardless of the field-selection/empty-selection state
-            // above (05-UI-SPEC.md Interaction Contract: Open Bolus/Refresh "Always available").
-            LAActionRow(context: context)
+            // above. Phase 09.26 (UAT fix, Defect 7): now Open-Bolus only — Snooze/Refresh removed.
+            LAActionRow()
         }
         .padding(16)
         .containerBackground(.fill.tertiary, for: .widget)
@@ -731,8 +748,15 @@ private struct CompactLeadingView: View {
 
 /// The second-priority selected field, glyph-only when it's a pump chip (05-UI-SPEC.md: "a single
 /// glyph-only pump-status icon... to stay legible" — the compact-trailing slot is too tiny for a
-/// value alongside compact-leading's numeral). Renders the arrow specifically when the composed
-/// field IS glucose (mirrors the tracer's original compactLeading=value/compactTrailing=arrow pair).
+/// value alongside compact-leading's numeral).
+///
+/// Phase 09.26 (UAT fix, Defect 8): `compactLeading` and `compactTrailing` are BOTH capacity-1
+/// regions with no drop-first/offset between them (`LiveActivityComposer.compose`), so both resolve
+/// to the SAME top-priority field — "glucose" by default. `compactLeading`'s
+/// `GlucoseNumeralView(.heading)` already renders value+arrow inline, so this view's own former
+/// `case "glucose": Text(context.arrow)` re-rendered the SAME trend arrow a second time in the same
+/// compact pill (visible as a double arrow in the Mac menu-bar LA pill and the iOS Dynamic Island
+/// compact pill, both styles). Render nothing for the glucose case instead.
 private struct CompactTrailingView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {
@@ -740,13 +764,7 @@ private struct CompactTrailingView: View {
             selection: context.state.selectedFields, state: context.state, region: .compactTrailing
         ).first
         switch field?.id {
-        case "glucose":
-            if !context.arrow.isEmpty {
-                Text(context.arrow)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(context.glucoseColor)
-            }
-        case nil, "minimal", "sparkline":
+        case "glucose", nil, "minimal", "sparkline":
             EmptyView()
         default:
             if let id = field?.id, let chip = WidgetUI.chip(for: id, context.state) {
