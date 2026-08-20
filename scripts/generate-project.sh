@@ -127,6 +127,15 @@ CGM_G6="${FABOLUS_CGM_G6:-0}"
 CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-0}"
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
 CGM_XDRIP="${FABOLUS_CGM_XDRIP:-0}"
+# Phase 1 (D-03, owner-corrected): Dexcom G7 direct-BLE (Shared/DexcomG7BLESource.swift) removed from
+# BOTH the iOS faBolus target AND the faBolusWatch target — narrow main carries ZERO direct-BLE CGM on
+# any surface. Unlike CGM_G6/CGM_LIBRELINKUP/CGM_XDRIP (whose sources live inside the unconditional
+# ios/faBolus include, gated via the APP_SOURCE_EXCLUDES excludes: list above), DexcomG7BLESource.swift
+# lives in the SHARED `Shared/` source dir that BOTH targets include separately, so it gets its own
+# standalone strip_block calls (below), not folded into the APP_SOURCE_EXCLUDES umbrella. Defaults to
+# 0 = source ABSENT (the Phase-1 removal). FABOLUS_CGM_G7=1 ADDITIONALLY restores the G7SensorKit SPM
+# package + the app-target/watch-target dependency on it (mirrors the CGM_G6/CGM_G6_KIT fence shape).
+CGM_G7="${FABOLUS_CGM_G7:-0}"
 # Phone-peer remote compile gate (TOPO-03/D-03; name per PER-SURFACE-CHECKLIST §B). Default 1 = the
 # phone-as-a-remote surface is PRESENT (today's behavior). At 0, ONLY the peer-remote files are excluded
 # (PeerRemoteHost, PhoneRemoteClientModel, RemotePeerPolicyStore, Remote{Control,Root,Settings}View); the
@@ -260,12 +269,27 @@ if [ "$CGM_G6" = 0 ]; then
   strip_block CGM_G6_KIT
 fi
 
+# Phase 1 G7 gate (D-03): standalone strip calls, NOT folded into the APP_SOURCE_EXCLUDES umbrella
+# above — DexcomG7BLESource.swift's exclude entry lives in the SHARED `Shared/` source path (both the
+# faBolus AND faBolusWatch targets), a separate source entry from ios/faBolus's excludes: list. Present
+# (=1) → drop the exclude line so the source compiles into both targets; absent (=0, default) → the
+# exclude line stays, dropping the source from both. Distinct tag from CGM_G7_KIT (word-boundary
+# anchored in strip_block — Pitfall 2).
+[ "$CGM_G7" = 1 ] && strip_block CGM_G7
+# FABOLUS_CGM_G7=0 (default) additionally drops the G7SensorKit SPM package + the app-target/watch-
+# target dependency on it (normal strip direction: removed at =0, present at default) — mirrors the
+# CGM_G6/CGM_G6_KIT fence shape exactly.
+if [ "$CGM_G7" = 0 ]; then
+  strip_block CGM_G7_KIT
+fi
+
 echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmXDrip=$CGM_XDRIP PhonePeer=$PHONE_PEER FoodFinder=$FOODFINDER (default 1=present; Phase 0 authors gates only — flips nothing off)"
+echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmXDrip=$CGM_XDRIP CgmG7=$CGM_G7 PhonePeer=$PHONE_PEER FoodFinder=$FOODFINDER (default 0=absent for G6/LibreLinkUp/xDrip/G7 — Phase 1 removals; Nightscout/PhonePeer/FoodFinder still default-present)"
 [ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the Dexcom G5/G6/ONE CGM source (FABOLUS_CGM_G6=0) — DexcomG6BLESource + the DexcomG6Kit package/dependency stripped; G7SensorKit/ShareClient kept"
 [ "$CGM_LIBRELINKUP" = 0 ] && echo "  → building WITHOUT the LibreLinkUp CGM source (FABOLUS_CGM_LIBRELINKUP=0)"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
 [ "$CGM_XDRIP" = 0 ] && echo "  → building WITHOUT the xDrip App-Group CGM source (FABOLUS_CGM_XDRIP=0)"
+[ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the Dexcom G7/ONE+ direct-BLE CGM source on iOS AND watch (FABOLUS_CGM_G7=0) — DexcomG7BLESource + the G7SensorKit package/dependency stripped from both targets"
 [ "$PHONE_PEER" = 0 ] && echo "  → building WITHOUT the phone-peer remote surface (FABOLUS_PHONE_PEER=0) — only the peer files excluded; the shared PhoneRemoteHost.swift core is preserved"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
