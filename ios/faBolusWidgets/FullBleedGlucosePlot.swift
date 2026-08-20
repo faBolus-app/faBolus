@@ -71,9 +71,12 @@ struct FullBleedGlucosePlot: View {
 
     /// Future-point guard (D-04, UI-SPEC "Future-point guard") — filter BEFORE building any Path, so
     /// a fast-clock artifact is never plotted as real history, mirroring `futureSkewTolerance`'s
-    /// intent applied to the whole series rather than just the single live value.
+    /// intent applied to the whole series rather than just the single live value. Delegates to
+    /// `FullBleedPlotState.validPoints` (IN-01, 09.26-review) — the SAME "drop future-dated points"
+    /// rule `classify` below applies, now a single shared implementation instead of two independently
+    /// maintained copies.
     private var validPoints: [WidgetSnapshot.Point] {
-        points.filter { $0.t <= now }
+        FullBleedPlotState.validPoints(points, now: now)
     }
 
     /// Phase 09.26-04 (D-20) — the pure four-branch sparse/not-fully-populated classification for

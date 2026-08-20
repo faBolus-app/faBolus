@@ -425,6 +425,15 @@ public enum FullBleedPlotState: Equatable, Sendable {
     /// 2+ points whose span covers (or exceeds) the selected plot range — normal full-width curve.
     case full
 
+    /// The future-point guard (D-04) — drops any point with `t > now` (a fast-clock artifact must
+    /// never count as real history). Shared by `classify` below AND `FullBleedGlucosePlot
+    /// .validPoints` (IN-01, 09.26-review) — previously the identical `points.filter { $0.t <= now
+    /// }` rule was duplicated independently at both call sites; this is now the single source of
+    /// truth for "drop future-dated points" so the two can't silently drift.
+    public static func validPoints(_ points: [WidgetSnapshot.Point], now: Date) -> [WidgetSnapshot.Point] {
+        points.filter { $0.t <= now }
+    }
+
     /// Classifies `points` for the given `plotRangeHours` window as of `now`. Future-dated points
     /// (`t > now`) are excluded BEFORE classification (mirrors the Plan-01 render-time guard) — a
     /// fast-clock artifact must never count toward "the data covers the range." The `.full`/`.partial`
@@ -433,7 +442,7 @@ public enum FullBleedPlotState: Equatable, Sendable {
     /// (inclusive of the exact-equal boundary, matching the UI-SPEC's "span covers the full selected
     /// plot range").
     public static func classify(points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date) -> FullBleedPlotState {
-        let valid = points.filter { $0.t <= now }
+        let valid = validPoints(points, now: now)
         guard let first = valid.first, let last = valid.last else { return .empty }
         guard valid.count >= 2 else { return .single }
         let span = last.t.timeIntervalSince(first.t)
