@@ -400,4 +400,34 @@ struct SettingsCatalogTests {
         #expect(s2.glucosePlotFloorSmall == 50)
         #expect(s2.glucosePlotCeilingSmall == 400)
     }
+
+    // MARK: Phase 00-04 (INV-02 §6c) — reusable no-dangling-refs / cohesive-UX completeness helper
+    //
+    // The reusable "no orphaned compile-gated setting" check every later removal phase parametrizes
+    // (see `CompileGateAudit` below). SettingsCatalog is already the single source of truth for every
+    // persisted key; SettingsIndex is the searchable settings surface. When a phase compiles a surface
+    // OUT, any SettingsIndex row that still advertises it is a §6c dangling ref (search would route the
+    // user to a feature that no longer exists). Phase 0 removes NO surface, so this is vacuous-green
+    // today — the fixture test below proves the helper is NOT a tautology (T-00-09).
+
+    /// Vacuous-green on the CURRENT build: Phase 0 removes NO surface (every `FABOLUS_*` compile gate
+    /// defaults present), so the gated-off token set is empty and there are zero orphaned SettingsIndex
+    /// rows. Later phases populate `gatedOffSearchTokens` per surface they remove.
+    @Test func noOrphanedCompileGatedSettingsOnCurrentBuild() {
+        let orphans = CompileGateAudit.orphanedSettingsIndexEntries(
+            forGatedOffTokens: CompileGateAudit.gatedOffSearchTokens)
+        #expect(orphans.isEmpty,
+                "a compile-gated-off feature still has a live SettingsIndex row: \(orphans.map(\.title))")
+    }
+
+    /// Non-vacuous proof (T-00-09): the helper is NOT a tautology. Fed a token owned by a STILL-PRESENT
+    /// SettingsIndex row, it must flag that row as an orphan. A helper that always returned `[]` — a
+    /// tautological pass that would give every later removal phase a false sense of safety — fails here.
+    @Test func orphanDetectorIsNonVacuous() {
+        let orphans = CompileGateAudit.orphanedSettingsIndexEntries(
+            forGatedOffTokens: ["Failover CGM source"])
+        #expect(!orphans.isEmpty,
+                "the §6c helper must detect a dangling settings row for a removed feature")
+        #expect(orphans.contains { $0.title == "Failover CGM source" })
+    }
 }
