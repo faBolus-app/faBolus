@@ -716,8 +716,11 @@ public final class AppSettings {
     /// "connection" is itself a selectable field — the composer shows it only when the pump link is
     /// down/stale (never as a redundant "all fine" confirmation), so it is last by default rather than
     /// third as the raw clinical-priority text reads.
+    // Phase 09.26-03 (D-13, UI-SPEC "New Field Vocabulary"): "delta"/"tir" appended — opt-in (off by
+    // default, same "kept in sync by inspection" precedent as `LAFieldVocabulary.all`), usable in the
+    // full-bleed style's bottom customizable row.
     public static let laFieldItems: [String] =
-        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "connection"]
+        ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "connection", "delta", "tir"]
     public static func laFieldLabel(_ id: String) -> String {
         switch id {
         case "glucose": return "Glucose"
@@ -728,6 +731,8 @@ public final class AppSettings {
         case "controlIQ": return "Control-IQ"
         case "controlIQZone": return "Control-IQ state"
         case "connection": return "Connection / last sync"
+        case "delta": return "Trend delta"
+        case "tir": return "Time in range"
         default: return id
         }
     }

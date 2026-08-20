@@ -379,7 +379,11 @@ public enum LAFieldVocabulary {
     // Phase 09.15 T1-9: "exerciseTimer" registered as opt-in (off by default, matches
     // "lastAutoCorrection"'s own precedent) — Sleep facts are deliberately NOT added here (explicit
     // scope, D-08 T1-9 note).
-    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection"]
+    // Phase 09.26-03 (D-13, UI-SPEC "New Field Vocabulary"): "delta" (the 30-min windowed glucose
+    // delta) and "tir" (time-in-range over the current LA plot window) registered as opt-in — off by
+    // default, same precedent as "controlIQZone"/"lastAutoCorrection". Usable in the full-bleed
+    // bottom customizable row (not just the top-right slot); rendered via `WidgetUI.chip(for:_:)`.
+    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection", "delta", "tir"]
 }
 
 /// Phase 09.26-02 (D-15) — the valid tokens for the full-bleed style's user-selectable top-right slot.

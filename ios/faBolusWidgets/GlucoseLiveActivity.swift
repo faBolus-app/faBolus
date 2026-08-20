@@ -342,6 +342,9 @@ private struct LockScreenLiveActivityView: View {
                 LAActionRow(context: context)
             }
         }
+        // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the outer ZStack's
+        // `.topLeading`, since the top-left block above and this one are independently sized.
+        .overlay(alignment: .topTrailing) { fullBleedTopTrailingOverlay }
         .padding(16)
         .containerBackground(.fill.tertiary, for: .widget)
     }
@@ -354,6 +357,32 @@ private struct LockScreenLiveActivityView: View {
         GlucoseNumeralView(context: context, role: .display)
             .padding(8)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Top-right overlay (D-05/D-15, 09.26-UI-SPEC.md "Top-right overlay") — the user-selectable
+    /// slot, default "IOB + trend delta". Renders NOTHING (no scrim either) when
+    /// `LAMetrics.topRightText` returns `nil` (`topRightField == "none"`), giving that corner back
+    /// to the plain curve. The small `.secondary` "ellipsis" glyph in the scrim's corner is a purely
+    /// visual "this is configurable" affordance — NOT a separate tap target (the whole card already
+    /// opens the app via `.widgetURL`).
+    @ViewBuilder private var fullBleedTopTrailingOverlay: some View {
+        if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
+            Text(text)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .padding(8)
+                .padding(.trailing, 6)   // extra room so the corner glyph never overlaps the text
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                        .accessibilityHidden(true)
+                }
+                // Single combined VoiceOver element (09.26-UI-SPEC.md Accessibility) — the decorative
+                // ellipsis glyph above is separately hidden so only the slot's own text is announced.
+                .accessibilityElement(children: .combine)
+        }
     }
 
     // MARK: - Classic (D-21, unchanged)

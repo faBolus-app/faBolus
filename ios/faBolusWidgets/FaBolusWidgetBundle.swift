@@ -195,6 +195,34 @@ enum WidgetUI {
         return PumpChip(icon: "antenna.radiowaves.left.and.right", tint: .gray, value: "Synced")
     }
 
+    /// Delta chip (Phase 09.26-03, D-13) — an arrow-glyph icon matched to `LAMetrics.deltaGlyph`'s
+    /// direction (up/flat/down), value from `LAMetrics.delta` + its glyph, "--" when the series spans
+    /// less than 10 minutes (never a fabricated/zero delta, T-09.26-08). Dateless (no own staleness
+    /// stamp — it's derived fresh from `recentPoints` every render), so it never greys off
+    /// `pumpLinkStale` the way the pump-surface chips do.
+    static func deltaChip(_ state: FaBolusGlucoseAttributes.ContentState, now: Date = Date()) -> PumpChip {
+        guard let d = LAMetrics.delta(points: state.recentPoints, now: now) else {
+            return PumpChip(icon: "arrow.right", tint: .secondary, value: "--")
+        }
+        let sign = d > 0 ? "+" : ""
+        let icon: String
+        switch d {
+        case 10...: icon = "arrow.up"
+        case 1...9: icon = "arrow.up.right"
+        case 0: icon = "arrow.right"
+        case -9...(-1): icon = "arrow.down.right"
+        default: icon = "arrow.down"
+        }
+        return PumpChip(icon: icon, tint: AppTheme.insulin, value: "\(sign)\(d)\(LAMetrics.deltaGlyph(d))")
+    }
+
+    /// Time-in-range chip (Phase 09.26-03, D-13) — percent of `recentPoints` in the closed [70,180]
+    /// convention (`LAMetrics.tir`), matching `faBolusCore.GlucoseStatistics.timeInRangePct`
+    /// (T-09.26-10). Dateless, same reasoning as `deltaChip`.
+    static func tirChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        PumpChip(icon: "chart.bar.fill", tint: AppTheme.inRange, value: "\(LAMetrics.tir(points: state.recentPoints))%")
+    }
+
     /// Resolves a `LAField.id` (05-04, D-17a) to its chip, or `nil` for the special "glucose"/
     /// "sparkline"/"minimal" pseudo-ids, which the view renders through their own dedicated views.
     static func chip(for id: String, _ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip? {
@@ -205,6 +233,8 @@ enum WidgetUI {
         case "basal": return basalChip(state)
         case "controlIQ": return controlIQChip(state)
         case "connection": return connectionChip(state)
+        case "delta": return deltaChip(state)
+        case "tir": return tirChip(state)
         default: return nil
         }
     }
