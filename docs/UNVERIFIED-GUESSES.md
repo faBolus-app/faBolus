@@ -248,6 +248,40 @@ Three thresholds gate that bootstrap/accept path; all are owner/bench-adjustable
   keeps dating correctly across a long uninterrupted session with the anchor held stable — tune the
   three thresholds to the observed wake cadence if needed.
 
+## 12. `CurrentBatteryV2Response.chargingStatus == 1` (op-145 byte 2) — Phase 09.27 (D-03)
+
+- **Kit decodes it; not oracle-confirmed live.** The pinned TandemKit (`1a09dba`) already decodes the
+  charging bit — `chargingStatus = Int(raw[2])` in `CurrentBatteryV2Response`
+  (`TandemKit/Sources/TandemMessages/Responses/Responses.swift:1001`, pinned, READ-ONLY reference), and
+  the vendored jwoglom oracle confirms the field's SHAPE (`vendor/pumpx2-oracle/.../
+  CurrentBatteryV2Response.java:57`: `chargingStatus = raw[2]`, `isCharging() { return chargingStatus
+  == 1; }`). App-side only — no TandemKit PR; the pin stays HELD (D-01, 09.14 D-05). D-07's optional
+  inert kit-decode parity test is DEFERRED (see 09.27 CONTEXT.md) — not planned this phase.
+- **The caveat that keeps this UNVERIFIED:** jwoglom's own V2 javadoc notes the extra bytes beyond the
+  headline reading "often read 0" on a real pump. Nobody has yet confirmed `chargingStatus == 1` fires
+  live when a real pump is actually on its charger, for either pump family (t:slim X2 / Mobi) or across
+  firmware/software versions. Treat it exactly like entry 8's ordinal-hypothesis guess: plausible,
+  oracle-shaped, but NOT bench-confirmed.
+- `PumpSnapshot.batteryCharging` (`PumpResponseApplier.swift` op-145 apply site) captures
+  `chargingStatus == 1` ONLY — any other/unknown value fails closed to `false` (plain battery, no
+  charging badge), never inferred from a rising percentage. Threaded display-only, additive-optional,
+  through `RemoteCommand.batteryCharging` → `RemoteClientModel`/`MacRemoteModel`/`RemoteControlView` →
+  the remote-iPhone/Mac remotes, and to Garmin's `AppState.batteryCharging` over the same remote wire.
+  Nothing here is claimed "verified against a real pump on its charger."
+- **Where:** `Models.swift` (`PumpSnapshot.batteryCharging`), `PumpResponseApplier.swift` (op-145 case),
+  `Packages/faBolusDesign/Sources/faBolusDesign/BatteryChargingPresentation.swift` (glyph/text/tint),
+  `RemoteCommand.swift` (`batteryCharging` field + `RemoteCommandTests`), `Shared/RemoteClientModel.swift`,
+  `mac/faBolusMac/MacRemoteModel.swift`, `ios/faBolus/Views/RemoteControlView.swift`,
+  `faBolusGarmin/source/app/AppState.mc` + `DetailsView.mc`.
+- **Risk:** display-only, never a dose input (D-06) — worst case is a wrong (or absent) charging badge,
+  never a wrong dose. A confidently-wrong charging claim is still a trust hazard (a user believing the
+  pump is charging when it isn't, or vice versa), which is why every hop fails closed to "not charging"
+  on absent/invalid/legacy rather than guessing.
+- **Verify (Phase-11 saline bench):** put the pump on its charger and confirm `chargingStatus == 1` is
+  observed live at op-145, per pump family (t:slim X2 / Mobi) and firmware/software version; also
+  confirm it correctly reads NOT-1 when off the charger. See the Resolution Ledger row below and the
+  ROADMAP Phase 11 objective.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to
@@ -266,8 +300,9 @@ this phase) reads as Closed.
 | 6 | Mobi sleep-schedule `SetSleepScheduleRequest.flag` semantic + slots 1-3 | Value pinned to captured golden `3`; day-of-week bitmask confirmed; `flag`'s semantic meaning and slots 1-3 generalization unconfirmed | Set a distinctive schedule on all 4 slots, read back directly on the pump | v0.4.0 Phase 11 (09.10 bench) |
 | 7 | `CurrentActiveIdpValuesResponse.currentTargetBg` byte-4 decode | Capture-backed, not oracle-backed, not bench-confirmed; no live faBolus consumer today | TandemKit `docs/BENCH-SESSION-PLAN.md` Objective 4 — confirm byte 4 across pump families and t:slim software versions **before any dosing consumer relies on it**, matching this entry's own GATING RULE above | v0.4.0 Phase 11 |
 | 8 | `controlStateType` → `ciqZone` word mapping | Ordinal-hypothesis guess (0-4 ascending with Tandem's documented zone thresholds); no oracle/capture backing; display-only, fail-closed to absent on any unmapped value | Cycle the pump through each documented CIQ zone on the Phase-11 bench (or a live capture) and record the real `controlStateType` byte per zone | v0.4.0 Phase 11 |
+| 12 | `CurrentBatteryV2Response.chargingStatus == 1` (op-145 byte 2) | Kit-decoded, oracle-shaped, display-only, fail-closed to `false` on any other/unknown value; jwoglom's V2 javadoc notes the extra bytes "often read 0" so live semantics are unconfirmed | On the Phase-11 saline bench, put the pump on its charger and confirm `chargingStatus == 1` is observed live, per pump family (t:slim X2 / Mobi) and firmware/software version (and confirm NOT-1 off the charger) | v0.4.0 Phase 11 |
 
-Every non-Closed row above (1, 2, 4, 5, 6, 7, 8) is tagged for the keep-off-narrow-main gating rule added
+Every non-Closed row above (1, 2, 4, 5, 6, 7, 8, 12) is tagged for the keep-off-narrow-main gating rule added
 to the 999.5 per-surface checklist (`.planning/intel/prep/999.5-branch-model-reorg/PER-SURFACE-CHECKLIST.md`,
 "Gating Rule: Unverified-Guess-Gated Features Stay Off Narrowed main") — none of these surfaces may be
 promoted onto the narrowed `main` until its "Resolves via" step clears.
