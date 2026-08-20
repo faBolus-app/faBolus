@@ -26,6 +26,11 @@ struct NotificationSettingsView: View {
     /// safety-reducing direction, so it's confirm-gated too. Holds the category whose confirm dialog
     /// is currently showing (`nil` ⇒ no dialog).
     @State private var breakThroughOffCategory: NotificationBroker.Category?
+    /// 09.25-01 (D-03/D-06): the never-suppressible safety trio is now user-disableable behind a
+    /// confirm-on-disable §13-DRAFT warning — turning a trio row OFF is the safety-reducing direction, so
+    /// it routes through this dialog; turning it back ON is immediate. Holds the trio category whose
+    /// confirm dialog is currently showing (`nil` ⇒ no dialog).
+    @State private var safetyDisableOffCategory: NotificationBroker.Category?
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -155,6 +160,65 @@ struct NotificationSettingsView: View {
         updateCategorySettings(cfg, for: category)
     }
 
+    /// 09.25-01 (D-03/D-06/D-08): the never-suppressible safety trio's confirm-on-disable toggle — mirrors
+    /// `breakThroughBinding`'s double-inversion exactly. Built by wrapping `guardedToggle` around the
+    /// INVERTED ("disabled") boolean: turning the real toggle OFF drives `guardedToggle`'s "on" (confirm)
+    /// path via `safetyDisableOffCategory`, and turning it back ON drives its "off" (immediate) path. The
+    /// outer `Binding` always reads/writes the real `enabled` value — the inversion is purely internal
+    /// plumbing. Deliberately the `guardedToggle` + `.confirmationDialog` idiom, NOT the dose-path-ack
+    /// gate elsewhere in this app (D-08) — that pattern writes a therapy acknowledgment and would
+    /// breach the no-dose-path boundary this phase must not cross.
+    private func safetyEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
+        let offToggle = guardedToggle(
+            get: { !(categorySettings[category]?.enabled ?? true) },
+            set: { off in setSafetyEnabled(!off, for: category) },
+            requestConfirm: { safetyDisableOffCategory = category }
+        )
+        return Binding(
+            get: { !offToggle.wrappedValue },
+            set: { on in offToggle.wrappedValue = !on }
+        )
+    }
+
+    /// Write BOTH `enabled` and the paired `userAcknowledgedSafetyDisable` flag together, so `decide()`'s
+    /// AND-gate (D-03/D-07) always sees a coherent pair: disabling sets both `enabled = false` and
+    /// `userAcknowledgedSafetyDisable = true` (the explicit acknowledgment); re-enabling sets `enabled =
+    /// true` and clears the ack back to `nil` (so a later disable requires a fresh acknowledgment).
+    private func setSafetyEnabled(_ on: Bool, for category: NotificationBroker.Category) {
+        var cfg = categorySettings[category] ?? .defaults(for: category)
+        cfg.enabled = on
+        cfg.userAcknowledgedSafetyDisable = on ? nil : true
+        updateCategorySettings(cfg, for: category)
+    }
+
+    /// The confirm dialog's per-category title (D-06 UI-SPEC "Interaction Contract — Confirm Dialogs")
+    /// — each trio category's "what you're giving up" warning is category-specific, unlike the
+    /// break-through dialog's one generic templated sentence.
+    private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
+        switch category {
+        case .pumpDisconnect:      return Text("Turn off pump-disconnect alerts?")
+        case .cgmDataLoss:         return Text("Turn off CGM-data-loss alerts?")
+        case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
+        default:                  return Text("")
+        }
+    }
+
+    /// The trio's computed effective-state caption (D-06 UI-SPEC "Copy → Caption Mapping"), rendered
+    /// below each trio row.
+    @ViewBuilder
+    private func safetyEffectiveStateCaption(for category: NotificationBroker.Category) -> some View {
+        if categorySettings[category]?.enabled ?? true {
+            Text("On — always delivered, even during quiet hours or Do Not Disturb.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text("⚠ Off — you turned off this safety protection.")
+            }
+            .foregroundStyle(.red)
+        }
+    }
+
     /// The one write-through seam every per-category mutation in this view uses: updates the local
     /// mirror for immediate UI feedback, then persists via the Plan 01 seam so a fresh
     /// `NotificationRuntime` (including an out-of-process poster) honors it.
@@ -199,6 +263,36 @@ struct NotificationSettingsView: View {
                 Text("\(category.label)'s urgent/critical alerts will follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through. You can turn this back on anytime.")
             }
         }
+        // 09.25-01 (D-03/D-04/D-06): the trio's confirm-on-disable dialog. Each trio category has a
+        // category-specific title AND §13-DRAFT message body — driven by `safetyDisableDialogTitle`
+        // rather than the break-through dialog's fixed-title shape, since the "what you're giving up"
+        // warning genuinely differs per category.
+        .confirmationDialog(safetyDisableDialogTitle(for: safetyDisableOffCategory),
+                             isPresented: Binding(get: { safetyDisableOffCategory != nil },
+                                                  set: { if !$0 { safetyDisableOffCategory = nil } }),
+                             titleVisibility: .visible) {
+            if let category = safetyDisableOffCategory {
+                Button("Turn off protection", role: .destructive) {
+                    setSafetyEnabled(false, for: category)
+                    safetyDisableOffCategory = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { safetyDisableOffCategory = nil }
+        } message: {
+            switch safetyDisableOffCategory {
+            case .pumpDisconnect:
+                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
+                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime.")
+            case .cgmDataLoss:
+                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
+                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime.")
+            case .bolusReconciliation:
+                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
+                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime.")
+            default:
+                EmptyView()
+            }
+        }
     }
 
     // MARK: - Sections
@@ -239,21 +333,20 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// (b) App-generated, non-trio: the never-suppressible trio rendered always-on / non-interactive
-    /// (D-05) — its rows cannot be toggled from this screen, and the caption discloses the guarantee
-    /// rather than hiding it (mirrors Phase 8's honest-status rationale).
+    /// (b) App-generated, non-trio: 09.25-01 (D-03/D-06) — the never-suppressible trio is now
+    /// user-disableable behind a §13-DRAFT confirm-on-disable dialog (`safetyEnabledBinding`); the
+    /// caption below each row discloses the current effective state either way (mirrors Phase 8's
+    /// honest-status rationale — never hide the guarantee, or its absence).
     private var safetyAlertsSection: some View {
         Section {
             ForEach(trioCategories, id: \.self) { category in
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle(category.label, isOn: .constant(true))
-                        .disabled(true)
-                    Text("Always delivered — this is a safety alert and cannot be turned off.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(category.label, isOn: safetyEnabledBinding(for: category))
+                    safetyEffectiveStateCaption(for: category)
                 }
             }
         } header: { Text("Safety alerts") } footer: {
-            Text("Pump disconnected, CGM data loss, and bolus result always reach you — no setting, quiet hours, or budget can suppress them.")
+            Text("Pump disconnected, CGM data loss, and bolus result reach you even during quiet hours, Do Not Disturb, or a full daily budget — unless you explicitly turn one off above.")
         }
     }
 
