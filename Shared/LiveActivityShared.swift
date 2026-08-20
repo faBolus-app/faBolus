@@ -410,7 +410,12 @@ public enum LAMetrics {
     /// with the smallest absolute time distance to `now - 30min` (ties broken toward the earlier
     /// point via `min(by:)`'s stable first-match semantics).
     public static func delta(points: [WidgetSnapshot.Point], now: Date) -> Int? {
-        nil   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+        guard let first = points.first, let last = points.last else { return nil }
+        guard last.t.timeIntervalSince(first.t) >= 10 * 60 else { return nil }
+        let target = now.addingTimeInterval(-30 * 60)
+        let nearest = points.min { abs($0.t.timeIntervalSince(target)) < abs($1.t.timeIntervalSince(target)) }
+        guard let nearest else { return nil }
+        return last.mgdl - nearest.mgdl
     }
 
     /// The delta glyph, reusing the SAME Unicode trend-arrow set already carried on `trendArrow`
@@ -418,7 +423,13 @@ public enum LAMetrics {
     /// full up arrow, `> 0` (but `< 10`) is up-right, `== 0` is flat, `< 0` (but `> -10`) is
     /// down-right, `<= -10` is a full down arrow.
     public static func deltaGlyph(_ d: Int) -> String {
-        ""   // RED stub (09.26-03 Task 1) — real mapping lands in the GREEN commit.
+        switch d {
+        case 10...: return "↑"
+        case 1...9: return "↗"
+        case 0: return "→"
+        case -9...(-1): return "↘"
+        default: return "↓"   // <= -10
+        }
     }
 
     /// Time-in-range percent (rounded to the nearest whole percent) over `points`, count-based on the
@@ -428,7 +439,9 @@ public enum LAMetrics {
     /// via the drift-guarded `WidgetGlucoseThresholds` mirror instead of a second literal 70/180.
     /// Empty input → 0 (never a divide-by-zero crash, never a fabricated 100%).
     public static func tir(points: [WidgetSnapshot.Point]) -> Int {
-        0   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+        guard !points.isEmpty else { return 0 }
+        let inRange = points.filter { $0.mgdl >= WidgetGlucoseThresholds.low && $0.mgdl <= WidgetGlucoseThresholds.high }.count
+        return Int((Double(inRange) / Double(points.count) * 100).rounded())
     }
 
     /// The composite top-right slot copy for `field` (one of `LATopRightFieldVocabulary.all`), or
@@ -442,7 +455,33 @@ public enum LAMetrics {
     public static func topRightText(
         field: String, state: FaBolusGlucoseAttributes.ContentState, now: Date
     ) -> String? {
-        nil   // RED stub (09.26-03 Task 1) — real derivation lands in the GREEN commit.
+        func iobText() -> String { String(format: "%.2f U", state.iobUnits) }
+        func deltaClause() -> String? {
+            guard let d = delta(points: state.recentPoints, now: now) else { return nil }
+            let sign = d > 0 ? "+" : ""
+            return "\(sign)\(d)\(deltaGlyph(d)) 30m"
+        }
+        switch field {
+        case "iob":
+            return iobText()
+        case "delta":
+            return deltaClause()
+        case "tir":
+            return "\(tir(points: state.recentPoints))% TIR"
+        case "controlIQZone":
+            return state.ciqZone
+        case "battery":
+            return "\(state.batteryPercent)%"
+        case "reservoir":
+            return String(format: "%.0f U", state.reservoirUnits)
+        case "none":
+            return nil
+        case "iobDelta":
+            fallthrough
+        default:
+            guard let clause = deltaClause() else { return iobText() }
+            return "\(iobText()) · \(clause)"
+        }
     }
 }
 
