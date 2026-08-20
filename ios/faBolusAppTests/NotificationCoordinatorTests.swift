@@ -261,6 +261,29 @@ import UserNotifications
         #expect(!acked.deliver && acked.reason == .categoryDisabled)
     }
 
+    /// 09.25-02 Task 1 (D-01/D-02): pure caption helper pins the exact UI-SPEC copy for the
+    /// break-through row's three effective-state branches — the direct fix for the D-01 override
+    /// ambiguity (a disabled category's break-through row must read as moot, not silently ignored).
+    @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
+                == "On — this category's urgent/critical alerts always break through quiet hours and limits.")
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
+                == "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below.")
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
+                == "Off — category is disabled, so break-through has no effect.")
+        // `allow` is moot once the master is off — same string regardless of its value.
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: false)
+                == "Off — category is disabled, so break-through has no effect.")
+    }
+
+    /// 09.25-02 Task 1 (D-06): the silence-pump-alarms row's effective-state caption is non-nil ONLY
+    /// when the pump section's master is off (the row has no effect while `pumpAlert` is disabled).
+    @Test func silenceMirrorCaptionOnlyWhenPumpDisabled() {
+        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
+                == "No effect — pump alerts are disabled.")
+        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
