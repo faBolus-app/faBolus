@@ -243,7 +243,12 @@ struct CgmStatusView: View {
                 Spacer()
                 Text(Self.classificationLabel(row.classification))
                     .font(.caption)
-                    .foregroundStyle(row.classification == .activeFailover ? Color.green : Color.secondary)
+                    // WR-02 (09.24 review): was the raw system `Color.green`, which rendered a
+                    // visibly different "active" green than the design-system `AppTheme.inRange`
+                    // used a few lines away on this same screen family (CgmStatusView's own "Last
+                    // test result" success icon, and SettingsView's statusSubtitleColor). Standardize
+                    // on ONE green for "active/live" across the screen.
+                    .foregroundStyle(row.classification == .activeFailover ? AppTheme.inRange : Color.secondary)
             }
             if let s = row.statusCaseName {
                 Text(Self.rowDetail(statusCaseName: s, ageSeconds: row.ageSeconds))
