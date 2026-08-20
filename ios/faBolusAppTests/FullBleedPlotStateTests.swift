@@ -72,4 +72,22 @@ struct FullBleedPlotStateTests {
         let future = WidgetSnapshot.Point(t: now.addingTimeInterval(600), mgdl: 120)
         #expect(FullBleedPlotState.classify(points: [future], plotRangeHours: 2, now: now) == .empty)
     }
+
+    /// Phase 09.26 (WR-03 review fix) — pins the exact "all points aged out of the window" scenario
+    /// the view-layer fix (`FullBleedGlucosePlot`'s `curvePoints.isEmpty` fallback) depends on:
+    /// `classify` operates on the UNWINDOWED valid span (only future points are excluded before
+    /// classification — never a "points older than `now - plotRangeHours`" filter), so a
+    /// long-enough CGM outage can leave `classify` reporting `.full` even though EVERY point is now
+    /// older than `now - plotRangeHours` (i.e. the view's own windowed `curvePoints` would be
+    /// empty). `classify` itself is correct here (it is, by design, not window-aware — see its own
+    /// doc comment) — this test documents why the render layer needs its own additional
+    /// `curvePoints.isEmpty` guard rather than trusting `.full`/`.partial` alone to mean "there is
+    /// something in-window to draw."
+    @Test func allPointsAgedOutOfTheSelectedWindowStillClassifiesAsFull() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        // Both points are 8h+ stale — entirely outside a 2h selected window (windowStart = now-2h) —
+        // yet their mutual span (exactly 2h) still meets the `.full` boundary.
+        let points = [pt(36_000, from: now), pt(28_800, from: now)]
+        #expect(FullBleedPlotState.classify(points: points, plotRangeHours: 2, now: now) == .full)
+    }
 }

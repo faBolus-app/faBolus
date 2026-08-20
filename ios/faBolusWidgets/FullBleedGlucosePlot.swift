@@ -149,10 +149,28 @@ struct FullBleedGlucosePlot: View {
                     }
                     collectingHistoryHint
                 case .partial:
-                    curveLayer(in: size)
-                    partialGapOverlay(in: size)
+                    // Phase 09.26 (WR-03 review fix): `plotState` classifies against the UNWINDOWED
+                    // valid span (only future points excluded), while `curvePoints` below is further
+                    // restricted to `[windowStart, now]`. A long-enough CGM outage can leave the
+                    // unwindowed span still >= the classify boundary (so `.partial`/`.full` is
+                    // reported) while every point has aged OUT of the window `curveLayer`/
+                    // `partialGapOverlay` actually draw from — without this guard that combination
+                    // rendered a fully blank canvas (no dot/line/hint at all). Fall back to the SAME
+                    // "Collecting history…" hint the `.empty`/`.single` branches already use whenever
+                    // there is nothing left in-window to draw, mirroring `.single`'s own
+                    // `curvePoints.last ?? validPoints.last` defensive fallback.
+                    if curvePoints.isEmpty {
+                        collectingHistoryHint
+                    } else {
+                        curveLayer(in: size)
+                        partialGapOverlay(in: size)
+                    }
                 case .full:
-                    curveLayer(in: size)
+                    if curvePoints.isEmpty {
+                        collectingHistoryHint
+                    } else {
+                        curveLayer(in: size)
+                    }
                 }
                 // Phase 09.26-05 (D-06) — ALL chrome forced off under always-on, regardless of the
                 // user's own toggles (reduce visual noise + power draw); the load-bearing facts
