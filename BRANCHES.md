@@ -89,6 +89,38 @@ Per §1.2: `deprecated` was cut first (before any merge, so it captures the pre-
 round-3 fixes merged to `main`, then `experimental` was created from the fixed `main`. Creating
 `experimental` from a pre-fix `main` would have carried the P0s into it.
 
+## §1.2b — v0.5.0 narrow-main topology (Phase 0, 2026-08-20)
+
+The v0.5.0 "narrow-main" milestone narrows `main` by SUBTRACTION from the full pre-narrow baseline. Phase 0
+established the recoverable baseline + the per-surface sub-branch topology across the three-repo lockstep.
+
+**Pre-narrow baseline tags** (annotated; the recoverable full-surface snapshot each sub-branch is cut from):
+
+| Repo | Operative tag | At | Superseded |
+|------|---------------|----|------------|
+| faBolus | `pre-narrow/2026-08-20` | `main` @ `618dd29` | `pre-narrow/2026-08-18` (lightweight, ~130 commits stale — predated the 09.24–09.29 sync + the pump-disconnect fix; left untouched) |
+| TandemKit | `pre-narrow/2026-08-20` | `main` @ `89c208e` | `pre-narrow/2026-08-18` (lightweight; left untouched) |
+| faBolusGarmin | `pre-narrow/2026-08-20` | `main` @ `87ca1c1` | `pre-narrow/2026-08-18` (lightweight; left untouched) |
+
+**Per-surface sub-branches — namespace `dev/<surface>`, NOT `experimental/<surface>`** (owner, 2026-08-20):
+git cannot nest `experimental/<surface>` under the existing `experimental` integration branch (ref
+file-vs-directory conflict), so per-surface branches live under a fresh `dev/` namespace; the `experimental`
+all-features integration branch is unchanged. Each sub-branch is code-identical to the baseline at cut time
+(no surface relocated in Phase 0); the owning per-surface phase (1–9) later moves its surface onto it.
+
+| Repo | Sub-branches (`dev/…`) | Count |
+|------|------------------------|-------|
+| faBolus | `mac`, `phone-remote`, `watch-remote`, `watch-host`, `nudge`, `cgm-extra`, `mobi` | 7 |
+| faBolusGarmin | `garmin-devices` | 1 |
+| TandemKit | — (none: the protocol layer is pump-model-agnostic and ships `.mobi`-tagged messages unconditionally; Mobi removal is faBolus-side capability surgery) | 0 |
+
+**Branch-aware CI (TOPO-04):** `on.push.branches` widened to include `'dev/**'` on faBolus + faBolusGarmin so a
+per-surface sub-branch push fires CI (the `resolve-refs`/`fbref` resolver already matches any branch name —
+the gap was only the trigger key). **TandemKit's `ci.yml` trigger widening is DEFERRED** — TandemKit has no
+`dev/*` sub-branch (so it is non-functional now) and TandemKit changes go via PR → merge-after-green-CI (kit
+discipline); open a kit PR if TandemKit ever needs a `dev/*` branch. `watch-host` builds Simulator-only
+(hardware → Phase-11 bench).
+
 ## §1.3 — versioning and the cross-repo contract
 
 This is the **canonical** version + cross-repo contract for all three code repos. `AGENTS.md` and
