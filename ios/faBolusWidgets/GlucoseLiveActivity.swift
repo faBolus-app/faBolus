@@ -335,9 +335,20 @@ private struct LockScreenLiveActivityView: View {
                 ceilingMgdl: context.state.plotCeilingMgdl,
                 currentGlucose: context.state.glucose,
                 isStale: context.isStale)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
                 fullBleedTopLeadingOverlay
                 Spacer(minLength: 0)
+                // Bottom row (D-13, 09.26-UI-SPEC.md "Bottom row") — the retained customizable
+                // field-selection composer, rendered ABOVE the always-available action row.
+                if !fullBleedBottomRowFields.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(fullBleedBottomRowFields, id: \.id) { f in
+                            if let chip = WidgetUI.chip(for: f.id, context.state) {
+                                PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
+                            }
+                        }
+                    }
+                }
                 // D-18 (05-05) — always available, unchanged from Classic.
                 LAActionRow(context: context)
             }
@@ -347,6 +358,23 @@ private struct LockScreenLiveActivityView: View {
         .overlay(alignment: .topTrailing) { fullBleedTopTrailingOverlay }
         .padding(16)
         .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    /// The full-bleed bottom row's composed fields (D-13, 09.26-UI-SPEC.md "Bottom row") — the SAME
+    /// `LiveActivityComposer.compose(...)` the Classic style uses, minus the structural "glucose"/
+    /// "sparkline" pseudo-ids (BG is top-left, the curve is the background — always shown, not
+    /// optional composed fields in full-bleed) and minus whatever id is currently bound to the
+    /// top-right slot (dedupe — never show the same fact twice). Empty selection yields an empty
+    /// bottom row (NOT the card-wide "minimal" fallback — BG + curve already occupy the card, so
+    /// "minimal" is filtered defensively too, though by construction of `hasGlucoseReading` gating
+    /// entry into `fullBleedBody` it can't actually appear here alongside other fields).
+    private var fullBleedBottomRowFields: [LAField] {
+        let composed = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+        return composed.filter {
+            $0.id != "glucose" && $0.id != "sparkline" && $0.id != "minimal"
+                && $0.id != context.state.topRightField
+        }
     }
 
     /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
