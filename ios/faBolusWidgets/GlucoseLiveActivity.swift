@@ -299,7 +299,66 @@ private struct LAActionRow: View {
 private struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
 
+    /// Phase 09.26-01 tracer (D-11/D-21) — the additive style branch. "classic" (or any
+    /// unrecognized/legacy token, decode-defaulted to "fullBleed" upstream but re-checked here
+    /// defensively) renders the EXISTING body verbatim, extracted below as `classicBody` so the
+    /// diff stays a wrapper, not a rewrite of the Classic layout (09.26-01-PLAN.md verification:
+    /// "Classic style renders byte-identically"). Full-bleed only takes over once there is at least
+    /// one glucose fact to plot — the no-reading `isMinimalFallback` state stays SHARED and unchanged
+    /// between styles (D-11: "no curve is drawn without at least one fact").
     var body: some View {
+        if context.state.liveActivityStyle == "fullBleed" && hasGlucoseReading {
+            fullBleedBody
+        } else {
+            classicBody
+        }
+    }
+
+    private var hasGlucoseReading: Bool {
+        let composed = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+        return composed.first?.id == "glucose"
+    }
+
+    // MARK: - Full-bleed (D-11/D-16/D-17, Phase 09.26-01 tracer)
+
+    /// Z-order back→front (09.26-UI-SPEC.md "Lock Screen Expanded"): system material background,
+    /// `FullBleedGlucosePlot` filling the content area, then the top-left BG overlay + the always-
+    /// available action row. Chrome (axis lines/ticks/range-lines), the top-right selectable slot,
+    /// and the bottom customizable-fields row are later plans — this tracer proves the vertical
+    /// slice end-to-end, not the full per-presentation layout.
+    @ViewBuilder private var fullBleedBody: some View {
+        ZStack(alignment: .topLeading) {
+            FullBleedGlucosePlot(
+                points: context.state.recentPoints,
+                floorMgdl: context.state.plotFloorMgdl,
+                ceilingMgdl: context.state.plotCeilingMgdl,
+                currentGlucose: context.state.glucose,
+                isStale: context.isStale)
+            VStack(alignment: .leading, spacing: 0) {
+                fullBleedTopLeadingOverlay
+                Spacer(minLength: 0)
+                // D-18 (05-05) — always available, unchanged from Classic.
+                LAActionRow(context: context)
+            }
+        }
+        .padding(16)
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
+    /// directly below it — `GlucoseNumeralView(role: .display)` already renders exactly this
+    /// (angled Unicode arrow + relative-age caption), reused verbatim rather than re-derived. A
+    /// `.thinMaterial` scrim keeps the block legible over the busy curve.
+    private var fullBleedTopLeadingOverlay: some View {
+        GlucoseNumeralView(context: context, role: .display)
+            .padding(8)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - Classic (D-21, unchanged)
+
+    @ViewBuilder private var classicBody: some View {
         let composed = LiveActivityComposer.compose(
             selection: context.state.selectedFields, state: context.state, region: .lockScreen)
         let hasGlucose = composed.first?.id == "glucose"
