@@ -224,6 +224,43 @@ import UserNotifications
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
     }
 
+    /// 09.25-01 Task 1 (tracer, D-03/D-06/D-08/D-09): the safety trio becomes user-disableable behind an
+    /// acknowledged-disable flag. This is the end-to-end slice: write the disable through
+    /// `NotificationRuntime.updateSettings` on an isolated store, then prove a FRESH runtime + the real
+    /// `NotificationPoster` honors it — while an untouched trio category still delivers.
+    @Test func acknowledgedSafetyDisablePersistsAndIsHonoredByAFreshRuntimeAndTheRealPoster() {
+        let store = isolatedStore(#function)
+        let rt1 = NotificationRuntime(store: store)
+        var cfg = rt1.settings[.pumpDisconnect] ?? .defaults(for: .pumpDisconnect)
+        cfg.enabled = false
+        cfg.userAcknowledgedSafetyDisable = true
+        rt1.updateSettings(cfg, for: .pumpDisconnect)
+        // A FRESH runtime on the same App-Group store (a relaunch, or an out-of-process poster).
+        let rt2 = NotificationRuntime(store: store)
+        let disabled = NotificationPoster.post(msg(.pumpDisconnect, key: "pd1"), runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(!disabled.deliver && disabled.reason == .categoryDisabled,
+               "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
+        // cgmDataLoss (untouched) still delivers on the same runtime.
+        let untouched = NotificationPoster.post(msg(.cgmDataLoss, key: "cgm1"), runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(untouched.deliver, "an untouched trio category is unaffected by another category's disable")
+    }
+
+    /// decide(): `!enabled` alone must NEVER suppress a trio — only the paired acknowledgment does.
+    @Test func decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory() {
+        typealias B = NotificationBroker
+        // enabled==false, ack unset (nil) → still delivers.
+        let notAcked = B.decide(msg(.pumpDisconnect),
+                                settings: [.pumpDisconnect: B.CategorySettings(enabled: false)],
+                                state: B.State(), now: at(9, 0))
+        #expect(notAcked.deliver, "the ack flag is the mandatory gate — !enabled alone must never suppress a trio")
+        // enabled==false, ack==true → suppressed.
+        var ackedCfg = B.CategorySettings(enabled: false)
+        ackedCfg.userAcknowledgedSafetyDisable = true
+        let acked = B.decide(msg(.pumpDisconnect), settings: [.pumpDisconnect: ackedCfg],
+                             state: B.State(), now: at(9, 0))
+        #expect(!acked.deliver && acked.reason == .categoryDisabled)
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
