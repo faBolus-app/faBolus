@@ -110,4 +110,52 @@ struct CgmStatusSurfaceTests {
         #expect(CgmStatusView.rowDetail(statusCaseName: "connected", ageSeconds: 180).contains("3 min ago"))
         #expect(CgmStatusView.rowDetail(statusCaseName: "searching", ageSeconds: nil).contains("no reading"))
     }
+
+    // MARK: - WR-01/IN-02/IN-03 (09.24 review): shared Section-2/Section-3 subtitle basis
+    //
+    // `CgmSettingsView.currentSelectionSubtitle` (SettingsView.swift) and `configureAndTestSubtitle`
+    // must never disagree about whether a source is selected for the same underlying state. Before
+    // the fix, Section 3 read the raw, unvalidated `GlucoseSourceRegistry.selectedId()` while
+    // Section 2 validated against `GlucoseSourceRegistry.selected()` — so a stale/invalid persisted
+    // id made the two sections contradict each other. These tests exercise the shared pure helper
+    // both call sites now go through, `CgmStatusView.selectionStatusSubtitle`, directly — no live
+    // view, no live `AppModel`.
+
+    /// The core WR-01 regression: a `nil` selection (what `GlucoseSourceRegistry.selected()` returns
+    /// both for "nothing chosen" AND for a stale/invalid persisted id) must read as "not selected" —
+    /// the same family of message Section 2's `configureAndTestSubtitle` shows for `nil` — and must
+    /// NEVER render as "Selected —" text, regardless of what a stale armed/provenance state claims.
+    @Test func selectionStatusSubtitleNeverContradictsNotSelectedForANilOrStaleSelection() {
+        let result = CgmStatusView.selectionStatusSubtitle(
+            selected: nil,
+            armedId: "healthkit",   // stale: still "armed" per old state, but no longer selectable
+            provenance: .failover(sourceID: "healthkit", reason: .pumpStale))
+
+        #expect(result.text == "Pump only — no failover source selected")
+        #expect(!result.text.localizedCaseInsensitiveContains("selected —"),
+                "a nil (stale/invalid) selection must never render as 'Selected — …' — the WR-01 contradiction")
+        #expect(result.isActive == false)
+    }
+
+    @Test func selectionStatusSubtitleReflectsActiveFailoverForAValidSelection() {
+        let result = CgmStatusView.selectionStatusSubtitle(
+            selected: (id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)"),
+            armedId: "dexcom-g7-ble",
+            provenance: .failover(sourceID: "dexcom-g7-ble", reason: .pumpStale))
+
+        #expect(result.text == CgmStatusView.classificationLabel(.activeFailover))
+        #expect(result.isActive == true)
+    }
+
+    /// F-18: a selected-but-not-yet-armed source must read as "Selected — reopen the app to arm",
+    /// distinct from both the active-failover and the nil/not-selected cases above.
+    @Test func selectionStatusSubtitleReflectsSelectedNotArmed() {
+        let result = CgmStatusView.selectionStatusSubtitle(
+            selected: (id: "dexcom-share", name: "Dexcom Share (cloud, last resort)"),
+            armedId: "dexcom-g7-ble",
+            provenance: .failover(sourceID: "dexcom-g7-ble", reason: .pumpStale))
+
+        #expect(result.text == CgmStatusView.classificationLabel(.selectedNotArmed))
+        #expect(result.isActive == false)
+    }
 }

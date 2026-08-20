@@ -112,4 +112,32 @@ struct LiveActivityFieldSelectionTests {
         #expect(!result.contains(LAField(id: "glucose")))
         #expect(!result.contains(LAField(id: "minimal")))
     }
+
+    // MARK: - Phase 09.26-03 (D-13) — 'delta'/'tir' additive vocabulary (ADDITIVE, existing cases
+    // above stay unchanged per D-07/D-21: the composer is a generic id-agnostic priority/capacity
+    // rule, so the new opt-in ids compose/survive-capacity exactly like any pre-existing id).
+
+    /// 'delta' and 'tir' compose like any other selected field, in priority order.
+    @Test func deltaAndTirComposeLikeAnyOtherSelectedField() {
+        let s = state()
+        let selection = ["glucose", "delta", "tir"]
+        let result = LiveActivityComposer.compose(selection: selection, state: s, region: .lockScreen)
+        #expect(result.map(\.id) == selection)
+    }
+
+    /// 'delta'/'tir' survive a capacity-constrained region's whole-field-drop-by-priority rule
+    /// exactly like any pre-existing id — no special-casing anywhere in the composer.
+    @Test func deltaAndTirSurviveCapacityConstrainedOverflowByPriorityLikeAnyOtherId() {
+        let s = state()
+        let selection = ["glucose", "iob", "delta", "tir", "basal"]
+        let result = LiveActivityComposer.compose(selection: selection, state: s, region: .expanded)
+        #expect(result.map(\.id) == ["glucose", "iob", "delta", "tir", "basal"])   // capacity 5, exact fit
+    }
+
+    /// A capacity-1 region picks 'delta'/'tir' as the sole top-priority field just like any other id.
+    @Test func deltaOrTirAsSoleTopPriorityFieldInACapacityOneRegion() {
+        let s = state()
+        #expect(LiveActivityComposer.compose(selection: ["delta", "iob"], state: s, region: .compactLeading).map(\.id) == ["delta"])
+        #expect(LiveActivityComposer.compose(selection: ["tir", "iob"], state: s, region: .minimal).map(\.id) == ["tir"])
+    }
 }

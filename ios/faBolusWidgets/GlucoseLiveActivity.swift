@@ -17,40 +17,26 @@ import faBolusDesign
 // Portions adapted from Loop (github.com/LoopKit/Loop), MIT License.
 // Copyright (c) 2015 Nathan Racklyeft. Copyright (c) 2016 LoopKit Authors.
 //
-// The iOS-18 CarPlay `.small` gating below (`@available(iOS 18.0, *)` branch reading
-// `@Environment(\.activityFamily)`) adapts Loop's `GlucoseLiveActivityConfiguration`
-// `AdaptiveLockScreenView` availability-branch pattern — content is faBolus-original, not copied,
-// and none of Loop's named color assets / `SwiftCharts` are used (05-UI-SPEC.md Registry Safety).
+// The CarPlay `.small` gating below (reading `@Environment(\.activityFamily)`) adapts Loop's
+// `GlucoseLiveActivityConfiguration` `AdaptiveLockScreenView` split pattern — content is
+// faBolus-original, not copied, and none of Loop's named color assets / `SwiftCharts` are used
+// (05-UI-SPEC.md Registry Safety).
 
 /// The glucose Live Activity + Dynamic Island (D-01). Every region below renders through
 /// `LiveActivityComposer.compose(selection:state:region:)` (05-04, D-17a) so the Lock Screen /
 /// Dynamic Island / CarPlay layout adapts to ANY 0..N user-selected field subset, with a documented
 /// empty-selection fallback — never a fixed field set.
 ///
-/// `Widget.body` has no `@available`-branching result builder (unlike `View`/`WidgetBundle`), so an
-/// iOS-18-only `.supplementalActivityFamilies` call cannot live in a conditional branch of ONE
-/// widget's `body` — the CarPlay `.small` presentation instead ships as a SEPARATE `Widget` conformer
-/// (`GlucoseLiveActivityCarPlay`, `@available(iOS 18.0, *)`), and `FaBolusWidgetBundle` picks exactly
-/// one of the two via `if #available` at the BUNDLE level, which `WidgetBundleBuilder` DOES support.
-/// Both widgets share the identical Dynamic Island region tree (`glucoseDynamicIslandConfiguration`)
-/// so there is no duplicated region logic between the iOS-17 floor and the iOS-18 CarPlay variant.
+/// 09.26-06 (D-08): `faBolusWidgets`' deployment target is unconditionally 18.0 (`project.yml`), the
+/// SAME floor as the host app — there is no iOS-17 build of this extension to keep a `@available`
+/// split for. `CarPlayGatedView` below (which reads `@Environment(\.activityFamily)`, an iOS-18
+/// environment key) and `.supplementalActivityFamilies([.small])` are therefore called
+/// UNCONDITIONALLY from this single `Widget` conformer — the previous two-widget split
+/// (`GlucoseLiveActivity` iOS-17-floor + a separate `@available(iOS 18.0, *) GlucoseLiveActivityCarPlay`,
+/// picked via a bundle-level `if #available`) existed only to work around `Widget.body` having no
+/// `@available`-branching result builder for a MIXED-floor extension; with a single 18.0 floor for the
+/// whole extension that mixed-floor problem no longer exists, so the split collapsed into one widget.
 struct GlucoseLiveActivity: Widget {
-    var body: some WidgetConfiguration {
-        ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
-            LockScreenLiveActivityView(context: context)
-                .widgetURL(FaBolusDeepLink.open)
-        } dynamicIsland: { context in
-            glucoseDynamicIslandConfiguration(context: context)
-        }
-    }
-}
-
-/// CarPlay `.small` presentation (iOS 18+, D-10) — identical Lock Screen + Dynamic Island content to
-/// `GlucoseLiveActivity` above, plus `.supplementalActivityFamilies([.small])` so the SAME Activity
-/// additionally renders on CarPlay. `.medium` is NOT built (D-10: `.small` ONLY for v1). Display-only
-/// — no CarPlay entitlement, no CarPlay app.
-@available(iOS 18.0, *)
-struct GlucoseLiveActivityCarPlay: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FaBolusGlucoseAttributes.self) { context in
             CarPlayGatedView(context: context)
@@ -62,57 +48,232 @@ struct GlucoseLiveActivityCarPlay: Widget {
     }
 }
 
-/// The Dynamic Island region tree, factored out so it is written exactly once and shared by both
-/// `GlucoseLiveActivity` (iOS 17 floor) and `GlucoseLiveActivityCarPlay` (iOS 18+) — see the type
-/// doc comment above for why this can't be a single `if #available` branch inside one widget's body.
+/// The Dynamic Island region tree, factored out so it is written exactly once and shared by every
+/// presentation of this single widget (Lock Screen, Dynamic Island, and the CarPlay `.small`
+/// supplemental family all resolve through the same `ActivityConfiguration`'s `dynamicIsland` closure).
 @MainActor
 private func glucoseDynamicIslandConfiguration(
     context: ActivityViewContext<FaBolusGlucoseAttributes>
 ) -> DynamicIsland {
     DynamicIsland {
+        // Phase 09.26-05 (D-06/UI-SPEC "Dynamic Island — expanded") — EACH expanded sub-region
+        // branches on `liveActivityStyle`. "classic" (or unrecognized) renders the EXISTING
+        // composer-driven tree verbatim; "fullBleed" distributes per the UI-SPEC's 4-slot table
+        // (center = BG+arrow, leading = time-since + 1st bottom-row field, trailing = top-right
+        // slot + 2nd bottom-row field, bottom = the 44pt plot + compact action row).
         DynamicIslandExpandedRegion(.leading) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(composed.dropFirst().prefix(2)), id: \.id) { field in
-                    ComposedFieldView(context: context, field: field, role: .label)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedLeading(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(composed.dropFirst().prefix(2)), id: \.id) { field in
+                        ComposedFieldView(context: context, field: field, role: .label)
+                    }
                 }
             }
         }
         DynamicIslandExpandedRegion(.trailing) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            VStack(alignment: .trailing, spacing: 8) {
-                ForEach(Array(composed.dropFirst(3).prefix(2)), id: \.id) { field in
-                    ComposedFieldView(context: context, field: field, role: .label)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedTrailing(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                VStack(alignment: .trailing, spacing: 8) {
+                    ForEach(Array(composed.dropFirst(3).prefix(2)), id: \.id) { field in
+                        ComposedFieldView(context: context, field: field, role: .label)
+                    }
                 }
             }
         }
         DynamicIslandExpandedRegion(.center) {
-            let composed = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .expanded)
-            if let first = composed.first {
-                ComposedFieldView(context: context, field: first, role: .display)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedCenter(context: context)
+            } else {
+                let composed = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .expanded)
+                if let first = composed.first {
+                    ComposedFieldView(context: context, field: first, role: .display)
+                }
             }
         }
         DynamicIslandExpandedRegion(.bottom) {
-            let bottom = LiveActivityComposer.compose(
-                selection: context.state.selectedFields, state: context.state, region: .bottom)
-            VStack(spacing: 6) {
-                if bottom.first?.id == "sparkline" {
-                    Sparkline(points: context.state.recentPoints).frame(height: 40)
+            if context.state.liveActivityStyle == "fullBleed" {
+                fullBleedDIExpandedBottom(context: context)
+            } else {
+                let bottom = LiveActivityComposer.compose(
+                    selection: context.state.selectedFields, state: context.state, region: .bottom)
+                VStack(spacing: 6) {
+                    if bottom.first?.id == "sparkline" {
+                        Sparkline(points: context.state.recentPoints).frame(height: 40)
+                    }
+                    LAActionRow(context: context, compact: true)
                 }
-                LAActionRow(context: context, compact: true)
             }
         }
     } compactLeading: {
+        // INVARIANT (D-06/09.26-UI-SPEC "compact leading/trailing + minimal"): these capacity-1
+        // regions render byte-identically regardless of `liveActivityStyle` — too small (~20x20pt)
+        // for a legible curve, so full-bleed's differentiator (the plot) is reserved for the
+        // surfaces with room for it (DI expanded + Lock Screen expanded). Do NOT branch this on
+        // style; that would be "fixing" a deliberate design decision, not a bug.
         CompactLeadingView(context: context)
     } compactTrailing: {
+        // Style-agnostic — see `compactLeading` invariant comment above.
         CompactTrailingView(context: context)
     } minimal: {
+        // Style-agnostic — see `compactLeading` invariant comment above.
         MinimalRegionView(context: context)
     }
     .widgetURL(FaBolusDeepLink.open)
+}
+
+// MARK: - DI-expanded full-bleed distribution (Phase 09.26-05, D-06/D-16/D-17)
+
+/// `.center` (09.26-UI-SPEC "Dynamic Island — expanded" table): the BG numeral + trend arrow ONLY —
+/// no time-since caption or band here (those live in `.leading`/aren't shown at this scale; DI has
+/// no room for a second stacked line under `.center` the way the Lock Screen's top-left block does).
+/// Zone-colored, greys/drops the arrow when stale via the SAME `context.glucoseColor`/`context.arrow`
+/// extension every other presentation reuses verbatim (D-04 — no second staleness rule).
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedCenter(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+        Text(context.glucoseText)
+            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .foregroundStyle(context.glucoseColor)
+        if !context.arrow.isEmpty {
+            Text(context.arrow)
+                .font(.title3)
+                .foregroundStyle(context.glucoseColor)
+        }
+    }
+}
+
+/// `.leading` (capacity 2): 1) the time-since-CGM caption (D-16, relocated here — DI's `.center` has
+/// no room for a second stacked line, unlike the Lock Screen's "directly below the BG" placement);
+/// 2) the first full-bleed customizable bottom-row field (`composeFullBleedBottomRowFields`, shared
+/// with the Lock Screen bottom row).
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedLeading(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+        if let d = context.state.glucoseDate {
+            Text(d, style: .relative).font(.caption2)
+                .foregroundStyle(context.isStale ? .orange : .secondary)
+        }
+        if let field = composeFullBleedBottomRowFields(context: context).first {
+            ComposedFieldView(context: context, field: field, role: .label)
+        }
+    }
+}
+
+/// Phase 09.26 (WR-01 review fix) — the top-right slot's staleness tint, applied at BOTH render
+/// call sites (Lock Screen `fullBleedTopTrailingOverlay` and Dynamic Island
+/// `fullBleedDIExpandedTrailing`) so the corner never contradicts the greyed-out BG numeral/arrow/
+/// IOB chip beside it on the same card. Mirrors `WidgetUI.iobChip`'s own `iobStale` tint exactly for
+/// the `"iob"`/`"iobDelta"` fields (the only ones carrying their own dedicated staleness flag), and
+/// falls back to the card-wide `context.isStale` → `.secondary` treatment (mirroring the
+/// arrow/band-indicator greying) for every other field/composite. This makes `LAMetrics
+/// .topRightText`'s doc comment ("the caller applies tint via the same `iobStale` flag") true.
+private func topRightTint(
+    field: String, state: FaBolusGlucoseAttributes.ContentState, isStale: Bool
+) -> Color {
+    if (field == "iob" || field == "iobDelta") && state.iobStale {
+        return AppTheme.low
+    }
+    return isStale ? .secondary : .primary
+}
+
+/// `.trailing` (capacity 2): 1) the top-right selectable slot's content (D-05/D-15) — the SAME
+/// `LAMetrics.topRightText` derivation the Lock Screen top-right overlay uses; 2) the second
+/// full-bleed customizable bottom-row field.
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedTrailing(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(alignment: .trailing, spacing: 8) {
+        if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
+            Text(text)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(topRightTint(
+                    field: context.state.topRightField, state: context.state, isStale: context.isStale))
+        }
+        if let field = composeFullBleedBottomRowFields(context: context).dropFirst().first {
+            ComposedFieldView(context: context, field: field, role: .label)
+        }
+    }
+}
+
+/// `.bottom`: `FullBleedGlucosePlot` at the expanded-island width, 44pt tall (up from Classic's
+/// fixed 40pt `Sparkline`) — passed the SAME parameter surface (chrome toggles, plot range, floor/
+/// ceiling) the Lock Screen full-bleed body passes, so a Settings change is visible on EVERY
+/// full-bleed presentation, not just the Lock Screen — plus the always-available compact action row
+/// beneath it (D-18, unchanged from Classic's `.bottom`).
+///
+/// Phase 09.26-07 (D-22): when `showBolusShortcut` is on, the compact `LABolusShortcutPill` renders
+/// LEADING of the compact action row, which itself passes `showOpenBolus: false` — the pill becomes
+/// the single bolus entry point here too (de-dup), matching the Lock Screen full-bleed body.
+@MainActor
+@ViewBuilder
+private func fullBleedDIExpandedBottom(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> some View {
+    VStack(spacing: 6) {
+        FullBleedGlucosePlot(
+            points: context.state.recentPoints,
+            floorMgdl: context.state.plotFloorMgdl,
+            ceilingMgdl: context.state.plotCeilingMgdl,
+            currentGlucose: context.state.glucose,
+            isStale: context.isStale,
+            plotRangeHours: context.state.plotRangeHours,
+            showXAxisLine: context.state.showXAxisLine,
+            showYAxisLine: context.state.showYAxisLine,
+            showXAxisTicks: context.state.showXAxisTicks,
+            showYAxisTicks: context.state.showYAxisTicks,
+            showRangeLines: context.state.showRangeLines)
+            .frame(height: 44)
+        HStack(spacing: 8) {
+            if context.state.showBolusShortcut {
+                LABolusShortcutPill(compact: true)
+            }
+            LAActionRow(context: context, compact: true, showOpenBolus: false)
+        }
+    }
+}
+
+/// The full-bleed bottom row's composed fields (D-13, 09.26-UI-SPEC.md "Bottom row") — shared by the
+/// Lock Screen bottom row AND the DI-expanded `.leading`/`.trailing` full-bleed slots above (09.26-05).
+/// The SAME `LiveActivityComposer.compose(...)` the Classic style uses, minus the structural
+/// "glucose"/"sparkline"/"minimal" pseudo-ids (BG is top-left/center, the curve is the background —
+/// always shown, not optional composed fields in full-bleed) and minus whatever id is currently bound
+/// to the top-right slot (dedupe — never show the same fact twice).
+///
+/// Phase 09.26 (WR-02 review fix): when `topRightField == "iobDelta"` (the default,
+/// `LATopRightFieldVocabulary.defaultId`), the top-right slot is a COMPOSITE that actually renders
+/// BOTH the `"iob"` and `"delta"` component facts (`LAMetrics.topRightText`'s `"iobDelta"` case) —
+/// excluding only the literal string `"iobDelta"` from the bottom row (which is never a real field
+/// id a `selectedFields` selection can carry) left `"iob"` un-deduped, so a completely untouched
+/// fresh install (default `topRightField` "iobDelta" + default `selectedFields` including "iob")
+/// rendered the SAME IOB fact twice: once in the top-right corner, once as a bottom-row chip. The
+/// dedupe set now names the composite's actual rendered components, not just the composite's own id.
+private func composeFullBleedBottomRowFields(
+    context: ActivityViewContext<FaBolusGlucoseAttributes>
+) -> [LAField] {
+    let composed = LiveActivityComposer.compose(
+        selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+    let topRightComponents: Set<String> = context.state.topRightField == "iobDelta"
+        ? ["iob", "delta"] : [context.state.topRightField]
+    return composed.filter {
+        $0.id != "glucose" && $0.id != "sparkline" && $0.id != "minimal"
+            && !topRightComponents.contains($0.id)
+    }
 }
 
 /// Convenience readers shared by every region below — ALL derive staleness from `context.isStale`
@@ -134,8 +295,10 @@ private extension ActivityViewContext<FaBolusGlucoseAttributes> {
         guard let g = state.glucose else { return .gray }
         return AppTheme.glucoseColor(g, stale: isStale)
     }
-    /// The classified band (Phase 09.1, Task 2) for the redundant icon+word non-color channel — `nil`
-    /// when there is no reading to classify (mirrors `glucoseColor`'s grey-on-missing fallback).
+    /// CR-01 (09.29 review): restored ONLY to feed the VoiceOver zone word that the deleted
+    /// `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` — no visual
+    /// glyph is reintroduced. `nil` when there is no reading to classify (mirrors `glucoseColor`'s
+    /// grey-on-missing fallback).
     var glucoseBand: GlucoseRange? {
         state.glucose.map(GlucoseRange.classify)
     }
@@ -194,15 +357,19 @@ private struct ComposedFieldView: View {
 /// The glucose numeral + trend arrow, sized per `role` (Display 34pt vs. Heading 16pt,
 /// 05-UI-SPEC.md Typography). Includes the sample-age caption below it ONLY at `.display` role —
 /// the compact/minimal regions have no room for a second line.
-///
-/// Phase 09.1 (D-04) — every presentation this view backs (Lock Screen banner + DI expanded-center
-/// at `.display`, DI compact-leading/minimal/CarPlay-small at `.heading`) also carries the
-/// `BandIndicator` non-color channel: `.display` (roomy) shows icon+word, `.heading` (space-
-/// constrained) shows icon-only (UI-SPEC #3/#4). Only rendered for a fresh reading — the number is
-/// already greyed when stale, so there is no band color to duplicate (mirrors `StatusRingView`).
 private struct GlucoseNumeralView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var role: ComposedFieldView.FieldRole = .heading
+
+    /// CR-01 (09.29 review): the spoken value+trend(+band) sentence, mirroring
+    /// `StatusRingView.a11yLabel` — speaks the band word for a live (non-stale) reading only, the
+    /// same gating the deleted `BandIndicator(...)` call site used for its visual glyph, so VoiceOver
+    /// never depends on zone color alone.
+    private var numeralA11yLabel: String {
+        let band = context.isStale ? nil : context.glucoseBand
+        return band.map { "\(context.glucoseText), \(context.arrow), \($0.shortLabel)" }
+            ?? "\(context.glucoseText), \(context.arrow)"
+    }
 
     var body: some View {
         VStack(alignment: role == .display ? .leading : .center, spacing: 2) {
@@ -216,11 +383,11 @@ private struct GlucoseNumeralView: View {
                         .foregroundStyle(context.glucoseColor)
                 }
             }
-            if !context.isStale, let band = context.glucoseBand {
-                BandIndicator(band: band, showWord: role == .display)
-                    .font(role == .display ? .caption2 : .system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
-            }
+            // CR-01: combine the value+arrow into one spoken element carrying the band word back
+            // (the deleted BandIndicator was the only VoiceOver source for it on every region this
+            // view backs); the sample-age caption below (`.display` only) stays a separate element.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(numeralA11yLabel)
             if role == .display {
                 if let d = context.state.glucoseDate {
                     Text(d, style: .relative).font(.caption2)
@@ -260,9 +427,15 @@ private struct MinimalFallbackView: View {
 /// (never re-derived here) that is false whenever the only active alert is a non-snoozeable `.alarm`
 /// (`PumpAlertKind.isAutoRuleEligible`). `compact` trims to icon-only glyphs for the Dynamic Island's
 /// tight `.bottom` region; the Lock Screen banner has room for the full label.
+///
+/// Phase 09.26-07 (D-22/de-dup) — `showOpenBolus` (default `true`) gates the "Open Bolus" button.
+/// EVERY Classic call site is byte-identical (they never pass this parameter, so it stays `true`);
+/// the full-bleed render paths pass `false` because the new `LABolusShortcutPill` becomes the SINGLE
+/// bolus entry point there — Snooze/Refresh are unaffected either way.
 private struct LAActionRow: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var compact: Bool = false
+    var showOpenBolus: Bool = true
 
     var body: some View {
         Group {
@@ -279,8 +452,10 @@ private struct LAActionRow: View {
 
     @ViewBuilder private var buttons: some View {
         HStack(spacing: compact ? 14 : 20) {
-            Button(intent: LAOpenBolusIntent()) {
-                Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
+            if showOpenBolus {
+                Button(intent: LAOpenBolusIntent()) {
+                    Label("Open Bolus", systemImage: "arrow.up.forward.app.fill")
+                }
             }
             if context.state.hasSnoozeEligibleAlert {
                 Button(intent: LASnoozeAlertIntent()) {
@@ -294,12 +469,182 @@ private struct LAActionRow: View {
     }
 }
 
+/// D-22 — the optional nav-only "Bolus" shortcut pill. Reuses the EXISTING `LAOpenBolusIntent`
+/// verbatim (open-only, zero `@Parameter`, `openAppWhenRun=true`) — introduces NO new
+/// `LiveActivityIntent` conformer. Styled as a DISTINCT tinted/filled action pill (`.borderedProminent`
+/// + accent tint) so it reads differently from the passive `PumpChipView` info chips it sits beside.
+/// `compact` trims to an icon-only glyph for the Dynamic Island's tighter `.bottom` region — mirrors
+/// `LAActionRow`'s own `compact` icon-only/titleAndIcon split.
+private struct LABolusShortcutPill: View {
+    var compact: Bool = false
+
+    var body: some View {
+        Group {
+            if compact {
+                label.labelStyle(.iconOnly)
+            } else {
+                label.labelStyle(.titleAndIcon)
+            }
+        }
+        .font(compact ? .caption2 : .caption)
+        .buttonStyle(.borderedProminent)
+        .tint(.accentColor)
+        .accessibilityLabel("Bolus")
+        .accessibilityHint("Opens the bolus entry screen. No dose is sent from here.")
+    }
+
+    private var label: some View {
+        Button(intent: LAOpenBolusIntent()) {
+            Label("Bolus", systemImage: "syringe")
+        }
+    }
+}
+
 // MARK: - Lock Screen (+ CarPlay fallback surface)
 
 private struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
+    /// Phase 09.26-05 (D-06 "Always-on") — drives the flat-scrim swap below; `FullBleedGlucosePlot`
+    /// reads this SAME environment key independently for its own fill/chrome flattening.
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
+    /// Phase 09.26-01 tracer (D-11/D-21) — the additive style branch. "classic" (or any
+    /// unrecognized/legacy token, decode-defaulted to "fullBleed" upstream but re-checked here
+    /// defensively) renders the EXISTING body verbatim, extracted below as `classicBody` so the
+    /// diff stays a wrapper, not a rewrite of the Classic layout (09.26-01-PLAN.md verification:
+    /// "Classic style renders byte-identically"). Full-bleed only takes over once there is at least
+    /// one glucose fact to plot — the no-reading `isMinimalFallback` state stays SHARED and unchanged
+    /// between styles (D-11: "no curve is drawn without at least one fact").
     var body: some View {
+        if context.state.liveActivityStyle == "fullBleed" && hasGlucoseReading {
+            fullBleedBody
+        } else {
+            classicBody
+        }
+    }
+
+    private var hasGlucoseReading: Bool {
+        let composed = LiveActivityComposer.compose(
+            selection: context.state.selectedFields, state: context.state, region: .lockScreen)
+        return composed.first?.id == "glucose"
+    }
+
+    // MARK: - Full-bleed (D-11/D-16/D-17, Phase 09.26-01 tracer)
+
+    /// Z-order back→front (09.26-UI-SPEC.md "Lock Screen Expanded"): system material background,
+    /// `FullBleedGlucosePlot` filling the content area, then the top-left BG overlay + the always-
+    /// available action row. Chrome (axis lines/ticks/range-lines), the top-right selectable slot,
+    /// and the bottom customizable-fields row are later plans — this tracer proves the vertical
+    /// slice end-to-end, not the full per-presentation layout.
+    @ViewBuilder private var fullBleedBody: some View {
+        ZStack(alignment: .topLeading) {
+            FullBleedGlucosePlot(
+                points: context.state.recentPoints,
+                floorMgdl: context.state.plotFloorMgdl,
+                ceilingMgdl: context.state.plotCeilingMgdl,
+                currentGlucose: context.state.glucose,
+                isStale: context.isStale,
+                plotRangeHours: context.state.plotRangeHours,
+                showXAxisLine: context.state.showXAxisLine,
+                showYAxisLine: context.state.showYAxisLine,
+                showXAxisTicks: context.state.showXAxisTicks,
+                showYAxisTicks: context.state.showYAxisTicks,
+                showRangeLines: context.state.showRangeLines)
+            VStack(alignment: .leading, spacing: 8) {
+                fullBleedTopLeadingOverlay
+                Spacer(minLength: 0)
+                // Bottom row (D-13, 09.26-UI-SPEC.md "Bottom row") — the retained customizable
+                // field-selection composer, rendered ABOVE the always-available action row.
+                // Phase 09.26-07 (D-22): when the optional Bolus-shortcut pill is on, it takes the
+                // LEFTMOST slot of this SAME row and the customizable chips offset (shift right);
+                // when off, the chips use the full row exactly as before.
+                if context.state.showBolusShortcut || !fullBleedBottomRowFields.isEmpty {
+                    HStack(spacing: 8) {
+                        if context.state.showBolusShortcut {
+                            LABolusShortcutPill()
+                        }
+                        ForEach(fullBleedBottomRowFields, id: \.id) { f in
+                            if let chip = WidgetUI.chip(for: f.id, context.state) {
+                                PumpChipView(chip: chip, ageDate: f.id == "iob" && context.state.iobStale ? context.state.iobDate : nil)
+                            }
+                        }
+                    }
+                }
+                // D-18 (05-05) — always available, unchanged from Classic. Phase 09.26-07 (D-22/
+                // de-dup): full-bleed passes showOpenBolus: false — the pill above (when on) is the
+                // SINGLE bolus entry point here; Snooze/Refresh stay.
+                LAActionRow(context: context, showOpenBolus: false)
+            }
+        }
+        // Top-right overlay (D-05/D-15) — a SEPARATE overlay alignment from the outer ZStack's
+        // `.topLeading`, since the top-left block above and this one are independently sized.
+        .overlay(alignment: .topTrailing) { fullBleedTopTrailingOverlay }
+        .padding(16)
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    /// The full-bleed bottom row's composed fields (D-13, 09.26-UI-SPEC.md "Bottom row") — the SAME
+    /// `LiveActivityComposer.compose(...)` the Classic style uses, minus the structural "glucose"/
+    /// "sparkline" pseudo-ids (BG is top-left, the curve is the background — always shown, not
+    /// optional composed fields in full-bleed) and minus whatever id is currently bound to the
+    /// top-right slot (dedupe — never show the same fact twice). Empty selection yields an empty
+    /// bottom row (NOT the card-wide "minimal" fallback — BG + curve already occupy the card, so
+    /// "minimal" is filtered defensively too, though by construction of `hasGlucoseReading` gating
+    /// entry into `fullBleedBody` it can't actually appear here alongside other fields).
+    private var fullBleedBottomRowFields: [LAField] {
+        composeFullBleedBottomRowFields(context: context)
+    }
+
+    /// Phase 09.26-05 (D-06 "Always-on") — swaps `.thinMaterial` for a flat, very-low-opacity
+    /// rectangle under `isLuminanceReduced` (materials can render inconsistently on some OS versions
+    /// under AOD, UI-SPEC "[RESOLVED, flagged as a research item below — non-blocking]"). Used by
+    /// BOTH full-bleed scrims below — never a second scrim style introduced elsewhere.
+    private var scrimStyle: AnyShapeStyle {
+        isLuminanceReduced ? AnyShapeStyle(Color.black.opacity(0.15)) : AnyShapeStyle(.thinMaterial)
+    }
+
+    /// Top-left overlay (D-16): the BG numeral + trend arrow, with the time-since-CGM caption
+    /// directly below it — `GlucoseNumeralView(role: .display)` already renders exactly this
+    /// (angled Unicode arrow + relative-age caption), reused verbatim rather than re-derived. A
+    /// `scrimStyle` scrim (`.thinMaterial`, or a flat rect under always-on) keeps the block legible
+    /// over the busy curve.
+    private var fullBleedTopLeadingOverlay: some View {
+        GlucoseNumeralView(context: context, role: .display)
+            .padding(8)
+            .background(scrimStyle, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Top-right overlay (D-05/D-15, 09.26-UI-SPEC.md "Top-right overlay") — the user-selectable
+    /// slot, default "IOB + trend delta". Renders NOTHING (no scrim either) when
+    /// `LAMetrics.topRightText` returns `nil` (`topRightField == "none"`), giving that corner back
+    /// to the plain curve. The small `.secondary` "ellipsis" glyph in the scrim's corner is a purely
+    /// visual "this is configurable" affordance — NOT a separate tap target (the whole card already
+    /// opens the app via `.widgetURL`).
+    @ViewBuilder private var fullBleedTopTrailingOverlay: some View {
+        if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
+            Text(text)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(topRightTint(
+                    field: context.state.topRightField, state: context.state, isStale: context.isStale))
+                .padding(8)
+                .padding(.trailing, 6)   // extra room so the corner glyph never overlaps the text
+                .background(scrimStyle, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                        .accessibilityHidden(true)
+                }
+                // Single combined VoiceOver element (09.26-UI-SPEC.md Accessibility) — the decorative
+                // ellipsis glyph above is separately hidden so only the slot's own text is announced.
+                .accessibilityElement(children: .combine)
+        }
+    }
+
+    // MARK: - Classic (D-21, unchanged)
+
+    @ViewBuilder private var classicBody: some View {
         let composed = LiveActivityComposer.compose(
             selection: context.state.selectedFields, state: context.state, region: .lockScreen)
         let hasGlucose = composed.first?.id == "glucose"
@@ -421,14 +766,17 @@ private struct MinimalRegionView: View {
     }
 }
 
-// MARK: - CarPlay `.small` (iOS 18+, D-10) — adapts Loop's AdaptiveLockScreenView split
+// MARK: - CarPlay `.small` (D-10) — adapts Loop's AdaptiveLockScreenView split
+//
+// 09.26-06 (D-08): `@Environment(\.activityFamily)` is an iOS-18 API, but `faBolusWidgets`' floor is
+// unconditionally 18.0 (project.yml), so it — and `CarPlaySmallView` below — need no `@available`
+// gate: every build of this extension already meets the requirement. `GlucoseLiveActivity` is now
+// this view's ONLY caller (the previous separate `@available(iOS 18.0, *)` CarPlay widget conformer
+// was removed as part of the same reconciliation).
 
-/// The `GlucoseLiveActivityCarPlay` widget's Lock-Screen closure — reads `@Environment
-/// (\.activityFamily)` (iOS-18-only) to branch between the CarPlay `.small` layout and the SAME
-/// full Lock Screen content `GlucoseLiveActivity` (the iOS-17-floor widget) renders. `GlucoseLiveActivity`
-/// itself never sees this type — only the `@available(iOS 18.0, *)`-gated CarPlay widget does, so the
-/// iOS-17-only build path never references the iOS-18-only `activityFamily` environment key.
-@available(iOS 18.0, *)
+/// `GlucoseLiveActivity`'s Lock-Screen closure — reads `@Environment(\.activityFamily)` to branch
+/// between the CarPlay `.small` layout and the SAME full Lock Screen content every other family
+/// (Lock Screen, Dynamic Island's own presentation) renders.
 private struct CarPlayGatedView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     @Environment(\.activityFamily) private var activityFamily
@@ -445,7 +793,6 @@ private struct CarPlayGatedView: View {
 /// The CarPlay `.small` glanceable field — a single highest-priority selected field, plain padding
 /// (NO `SmartStackMargins`, NO Loop named color assets — 05-UI-SPEC.md Registry Safety caveat).
 /// Display-only: no CarPlay entitlement, no CarPlay app (D-10).
-@available(iOS 18.0, *)
 private struct CarPlaySmallView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var body: some View {

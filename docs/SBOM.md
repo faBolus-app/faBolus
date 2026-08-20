@@ -14,7 +14,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 | Component | Version | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
 | faBolusCore | in-repo | MIT | `Packages/faBolusCore` | Pump/host-agnostic contracts, models, BolusMath, transports |
-| faBolusDesign | in-repo | MIT | `Packages/faBolusDesign` | Shared §13 band-color tokens + icon+word BandIndicator primitive (depends on faBolusCore) |
+| faBolusDesign | in-repo | MIT | `Packages/faBolusDesign` | Shared §13 band-color tokens (depends on faBolusCore) |
 | HistoryStore | in-repo | MIT | `Packages/HistoryStore` | SwiftData glucose/insulin/carb history |
 
 ## Vendored source (copied in, LoopKit lineage — all MIT)

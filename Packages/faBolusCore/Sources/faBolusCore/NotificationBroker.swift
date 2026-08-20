@@ -129,13 +129,25 @@ public enum NotificationBroker {
         /// default (see the 05-02 `WidgetSnapshot` incident) — decoding an already-persisted pre-this-field
         /// blob would otherwise fail the whole decode.
         public var allowCriticalBreakthrough: Bool
+        /// 09.25-01 (D-03/D-07): the ONLY field that lets a `neverSuppressible` trio category
+        /// (`pumpDisconnect`/`cgmDataLoss`/`bolusReconciliation`) be suppressed. `decide()` suppresses a
+        /// trio message iff `enabled == false && userAcknowledgedSafetyDisable == true` — `enabled ==
+        /// false` alone is NEVER enough, so a stray/partial write can't silently drop a safety alert.
+        /// **Optional-typed per the Future-field warning above**: the `notificationBroker.settings.v1`
+        /// blob has been persisted since Phase 8.1, so a non-optional `= false` default would fail the
+        /// whole decode of an already-persisted blob (the 05-02 `WidgetSnapshot` incident) — a missing
+        /// key decodes to `nil`, which reads as "not acknowledged" (safe). Consulted ONLY at the trio
+        /// short-circuit in `decide()`, nowhere else.
+        public var userAcknowledgedSafetyDisable: Bool?
         public init(enabled: Bool, quietStartMinuteOfDay: Int = 0, quietEndMinuteOfDay: Int = 0,
-                    minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true) {
+                    minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
+                    userAcknowledgedSafetyDisable: Bool? = nil) {
             self.enabled = enabled
             self.quietStartMinuteOfDay = quietStartMinuteOfDay
             self.quietEndMinuteOfDay = quietEndMinuteOfDay
             self.minIntervalSeconds = minIntervalSeconds
             self.allowCriticalBreakthrough = allowCriticalBreakthrough
+            self.userAcknowledgedSafetyDisable = userAcknowledgedSafetyDisable
         }
         /// The default governance for a category (respecting its `defaultEnabled`).
         public static func defaults(for category: Category) -> CategorySettings {
@@ -242,10 +254,20 @@ public enum NotificationBroker {
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
 
-        // Safety categories bypass EVERYTHING (still recorded so dedupe/episode/counters stay coherent).
-        if message.category.neverSuppressible { return deliver() }
-
         let cfg = settings[message.category] ?? .defaults(for: message.category)
+
+        // Safety categories bypass EVERYTHING (still recorded so dedupe/episode/counters stay coherent) —
+        // UNLESS the user explicitly acknowledged turning this specific safety alert off (D-03/D-07,
+        // 09.25-01). `enabled == false` alone is never enough: suppression requires BOTH `enabled ==
+        // false` AND `userAcknowledgedSafetyDisable == true`, so a stray/partial write (or an old
+        // pre-this-field blob, where the ack field decodes to `nil`) can never silently drop a safety
+        // alert. This is the ONLY place a trio category is suppressible.
+        if message.category.neverSuppressible {
+            if !cfg.enabled && cfg.userAcknowledgedSafetyDisable == true {
+                return suppress(.categoryDisabled)
+            }
+            return deliver()
+        }
 
         // S8 / §6 #6: a CRITICAL-severity governed message (e.g. an occlusion / empty-cartridge /
         // pump-error alarm — surfaced as the `.pumpAlert` category, which is `Severity.critical` by
@@ -294,7 +316,12 @@ public enum NotificationBroker {
 
     /// Record a "snooze this category until `until`" into `state`, returning the next state. **Refuses a
     /// `neverSuppressible` category** — the write side guards the safety invariant in addition to `decide`
-    /// bypassing it on the read side, so no code path (or corrupt input) can ever snooze a safety alert.
+    /// bypassing it on the read side, so no TRANSIENT snooze (or corrupt/forged snooze map) can ever
+    /// suppress a safety alert. **(D-07, 09.25-01):** this is no longer an absolute "no code path can
+    /// ever suppress a safety alert" — the user CAN deliberately disable a trio category, but only
+    /// through the explicit, acknowledged path `decide()` reads at the trio short-circuit
+    /// (`CategorySettings.userAcknowledgedSafetyDisable`), never through this snooze mechanism. A
+    /// transient snooze/quiet-hour/rate-limit/budget still cannot suppress a trio member.
     public static func snooze(_ state: State, category: Category, until: Date) -> State {
         guard !category.neverSuppressible else { return state }
         var out = state

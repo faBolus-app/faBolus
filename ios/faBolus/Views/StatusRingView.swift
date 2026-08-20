@@ -64,16 +64,6 @@ struct StatusRingView: View {
                 if showUnitLabel {
                     Text(unitLabel).font(.caption2).foregroundStyle(.secondary)
                 }
-                // F4 (A5) — non-color band channel (WCAG 1.4.1): when the number is shown in its band
-                // COLOR (fresh reading), also name the band with an icon + word, so it reads without
-                // relying on color. Not shown when stale — the number is grey then (no band color to
-                // duplicate). Hidden from VoiceOver (a11yLabel already speaks the band below).
-                if present == .fresh {
-                    let band = GlucoseRange.classify(g)
-                    BandIndicator(band: band, announcesOwnLabel: false)
-                        .font(.caption2)
-                        .foregroundStyle(AppTheme.glucoseColor(g))
-                }
                 if let d = snapshot.glucoseDate {
                     Text(GlucoseFreshness.ageLabel(for: d, now: now))
                         .font(.caption2)

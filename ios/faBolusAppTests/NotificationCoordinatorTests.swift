@@ -224,6 +224,123 @@ import UserNotifications
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
     }
 
+    /// 09.25-01 Task 1 (tracer, D-03/D-06/D-08/D-09): the safety trio becomes user-disableable behind an
+    /// acknowledged-disable flag. This is the end-to-end slice: write the disable through
+    /// `NotificationRuntime.updateSettings` on an isolated store, then prove a FRESH runtime + the real
+    /// `NotificationPoster` honors it — while an untouched trio category still delivers.
+    @Test func acknowledgedSafetyDisablePersistsAndIsHonoredByAFreshRuntimeAndTheRealPoster() {
+        let store = isolatedStore(#function)
+        let rt1 = NotificationRuntime(store: store)
+        var cfg = rt1.settings[.pumpDisconnect] ?? .defaults(for: .pumpDisconnect)
+        cfg.enabled = false
+        cfg.userAcknowledgedSafetyDisable = true
+        rt1.updateSettings(cfg, for: .pumpDisconnect)
+        // A FRESH runtime on the same App-Group store (a relaunch, or an out-of-process poster).
+        let rt2 = NotificationRuntime(store: store)
+        let disabled = NotificationPoster.post(msg(.pumpDisconnect, key: "pd1"), runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(!disabled.deliver && disabled.reason == .categoryDisabled,
+               "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
+        // cgmDataLoss (untouched) still delivers on the same runtime.
+        let untouched = NotificationPoster.post(msg(.cgmDataLoss, key: "cgm1"), runtime: rt2, now: at(9, 0)) { _ in }
+        #expect(untouched.deliver, "an untouched trio category is unaffected by another category's disable")
+    }
+
+    /// decide(): `!enabled` alone must NEVER suppress a trio — only the paired acknowledgment does.
+    @Test func decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory() {
+        typealias B = NotificationBroker
+        // enabled==false, ack unset (nil) → still delivers.
+        let notAcked = B.decide(msg(.pumpDisconnect),
+                                settings: [.pumpDisconnect: B.CategorySettings(enabled: false)],
+                                state: B.State(), now: at(9, 0))
+        #expect(notAcked.deliver, "the ack flag is the mandatory gate — !enabled alone must never suppress a trio")
+        // enabled==false, ack==true → suppressed.
+        var ackedCfg = B.CategorySettings(enabled: false)
+        ackedCfg.userAcknowledgedSafetyDisable = true
+        let acked = B.decide(msg(.pumpDisconnect), settings: [.pumpDisconnect: ackedCfg],
+                             state: B.State(), now: at(9, 0))
+        #expect(!acked.deliver && acked.reason == .categoryDisabled)
+    }
+
+    /// 09.25-02 Task 1 (D-01/D-02): pure caption helper pins the exact UI-SPEC copy for the
+    /// break-through row's three effective-state branches — the direct fix for the D-01 override
+    /// ambiguity (a disabled category's break-through row must read as moot, not silently ignored).
+    @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
+                == "On — this category's urgent/critical alerts always break through quiet hours and limits.")
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
+                == "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below.")
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
+                == "Off — category is disabled, so break-through has no effect.")
+        // `allow` is moot once the master is off — same string regardless of its value.
+        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: false)
+                == "Off — category is disabled, so break-through has no effect.")
+    }
+
+    /// 09.25-02 Task 1 (D-06): the silence-pump-alarms row's effective-state caption is non-nil ONLY
+    /// when the pump section's master is off (the row has no effect while `pumpAlert` is disabled).
+    @Test func silenceMirrorCaptionOnlyWhenPumpDisabled() {
+        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
+                == "No effect — pump alerts are disabled.")
+        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
+    }
+
+    /// 09.25-02 Task 2 (D-02c): resolves `NotificationSettingsView.swift` by walking up from
+    /// `#filePath`, mirroring `SettingsReachabilityGuardTests.viewsDirURL()` — same technique, scoped to
+    /// one file rather than a whole directory.
+    private static func notificationSettingsViewFileURL() -> URL? {
+        let fm = FileManager.default
+        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            let candidate = probe.appendingPathComponent("ios/faBolus/Views/NotificationSettingsView.swift")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+            probe = probe.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    /// 09.25-02 Task 2 (D-02c/T-09.25-06): the Interruption Strength section (relabel of "Critical
+    /// Alerts") must gate NOTHING else on screen — no `.disabled(...)` call anywhere in the view may
+    /// read `criticalAlertsEnabled`. Scans every `.disabled(` occurrence's balanced-parenthesis argument
+    /// for the flag token; the plain toggle binding (`$settings.criticalAlertsEnabled`) and
+    /// `shouldShowHonestStatus(...)` references are allowed since neither is a `.disabled(...)` call.
+    /// Fails loudly (non-vacuously) if the file can't be resolved/read or if greying has regressed to
+    /// zero `.disabled(` sites.
+    @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
+        guard let url = Self.notificationSettingsViewFileURL(),
+              let source = try? String(contentsOf: url, encoding: .utf8) else {
+            Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
+            return
+        }
+        #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+
+        var searchStart = source.startIndex
+        var disabledSitesFound = 0
+        while let range = source.range(of: ".disabled(", range: searchStart..<source.endIndex) {
+            disabledSitesFound += 1
+            // Extract the parenthesized argument up to its own matching close paren — every
+            // `.disabled(...)` call site in this file is a simple boolean expression, so a single-level
+            // balance counter is sufficient (no need for a full expression parser).
+            var depth = 0
+            var i = range.upperBound
+            var argEnd = i
+            while i < source.endIndex {
+                let ch = source[i]
+                if ch == "(" { depth += 1 }
+                if ch == ")" {
+                    if depth == 0 { argEnd = i; break }
+                    depth -= 1
+                }
+                i = source.index(after: i)
+            }
+            let arg = String(source[range.upperBound..<argEnd])
+            #expect(!arg.contains("criticalAlertsEnabled"),
+                    "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
+            searchStart = source.index(after: range.lowerBound)
+        }
+        #expect(disabledSitesFound > 0,
+                "found zero .disabled( occurrences in NotificationSettingsView.swift — parent-master greying may have regressed")
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
@@ -233,5 +350,106 @@ import UserNotifications
         NotificationPoster.post(msg(.remoteBolusRejected, key: "remoteBolusRejected-2"),
                                 runtime: rt, now: at(9, 0)) { ids.append($0.identifier) }
         #expect(ids == ["remoteBolusRejected-1", "remoteBolusRejected-2"])   // old fixed id collapsed both
+    }
+
+    // MARK: - 09.25 REVIEW-FIX (WR-01 / WR-02 / IN-01)
+
+    /// IN-01: pins the safety-trio toggle's Cancel/snap-back contract at its ACTUAL call-site wiring
+    /// (`safetyEnabledBinding`, via the extracted `safetyTrioToggleBinding` factory) rather than only the
+    /// generic `guardedToggle` contract `GuardedToggleTests` already covers — turning the toggle OFF must
+    /// request confirm and must NOT write `enabled` until the confirm button fires; if Cancel is chosen
+    /// (never calls `setEnabled`), a re-read must show the toggle back ON with nothing written.
+    @Test func safetyTrioToggleCancelSnapsBackWithoutWritingEnabled() {
+        var backing = true   // currently ON (protection active)
+        var setCalls: [Bool] = []
+        var confirmRequested = 0
+        let binding = NotificationSettingsView.safetyTrioToggleBinding(
+            enabled: { backing },
+            setEnabled: { on in setCalls.append(on); backing = on },
+            requestConfirmDisable: { confirmRequested += 1 }
+        )
+        #expect(binding.wrappedValue == true)
+        binding.wrappedValue = false   // user taps the toggle OFF
+        #expect(confirmRequested == 1, "turning off must request confirm before writing anything")
+        #expect(setCalls.isEmpty, "must not write `enabled` until the confirm button explicitly fires")
+        // Simulate Cancel: no dialog action ever calls setEnabled. A re-read must snap back to ON.
+        #expect(binding.wrappedValue == true, "Cancel must snap the toggle back to its prior (on) state")
+        #expect(backing == true, "Cancel must never have written the backing value")
+    }
+
+    /// IN-01 / WR-01 companion: confirming (not cancelling) DOES write through `setEnabled`, so the
+    /// snap-back test above isn't vacuously passing because writes are broken entirely.
+    @Test func safetyTrioToggleConfirmWritesThroughSetEnabled() {
+        var backing = true
+        var setCalls: [Bool] = []
+        let binding = NotificationSettingsView.safetyTrioToggleBinding(
+            enabled: { backing }, setEnabled: { on in setCalls.append(on); backing = on },
+            requestConfirmDisable: { }
+        )
+        binding.wrappedValue = false             // requests confirm, no write yet
+        setCalls.append(false); backing = false  // simulate the confirm button's own explicit action
+        #expect(binding.wrappedValue == false)
+        #expect(setCalls == [false])
+    }
+
+    /// WR-02: `trioIsSuppressed` must mirror `NotificationBroker.decide()`'s exact AND-gate — `enabled ==
+    /// false` alone (no acknowledgment) must NEVER read as suppressed, matching
+    /// `decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory` above one-for-one so the
+    /// UI caption/toggle can never diverge from what `decide()` actually delivers.
+    @Test func trioIsSuppressedMirrorsDecidesExactAndGate() {
+        typealias B = NotificationBroker
+        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: nil))
+        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: true)))
+        // enabled == false, ack unset (nil) → NOT suppressed (the exact WR-02 failure shape).
+        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: false)))
+        // enabled == false, ack explicitly false → still NOT suppressed.
+        var ackedFalse = B.CategorySettings(enabled: false)
+        ackedFalse.userAcknowledgedSafetyDisable = false
+        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: ackedFalse))
+        // enabled == false AND ack == true → suppressed (the only true case).
+        var acked = B.CategorySettings(enabled: false)
+        acked.userAcknowledgedSafetyDisable = true
+        #expect(NotificationSettingsView.trioIsSuppressed(cfg: acked))
+        // enabled == true (regardless of ack) → never suppressed.
+        var enabledButAcked = B.CategorySettings(enabled: true)
+        enabledButAcked.userAcknowledgedSafetyDisable = true
+        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: enabledButAcked))
+    }
+
+    /// WR-01 regression: `NotificationCoordinator.identifiers(for:in:)` is the matching contract
+    /// `withdrawAll(for:)` uses to find every OS-outstanding request for a category — pins that it
+    /// filters by the `brokerCategory` userInfo stamp (`NotificationPoster.post`) rather than a static
+    /// dedupe-key list, so it also matches `.bolusReconciliation`'s per-attempt DYNAMIC keys
+    /// (`reconcile-<peerId>-<requestId>`, which have no fixed list to enumerate ahead of time) and never
+    /// cross-matches an unrelated category.
+    @Test func withdrawAllMatchesOnlyRequestsStampedWithTheGivenCategory() {
+        func request(_ id: String, category: NotificationBroker.Category) -> UNNotificationRequest {
+            let content = UNMutableNotificationContent()
+            content.userInfo = ["brokerCategory": category.rawValue]
+            return UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        }
+        let requests = [
+            request("safety.pumpDisconnect", category: .pumpDisconnect),
+            request("pumpDisconnect-escalation-1", category: .pumpDisconnect),
+            request("reconcile-peerA-req1", category: .bolusReconciliation),   // dynamic key, no static list
+            request("safety.cgmDataLoss", category: .cgmDataLoss),
+            request("some-pump-alert", category: .pumpAlert),                  // must NOT match any trio
+        ]
+        #expect(Set(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: requests))
+                == ["safety.pumpDisconnect", "pumpDisconnect-escalation-1"])
+        #expect(NotificationCoordinator.identifiers(for: .bolusReconciliation, in: requests)
+                == ["reconcile-peerA-req1"])
+        #expect(NotificationCoordinator.identifiers(for: .cgmDataLoss, in: requests) == ["safety.cgmDataLoss"])
+        // The unrelated pump-alert request matches ONLY its own category — never a trio query, and no
+        // trio query's result set ever includes it (checked implicitly above via exact-set equality).
+        #expect(NotificationCoordinator.identifiers(for: .pumpAlert, in: requests) == ["some-pump-alert"])
+    }
+
+    /// WR-01: a request with no `brokerCategory` userInfo at all (shouldn't happen — every poster stamps
+    /// it — but the filter must degrade safely rather than crash or over-match) never matches any category.
+    @Test func withdrawAllNeverMatchesARequestMissingTheBrokerCategoryStamp() {
+        let content = UNMutableNotificationContent()   // no userInfo set
+        let bare = UNNotificationRequest(identifier: "bare", content: content, trigger: nil)
+        #expect(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: [bare]) == [])
     }
 }

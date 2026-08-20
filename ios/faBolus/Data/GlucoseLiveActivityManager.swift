@@ -53,16 +53,49 @@ enum GlucoseLiveActivityManager {
         // yet (a legacy install, or before `AppSettings.syncWidgetConfig()` has ever run) rather than
         // baking in an empty selection that would render the empty-selection fallback for no reason.
         let selection = WidgetStore.liveActivityFields ?? LAFieldVocabulary.all
+        // Phase 09.26 tracer (D-11/D-21) — the style mirror; an absent mirror (legacy install, or
+        // before the first syncWidgetConfig() call) defaults to "fullBleed", never a blank style.
+        let style = WidgetStore.liveActivityStyle ?? "fullBleed"
+        // Phase 09.26 tracer (D-02/D-03) — resolve the SAME floor/ceiling the phone's own glucose
+        // chart uses (GlucosePlotScale.resolve already treats an absent/out-of-set mirror as "use the
+        // defaults" — 40/300 — so no separate fallback is needed here).
+        let plotBounds = GlucosePlotScale.resolve(
+            storedFloor: WidgetStore.liveActivityPlotFloor,
+            storedCeiling: WidgetStore.liveActivityPlotCeiling)
+        // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed display settings mirrors; an absent mirror
+        // (legacy install, or before the first syncWidgetConfig() call) falls back to the documented
+        // default for each (iobDelta / 2h / all chrome OFF), and an unrecognized persisted
+        // topRightField token ALSO resolves to the default — never a blank/crash slot.
+        let rawTopRightField = WidgetStore.liveActivityTopRightField ?? LATopRightFieldVocabulary.defaultId
+        let topRightField = LATopRightFieldVocabulary.all.contains(rawTopRightField)
+            ? rawTopRightField : LATopRightFieldVocabulary.defaultId
+        let plotRangeHours = WidgetStore.liveActivityPlotRangeHours ?? 2
+        let showXAxisLine = WidgetStore.liveActivityShowXAxisLine ?? false
+        let showYAxisLine = WidgetStore.liveActivityShowYAxisLine ?? false
+        let showXAxisTicks = WidgetStore.liveActivityShowXAxisTicks ?? false
+        let showYAxisTicks = WidgetStore.liveActivityShowYAxisTicks ?? false
+        let showRangeLines = WidgetStore.liveActivityShowRangeLines ?? false
+        // Phase 09.26-07 (D-22) — the optional Bolus-shortcut pill mirror; absent ⇒ false (OFF).
+        let showBolusShortcut = WidgetStore.liveActivityShowBolusShortcut ?? false
+        // Phase 09.26-04 (D-14/D-07) — the LA plot honors its OWN plot-range setting, independent of
+        // the phone/watch chart windows: the 2h default path is UNCHANGED (`suffix(24)`, tighter cap
+        // than the widget's 96); 6h carries up to ~6h of history, windowed by TIMESTAMP and
+        // downsampled if necessary so the encoded `ContentState` stays under the ~4KB ceiling
+        // (`LAPlotWindow.recentPoints`'s own doc comment has the measured budget numbers).
+        let recentPoints: [WidgetSnapshot.Point] = plotRangeHours >= 6
+            ? LAPlotWindow.recentPoints(from: snap.recentPoints, plotRangeHours: plotRangeHours, now: now)
+            : Array(snap.recentPoints.suffix(24))
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
             trendArrow: stale ? "" : snap.trendArrow,             // C8 — never synthesize a trend
-            recentPoints: Array(snap.recentPoints.suffix(24)),    // tighter cap than the widget's 48
+            recentPoints: recentPoints,
             displayUnitToken: snap.displayUnit,                   // D-09 — carried verbatim, no inline conversion
             iobUnits: snap.iobUnits,
             iobDate: snap.iobDate,
             reservoirUnits: snap.reservoirUnits,
             batteryPercent: snap.batteryPercent,
+            batteryCharging: snap.batteryCharging,                // D-04/D-05 — carried verbatim, fail-closed decode
             basalRateUnitsPerHour: snap.basalRateUnitsPerHour,    // effective U/hr — never a synthesized temp-rate %
             deliverySuspended: snap.deliverySuspended,
             controlIQMode: snap.controlIQMode,
@@ -73,7 +106,18 @@ enum GlucoseLiveActivityManager {
             pumpLinkStale: pumpLinkStale,
             selectedFields: selection,
             hasSnoozeEligibleAlert: snap.hasSnoozeEligibleAlert,
-            showUnitLabel: snap.showUnitLabel                     // owner-requested toggle, carried verbatim
+            showUnitLabel: snap.showUnitLabel,                    // owner-requested toggle, carried verbatim
+            liveActivityStyle: style,
+            plotFloorMgdl: plotBounds.floor,
+            plotCeilingMgdl: plotBounds.ceiling,
+            topRightField: topRightField,
+            plotRangeHours: plotRangeHours,
+            showXAxisLine: showXAxisLine,
+            showYAxisLine: showYAxisLine,
+            showXAxisTicks: showXAxisTicks,
+            showYAxisTicks: showYAxisTicks,
+            showRangeLines: showRangeLines,
+            showBolusShortcut: showBolusShortcut
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)

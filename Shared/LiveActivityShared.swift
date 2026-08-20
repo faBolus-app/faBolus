@@ -1,5 +1,6 @@
 import Foundation
 import ActivityKit
+import faBolusCore
 
 /// Shared Live Activity attributes/content-state for the glucose Live Activity + Dynamic Island
 /// (Phase 5, D-01/D-02). Compiled into BOTH the app target and the `faBolusWidgets` extension —
@@ -53,6 +54,12 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         public var iobDate: Date?
         public var reservoirUnits: Double
         public var batteryPercent: Int
+        /// Phase 09.27-02 (D-04/D-05) — whether the pump is currently charging (op-145
+        /// `chargingStatus == 1`, mirrored verbatim from `PumpSnapshot.batteryCharging`). Additive,
+        /// fail-closed default `false` (matches `deliverySuspended`'s own non-optional shape):
+        /// absent/legacy ⇒ never a fabricated charging badge on an old payload (D-05). Routed through
+        /// `BatteryChargingPresentation` at render — never re-derived inline.
+        public var batteryCharging: Bool
         /// Effective basal rate (U/hr) — never an invented temp-rate percent.
         public var basalRateUnitsPerHour: Double
         public var deliverySuspended: Bool
@@ -152,10 +159,46 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         /// be silenced even if this flag were somehow wrong.
         public var hasSnoozeEligibleAlert: Bool
 
+        // Phase 09.26 tracer (D-11/D-21) — the Live Activity STYLE switch (additive). "fullBleed"
+        // (default) or "classic"; an unrecognized/legacy-absent token resolves to "fullBleed" at
+        // render (never blank/crash — mirrors `displayUnitToken`'s "carry the string verbatim, only
+        // the renderer maps unknown -> a safe default" pattern). Baked by `GlucoseLiveActivityManager
+        // .makeContent` from `WidgetStore.liveActivityStyle`.
+        public var liveActivityStyle: String
+        // Phase 09.26 tracer (D-02/D-03) — the plot Y-axis bounds (mg/dL), resolved at publish time
+        // via `GlucosePlotScale.resolve(storedFloor:storedCeiling:)` over the phone's own
+        // `AppSettings.glucosePlotFloor`/`glucosePlotCeiling` mirror, so the full-bleed LA curve
+        // matches whatever floor/ceiling the phone's own glucose chart uses. Defaulted to
+        // `GlucosePlotScale.defaultFloor`/`defaultCeiling` (40/300) so a legacy decode never leaves
+        // these at a nonsensical 0/0.
+        public var plotFloorMgdl: Int
+        public var plotCeilingMgdl: Int
+
+        // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed display settings: the user-selectable
+        // top-right slot content (default "IOB + trend delta"), the LA-only plot time-range (D-14,
+        // independent of the watch/phone chart's own range), the four independent axis-chrome toggles,
+        // and the high/low target-range dashed-line toggle. All additive/decode-defaulted; baked by
+        // `GlucoseLiveActivityManager.makeContent` from their `WidgetStore` mirrors, with an
+        // unrecognized `topRightField` token ALSO resolved to the default at bake time (never a
+        // blank/crash slot) — mirrors `liveActivityStyle`'s own unrecognized-token handling.
+        public var topRightField: String
+        public var plotRangeHours: Int
+        public var showXAxisLine: Bool
+        public var showYAxisLine: Bool
+        public var showXAxisTicks: Bool
+        public var showYAxisTicks: Bool
+        public var showRangeLines: Bool
+        /// Phase 09.26-07 (D-22) — whether the full-bleed style's optional nav-only "Bolus" shortcut
+        /// pill renders on the Lock Screen expanded + Dynamic Island expanded. Additive/decode-
+        /// defaulted to `false` (OFF), baked by `GlucoseLiveActivityManager.makeContent` from
+        /// `WidgetStore.liveActivityShowBolusShortcut`.
+        public var showBolusShortcut: Bool
+
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
-                    batteryPercent: Int = 0, basalRateUnitsPerHour: Double = 0,
+                    batteryPercent: Int = 0, batteryCharging: Bool = false,
+                    basalRateUnitsPerHour: Double = 0,
                     deliverySuspended: Bool = false, controlIQMode: Int = 0,
                     controlIQEnabled: Bool = false, ciqZone: String? = nil,
                     ciqSuspendedForLow: Bool = false, ciqSuspendStartDate: Date? = nil,
@@ -165,7 +208,18 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     connected: Bool = false,
                     updatedAt: Date = Date(),
                     iobStale: Bool = false, pumpLinkStale: Bool = false, selectedFields: [String] = [],
-                    hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false) {
+                    hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
+                    liveActivityStyle: String = "fullBleed",
+                    plotFloorMgdl: Int = GlucosePlotScale.defaultFloor,
+                    plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling,
+                    topRightField: String = LATopRightFieldVocabulary.defaultId,
+                    plotRangeHours: Int = 2,
+                    showXAxisLine: Bool = false,
+                    showYAxisLine: Bool = false,
+                    showXAxisTicks: Bool = false,
+                    showYAxisTicks: Bool = false,
+                    showRangeLines: Bool = false,
+                    showBolusShortcut: Bool = false) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
@@ -176,6 +230,7 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.iobDate = iobDate
             self.reservoirUnits = reservoirUnits
             self.batteryPercent = batteryPercent
+            self.batteryCharging = batteryCharging
             self.basalRateUnitsPerHour = basalRateUnitsPerHour
             self.deliverySuspended = deliverySuspended
             self.controlIQMode = controlIQMode
@@ -192,15 +247,29 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.pumpLinkStale = pumpLinkStale
             self.selectedFields = selectedFields
             self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
+            self.liveActivityStyle = liveActivityStyle
+            self.plotFloorMgdl = plotFloorMgdl
+            self.plotCeilingMgdl = plotCeilingMgdl
+            self.topRightField = topRightField
+            self.plotRangeHours = plotRangeHours
+            self.showXAxisLine = showXAxisLine
+            self.showYAxisLine = showYAxisLine
+            self.showXAxisTicks = showXAxisTicks
+            self.showYAxisTicks = showYAxisTicks
+            self.showRangeLines = showRangeLines
+            self.showBolusShortcut = showBolusShortcut
         }
 
         private enum CodingKeys: String, CodingKey {
             case glucose, glucoseDate, trendArrow, recentPoints, displayUnitToken, iobUnits, iobDate,
-                 reservoirUnits, batteryPercent, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
+                 reservoirUnits, batteryPercent, batteryCharging, basalRateUnitsPerHour, deliverySuspended, controlIQMode,
                  controlIQEnabled, ciqZone, ciqSuspendedForLow, ciqSuspendStartDate, lastAutoCorrectionDate,
                  lockoutUntilDate, exerciseTimeRemainingSec,
                  connected, updatedAt,
-                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel
+                 iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel,
+                 liveActivityStyle, plotFloorMgdl, plotCeilingMgdl,
+                 topRightField, plotRangeHours, showXAxisLine, showYAxisLine, showXAxisTicks,
+                 showYAxisTicks, showRangeLines, showBolusShortcut
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -225,6 +294,10 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 iobDate: try c.decodeIfPresent(Date.self, forKey: .iobDate),
                 reservoirUnits: try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0,
                 batteryPercent: try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0,
+                // Phase 09.27-02 (D-05): a legacy/missing key falls back to `false` (not charging) —
+                // mirrors `deliverySuspended`'s own fail-closed default; an in-flight Live Activity
+                // started before this plan shipped never shows a fabricated charging badge.
+                batteryCharging: try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false,
                 basalRateUnitsPerHour: try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0,
                 deliverySuspended: try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false,
                 controlIQMode: try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0,
@@ -255,7 +328,27 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 hasSnoozeEligibleAlert: try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false,
                 // Owner-requested toggle: missing key ⇒ false (labels hidden), same default-OFF rule
                 // every other additive field above follows.
-                showUnitLabel: try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
+                showUnitLabel: try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false,
+                // Phase 09.26 tracer (D-11/D-21/D-02/D-03): a legacy/missing key falls back to the
+                // SAME defaults the memberwise `init` above declares — "fullBleed"/40/300 — never a
+                // thrown decode for an in-flight Live Activity started under an older build.
+                liveActivityStyle: try c.decodeIfPresent(String.self, forKey: .liveActivityStyle) ?? "fullBleed",
+                plotFloorMgdl: try c.decodeIfPresent(Int.self, forKey: .plotFloorMgdl) ?? GlucosePlotScale.defaultFloor,
+                plotCeilingMgdl: try c.decodeIfPresent(Int.self, forKey: .plotCeilingMgdl) ?? GlucosePlotScale.defaultCeiling,
+                // Phase 09.26-02 (D-15/D-18/D-19): every full-bleed display setting falls back to the
+                // SAME default the memberwise `init` above declares — iobDelta/2h/all chrome OFF —
+                // never a thrown decode for a Live Activity started before this plan shipped.
+                topRightField: try c.decodeIfPresent(String.self, forKey: .topRightField) ?? LATopRightFieldVocabulary.defaultId,
+                plotRangeHours: try c.decodeIfPresent(Int.self, forKey: .plotRangeHours) ?? 2,
+                showXAxisLine: try c.decodeIfPresent(Bool.self, forKey: .showXAxisLine) ?? false,
+                showYAxisLine: try c.decodeIfPresent(Bool.self, forKey: .showYAxisLine) ?? false,
+                showXAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showXAxisTicks) ?? false,
+                showYAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showYAxisTicks) ?? false,
+                showRangeLines: try c.decodeIfPresent(Bool.self, forKey: .showRangeLines) ?? false,
+                // Phase 09.26-07 (D-22): a legacy/missing key falls back to the SAME default the
+                // memberwise `init` above declares — false (pill OFF) — never a thrown decode for a
+                // Live Activity started before this plan shipped.
+                showBolusShortcut: try c.decodeIfPresent(Bool.self, forKey: .showBolusShortcut) ?? false
             )
         }
     }
@@ -309,7 +402,195 @@ public enum LAFieldVocabulary {
     // Phase 09.15 T1-9: "exerciseTimer" registered as opt-in (off by default, matches
     // "lastAutoCorrection"'s own precedent) — Sleep facts are deliberately NOT added here (explicit
     // scope, D-08 T1-9 note).
-    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection"]
+    // Phase 09.26-03 (D-13, UI-SPEC "New Field Vocabulary"): "delta" (the 30-min windowed glucose
+    // delta) and "tir" (time-in-range over the current LA plot window) registered as opt-in — off by
+    // default, same precedent as "controlIQZone"/"lastAutoCorrection". Usable in the full-bleed
+    // bottom customizable row (not just the top-right slot); rendered via `WidgetUI.chip(for:_:)`.
+    public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection", "delta", "tir"]
+}
+
+/// Phase 09.26-02 (D-15) — the valid tokens for the full-bleed style's user-selectable top-right slot.
+/// Mirrors `AppSettings.liveActivityTopRightFieldOptions` verbatim — kept in sync by inspection (same
+/// "kept in sync" precedent as `LAFieldVocabulary` above), since this file compiles into the
+/// `faBolusWidgets` extension too and must not link `AppSettings`. An unrecognized/legacy token (a
+/// downgrade, or a value dropped in a later build) resolves to `defaultId` at bake/render time — never
+/// a blank/crash slot.
+public enum LATopRightFieldVocabulary {
+    public static let all: [String] = ["iobDelta", "iob", "delta", "tir", "controlIQZone", "battery", "reservoir", "none"]
+    public static let defaultId = "iobDelta"
+}
+
+/// Phase 09.26-04 (D-20) — the four intentional states for the full-bleed plot's sparse/not-fully-
+/// populated history: never a misleading full-width fill/line across time for which there is no
+/// data. Pure classifier (no ActivityKit/SwiftUI, same purity discipline as `LiveActivityComposer`)
+/// so it's unit-testable from the app target and usable by `FullBleedGlucosePlot`'s render in the
+/// `faBolusWidgets` extension. See `FullBleedGlucosePlot` for what each state actually draws.
+public enum FullBleedPlotState: Equatable, Sendable {
+    /// No points at all (after the future-point guard) — caption only, no dot/line/fill.
+    case empty
+    /// Exactly one point — now-dot + caption, no line/fill (a single fact can't draw a line).
+    case single
+    /// 2+ points, but the real data span is LESS than the selected plot range — the curve draws
+    /// only across the real span, anchored right (now), with a faint baseline + caption filling the
+    /// uncovered left region.
+    case partial
+    /// 2+ points whose span covers (or exceeds) the selected plot range — normal full-width curve.
+    case full
+
+    /// The future-point guard (D-04) — drops any point with `t > now` (a fast-clock artifact must
+    /// never count as real history). Shared by `classify` below AND `FullBleedGlucosePlot
+    /// .validPoints` (IN-01, 09.26-review) — previously the identical `points.filter { $0.t <= now
+    /// }` rule was duplicated independently at both call sites; this is now the single source of
+    /// truth for "drop future-dated points" so the two can't silently drift.
+    public static func validPoints(_ points: [WidgetSnapshot.Point], now: Date) -> [WidgetSnapshot.Point] {
+        points.filter { $0.t <= now }
+    }
+
+    /// Classifies `points` for the given `plotRangeHours` window as of `now`. Future-dated points
+    /// (`t > now`) are excluded BEFORE classification (mirrors the Plan-01 render-time guard) — a
+    /// fast-clock artifact must never count toward "the data covers the range." The `.full`/`.partial`
+    /// boundary is RELATIVE to `plotRangeHours` (2h vs 6h classify the SAME absolute span
+    /// differently) — never a fixed absolute threshold; `span >= rangeSeconds` counts as `.full`
+    /// (inclusive of the exact-equal boundary, matching the UI-SPEC's "span covers the full selected
+    /// plot range").
+    public static func classify(points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date) -> FullBleedPlotState {
+        let valid = validPoints(points, now: now)
+        guard let first = valid.first, let last = valid.last else { return .empty }
+        guard valid.count >= 2 else { return .single }
+        let span = last.t.timeIntervalSince(first.t)
+        let rangeSeconds = Double(max(plotRangeHours, 1)) * 3600
+        return span >= rangeSeconds ? .full : .partial
+    }
+}
+
+/// Phase 09.26-03 (D-05/D-13/D-15) — pure derivation helpers for the full-bleed top-right slot and
+/// the opt-in "delta"/"tir" bottom-row fields. No ActivityKit, no SwiftUI (same purity discipline as
+/// `LiveActivityComposer` above) so this compiles into BOTH the app target (unit-testable) and the
+/// `faBolusWidgets` extension (rendering), and is callable from plain (non-`@MainActor`) test
+/// contexts. `delta`/`tir` are GROUNDED facts derived from `recentPoints`/`iobUnits` — never a
+/// forecast/ETA (D-05 explicitly out of scope). The delta is a WINDOWED fact over the last 30
+/// minutes of `recentPoints`, deliberately distinct from `ContentState.trendArrow` (the CGM's own
+/// instantaneous slope classifier, carried verbatim from the sensor) — the two may legitimately
+/// disagree; this type never conflates them.
+public enum LAMetrics {
+    /// The 30-minute windowed glucose delta (mg/dL), or `nil` when `points` spans LESS than 10
+    /// minutes — too little history to compute a meaningful 30-minute delta, so the caller must omit
+    /// the clause entirely rather than render a fabricated/zero-filled delta (D-05/D-20, T-09.26-08).
+    /// ALSO `nil` when the freshest point (`last`) is itself more than 10 minutes stale relative to
+    /// `now` (CR-01, 09.26-review) — without this guard, a CGM feed that has been down for >~30
+    /// minutes leaves `nearest` mathematically degenerating to `last` itself (every other candidate
+    /// point is farther from `target` than `last` is), which fabricates a "flat" `0` delta instead of
+    /// truthfully reporting "no real 30-minute comparison exists." This mirrors the `context.isStale`/
+    /// "never present stale as current" contract already enforced on the BG numeral/arrow.
+    /// `= last(points).mgdl - nearest(points, to: now - 30min).mgdl`, where "nearest" is the point
+    /// with the smallest absolute time distance to `now - 30min` (ties broken toward the earlier
+    /// point via `min(by:)`'s stable first-match semantics).
+    public static func delta(points: [WidgetSnapshot.Point], now: Date) -> Int? {
+        guard let first = points.first, let last = points.last else { return nil }
+        guard last.t.timeIntervalSince(first.t) >= 10 * 60 else { return nil }
+        guard now.timeIntervalSince(last.t) <= 10 * 60 else { return nil }
+        let target = now.addingTimeInterval(-30 * 60)
+        let nearest = points.min { abs($0.t.timeIntervalSince(target)) < abs($1.t.timeIntervalSince(target)) }
+        guard let nearest else { return nil }
+        return last.mgdl - nearest.mgdl
+    }
+
+    /// The delta glyph, reusing the SAME Unicode trend-arrow set already carried on `trendArrow`
+    /// (`faBolusCore.TrendArrow`'s raw values) — no new glyphs introduced. Boundaries: `>= +10` is a
+    /// full up arrow, `> 0` (but `< 10`) is up-right, `== 0` is flat, `< 0` (but `> -10`) is
+    /// down-right, `<= -10` is a full down arrow.
+    public static func deltaGlyph(_ d: Int) -> String {
+        switch d {
+        case 10...: return "↑"
+        case 1...9: return "↗"
+        case 0: return "→"
+        case -9...(-1): return "↘"
+        default: return "↓"   // <= -10
+        }
+    }
+
+    /// Time-in-range percent (rounded to the nearest whole percent) over `points`, count-based on the
+    /// SAME closed `[WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.high]` (70...180) convention
+    /// `faBolusCore.GlucoseStatistics.timeInRangePct` uses (T-09.26-10) — this file can't link
+    /// faBolusCore directly (compiles into the widget extension too), so it re-derives the same count
+    /// via the drift-guarded `WidgetGlucoseThresholds` mirror instead of a second literal 70/180.
+    /// Empty input → 0 (never a divide-by-zero crash, never a fabricated 100%).
+    public static func tir(points: [WidgetSnapshot.Point]) -> Int {
+        guard !points.isEmpty else { return 0 }
+        let inRange = points.filter { $0.mgdl >= WidgetGlucoseThresholds.low && $0.mgdl <= WidgetGlucoseThresholds.high }.count
+        return Int((Double(inRange) / Double(points.count) * 100).rounded())
+    }
+
+    /// The composite top-right slot copy for `field` (one of `LATopRightFieldVocabulary.all`), or
+    /// `nil` when the slot should render NOTHING (field == "none" — the corner is handed back to the
+    /// plain curve, D-15). An unrecognized token falls back to the "iobDelta" composite, matching
+    /// `LATopRightFieldVocabulary`'s own unrecognized-token-resolves-to-default rule (never a
+    /// blank/crash slot). The IOB half is formatted EXACTLY as `WidgetUI.chip(for: "iob", state)`
+    /// does today (`String(format: "%.2f U", ...)`), including honoring `iobStale` — this function
+    /// does not grey/color, it only produces the copy string; the caller applies tint via the same
+    /// `iobStale` flag it already reads for every other chip (T-09.26-09).
+    public static func topRightText(
+        field: String, state: FaBolusGlucoseAttributes.ContentState, now: Date
+    ) -> String? {
+        func iobText() -> String { String(format: "%.2f U", state.iobUnits) }
+        func deltaClause() -> String? {
+            guard let d = delta(points: state.recentPoints, now: now) else { return nil }
+            let sign = d > 0 ? "+" : ""
+            return "\(sign)\(d)\(deltaGlyph(d)) 30m"
+        }
+        switch field {
+        case "iob":
+            return iobText()
+        case "delta":
+            return deltaClause()
+        case "tir":
+            return "\(tir(points: state.recentPoints))% TIR"
+        case "controlIQZone":
+            return state.ciqZone
+        case "battery":
+            return "\(state.batteryPercent)%"
+        case "reservoir":
+            return String(format: "%.0f U", state.reservoirUnits)
+        case "none":
+            return nil
+        case "iobDelta":
+            fallthrough
+        default:
+            guard let clause = deltaClause() else { return iobText() }
+            return "\(iobText()) · \(clause)"
+        }
+    }
+}
+
+/// Phase 09.26-04 (D-14/D-07) — the LA-specific plot-range `recentPoints` windowing/downsampling.
+/// Pure (no ActivityKit/WidgetKit) so the boundary math is unit-testable from
+/// `GlucoseLiveActivityManager.makeContent`'s tests without a running Activity.
+public enum LAPlotWindow {
+    /// Filters `points` to the trailing `plotRangeHours` window (by TIMESTAMP, not a fixed array-
+    /// suffix count, since cadence isn't a guaranteed constant), then, if the windowed count exceeds
+    /// `capForBudget`, evenly thins it — ALWAYS keeping the first and last point — so the caller
+    /// stays comfortably under the ~4KB ActivityKit `ContentState` ceiling even at the widest
+    /// selectable range (T-09.26-11; measured empirically: 72 points + every other full-bleed field
+    /// populated encodes to ~2.8KB, comfortably under the ~4KB ceiling with margin to spare — see the
+    /// plan's own 6h budget test). `capForBudget`'s default (72) is a defensive safety valve, not the
+    /// expected count under normal ~5-min CGM cadence (which already yields ≈72 points for a 6h
+    /// window) — it only actually thins if the source data is denser than assumed.
+    public static func recentPoints(
+        from points: [WidgetSnapshot.Point], plotRangeHours: Int, now: Date, capForBudget: Int = 72
+    ) -> [WidgetSnapshot.Point] {
+        let windowStart = now.addingTimeInterval(-Double(max(plotRangeHours, 1)) * 3600)
+        let windowed = points.filter { $0.t >= windowStart && $0.t <= now }
+        guard windowed.count > capForBudget, capForBudget > 1 else { return windowed }
+        var result: [WidgetSnapshot.Point] = []
+        result.reserveCapacity(capForBudget)
+        let lastIndex = windowed.count - 1
+        let step = Double(lastIndex) / Double(capForBudget - 1)
+        for i in 0..<capForBudget {
+            let idx = min(lastIndex, Int((Double(i) * step).rounded()))
+            result.append(windowed[idx])
+        }
+        return result
+    }
 }
 
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target

@@ -332,5 +332,352 @@ struct LiveActivityContentBuilderTests {
         #expect(decoded.pumpLinkStale == false)
         #expect(decoded.selectedFields == [])
         #expect(decoded.hasSnoozeEligibleAlert == false)
+        // Phase 09.26-01 tracer (D-11/D-21/D-02/D-03): the three newest additive fields also fall
+        // back to the SAME defaults the memberwise `init` declares — "fullBleed"/40/300 — never a
+        // thrown decode for an in-flight Live Activity started before this tracer shipped.
+        #expect(decoded.liveActivityStyle == "fullBleed")
+        #expect(decoded.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(decoded.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+        // Phase 09.26-02 (D-15/D-18/D-19): the full-bleed display settings also fall back to the SAME
+        // defaults the memberwise `init` declares — iobDelta / 2h / all chrome OFF — never a thrown
+        // decode for a Live Activity started before this plan shipped.
+        #expect(decoded.topRightField == "iobDelta")
+        #expect(decoded.plotRangeHours == 2)
+        #expect(decoded.showXAxisLine == false)
+        #expect(decoded.showYAxisLine == false)
+        #expect(decoded.showXAxisTicks == false)
+        #expect(decoded.showYAxisTicks == false)
+        #expect(decoded.showRangeLines == false)
+        // Phase 09.26-07 (D-22): the optional Bolus-shortcut pill falls back to the SAME default the
+        // memberwise `init` declares — false (OFF) — never a thrown decode for a Live Activity
+        // started before this plan shipped.
+        #expect(decoded.showBolusShortcut == false)
+    }
+
+    // MARK: - Phase 09.26-01 tracer (D-11/D-21/D-02/D-03) — full-bleed style + plot-bounds baking
+
+    /// The 4KB ceiling holds with the three newest additive fields populated (non-default values, the
+    /// worst case for encoded size) alongside a 24-point series — the plan's own acceptance criterion,
+    /// distinct from the two pre-existing budget tests above.
+    @Test func encodedContentStateStaysUnderFourKBWithStyleAndPlotBoundsPopulated() throws {
+        let now = Date(timeIntervalSince1970: 13_000_000)
+        let points = (0..<48).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 48) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.recentPoints.count == 24)
+        #expect(state.liveActivityStyle == "fullBleed")   // default when no WidgetStore mirror is set
+        #expect(state.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(state.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// `makeContent` bakes `WidgetStore.liveActivityStyle`/`liveActivityPlotFloor`/
+    /// `liveActivityPlotCeiling` into `ContentState`, resolving the bounds through
+    /// `GlucosePlotScale.resolve` (snapping to the nearest valid preset) rather than carrying the
+    /// stored mirror through unresolved. Mutates the shared App-Group `UserDefaults` suite for the
+    /// duration of the test only, restoring it in a `defer` so this doesn't leak into any other test.
+    @Test func makeContentBakesStyleAndResolvedPlotBoundsFromWidgetStoreMirror() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        let previousFloor = WidgetStore.liveActivityPlotFloor
+        let previousCeiling = WidgetStore.liveActivityPlotCeiling
+        defer {
+            WidgetStore.liveActivityStyle = previousStyle
+            WidgetStore.liveActivityPlotFloor = previousFloor
+            WidgetStore.liveActivityPlotCeiling = previousCeiling
+        }
+
+        WidgetStore.liveActivityStyle = "classic"
+        WidgetStore.liveActivityPlotFloor = 50
+        WidgetStore.liveActivityPlotCeiling = 350
+
+        let now = Date(timeIntervalSince1970: 14_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.liveActivityStyle == "classic")
+        #expect(state.plotFloorMgdl == 50)
+        #expect(state.plotCeilingMgdl == 350)
+    }
+
+    /// An unset (nil) App-Group mirror — the legacy-install / never-synced case — bakes the documented
+    /// defaults, never a blank style or a 0/0 bound pair.
+    @Test func makeContentDefaultsToFullBleedAndDefaultBoundsWhenWidgetStoreMirrorIsAbsent() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        let previousFloor = WidgetStore.liveActivityPlotFloor
+        let previousCeiling = WidgetStore.liveActivityPlotCeiling
+        defer {
+            WidgetStore.liveActivityStyle = previousStyle
+            WidgetStore.liveActivityPlotFloor = previousFloor
+            WidgetStore.liveActivityPlotCeiling = previousCeiling
+        }
+
+        WidgetStore.liveActivityStyle = nil
+        WidgetStore.liveActivityPlotFloor = nil
+        WidgetStore.liveActivityPlotCeiling = nil
+
+        let now = Date(timeIntervalSince1970: 15_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.liveActivityStyle == "fullBleed")
+        #expect(state.plotFloorMgdl == GlucosePlotScale.defaultFloor)
+        #expect(state.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+    }
+
+    // MARK: - Phase 09.26-02 — full-bleed display settings (top-right slot, plot range, axis chrome, range lines)
+
+    /// The 4KB ceiling holds with EVERY full-bleed display field (this plan's 7 new settings) at a
+    /// non-default value, alongside the pre-existing style/plot-bounds fields and a 24-point series —
+    /// the plan's own re-verify acceptance criterion.
+    @Test func encodedContentStateStaysUnderFourKBWithFullBleedDisplaySettingsPopulated() throws {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
+        }
+        WidgetStore.liveActivityTopRightField = "controlIQZone"
+        WidgetStore.liveActivityPlotRangeHours = 6
+        WidgetStore.liveActivityShowXAxisLine = true
+        WidgetStore.liveActivityShowYAxisLine = true
+        WidgetStore.liveActivityShowXAxisTicks = true
+        WidgetStore.liveActivityShowYAxisTicks = true
+        WidgetStore.liveActivityShowRangeLines = true
+        // Phase 09.26-07 (D-22): the newest additive field, at its non-default value — the plan's own
+        // re-verify acceptance criterion.
+        WidgetStore.liveActivityShowBolusShortcut = true
+
+        let now = Date(timeIntervalSince1970: 16_000_000)
+        let points = (0..<48).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 48) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        // Phase 09.26-04 (D-14/D-07): at `plotRangeHours == 6`, the LA now honors its OWN wider
+        // window instead of the fixed 24-point 2h cap — all 48 of this test's points fall within the
+        // trailing 6h window (their span is only 4h) and stay under the 72-point budget cap, so none
+        // are dropped/downsampled. This UPDATES the pre-09.26-04 assertion (which pinned the
+        // then-current "always 24 regardless of plotRangeHours" behavior this plan's Task 3 exists to
+        // change) — see `plotRangeHoursTwoPreservesTheExistingTwoHourWindow` and
+        // `encodedContentStateStaysUnderFourKBWithASixHourPopulatedSeries` for the new 2h/6h contract.
+        #expect(state.recentPoints.count == 48)
+        #expect(state.topRightField == "controlIQZone")
+        #expect(state.plotRangeHours == 6)
+        #expect(state.showXAxisLine == true)
+        #expect(state.showYAxisLine == true)
+        #expect(state.showXAxisTicks == true)
+        #expect(state.showYAxisTicks == true)
+        #expect(state.showRangeLines == true)
+        #expect(state.showBolusShortcut == true)
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// `makeContent` bakes all 8 full-bleed display settings from their `WidgetStore` mirrors
+    /// (7 from 09.26-02 + `showBolusShortcut` from 09.26-07/D-22).
+    @Test func makeContentBakesFullBleedDisplaySettingsFromWidgetStoreMirror() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
+        }
+        WidgetStore.liveActivityTopRightField = "battery"
+        WidgetStore.liveActivityPlotRangeHours = 6
+        WidgetStore.liveActivityShowXAxisLine = true
+        WidgetStore.liveActivityShowYAxisLine = false
+        WidgetStore.liveActivityShowXAxisTicks = true
+        WidgetStore.liveActivityShowYAxisTicks = false
+        WidgetStore.liveActivityShowRangeLines = true
+        WidgetStore.liveActivityShowBolusShortcut = true
+
+        let now = Date(timeIntervalSince1970: 17_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "battery")
+        #expect(state.plotRangeHours == 6)
+        #expect(state.showXAxisLine == true)
+        #expect(state.showYAxisLine == false)
+        #expect(state.showXAxisTicks == true)
+        #expect(state.showYAxisTicks == false)
+        #expect(state.showRangeLines == true)
+        #expect(state.showBolusShortcut == true)
+    }
+
+    /// An unset (nil) mirror for every one of the 8 full-bleed display settings bakes the documented
+    /// defaults — iobDelta / 2h / all chrome OFF / Bolus shortcut OFF — never a blank/crash.
+    @Test func makeContentDefaultsFullBleedDisplaySettingsWhenWidgetStoreMirrorIsAbsent() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        let previousBolusShortcut = WidgetStore.liveActivityShowBolusShortcut
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+            WidgetStore.liveActivityShowBolusShortcut = previousBolusShortcut
+        }
+        WidgetStore.liveActivityTopRightField = nil
+        WidgetStore.liveActivityPlotRangeHours = nil
+        WidgetStore.liveActivityShowXAxisLine = nil
+        WidgetStore.liveActivityShowYAxisLine = nil
+        WidgetStore.liveActivityShowXAxisTicks = nil
+        WidgetStore.liveActivityShowYAxisTicks = nil
+        WidgetStore.liveActivityShowRangeLines = nil
+        WidgetStore.liveActivityShowBolusShortcut = nil
+
+        let now = Date(timeIntervalSince1970: 18_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "iobDelta")
+        #expect(state.plotRangeHours == 2)
+        #expect(state.showXAxisLine == false)
+        #expect(state.showYAxisLine == false)
+        #expect(state.showXAxisTicks == false)
+        #expect(state.showYAxisTicks == false)
+        #expect(state.showRangeLines == false)
+        #expect(state.showBolusShortcut == false)
+    }
+
+    /// D-15: an unrecognized `liveActivityTopRightField` mirror token (a downgrade, or a value from a
+    /// build that has since dropped an option) resolves to the documented default "iobDelta" at bake
+    /// time — never a blank/crash slot.
+    @Test func makeContentResolvesUnrecognizedTopRightFieldTokenToIobDelta() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        defer { WidgetStore.liveActivityTopRightField = previousTopRight }
+        WidgetStore.liveActivityTopRightField = "notARealOption"
+
+        let now = Date(timeIntervalSince1970: 19_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "iobDelta")
+    }
+
+    // MARK: - Phase 09.26-04 (Task 3, D-14/D-07) — LA-specific plot-range window + 4KB budget re-verify
+
+    /// The 2h default path is UNCHANGED by this plan: `plotRangeHours == 2` still caps at the
+    /// existing 24-point ~2h window (`suffix(24)`), independent of how much history the (now-widened)
+    /// snapshot actually carries.
+    @Test func plotRangeHoursTwoPreservesTheExistingTwoHourWindow() {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = 2
+
+        let now = Date(timeIntervalSince1970: 21_000_000)
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, points: points)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.plotRangeHours == 2)
+        #expect(state.recentPoints.count == 24)
+        #expect(state.recentPoints == Array(points.suffix(24)))
+    }
+
+    /// MANDATORY 6h budget re-verify (D-14/D-07, the plan's own hard acceptance criterion,
+    /// T-09.26-11): a snapshot carrying a fully-populated series spanning MORE than 6h (so the
+    /// trailing-window filter is genuinely exercised, not just a full passthrough) plus every
+    /// full-bleed field populated at a non-default value still encodes under the ActivityKit ~4KB
+    /// `ContentState` ceiling.
+    @Test func encodedContentStateStaysUnderFourKBWithASixHourPopulatedSeries() throws {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = 6
+
+        let now = Date(timeIntervalSince1970: 22_000_000)
+        // 8h of 5-minute-cadence points (96 samples) — wider than the OLD 48-point widget cap (proving
+        // the snapshot side was actually widened to feed the 6h option) and wider than the 6h window
+        // itself (so the trailing-window filter is genuinely exercised, not a full passthrough).
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + ($0 % 40))
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.plotRangeHours == 6)
+        let sixHoursAgo = now.addingTimeInterval(-6 * 3600)
+        #expect(state.recentPoints.allSatisfy { $0.t >= sixHoursAgo })   // the 6h window is honored
+        #expect(state.recentPoints.count > 24)   // denser than the 2h/24-point default path
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// D-14: the 6h path never widens the phone/watch chart windows — it is entirely independent,
+    /// keyed off `WidgetStore.liveActivityPlotRangeHours` (the LA-only mirror), not any watch/phone
+    /// plot-range setting.
+    @Test func sixHourWindowIsScopedToTheLAOnlyPlotRangeMirror() {
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        defer { WidgetStore.liveActivityPlotRangeHours = previousRangeHours }
+        WidgetStore.liveActivityPlotRangeHours = nil   // legacy/never-synced ⇒ documented default (2h)
+
+        let now = Date(timeIntervalSince1970: 23_000_000)
+        let points = (0..<96).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 96) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, points: points)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.plotRangeHours == 2)
+        #expect(state.recentPoints.count == 24)
+    }
+
+    /// `WidgetPublisher.makeSnapshot` retains enough history in the App-Group snapshot to feed the
+    /// LA's 6h option — widened beyond the OLD 48-point/~4h cap. Additive/snapshot-only; no
+    /// pump/dose logic change (the App-Group `WidgetSnapshot` budget is NOT the ActivityKit 4KB
+    /// `ContentState` ceiling this plan re-verifies above).
+    @MainActor
+    @Test func widgetPublisherMakeSnapshotRetainsEnoughHistoryForTheSixHourLAOption() {
+        let now = Date()
+        let history = (0..<200).map {
+            GlucoseReading(date: now.addingTimeInterval(Double($0 - 200) * 300), mgdl: 100)
+        }
+        let widgetSnap = WidgetPublisher.makeSnapshot(PumpSnapshot(), history: history, alerts: [],
+                                                       staleAfterSec: 360, hideAfterSec: nil)
+        // At least 72 points (~6h @ 5-min cadence) must be retained for the LA's 6h option to have
+        // enough raw material to window/downsample from.
+        #expect(widgetSnap.recentPoints.count >= 72)
     }
 }

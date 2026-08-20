@@ -24,6 +24,10 @@ class RemoteClientModel {
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var batteryPercent: Int = 0
+    /// Phase 09.27-03 (D-04/D-05) — mirrors `RemoteCommand.batteryCharging`. Default false = fail-closed
+    /// (a cold launch / legacy host shows plain battery, never a fabricated charging state). The on-wire
+    /// `chargingStatus == 1` semantics remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md).
+    var batteryCharging: Bool = false
     var lastBolusUnits: Double?
     var basalRate: Double = 0          // units/hr, mirrored from the host
     var connection: String = ""
@@ -401,6 +405,18 @@ class RemoteClientModel {
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }
             if let b = cmd.batteryPercent { batteryPercent = Int(b) }
+            // Review fix WR-01 (was: `if let c = cmd.batteryCharging { batteryCharging = c }`, which
+            // kept the last-known value on an absent key — a stale "Charging" claim, the exact
+            // false-positive badge D-03's fail-closed intent exists to prevent). Unlike most optional
+            // fields in this handler, batteryCharging does NOT keep-last on an absent key — it
+            // mirrors `faBolusGarmin/source/app/AppState.mc`'s `(bc instanceof Lang.Boolean) && bc`,
+            // which re-evaluates unconditionally on every statusRead specifically "so a dropped key
+            // or a legacy phone can never leave a stale 'charging' claim on screen." A stale
+            // "Charging" claim is judged worse than a stale battery percent (which DOES legitimately
+            // keep-last, same as every other field here), so this field alone is deliberately
+            // fail-closed rather than sticky. Harmless behavior change for a bare/legacy
+            // `RemoteCommand`: it now explicitly reports "not charging" instead of the last value.
+            batteryCharging = (cmd.batteryCharging == true)
             if let cr = cmd.carbRatio { carbRatio = cr }
             if let i = cmd.isf { isf = Int(i) }
             if let tb = cmd.targetBg { targetBg = Int(tb) }
@@ -588,9 +604,15 @@ class RemoteClientModel {
     /// Publish the latest glucose/pump state to the App Group so this device's widgets/complication
     /// can show it. Reuses `WidgetSnapshot`/`WidgetStore` (a device-local App Group container).
     func publishSnapshot() {
+        // Verifier gap closure (09.27-VERIFICATION.md Truth #11): forward `batteryCharging` into
+        // the App-Group snapshot here on the BASE class, same as `MacRemoteModel.publishSnapshot`'s
+        // override already does — this is what makes the Watch (which does not override
+        // `publishSnapshot`) also carry the fail-closed charging state into its own `WidgetSnapshot`
+        // instead of silently defaulting to `false` regardless of the real value.
         let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
                                   iobUnits: iobUnits, reservoirUnits: reservoirUnits,
-                                  batteryPercent: batteryPercent, lastBolusUnits: lastBolusUnits,
+                                  batteryPercent: batteryPercent, batteryCharging: batteryCharging,
+                                  lastBolusUnits: lastBolusUnits,
                                   connected: reachable, updatedAt: Date(),
                                   cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
                                   targetBg: targetBg, maxBolusUnits: maxBolusUnits)

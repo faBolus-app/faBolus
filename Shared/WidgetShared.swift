@@ -73,6 +73,12 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
+    /// Phase 09.27-02 (D-04/D-05) — whether the pump is currently charging (op-145
+    /// `chargingStatus == 1`, mirrored verbatim from `PumpSnapshot.batteryCharging`). Additive,
+    /// fail-closed default `false` (matches `deliverySuspended`'s own non-optional shape):
+    /// absent/legacy key ⇒ never a fabricated charging badge on an old widget/complication snapshot
+    /// (D-05). Routed through `BatteryChargingPresentation` at render — never re-derived inline.
+    public var batteryCharging: Bool
     public var lastBolusUnits: Double?
     public var lastBolusDate: Date?
     public var connected: Bool
@@ -142,7 +148,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var cartridgeReady: Bool
 
     public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
-                reservoirUnits: Double = 0, batteryPercent: Int = 0, lastBolusUnits: Double? = nil,
+                reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
+                lastBolusUnits: Double? = nil,
                 lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
                 recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
                 carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
@@ -152,7 +159,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
                 hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
                 cartridgeReady: Bool = true) {
         self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
-        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
+        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent; self.batteryCharging = batteryCharging
         self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
         self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
         self.activeAlerts = activeAlerts
@@ -169,7 +176,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, lastBolusUnits,
+        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging, lastBolusUnits,
              lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
              targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
              basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
@@ -191,6 +198,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
         reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
         batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
+        // Phase 09.27-02 (D-05): a legacy/missing key falls back to `false` (not charging) — mirrors
+        // `deliverySuspended`'s own fail-closed default; an older widget-extension binary never shows
+        // a fabricated charging badge from a missing key.
+        batteryCharging = try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false
         lastBolusUnits = try c.decodeIfPresent(Double.self, forKey: .lastBolusUnits)
         lastBolusDate = try c.decodeIfPresent(Date.self, forKey: .lastBolusDate)
         connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false
@@ -320,6 +331,147 @@ public enum WidgetStore {
                 return
             }
             defaults?.set(data, forKey: "liveActivityFields")
+        }
+    }
+
+    /// Phase 09.26 tracer (D-11/D-21) — the Live Activity style mirror ("fullBleed"|"classic"),
+    /// written by `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent`
+    /// when baking `ContentState.liveActivityStyle` (the extension's SwiftUI views never observe
+    /// App-Group changes directly — pump-surface research §2b). `nil` when absent (a legacy install,
+    /// or before the first `syncWidgetConfig()` call) — the manager falls back to "fullBleed" rather
+    /// than baking in a blank style.
+    public static var liveActivityStyle: String? {
+        get { defaults?.string(forKey: "liveActivityStyle") }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityStyle")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityStyle")
+        }
+    }
+
+    /// Phase 09.26 tracer (D-02/D-03) — the phone's own glucose-plot Y-axis floor/ceiling mirror
+    /// (`AppSettings.glucosePlotFloor`/`glucosePlotCeiling`), so the full-bleed LA curve resolves the
+    /// SAME bounds via `GlucosePlotScale.resolve(storedFloor:storedCeiling:)` the phone's own chart
+    /// uses. `nil` when absent (legacy install / not yet synced) — `resolve` already treats a `nil`
+    /// pair as "use the defaults", so no separate fallback is needed here.
+    public static var liveActivityPlotFloor: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotFloor") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotFloor")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotFloor")
+        }
+    }
+    public static var liveActivityPlotCeiling: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotCeiling") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotCeiling")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotCeiling")
+        }
+    }
+
+    /// Phase 09.26-02 (D-15) — the full-bleed top-right slot content mirror, written by
+    /// `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent` when baking
+    /// `ContentState.topRightField`. `nil` when absent (a legacy install, or before the first
+    /// `syncWidgetConfig()` call) — the manager falls back to "iobDelta" rather than baking in a blank
+    /// slot.
+    public static var liveActivityTopRightField: String? {
+        get { defaults?.string(forKey: "liveActivityTopRightField") }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityTopRightField")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityTopRightField")
+        }
+    }
+
+    /// Phase 09.26-02 (D-14) — the full-bleed LA-ONLY plot time-range (hours) mirror, independent of
+    /// the watch/phone chart's own range settings. `nil` when absent — the manager falls back to 2h.
+    public static var liveActivityPlotRangeHours: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotRangeHours") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotRangeHours")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotRangeHours")
+        }
+    }
+
+    /// Phase 09.26-02 (D-18/D-19) — the four independent axis-chrome toggles + the high/low range-lines
+    /// toggle, each mirrored individually (never one packed bitmask) so a future plan can add another
+    /// independent toggle without a migration. `nil` when absent — the manager falls back to `false`
+    /// (chrome OFF) for every one, matching the owner-approved clean full-bleed default.
+    public static var liveActivityShowXAxisLine: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowXAxisLine") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowXAxisLine")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowXAxisLine")
+        }
+    }
+    public static var liveActivityShowYAxisLine: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowYAxisLine") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowYAxisLine")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowYAxisLine")
+        }
+    }
+    public static var liveActivityShowXAxisTicks: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowXAxisTicks") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowXAxisTicks")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowXAxisTicks")
+        }
+    }
+    public static var liveActivityShowYAxisTicks: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowYAxisTicks") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowYAxisTicks")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowYAxisTicks")
+        }
+    }
+    public static var liveActivityShowRangeLines: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowRangeLines") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowRangeLines")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowRangeLines")
+        }
+    }
+
+    /// Phase 09.26-07 (D-22) — the optional nav-only Bolus-shortcut pill toggle mirror. `nil` when
+    /// absent — the manager falls back to `false` (pill OFF), matching the owner-approved default-OFF
+    /// opt-in.
+    public static var liveActivityShowBolusShortcut: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowBolusShortcut") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowBolusShortcut")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowBolusShortcut")
         }
     }
 

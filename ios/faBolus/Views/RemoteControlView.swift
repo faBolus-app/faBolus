@@ -284,6 +284,8 @@ extension RemoteClientModel {
         s.iobUnits = iobUnits
         s.reservoirUnits = reservoirUnits
         s.batteryPercent = batteryPercent
+        // Phase 09.27-03 (D-04/D-05): the charging-aware StatusPillsView (Plan 01) renders this.
+        s.batteryCharging = batteryCharging
         s.carbRatio = carbRatio
         s.isf = isf
         s.targetBg = targetBg

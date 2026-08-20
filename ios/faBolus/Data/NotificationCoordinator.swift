@@ -287,6 +287,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
         }
         model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
+        // 09.25 WR-01: withdraw every OS-outstanding request for a whole CATEGORY (used when the user
+        // disables a safety-trio category via the confirm-on-disable dialog) — distinct from `withdraw(_:)`
+        // above, which only knows a fixed list of dedupe keys.
+        model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
         // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
@@ -326,6 +330,43 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         guard !dedupeKeys.isEmpty else { return }
         center.removeDeliveredNotifications(withIdentifiers: dedupeKeys)
         center.removePendingNotificationRequests(withIdentifiers: dedupeKeys)
+    }
+
+    /// 09.25 WR-01: withdraw every OS-outstanding (pending OR already-delivered) notification for
+    /// `category` — called when the user disables a safety-trio category via the confirm-on-disable
+    /// dialog, so the dialog's "faBolus will no longer alert you" promise is immediately true rather than
+    /// only for the NEXT event (a pump-disconnect escalation step scheduled BEFORE the disable would
+    /// otherwise still fire after it). Unlike `withdraw(_:)`, this doesn't need a fixed list of dedupe
+    /// keys: it queries the OS directly and filters by the `brokerCategory` userInfo every request is
+    /// already stamped with (`NotificationPoster.post`) — which is what makes it work uniformly for
+    /// `.bolusReconciliation`, whose dedupe keys are dynamic per delivery attempt
+    /// (`reconcile-<peerId>-<requestId>`, see `DeliveryLedgerCoordinator`) and have no fixed list to
+    /// enumerate ahead of time. Best-effort / fire-and-forget: this is a UI-adjacent cleanup, not part of
+    /// the governed decide()/post() path, so a caller never awaits it.
+    func withdrawAll(for category: NotificationBroker.Category) {
+        Task { @MainActor [center] in
+            let pending = await center.pendingNotificationRequests()
+            let pendingIds = Self.identifiers(for: category, in: pending)
+            if !pendingIds.isEmpty { center.removePendingNotificationRequests(withIdentifiers: pendingIds) }
+            let delivered = await center.deliveredNotifications()
+            let deliveredIds = Self.identifiers(for: category, inDelivered: delivered)
+            if !deliveredIds.isEmpty { center.removeDeliveredNotifications(withIdentifiers: deliveredIds) }
+        }
+    }
+
+    /// Pure filter used by `withdrawAll(for:)` — the identifiers of `requests` stamped with `category`'s
+    /// `brokerCategory` userInfo. Extracted (non-`private`) so the matching contract is directly
+    /// unit-testable with plainly-constructed `UNNotificationRequest`s, without a real
+    /// `UNUserNotificationCenter`.
+    static func identifiers(for category: NotificationBroker.Category, in requests: [UNNotificationRequest]) -> [String] {
+        requests.filter { ($0.content.userInfo["brokerCategory"] as? String) == category.rawValue }.map(\.identifier)
+    }
+
+    /// Same filter, for the delivered-notification shape (`UNNotification.request`) — kept separate from
+    /// `identifiers(for:in:)` because `UNNotification` has no public initializer, so this half can't be
+    /// driven by a plain unit test the way the pending half can.
+    static func identifiers(for category: NotificationBroker.Category, inDelivered delivered: [UNNotification]) -> [String] {
+        identifiers(for: category, in: delivered.map(\.request))
     }
 
     // MARK: Posting

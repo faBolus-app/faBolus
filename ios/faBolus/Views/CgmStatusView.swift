@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// D-12: a real, non-debug CGM-status surface listing every CONFIGURED failover source's live
 /// status/age/provenance — reusing the SAME already-arbitrated `GlucoseProvenance` the live "via
@@ -90,6 +91,25 @@ struct CgmStatusView: View {
         }
     }
 
+    /// WR-01/IN-02/IN-03 (09.24 review): the single, shared, pure basis for `CgmSettingsView`'s
+    /// Section-2 "Configure & test" subtitle and Section-3 "Status" subtitle. Both MUST agree on
+    /// whether a source is selected for the SAME underlying state — before this helper existed,
+    /// Section 3 read the raw, unvalidated `GlucoseSourceRegistry.selectedId()` while Section 2
+    /// validated against `GlucoseSourceRegistry.selected()`, so a stale/invalid persisted id (one
+    /// that no longer resolves to a descriptor in `enabled`) made the two sections contradict each
+    /// other. Callers must pass the ALREADY-VALIDATED selection — i.e. `GlucoseSourceRegistry
+    /// .selected()` (not the raw id) — so `nil` here always means "not selected" to both call sites.
+    /// `nonisolated static` and pure (mirrors `classify`), so it's directly unit-testable (closes
+    /// IN-03) without a live view or a live `AppModel`.
+    nonisolated static func selectionStatusSubtitle(selected: (id: String, name: String)?, armedId: String?,
+                                                     provenance: GlucoseProvenance) -> (text: String, isActive: Bool) {
+        guard let selected else {
+            return ("Pump only — no failover source selected", false)
+        }
+        let cls = classify(sourceId: selected.id, selectedId: selected.id, armedId: armedId, provenance: provenance)
+        return (classificationLabel(cls), cls == .activeFailover)
+    }
+
     /// Live status + age line for the armed source.
     nonisolated static func rowDetail(statusCaseName: String, ageSeconds: Int?) -> String {
         guard let a = ageSeconds else { return "\(statusCaseName) · no reading yet" }
@@ -147,6 +167,42 @@ struct CgmStatusView: View {
                 Text("Live status for each source you've configured. Only ONE source is armed at a time — the one you selected — so status and age are live only for that source; the rest are shown for reference. This reads the same arbitration the live glucose badge uses; it never changes how the app doses.")
             }
 
+            // 09.24-01 (D-03): a read-only echo of the most recent Test outcome (AppModel-owned
+            // state, already tracked today) — this page NEVER hosts a Test button or re-triggers
+            // the Test flow; the Test action stays on the Configure & test page.
+            Section {
+                switch model.cgmTestOutcome {
+                case nil:
+                    Text("No test has been run yet — run **Test** on the CGM credentials & testing page.")
+                        .font(.caption).foregroundStyle(.secondary)
+                case .waiting:
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock").foregroundStyle(.secondary)
+                        Text("Test in progress — waiting for a reading from \(lastTestSourceName)…")
+                            .font(.caption)
+                    }
+                    .accessibilityElement(children: .combine)
+                case .success(let sample):
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(AppTheme.inRange)
+                        Text("\(lastTestSourceName): last test succeeded — \(lastTestSuccessDetail(sample))")
+                            .font(.caption)
+                    }
+                    .accessibilityElement(children: .combine)
+                case .timeout:
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                        Text("\(lastTestSourceName): last test found no reading")
+                            .font(.caption)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Last test result")
+            } footer: {
+                Text("A read-only echo of the most recent Test you ran on the CGM credentials & testing page. This page never re-runs the test itself.")
+            }
+
             if needsRelaunchToArm {
                 Section {
                     Label {
@@ -162,6 +218,24 @@ struct CgmStatusView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// D-03: the currently-selected source's display name, read directly from the registry (mirrors
+    /// `CgmCredentialsView.selectedSourceName` — not duplicated as a shared helper here).
+    private var lastTestSourceName: String {
+        guard let id = GlucoseSourceRegistry.selectedId() else { return "the selected source" }
+        return GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
+    }
+
+    /// Compact "{bg} · {age}" success line, mirroring `CgmCredentialsView.successDetail`'s
+    /// display-unit + age-string conventions (no ProgressView, no elapsed counter, no error dump —
+    /// the full diagnostic stays on the Configure & test page, D-03).
+    private func lastTestSuccessDetail(_ sample: GlucoseSample) -> String {
+        let age = Int(max(0, Date().timeIntervalSince(sample.date)))
+        let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
+        let bgUnit = AppSettings.shared.glucoseDisplayUnit
+        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+        return "\(bgStr) · \(ageStr)"
+    }
+
     @ViewBuilder private func statusRowView(_ row: Row) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
@@ -169,7 +243,12 @@ struct CgmStatusView: View {
                 Spacer()
                 Text(Self.classificationLabel(row.classification))
                     .font(.caption)
-                    .foregroundStyle(row.classification == .activeFailover ? Color.green : Color.secondary)
+                    // WR-02 (09.24 review): was the raw system `Color.green`, which rendered a
+                    // visibly different "active" green than the design-system `AppTheme.inRange`
+                    // used a few lines away on this same screen family (CgmStatusView's own "Last
+                    // test result" success icon, and SettingsView's statusSubtitleColor). Standardize
+                    // on ONE green for "active/live" across the screen.
+                    .foregroundStyle(row.classification == .activeFailover ? AppTheme.inRange : Color.secondary)
             }
             if let s = row.statusCaseName {
                 Text(Self.rowDetail(statusCaseName: s, ageSeconds: row.ageSeconds))

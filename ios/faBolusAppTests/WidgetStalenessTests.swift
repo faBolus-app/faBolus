@@ -128,4 +128,60 @@ import faBolusCore
         let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: JSONEncoder().encode(notReady))
         #expect(decoded.cartridgeReady == false)
     }
+
+    // MARK: - Phase 09.26-05 (D-04): every full-bleed presentation shares ONE staleness gate
+
+    /// 09.26-05-PLAN.md Task 2: "reuse the existing `context.arrow` / `glucoseColor(stale:)`
+    /// extension verbatim, do NOT add a second staleness rule." The new DI-expanded full-bleed
+    /// distribution (09.26-05) and the always-on treatment both read `GlucoseLiveActivityManager
+    /// .makeContent`'s baked `trendArrow`/staleDate — this pins that the bake is IDENTICAL for
+    /// "classic" and "fullBleed" on the SAME snapshot, guarding against a future edit that
+    /// accidentally special-cases full-bleed's own staleness computation instead of reusing the one
+    /// gate every presentation (Lock Screen, DI expanded, always-on) renders through.
+    @Test func stalenessGateIsIdenticalAcrossBothLiveActivityStylesForTheSameSnapshot() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        defer { WidgetStore.liveActivityStyle = previousStyle }
+
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        // Sampled 10 min ago, stale after 5 min — squarely stale-as-of-now (C8: never synthesized).
+        let stale = WidgetSnapshot(glucose: 140, glucoseDate: now.addingTimeInterval(-600),
+                                   trendArrow: "↑", staleAfterSec: 5 * 60)
+
+        WidgetStore.liveActivityStyle = "fullBleed"
+        let (fullBleedState, fullBleedStaleDate, _) =
+            GlucoseLiveActivityManager.makeContent(from: stale, now: now)
+
+        WidgetStore.liveActivityStyle = "classic"
+        let (classicState, classicStaleDate, _) =
+            GlucoseLiveActivityManager.makeContent(from: stale, now: now)
+
+        // Both styles drop the arrow identically — never a synthesized fallback in either style.
+        #expect(fullBleedState.trendArrow == "")
+        #expect(classicState.trendArrow == "")
+        // Both styles compute the SAME staleDate (sample date + threshold) — style is a rendering
+        // choice, never a second freshness policy.
+        #expect(fullBleedStaleDate == classicStaleDate)
+        #expect(fullBleedState.glucose == classicState.glucose)
+        #expect(fullBleedState.liveActivityStyle == "fullBleed")
+        #expect(classicState.liveActivityStyle == "classic")
+    }
+
+    /// The fresh case, mirrored: both styles carry the SAME arrow verbatim (never re-derived per
+    /// style) while the reading is still within the stale threshold.
+    @Test func freshTrendArrowCarriedIdenticallyAcrossBothLiveActivityStyles() {
+        let previousStyle = WidgetStore.liveActivityStyle
+        defer { WidgetStore.liveActivityStyle = previousStyle }
+
+        let now = Date(timeIntervalSince1970: 6_000_000)
+        let fresh = WidgetSnapshot(glucose: 110, glucoseDate: now.addingTimeInterval(-30),
+                                   trendArrow: "↗", staleAfterSec: 5 * 60)
+
+        WidgetStore.liveActivityStyle = "fullBleed"
+        let (fullBleedState, _, _) = GlucoseLiveActivityManager.makeContent(from: fresh, now: now)
+        WidgetStore.liveActivityStyle = "classic"
+        let (classicState, _, _) = GlucoseLiveActivityManager.makeContent(from: fresh, now: now)
+
+        #expect(fullBleedState.trendArrow == "↗")
+        #expect(classicState.trendArrow == "↗")
+    }
 }

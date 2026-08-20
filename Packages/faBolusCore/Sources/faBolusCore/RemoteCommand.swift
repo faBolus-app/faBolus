@@ -129,6 +129,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     // Extra pump status for a remote's detail screen.
     public var reservoirUnits: Double?
     public var batteryPercent: Double?
+    /// Phase 09.27-03 (D-04/D-05) — the pump's charging state, mirrored from `PumpSnapshot.batteryCharging`
+    /// (`chargingStatus == 1` at op-145; see the phase's UNVERIFIED-GUESS entry — the on-wire semantics are
+    /// unconfirmed live). Additive-optional; auto-Codable, so the existing memberwise initializer stays
+    /// untouched (the host sets it via `cmd.batteryCharging = …`), exactly like `cartridgeReady`. Absent ⇒
+    /// a legacy host/remote that predates the field; a remote maps nil → NOT charging (fail-closed, never a
+    /// fabricated charging state). Display-only, never a dose input (D-06).
+    public var batteryCharging: Bool? = nil
     public var lastBolusUnits: Double?
     /// Current basal delivery rate (units/hr), so a remote's basal pill matches the host.
     public var basalRate: Double?

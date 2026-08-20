@@ -87,14 +87,19 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 57 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
+    /// All 59 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
     /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
     /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
     /// (999.2/D-01): `autoTempRate` added; 51 → 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation`
     /// added; 52 → 55, Phase 09.13-01 (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added
     /// (54→55 corrects a prior off-by-one in this comment); 55 → 57, Phase 09.13-02 (D-05):
-    /// `glucosePlotFloorSmall` + `glucosePlotCeilingSmall` added). Order mirrors
-    /// `AppSettings.swift` for reviewability.
+    /// `glucosePlotFloorSmall` + `glucosePlotCeilingSmall` added; 57 → 58, Phase 09.18a-04:
+    /// `siteAtlasEnabled` added; 58 → 59, Phase 09.26-01 (D-11/D-21): `liveActivityStyle` added; 59 →
+    /// 66, Phase 09.26-02 (D-15/D-18/D-19): `liveActivityTopRightField`, `liveActivityPlotRangeHours`,
+    /// `liveActivityShowXAxisLine`, `liveActivityShowYAxisLine`, `liveActivityShowXAxisTicks`,
+    /// `liveActivityShowYAxisTicks`, `liveActivityShowRangeLines` added; 66 → 67, Phase 09.26-07
+    /// (D-22): `liveActivityShowBolusShortcut` added).
+    /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
     static let descriptors: [SettingDescriptor] = [
@@ -138,6 +143,24 @@ enum SettingsCatalog {
         // must not silently switch it on for the owner on another device.
         .init("liveActivityEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
         .init("liveActivityFields", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 09.26 tracer (D-11/D-21): the Live Activity presentation style (full-bleed plot vs.
+        // classic chip HUD). Same per-device ambient-surface reasoning as the two rows above —
+        // syncsToICloud: false.
+        .init("liveActivityStyle", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 09.26-02 (D-15/D-18/D-19): the full-bleed style's display options — the top-right slot
+        // content, the LA-only plot time-range (D-14, independent of the watch/phone chart's own
+        // range), the four independent axis-chrome toggles, and the high/low range-lines toggle. Same
+        // per-device ambient-surface reasoning as `liveActivityStyle` above — syncsToICloud: false.
+        .init("liveActivityTopRightField", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityPlotRangeHours", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityShowXAxisLine", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityShowYAxisLine", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityShowXAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityShowYAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("liveActivityShowRangeLines", .display, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 09.26-07 (D-22): the optional nav-only Bolus-shortcut pill toggle. Same per-device
+        // ambient-surface reasoning as the rows above — syncsToICloud: false.
+        .init("liveActivityShowBolusShortcut", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
         // command-adjacent — but the same per-device ambient-surface reasoning as liveActivityEnabled
         // applies (a home-screen badge on one device should not silently light up on another), so it is

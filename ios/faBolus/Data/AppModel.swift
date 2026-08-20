@@ -231,6 +231,13 @@ public final class AppModel {
     /// Withdraw delivered notifications by dedupe key — used when a safety condition resolves (pump
     /// reconnects, CGM feed resumes) so a stale banner doesn't linger.
     public var notificationWithdrawSink: (([String]) -> Void)?
+    /// 09.25 WR-01: withdraw EVERY OS-outstanding notification for a whole category — used when the user
+    /// disables a safety-trio category (`pumpDisconnect`/`cgmDataLoss`/`bolusReconciliation`) via the
+    /// confirm-on-disable dialog, so an already-scheduled/delivered alert for it doesn't fire/linger after
+    /// the user explicitly turned it off. Distinct from `notificationWithdrawSink` above, which only knows
+    /// a fixed list of dedupe keys (insufficient for `bolusReconciliation`'s per-attempt dynamic keys).
+    /// Nil when no coordinator is installed (unit tests, an out-of-process intent) — a no-op then.
+    public var notificationWithdrawCategorySink: ((NotificationBroker.Category) -> Void)?
     /// S7: schedule the pump-disconnect escalation ladder (delayed re-notifications) when the link drops.
     /// The coordinator turns each step into an OS-scheduled `UNNotificationRequest` so it fires even while
     /// the app is suspended. Like the other sinks, nil when no coordinator is installed (unit tests, an
@@ -507,6 +514,11 @@ public final class AppModel {
         // op-20-excluded pump never relays a fail-open "ready" to Garmin/Watch/Mac. The dose gate above
         // (`cmd.canBolus` via `BolusGate.evaluate(cartridgeReady: s.cartridgeReadyForBolus)`) is unchanged.
         cmd.cartridgeReady = s.cartridgeReadyRemoteWire
+        // Phase 09.27-03 (D-04/D-05): mirror the pump's charging state to remotes on the same
+        // additive-optional wire shape as cartridgeReady. Absent on a legacy remote ⇒ NOT charging
+        // (fail-closed, never a fabricated charging state) — the on-wire chargingStatus==1 semantics
+        // remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md), display-only, no dose-path input.
+        cmd.batteryCharging = s.batteryCharging
         // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
         // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
         // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a

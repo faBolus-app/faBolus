@@ -186,7 +186,8 @@ final class MacRemoteModel: AuthenticatingRemoteClientModel {
         }
         let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
                                   iobUnits: iobUnits, reservoirUnits: reservoirUnits,
-                                  batteryPercent: batteryPercent, lastBolusUnits: lastBolusUnits,
+                                  batteryPercent: batteryPercent, batteryCharging: batteryCharging,
+                                  lastBolusUnits: lastBolusUnits,
                                   connected: reachable, updatedAt: now, recentPoints: Array(points),
                                   activeAlerts: alerts.map(\.title), cgmActive: cgmActive,
                                   carbRatio: carbRatio, isf: isf, targetBg: targetBg, maxBolusUnits: maxBolusUnits,

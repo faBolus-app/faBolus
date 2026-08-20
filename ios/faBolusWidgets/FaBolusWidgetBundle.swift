@@ -14,27 +14,17 @@ struct FaBolusWidgetBundle: WidgetBundle {
         BolusWidget()     // Tap-to-bolus shortcut (deep-links into the app)
         QuickBolusWidget() // Preset bolus with a 1-2-3 confirm (delivers via the app)
         // Phase 5 (D-01) — Lock Screen + Dynamic Island glucose Live Activity. Registered
-        // UNCONDITIONALLY: this is the iOS-17-floor widget (D-11) and every SDK version this app
-        // supports has it.
+        // UNCONDITIONALLY (every OS version this app supports has it — the whole app's floor is
+        // 18.0). 09.26-06 (D-08): this single widget ALSO carries `.supplementalActivityFamilies
+        // ([.small])` for the CarPlay `.small` presentation (D-10) — a previous separate
+        // `@available(iOS 18.0, *) GlucoseLiveActivityCarPlay` conformer, picked here via a
+        // `WidgetBundleBuilder.buildOptional`/`if #available` branch, existed only to work around a
+        // MIXED-floor extension (base widget iOS-17, CarPlay addition iOS-18); now that
+        // `faBolusWidgets`' deployment target is unconditionally 18.0 (project.yml), that mixed-floor
+        // problem doesn't exist, so `GlucoseLiveActivity` itself unconditionally registers both the
+        // Lock Screen/Dynamic Island presentation AND the CarPlay `.small` family — no bundle-level
+        // conditional needed at all.
         GlucoseLiveActivity()
-        // Phase 5 (D-10, 05-04) — the CarPlay `.small` supplemental presentation, additively
-        // registered when the SDK/OS supports it. `WidgetBundleBuilder` only provides `buildOptional`
-        // (a single-branch `if #available(...)` check via `buildLimitedAvailability`) — there is NO
-        // `buildEither`, so `if #available {} else {}` does not compile (confirmed: "closure
-        // containing control flow statement cannot be used with result builder 'WidgetBundleBuilder'"),
-        // and `if #unavailable(...)` used as the sole/negating branch triggers an internal compiler
-        // crash in this toolchain ("failed to produce diagnostic for expression") rather than a clean
-        // rejection — reported upstream is out of scope here; the additive single-branch form below is
-        // the only shape that compiles. `GlucoseLiveActivityCarPlay` shares the IDENTICAL Dynamic
-        // Island region tree and its Lock-Screen closure falls back to the SAME
-        // `LockScreenLiveActivityView` off-CarPlay, so registering both configurations for
-        // `FaBolusGlucoseAttributes` on iOS 18+ renders identically everywhere except the
-        // CarPlay-only `.small` presentation this one adds — see the Task-4 checkpoint for on-device
-        // confirmation that iOS resolves the dual registration as expected (05-RESEARCH.md §
-        // Environment Availability: CarPlay/dual-config behavior can't be verified off-device).
-        if #available(iOS 18.0, *) {
-            GlucoseLiveActivityCarPlay()
-        }
     }
 }
 
@@ -134,18 +124,18 @@ enum WidgetUI {
                  value: String(format: "%.0f U", state.reservoirUnits))
     }
 
-    /// Battery chip — level-matched `battery.*` glyph, dateless: greys off `pumpLinkStale`.
+    /// Battery chip — level-matched `battery.*` glyph, dateless: greys off `pumpLinkStale`. Phase
+    /// 09.27-02 (D-04/D-05) — routes the glyph + low-tint-override decision through the SAME
+    /// `BatteryChargingPresentation.make` helper `StatusPillsView.pillFor("battery")` uses, instead
+    /// of a second copy of the level->glyph switch, so this chip stays byte-identical to the phone
+    /// HUD's charging treatment. `pumpLinkStale` is checked FIRST and wins over the charging tint —
+    /// a stale link's charging claim is not trustworthy, so staleness greys regardless of `charging`.
     static func batteryChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
-        let icon: String
-        switch state.batteryPercent {
-        case ...5: icon = "battery.0"
-        case ...37: icon = "battery.25"
-        case ...62: icon = "battery.50"
-        case ...87: icon = "battery.75"
-        default: icon = "battery.100"
-        }
-        let tint = state.pumpLinkStale ? Color.gray : (state.batteryPercent <= 20 ? AppTheme.low : .green)
-        return PumpChip(icon: icon, tint: tint, value: "\(state.batteryPercent)%")
+        let battery = BatteryChargingPresentation.make(percent: state.batteryPercent, charging: state.batteryCharging)
+        let tint = state.pumpLinkStale ? Color.gray : (battery.usesLowTint ? AppTheme.low : .green)
+        // WR-02 review fix: consume the centralized `valueText` instead of re-interpolating the
+        // "N% · Charging" string here.
+        return PumpChip(icon: battery.symbolName, tint: tint, value: battery.valueText)
     }
 
     /// Basal/suspended chip — `waveform.path.ecg` (running) or `pause.circle.fill` (suspended),
@@ -195,6 +185,34 @@ enum WidgetUI {
         return PumpChip(icon: "antenna.radiowaves.left.and.right", tint: .gray, value: "Synced")
     }
 
+    /// Delta chip (Phase 09.26-03, D-13) — an arrow-glyph icon matched to `LAMetrics.deltaGlyph`'s
+    /// direction (up/flat/down), value from `LAMetrics.delta` + its glyph, "--" when the series spans
+    /// less than 10 minutes (never a fabricated/zero delta, T-09.26-08). Dateless (no own staleness
+    /// stamp — it's derived fresh from `recentPoints` every render), so it never greys off
+    /// `pumpLinkStale` the way the pump-surface chips do.
+    static func deltaChip(_ state: FaBolusGlucoseAttributes.ContentState, now: Date = Date()) -> PumpChip {
+        guard let d = LAMetrics.delta(points: state.recentPoints, now: now) else {
+            return PumpChip(icon: "arrow.right", tint: .secondary, value: "--")
+        }
+        let sign = d > 0 ? "+" : ""
+        let icon: String
+        switch d {
+        case 10...: icon = "arrow.up"
+        case 1...9: icon = "arrow.up.right"
+        case 0: icon = "arrow.right"
+        case -9...(-1): icon = "arrow.down.right"
+        default: icon = "arrow.down"
+        }
+        return PumpChip(icon: icon, tint: AppTheme.insulin, value: "\(sign)\(d)\(LAMetrics.deltaGlyph(d))")
+    }
+
+    /// Time-in-range chip (Phase 09.26-03, D-13) — percent of `recentPoints` in the closed [70,180]
+    /// convention (`LAMetrics.tir`), matching `faBolusCore.GlucoseStatistics.timeInRangePct`
+    /// (T-09.26-10). Dateless, same reasoning as `deltaChip`.
+    static func tirChip(_ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip {
+        PumpChip(icon: "chart.bar.fill", tint: AppTheme.inRange, value: "\(LAMetrics.tir(points: state.recentPoints))%")
+    }
+
     /// Resolves a `LAField.id` (05-04, D-17a) to its chip, or `nil` for the special "glucose"/
     /// "sparkline"/"minimal" pseudo-ids, which the view renders through their own dedicated views.
     static func chip(for id: String, _ state: FaBolusGlucoseAttributes.ContentState) -> PumpChip? {
@@ -205,6 +223,8 @@ enum WidgetUI {
         case "basal": return basalChip(state)
         case "controlIQ": return controlIQChip(state)
         case "connection": return connectionChip(state)
+        case "delta": return deltaChip(state)
+        case "tir": return tirChip(state)
         default: return nil
         }
     }

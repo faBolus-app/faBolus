@@ -36,14 +36,18 @@ struct StatusWidgetView: View {
         guard let g = snap.glucose, g > 0 else { return "--" }
         return unit.format(mgdl: g)
     }
-    /// Phase 09.1 (D-04) — the classified band for the redundant icon+word non-color channel (this
-    /// family is roomy — `systemMedium` — so the word always shows). `nil` while stale/unknown (the
-    /// number is already greyed then; no band color to duplicate, mirroring `StatusRingView`).
+    private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
+    /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
+    /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
+    /// no visual glyph is reintroduced. `nil` while stale/hidden/unknown, mirroring `bg`'s gating.
     private var band: GlucoseRange? {
-        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose else { return nil }
+        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose, g > 0 else { return nil }
         return GlucoseRange.classify(g)
     }
-
+    /// CR-01: the spoken glucose+trend(+band) sentence, mirroring `StatusRingView.a11yLabel`.
+    private var glucoseA11yLabel: String {
+        band.map { "\(bg), \(arrow), \($0.shortLabel)" } ?? "\(bg), \(arrow)"
+    }
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
@@ -51,12 +55,13 @@ struct StatusWidgetView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(bg)
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
-                    Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
+                    Text(arrow).font(.title3).foregroundStyle(color)
                 }
-                if let band {
-                    BandIndicator(band: band, showWord: true)
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                // CR-01: combine the value+arrow into one spoken element carrying the band word back
+                // (the deleted BandIndicator was the only VoiceOver source for it on this tile); the
+                // age caption and sparkline below stay separate, unchanged elements.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(glucoseA11yLabel)
                 // The SAMPLE age (orange once stale), replacing a static unit label — so a stale relay
                 // is visible on the overview, not silently shown as current (group A / C7).
                 if let d = snap.glucoseDate {
@@ -81,7 +86,19 @@ struct StatusWidgetView: View {
                     metric("clock.arrow.circlepath", "Last bolus",
                            "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .numeric)))")
                 } else {
-                    metric("battery.100", "Battery", "\(snap.batteryPercent)%")
+                    // Phase 09.27-02 (D-04/D-05) — routes the glyph + "Charging" text through the
+                    // SAME `BatteryChargingPresentation.make` helper every other battery-rendering
+                    // surface uses. IN-01 review fix: this is NOT byte-identical to the pre-09.27
+                    // code for every percent — the prior fallback here was hardcoded to
+                    // `metric("battery.100", "Battery", "\(snap.batteryPercent)%")`, i.e. always the
+                    // full-battery glyph regardless of the actual level. Routing through the shared
+                    // helper also fixes that pre-existing bug: a not-charging medium widget now
+                    // correctly renders the level-appropriate glyph (`battery.0/.25/.50/.75/.100`)
+                    // instead of always showing a full battery below 88%.
+                    let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
+                    // WR-02 review fix: consume the centralized `valueText` instead of
+                    // re-interpolating the "N% · Charging" string here.
+                    metric(battery.symbolName, "Battery", battery.valueText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

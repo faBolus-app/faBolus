@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 // MARK: - Shared helpers
 
@@ -274,7 +275,7 @@ struct SettingsView: View {
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
         case .alerts:  AlertRulesView(settings: settings)
-        case .notifications: NotificationSettingsView(settings: settings)
+        case .notifications: NotificationSettingsView(model: model, settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
@@ -556,6 +557,22 @@ struct DisplaySettingsView: View {
             Section {
                 Toggle("Live Activity", isOn: $settings.liveActivityEnabled)
                 if settings.liveActivityEnabled {
+                    // Phase 09.26-01 tracer (D-11/D-21) — the full-bleed-plot vs. classic style switch,
+                    // placed above "Fields shown" per the UI-SPEC's Settings Surface layout.
+                    Picker("Live Activity style", selection: $settings.liveActivityStyle) {
+                        Text("Full-bleed plot").tag("fullBleed")
+                        Text("Classic").tag("classic")
+                    }
+                    // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed-only display-options sub-screen
+                    // (top-right slot, plot range, axis chrome, range lines). Classic has no axis
+                    // chrome/top-right slot of its own, so this link only appears for the full-bleed
+                    // style — placed between the style Picker and "Fields shown" per the UI-SPEC's
+                    // Settings Surface layout.
+                    if settings.liveActivityStyle == "fullBleed" {
+                        NavigationLink {
+                            FullBleedLiveActivitySettingsView(settings: settings)
+                        } label: { Text("Full-bleed layout") }
+                    }
                     NavigationLink {
                         CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
                                           label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
@@ -564,7 +581,7 @@ struct DisplaySettingsView: View {
                     } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
                 }
             } header: { Text("Live Activity") } footer: {
-                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display.")
+                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display. Full-bleed plot shows an edge-to-edge glucose curve; Classic shows the original compact layout.")
             }
             // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
             // default OFF, SettingsCatalog descriptor) but had no reachable UI — mirrors the "Live
@@ -584,6 +601,54 @@ struct DisplaySettingsView: View {
             }
         }
         .navigationTitle("Display & chart")
+    }
+}
+
+// MARK: - Live Activity full-bleed layout (09.26-02, D-15/D-18/D-19)
+
+/// The full-bleed Live Activity's dedicated display-options sub-screen — reachable only when
+/// `settings.liveActivityStyle == "fullBleed"` (`09.26-UI-SPEC.md`'s "Settings Surface" table). Every
+/// control binds straight to an `AppSettings` property that already persists, mirrors to the App
+/// Group, and bakes into `ContentState` via `GlucoseLiveActivityManager.makeContent` — this view adds
+/// no state of its own.
+struct FullBleedLiveActivitySettingsView: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Top-right info", selection: $settings.liveActivityTopRightField) {
+                    Text("IOB + Δ").tag("iobDelta")
+                    Text("IOB").tag("iob")
+                    Text("Δ").tag("delta")
+                    Text("Time in range").tag("tir")
+                    Text("Control-IQ zone").tag("controlIQZone")
+                    Text("Battery").tag("battery")
+                    Text("Reservoir").tag("reservoir")
+                    Text("None").tag("none")
+                }
+                Picker("Live Activity plot range", selection: $settings.liveActivityPlotRangeHours) {
+                    Text("2h").tag(2)
+                    Text("6h").tag(6)
+                }
+                Toggle("X-axis line", isOn: $settings.liveActivityShowXAxisLine)
+                Toggle("Y-axis line", isOn: $settings.liveActivityShowYAxisLine)
+                Toggle("X-axis ticks", isOn: $settings.liveActivityShowXAxisTicks)
+                Toggle("Y-axis ticks", isOn: $settings.liveActivityShowYAxisTicks)
+                Toggle("High/low range lines", isOn: $settings.liveActivityShowRangeLines)
+            } footer: {
+                Text("The Live Activity plot range is independent of the watch/phone chart's own range. 6h shows more history when available; a freshly started Live Activity may only have a shorter window collected yet.")
+            }
+            // Phase 09.26-07 (D-22) — the optional nav-only Bolus shortcut. Off by default; when on,
+            // it becomes the SINGLE bolus entry point in the full-bleed style (the "Open Bolus"
+            // action-row button folds into this pill).
+            Section {
+                Toggle("Show bolus shortcut", isOn: $settings.liveActivityShowBolusShortcut)
+            } footer: {
+                Text("Adds a Bolus button to the Live Activity. It opens the bolus screen in the app — no dose is sent from the Live Activity.")
+            }
+        }
+        .navigationTitle("Full-bleed layout")
     }
 }
 
@@ -628,11 +693,7 @@ struct CgmSettingsView: View {
                         lastCommittedSource = id
                     }
                 }
-                NavigationLink("CGM credentials & testing") { CgmCredentialsView(model: model) }
-                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
-                // the place per-source live status/age/provenance exists — F-08/F-09).
-                NavigationLink("CGM source status") { CgmStatusView(model: model) }
-            } header: { Text("Glucose failover") } footer: {
+            } header: { Text("1. Choose a source") } footer: {
                 Text("An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app.")
             }
             .alert("Untested source", isPresented: $showExperimentalCgmWarning) {
@@ -657,6 +718,33 @@ struct CgmSettingsView: View {
                 Text("⚠️ This reads your sensor passively alongside the official Dexcom app — keep that app installed, paired, and running (a sensor already set up there needs no re-pairing and no transmitter ID). The first reading can take up to ~5 minutes (one Dexcom wake cycle) — that's normal, not a failure. This mode hasn't been verified on-device yet. See docs/operate/cgm-failover.md.")
             }
             Section {
+                NavigationLink { CgmCredentialsView(model: model) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("CGM credentials & testing", systemImage: "key.fill")
+                        Text(configureAndTestSubtitle)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: { Text("2. Configure & test") } footer: {
+                Text("Enter credentials for the selected source (if it needs any) and confirm it can get a reading.")
+            }
+            Section {
+                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
+                // the place per-source live status/age/provenance exists — F-08/F-09).
+                NavigationLink { CgmStatusView(model: model) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("CGM source status", systemImage: "chart.line.uptrend.xyaxis")
+                        Text(statusSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(statusSubtitleColor)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: { Text("3. Status") } footer: {
+                Text("See live status, freshness, and the last test result for every configured source.")
+            }
+            Section {
                 Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
             } header: { Text("Nightscout upload") } footer: {
                 Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to your Nightscout site. **Off by default — this sends your health data off-device.** Set the site URL, token, and (optional) API secret under **CGM credentials & testing**.")
@@ -673,6 +761,36 @@ struct CgmSettingsView: View {
             }
         }
         .navigationTitle("CGM & failover")
+    }
+
+    /// 09.24-01 (D-02): Section-2 subtitle — the current selection, or explicit guidance to step 1.
+    private var configureAndTestSubtitle: String {
+        guard let selected = GlucoseSourceRegistry.selected() else {
+            return "Not selected — pick a source in step 1"
+        }
+        return "Selected: \(selected.name)"
+    }
+
+    /// 09.24-01 (D-02); WR-01/IN-02/IN-03 fix (09.24 review): Section-3 subtitle. Previously this
+    /// guarded only on the raw, unvalidated `GlucoseSourceRegistry.selectedId()`, unlike Section 2's
+    /// `configureAndTestSubtitle` above, which validates against `GlucoseSourceRegistry.selected()`.
+    /// A stale/invalid persisted id (e.g. a source id left over from a build-flag toggle) made this
+    /// section say "Selected — reopen the app to arm" while Section 2 correctly said "Not selected"
+    /// for the exact same underlying state. Both subtitles now read from the SAME validated basis
+    /// through one shared, pure, unit-tested helper (`CgmStatusView.selectionStatusSubtitle` — closes
+    /// IN-02's duplicate-classification note and IN-03's missing test coverage), computed once per
+    /// render here so `statusSubtitle`/`statusSubtitleColor` can never disagree with each other either.
+    private var currentSelectionSubtitle: (text: String, isActive: Bool) {
+        let selected = GlucoseSourceRegistry.selected().map { (id: $0.id, name: $0.name) }
+        return CgmStatusView.selectionStatusSubtitle(selected: selected,
+                                                      armedId: model.glucoseSourceProbe?.id,
+                                                      provenance: model.glucoseProvenance)
+    }
+
+    private var statusSubtitle: String { currentSelectionSubtitle.text }
+
+    private var statusSubtitleColor: Color {
+        currentSelectionSubtitle.isActive ? AppTheme.inRange : .secondary
     }
 }
 

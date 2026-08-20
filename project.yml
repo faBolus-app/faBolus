@@ -432,6 +432,10 @@ targets:
 
   # WidgetKit extension — Lock Screen (accessory) + Home Screen widgets + tap-to-bolus. Reads
   # the snapshot the app publishes to the shared App Group; never touches Bluetooth itself.
+  # 09.26-06 (D-08): this is the CONFIG TRUTH for the widget extension's min-OS floor — 18.0,
+  # matching the host app (`faBolus` target above). GlucoseLiveActivity.swift's CarPlay `.small`
+  # availability branches were reconciled to this floor (unconditional, no `@available(iOS 18, *)`
+  # split, no bundle-level `if #available`) — see that file's doc comments.
   faBolusWidgets:
     type: app-extension
     platform: iOS
