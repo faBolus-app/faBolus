@@ -86,17 +86,32 @@ struct MacGlucoseWidget: Widget {
 struct MacGlucoseView: View {
     let snap: WidgetSnapshot
     let now: Date
+    /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
+    /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
+    /// no visual glyph is reintroduced. `nil` while stale/missing (mirrors the gating the deleted
+    /// band computed used).
+    private var band: GlucoseRange? {
+        guard !snap.isStale(asOf: now), let g = snap.glucose, g > 0 else { return nil }
+        return GlucoseRange.classify(g)
+    }
     var body: some View {
         let hidden = snap.isHidden(asOf: now)
+        let text = macWidgetGlucoseText(snap, now: now)
+        let a11yLabel = band.map { "\(text), \(snap.trendArrow), \($0.shortLabel)" } ?? "\(text), \(hidden ? "" : snap.trendArrow)"
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(macWidgetGlucoseText(snap, now: now))
+                Text(text)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .foregroundStyle(macWidgetGlucoseColor(snap, now: now))
                 if !hidden {
                     Text(snap.trendArrow).font(.title).foregroundStyle(.secondary)
                 }
             }
+            // CR-01: combine the value+arrow into one spoken element carrying the band word back
+            // (the deleted BandIndicator was the only VoiceOver source for it here); the age caption
+            // below stays a separate, unchanged element.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(a11yLabel)
             if let d = snap.glucoseDate {
                 Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live "5 min" age
             }
@@ -129,16 +144,32 @@ struct MacStatusWidgetView: View {
         if DisplaySettings.showBattery { parts.append("\(snap.batteryPercent)%") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
+    /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
+    /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
+    /// no visual glyph is reintroduced. `nil` while stale/missing (mirrors the gating the deleted
+    /// band computed used).
+    private var band: GlucoseRange? {
+        guard !snap.isStale(asOf: now), let g = snap.glucose, g > 0 else { return nil }
+        return GlucoseRange.classify(g)
+    }
     var body: some View {
+        let hidden = snap.isHidden(asOf: now)
+        let text = macWidgetGlucoseText(snap, now: now)
+        let a11yLabel = band.map { "\(text), \(snap.trendArrow), \($0.shortLabel)" } ?? "\(text), \(hidden ? "" : snap.trendArrow)"
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(macWidgetGlucoseText(snap, now: now)).font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(text).font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(macWidgetGlucoseColor(snap, now: now))
-                    if !snap.isHidden(asOf: now) {
+                    if !hidden {
                         Text(snap.trendArrow).font(.title2).foregroundStyle(.secondary)
                     }
                 }
+                // CR-01: combine the value+arrow into one spoken element carrying the band word back
+                // (the deleted BandIndicator was the only VoiceOver source for it here); the age /
+                // IOB / reservoir-battery captions below stay separate, unchanged elements.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(a11yLabel)
                 if let d = snap.glucoseDate {
                     Text(d, style: .relative).font(.caption2).foregroundStyle(.secondary)  // live age
                 }

@@ -91,6 +91,18 @@ struct GlucoseComplicationView: View {
         guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return .gray }
         return AppTheme.glucoseColor(g)
     }
+    /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
+    /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
+    /// no visual glyph is reintroduced. `nil` while stale/missing (mirrors the gating the deleted
+    /// band computed used).
+    private var band: GlucoseRange? {
+        guard let g = snap.glucose, g > 0, !snap.isStale(asOf: now) else { return nil }
+        return GlucoseRange.classify(g)
+    }
+    /// CR-01: the spoken value+trend(+band) sentence, mirroring `StatusRingView.a11yLabel`.
+    private var valueA11yLabel: String {
+        band.map { "\(value), \(arrow), \($0.shortLabel)" } ?? "\(value), \(arrow)"
+    }
 
     var body: some View {
         switch family {
@@ -98,6 +110,7 @@ struct GlucoseComplicationView: View {
             // The single line the system places under the clock — only one leading glyph fits; a
             // neutral drop icon replaces the band glyph (no confusable good/bad symbol here).
             Label("\(value) \(arrow)", systemImage: "drop.fill")
+                .accessibilityLabel(valueA11yLabel)
         #if os(watchOS)
         case .accessoryCorner:
             // Extremely tight face (a single glyph in the ring's corner) — no room for a second
@@ -109,8 +122,13 @@ struct GlucoseComplicationView: View {
         case .accessoryRectangular:
             HStack(spacing: 6) {
                 Text(value).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(bandColor)
+                    // CR-01: restore the VoiceOver band word on the value itself; the paired arrow
+                    // Text just below is hidden from the accessibility tree so it isn't announced
+                    // twice, and the age/unit caption stays a separate, unchanged element.
+                    .accessibilityLabel(valueA11yLabel)
                 VStack(alignment: .leading) {
                     Text(arrow.isEmpty ? "—" : arrow)
+                        .accessibilityHidden(true)
                     // Sample age (orange once stale), replacing a static "mg/dL" — so a stale relay is
                     // visible on the wrist, matching the iOS + Mac widgets (group A / C7).
                     if let d = snap.glucoseDate {
@@ -130,6 +148,10 @@ struct GlucoseComplicationView: View {
                     if !arrow.isEmpty { Text(arrow).font(.caption2) }
                 }
             }
+            // CR-01: combine the value+arrow into one spoken element carrying the band word back
+            // (the deleted BandIndicator was the only VoiceOver source for it on this family).
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(valueA11yLabel)
         }
     }
 }

@@ -295,6 +295,13 @@ private extension ActivityViewContext<FaBolusGlucoseAttributes> {
         guard let g = state.glucose else { return .gray }
         return AppTheme.glucoseColor(g, stale: isStale)
     }
+    /// CR-01 (09.29 review): restored ONLY to feed the VoiceOver zone word that the deleted
+    /// `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` — no visual
+    /// glyph is reintroduced. `nil` when there is no reading to classify (mirrors `glucoseColor`'s
+    /// grey-on-missing fallback).
+    var glucoseBand: GlucoseRange? {
+        state.glucose.map(GlucoseRange.classify)
+    }
     /// C8 — never synthesized. "" whenever `isStale`, else the state's carried arrow verbatim
     /// (the state itself already suppressed it at publish time; this re-applies the SAME rule at
     /// render time, since staleness can advance past `staleDate` without a new publish).
@@ -354,6 +361,16 @@ private struct GlucoseNumeralView: View {
     let context: ActivityViewContext<FaBolusGlucoseAttributes>
     var role: ComposedFieldView.FieldRole = .heading
 
+    /// CR-01 (09.29 review): the spoken value+trend(+band) sentence, mirroring
+    /// `StatusRingView.a11yLabel` — speaks the band word for a live (non-stale) reading only, the
+    /// same gating the deleted `BandIndicator(...)` call site used for its visual glyph, so VoiceOver
+    /// never depends on zone color alone.
+    private var numeralA11yLabel: String {
+        let band = context.isStale ? nil : context.glucoseBand
+        return band.map { "\(context.glucoseText), \(context.arrow), \($0.shortLabel)" }
+            ?? "\(context.glucoseText), \(context.arrow)"
+    }
+
     var body: some View {
         VStack(alignment: role == .display ? .leading : .center, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -366,6 +383,11 @@ private struct GlucoseNumeralView: View {
                         .foregroundStyle(context.glucoseColor)
                 }
             }
+            // CR-01: combine the value+arrow into one spoken element carrying the band word back
+            // (the deleted BandIndicator was the only VoiceOver source for it on every region this
+            // view backs); the sample-age caption below (`.display` only) stays a separate element.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(numeralA11yLabel)
             if role == .display {
                 if let d = context.state.glucoseDate {
                     Text(d, style: .relative).font(.caption2)

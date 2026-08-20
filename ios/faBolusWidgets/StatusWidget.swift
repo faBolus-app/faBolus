@@ -36,6 +36,18 @@ struct StatusWidgetView: View {
         guard let g = snap.glucose, g > 0 else { return "--" }
         return unit.format(mgdl: g)
     }
+    private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
+    /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
+    /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
+    /// no visual glyph is reintroduced. `nil` while stale/hidden/unknown, mirroring `bg`'s gating.
+    private var band: GlucoseRange? {
+        guard !WidgetUI.isStale(snap, now: now), let g = snap.glucose, g > 0 else { return nil }
+        return GlucoseRange.classify(g)
+    }
+    /// CR-01: the spoken glucose+trend(+band) sentence, mirroring `StatusRingView.a11yLabel`.
+    private var glucoseA11yLabel: String {
+        band.map { "\(bg), \(arrow), \($0.shortLabel)" } ?? "\(bg), \(arrow)"
+    }
     var body: some View {
         HStack(spacing: 14) {
             // Left: current glucose + trend + sparkline.
@@ -43,8 +55,13 @@ struct StatusWidgetView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(bg)
                         .font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(color)
-                    Text(WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow).font(.title3).foregroundStyle(color)
+                    Text(arrow).font(.title3).foregroundStyle(color)
                 }
+                // CR-01: combine the value+arrow into one spoken element carrying the band word back
+                // (the deleted BandIndicator was the only VoiceOver source for it on this tile); the
+                // age caption and sparkline below stay separate, unchanged elements.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(glucoseA11yLabel)
                 // The SAMPLE age (orange once stale), replacing a static unit label — so a stale relay
                 // is visible on the overview, not silently shown as current (group A / C7).
                 if let d = snap.glucoseDate {
