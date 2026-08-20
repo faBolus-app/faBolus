@@ -173,6 +173,23 @@ private func fullBleedDIExpandedLeading(
     }
 }
 
+/// Phase 09.26 (WR-01 review fix) — the top-right slot's staleness tint, applied at BOTH render
+/// call sites (Lock Screen `fullBleedTopTrailingOverlay` and Dynamic Island
+/// `fullBleedDIExpandedTrailing`) so the corner never contradicts the greyed-out BG numeral/arrow/
+/// IOB chip beside it on the same card. Mirrors `WidgetUI.iobChip`'s own `iobStale` tint exactly for
+/// the `"iob"`/`"iobDelta"` fields (the only ones carrying their own dedicated staleness flag), and
+/// falls back to the card-wide `context.isStale` → `.secondary` treatment (mirroring the
+/// arrow/band-indicator greying) for every other field/composite. This makes `LAMetrics
+/// .topRightText`'s doc comment ("the caller applies tint via the same `iobStale` flag") true.
+private func topRightTint(
+    field: String, state: FaBolusGlucoseAttributes.ContentState, isStale: Bool
+) -> Color {
+    if (field == "iob" || field == "iobDelta") && state.iobStale {
+        return AppTheme.low
+    }
+    return isStale ? .secondary : .primary
+}
+
 /// `.trailing` (capacity 2): 1) the top-right selectable slot's content (D-05/D-15) — the SAME
 /// `LAMetrics.topRightText` derivation the Lock Screen top-right overlay uses; 2) the second
 /// full-bleed customizable bottom-row field.
@@ -183,7 +200,10 @@ private func fullBleedDIExpandedTrailing(
 ) -> some View {
     VStack(alignment: .trailing, spacing: 8) {
         if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
-            Text(text).font(.system(size: 15, weight: .bold, design: .rounded))
+            Text(text)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(topRightTint(
+                    field: context.state.topRightField, state: context.state, isStale: context.isStale))
         }
         if let field = composeFullBleedBottomRowFields(context: context).dropFirst().first {
             ComposedFieldView(context: context, field: field, role: .label)
@@ -587,6 +607,8 @@ private struct LockScreenLiveActivityView: View {
         if let text = LAMetrics.topRightText(field: context.state.topRightField, state: context.state, now: Date()) {
             Text(text)
                 .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(topRightTint(
+                    field: context.state.topRightField, state: context.state, isStale: context.isStale))
                 .padding(8)
                 .padding(.trailing, 6)   // extra room so the corner glyph never overlaps the text
                 .background(scrimStyle, in: RoundedRectangle(cornerRadius: 10))
