@@ -83,16 +83,16 @@ struct GlucoseThresholdsTests {
 
     // MARK: - F4 (A5): the non-color band redundancy channel
 
-    /// Every band carries a distinct, non-empty label AND SF-symbol name, so the band can be conveyed
-    /// without color (WCAG 1.4.1). A representative reading in each band classifies to the right label.
-    @Test func everyBandHasADistinctNonColorLabelAndSymbol() {
+    /// Every band carries a distinct, non-empty label, so the band can be conveyed to VoiceOver
+    /// without color (WCAG 1.4.1). A representative reading in each band classifies to the right
+    /// label. Phase 09.29 (owner directive): the on-screen glyph this label used to pair with (via
+    /// the now-deleted `BandIndicator` view and its SF-Symbol-name property) was removed —
+    /// VoiceOver's `shortLabel` channel is unaffected.
+    @Test func everyBandHasADistinctNonColorLabel() {
         let bands: [GlucoseRange] = [.low, .inRange, .high, .urgentHigh]
         let labels = bands.map(\.shortLabel)
-        let symbols = bands.map(\.symbolName)
         #expect(Set(labels).count == 4)            // all distinct
-        #expect(Set(symbols).count == 4)
         #expect(labels.allSatisfy { !$0.isEmpty })
-        #expect(symbols.allSatisfy { !$0.isEmpty })
         // The channel tracks classify, so a colorblind user reads the same band the color would show.
         #expect(GlucoseRange.classify(55).shortLabel == "Low")
         #expect(GlucoseRange.classify(120).shortLabel == "In range")

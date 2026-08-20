@@ -80,26 +80,19 @@ public enum GlucoseRange: Sendable {
 
     /// F4 (A5) — the non-color redundancy channel for the glucose band (WCAG 1.4.1 "use of color"):
     /// a short label so the band reads without relying on color, for users who can't distinguish the
-    /// green/yellow/orange/red tokens. Pure data (a String) — faBolusCore doesn't import SwiftUI; the
-    /// view pairs it with `symbolName` via `Image(systemName:)`.
+    /// green/yellow/orange/red tokens. Pure data (a String) — faBolusCore doesn't import SwiftUI.
+    /// Spoken by VoiceOver on every surface's accessibility label. Phase 09.29 (owner directive):
+    /// the on-screen band GLYPH this used to pair with (`symbolName`, via the now-deleted
+    /// `BandIndicator` view) was removed — it read as a confusing good/bad checkmark and, in its
+    /// high/low states, as a second grey trend arrow next to the real CGM trend arrow. The band is
+    /// now conveyed on-screen by the number's zone COLOR alone; `shortLabel` still carries the
+    /// non-color cue to VoiceOver, unaffected by that removal.
     public var shortLabel: String {
         switch self {
         case .low: return "Low"
         case .inRange: return "In range"
         case .high: return "High"
         case .urgentHigh: return "Very high"
-        }
-    }
-
-    /// F4 (A5) — the SF Symbol name that carries the band shape (a second non-color cue alongside
-    /// `shortLabel`). All four are core SF Symbols present on iOS/watchOS/macOS. The arrows echo the band
-    /// direction (down = low, up = high); urgent-high uses the warning triangle.
-    public var symbolName: String {
-        switch self {
-        case .low: return "arrow.down.circle.fill"
-        case .inRange: return "checkmark.circle.fill"
-        case .high: return "arrow.up.circle.fill"
-        case .urgentHigh: return "exclamationmark.triangle.fill"
         }
     }
 }
