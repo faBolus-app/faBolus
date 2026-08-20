@@ -366,6 +366,90 @@ public enum WidgetStore {
         }
     }
 
+    /// Phase 09.26-02 (D-15) — the full-bleed top-right slot content mirror, written by
+    /// `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent` when baking
+    /// `ContentState.topRightField`. `nil` when absent (a legacy install, or before the first
+    /// `syncWidgetConfig()` call) — the manager falls back to "iobDelta" rather than baking in a blank
+    /// slot.
+    public static var liveActivityTopRightField: String? {
+        get { defaults?.string(forKey: "liveActivityTopRightField") }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityTopRightField")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityTopRightField")
+        }
+    }
+
+    /// Phase 09.26-02 (D-14) — the full-bleed LA-ONLY plot time-range (hours) mirror, independent of
+    /// the watch/phone chart's own range settings. `nil` when absent — the manager falls back to 2h.
+    public static var liveActivityPlotRangeHours: Int? {
+        get { defaults?.object(forKey: "liveActivityPlotRangeHours") as? Int }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityPlotRangeHours")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityPlotRangeHours")
+        }
+    }
+
+    /// Phase 09.26-02 (D-18/D-19) — the four independent axis-chrome toggles + the high/low range-lines
+    /// toggle, each mirrored individually (never one packed bitmask) so a future plan can add another
+    /// independent toggle without a migration. `nil` when absent — the manager falls back to `false`
+    /// (chrome OFF) for every one, matching the owner-approved clean full-bleed default.
+    public static var liveActivityShowXAxisLine: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowXAxisLine") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowXAxisLine")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowXAxisLine")
+        }
+    }
+    public static var liveActivityShowYAxisLine: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowYAxisLine") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowYAxisLine")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowYAxisLine")
+        }
+    }
+    public static var liveActivityShowXAxisTicks: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowXAxisTicks") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowXAxisTicks")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowXAxisTicks")
+        }
+    }
+    public static var liveActivityShowYAxisTicks: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowYAxisTicks") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowYAxisTicks")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowYAxisTicks")
+        }
+    }
+    public static var liveActivityShowRangeLines: Bool? {
+        get { defaults?.object(forKey: "liveActivityShowRangeLines") as? Bool }
+        set {
+            guard let newValue else {
+                defaults?.removeObject(forKey: "liveActivityShowRangeLines")
+                return
+            }
+            defaults?.set(newValue, forKey: "liveActivityShowRangeLines")
+        }
+    }
+
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
     /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
     public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }

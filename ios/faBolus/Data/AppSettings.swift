@@ -572,6 +572,82 @@ public final class AppSettings {
             GlucoseLiveActivityManager.refreshForSelectionChange()
         }
     }
+    /// Phase 09.26-02 (D-15) — the full-bleed style's user-selectable top-right slot content. "iobDelta"
+    /// (IOB + 30-min trend delta) is the default. Additive, same per-device ambient-surface reasoning
+    /// as `liveActivityStyle` — `didSet` mirrors + force-refreshes. Backed up, but **not** iCloud-synced
+    /// (`SettingsCatalog` `syncsToICloud: false`).
+    public var liveActivityTopRightField: String {
+        didSet {
+            d.set(liveActivityTopRightField, forKey: "liveActivityTopRightField")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    /// The valid `liveActivityTopRightField` tokens (Settings Picker options + init/restore's
+    /// unrecognized-token fallback) — pinned here so the two can never drift apart. Mirrors
+    /// `LATopRightFieldVocabulary.all` (`Shared/LiveActivityShared.swift`, which must not link
+    /// `AppSettings`) — kept in sync by inspection, same precedent as `laFieldItems`/`LAFieldVocabulary`.
+    public static let liveActivityTopRightFieldOptions: [String] =
+        ["iobDelta", "iob", "delta", "tir", "controlIQZone", "battery", "reservoir", "none"]
+
+    /// Phase 09.26-02 (D-14) — the full-bleed Live Activity's OWN plot time-range (hours), INDEPENDENT
+    /// of the watch/phone chart's own range settings. Default 2h (the current `recentPoints` window
+    /// needs no new data); 6h is offered in the Picker but degrades gracefully to whatever history is
+    /// actually available until a future plan adds the wider snapshot window (D-14 scope note in
+    /// `09.26-02-PLAN.md`'s `<safety>`). Additive, same per-device ambient-surface reasoning as
+    /// `liveActivityStyle`.
+    public var liveActivityPlotRangeHours: Int {
+        didSet {
+            d.set(liveActivityPlotRangeHours, forKey: "liveActivityPlotRangeHours")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    public static let liveActivityPlotRangeHoursOptions: [Int] = [2, 6]
+
+    /// Phase 09.26-02 (D-18) — optional full-bleed plot chrome, each an INDEPENDENT toggle (X-axis
+    /// line / Y-axis line / X-axis ticks / Y-axis ticks — four separate settings, never one packed
+    /// flag). **Default OFF** for all four (the clean full-bleed look the owner approved) — see
+    /// `09.26-UI-SPEC.md`'s "Zone-Colored Curve — Rendering Contract" #6. Additive, same per-device
+    /// ambient-surface reasoning as `liveActivityStyle`.
+    public var liveActivityShowXAxisLine: Bool {
+        didSet {
+            d.set(liveActivityShowXAxisLine, forKey: "liveActivityShowXAxisLine")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    public var liveActivityShowYAxisLine: Bool {
+        didSet {
+            d.set(liveActivityShowYAxisLine, forKey: "liveActivityShowYAxisLine")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    public var liveActivityShowXAxisTicks: Bool {
+        didSet {
+            d.set(liveActivityShowXAxisTicks, forKey: "liveActivityShowXAxisTicks")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    public var liveActivityShowYAxisTicks: Bool {
+        didSet {
+            d.set(liveActivityShowYAxisTicks, forKey: "liveActivityShowYAxisTicks")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
+    /// Phase 09.26-02 (D-19) — the high/low target-range dashed reference-line toggle, replacing the
+    /// old hard in-range band. **Default OFF**. Same additive/per-device reasoning as the axis toggles
+    /// above.
+    public var liveActivityShowRangeLines: Bool {
+        didSet {
+            d.set(liveActivityShowRangeLines, forKey: "liveActivityShowRangeLines")
+            syncWidgetConfig()
+            GlucoseLiveActivityManager.refreshForSelectionChange()
+        }
+    }
     /// Phase 5 (D-13/D-14, 05-03; UI reachability + unit-awareness closed in 05-06/WR-01/CR-01) —
     /// master opt-in for the app-icon glucose badge. **Default OFF** (opt-in, matching every other
     /// device-capability switch in this file). Reachable via the "Glucose badge" toggle in Display &
@@ -700,6 +776,15 @@ public final class AppSettings {
         WidgetStore.liveActivityStyle = liveActivityStyle
         WidgetStore.liveActivityPlotFloor = glucosePlotFloor
         WidgetStore.liveActivityPlotCeiling = glucosePlotCeiling
+        // Phase 09.26-02 (D-15/D-18/D-19): mirror the full-bleed display settings — same App-Group-
+        // mirror rationale as the style/bounds mirrors above.
+        WidgetStore.liveActivityTopRightField = liveActivityTopRightField
+        WidgetStore.liveActivityPlotRangeHours = liveActivityPlotRangeHours
+        WidgetStore.liveActivityShowXAxisLine = liveActivityShowXAxisLine
+        WidgetStore.liveActivityShowYAxisLine = liveActivityShowYAxisLine
+        WidgetStore.liveActivityShowXAxisTicks = liveActivityShowXAxisTicks
+        WidgetStore.liveActivityShowYAxisTicks = liveActivityShowYAxisTicks
+        WidgetStore.liveActivityShowRangeLines = liveActivityShowRangeLines
         WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
     }
     /// The Garmin remote's swipeable screens, in the default order. `glance` is the primary HUD.
@@ -948,6 +1033,23 @@ public final class AppSettings {
         // "fullBleed" rather than carrying an invalid string forward.
         let storedStyle = d.string(forKey: "liveActivityStyle")
         liveActivityStyle = (storedStyle == "classic") ? "classic" : "fullBleed"
+        // Phase 09.26-02 (D-15): default "iobDelta" for a fresh install/not-yet-set key; an
+        // unrecognized persisted token (a downgrade, or a value from a build with a since-removed
+        // option) also falls back to "iobDelta" rather than carrying an invalid string forward.
+        let storedTopRightField = d.string(forKey: "liveActivityTopRightField")
+        liveActivityTopRightField = Self.liveActivityTopRightFieldOptions.contains(storedTopRightField ?? "")
+            ? storedTopRightField! : "iobDelta"
+        // Phase 09.26-02 (D-14): default 2h; an unrecognized persisted value (not in the option set)
+        // also falls back to 2h.
+        let storedPlotRangeHours = d.object(forKey: "liveActivityPlotRangeHours") as? Int
+        liveActivityPlotRangeHours = Self.liveActivityPlotRangeHoursOptions.contains(storedPlotRangeHours ?? 0)
+            ? storedPlotRangeHours! : 2
+        // Phase 09.26-02 (D-18/D-19): all default OFF (the clean full-bleed look).
+        liveActivityShowXAxisLine = (d.object(forKey: "liveActivityShowXAxisLine") as? Bool) ?? false
+        liveActivityShowYAxisLine = (d.object(forKey: "liveActivityShowYAxisLine") as? Bool) ?? false
+        liveActivityShowXAxisTicks = (d.object(forKey: "liveActivityShowXAxisTicks") as? Bool) ?? false
+        liveActivityShowYAxisTicks = (d.object(forKey: "liveActivityShowYAxisTicks") as? Bool) ?? false
+        liveActivityShowRangeLines = (d.object(forKey: "liveActivityShowRangeLines") as? Bool) ?? false
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
@@ -1008,6 +1110,13 @@ public final class AppSettings {
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
             "liveActivityStyle": .string(liveActivityStyle),
+            "liveActivityTopRightField": .string(liveActivityTopRightField),
+            "liveActivityPlotRangeHours": .int(liveActivityPlotRangeHours),
+            "liveActivityShowXAxisLine": .bool(liveActivityShowXAxisLine),
+            "liveActivityShowYAxisLine": .bool(liveActivityShowYAxisLine),
+            "liveActivityShowXAxisTicks": .bool(liveActivityShowXAxisTicks),
+            "liveActivityShowYAxisTicks": .bool(liveActivityShowYAxisTicks),
+            "liveActivityShowRangeLines": .bool(liveActivityShowRangeLines),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
             // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
             "siteAtlasEnabled": .bool(siteAtlasEnabled),
@@ -1092,6 +1201,17 @@ public final class AppSettings {
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
         if let v = s("liveActivityStyle"), v == "fullBleed" || v == "classic" { liveActivityStyle = v }
+        if let v = s("liveActivityTopRightField"), Self.liveActivityTopRightFieldOptions.contains(v) {
+            liveActivityTopRightField = v
+        }
+        if let v = i("liveActivityPlotRangeHours"), Self.liveActivityPlotRangeHoursOptions.contains(v) {
+            liveActivityPlotRangeHours = v
+        }
+        if let v = b("liveActivityShowXAxisLine") { liveActivityShowXAxisLine = v }
+        if let v = b("liveActivityShowYAxisLine") { liveActivityShowYAxisLine = v }
+        if let v = b("liveActivityShowXAxisTicks") { liveActivityShowXAxisTicks = v }
+        if let v = b("liveActivityShowYAxisTicks") { liveActivityShowYAxisTicks = v }
+        if let v = b("liveActivityShowRangeLines") { liveActivityShowRangeLines = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
         if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }

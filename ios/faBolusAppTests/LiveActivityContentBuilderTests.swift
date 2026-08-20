@@ -338,6 +338,16 @@ struct LiveActivityContentBuilderTests {
         #expect(decoded.liveActivityStyle == "fullBleed")
         #expect(decoded.plotFloorMgdl == GlucosePlotScale.defaultFloor)
         #expect(decoded.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+        // Phase 09.26-02 (D-15/D-18/D-19): the full-bleed display settings also fall back to the SAME
+        // defaults the memberwise `init` declares — iobDelta / 2h / all chrome OFF — never a thrown
+        // decode for a Live Activity started before this plan shipped.
+        #expect(decoded.topRightField == "iobDelta")
+        #expect(decoded.plotRangeHours == 2)
+        #expect(decoded.showXAxisLine == false)
+        #expect(decoded.showYAxisLine == false)
+        #expect(decoded.showXAxisTicks == false)
+        #expect(decoded.showYAxisTicks == false)
+        #expect(decoded.showRangeLines == false)
     }
 
     // MARK: - Phase 09.26-01 tracer (D-11/D-21/D-02/D-03) — full-bleed style + plot-bounds baking
@@ -413,5 +423,148 @@ struct LiveActivityContentBuilderTests {
         #expect(state.liveActivityStyle == "fullBleed")
         #expect(state.plotFloorMgdl == GlucosePlotScale.defaultFloor)
         #expect(state.plotCeilingMgdl == GlucosePlotScale.defaultCeiling)
+    }
+
+    // MARK: - Phase 09.26-02 — full-bleed display settings (top-right slot, plot range, axis chrome, range lines)
+
+    /// The 4KB ceiling holds with EVERY full-bleed display field (this plan's 7 new settings) at a
+    /// non-default value, alongside the pre-existing style/plot-bounds fields and a 24-point series —
+    /// the plan's own re-verify acceptance criterion.
+    @Test func encodedContentStateStaysUnderFourKBWithFullBleedDisplaySettingsPopulated() throws {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+        }
+        WidgetStore.liveActivityTopRightField = "controlIQZone"
+        WidgetStore.liveActivityPlotRangeHours = 6
+        WidgetStore.liveActivityShowXAxisLine = true
+        WidgetStore.liveActivityShowYAxisLine = true
+        WidgetStore.liveActivityShowXAxisTicks = true
+        WidgetStore.liveActivityShowYAxisTicks = true
+        WidgetStore.liveActivityShowRangeLines = true
+
+        let now = Date(timeIntervalSince1970: 16_000_000)
+        let points = (0..<48).map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double($0 - 48) * 300), mgdl: 100 + $0)
+        }
+        let s = snap(glucoseDate: now, staleAfterSec: 300, displayUnit: "mmol", points: points,
+                     connected: true, updatedAt: now, iobDate: now, iobUnits: 1.2,
+                     basalRateUnitsPerHour: 0.85, deliverySuspended: false, controlIQMode: 1,
+                     controlIQEnabled: true, reservoirUnits: 142, batteryPercent: 80)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+
+        #expect(state.recentPoints.count == 24)
+        #expect(state.topRightField == "controlIQZone")
+        #expect(state.plotRangeHours == 6)
+        #expect(state.showXAxisLine == true)
+        #expect(state.showYAxisLine == true)
+        #expect(state.showXAxisTicks == true)
+        #expect(state.showYAxisTicks == true)
+        #expect(state.showRangeLines == true)
+        let data = try JSONEncoder().encode(state)
+        #expect(data.count < 4096)
+    }
+
+    /// `makeContent` bakes all 7 full-bleed display settings from their `WidgetStore` mirrors.
+    @Test func makeContentBakesFullBleedDisplaySettingsFromWidgetStoreMirror() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+        }
+        WidgetStore.liveActivityTopRightField = "battery"
+        WidgetStore.liveActivityPlotRangeHours = 6
+        WidgetStore.liveActivityShowXAxisLine = true
+        WidgetStore.liveActivityShowYAxisLine = false
+        WidgetStore.liveActivityShowXAxisTicks = true
+        WidgetStore.liveActivityShowYAxisTicks = false
+        WidgetStore.liveActivityShowRangeLines = true
+
+        let now = Date(timeIntervalSince1970: 17_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "battery")
+        #expect(state.plotRangeHours == 6)
+        #expect(state.showXAxisLine == true)
+        #expect(state.showYAxisLine == false)
+        #expect(state.showXAxisTicks == true)
+        #expect(state.showYAxisTicks == false)
+        #expect(state.showRangeLines == true)
+    }
+
+    /// An unset (nil) mirror for every one of the 7 full-bleed display settings bakes the documented
+    /// defaults — iobDelta / 2h / all chrome OFF — never a blank/crash.
+    @Test func makeContentDefaultsFullBleedDisplaySettingsWhenWidgetStoreMirrorIsAbsent() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        let previousRangeHours = WidgetStore.liveActivityPlotRangeHours
+        let previousXLine = WidgetStore.liveActivityShowXAxisLine
+        let previousYLine = WidgetStore.liveActivityShowYAxisLine
+        let previousXTicks = WidgetStore.liveActivityShowXAxisTicks
+        let previousYTicks = WidgetStore.liveActivityShowYAxisTicks
+        let previousRangeLines = WidgetStore.liveActivityShowRangeLines
+        defer {
+            WidgetStore.liveActivityTopRightField = previousTopRight
+            WidgetStore.liveActivityPlotRangeHours = previousRangeHours
+            WidgetStore.liveActivityShowXAxisLine = previousXLine
+            WidgetStore.liveActivityShowYAxisLine = previousYLine
+            WidgetStore.liveActivityShowXAxisTicks = previousXTicks
+            WidgetStore.liveActivityShowYAxisTicks = previousYTicks
+            WidgetStore.liveActivityShowRangeLines = previousRangeLines
+        }
+        WidgetStore.liveActivityTopRightField = nil
+        WidgetStore.liveActivityPlotRangeHours = nil
+        WidgetStore.liveActivityShowXAxisLine = nil
+        WidgetStore.liveActivityShowYAxisLine = nil
+        WidgetStore.liveActivityShowXAxisTicks = nil
+        WidgetStore.liveActivityShowYAxisTicks = nil
+        WidgetStore.liveActivityShowRangeLines = nil
+
+        let now = Date(timeIntervalSince1970: 18_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "iobDelta")
+        #expect(state.plotRangeHours == 2)
+        #expect(state.showXAxisLine == false)
+        #expect(state.showYAxisLine == false)
+        #expect(state.showXAxisTicks == false)
+        #expect(state.showYAxisTicks == false)
+        #expect(state.showRangeLines == false)
+    }
+
+    /// D-15: an unrecognized `liveActivityTopRightField` mirror token (a downgrade, or a value from a
+    /// build that has since dropped an option) resolves to the documented default "iobDelta" at bake
+    /// time — never a blank/crash slot.
+    @Test func makeContentResolvesUnrecognizedTopRightFieldTokenToIobDelta() {
+        let previousTopRight = WidgetStore.liveActivityTopRightField
+        defer { WidgetStore.liveActivityTopRightField = previousTopRight }
+        WidgetStore.liveActivityTopRightField = "notARealOption"
+
+        let now = Date(timeIntervalSince1970: 19_000_000)
+        let s = snap(glucoseDate: now)
+        let (state, _, _) = GlucoseLiveActivityManager.makeContent(from: s, now: now)
+        #expect(state.topRightField == "iobDelta")
     }
 }

@@ -168,6 +168,21 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
         public var plotFloorMgdl: Int
         public var plotCeilingMgdl: Int
 
+        // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed display settings: the user-selectable
+        // top-right slot content (default "IOB + trend delta"), the LA-only plot time-range (D-14,
+        // independent of the watch/phone chart's own range), the four independent axis-chrome toggles,
+        // and the high/low target-range dashed-line toggle. All additive/decode-defaulted; baked by
+        // `GlucoseLiveActivityManager.makeContent` from their `WidgetStore` mirrors, with an
+        // unrecognized `topRightField` token ALSO resolved to the default at bake time (never a
+        // blank/crash slot) — mirrors `liveActivityStyle`'s own unrecognized-token handling.
+        public var topRightField: String
+        public var plotRangeHours: Int
+        public var showXAxisLine: Bool
+        public var showYAxisLine: Bool
+        public var showXAxisTicks: Bool
+        public var showYAxisTicks: Bool
+        public var showRangeLines: Bool
+
         public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "",
                     recentPoints: [WidgetSnapshot.Point] = [], displayUnitToken: String? = nil,
                     iobUnits: Double = 0, iobDate: Date? = nil, reservoirUnits: Double = 0,
@@ -184,7 +199,14 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                     hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
                     liveActivityStyle: String = "fullBleed",
                     plotFloorMgdl: Int = GlucosePlotScale.defaultFloor,
-                    plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling) {
+                    plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling,
+                    topRightField: String = LATopRightFieldVocabulary.defaultId,
+                    plotRangeHours: Int = 2,
+                    showXAxisLine: Bool = false,
+                    showYAxisLine: Bool = false,
+                    showXAxisTicks: Bool = false,
+                    showYAxisTicks: Bool = false,
+                    showRangeLines: Bool = false) {
             self.glucose = glucose
             self.glucoseDate = glucoseDate
             self.trendArrow = trendArrow
@@ -214,6 +236,13 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
             self.liveActivityStyle = liveActivityStyle
             self.plotFloorMgdl = plotFloorMgdl
             self.plotCeilingMgdl = plotCeilingMgdl
+            self.topRightField = topRightField
+            self.plotRangeHours = plotRangeHours
+            self.showXAxisLine = showXAxisLine
+            self.showYAxisLine = showYAxisLine
+            self.showXAxisTicks = showXAxisTicks
+            self.showYAxisTicks = showYAxisTicks
+            self.showRangeLines = showRangeLines
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -223,7 +252,9 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                  lockoutUntilDate, exerciseTimeRemainingSec,
                  connected, updatedAt,
                  iobStale, pumpLinkStale, selectedFields, hasSnoozeEligibleAlert, showUnitLabel,
-                 liveActivityStyle, plotFloorMgdl, plotCeilingMgdl
+                 liveActivityStyle, plotFloorMgdl, plotCeilingMgdl,
+                 topRightField, plotRangeHours, showXAxisLine, showYAxisLine, showXAxisTicks,
+                 showYAxisTicks, showRangeLines
         }
 
         /// Hand-written decode — mirrors `WidgetSnapshot.init(from:)` EXACTLY (`Shared/WidgetShared.swift`),
@@ -284,7 +315,17 @@ public struct FaBolusGlucoseAttributes: ActivityAttributes {
                 // thrown decode for an in-flight Live Activity started under an older build.
                 liveActivityStyle: try c.decodeIfPresent(String.self, forKey: .liveActivityStyle) ?? "fullBleed",
                 plotFloorMgdl: try c.decodeIfPresent(Int.self, forKey: .plotFloorMgdl) ?? GlucosePlotScale.defaultFloor,
-                plotCeilingMgdl: try c.decodeIfPresent(Int.self, forKey: .plotCeilingMgdl) ?? GlucosePlotScale.defaultCeiling
+                plotCeilingMgdl: try c.decodeIfPresent(Int.self, forKey: .plotCeilingMgdl) ?? GlucosePlotScale.defaultCeiling,
+                // Phase 09.26-02 (D-15/D-18/D-19): every full-bleed display setting falls back to the
+                // SAME default the memberwise `init` above declares — iobDelta/2h/all chrome OFF —
+                // never a thrown decode for a Live Activity started before this plan shipped.
+                topRightField: try c.decodeIfPresent(String.self, forKey: .topRightField) ?? LATopRightFieldVocabulary.defaultId,
+                plotRangeHours: try c.decodeIfPresent(Int.self, forKey: .plotRangeHours) ?? 2,
+                showXAxisLine: try c.decodeIfPresent(Bool.self, forKey: .showXAxisLine) ?? false,
+                showYAxisLine: try c.decodeIfPresent(Bool.self, forKey: .showYAxisLine) ?? false,
+                showXAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showXAxisTicks) ?? false,
+                showYAxisTicks: try c.decodeIfPresent(Bool.self, forKey: .showYAxisTicks) ?? false,
+                showRangeLines: try c.decodeIfPresent(Bool.self, forKey: .showRangeLines) ?? false
             )
         }
     }
@@ -339,6 +380,17 @@ public enum LAFieldVocabulary {
     // "lastAutoCorrection"'s own precedent) — Sleep facts are deliberately NOT added here (explicit
     // scope, D-08 T1-9 note).
     public static let all: [String] = ["glucose", "iob", "reservoir", "battery", "basal", "controlIQ", "controlIQZone", "lastAutoCorrection", "exerciseTimer", "connection"]
+}
+
+/// Phase 09.26-02 (D-15) — the valid tokens for the full-bleed style's user-selectable top-right slot.
+/// Mirrors `AppSettings.liveActivityTopRightFieldOptions` verbatim — kept in sync by inspection (same
+/// "kept in sync" precedent as `LAFieldVocabulary` above), since this file compiles into the
+/// `faBolusWidgets` extension too and must not link `AppSettings`. An unrecognized/legacy token (a
+/// downgrade, or a value dropped in a later build) resolves to `defaultId` at bake/render time — never
+/// a blank/crash slot.
+public enum LATopRightFieldVocabulary {
+    public static let all: [String] = ["iobDelta", "iob", "delta", "tir", "controlIQZone", "battery", "reservoir", "none"]
+    public static let defaultId = "iobDelta"
 }
 
 /// Pure adaptive-layout composer (D-17a) — no ActivityKit, no I/O, callable from both the app target

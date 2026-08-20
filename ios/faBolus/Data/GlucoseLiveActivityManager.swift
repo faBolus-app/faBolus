@@ -62,6 +62,19 @@ enum GlucoseLiveActivityManager {
         let plotBounds = GlucosePlotScale.resolve(
             storedFloor: WidgetStore.liveActivityPlotFloor,
             storedCeiling: WidgetStore.liveActivityPlotCeiling)
+        // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed display settings mirrors; an absent mirror
+        // (legacy install, or before the first syncWidgetConfig() call) falls back to the documented
+        // default for each (iobDelta / 2h / all chrome OFF), and an unrecognized persisted
+        // topRightField token ALSO resolves to the default — never a blank/crash slot.
+        let rawTopRightField = WidgetStore.liveActivityTopRightField ?? LATopRightFieldVocabulary.defaultId
+        let topRightField = LATopRightFieldVocabulary.all.contains(rawTopRightField)
+            ? rawTopRightField : LATopRightFieldVocabulary.defaultId
+        let plotRangeHours = WidgetStore.liveActivityPlotRangeHours ?? 2
+        let showXAxisLine = WidgetStore.liveActivityShowXAxisLine ?? false
+        let showYAxisLine = WidgetStore.liveActivityShowYAxisLine ?? false
+        let showXAxisTicks = WidgetStore.liveActivityShowXAxisTicks ?? false
+        let showYAxisTicks = WidgetStore.liveActivityShowYAxisTicks ?? false
+        let showRangeLines = WidgetStore.liveActivityShowRangeLines ?? false
         let state = FaBolusGlucoseAttributes.ContentState(
             glucose: snap.glucose,
             glucoseDate: snap.glucoseDate,
@@ -85,7 +98,14 @@ enum GlucoseLiveActivityManager {
             showUnitLabel: snap.showUnitLabel,                    // owner-requested toggle, carried verbatim
             liveActivityStyle: style,
             plotFloorMgdl: plotBounds.floor,
-            plotCeilingMgdl: plotBounds.ceiling
+            plotCeilingMgdl: plotBounds.ceiling,
+            topRightField: topRightField,
+            plotRangeHours: plotRangeHours,
+            showXAxisLine: showXAxisLine,
+            showYAxisLine: showYAxisLine,
+            showXAxisTicks: showXAxisTicks,
+            showYAxisTicks: showYAxisTicks,
+            showRangeLines: showRangeLines
         )
         let staleDate = (snap.glucoseDate ?? now).addingTimeInterval(snap.staleAfterSec ?? 360)
         return (state: state, staleDate: staleDate, timestamp: snap.glucoseDate)
