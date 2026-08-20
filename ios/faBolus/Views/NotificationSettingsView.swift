@@ -220,17 +220,27 @@ struct NotificationSettingsView: View {
         }
     }
 
+    /// The trio's computed effective-state caption text (D-06 UI-SPEC "Copy → Caption Mapping"). Pulled
+    /// out as a plain `String` (rather than inlined in the `@ViewBuilder` below) so 09.25-02 Task 3 can
+    /// feed the SAME value into `.accessibilityValue` on the governing Toggle — VoiceOver announces
+    /// exactly what's on screen, never a separately-authored a11y string.
+    private func safetyEffectiveStateCaptionText(for category: NotificationBroker.Category) -> String {
+        (categorySettings[category]?.enabled ?? true)
+            ? "On — always delivered, even during quiet hours or Do Not Disturb."
+            : "⚠ Off — you turned off this safety protection."
+    }
+
     /// The trio's computed effective-state caption (D-06 UI-SPEC "Copy → Caption Mapping"), rendered
     /// below each trio row.
     @ViewBuilder
     private func safetyEffectiveStateCaption(for category: NotificationBroker.Category) -> some View {
         if categorySettings[category]?.enabled ?? true {
-            Text("On — always delivered, even during quiet hours or Do Not Disturb.")
+            Text(safetyEffectiveStateCaptionText(for: category))
                 .font(.caption).foregroundStyle(.secondary)
         } else {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                Text("⚠ Off — you turned off this safety protection.")
+                Text(safetyEffectiveStateCaptionText(for: category))
             }
             .foregroundStyle(.red)
         }
@@ -336,6 +346,9 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
                     .disabled(!masterOn)
+                    // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
+                    // (mirrors GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                    .accessibilityValue(Text(breakThroughCaption))
                 Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -385,6 +398,10 @@ struct NotificationSettingsView: View {
             ForEach(trioCategories, id: \.self) { category in
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(category.label, isOn: safetyEnabledBinding(for: category))
+                        // 09.25-02 Task 3 (D-06 backstop): VoiceOver announces switch-state + the SAME
+                        // on-screen effective-state caption as one utterance (mirrors
+                        // GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                        .accessibilityValue(Text(safetyEffectiveStateCaptionText(for: category)))
                     safetyEffectiveStateCaption(for: category)
                 }
             }
@@ -415,6 +432,9 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
                     .disabled(!masterOn)
+                    // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
+                    // (mirrors GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                    .accessibilityValue(Text(breakThroughCaption))
                 Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
             }
         } header: {
