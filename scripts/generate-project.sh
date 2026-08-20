@@ -126,7 +126,7 @@ TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
 CGM_G6="${FABOLUS_CGM_G6:-1}"
 CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-1}"
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
-CGM_XDRIP="${FABOLUS_CGM_XDRIP:-1}"
+CGM_XDRIP="${FABOLUS_CGM_XDRIP:-0}"
 # Phone-peer remote compile gate (TOPO-03/D-03; name per PER-SURFACE-CHECKLIST §B). Default 1 = the
 # phone-as-a-remote surface is PRESENT (today's behavior). At 0, ONLY the peer-remote files are excluded
 # (PeerRemoteHost, PhoneRemoteClientModel, RemotePeerPolicyStore, Remote{Control,Root,Settings}View); the

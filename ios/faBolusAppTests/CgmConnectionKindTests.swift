@@ -23,7 +23,7 @@ struct CgmConnectionKindTests {
             "librelinkup": .cloudPoll,
             "nightscout": .cloudPoll,
             "dexcom-share": .cloudPoll,
-            "xdrip-appgroup": .localOnDevice,
+            // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
         ]
         #if FABOLUS_HEALTHKIT
         table["healthkit"] = .localOnDevice
@@ -53,12 +53,17 @@ struct CgmConnectionKindTests {
         }
     }
 
-    /// The three categories are each populated — proves the typed enum actually differentiates the
-    /// three physical connection classes (not everything collapsing into one case).
+    /// The BLE and cloud-poll categories are always populated — proves the typed enum actually
+    /// differentiates the physical connection classes (not everything collapsing into one case).
+    /// `.localOnDevice` was xDrip App Group's category; it was removed from `main` in Phase 1, Plan 01
+    /// (CGM-05), so `.localOnDevice` is only expected when the last remaining `.localOnDevice` source
+    /// (HealthKit) is compiled in.
     @Test func allThreeConnectionKindsArePresentAcrossTheRegistry() {
         let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
         #expect(kinds.contains(.localBLE))
         #expect(kinds.contains(.cloudPoll))
+        #if FABOLUS_HEALTHKIT
         #expect(kinds.contains(.localOnDevice))
+        #endif
     }
 }

@@ -4,11 +4,11 @@ import faBolusCore
 @testable import faBolus
 
 /// Phase 09.22-05 (Task 1, D-11 / D-14): pins that EVERY failover source has a discoverable config
-/// section in `CgmCredentialsView`, and that the three that previously had none — Dexcom G7,
-/// Apple Health (HealthKit), and the xDrip App Group — carry their required precondition copy. The
-/// xDrip self-compile / same-Team-ID caveat must be an UNMISSABLE gate (a warning-styled banner in the
-/// section content), not a buried footer (CRIT F-01). Mirrors `WatchDirectBleScopeGuardTests`'
-/// `#filePath`-rooted source scan (no simulator, no live source).
+/// section in `CgmCredentialsView`, and that the sources that previously had none — Dexcom G7 and
+/// Apple Health (HealthKit) — carry their required precondition copy. (The xDrip App Group section's
+/// own copy-presence tests were removed with the source in Phase 1, Plan 01 — CGM-05; the core
+/// `configuredSectionSourceIds == registryIds` equality assertion below still covers the shrunk set.)
+/// Mirrors `WatchDirectBleScopeGuardTests`' `#filePath`-rooted source scan (no simulator, no live source).
 ///
 /// **I-01 (D-14) — `stripLineComments` limitation.** The helper below is a NAIVE line-comment stripper:
 /// it truncates each line at the first `//` and is NOT string-literal aware, so a `//` inside a Swift
@@ -58,10 +58,11 @@ struct CgmConfigSectionCopyGuardTests {
         let registryIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
         #expect(CgmCredentialsView.configuredSectionSourceIds == registryIds,
                 "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))")
-        // The three D-11 additions must specifically be present. "healthkit" only exists in the
-        // registry (and this required set) when FABOLUS_HEALTHKIT is ON (D-13, Phase 09.23) — under
-        // OFF neither side has it, so the equality check above already covers that state.
-        var requiredIds = ["dexcom-g7-ble", "xdrip-appgroup"]
+        // The D-11 additions that remain on `main` must specifically be present. "healthkit" only
+        // exists in the registry (and this required set) when FABOLUS_HEALTHKIT is ON (D-13, Phase
+        // 09.23) — under OFF neither side has it, so the equality check above already covers that
+        // state. "xdrip-appgroup" was removed in Phase 1, Plan 01 (CGM-05).
+        var requiredIds = ["dexcom-g7-ble"]
         #if FABOLUS_HEALTHKIT
         requiredIds.append("healthkit")
         #endif
@@ -141,37 +142,4 @@ struct CgmConfigSectionCopyGuardTests {
                 "D-08 violated — no heart-rate EXPORT toggle/row may exist; HR is read-only")
     }
     #endif
-
-    @Test func xdripSectionCarriesSelfCompileTeamIdGate() throws {
-        let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
-        #expect(code.contains("Self-compile only"), "xDrip section missing the self-compile-only caveat")
-        #expect(code.contains("same Apple Team ID") || code.contains("SAME Apple Team ID"),
-                "xDrip section missing the same-Apple-Team-ID caveat")
-    }
-
-    /// CRIT F-01: the xDrip caveat must be an UNMISSABLE gate — presented with a warning treatment in
-    /// the section CONTENT (a warning icon), not tucked into a plain-text footer. We assert both the
-    /// caveat text and a warning icon are present, and that the caveat appears BEFORE the section's
-    /// `footer:` label (i.e. it is content, not footer).
-    @Test func xdripSelfCompileCaveatIsAnUnmissableGateNotABuriedFooter() throws {
-        let code = Self.stripLineComments(try #require(Self.readSource(Self.credentialsViewPath)))
-        #expect(code.contains("exclamationmark.triangle"),
-                "xDrip self-compile gate must use a warning icon (unmissable), not a plain footer")
-        // Anchor on the section's definition. In a SwiftUI `Section { content } header: {} footer: {}`
-        // the CONTENT is emitted first in source, so the caveat must appear AFTER the section opens and
-        // BEFORE its `footer:` label — i.e. it is warning-styled section content, not a buried footer.
-        guard let defRange = code.range(of: "xdripAppGroupConfigSection: some View") else {
-            Issue.record("could not locate the xDrip App Group section definition in the source")
-            return
-        }
-        let sectionBody = code[defRange.upperBound...]
-        let caveatIdx = sectionBody.range(of: "Self-compile only")?.lowerBound
-        let footerIdx = sectionBody.range(of: "footer:")?.lowerBound
-        #expect(caveatIdx != nil, "xDrip self-compile caveat not found in the section content")
-        #expect(footerIdx != nil, "xDrip section has no footer label — section structure changed")
-        if let caveatIdx, let footerIdx {
-            #expect(caveatIdx < footerIdx,
-                    "xDrip self-compile caveat sits in the footer — it must be unmissable section content")
-        }
-    }
 }

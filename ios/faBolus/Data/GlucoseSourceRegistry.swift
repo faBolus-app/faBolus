@@ -51,8 +51,9 @@ public enum GlucoseSourceRegistry {
         list.append(GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
                                 sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() })
         #endif
-        list.append(GlucoseSourceDescriptor(id: "xdrip-appgroup", name: "xDrip4iOS — App Group (local)",
-                                sensors: ["xDrip4iOS (any sensor, local)"]) { _ in XDripAppGroupSource() })
+        // xdrip-appgroup (XDripAppGroupSource) removed from narrow `main` — Phase 1, Plan 01 (CGM-05).
+        // Compile-excluded via FABOLUS_CGM_XDRIP=0 in scripts/generate-project.sh; the source file
+        // itself stays checked in (still built on experimental/cgm-extra at FABOLUS_CGM_XDRIP=1).
         return list
     }()
 

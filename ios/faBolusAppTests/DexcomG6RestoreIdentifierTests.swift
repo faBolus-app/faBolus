@@ -62,7 +62,8 @@ struct DexcomG6RestoreIdentifierTests {
     /// here too, an unavoidable direct consequence of that gating (not itself part of the 09.23-01
     /// plan's declared scope).
     @Test func everyOtherDescriptorClosureIgnoresTheFlag() throws {
-        var ids = ["dexcom-g7-ble", "librelinkup", "nightscout", "dexcom-share", "xdrip-appgroup"]
+        // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
+        var ids = ["dexcom-g7-ble", "librelinkup", "nightscout", "dexcom-share"]
         #if FABOLUS_HEALTHKIT
         ids.append("healthkit")
         #endif

@@ -350,7 +350,7 @@ enum SettingsIndex {
         .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         .init(title: "Allow bolusing from Watch & Garmin", keywords: "allow enable remote bolus watch garmin deliver read only view only", category: .remotes),
         .init(title: "Remote bolus size limit", keywords: "ceiling cap max units remote bolus limit dose watch garmin", category: .remotes),
-        .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share xdrip", category: .cgm),
+        .init(title: "Failover CGM source", keywords: "dexcom libre nightscout share", category: .cgm),
         .init(title: "CGM account credentials", keywords: "login libre share nightscout transmitter", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
