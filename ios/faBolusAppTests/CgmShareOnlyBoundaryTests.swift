@@ -3,14 +3,13 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 1 (CGM → Dexcom Share only), Plan 01 (D-06): the app-target boundary test that pins the
-/// narrow-`main` CGM-source contract across the phase's three plans. Written as the TRACER slice
-/// (Plan 01 removes only xDrip App Group), so `registryContainsOnlyShareAndNightscout` and
-/// `removedSourceIdsAreAbsent` are DELIBERATELY still partially RED on `main` after this plan — they
-/// converge to fully GREEN only once Plan 02 (G6 + LibreLinkUp) and Plan 03 (G7) land. This is the
-/// intended RED→GREEN convergence for a multi-plan removal, not a regression: each plan narrows the
-/// registry further and this file's expectations do not change. Mirrors `CgmSourceValidationTests`'
-/// registry-enumeration style (construction-time, no live source, no simulator).
+/// Originally Phase 1 (CGM → Dexcom Share only), Plan 01 (D-06): the app-target boundary test that
+/// pins the narrow-`main` CGM-source contract. `registryContainsOnlyDexcomShare` and
+/// `removedSourceIdsAreAbsent` converged to fully GREEN once Phase 1's Plans 02/03 landed, and were
+/// extended here in Phase 5 (`registryContainsOnlyDexcomShare`, renamed from
+/// `registryContainsOnlyShareAndNightscout`) to also cover HealthKit's (HEALTH-01) and Nightscout's
+/// (HEALTH-02) removal. Mirrors `CgmSourceValidationTests`' registry-enumeration style
+/// (construction-time, no live source, no simulator).
 ///
 /// A stand-in `GlucoseSource` for the arbiter-contract test (Task 2, D-05) — mirrors
 /// `GlucoseArbiterTests.MockGlucoseSource` in `Packages/faBolusCore`, reproduced here (not imported —
@@ -35,26 +34,21 @@ private final class MockShareLikeGlucoseSource: GlucoseSource {
 @MainActor
 struct CgmShareOnlyBoundaryTests {
 
-    /// The end state of Phase 1: `GlucoseSourceRegistry.enabled` contains ONLY Dexcom Share +
-    /// Nightscout (+ HealthKit under `FABOLUS_HEALTHKIT`, which Phase 1 does not touch — it drops in
-    /// Phase 5). RED after Plan 01 (dexcom-g7-ble / dexcom-g6-ble / librelinkup are still present);
-    /// GREEN only after Plan 03 removes the last of them.
-    @Test func registryContainsOnlyShareAndNightscout() {
-        var expected: Set<String> = ["dexcom-share", "nightscout"]
-        #if FABOLUS_HEALTHKIT
-        expected.insert("healthkit")
-        #endif
+    /// The end state of Phase 5 (HEALTH-01/HEALTH-02): `GlucoseSourceRegistry.enabled` contains ONLY
+    /// Dexcom Share — HealthKit and Nightscout are both gone from narrow `main` (see dev/healthkit's
+    /// and dev/nightscout's REINTEGRATION.md).
+    @Test func registryContainsOnlyDexcomShare() {
+        let expected: Set<String> = ["dexcom-share"]
         let actual = Set(GlucoseSourceRegistry.enabled.map(\.id))
         #expect(actual == expected,
                 "narrow main's CGM registry must be exactly \(expected); got \(actual)")
     }
 
-    /// Every source this phase removes is fully gone from the registry: absent from `enabled` AND
-    /// `descriptor(id:)` returns nil (not merely hidden from the default UI). xdrip-appgroup goes GREEN
-    /// in this plan; dexcom-g7-ble / dexcom-g6-ble / librelinkup stay RED until Plans 02/03.
+    /// Every source this milestone removes is fully gone from the registry: absent from `enabled` AND
+    /// `descriptor(id:)` returns nil (not merely hidden from the default UI).
     @Test func removedSourceIdsAreAbsent() {
         let enabledIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
-        for id in ["dexcom-g7-ble", "dexcom-g6-ble", "librelinkup", "xdrip-appgroup"] {
+        for id in ["dexcom-g7-ble", "dexcom-g6-ble", "librelinkup", "xdrip-appgroup", "nightscout", "healthkit"] {
             #expect(!enabledIds.contains(id), "\(id) must be removed from GlucoseSourceRegistry.enabled")
             #expect(GlucoseSourceRegistry.descriptor(id: id) == nil,
                     "\(id) must have no descriptor at all, not just be unlisted")

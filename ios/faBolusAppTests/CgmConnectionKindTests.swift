@@ -12,24 +12,17 @@ import faBolusCore
 @MainActor
 struct CgmConnectionKindTests {
 
-    /// The expected classification for each registered failover source. "healthkit" only exists in
-    /// `GlucoseSourceRegistry.enabled` when `FABOLUS_HEALTHKIT` is ON (D-13, Phase 09.23) — gated
-    /// here too so the set-equality check below stays exact in both flag states, as an unavoidable
-    /// direct consequence of that gating (not itself part of the 09.23-01 plan's declared scope).
-    private static let expected: [String: GlucoseConnectionKind] = {
-        var table: [String: GlucoseConnectionKind] = [
-            "nightscout": .cloudPoll,
-            "dexcom-share": .cloudPoll,
-            // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
-            // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
-            // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
-            // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
-        ]
-        #if FABOLUS_HEALTHKIT
-        table["healthkit"] = .localOnDevice
-        #endif
-        return table
-    }()
+    /// The expected classification for each registered failover source. HealthKit ("healthkit") was
+    /// removed from narrow `main` in Phase 5 (HEALTH-01, see dev/healthkit's REINTEGRATION.md);
+    /// Nightscout ("nightscout") was removed from narrow `main` in Phase 5 (HEALTH-02, see
+    /// dev/nightscout's REINTEGRATION.md) — narrow main's table is Share-only.
+    private static let expected: [String: GlucoseConnectionKind] = [
+        "dexcom-share": .cloudPoll,
+        // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
+        // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
+        // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
+        // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
+    ]
 
     /// Every registered source classifies itself correctly (BLE / cloud / on-device). Iterates the
     /// registry's enabled descriptors so the set is exactly what the app ships, not a hand-copied list.
@@ -64,8 +57,5 @@ struct CgmConnectionKindTests {
         let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
         #expect(!kinds.contains(.localBLE), "no direct-BLE CGM source remains on narrow main (D-03)")
         #expect(kinds.contains(.cloudPoll))
-        #if FABOLUS_HEALTHKIT
-        #expect(kinds.contains(.localOnDevice))
-        #endif
     }
 }

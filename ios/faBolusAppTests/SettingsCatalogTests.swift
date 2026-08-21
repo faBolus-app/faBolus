@@ -42,6 +42,10 @@ enum CompileGateAudit {
         // removed watch-remote surface, keeping the orphan-detector's own self-test
         // (`orphanDetectorIsNonVacuous` below) meaningful for a token this milestone actually removed.
         tokens.formUnion(["Apple Watch app"])
+        // Phase 5 (05-01/05-02, HEALTH-01/HEALTH-02): Apple HealthKit (CGM source + HR reader +
+        // import/export) and Nightscout (source + upload + backfill) both removed from narrow
+        // `main` (unconditional — permanent removal, no `#if` guard per D-01).
+        tokens.formUnion(["nightscout", "healthkit", "heart rate"])
         return tokens
     }
 
@@ -99,8 +103,12 @@ struct SettingsCatalogTests {
         // eatingTriggerConfig + eatingLearnFromFeedback removed — the whole `.smartAssist` submenu
         // deleted; all 4 properties survive as hidden/unregistered flags, see the NOTE in
         // SettingsCatalog.swift).
-        #expect(SettingsCatalog.descriptors.count == 60)
-        #expect(SettingsCatalog.byKey.count == 60)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 5 (05-02, HEALTH-02): 60 → 59 (nightscoutUploadEnabled removed — the property
+        // survives as a hidden/unregistered UserDefaults flag, no migration; HealthKit's
+        // healthKit*Enabled properties were never a catalog row per D-13, so HEALTH-01 required no
+        // count change here).
+        #expect(SettingsCatalog.descriptors.count == 59)
+        #expect(SettingsCatalog.byKey.count == 59)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -134,7 +142,9 @@ struct SettingsCatalogTests {
         // catalog AND backupSnapshot — hidden-flag pattern, accessor stays).
         // Phase 4 (04-02, D-05/NUDGE-01): 59 → 58 (siteAtlasEnabled, unconditional, removed from the
         // catalog AND backupSnapshot — the eating trio was never backed up, so no further drop).
-        #expect(SettingsCatalog.backedUpKeys.count == 58)                      // 52 unconditional + 6 conditional
+        // Phase 5 (05-02, HEALTH-02): 58 → 57 (nightscoutUploadEnabled, unconditional, removed from
+        // the catalog AND backupSnapshot).
+        #expect(SettingsCatalog.backedUpKeys.count == 57)                      // 51 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

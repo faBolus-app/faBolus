@@ -99,22 +99,23 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("CGM source status"))
     }
 
-    // MARK: - Task 1: ordering — "3. Status" before "Nightscout upload" before "Glucose staleness"
+    // MARK: - Task 1: ordering — "3. Status" before "Glucose staleness"
+    //
+    // The "Nightscout upload" section this test originally also ordered was removed from narrow
+    // `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. The remaining
+    // "3. Status" → "Glucose staleness" ordering guard still applies and is preserved (renamed).
 
-    @Test func statusSectionComesBeforeNightscoutBeforeStaleness() throws {
+    @Test func statusSectionComesBeforeStaleness() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
         // Header-specific markers (`Text("…")`) to avoid matching the unrelated
         // `SettingsIndex.entries` "Glucose staleness" keyword string, which appears earlier in the file.
         guard let statusIdx = source.range(of: "Text(\"3. Status\")")?.lowerBound,
-              let nightscoutIdx = source.range(of: "Text(\"Nightscout upload\")")?.lowerBound,
               let stalenessIdx = source.range(of: "Text(\"Glucose staleness\")")?.lowerBound else {
-            Issue.record("could not locate all three header markers in SettingsView.swift")
+            Issue.record("could not locate both header markers in SettingsView.swift")
             return
         }
-        #expect(statusIdx < nightscoutIdx,
-                "\"3. Status\" must come before \"Nightscout upload\" in CgmSettingsView's body")
-        #expect(nightscoutIdx < stalenessIdx,
-                "\"Nightscout upload\" must come before \"Glucose staleness\" in CgmSettingsView's body")
+        #expect(statusIdx < stalenessIdx,
+                "\"3. Status\" must come before \"Glucose staleness\" in CgmSettingsView's body")
     }
 
     // MARK: - Task 3: status-page "Last test result" echo
