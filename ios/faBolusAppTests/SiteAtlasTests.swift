@@ -133,7 +133,13 @@ struct SiteAtlasTests {
         #expect(reloaded.siteAtlasEnabled == false)   // persisted across re-init
     }
 
-    @MainActor @Test func siteAtlasEnabledBacksUpAndRestores() {
+    // Phase 4 (04-02, D-05/D-06b/NUDGE-01): siteAtlasEnabled's SettingsCatalog descriptor + backup
+    // participation were removed when the whole Smart Assist submenu (its only UI surface) was
+    // deleted from narrow `main` (SC2 forces this — see the NOTE in SettingsCatalog.swift). This test
+    // used to assert the opposite (backs up + restores); it now pins the new hidden-flag behavior:
+    // the property survives at its existing value, but a backup/restore round-trip no longer touches
+    // it at all.
+    @MainActor @Test func siteAtlasEnabledNoLongerBacksUpOrRestores() {
         let suiteName = "SiteAtlasTests.siteAtlasBackup.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -141,12 +147,12 @@ struct SiteAtlasTests {
         let s = AppSettings(defaults: defaults)
         s.siteAtlasEnabled = false
         let snapshot = s.backupSnapshot()
-        #expect(snapshot["siteAtlasEnabled"] == .bool(false))
+        #expect(snapshot["siteAtlasEnabled"] == nil)   // no longer emitted
 
         let s2 = AppSettings(defaults: defaults)
         s2.siteAtlasEnabled = true
         s2.applyBackup(snapshot)
-        #expect(s2.siteAtlasEnabled == false)   // restored from the backup
+        #expect(s2.siteAtlasEnabled == true)   // unaffected — restore no longer carries this key
     }
 
     // MARK: - One-time "About Smart Features" explainer ack (D-16)
