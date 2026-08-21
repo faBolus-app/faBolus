@@ -12,10 +12,10 @@ import WidgetKit
 /// It intentionally still needs `@testable import faBolus` for `WidgetStore`/`WidgetSnapshot`
 /// (app-internal, `Shared/WidgetShared.swift`) — every other type it touches is public `faBolusCore`.
 ///
-/// Not the production type: the real `RemoteClientModel` now lives at
-/// `watch/faBolusWatch/RemoteClientModel.swift` (Watch-target-only — see the 03-02-SUMMARY.md deviation
-/// note; `WatchModel: RemoteClientModel` in that target still needs the real superclass until the Watch
-/// app itself is removed in 03-03). This fixture is never used by the shipped app.
+/// Not the production type: the real `RemoteClientModel` (moved to `watch/faBolusWatch/` in 03-02,
+/// see that plan's deviation note, since `WatchModel: RemoteClientModel` still needed it) is now gone
+/// from `main` entirely — the whole Watch target was removed in 03-03 (REMOTE-03, delete-on-main),
+/// preserved on `dev/watch-remote`. This fixture is never used by the shipped app.
 ///
 /// Original doc (verbatim, describes the PRODUCTION type this fixture mirrors — the second paragraph's
 /// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code):

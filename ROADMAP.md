@@ -115,8 +115,11 @@ testing across 3 devices, and the naïve wiring risks the shipped watch↔host p
 ### Apple Watch host / phone-as-remote swap (tracked, not started)
 Make the **watch the pump host** and the **phone a remote**. The pump allows only one paired
 controller (see `docs/setup/pairing.md`), so this is a full re-pair that evicts the phone — not a
-quick toggle. Ties into the existing untested **Phase-1 direct-pump** scaffold
-(`watch/faBolusWatch/WatchPumpClient.swift`, `WatchDirectView.swift`). Work required:
+quick toggle. Ties into the existing untested **Phase-1 direct-pump** scaffold (REMOTE-04,
+`WatchPumpClient.swift`, `WatchDirectView.swift`) — as of Phase 3 (03-03, v0.5.0 narrow-main) this
+whole Apple-Watch-as-host surface is delete-on-main, preserved on `dev/watch-host`
+(`watch/faBolusWatch/direct-pump/`, see its `REINTEGRATION.md`), not present on narrow `main` at all.
+Work required (restore from `dev/watch-host` first):
 1. **Phase 2 watch backend** — port `TandemBackend`'s tiered polling + signed
    `deliverBolus`/`cancelBolus`/`dismissNotification` + snapshot building into `WatchPumpClient`
    (the `TandemBLE`/`TandemAuth`/`TandemMessages` libs already run on watchOS unchanged).
@@ -126,5 +129,6 @@ quick toggle. Ties into the existing untested **Phase-1 direct-pump** scaffold
 3. **Single-pairing eviction UX** — pairing the watch unpairs the phone; add a clear hand-off flow.
 4. **On-device host testing** — validate the watch-hosted signed delivery path (extends the
    currently-untested Phase-1 direct-pump work).
-   Files: `watch/faBolusWatch/WatchPumpClient.swift`, `ios/faBolus/Data/TandemBackend.swift`,
-   `Shared/RemoteClientModel.swift`, `Packages/faBolusCore/.../RemoteCommand.swift`.
+   Files (on `dev/watch-host`): `watch/faBolusWatch/direct-pump/WatchPumpClient.swift`,
+   `ios/faBolus/Data/TandemBackend.swift`, `Packages/faBolusCore/.../RemoteCommand.swift` (the last
+   two are frozen dose/signed files on `main`, unaffected by the delete-on-main removal).

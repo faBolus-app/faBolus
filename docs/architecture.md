@@ -45,9 +45,7 @@ faBolus  (this repo, consumes TandemKit via SPM)
 ├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
 │   └── Data/Sources/    CGM failover impls: cloud (LibreLinkUp, Nightscout, Dexcom Share) + HealthKit + credentials
 ├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
-├── watch/faBolusWatch/  Apple Watch remote (WatchConnectivity + direct-G7 failover)
-├── watch/faBolusWatchWidgets/  watch-face complication
-├── Shared/                DexcomG7BLESource — passive G7 central reused by phone + watch
+├── Shared/                DexcomG7BLESource — passive G7 central (phone-side)
 ├── schema/                command.schema.json — the single source of truth for the contract
 └── docs/                  this site
 
@@ -61,12 +59,17 @@ faBolusGarmin  (separate repo)
     Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK dependency) is part of this app,
     so the two talk over the shared command contract.
 
+!!! note "The Apple Watch remote is delete-on-main (v0.5.0 narrow-main)"
+    `watch/faBolusWatch/` (the Watch app + its WatchConnectivity/direct-G7-failover code) and
+    `watch/faBolusWatchWidgets/` (the watch-face complication) are removed from narrow `main` —
+    preserved byte-identical on `dev/watch-remote`. The standalone Apple-Watch-as-host/direct-to-pump
+    scaffold (`direct-pump/`) is likewise removed, preserved on `dev/watch-host`.
+
 ## Who owns the pump
 
-The iPhone owns the single Bluetooth control connection and runs **TandemKit**. Remotes (Apple
-Watch, Garmin, and the Mac) are thin clients that send commands to the phone; the phone runs the confirm
-interlock and delivers. A standalone Apple Watch that runs TandemKit on-watch (no phone) is
-designed but not built.
+The iPhone owns the single Bluetooth control connection and runs **TandemKit**. Garmin is a thin
+client that sends commands to the phone; the phone runs the confirm interlock and delivers. (The
+Apple Watch and Mac remotes are removed from narrow `main` — see the notes above and `dev/mac`.)
 
 **The pump link always wins (§5.5).** Serving a remote never touches the pump connection: the iPhone's
 CoreBluetooth link to the pump lives in TandemKit's `PumpBLEClient`, while every remote is served through

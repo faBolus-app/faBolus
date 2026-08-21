@@ -60,16 +60,17 @@ struct GlucoseStatusGlyphGuardTests {
     static let zoneWordNeedle = ".shortLabel"
 
     /// The glucose surfaces the D-02 sweep (waves 01-04) touched, pinned BY PATH
-    /// (09.29-DIAGNOSIS.md §A table) — originally eight; now six after Phase 3 (03-01) git rm'd
+    /// (09.29-DIAGNOSIS.md §A table) — originally eight; six after Phase 3 (03-01) git rm'd
     /// `mac/faBolusMac/MacComponents.swift` + `mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift` from
-    /// `main` (preserved on dev/mac) — out-of-scope fix, see 03-02-SUMMARY.md.
+    /// `main` (preserved on dev/mac) — out-of-scope fix, see 03-02-SUMMARY.md; now four after Phase 3
+    /// (03-03) git rm'd `watch/faBolusWatch/WatchHUDView.swift` +
+    /// `watch/faBolusWatchWidgets/GlucoseComplication.swift` from `main` (preserved on dev/watch-remote,
+    /// REMOTE-03, delete-on-main) — same out-of-scope-fix posture as the Mac removal above.
     static let pinnedSurfaces = [
         "ios/faBolus/Views/StatusRingView.swift",
         "ios/faBolusWidgets/GlucoseLiveActivity.swift",
         "ios/faBolusWidgets/GlucoseWidget.swift",
         "ios/faBolusWidgets/StatusWidget.swift",
-        "watch/faBolusWatch/WatchHUDView.swift",
-        "watch/faBolusWatchWidgets/GlucoseComplication.swift",
     ]
 
     // MARK: - Repo enumeration (mirrors BandDriftGuardTests' idiom)
@@ -194,8 +195,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(violations.isEmpty,
                 "Band-glyph regression guard violated:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 6,
-                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 4,
+                "expected to scan all 4 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Prong 2 (trend-arrow survives — presence): every pinned surface still renders its trend token
@@ -204,7 +205,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// check ONLY — see `everyRenderBlockRendersItsTrendArrowAtMostOnce` below for the uniqueness prong
     /// (WR-01: the two together give "exactly once per render occasion," which a single whole-file
     /// `contains` can't express since several pinned surfaces legitimately render the trend arrow once
-    /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 6.
+    /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 4.
     @Test func everyPinnedSurfaceStillRendersItsTrendToken() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -224,8 +225,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(missing.isEmpty,
                 "Trend-arrow regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 6,
-                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 4,
+                "expected to scan all 4 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Prong 2b (trend-arrow survives — uniqueness, WR-01): every independent render block
@@ -236,8 +237,8 @@ struct GlucoseStatusGlyphGuardTests {
     /// per whole file, because several pinned surfaces legitimately render the trend arrow once EACH
     /// across multiple mutually-exclusive `WidgetFamily` `case`s or multiple independent region-backing
     /// `struct`s/`func`s (confirmed by inspection — a flat whole-file "exactly one" would false-positive
-    /// on today's correct `GlucoseWidget.swift`, `GlucoseLiveActivity.swift`,
-    /// and `GlucoseComplication.swift`). Loud-not-vacuous: scanned == 6.
+    /// on today's correct `GlucoseWidget.swift` and `GlucoseLiveActivity.swift`). Loud-not-vacuous:
+    /// scanned == 4.
     @Test func everyRenderBlockRendersItsTrendArrowAtMostOnce() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -260,8 +261,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(violations.isEmpty,
                 "Duplicate trend-arrow render:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 6,
-                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 4,
+                "expected to scan all 4 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// CR-01 GUARD (09.29 review): every pinned surface's (comment-stripped) source contains BOTH the
@@ -271,7 +272,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// where 5 of 8 surfaces lost their ONLY VoiceOver band cue when `BandIndicator` was removed) can't
     /// silently drop it again without failing this test. NOT full UI-tree/snapshot verification — the
     /// review's own words: "the existing text-scan guard can't verify accessibility wiring." Loud-not-
-    /// vacuous: scanned == 6.
+    /// vacuous: scanned == 4.
     @Test func everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -292,17 +293,17 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(missing.isEmpty,
                 "VoiceOver zone-word regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 6,
-                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 4,
+                "expected to scan all 4 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Loud-not-vacuous plumbing check (mirrors `BandDriftGuardTests.fileResolutionActuallyFoundTheRepoRoot`):
     /// a path-resolution bug must fail loudly, not pass vacuously. Also pins the exact surface count.
-    @Test func guardResolvesRepoRootAndScansAllSixGlucoseSurfaces() throws {
+    @Test func guardResolvesRepoRootAndScansAllFourGlucoseSurfaces() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
-        #expect(Self.pinnedSurfaces.count == 6,
-                "expected exactly 6 pinned glucose surfaces (09.29-DIAGNOSIS.md §A) — pin list drifted")
+        #expect(Self.pinnedSurfaces.count == 4,
+                "expected exactly 4 pinned glucose surfaces (09.29-DIAGNOSIS.md §A, minus the Mac + Watch surfaces removed by 03-01/03-03 delete-on-main) — pin list drifted")
         var scannedSurfaces = 0
         for path in Self.pinnedSurfaces {
             let url = repoRoot.appendingPathComponent(path)
@@ -314,8 +315,8 @@ struct GlucoseStatusGlyphGuardTests {
             }
             scannedSurfaces += 1
         }
-        #expect(scannedSurfaces == 6,
-                "expected to actually read all 6 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
+        #expect(scannedSurfaces == 4,
+                "expected to actually read all 4 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
     }
 
     /// IN-02 (09.29 review): direct unit coverage for `balancedSlice` — previously dead code with no
