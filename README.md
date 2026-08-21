@@ -92,10 +92,9 @@ ios/faBolus/                 # iOS host app — owns the pump connection; tabbed
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
 ios/faBolus/Data/Sources/    # CGM failover impls: cloud (LibreLinkUp/Nightscout/Share) + HealthKit + creds
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
-watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity + direct-G7 failover)
-watch/faBolusWatchWidgets/   # watch-face complication
-Shared/                      # WidgetShared (App Group snapshot) + RemoteClientModel (shared remote
-                             #   state) + DisplaySettings + DexcomG7BLESource (phone+watch)
+Shared/                      # WidgetShared (App Group snapshot) + DisplaySettings
+                             #   (the Apple Watch remote — WatchConnectivity + direct-G7 failover —
+                             #   and its complication are removed from main; see dev/watch-remote)
 schema/                      # THE phone↔remote message contract — single source of truth
 hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
 docs/                        # the documentation site (MkDocs Material)
@@ -105,9 +104,10 @@ New pumps and new host apps are added **in-tree behind stable interfaces, not by
 **[ARCHITECTURE.md](ARCHITECTURE.md)** for the two seams and **[CONTRIBUTING.md](CONTRIBUTING.md)**
 for step-by-step "add a pump backend" / "host the remotes" guides.
 
-- The iOS app, widgets, Apple Watch app, watch complication, and the Mac menu-bar app + its widgets
-  are all targets of one Xcode project (`faBolus.xcodeproj`), generated from `project.yml` with
-  [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `TandemKit` via SPM.
+- The iOS app + widgets are targets of one Xcode project (`faBolus.xcodeproj`), generated from
+  `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `TandemKit` via
+  SPM. (The Apple Watch app/complication and the Mac menu-bar app/widgets are removed from `main` —
+  delete-on-main — preserved on `dev/watch-remote` and `dev/mac` respectively.)
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
   **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
@@ -128,12 +128,12 @@ open faBolus.xcodeproj             # set your Team under Signing & Capabilities,
 
 Requires **Xcode 16+** and an **Apple ID** (free works; paid recommended).
 
-**Garmin and the Apple Watch are optional at build time.** `scripts/generate-project.sh` auto-detects
-the **Connect IQ Mobile SDK for iOS**: if it's not present, the app builds **without** Garmin (no SDK
-needed) and shows a note where Garmin pairing would be. To use a Garmin watch, place the Connect IQ
-SDK where `project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script. To
-build the phone app **without the Apple Watch** app, run `FABOLUS_WATCH=0 ./scripts/generate-project.sh`
-(force Garmin on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works and includes both.
+**Garmin is optional at build time.** `scripts/generate-project.sh` auto-detects the **Connect IQ
+Mobile SDK for iOS**: if it's not present, the app builds **without** Garmin (no SDK needed) and shows
+a note where Garmin pairing would be. To use a Garmin watch, place the Connect IQ SDK where
+`project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script (force Garmin
+on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works. (The Apple Watch remote is
+removed from `main` — see `dev/watch-remote` — not a build-time toggle.)
 
 **Smart Assist is optional too.** The advisory eating-detection features (on-device meal detection and
 the eating nudge) are powered by the private

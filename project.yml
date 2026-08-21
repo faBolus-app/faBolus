@@ -177,11 +177,10 @@ targets:
       # <<< GARMIN
       # Embeds the WidgetKit extension (Lock Screen + Home Screen widgets).
       - target: faBolusWidgets
-      # >>> WATCH (stripped by scripts/generate-project.sh when FABOLUS_WATCH=0)
-      # Embeds the watchOS companion app so it installs to the paired watch with the phone app.
-      - target: faBolusWatch
-        embed: true
-      # <<< WATCH
+      # Phase 3 (03-03, REMOTE-03): the watchOS companion app embed + its FABOLUS_WATCH/
+      # WATCH_EMBEDDED gate are retired — the whole Watch app + complication tree is git rm'd
+      # from main (delete-on-main, D-01), preserved on dev/watch-remote. Not a compile-gated
+      # embed anymore; there is nothing to embed.
     entitlements:
       path: ios/faBolus/faBolus.entitlements
       properties:
@@ -295,9 +294,11 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-      # Feature compile flags. Defaults enable Garmin (ConnectIQ) + the embedded Watch app;
-      # scripts/generate-project.sh removes the GARMIN / WATCH_EMBEDDED tokens (and the package/embed
-      # above) when the Garmin SDK is absent or FABOLUS_WATCH=0, so the app compiles without them.
+      # Feature compile flags. Default enables Garmin (ConnectIQ);
+      # scripts/generate-project.sh removes the GARMIN token (and the package above) when the Garmin
+      # SDK is absent. WATCH_EMBEDDED is permanently retired (Phase 3, 03-03, REMOTE-03) — the whole
+      # Watch app + complication tree is git rm'd from main, so there is nothing to embed and no gate
+      # left to flip; the `#if !WATCH_EMBEDDED` fallback in SettingsView.swift is now permanently active.
       configs:
         # generate-project.sh drops FABOLUS_ICLOUD unless FABOLUS_ICLOUD=1 (default OFF → the no-op iCloud
         # stub compiles and the app signs on a free account).
@@ -307,171 +308,16 @@ targets:
         # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
         # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
 
-  # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
-  # It also embeds the glucose complication extension (faBolusWatchWidgets) as a target dependency now
-  # that the App Group is registered on the watch App IDs, so the WatchCI scheme (which builds this
-  # target) also builds the complication.
-  faBolusWatch:
-    type: application
-    platform: watchOS
-    deploymentTarget: "10.0"
-    sources:
-      - path: watch/faBolusWatch
-        # >>> WATCH_DIRECT_PUMP_OFF (this block is stripped when FABOLUS_WATCH_DIRECT_PUMP=1)
-        # C9 ("one owner, N remotes"): direct-pump/ holds a SECOND pump-connection holder that
-        # bypasses the PumpBackend seam, and pairing it evicts the phone's pairing. Excluded from
-        # shipping builds — the same posture as faBolusGarmin's direct-pump/. See its STATUS.md.
-        # Excluding the directory also removes the watch's ONLY link to the pump BLE stack (the
-        # TandemKit deps below), so a shipping watch build cannot hold a pump connection at all.
-        excludes:
-          - direct-pump
-        # <<< WATCH_DIRECT_PUMP_OFF
-      # WidgetBolusIntents belongs to the widget extensions only. LiveActivityShared/LiveActivityIntents
-      # (Phase 5) are iOS-only (D-01 puts the Live Activity in faBolusWidgets, an iOS app-extension) —
-      # ActivityKit isn't resolvable in this watchOS build, and the LA intents exist to drive an
-      # iOS-only surface, so neither must compile into the watch app.
-      - path: Shared
-        excludes:
-          - WidgetBolusIntents.swift
-          - LiveActivityShared.swift
-          - LiveActivityIntents.swift
-      # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
-      # Bundle the eating model + manifest on the watch for the on-device path.
-      - path: ios/faBolus/Models
-      # <<< ONWATCH_EATING
-    dependencies:
-      # Embeds the watch-face complication extension (App Group now enabled on the watch App IDs).
-      - target: faBolusWatchWidgets
-      # Shared contracts (RemoteCommand/RemoteLink + models).
-      - package: faBolusCore
-        product: faBolusCore
-      - package: faBolusDesign
-        product: faBolusDesign
-      # >>> CGM_G7_KIT (scripts/generate-project.sh strips this dependency when FABOLUS_CGM_G7=0; default 0 = absent — Phase 1)
-      # Dexcom G7/ONE+ direct-BLE decoders: the app-side source that consumed this package was
-      # git rm'd from main (Phase 2.5 retro-clean, D-07) — the vendored SPM package + this
-      # dependency stay (D-02) so the failover can be reintegrated by restoring the source from
-      # origin/dev/cgm-extra without re-vendoring the decoder.
-      - package: G7SensorKit
-        product: G7SensorKit
-      # <<< CGM_G7_KIT
-      # >>> WATCH_DIRECT_PUMP (stripped unless FABOLUS_WATCH_DIRECT_PUMP=1 — C9, bench only)
-      # Direct-to-pump support (independent watch, Phase 1: pairing). TandemKit builds for watchOS.
-      # ONLY direct-pump/WatchPumpClient.swift imports these, so with the flag off the watch app
-      # does not link the pump BLE stack at all.
-      - package: TandemKit
-        product: TandemMessages
-      - package: TandemKit
-        product: TandemAuth
-      - package: TandemKit
-        product: TandemBLE
-      # <<< WATCH_DIRECT_PUMP
-      # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
-      # On-device eating detector (EatingDetectionKit) + its model catalog. Needs HealthKit (below).
-      - package: faBolusNudge
-        product: EatingDetectionKit
-      - package: faBolusNudge
-        product: ModelCatalogKit
-      # <<< ONWATCH_EATING
-    entitlements:
-      path: watch/faBolusWatch/faBolusWatch.entitlements
-      properties:
-        # Device-local container shared with the watch complication.
-        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
-        # HealthKit on the watch (read xDrip glucose from Apple Health, synced from the phone) is
-        # OPT-IN like the phone — uncomment (and enable HealthKit under Signing & Capabilities) to use
-        # the watchOS Apple Health failover. See docs/operate/cgm-failover.md.
-        # com.apple.developer.healthkit: true
-        # com.apple.developer.healthkit.access: []
-        # >>> ONWATCH_EATING
-        # On-device eating detection keeps sensing alive via an HKWorkoutSession → needs HealthKit.
-        # This is the PAID-account requirement; generate-project.sh omits it unless the flag is on.
-        com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: []
-        # <<< ONWATCH_EATING
-    info:
-      path: watch/faBolusWatch/Info.plist
-      properties:
-        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
-        CFBundleDisplayName: faBolus
-        WKApplication: true
-        # Marks this as the companion of the iPhone app so it installs alongside it.
-        WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
-        NSBluetoothAlwaysUsageDescription: "faBolus relays bolus commands to the iPhone app over Bluetooth."
-        # Read glucose from Apple Health (e.g. xDrip4iOS) as a phone-independent failover on the watch.
-        NSHealthShareUsageDescription: "faBolus can read glucose from Apple Health as a backup CGM feed when your iPhone is out of range."
-        # Phase 1, Plan 03 (D-03): the direct CGM (G7) BLE failover this background mode existed for is
-        # now removed from the watch target. Left declared (discretionary/A2, low-risk per RESEARCH) —
-        # not independently verified to have zero other consumer, so not removed this phase.
-        UIBackgroundModes: [bluetooth-central]
-        # >>> ONWATCH_EATING (stripped unless FABOLUS_ONWATCH_EATING=1)
-        # On-device eating sensing keeps CoreMotion alive via a workout session while sensing.
-        WKBackgroundModes: [workout-processing]
-        NSMotionUsageDescription: "faBolus senses wrist motion on-device to detect when you're likely eating, so it can remind you to bolus. Advisory only — it never doses."
-        # <<< ONWATCH_EATING
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch
-        GENERATE_INFOPLIST_FILE: NO
-        SWIFT_VERSION: "6.0"
-        CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "4"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon   # watchOS won't install without an app icon
-      # Two independent opt-in flags live here. generate-project.sh's drop_flag removes each flag NAME
-      # from these two lines when its feature is off, so the block itself is unconditional and the two
-      # flags cannot switch each other off:
-      #   FABOLUS_ONWATCH_EATING   — on-device eating sensing; needs the PAID HealthKit entitlement.
-      #   FABOLUS_WATCH_DIRECT_PUMP — the C9 direct-to-pump path; bench only, never shipped.
-      configs:
-        Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG FABOLUS_ONWATCH_EATING FABOLUS_WATCH_DIRECT_PUMP
-        Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_ONWATCH_EATING FABOLUS_WATCH_DIRECT_PUMP
-
-  # watchOS widget extension — the glucose watch-face complication. Reads the snapshot the watch
-  # app publishes to the shared App Group; never touches Bluetooth.
-  faBolusWatchWidgets:
-    type: app-extension
-    platform: watchOS
-    deploymentTarget: "10.0"
-    sources:
-      - watch/faBolusWatchWidgets
-      - path: Shared/WidgetShared.swift
-    dependencies:
-      # D-01/D-02: this complication extension previously linked neither faBolus nor faBolusCore
-      # (see Shared/WidgetShared.swift's WidgetGlucoseThresholds mirror comment). Adding
-      # faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy — viable
-      # because faBolusCore has zero package dependencies of its own. faBolusCore is declared
-      # DIRECTLY (not only transitively via faBolusDesign): GlucoseComplication.swift imports it and
-      # calls GlucoseRange.classify/.symbolName, and a watchOS app-extension does not link a
-      # dependency's transitive closure — those symbols must come from a direct product dep or the
-      # extension fails to link (faBolusCore.GlucoseRange.classify/symbolName undefined at Ld).
-      - package: faBolusDesign
-        product: faBolusDesign
-      - package: faBolusCore
-        product: faBolusCore
-    info:
-      path: watch/faBolusWatchWidgets/Info.plist
-      properties:
-        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
-        CFBundleDisplayName: faBolus
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    entitlements:
-      path: watch/faBolusWatchWidgets/faBolusWatchWidgets.entitlements
-      properties:
-        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watch.widgets
-        GENERATE_INFOPLIST_FILE: NO
-        SWIFT_VERSION: "6.0"
-        CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "4"
+  # Phase 3 (03-03, REMOTE-03/REMOTE-04): the watchOS companion app (incl. the direct-pump/
+  # subtree) and its glucose-complication extension are removed from narrow main entirely
+  # (delete-on-main, D-01) — no target-def bodies, no compile gate. Both trees are preserved on
+  # dev/watch-remote (app + complication) and dev/watch-host (direct-pump subtree, REMOTE-04); see
+  # their REINTEGRATION.md for how to restore the target defs + the
+  # FABOLUS_WATCH/WATCH_EMBEDDED/FABOLUS_WATCH_DIRECT_PUMP cascade this used to drive.
 
   # WidgetKit extension — Lock Screen (accessory) + Home Screen widgets + tap-to-bolus. Reads
   # the snapshot the app publishes to the shared App Group; never touches Bluetooth itself.
@@ -549,7 +395,7 @@ targets:
       - package: HistoryStore
         product: HistoryStore
       # Phase 09.17-01 (D-06b): compact-width visual-regression net. Test-target-ONLY dependency —
-      # never linked into faBolus/faBolusWidgets/faBolusWatch, so it never ships in the
+      # never linked into any shipping app/extension target, so it never ships in the
       # App Store binary (Pitfall 4).
       - package: SnapshotTesting
         product: SnapshotTesting
@@ -571,13 +417,8 @@ targets:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
 
 schemes:
-  # Watch-only scheme for CI: builds the watchOS app + complication (and their SPM deps) WITHOUT the
-  # iOS faBolus app, so it doesn't require Garmin's ConnectIQ SDK (not available in CI). Catches
-  # watchOS build breakage — e.g. a watchOS-only WidgetKit family used without an os() guard.
-  WatchCI:
-    build:
-      targets:
-        faBolusWatch: all
+  # Phase 3 (03-03, REMOTE-03): the Watch-only CI scheme is retired along with the whole Watch
+  # target — there is nothing left for it to build. Preserved on dev/watch-remote's REINTEGRATION.md.
 
   # Primary app scheme, shared so it survives project regeneration (otherwise it's only an
   # Xcode auto-created user scheme that gets wiped whenever generate-project.sh runs).

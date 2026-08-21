@@ -178,46 +178,9 @@ jobs:
             -skip-testing:faBolusAppTests/SettingsSnapshotTests \
             -skip-testing:faBolusAppTests/DashboardSnapshotTests
 
-  watch-build:
-    name: watchOS app + complication build
-    runs-on: macos-15
-    needs: resolve-refs
-    steps:
-      # Two-level checkout so the project's relative package paths resolve:
-      #   repos/faBolus/../TandemKit  and  repos/faBolus/../../vendor/<ConnectIQ>
-      - name: Checkout faBolus
-        uses: actions/checkout@v4
-        with:
-          path: repos/faBolus
-
-      - name: Checkout TandemKit (local package dependency, branch-aware — see resolve-refs)
-        uses: actions/checkout@v4
-        with:
-          repository: faBolus-app/TandemKit
-          ref: ${{ needs.resolve-refs.outputs.tandemkit_ref }}
-          submodules: recursive
-          path: repos/TandemKit
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      # Generate via the project script with the optional, credential-gated pieces stripped: the private
-      # faBolusNudge SDK (CI can't clone it) and Garmin's ConnectIQ SDK (not committed — license). This is
-      # the same open-source build path an external contributor without those gets; the watch app links
-      # neither, so the WatchCI scheme builds cleanly. See scripts/generate-project.sh.
-      - name: Generate the Xcode project (no private SDK, no Garmin)
-        working-directory: repos/faBolus
-        run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
-
-      # Builds the watchOS app + glucose complication (and their SPM deps) via the WatchCI scheme,
-      # which excludes the iOS app so ConnectIQ isn't needed. Catches watchOS build breakage.
-      - name: Build watch app + complication
-        working-directory: repos/faBolus
-        run: |
-          set -o pipefail
-          xcodebuild -project faBolus.xcodeproj -scheme WatchCI \
-            -destination 'generic/platform=watchOS Simulator' \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+  # Phase 3 (03-03, REMOTE-03/REMOTE-04): the watch-build job (WatchCI scheme) is retired along with
+  # the whole Apple Watch app + complication + direct-pump target tree it built — delete-on-main,
+  # preserved on dev/watch-remote / dev/watch-host. There is no watch target left for CI to build.
 
   mac-build:
     name: macOS remote app + widgets build

@@ -1064,11 +1064,14 @@ struct RemotesSettingsView: View {
             }
             #endif
             #if !WATCH_EMBEDDED
+            // Phase 3 (03-03, REMOTE-03): WATCH_EMBEDDED is permanently retired — this fallback is
+            // now the ONLY state (not a build-time toggle). The whole Apple Watch app + complication
+            // is removed from narrow main (delete-on-main), preserved on dev/watch-remote.
             Section {
                 Label("Apple Watch app not included", systemImage: "applewatch.slash")
                     .foregroundStyle(.secondary)
             } header: { Text("Apple Watch") } footer: {
-                Text("This build was compiled without the Apple Watch app (FABOLUS_WATCH=0), so nothing installs to a paired watch. Rebuild with the watch enabled (the default) to use it — see scripts/generate-project.sh.")
+                Text("faBolus no longer includes an Apple Watch app — nothing installs to a paired watch. Use the Garmin remote below, or the iPhone app directly.")
             }
             #endif
             Section {

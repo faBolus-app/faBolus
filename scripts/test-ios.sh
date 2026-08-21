@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Same generation path as build-sim.sh (auto-detects Garmin, honors FABOLUS_WATCH/FABOLUS_NUDGE).
+# Same generation path as build-sim.sh (auto-detects Garmin, honors FABOLUS_NUDGE).
 ./scripts/generate-project.sh >/dev/null
 
 # Destination: honor FABOLUS_TEST_DEST; otherwise auto-pick an INSTALLED iPhone simulator so the script
