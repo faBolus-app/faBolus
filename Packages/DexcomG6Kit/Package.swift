@@ -3,7 +3,8 @@
 // (MIT) and stripped to the **passive read path**: it decodes the glucose messages the transmitter
 // broadcasts on the control characteristic while the official Dexcom app owns the authenticated
 // session ("Follow Dexcom-app" / passive mode). No auth, no crypto, no control writes. faBolus's
-// DexcomG6BLESource uses this to read a G6 locally alongside the official app.
+// app-side CGM source used this to read a G6 locally alongside the official app (that source was
+// git rm'd from main in the Phase 2.5 retro-clean, D-07; preserved on origin/dev/cgm-extra).
 import PackageDescription
 
 let package = Package(

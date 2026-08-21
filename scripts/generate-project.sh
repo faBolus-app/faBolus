@@ -114,26 +114,15 @@ TIME_SENSITIVE="${FABOLUS_TIME_SENSITIVE:-0}"
 # version-pin, D-01). FABOLUS_TANDEM_LOCAL=1 swaps in the sibling path (../TandemKit) for day-to-day
 # co-development (never for a build you keep — see project.yml comment on the TandemKit package).
 TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
-# Phase-0 (v0.5.0) per-CGM-source compile gates (TOPO-03/D-03). Four CGM sources have NO gate today —
-# DexcomG6BLESource, LibreLinkUpSource, NightscoutSource(+Backfill), XDripAppGroupSource. (The 5th,
-# `healthkit`, is already covered by FABOLUS_HEALTHKIT — not duplicated here. The kept sources
-# dexcom-g7-ble / dexcom-share get NO toggle here; Phase 1 authors its own G7 toggle.) Each DEFAULTS to
-# 1 = source PRESENT (today's byte-identical behavior); Phase 0 AUTHORS the gates and flips NOTHING off —
-# the removal flip is Phase 1's job. These sources live inside the unconditional ios/faBolus include, so
-# they are gated via the APP_SOURCE_EXCLUDES excludes: list (see the app-source strip logic below), not a
-# whole-block strip. FABOLUS_CGM_G6=0 ADDITIONALLY drops the DexcomG6Kit SPM package + the app-target
-# dependency on it (D-06: prove a single CGM SPM product can be dropped while G7SensorKit/ShareClient stay).
+# Phase-0 (v0.5.0) per-CGM-source compile gates (TOPO-03/D-03). Nightscout is the only CGM source that
+# still ships behind an APP_SOURCE_EXCLUDES file-exclude gate (see the app-source strip logic below).
+# G6, LibreLinkUp, G7, and xDrip were Phase-1 flag-excluded, then Phase 2.5 retro-cleaned to a physical
+# `git rm` from main (D-01/D-07, CLEAN-03) — their source files no longer exist here at all; they are
+# preserved on origin/dev/cgm-extra. CGM_LIBRELINKUP is fully retired (no companion vendored package).
+# CGM_G6/CGM_G7 remain ONLY to drive the CGM_G6_KIT/CGM_G7_KIT project.yml PACKAGE-block strip (D-02) —
+# they no longer gate any source FILE (the files they used to gate are gone unconditionally now).
 CGM_G6="${FABOLUS_CGM_G6:-0}"
-CGM_LIBRELINKUP="${FABOLUS_CGM_LIBRELINKUP:-0}"
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
-# Phase 1 (D-03, owner-corrected): Dexcom G7 direct-BLE (Shared/DexcomG7BLESource.swift) removed from
-# BOTH the iOS faBolus target AND the faBolusWatch target — narrow main carries ZERO direct-BLE CGM on
-# any surface. Unlike CGM_G6/CGM_LIBRELINKUP/CGM_XDRIP (whose sources live inside the unconditional
-# ios/faBolus include, gated via the APP_SOURCE_EXCLUDES excludes: list above), DexcomG7BLESource.swift
-# lives in the SHARED `Shared/` source dir that BOTH targets include separately, so it gets its own
-# standalone strip_block calls (below), not folded into the APP_SOURCE_EXCLUDES umbrella. Defaults to
-# 0 = source ABSENT (the Phase-1 removal). FABOLUS_CGM_G7=1 ADDITIONALLY restores the G7SensorKit SPM
-# package + the app-target/watch-target dependency on it (mirrors the CGM_G6/CGM_G6_KIT fence shape).
 CGM_G7="${FABOLUS_CGM_G7:-0}"
 # Phone-peer remote compile gate (TOPO-03/D-03; name per PER-SURFACE-CHECKLIST §B). Default 1 = the
 # phone-as-a-remote surface is PRESENT (today's behavior). At 0, ONLY the peer-remote files are excluded
@@ -240,16 +229,15 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). The CGM sources gated here live INSIDE the
-# unconditional ios/faBolus directory include, so they are removed via the APP_SOURCE_EXCLUDES excludes:
-# list, not a whole-block strip. When EVERY gate is at its default (=1, surface PRESENT) the entire
-# excludes: block is removed so the app target is byte-identical to today; otherwise the block is kept and
-# only the still-present (=1) surfaces' exclude lines are dropped, leaving the =0 surface(s) excluded.
-if [ "$CGM_G6" = 1 ] && [ "$CGM_LIBRELINKUP" = 1 ] && [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$PHONE_PEER" = 1 ] && [ "$FOODFINDER" = 1 ]; then
-  strip_block APP_SOURCE_EXCLUDES   # all app-source surfaces present → drop the whole excludes: block (today's byte-identical spec)
+# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). Only Nightscout/PHONE_PEER/FOODFINDER
+# still gate a source FILE via this APP_SOURCE_EXCLUDES excludes: list — G6/LibreLinkUp/G7/xDrip's
+# file-exclude entries were retired in Phase 2.5 (their source files are git rm'd outright, D-01/D-07).
+# When EVERY remaining gate is at its default (=1, surface PRESENT) the entire excludes: block is
+# removed; otherwise the block is kept and only the still-present (=1) surfaces' exclude lines are
+# dropped, leaving the =0 surface(s) excluded.
+if [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$PHONE_PEER" = 1 ] && [ "$FOODFINDER" = 1 ]; then
+  strip_block APP_SOURCE_EXCLUDES   # all remaining app-source surfaces present → drop the whole excludes: block
 else
-  [ "$CGM_G6" = 1 ]          && strip_block CGM_G6            # present → drop its exclude line so the source compiles in
-  [ "$CGM_LIBRELINKUP" = 1 ] && strip_block CGM_LIBRELINKUP
   [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
   [ "$PHONE_PEER" = 1 ]      && strip_block PHONE_PEER        # present → drop the peer-file exclude lines
   [ "$FOODFINDER" = 1 ]      && strip_block FOODFINDER        # present → drop the FoodFinder-dir exclude lines
@@ -260,33 +248,27 @@ fi
 if [ "$PHONE_PEER" = 1 ]; then
   strip_block PHONE_PEER_KEEP
 fi
-# FABOLUS_CGM_G6=0 additionally drops the DexcomG6Kit SPM package + the app-target dependency on it
-# (normal strip direction: removed at =0, present at default). Distinct tag from CGM_G6 (word-boundary
-# anchored in strip_block, so CGM_G6 never matches CGM_G6_KIT and vice-versa — Pitfall 2).
+# FABOLUS_CGM_G6=0 (default) drops the DexcomG6Kit SPM package + the app-target dependency on it — the
+# ONLY thing CGM_G6 still gates after Phase 2.5 (its source-file exclude entry no longer exists; the
+# source itself is git rm'd, D-01/D-07). Distinct tag from CGM_G6 (word-boundary anchored in
+# strip_block, so CGM_G6 never matches CGM_G6_KIT and vice-versa — Pitfall 2).
 if [ "$CGM_G6" = 0 ]; then
   strip_block CGM_G6_KIT
 fi
 
-# Phase 1 G7 gate (D-03): standalone strip calls, NOT folded into the APP_SOURCE_EXCLUDES umbrella
-# above — DexcomG7BLESource.swift's exclude entry lives in the SHARED `Shared/` source path (both the
-# faBolus AND faBolusWatch targets), a separate source entry from ios/faBolus's excludes: list. Present
-# (=1) → drop the exclude line so the source compiles into both targets; absent (=0, default) → the
-# exclude line stays, dropping the source from both. Distinct tag from CGM_G7_KIT (word-boundary
-# anchored in strip_block — Pitfall 2).
-[ "$CGM_G7" = 1 ] && strip_block CGM_G7
-# FABOLUS_CGM_G7=0 (default) additionally drops the G7SensorKit SPM package + the app-target/watch-
-# target dependency on it (normal strip direction: removed at =0, present at default) — mirrors the
-# CGM_G6/CGM_G6_KIT fence shape exactly.
+# FABOLUS_CGM_G7=0 (default) drops the G7SensorKit SPM package + the app-target/watch-target
+# dependency on it — the ONLY thing CGM_G7 still gates after Phase 2.5 (its standalone Shared/
+# source-file exclude entries no longer exist on either target; the source itself is git rm'd,
+# D-01/D-07). Mirrors the CGM_G6/CGM_G6_KIT fence shape exactly.
 if [ "$CGM_G7" = 0 ]; then
   strip_block CGM_G7_KIT
 fi
 
 echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6=$CGM_G6 CgmLibreLinkUp=$CGM_LIBRELINKUP CgmNightscout=$CGM_NIGHTSCOUT CgmG7=$CGM_G7 PhonePeer=$PHONE_PEER FoodFinder=$FOODFINDER (default 0=absent for G6/LibreLinkUp/G7 — Phase 1 removals; xDrip deleted from main outright — Phase 2.5 retro-clean; Nightscout/PhonePeer/FoodFinder still default-present)"
-[ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the Dexcom G5/G6/ONE CGM source (FABOLUS_CGM_G6=0) — DexcomG6BLESource + the DexcomG6Kit package/dependency stripped; G7SensorKit/ShareClient kept"
-[ "$CGM_LIBRELINKUP" = 0 ] && echo "  → building WITHOUT the LibreLinkUp CGM source (FABOLUS_CGM_LIBRELINKUP=0)"
+echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 PhonePeer=$PHONE_PEER FoodFinder=$FOODFINDER (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout/PhonePeer/FoodFinder still default-present)"
+[ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the DexcomG6Kit package/dependency (FABOLUS_CGM_G6=0, default) — the Dexcom G5/G6/ONE BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra; G7SensorKit/ShareClient kept"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
-[ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the Dexcom G7/ONE+ direct-BLE CGM source on iOS AND watch (FABOLUS_CGM_G7=0) — DexcomG7BLESource + the G7SensorKit package/dependency stripped from both targets"
+[ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
 [ "$PHONE_PEER" = 0 ] && echo "  → building WITHOUT the phone-peer remote surface (FABOLUS_PHONE_PEER=0) — only the peer files excluded; the shared PhoneRemoteHost.swift core is preserved"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"

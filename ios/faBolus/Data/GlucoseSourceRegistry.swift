@@ -12,12 +12,10 @@ public enum GlucoseSourceRegistry {
     /// (last resort), and HealthKit (Eversense).
     public static let enabled: [GlucoseSourceDescriptor] = {
         var list: [GlucoseSourceDescriptor] = [
-            // dexcom-g7-ble (DexcomG7BLESource), dexcom-g6-ble (DexcomG6BLESource), and librelinkup
-            // (LibreLinkUpSource) removed from narrow `main` — Phase 1, Plan 03 (G7, CGM-01/CGM-02)
-            // and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04). Compile-excluded via
-            // FABOLUS_CGM_G7=0 / FABOLUS_CGM_G6=0 / FABOLUS_CGM_LIBRELINKUP=0 in
-            // scripts/generate-project.sh; the source files themselves stay checked in (still built
-            // on dev/cgm-extra at =1).
+            // dexcom-g7-ble, dexcom-g6-ble, and librelinkup removed from narrow `main` — Phase 1,
+            // Plan 03 (G7, CGM-01/CGM-02) and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04), then
+            // retro-cleaned to a physical `git rm` in Phase 2.5 (D-01/D-07, CLEAN-03) — the source
+            // files no longer exist on `main` at all; they are preserved on origin/dev/cgm-extra.
             GlucoseSourceDescriptor(id: "nightscout", name: "Nightscout (any CGM)",
                                     sensors: ["Any"]) { _ in NightscoutSource() },
             GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
@@ -32,9 +30,8 @@ public enum GlucoseSourceRegistry {
         list.append(GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
                                 sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() })
         #endif
-        // xdrip-appgroup (XDripAppGroupSource) removed from narrow `main` — Phase 1, Plan 01 (CGM-05).
-        // Compile-excluded via FABOLUS_CGM_XDRIP=0 in scripts/generate-project.sh; the source file
-        // itself stays checked in (still built on experimental/cgm-extra at FABOLUS_CGM_XDRIP=1).
+        // xdrip-appgroup removed from narrow `main` — Phase 1, Plan 01 (CGM-05), then git rm'd
+        // outright in Phase 2.5 (D-07, CLEAN-03); preserved on origin/dev/cgm-extra.
         return list
     }()
 

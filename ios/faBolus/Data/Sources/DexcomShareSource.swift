@@ -20,8 +20,9 @@ extension ShareClient: ShareGlucoseFetching {}
 /// implementation Loop uses (login + re-auth + `fetchLast`) — instead of hand-rolled endpoint calls.
 /// See Phase 6 in MIGRATION.md.
 ///
-/// D-07: the `ShareClient` is **cached on the instance across polls** (mirroring `LibreLinkUpSource`'s
-/// correct `token: String?` pattern) instead of being rebuilt inside `poll()` every cycle — a rebuild
+/// D-07: the `ShareClient` is **cached on the instance across polls** (mirroring the now-removed
+/// LibreLinkUp source's correct `token: String?` pattern) instead of being rebuilt inside `poll()`
+/// every cycle — a rebuild
 /// forces a full 2-request re-auth handshake as often as every 60s during failover, risking Dexcom's
 /// `SSO_Authenticate MaxAttemptsExceeed` lockout at the exact moment the fallback is needed. It is
 /// re-constructed only when the configured credentials change or a fetch error nils it (a

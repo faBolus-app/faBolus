@@ -113,12 +113,6 @@ targets:
         #   are dropped, leaving the =0 surface excluded. Phase 0 AUTHORS these gates and flips NOTHING off — the
         #   removal flip is the owning per-surface phase's job (CGM → Phase 1).)
         excludes:
-          # >>> CGM_G6 (kept only when FABOLUS_CGM_G6=0 → excludes the Dexcom G5/G6/ONE source; stripped by default)
-          - Data/Sources/DexcomG6BLESource.swift
-          # <<< CGM_G6
-          # >>> CGM_LIBRELINKUP (kept only when FABOLUS_CGM_LIBRELINKUP=0 → excludes the LibreLinkUp source; stripped by default)
-          - Data/Sources/LibreLinkUpSource.swift
-          # <<< CGM_LIBRELINKUP
           # >>> CGM_NIGHTSCOUT (kept only when FABOLUS_CGM_NIGHTSCOUT=0 → excludes the Nightscout source + backfill; stripped by default)
           - Data/Sources/NightscoutSource.swift
           - Data/Sources/NightscoutBackfill.swift
@@ -152,10 +146,6 @@ targets:
       - path: Shared
         excludes:
           - WidgetBolusIntents.swift
-          # >>> CGM_G7 (kept only when FABOLUS_CGM_G7=0 → excludes the Dexcom G7/ONE+ direct-BLE source
-          #   from the iOS target; stripped when FABOLUS_CGM_G7=1. Default 0 = absent — Phase 1, D-03.)
-          - DexcomG7BLESource.swift
-          # <<< CGM_G7
     dependencies:
       - package: faBolusCore
         product: faBolusCore
@@ -357,11 +347,6 @@ targets:
           - WidgetBolusIntents.swift
           - LiveActivityShared.swift
           - LiveActivityIntents.swift
-          # >>> CGM_G7 (kept only when FABOLUS_CGM_G7=0 → excludes the Dexcom G7/ONE+ direct-BLE source
-          #   from the watch target too; stripped when FABOLUS_CGM_G7=1. Default 0 = absent — Phase 1, D-03:
-          #   G7 leaves BOTH targets so narrow main carries zero direct-BLE CGM on any surface.)
-          - DexcomG7BLESource.swift
-          # <<< CGM_G7
       # >>> ONWATCH_EATING (stripped by scripts/generate-project.sh unless FABOLUS_ONWATCH_EATING=1)
       # Bundle the eating model + manifest on the watch for the on-device path.
       - path: ios/faBolus/Models
@@ -375,7 +360,10 @@ targets:
       - package: faBolusDesign
         product: faBolusDesign
       # >>> CGM_G7_KIT (scripts/generate-project.sh strips this dependency when FABOLUS_CGM_G7=0; default 0 = absent — Phase 1)
-      # Dexcom G7/ONE+ decoders for the watch's direct-BLE failover (Shared/DexcomG7BLESource).
+      # Dexcom G7/ONE+ direct-BLE decoders: the app-side source that consumed this package was
+      # git rm'd from main (Phase 2.5 retro-clean, D-07) — the vendored SPM package + this
+      # dependency stay (D-02) so the failover can be reintegrated by restoring the source from
+      # origin/dev/cgm-extra without re-vendoring the decoder.
       - package: G7SensorKit
         product: G7SensorKit
       # <<< CGM_G7_KIT
