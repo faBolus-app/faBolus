@@ -260,7 +260,7 @@ struct CgmCredentialsView: View {
             } header: {
                 Text("Dexcom Share (last resort)")
             } footer: {
-                Text("Your Dexcom account with Share enabled and uploading. Cloud-only and unreliable — a last-resort feed for G6.")
+                Text("Your Dexcom account with Share enabled and uploading. Cloud-only and unreliable — a last-resort feed.")
             }
 
             Section {

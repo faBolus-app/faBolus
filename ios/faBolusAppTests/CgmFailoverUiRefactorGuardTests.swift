@@ -7,12 +7,11 @@ import faBolusCore
 /// 2. Configure & test → 3. Status" guided progression (Task 1), the honest ordering that moves
 /// "Nightscout upload" / "Glucose staleness" below the three numbered steps, and the read-only
 /// "Last test result" echo added to `CgmStatusView` (Task 3). Mirrors the `#filePath`-rooted
-/// `repoRootURL()` / `readSource` source-scan idiom already used by `DexcomG6CopyGuardTests` /
-/// `CgmConfigSectionCopyGuardTests` — no simulator, no live view, pure text-content + source-position
-/// guard.
+/// `repoRootURL()` / `readSource` source-scan idiom already used by `CgmConfigSectionCopyGuardTests`
+/// — no simulator, no live view, pure text-content + source-position guard.
 struct CgmFailoverUiRefactorGuardTests {
 
-    // MARK: - Source resolution (mirrors DexcomG6CopyGuardTests.repoRootURL)
+    // MARK: - Source resolution (mirrors CgmConfigSectionCopyGuardTests.repoRootURL)
 
     private static func repoRootURL() -> URL? {
         let fm = FileManager.default

@@ -53,19 +53,41 @@ struct CgmConnectionKindTests {
         }
     }
 
-    /// The cloud-poll category is always populated — proves the typed enum actually differentiates
-    /// the physical connection classes (not everything collapsing into one case). `.localBLE` was
-    /// Dexcom G7's category; it was removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02), so
-    /// narrow `main` has NO remaining `.localBLE` source at all (D-03: zero direct-BLE CGM on any
-    /// surface). `.localOnDevice` was xDrip App Group's category; it was removed from `main` in
-    /// Phase 1, Plan 01 (CGM-05), so `.localOnDevice` is only expected when the last remaining
-    /// `.localOnDevice` source (HealthKit) is compiled in.
-    @Test func allThreeConnectionKindsArePresentAcrossTheRegistry() {
-        let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
-        #expect(!kinds.contains(.localBLE), "no direct-BLE CGM source remains on narrow main (D-03)")
-        #expect(kinds.contains(.cloudPoll))
+    /// The connection kinds the registry's enabled sources classify as, built exactly as the app
+    /// ships them (not a hand-copied list). Shared by the three assertions below, each named for the
+    /// single kind it checks so the name and the assertion can never drift apart (they did once: the
+    /// former `allThreeConnectionKindsArePresentAcrossTheRegistry` asserted `.localBLE` *absence*).
+    private static func enabledConnectionKinds() -> [GlucoseConnectionKind] {
+        GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
+    }
+
+    /// The cloud-poll category is populated — proves the typed enum actually differentiates the
+    /// physical connection classes (not everything collapsing into one case). Nightscout + Dexcom
+    /// Share are narrow `main`'s cloud-poll sources.
+    @Test func cloudPollConnectionKindIsPresentInTheRegistry() {
+        #expect(Self.enabledConnectionKinds().contains(.cloudPoll))
+    }
+
+    /// No direct-BLE CGM source remains on narrow `main` (asserts ABSENCE). `.localBLE` was Dexcom
+    /// G6/G7's category; both were removed from `main` in Phase 1 (G6 + LibreLinkUp in Plan 02, G7 in
+    /// Plan 03), so narrow `main` classifies ZERO sources as `.localBLE` (D-03: zero direct-BLE CGM on
+    /// any surface).
+    @Test func noDirectBleConnectionKindRemainsOnNarrowMain() {
+        #expect(!Self.enabledConnectionKinds().contains(.localBLE),
+                "no direct-BLE CGM source remains on narrow main (D-03)")
+    }
+
+    /// `.localOnDevice` was xDrip App Group's category (removed from `main` in Phase 1, Plan 01,
+    /// CGM-05). The only remaining `.localOnDevice` source is HealthKit, which compiles in only under
+    /// `FABOLUS_HEALTHKIT` (D-13) — so the kind is present in that flag state and absent otherwise.
+    @Test func localOnDeviceConnectionKindMatchesHealthKitGate() {
+        let kinds = Self.enabledConnectionKinds()
         #if FABOLUS_HEALTHKIT
-        #expect(kinds.contains(.localOnDevice))
+        #expect(kinds.contains(.localOnDevice),
+                "HealthKit is the only remaining .localOnDevice source and is compiled in")
+        #else
+        #expect(!kinds.contains(.localOnDevice),
+                "no .localOnDevice source remains when HealthKit is not compiled in")
         #endif
     }
 }

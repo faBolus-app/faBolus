@@ -71,10 +71,14 @@ public enum GlucoseSourceRegistry {
     ///
     /// W-04 (D-14) — KEEP-WITH-COMMENT: this has ZERO remaining PRODUCTION call sites (the live Test
     /// flow now observes the already-running `AppModel.glucoseSource` production instance via
-    /// `glucoseSourceProbe`, never a second ephemeral central). It is still exercised by
-    /// `DexcomG6RestoreIdentifierTests`, which pins the invariant that the by-id build path carries
-    /// `restoreStateEnabled: false` — the sole guard against the dup-restore-id SIGABRT. Keeping it
-    /// (and `CgmCredentialsView.sourcesToTest`) is the chosen low-risk option under full-hardening
-    /// scope; do NOT delete either without migrating those test call sites in the same change.
+    /// `glucoseSourceProbe`, never a second ephemeral central). On narrow `main` it is still exercised
+    /// by `CgmConnectionKindTests` (which builds each source by id to read its `connectionKind`). The
+    /// restore-identifier invariant it also guards — that the by-id path passes `restoreStateEnabled:
+    /// false`, the sole guard against the dup-restore-id SIGABRT — has NO direct-BLE CGM consumer on
+    /// narrow `main` (no `.localBLE` source ships here), so it is regression-tested only on the branches
+    /// where such a source still compiles (`dev/cgm-extra`: `Dexcom{G6,G7}RestoreIdentifierTests`).
+    /// Keeping it (and `CgmCredentialsView.sourcesToTest`) is the chosen low-risk option; if narrow
+    /// `main` ever regains a direct-BLE CGM source, restore that restore-identifier coverage in the
+    /// same change.
     public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make(false) }
 }
