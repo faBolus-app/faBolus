@@ -35,6 +35,13 @@ enum CompileGateAudit {
         // NavigationLink, SettingsView.swift, both git rm'd in 03-02) — both surfaces' tokens land
         // together since neither can be removed independently of the other's UI.
         tokens.formUnion(["Remote access", "Pair a remote"])
+        // Phase 3, 03-03 (REMOTE-03): the whole Watch target is delete-on-main, but its Settings row
+        // is the `#if !WATCH_EMBEDDED` fallback notice (SettingsView.swift, "Apple Watch app not
+        // included") — permanently active now that WATCH_EMBEDDED no longer exists in any build
+        // config, so it is NOT itself an orphan. This token instead pins the LITERAL title tied to the
+        // removed watch-remote surface, keeping the orphan-detector's own self-test
+        // (`orphanDetectorIsNonVacuous` below) meaningful for a token this milestone actually removed.
+        tokens.formUnion(["Apple Watch app"])
         return tokens
     }
 
@@ -85,8 +92,11 @@ struct SettingsCatalogTests {
         // Phase 09.26-07 (D-22): 66 → 67 (liveActivityShowBolusShortcut added).
         // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): 67 → 65 (remoteBluetoothEnabled removed entirely;
         // requireRemoteBolusApproval's row removed — hidden-flag pattern, accessor stays).
-        #expect(SettingsCatalog.descriptors.count == 65)
-        #expect(SettingsCatalog.byKey.count == 65)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 3 (03-03, REMOTE-03): 65 → 64 (watchBolusEnabled's row removed — hidden-flag pattern,
+        // accessor stays; the five Garmin-shared watch*/glucosePlotFloorSmall/CeilingSmall
+        // descriptors stay registered, Pitfall E).
+        #expect(SettingsCatalog.descriptors.count == 64)
+        #expect(SettingsCatalog.byKey.count == 64)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -116,7 +126,9 @@ struct SettingsCatalogTests {
         // Phase 09.26-07 (D-22): 61 → 62 (liveActivityShowBolusShortcut, unconditional).
         // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): 62 → 60 (remoteBluetoothEnabled +
         // requireRemoteBolusApproval, both unconditional, removed from the catalog AND backupSnapshot).
-        #expect(SettingsCatalog.backedUpKeys.count == 60)                      // 54 unconditional + 6 conditional
+        // Phase 3 (03-03, REMOTE-03): 60 → 59 (watchBolusEnabled, unconditional, removed from the
+        // catalog AND backupSnapshot — hidden-flag pattern, accessor stays).
+        #expect(SettingsCatalog.backedUpKeys.count == 59)                      // 53 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

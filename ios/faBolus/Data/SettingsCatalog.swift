@@ -83,7 +83,10 @@ enum SettingsCatalog {
         // §2.3 per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another
         // device.
         "garminBolusEnabled",
-        "watchBolusEnabled",
+        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled removed from this set — its SettingsCatalog
+        // row is gone (hidden-flag pattern), so it can no longer sync via iCloud by construction; the
+        // AppSettings accessor itself stays (frozen AppModel.swift:360,533 + AccessPolicy.swift:199
+        // still read it). Same reasoning as requireRemoteBolusApproval's removal above (03-02, F-1).
         // §2.3 remote-only dose ceiling — a synced value must never silently RELAX the cap on another device
         // (the same C5 hazard as the enables; not a boolean, but the same never-iCloud-sync rule applies).
         "remoteBolusCeiling",
@@ -204,7 +207,10 @@ enum SettingsCatalog {
         // MARK: Remotes & devices
         .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("watchBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled's row is removed here (hidden-flag pattern,
+        // same posture as requireRemoteBolusApproval above) — the AppSettings accessor stays, read by
+        // frozen AppModel.swift:360,533 + AccessPolicy.swift:199's apple-watch gate. Garmin has its
+        // own independent garminBolusEnabled above, unaffected.
         // §2.3 optional remote-only per-bolus ceiling. Command-adjacent (never iCloud-synced); backs up.
         .init("remoteBolusCeiling", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): the Mac/peer "Remote access" rows are removed here.

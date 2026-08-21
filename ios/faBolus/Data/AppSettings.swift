@@ -302,9 +302,14 @@ public final class AppSettings {
     /// an auto-synced value must not silently arm bolusing on another device.
     public var garminBolusEnabled: Bool { didSet { d.set(garminBolusEnabled, forKey: "garminBolusEnabled") } }
     /// **Apple Watch bolusing allowed (§2.3).** As `garminBolusEnabled`, for the Apple Watch. **Default OFF.**
-    /// The one-time warning copy acknowledges that wrist detection makes an accidental tap less likely on the
-    /// Watch than on Garmin, but the enable is still explicit and off by default. Command-adjacent (backs up,
-    /// never iCloud-synced).
+    ///
+    /// Phase 3 (03-03, REMOTE-03): the Apple Watch app this enabled is delete-on-main, so this can
+    /// never take effect again. Same hidden-flag posture as `requireRemoteBolusApproval` (03-02, F-1):
+    /// this accessor STAYS — the frozen `AppModel.swift:360,533` + `AccessPolicy.swift:199` still read
+    /// it — but its `SettingsCatalog` row, `backupSnapshot`/`applyBackup` participation, and
+    /// `RemotesSettingsView` UI (toggle + one-time-warning dialog) are all removed. A legacy backup
+    /// carrying this key is now silently ignored (same tolerance as the existing
+    /// `basalScheduleByHour`/`basalScheduleSource` precedent).
     public var watchBolusEnabled: Bool { didSet { d.set(watchBolusEnabled, forKey: "watchBolusEnabled") } }
 
     /// **Optional remote-only per-bolus ceiling (§2.3).** When set (a positive units value), a bolus started
@@ -853,6 +858,12 @@ public final class AppSettings {
     // shown the FIRST time each surface's enable is switched on. Same idiom as `clinicianTierAckAt`:
     // durable per-install markers, NOT catalog rows — never backed up, never iCloud-synced (a synced ack
     // must not silently pre-suppress the warning on another device). nil ⇒ never acknowledged.
+    // Phase 3 (03-03, REMOTE-03): the RemotesSettingsView call sites that read/write these three
+    // (the watch bolus-enable toggle + its one-time-warning confirmationDialog) are removed along
+    // with the Watch app they warned about — these accessors are now unreachable, harmless dead
+    // storage (never written again, so `hasAcknowledgedWatchBolusWarning` stays permanently false).
+    // Left in place rather than deleted: no correctness/security implication either way, and this
+    // file is outside the plan's declared scope for anything beyond the accessor demotion above.
     public var watchBolusWarningAckAt: Date? { didSet { d.set(watchBolusWarningAckAt?.timeIntervalSince1970 ?? 0, forKey: "watchBolusWarningAckAt") } }
     public var hasAcknowledgedWatchBolusWarning: Bool { watchBolusWarningAckAt != nil }
     public func acknowledgeWatchBolusWarning() { if watchBolusWarningAckAt == nil { watchBolusWarningAckAt = Date() } }
@@ -1123,7 +1134,9 @@ public final class AppSettings {
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
             "garminBolusEnabled": .bool(garminBolusEnabled),
-            "watchBolusEnabled": .bool(watchBolusEnabled),
+            // Phase 3 (03-03, REMOTE-03): watchBolusEnabled is no longer emitted into the backup
+            // snapshot (catalog row + backup participation removed, hidden-flag pattern) — same
+            // posture as requireRemoteBolusApproval (see applyBackup below).
             "garminScreenOrder": .stringArray(garminScreenOrder),
             "garminDefaultScreen": .string(garminDefaultScreen),
             "garminComplicationDisplay": .string(garminComplicationDisplay),
@@ -1212,13 +1225,14 @@ public final class AppSettings {
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
         if let v = b("remotesReadOnly") { remotesReadOnly = v }
         if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
-        if let v = b("watchBolusEnabled") { watchBolusEnabled = v }
         if let v = dbl("remoteBolusCeiling"), v > 0 { remoteBolusCeiling = v }   // §2.3: only a positive cap arms it
         // Phase 3 (03-02, F-1/Pitfall B): remoteBluetoothEnabled removed entirely (never read by
         // AppModel); requireRemoteBolusApproval no longer restores from a backup (its catalog row +
         // backup participation are removed, hidden-flag pattern) — a legacy backup carrying either key
         // is silently ignored here, same tolerance as the basalScheduleByHour/basalScheduleSource
         // precedent (restoreToleratesLegacyBasalScheduleKeys).
+        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled no longer restores from a backup either — same
+        // hidden-flag pattern, same legacy-key tolerance.
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
         if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
