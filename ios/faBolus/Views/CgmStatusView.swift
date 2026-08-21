@@ -126,7 +126,6 @@ struct CgmStatusView: View {
         var ids = Set<String>()
         if let s = GlucoseSourceRegistry.selectedId(), !s.isEmpty { ids.insert(s) }
         if let armed = model.glucoseSourceProbe?.id { ids.insert(armed) }
-        if GlucoseSourceConfig.string("nightscout.url") != nil { ids.insert("nightscout") }
         if GlucoseSourceConfig.string("dexcomshare.username") != nil { ids.insert("dexcom-share") }
         return GlucoseSourceRegistry.enabled
             .filter { ids.contains($0.id) }

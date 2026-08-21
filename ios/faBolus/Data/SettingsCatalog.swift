@@ -226,8 +226,9 @@ enum SettingsCatalog {
         .init("garminTargetApp", .remotes, from: .advanced, backsUp: true),
         // MARK: Alerts
         .init("alertRules", .alerts, from: .advanced, backsUp: true),
-        // MARK: CGM upload (off-device, opt-in)
-        .init("nightscoutUploadEnabled", .cgm, from: .advanced, backsUp: true),
+        // Nightscout upload (nightscoutUploadEnabled) removed from narrow `main` in Phase 5
+        // (HEALTH-02) — the UserDefaults key is left in place as a hidden device-local flag, no
+        // migration (see dev/nightscout's REINTEGRATION.md).
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),

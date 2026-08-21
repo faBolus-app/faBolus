@@ -329,8 +329,8 @@ enum SettingsIndex {
         // own toggle + read-only override stay live in the same section.
         .init(title: "Allow bolusing from Garmin", keywords: "allow enable remote bolus garmin deliver read only view only", category: .remotes),
         .init(title: "Remote bolus size limit", keywords: "ceiling cap max units remote bolus limit dose garmin", category: .remotes),
-        .init(title: "Failover CGM source", keywords: "dexcom nightscout share", category: .cgm),
-        .init(title: "CGM account credentials", keywords: "login share nightscout", category: .cgm),
+        .init(title: "Failover CGM source", keywords: "dexcom share", category: .cgm),
+        .init(title: "CGM account credentials", keywords: "login share", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
@@ -681,11 +681,8 @@ struct CgmSettingsView: View {
             } header: { Text("3. Status") } footer: {
                 Text("See live status, freshness, and the last test result for every configured source.")
             }
-            Section {
-                Toggle("Upload to Nightscout", isOn: $settings.nightscoutUploadEnabled)
-            } header: { Text("Nightscout upload") } footer: {
-                Text("Pushes glucose, boluses, and pump status (IOB / reservoir / battery) to your Nightscout site. **Off by default — this sends your health data off-device.** Set the site URL, token, and (optional) API secret under **CGM credentials & testing**.")
-            }
+            // Nightscout upload section removed from narrow `main` in Phase 5 (HEALTH-02) — see
+            // dev/nightscout's REINTEGRATION.md.
             Section {
                 Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
                     ForEach(AppSettings.glucoseStaleOptions, id: \.self) { Text("\($0) min").tag($0) }

@@ -12,10 +12,6 @@ struct CgmCredentialsView: View {
     @State private var shareUser = ""
     @State private var sharePass = ""
     @State private var shareRegion = "us"
-    // Nightscout (universal)
-    @State private var nsURL = ""
-    @State private var nsToken = ""
-    @State private var nsApiSecret = ""
 
     /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
     /// "Test <name>" button label and the empty-state guidance.
@@ -46,12 +42,13 @@ struct CgmCredentialsView: View {
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
     static let configuredSectionSourceIds: Set<String> = {
         let ids: Set<String> = [
-            "dexcom-share", "nightscout",
+            "dexcom-share",
         ]
-        // HealthKit ("healthkit") was removed from narrow `main` in Phase 5 (HEALTH-01) — this set
-        // stays equal to GlucoseSourceRegistry.enabled's id set (pinned by
-        // CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection) with no HealthKit
-        // entry to insert. See dev/healthkit's REINTEGRATION.md.
+        // HealthKit ("healthkit") was removed from narrow `main` in Phase 5 (HEALTH-01) — see
+        // dev/healthkit's REINTEGRATION.md. Nightscout ("nightscout") was removed from narrow
+        // `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. This set stays
+        // equal to GlucoseSourceRegistry.enabled's id set (pinned by
+        // CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection).
         return ids
     }()
 
@@ -201,24 +198,14 @@ struct CgmCredentialsView: View {
                 Text("Your Dexcom account with Share enabled and uploading. Cloud-only and unreliable — a last-resort feed for G6.")
             }
 
-            Section {
-                TextField("Site URL (https://…)", text: $nsURL)
-                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("Token (optional)", text: $nsToken)
-                SecureField("API secret (optional, for upload)", text: $nsApiSecret)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-            } header: {
-                Text("Nightscout (any CGM)")
-            } footer: {
-                Text("A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**.")
-            }
-
             // D-11: HealthKit's config section (the one remaining source that previously had no
             // section) was removed with the source in Phase 5 (HEALTH-01) — see dev/healthkit's
-            // REINTEGRATION.md. The G7 section was removed with the source (Phase 1, Plan 03 —
-            // CGM-01/CGM-02); xDrip App Group's section was removed with the source (Phase 1,
-            // Plan 01 — CGM-05); the LibreLinkUp and Dexcom G6 sections/descriptors were removed
-            // with their sources (Phase 1, Plan 02 — CGM-03/CGM-04, D-10).
+            // REINTEGRATION.md. Nightscout's config section was removed with the source in
+            // Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. The G7 section was
+            // removed with the source (Phase 1, Plan 03 — CGM-01/CGM-02); xDrip App Group's
+            // section was removed with the source (Phase 1, Plan 01 — CGM-05); the LibreLinkUp
+            // and Dexcom G6 sections/descriptors were removed with their sources (Phase 1,
+            // Plan 02 — CGM-03/CGM-04, D-10).
 
             Section {
                 Button {
@@ -289,9 +276,6 @@ struct CgmCredentialsView: View {
         shareUser = GlucoseSourceConfig.string("dexcomshare.username") ?? ""
         sharePass = CredentialStore.get(account: "dexcomshare.password") ?? ""
         shareRegion = GlucoseSourceConfig.string("dexcomshare.region") ?? "us"
-        nsURL = GlucoseSourceConfig.string("nightscout.url") ?? ""
-        nsToken = CredentialStore.get(account: "nightscout.token") ?? ""
-        nsApiSecret = CredentialStore.get(account: "nightscout.apisecret") ?? ""
     }
 
     private func save() {
@@ -302,10 +286,6 @@ struct CgmCredentialsView: View {
         GlucoseSourceConfig.set(trimmed(shareUser), "dexcomshare.username")
         CredentialStore.set(trimmed(sharePass), account: "dexcomshare.password")
         GlucoseSourceConfig.set(shareRegion, "dexcomshare.region")
-
-        GlucoseSourceConfig.set(trimmed(nsURL), "nightscout.url")
-        CredentialStore.set(trimmed(nsToken), account: "nightscout.token")
-        CredentialStore.set(trimmed(nsApiSecret), account: "nightscout.apisecret")
     }
 
 }

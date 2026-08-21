@@ -402,9 +402,11 @@ public final class AppSettings {
         didSet { d.set((try? JSONEncoder().encode(alertRules)) ?? Data(), forKey: "alertRules") }
     }
 
-    /// Upload glucose + boluses + pump status to a Nightscout site. **Default OFF** — this publishes
-    /// health data off-device, so it's strictly opt-in. Uses the same `nightscout.url` + token the
-    /// follower source uses (plus an optional API secret). See [[NightscoutUploader]].
+    /// Upload glucose + boluses + pump status to a Nightscout site. Nightscout was removed from
+    /// narrow `main` in Phase 5 (HEALTH-02) — this accessor STAYS (a hidden, unregistered
+    /// device-local flag, no migration) but its `SettingsCatalog` row, `backupSnapshot`/
+    /// `applyBackup` participation, and `SettingsView` UI are removed (same hidden-flag pattern as
+    /// `watchBolusEnabled`/`requireRemoteBolusApproval`). See dev/nightscout's REINTEGRATION.md.
     public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
 
     /// Phase 09.23-02 (D-14): per-type Apple Health IMPORT toggles — each import type (carbs,
@@ -1128,7 +1130,9 @@ public final class AppSettings {
             "garminComplicationDisplay": .string(garminComplicationDisplay),
             "garminClockAnalog": .bool(garminClockAnalog),
             "garminTargetApp": .string(garminTargetApp),
-            "nightscoutUploadEnabled": .bool(nightscoutUploadEnabled),
+            // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled is no longer emitted into the
+            // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
+            // same posture as watchBolusEnabled/requireRemoteBolusApproval (see applyBackup below).
             "childModeEnabled": .bool(childModeEnabled),
             "liveActivityEnabled": .bool(liveActivityEnabled),
             "liveActivityFields": .stringArray(liveActivityFields),
@@ -1222,12 +1226,13 @@ public final class AppSettings {
         // precedent (restoreToleratesLegacyBasalScheduleKeys).
         // Phase 3 (03-03, REMOTE-03): watchBolusEnabled no longer restores from a backup either — same
         // hidden-flag pattern, same legacy-key tolerance.
+        // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled no longer restores from a backup
+        // either — same hidden-flag pattern, same legacy-key tolerance.
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
         if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
         if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
-        if let v = b("nightscoutUploadEnabled") { nightscoutUploadEnabled = v }
         if let v = b("childModeEnabled") { childModeEnabled = v }
         if let v = b("liveActivityEnabled") { liveActivityEnabled = v }
         if let v = sa("liveActivityFields") { liveActivityFields = v }
