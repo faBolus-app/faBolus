@@ -123,9 +123,6 @@ targets:
           - Data/Sources/NightscoutSource.swift
           - Data/Sources/NightscoutBackfill.swift
           # <<< CGM_NIGHTSCOUT
-          # >>> CGM_XDRIP (kept only when FABOLUS_CGM_XDRIP=0 → excludes the xDrip App-Group source; stripped by default)
-          - Data/Sources/XDripAppGroupSource.swift
-          # <<< CGM_XDRIP
           # >>> PHONE_PEER (kept only when FABOLUS_PHONE_PEER=0 → excludes ONLY the phone-peer remote files;
           #   stripped by default. CRITICAL: this list must NEVER include PhoneRemoteHost.swift — that is the
           #   SHARED Garmin/widget receiver core (REMOTE-02 / MILESTONE-PREP §2) kept on main unconditionally.
@@ -291,10 +288,6 @@ targets:
         # >>> HEALTHKIT (stripped by scripts/generate-project.sh unless FABOLUS_HEALTHKIT=1)
         NSHealthUpdateUsageDescription: "faBolus can write your carb, insulin, and glucose entries to Apple Health so other apps and your clinic can see them. You choose which types to export."
         # <<< HEALTHKIT
-        # xDrip4iOS "Share to Loop" App Group ids (team substituted at build). Read by
-        # XDripAppGroupSource — Loop and Trio share types; faBolus reads whichever group has data.
-        LoopAppGroupIdentifier: group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup
-        TrioAppGroupIdentifier: group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group
         # Keep the pump BLE connection alive in the background (bluetooth-central), and act as a BLE
         # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
         UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]

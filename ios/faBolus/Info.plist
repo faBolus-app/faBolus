@@ -64,8 +64,6 @@
 	<array>
 		<string>gcm-ciq</string>
 	</array>
-	<key>LoopAppGroupIdentifier</key>
-	<string>group.com.$(DEVELOPMENT_TEAM).loopkit.LoopGroup</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
 	<key>NSCameraUsageDescription</key>
@@ -76,8 +74,6 @@
 	<string>faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
-	<key>TrioAppGroupIdentifier</key>
-	<string>group.org.nightscout.$(DEVELOPMENT_TEAM).trio.trio-app-group</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
