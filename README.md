@@ -94,8 +94,6 @@ ios/faBolus/Data/Sources/    # CGM failover impls: cloud (LibreLinkUp/Nightscout
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
 watch/faBolusWatch/          # Apple Watch remote (WatchConnectivity + direct-G7 failover)
 watch/faBolusWatchWidgets/   # watch-face complication
-mac/faBolusMac/              # Mac menu-bar remote (BLE central; no Dock icon/window)
-mac/faBolusMacWidgets/       # Mac WidgetKit widgets (Glucose, Status, interactive Quick Bolus)
 Shared/                      # WidgetShared (App Group snapshot) + RemoteClientModel (shared remote
                              #   state) + DisplaySettings + DexcomG7BLESource (phone+watch)
 schema/                      # THE phone↔remote message contract — single source of truth

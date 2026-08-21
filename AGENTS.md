@@ -19,12 +19,11 @@ Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch 
 ## Commands
 - **Core unit tests:** `swift test --package-path Packages/faBolusCore`
 - **Simulator build (iOS app + watch + widgets):** `./scripts/build-sim.sh`
-- **macOS remote build:** `xcodebuild -project faBolus.xcodeproj -scheme faBolusMac -destination 'platform=macOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build`
 - **Device build + install:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then
   `xcodegen generate` → `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath build/DDdevice build` → `xcrun devicectl device install app --device <UDID> build/DDdevice/Build/Products/Debug-iphoneos/faBolus.app`
 - **Schema drift (after touching `RemoteCommand`):** `./scripts/check-schema-drift.sh`
 - **Always run `xcodegen generate` after editing `project.yml`.** New files under globbed dirs
-  (`ios/faBolus`, `Shared`, `mac/faBolusMac`) are picked up automatically.
+  (`ios/faBolus`, `Shared`) are picked up automatically.
 
 ## How to add X
 - **A user setting:** `AppSettings.swift` (UserDefaults `var` + `didSet`, defaulted/sanitized in
