@@ -16,10 +16,6 @@ struct PumpControlView: View {
     @State private var tempDurationMin: Int = 60
     @State private var busy = false
     @State private var showClinicianTierAck = false
-    /// Phase 09.15 T1-8 (D-03(v)) — the feature-specific one-time explainer, shown the first time the
-    /// readout below actually becomes visible (opt-in toggle just turned on). Mirrors `showClinicianTierAck`'s
-    /// exact idiom in this same file. SEPARATE from the generic D-07 Smart-Assist explainer.
-    @State private var showMaxBasalNotice = false
     /// Phase 09.15 T2-3 (D-04) — state for the Control-IQ+-only temp-rate PLACEHOLDER below. Deliberately
     /// separate from `tempPercent`/`tempDurationMin` above (the classic, CIQ-off temp-basal section) even
     /// though the underlying write is the same request shape — this is a distinct, capability-scoped entry
@@ -46,26 +42,10 @@ struct PumpControlView: View {
         caps.supportsLimits || caps.supportsControlIQSettings || caps.supportsProfiles
     }
 
-    /// Phase 09.15 T1-8 (D-03, SP-5 fail-closed): the "% of your configured max basal rate" readout, or
-    /// `nil` when it must render ABSENT (not zero/dash) — the Smart-Assist toggle is off, the pump isn't
-    /// currently connected (the only per-field freshness signal available for `basalRateUnitsPerHour`/
-    /// `maxBasalUnitsPerHour` today — neither carries its own read-timestamp, unlike IOB/therapy), or
-    /// `maxBasalUnitsPerHour == 0` (unread/unknown max, `MaxBasalFraction`'s own fail-closed guard).
-    private var maxBasalReadout: (headline: String, detail: String, fraction: Double)? {
-        guard AppSettings.shared.ciqMaxBasalReadoutEnabled, model.pumpReady,
-              let f = MaxBasalFraction.fraction(currentUnitsPerHour: model.snapshot.basalRateUnitsPerHour,
-                                                maxUnitsPerHour: model.snapshot.maxBasalUnitsPerHour),
-              let label = MaxBasalFraction.label(currentUnitsPerHour: model.snapshot.basalRateUnitsPerHour,
-                                                 maxUnitsPerHour: model.snapshot.maxBasalUnitsPerHour)
-        else { return nil }
-        return (label.headline, label.detail, f)
-    }
-
     // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `content` (the UNCHANGED Form + its
     // full modifier chain below) at the shared readable-content width and center it (the double-frame
     // idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today (D-06a). This
-    // is a pure presentation wrapper: `content` itself, the GeometryReader-relative
-    // `MaxBasalReadoutView` bar, and every pump-control action path are untouched.
+    // is a pure presentation wrapper: `content` itself and every pump-control action path are untouched.
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -102,26 +82,11 @@ struct PumpControlView: View {
             if !AppSettings.shared.hasAcknowledgedClinicianTier && hasClinicianTierSection {
                 showClinicianTierAck = true
             }
-            // Phase 09.15 T1-8 (D-03(v)): the feature-specific one-time explainer, shown the first time
-            // the readout above is actually visible on screen — never on a toggle that's off, and never
-            // more than once ever (persisted via `hasAcknowledgedMaxBasalNotice`, same idiom as
-            // `hasAcknowledgedClinicianTier` just above). SEPARATE from the generic D-07 Smart-Assist
-            // explainer — this one is required IN ADDITION to it.
-            if maxBasalReadout != nil && !AppSettings.shared.hasAcknowledgedMaxBasalNotice {
-                showMaxBasalNotice = true
-            }
         }
         .alert("Clinician-tier settings", isPresented: $showClinicianTierAck) {
             Button("I understand") { AppSettings.shared.acknowledgeClinicianTier() }
         } message: {
             Text(ClinicianTierAck.disclosure)
-        }
-        .alert("About the basal rate readout", isPresented: $showMaxBasalNotice) {
-            Button("I understand") { AppSettings.shared.acknowledgeMaxBasalNotice() }
-        } message: {
-            Text("This is faBolus's own reading of your pump's configured maximum basal rate — a safety "
-                 + "cap on ALL basal delivery. It is not a Control-IQ or auto-bolus figure, and Tandem does "
-                 + "not ship this gauge; faBolus computed it from your pump's own settings.")
         }
         // Gate every action (and the NavigationLinks into the wizards) on a live pump connection.
         .disabled(busy || !model.pumpReady)
@@ -307,22 +272,6 @@ struct PumpControlView: View {
             } header: { Text("Limits") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
         }
 
-        // Phase 09.15 T1-8 (D-03): faBolus's OWN "% of your configured max basal rate" readout — a
-        // cap on ALL basal delivery, NEVER a Control-IQ/auto-bolus figure. Placed here, next to the
-        // "Limits" section that already owns `setMaxBasal` (max-basal-adjacent settings), and
-        // physically separated from every bolus/correction surface on this screen (D-03(iii) — this
-        // whole view has no bolus-entry control at all). Opt-in (default OFF, D-07); render-absent
-        // (not zero/dash) whenever `maxBasalReadout` is nil — never disabled-but-visible.
-        if let readout = maxBasalReadout {
-            Section {
-                MaxBasalReadoutView(headline: readout.headline, detail: readout.detail, fraction: readout.fraction)
-            } header: {
-                Text("Basal rate")
-            } footer: {
-                Text("faBolus's own reading of your pump's configured maximum basal rate — a safety cap on ALL basal delivery, not a Control-IQ figure.")
-            }
-        }
-
         if caps.supportsTimeSync {
             Section("Time") {
                 Button { ask("Sync pump time?", "Set the pump clock to this phone's current time.", destructive: false) { await model.syncTimeToNow() } }
@@ -384,32 +333,3 @@ struct PumpControlView: View {
     private func modeName(_ m: Int) -> String { m == 1 ? "Sleep" : m == 2 ? "Exercise" : "Normal" }
 }
 
-/// Phase 09.15 T1-8 (D-03) — the honest "% of your configured max basal rate" readout. Same neutral bar
-/// family as `LockoutCountdownBarView` (flat `AppTheme.insulin` fill on a `.quaternary` track, never
-/// banded by %, D-06 gauge-neutrality) — but this is a STATIC current/max fraction, not a time-fill
-/// countdown. `headline`/`detail` are the D-03(i)/(ii) LOCKED wording from `MaxBasalFraction.label`; this
-/// view never re-derives or reformats the string, so a future copy edit has exactly one place to change.
-private struct MaxBasalReadoutView: View {
-    let headline: String
-    let detail: String
-    let fraction: Double
-
-    private var clampedFraction: Double { min(max(fraction, 0), 1) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(headline).font(.subheadline)
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.quaternary)
-                    Capsule().fill(AppTheme.insulin)
-                        .frame(width: geo.size.width * CGFloat(clampedFraction))
-                }
-            }
-            .frame(height: 6)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(headline). \(detail)")
-    }
-}

@@ -101,15 +101,6 @@ struct DashboardView: View {
 
                                 StatusPillsView(snapshot: model.snapshot)
 
-                                if settings.ciqLockoutCountdownEnabled,
-                                   let fraction = AutoCorrectionDisclosure.lockoutRemainingFraction(
-                                       descriptor: model.snapshot.controllerDescriptor,
-                                       controllerEnabled: model.snapshot.controlIQEnabled,
-                                       lockoutStartDate: model.snapshot.lastAutoCorrectionDate, now: Date()),
-                                   let availableAt = model.snapshot.lockoutUntilDate {
-                                    LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
-                                }
-
                                 // Chart block renders at the column's FULL width — never a fixed
                                 // sub-fraction, never clipped (D-04 non-negotiable chart protection).
                                 VStack(spacing: 6) {
@@ -134,8 +125,6 @@ struct DashboardView: View {
                             .frame(maxWidth: .infinity, alignment: .top)
 
                             VStack(spacing: 14) {
-                                SleepExerciseAwarenessCard(snapshot: model.snapshot)
-
                                 if settings.showStats {
                                     StatsCardView(history: model.glucoseHistory)
                                 }
@@ -232,25 +221,6 @@ struct DashboardView: View {
                         }
 
                         StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
-
-                        // T1-5 (D-01, D-07, D-08): a slim countdown card under the controlIQ/ciqZone pills —
-                        // StatusPillsView is pill-shaped (too small for a bar). Gated on
-                        // `ciqLockoutCountdownEnabled` (ON by default); fail-closed nil ⇒ card absent.
-                        if settings.ciqLockoutCountdownEnabled,
-                           let fraction = AutoCorrectionDisclosure.lockoutRemainingFraction(
-                               descriptor: model.snapshot.controllerDescriptor,
-                               controllerEnabled: model.snapshot.controlIQEnabled,
-                               lockoutStartDate: model.snapshot.lastAutoCorrectionDate, now: Date()),
-                           let availableAt = model.snapshot.lockoutUntilDate {
-                            LockoutCountdownBarView(fraction: fraction, availableAt: availableAt)
-                                .padding(.horizontal)
-                        }
-
-                        // T1-9 (D-01, D-06 guardrail #4, D-07, D-08): the Sleep/Exercise awareness card
-                        // — pure UI wiring of ControllerDescriptor.activityPresets. Fail-closed: absent
-                        // unless a preset is actively selected by the pump's own controlIQMode AND the
-                        // Smart-Assist toggle is on (never a "Normal mode" card).
-                        SleepExerciseAwarenessCard(snapshot: model.snapshot).padding(.horizontal)
 
                         VStack(spacing: 6) {
                             GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
@@ -397,54 +367,6 @@ struct PumpDetailsCard: View {
         // N12: each detail row reads as one element — "Active insulin, 1.23 U".
         .accessibilityElement(children: .combine)
         if !last { Divider().padding(.leading, 14) }
-    }
-}
-
-/// Phase 09.15 T1-9 (D-01, D-06 guardrail #4, D-07, D-08) — pure UI wiring of the controller's OWN
-/// activity presets (already Tandem-clinical-review-gated, §13) plus the pump-reported exercise
-/// timer + sleep-schedule window. Card entirely absent when Control-IQ isn't in Sleep/Exercise right
-/// now (`snapshot.ciqActivityPreset == nil`) — never a "Normal mode" card (empty-state rule) — or
-/// when the Smart-Assist toggle (`ciqSleepExerciseAwarenessEnabled`, OFF by default, D-07) is off.
-/// Mutual-exclusivity is structural: `ciqActivityPreset` selects exactly one preset (or none), so
-/// this view's single `if let preset` branch can never render both Sleep and Exercise facts at
-/// once. Fact lines each render independently (partial-state coverage, D-08): a missing datum
-/// simply omits its own line, never blocks the rest of the card.
-struct SleepExerciseAwarenessCard: View {
-    let snapshot: PumpSnapshot
-    @State private var settings = AppSettings.shared
-
-    var body: some View {
-        if settings.ciqSleepExerciseAwarenessEnabled, let preset = snapshot.ciqActivityPreset {
-            let isSleep = preset.name == "Sleep"
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    // Reuses StatusPillsView's controlIQIcon choice exactly (moon.zzz.fill/figure.run)
-                    // for visual consistency with the existing controlIQ pill.
-                    Image(systemName: isSleep ? "moon.zzz.fill" : "figure.run")
-                        .foregroundStyle(AppTheme.insulin)
-                        .accessibilityHidden(true)
-                    Text("\(preset.name) Activity is on").font(.subheadline).fontWeight(.semibold)
-                }
-                Text(SleepExerciseAwareness.targetAutoBolusLine(preset))
-                    .font(.footnote).foregroundStyle(.secondary)
-                if let threshold = SleepExerciseAwareness.suspendThresholdLine(preset) {
-                    Text(threshold).font(.footnote).foregroundStyle(.secondary)
-                }
-                if isSleep {
-                    // Sleep-only: the verbose window-schedule text (iPhone/Mac only, D-09.5).
-                    if let window = snapshot.ciqSleepWindowLine {
-                        Text(window).font(.footnote).foregroundStyle(.secondary)
-                    }
-                } else if let remaining = SleepExerciseAwareness.remainingLabel(seconds: snapshot.exerciseTimeRemainingSec) {
-                    // Exercise-only: the countdown, never rendered alongside Sleep facts.
-                    Text(remaining).font(.subheadline.weight(.semibold))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding().background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-            // N12: the whole card reads as one element (mirrors PumpDetailsCard's row idiom).
-            .accessibilityElement(children: .combine)
-        }
     }
 }
 

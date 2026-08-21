@@ -211,19 +211,10 @@ public final class AppSettings {
     /// display-only — never originates or gates a dose. Default **ON** (discoverable, D-17); unlike the
     /// `ciq*` flags this one is backup-participating (`SettingsCatalog`), so a restore preserves it.
     public var siteAtlasEnabled: Bool { didSet { d.set(siteAtlasEnabled, forKey: "siteAtlasEnabled") } }
-    // One-time acknowledgment markers — same idiom as `stackingGuardNoticeAckAt`: durable per-install
-    // markers, NOT `SettingsCatalog` rows — never backed up, never iCloud-synced (a synced ack must not
-    // silently pre-suppress the notice on another device). NEVER gate a write. nil ⇒ never shown.
-    public var ciqAwarenessNoticeAckAt: Date? { didSet { d.set(ciqAwarenessNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "ciqAwarenessNoticeAckAt") } }
-    public var hasAcknowledgedCiqAwarenessNotice: Bool { ciqAwarenessNoticeAckAt != nil }
-    public func acknowledgeCiqAwarenessNotice() { if ciqAwarenessNoticeAckAt == nil { ciqAwarenessNoticeAckAt = Date() } }
-    public var maxBasalNoticeAckAt: Date? { didSet { d.set(maxBasalNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "maxBasalNoticeAckAt") } }
-    public var hasAcknowledgedMaxBasalNotice: Bool { maxBasalNoticeAckAt != nil }
-    public func acknowledgeMaxBasalNotice() { if maxBasalNoticeAckAt == nil { maxBasalNoticeAckAt = Date() } }
-    // Generic "About Smart Features" one-time explainer (09.18a, D-16) — same durable per-install-marker
-    // idiom as `ciqAwarenessNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a
-    // synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of a Smart
-    // Features surface (e.g. SiteAtlas). nil ⇒ never shown. NEVER gates a write.
+    // Generic "About Smart Features" one-time explainer (09.18a, D-16) — a durable per-install marker,
+    // same idiom as `stackingGuardNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-
+    // synced (a synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of
+    // a Smart Features surface (e.g. SiteAtlas). nil ⇒ never shown. NEVER gates a write.
     public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
     public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
     public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
@@ -709,7 +700,7 @@ public final class AppSettings {
     }
     /// Status pills available on the dashboard, in default order (first 6 shown by default).
     public static let pillItems: [String] =
-        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "ciqZone", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
+        ["iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "lastBolus", "carbRatio", "isf", "target", "maxBolus", "cob"]
     public static func pillLabel(_ id: String) -> String {
         switch id {
         case "iob": return "Active insulin"
@@ -718,7 +709,6 @@ public final class AppSettings {
         case "cgm": return "CGM"
         case "basal": return "Basal / Suspended"
         case "controlIQ": return "Control-IQ"
-        case "ciqZone": return "Control-IQ state"
         case "lastBolus": return "Last bolus"
         case "carbRatio": return "Carb ratio"
         case "isf": return "Correction (ISF)"
@@ -964,10 +954,6 @@ public final class AppSettings {
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
         // 09.18a (D-17): SiteAtlas is discoverable / ON by default.
         siteAtlasEnabled = (d.object(forKey: "siteAtlasEnabled") as? Bool) ?? true
-        let ciqAck = d.double(forKey: "ciqAwarenessNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
-        ciqAwarenessNoticeAckAt = ciqAck > 0 ? Date(timeIntervalSince1970: ciqAck) : nil
-        let mbAck = d.double(forKey: "maxBasalNoticeAckAt")        // 0 (absent) ⇒ never acknowledged
-        maxBasalNoticeAckAt = mbAck > 0 ? Date(timeIntervalSince1970: mbAck) : nil
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged
