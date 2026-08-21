@@ -533,106 +533,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
 
-  # >>> MAC (scripts/generate-project.sh strips this block when FABOLUS_MAC=0; default 1 = Mac remote present)
-  # macOS remote app — a remote for the iPhone host over Bluetooth LE (works when the phone is
-  # locked/backgrounded). It never touches the pump: it displays the status the phone relays and sends
-  # bolus/cancel/dismiss commands the phone executes. Menu-bar item + window.
-  faBolusMac:
-    type: application
-    platform: macOS
-    deploymentTarget: "14.0"   # interactive WidgetKit widgets + current MenuBarExtra
-    sources:
-      - mac/faBolusMac
-      # Shared remote-client state machine + the App Group snapshot/store (portable, no BLE/HealthKit).
-      - path: Shared/RemoteClientModel.swift
-      - path: Shared/AuthenticatingRemoteClientModel.swift
-      - path: Shared/WidgetShared.swift
-      - path: Shared/DisplaySettings.swift
-    dependencies:
-      # Contracts + models + the BLE transport. No TandemKit/ConnectIQ — it's a remote.
-      - package: faBolusCore
-        product: faBolusCore
-      - package: faBolusDesign
-        product: faBolusDesign
-      # Embeds the macOS WidgetKit extension.
-      - target: faBolusMacWidgets
-        embed: true
-    entitlements:
-      path: mac/faBolusMac/faBolusMac.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        # BLE central (connects to the iPhone peripheral) — works when the phone is locked/backgrounded.
-        com.apple.security.device.bluetooth: true
-        # Camera access to scan the pairing QR code. Required in the sandbox even with
-        # NSCameraUsageDescription — without it AVCaptureDevice access is denied and the scanner is black.
-        com.apple.security.device.camera: true
-        com.apple.security.network.server: true
-        # Shared container the app writes and the Mac widgets read. macOS App Groups are Team-ID
-        # prefixed, so this uses $(TeamIdentifierPrefix) (unlike the iOS/watch group ids).
-        com.apple.security.application-groups:
-          - $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
-    info:
-      path: mac/faBolusMac/Info.plist
-      properties:
-        # Team-prefixed App Group id exposed to code (WidgetStore reads AppGroupIdentifier at runtime).
-        AppGroupIdentifier: $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
-        CFBundleDisplayName: faBolus
-        # Menu-bar-only agent app: no Dock icon and no main window.
-        LSUIElement: true
-        # BLE is the transport to the iPhone (works when the phone is locked/backgrounded).
-        NSBluetoothAlwaysUsageDescription: "faBolus connects to your iPhone over Bluetooth to show pump status and relay boluses, even when the phone is locked."
-        NSCameraUsageDescription: "faBolus uses the camera to scan the pairing QR code shown on your iPhone."
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac
-        GENERATE_INFOPLIST_FILE: NO
-        SWIFT_VERSION: "6.0"
-        CODE_SIGN_STYLE: Automatic
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-
-  # macOS WidgetKit extension — Notification Center / desktop widgets + interactive quick-bolus.
-  # Reads the snapshot the Mac app publishes to the shared App Group; never touches the network.
-  faBolusMacWidgets:
-    type: app-extension
-    platform: macOS
-    deploymentTarget: "14.0"
-    sources:
-      - mac/faBolusMacWidgets
-      - path: Shared/WidgetShared.swift
-      - path: Shared/WidgetBolusIntents.swift
-      - path: Shared/DisplaySettings.swift
-    dependencies:
-      # D-01/D-02: this widget extension previously linked neither faBolusMac nor faBolusCore.
-      # Adding faBolusDesign deliberately reverses that no-faBolusCore-in-extensions policy —
-      # viable because faBolusCore has zero package dependencies of its own. faBolusCore is declared
-      # DIRECTLY (not only transitively via faBolusDesign): FaBolusMacWidgetBundle.swift imports it
-      # and calls GlucoseRange.classify/.symbolName, and an app-extension does not link a dependency's
-      # transitive closure — those symbols must come from a direct product dep or Ld fails.
-      - package: faBolusDesign
-        product: faBolusDesign
-      - package: faBolusCore
-        product: faBolusCore
-    info:
-      path: mac/faBolusMacWidgets/Info.plist
-      properties:
-        AppGroupIdentifier: $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
-        CFBundleDisplayName: faBolus
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    entitlements:
-      path: mac/faBolusMacWidgets/faBolusMacWidgets.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.application-groups:
-          - $(TeamIdentifierPrefix)group.$(APP_BUNDLE_ID)
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).mac.widgets
-        GENERATE_INFOPLIST_FILE: NO
-        SWIFT_VERSION: "6.0"
-        CODE_SIGN_STYLE: Automatic
-  # <<< MAC
-
   # Behavioral e2e suite (audit C-08 / T-01). A hosted unit-test bundle that drives the real
   # AppModel remote-delivery decision logic — the divergence guard, freeze-before-approve
   # (C-02), the child/read-only action gates (A-05), and the idempotency-ledger wiring (A-02) —
@@ -657,7 +557,7 @@ targets:
       - package: HistoryStore
         product: HistoryStore
       # Phase 09.17-01 (D-06b): compact-width visual-regression net. Test-target-ONLY dependency —
-      # never linked into faBolus/faBolusWidgets/faBolusWatch/faBolusMac, so it never ships in the
+      # never linked into faBolus/faBolusWidgets/faBolusWatch, so it never ships in the
       # App Store binary (Pitfall 4).
       - package: SnapshotTesting
         product: SnapshotTesting
