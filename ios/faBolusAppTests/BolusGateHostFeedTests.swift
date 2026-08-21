@@ -138,7 +138,7 @@ struct BolusGateHostFeedTests {
 
             // Fed into a real remote client, its `BolusGate` now refuses a 10 U dose (over the 5 U ceiling,
             // under the pump's 25 U max) — the clamp reaches the remote surface's own gate.
-            let remote = RemoteClientModel(link: FakeLink())
+            let remote = RemoteCommandWireFixture(link: FakeLink())
             remote.handle(cmd)
             let rg = remote.bolusGate(amount: 10, minimum: 0.05)
             #expect(!rg.canBolus)

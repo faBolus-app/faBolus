@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P15 Addendum B (AB3) — the shared `RemoteClientModel` seams the Apple Watch, Mac, and remote-iPhone
+/// P15 Addendum B (AB3) — the shared `RemoteCommandWireFixture` seams the Apple Watch, Mac, and remote-iPhone
 /// all use to offer the stale-CGM three-way choice, plus the divergence-guard consistency that the
 /// include-stale path depends on.
 ///
@@ -33,9 +33,9 @@ import faBolusCore
     /// Build a model with calculator settings and a reading whose source age is `ageMinutes` old.
     /// carbRatio 10 g/U, ISF 50 mg/dL/U, target 100 mg/dL, IOB 0 ⇒ a correction is added iff the reading
     /// is above target and used.
-    private func model(bg: Int?, ageMinutes: Double) -> (RemoteClientModel, CapturingLink) {
+    private func model(bg: Int?, ageMinutes: Double) -> (RemoteCommandWireFixture, CapturingLink) {
         let link = CapturingLink()
-        let m = RemoteClientModel(link: link)
+        let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
         if let bg { cmd.bgMgdl = Double(bg) }
@@ -139,7 +139,7 @@ import faBolusCore
 
     @Test func decodesCalcInputEpochsAndReportsStaleness() {
         let link = CapturingLink()
-        let m = RemoteClientModel(link: link)
+        let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
         cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 10)            // 10 s old → fresh
@@ -157,7 +157,7 @@ import faBolusCore
         // A legacy host that predates the fields sends no calc epochs ⇒ nil ⇒ unknown age ⇒ stale, never
         // fresh (the fail-closed invariant; a remote can't be tricked into rendering these fresh).
         let link = CapturingLink()
-        let m = RemoteClientModel(link: link)
+        let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
         m.handle(cmd)
@@ -175,7 +175,7 @@ import faBolusCore
         // include-last-known override (only the host may, on the host UI). There is no override channel on
         // the wire for a remote to smuggle one through.
         let link = CapturingLink()
-        let m = RemoteClientModel(link: link)
+        let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 150)
         cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
         cmd.glucoseEpochSec = Int(Date().timeIntervalSince1970 - 30)         // fresh CGM

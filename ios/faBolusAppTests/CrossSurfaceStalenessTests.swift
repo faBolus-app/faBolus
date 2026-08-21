@@ -10,7 +10,7 @@ import faBolusCore
 /// families and the complication have no unit-test seam, so the shared substrate they render from is
 /// pinned here instead:
 ///   • `GlucoseFreshness` — the phone's HUD and the single policy every surface shares,
-///   • `RemoteClientModel` — the shared base for the Apple Watch, the Mac, and the remote-iPhone client,
+///   • `RemoteCommandWireFixture` — the shared base for the Apple Watch, the Mac, and the remote-iPhone client,
 ///   • `WidgetSnapshot`   — the value every widget family and the complication read.
 /// The Garmin surface is pinned in its own repo (the Monkey C epochs parse + the `historyEpochs`
 /// schema key), since it consumes the same wire contract.
@@ -22,7 +22,7 @@ import faBolusCore
 @MainActor
 @Suite(.serialized) struct CrossSurfaceStalenessTests {
 
-    /// Minimal in-memory transport so a `RemoteClientModel` can be exercised without a real link.
+    /// Minimal in-memory transport so a `RemoteCommandWireFixture` can be exercised without a real link.
     /// The test drives `handle(_:)` directly (the same entry point the link's `onReceive` calls), so
     /// nothing here is invoked — it only satisfies the initializer.
     private final class FakeLink: RemoteTransport {
@@ -48,8 +48,8 @@ import faBolusCore
         let sourceEpoch = Int(now.timeIntervalSince1970) - 3600      // taken 60 min ago
         let sourceDate = Date(timeIntervalSince1970: TimeInterval(sourceEpoch))
 
-        // --- RemoteClientModel (Apple Watch / Mac / remote-iPhone shared base) ---
-        let model = RemoteClientModel(link: FakeLink())
+        // --- RemoteCommandWireFixture (Apple Watch / Mac / remote-iPhone shared base) ---
+        let model = RemoteCommandWireFixture(link: FakeLink())
         model.handle(statusRead(bgMgdl: 120, sourceEpoch: sourceEpoch))
         // The stored date is the SOURCE time, not receive time. If age were taken at receipt this
         // would be ≈ now and the deltas below would be ≈ 0.
@@ -59,8 +59,8 @@ import faBolusCore
         #expect(model.isGlucoseStale)          // 60 min ≫ any configured stale threshold
 
         // --- WidgetSnapshot (every widget family + the complication) ---
-        // Built exactly as `RemoteClientModel.publishSnapshot` builds it
-        // (Shared/RemoteClientModel.swift:233): `glucoseDate` is the SAMPLE time, `updatedAt` is the
+        // Built exactly as `RemoteCommandWireFixture.publishSnapshot` builds it
+        // (Shared/RemoteCommandWireFixture.swift:233): `glucoseDate` is the SAMPLE time, `updatedAt` is the
         // PUBLISH/receive time. `updatedAt` is deliberately `now` (a brand-new publish) — staleness
         // must key off `glucoseDate`, so a fresh publish of an old sample stays stale.
         let snap = WidgetSnapshot(glucose: model.glucose, glucoseDate: model.glucoseDate,
@@ -77,7 +77,7 @@ import faBolusCore
     /// §A: a reading with a value but NO source timestamp (no epoch, no age) must render stale /
     /// no-data — never fresh — on every surface. The counter that records this case ships in P12.
     @Test func sampleWithNoSourceTimestampRendersStaleNeverFresh() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
         cmd.glucoseEpochSec = nil
         cmd.glucoseAgeSec = nil
@@ -114,10 +114,10 @@ import faBolusCore
         #expect(GlucoseFreshness.isStale(future, now: now))
         #expect(GlucoseFreshness.presentation(of: future, now: now) == .stale)
 
-        // RemoteClientModel (Apple Watch / Mac / remote-iPhone shared base) delegates to the policy,
+        // RemoteCommandWireFixture (Apple Watch / Mac / remote-iPhone shared base) delegates to the policy,
         // so the future-dated reading reads stale there too. (`isGlucoseStale` evaluates against the
         // real wall clock, ≈ `now`; a 30-min-ahead stamp is stale with wide margin.)
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         model.handle(statusRead(bgMgdl: 120, sourceEpoch: Int(future.timeIntervalSince1970)))
         #expect(model.isGlucoseStale)
 
@@ -134,7 +134,7 @@ import faBolusCore
         let sourceEpoch = Int(now.timeIntervalSince1970) - 30       // taken 30 s ago
         let sourceDate = Date(timeIntervalSince1970: TimeInterval(sourceEpoch))
 
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         model.handle(statusRead(bgMgdl: 120, sourceEpoch: sourceEpoch))
         #expect(!model.isGlucoseStale)
         #expect(model.ageMinutes == 0)

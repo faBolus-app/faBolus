@@ -24,7 +24,7 @@ import faBolusCore
 
     @MainActor
     @Test func stateReadoutFieldsLeakedWhileToggleOffAreSuppressedOnTheClient() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         // The fields leaked even though the toggle says off — exactly the threat this test guards.
         cmd.ciqZone = ControlIQZone.increases.rawValue
@@ -43,7 +43,7 @@ import faBolusCore
 
     @MainActor
     @Test func lockoutBarLeakedWhileToggleOffIsSuppressedOnTheClient() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         m.controllerVariant = .controlIQ
         m.controlIQEnabled = true
         var cmd = RemoteCommand(kind: .statusRead)
@@ -57,7 +57,7 @@ import faBolusCore
 
     @MainActor
     @Test func maxBasalReadoutLeakedWhileToggleOffIsSuppressedOnTheClient() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         m.basalRate = 1.0
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.maxBasalUnitsPerHour = 4.0
@@ -69,7 +69,7 @@ import faBolusCore
 
     @MainActor
     @Test func sleepExerciseFieldsLeakedWhileToggleOffAreSuppressedOnTheClient() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controlIQMode = 2   // Exercise
         cmd.exerciseTimeRemainingSec = 900
@@ -89,7 +89,7 @@ import faBolusCore
 
     @MainActor
     @Test func stateReadoutFieldsRenderWhenToggleIsOn() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.ciqZone = ControlIQZone.increases.rawValue
         cmd.ciqStateReadoutsEnabled = true
@@ -101,7 +101,7 @@ import faBolusCore
 
     @MainActor
     @Test func legacyCommandWithMirrorKeysAbsentDefaultsToSafeBehaviorPerFeature() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)   // predates this plan: every mirror key absent
         cmd.ciqZone = ControlIQZone.increases.rawValue
         cmd.lockoutUntilEpochSec = Int(Date().timeIntervalSince1970) + 1800
@@ -132,7 +132,7 @@ import faBolusCore
     /// toggle at its safe default — matching each flag's own `AppSettings` D-07 default exactly.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasSafeToggleDefaults() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.ciqStateReadoutsEnabled == true)
         #expect(m.ciqLockoutCountdownEnabled == true)
         #expect(m.ciqMaxBasalReadoutEnabled == false)

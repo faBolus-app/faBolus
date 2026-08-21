@@ -5,7 +5,7 @@ import faBolusCore
 
 /// Phase 09.15-08 (T1-8, D-03/D-08): the `maxBasalUnitsPerHour` primitive-propagation spine —
 /// `PumpSnapshot.maxBasalUnitsPerHour` → additive-optional `RemoteCommand.maxBasalUnitsPerHour` wire
-/// field → `validate()` bound → `RemoteClientModel.maxBasalUnitsPerHour` parse → local
+/// field → `validate()` bound → `RemoteCommandWireFixture.maxBasalUnitsPerHour` parse → local
 /// `MaxBasalFraction`/`maxBasalReadout` compute. Mirrors `CiqZoneWireTests`'s structure exactly.
 @Suite struct CiqMaxBasalWireTests {
 
@@ -105,7 +105,7 @@ import faBolusCore
     /// never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasMaxBasalUnitsPerHourAbsent() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.maxBasalUnitsPerHour == nil)
         #expect(m.maxBasalReadout == nil)
     }
@@ -114,7 +114,7 @@ import faBolusCore
     /// safe `nil` default when a command never carries the key.
     @MainActor
     @Test func absentMaxBasalUnitsPerHourOnTheWireKeepsTheSafeNilDefault() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         let cmd = RemoteCommand(kind: .statusRead)   // maxBasalUnitsPerHour never set ⇒ nil
         m.handle(cmd)
         #expect(m.maxBasalUnitsPerHour == nil)
@@ -127,7 +127,7 @@ import faBolusCore
     /// unconditional assign-or-clear proof.
     @MainActor
     @Test func aClearedMaxBasalUnitsPerHourOverwritesAPreviouslyKnownValueRatherThanStaying() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmdWithMax = RemoteCommand(kind: .statusRead)
         cmdWithMax.basalRate = 0.85
         cmdWithMax.maxBasalUnitsPerHour = 1.60
@@ -149,7 +149,7 @@ import faBolusCore
     /// `maxBasalUnitsPerHour` via `MaxBasalFraction`, never received as a pre-rendered string.
     @MainActor
     @Test func maxBasalReadoutIsComputedLocallyFromBasalRateAndMaxBasalUnitsPerHour() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.basalRate = 0.85
         cmd.maxBasalUnitsPerHour = 1.60

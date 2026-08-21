@@ -78,7 +78,7 @@ import faBolusCore
         #expect(validated.ciqSuspendStartEpochSec == nil)
     }
 
-    // MARK: - Task 2: fail-closed on the client (RemoteClientModel parse)
+    // MARK: - Task 2: fail-closed on the client (RemoteCommandWireFixture parse)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -93,7 +93,7 @@ import faBolusCore
     /// surface ABSENT, never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasNoCiqSuspendAttribution() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.ciqSuspendedForLow == nil)
         #expect(m.ciqSuspendStartDate == nil)
     }
@@ -103,7 +103,7 @@ import faBolusCore
     /// generic-suspend indicator, never a fabricated "Control-IQ paused").
     @MainActor
     @Test func absentSuspendFieldsOnTheWireKeepTheSafeNilDefault() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         let cmd = RemoteCommand(kind: .statusRead)   // suspend fields never set ⇒ nil
         m.handle(cmd)
         #expect(m.ciqSuspendedForLow == nil)
@@ -115,7 +115,7 @@ import faBolusCore
     /// stored value too — never a stale "Control-IQ paused" surviving past the moment it actually ended.
     @MainActor
     @Test func aClearedSuspendAttributionOverwritesAPreviouslyKnownTrueRatherThanStaying() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmdSuspended = RemoteCommand(kind: .statusRead)
         cmdSuspended.ciqSuspendedForLow = true
         let epoch = Int(Date().timeIntervalSince1970)

@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// B2 (S1+O3): the controller-disclosure wire round-trip on the shared `RemoteClientModel`. A remote
+/// B2 (S1+O3): the controller-disclosure wire round-trip on the shared `RemoteCommandWireFixture`. A remote
 /// receives the pump's controller identity (`controllerVariant`) + runtime on/off (`controlIQEnabled`)
 /// and reconstructs the `ControllerDescriptor` locally, deriving the SAME auto-correction disclosure the
 /// phone shows — no prose crosses the wire. Pins: fail-safe defaults (fresh model / legacy host omitting
@@ -21,7 +21,7 @@ import faBolusCore
     }
 
     @Test func freshModelShowsNoDisclosure() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.controllerVariant == .none)
         #expect(!m.controlIQEnabled)
         #expect(m.autoCorrectionAmbient == nil)
@@ -29,7 +29,7 @@ import faBolusCore
     }
 
     @Test func legacyHostOmittingTheFieldsShowsNoDisclosure() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.bgMgdl = 210
         m.handle(cmd)
         #expect(m.controllerVariant == .none)        // absent ⇒ safe default, not inferred
@@ -38,7 +38,7 @@ import faBolusCore
     }
 
     @Test func pushArmsBothDisclosuresAndNamesTheController() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.message = "Connected"; cmd.bgMgdl = 210; cmd.trend = "flat"   // 210 ≥ 180 ⇒ lockout fires regardless of trend
         cmd.controllerVariant = ControllerVariant.controlIQPro.rawValue
@@ -53,7 +53,7 @@ import faBolusCore
     }
 
     @Test func controlIQOffSuppressesTheDisclosure() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.message = "Connected"; cmd.bgMgdl = 210
         cmd.controllerVariant = ControllerVariant.controlIQPro.rawValue
@@ -65,7 +65,7 @@ import faBolusCore
     }
 
     @Test func unknownTokenFallsBackToNone() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.message = "Connected"; cmd.bgMgdl = 210
         cmd.controllerVariant = "controlIQPlus"      // not the frozen token ⇒ unknown

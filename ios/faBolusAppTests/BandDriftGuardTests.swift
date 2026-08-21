@@ -195,7 +195,10 @@ struct BandDriftGuardTests {
             ("ios/faBolus/Views/StatsCardView.swift", "func tirBar("),
             ("ios/faBolus/Views/GlucoseChartView.swift", "var body: some View {"),
             ("watch/faBolusWatch/WatchChartView.swift", "var body: some View {"),
-            ("mac/faBolusMac/MacComponents.swift", "struct MacChartView: View {"),
+            // Phase 3 (03-01, D-01/D-06 out-of-scope fix): mac/faBolusMac/MacComponents.swift (and its
+            // `MacChartView`) was git rm'd from main entirely in the Mac-remote delete-on-main plan —
+            // preserved on dev/mac. Removed from this pin list rather than left dangling (a read against
+            // a path that no longer exists on main would throw, not fail the intended assertion).
         ]
         for pin in pins {
             let url = repoRoot.appendingPathComponent(pin.file)

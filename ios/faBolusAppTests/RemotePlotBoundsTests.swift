@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.13-02 (glucose plot height customization, D-06/D-07): the shared `RemoteClientModel`
+/// Phase 09.13-02 (glucose plot height customization, D-06/D-07): the shared `RemoteCommandWireFixture`
 /// glucose-plot Y-axis bound channel split. `glucosePlotFloor`/`glucosePlotCeiling` are the
 /// SHARED/phone-scoped bounds — this is the channel the Mac (Plan 03) reads. `smallScreenFloor`/
 /// `smallScreenCeiling` are the Watch/Garmin-facing resolved bounds: the optional override when
@@ -22,7 +22,7 @@ import faBolusCore
     }
 
     @Test func freshModelDefaultsToTheSharedBaseline() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.glucosePlotFloor == GlucosePlotScale.defaultFloor)
         #expect(m.glucosePlotCeiling == GlucosePlotScale.defaultCeiling)
         #expect(m.smallScreenFloor == GlucosePlotScale.defaultFloor)
@@ -31,7 +31,7 @@ import faBolusCore
 
     /// D-07: with no override on the wire, `smallScreenFloor`/`smallScreenCeiling` == the shared bounds.
     @Test func overrideAbsentSmallScreenEqualsShared() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucosePlotFloor = 50
         cmd.glucosePlotCeiling = 400
@@ -46,7 +46,7 @@ import faBolusCore
     /// shared getters STILL == the phone values — the Mac (which reads `glucosePlotFloor`/
     /// `glucosePlotCeiling` directly) never receives the override.
     @Test func overridePresentSmallScreenUsesOverrideSharedStaysPhoneScoped() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucosePlotFloor = 40
         cmd.glucosePlotCeiling = 300
@@ -63,7 +63,7 @@ import faBolusCore
 
     /// Absent shared fields ⇒ the model keeps its safe default (never nil, never zero).
     @Test func legacyHostOmittingSharedBoundsKeepsSafeDefault() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.message = "Connected"; cmd.bgMgdl = 120
         m.handle(cmd)
@@ -76,7 +76,7 @@ import faBolusCore
     /// Turning the override OFF on a later push (both small fields become absent) reverts
     /// `smallScreen*` back to the shared bounds — a stale override never lingers.
     @Test func overrideClearedOnALaterPushRevertsToShared() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var withOverride = RemoteCommand(kind: .statusRead)
         withOverride.glucosePlotFloor = 40
         withOverride.glucosePlotCeiling = 300
@@ -99,7 +99,7 @@ import faBolusCore
     /// A hostile/out-of-set pair still resolves in-set via `GlucosePlotScale.resolve` (mirrors
     /// `AppSettings`'s own snap-at-init guarantee) rather than surfacing an invalid axis.
     @Test func outOfSetOverridePairSnapsInSet() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucosePlotFloor = 40
         cmd.glucosePlotCeiling = 300
@@ -114,7 +114,7 @@ import faBolusCore
     /// D-07: neither channel is ever routed through `watchChartRanges`/`chartRanges` — a push carrying
     /// ONLY `watchChartRanges` (the pre-existing time-range mirror) must not perturb the Y-axis bounds.
     @Test func watchChartRangesNeverPerturbsThePlotBoundChannels() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.watchChartRanges = [3, 6, 12, 24]
         m.handle(cmd)

@@ -9,12 +9,12 @@ import faBolusCore
 /// The Mac's `canDeliver` used to check only reachability + amount bounds; it ignored the relayed pump
 /// state entirely, so under phone-pushed read-only or a dropped pump link it showed a live, tappable
 /// Bolus button that the host then rejected (the A-05 show-then-fail class). It now routes through
-/// `BolusGate.evaluate`, fed by `RemoteClientModel.pumpConnected` (link health) and the new
+/// `BolusGate.evaluate`, fed by `RemoteCommandWireFixture.pumpConnected` (link health) and the new
 /// `.bolusInFlight` (a dose already running), plus the read-only flag as the access decision.
 ///
 /// The gate's own precedence/logic is pinned in faBolusCore `BolusGateTests`. The Mac's entry view has no
 /// unit-test seam, so `macGate` below mirrors `MacBolusEntryView.gate` exactly (the model-fed axes) and
-/// this suite pins (a) the two `RemoteClientModel` seams across every connection string and (b) that the
+/// this suite pins (a) the two `RemoteCommandWireFixture` seams across every connection string and (b) that the
 /// Mac feed yields the right reason for each blocking condition. These seams are shared by the Apple
 /// Watch and the remote-iPhone client too, so pinning them here guards those surfaces' later migrations.
 @MainActor
@@ -30,8 +30,8 @@ import faBolusCore
 
     /// Drive a status push carrying the host's connection string (`PumpConnectionState.rawValue`) and,
     /// optionally, the read-only flag — the same entry point the link's `onReceive` calls.
-    private func model(connection: String, readOnly: Bool = false) -> RemoteClientModel {
-        let m = RemoteClientModel(link: FakeLink())
+    private func model(connection: String, readOnly: Bool = false) -> RemoteCommandWireFixture {
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.message = connection
         cmd.remotesReadOnly = readOnly
@@ -41,7 +41,7 @@ import faBolusCore
 
     /// Mirrors `MacBolusEntryView.gate` (the model-fed axes): the Mac reads link + in-flight + read-only
     /// off the relayed state and passes them straight to the shared gate.
-    private func macGate(_ m: RemoteClientModel, amount: Double, isCarbs: Bool = false)
+    private func macGate(_ m: RemoteCommandWireFixture, amount: Double, isCarbs: Bool = false)
         -> (canBolus: Bool, reason: BolusBlockReason?) {
         let access: AccessPolicy.AccessDecision = m.readOnly ? .deny(.remotesReadOnly) : .allow
         let maxV = isCarbs ? 200 : (m.maxBolusUnits > 0 ? m.maxBolusUnits : 25)
@@ -57,8 +57,8 @@ import faBolusCore
     /// mode ⇒ a legacy host that never mode-gates ⇒ the remote stays permissive (`.advanced`), never
     /// over-hiding. A garbage value falls back to the same permissive default, never a crash.
     @Test func remoteAdoptsPhoneActiveModeWithPermissiveLegacyDefault() {
-        func modelWithMode(_ raw: String?) -> RemoteClientModel {
-            let m = RemoteClientModel(link: FakeLink())
+        func modelWithMode(_ raw: String?) -> RemoteCommandWireFixture {
+            let m = RemoteCommandWireFixture(link: FakeLink())
             var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.activeMode = raw
             m.handle(cmd); return m
         }
@@ -81,7 +81,7 @@ import faBolusCore
 
     @Test func linkAndInFlightSeamsMapEveryConnectionString() {
         // Before any push, nothing is linked and nothing is in flight.
-        let fresh = RemoteClientModel(link: FakeLink())
+        let fresh = RemoteCommandWireFixture(link: FakeLink())
         #expect(!fresh.pumpConnected); #expect(!fresh.bolusInFlight)
 
         // Connected: linked, not in flight.
@@ -167,10 +167,10 @@ import faBolusCore
     @Test func alertDismissCapabilityMirrorsAndDefaultsSafe() {
         // Safe default before any push: false ⇒ the remote shows "Snooze" (honest — a t:slim dismiss
         // only snoozes locally, so the label must not promise a pump clear).
-        #expect(!RemoteClientModel(link: FakeLink()).canDismissAlertOnPump)
+        #expect(!RemoteCommandWireFixture(link: FakeLink()).canDismissAlertOnPump)
 
         // A statusRead carrying the capability sets the mirror (Mobi ⇒ true ⇒ "Clear").
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var on = RemoteCommand(kind: .statusRead); on.supportsRemoteAlertDismiss = true
         m.handle(on)
         #expect(m.canDismissAlertOnPump)

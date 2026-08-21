@@ -6,7 +6,7 @@ import faBolusCore
 /// Phase 09.15-10 (T1-9, D-01/D-08/D-09.5): the Sleep/Exercise-awareness primitive-propagation
 /// spine — op-179 `exerciseTimeRemainingSeconds` (already decoded, previously dropped) →
 /// `PumpSnapshot`/`SleepExerciseAwareness` pure UI wiring of `ControllerDescriptor.activityPresets`
-/// → `RemoteCommand` additive-optional wire fields → `validate()` bounds → `RemoteClientModel`
+/// → `RemoteCommand` additive-optional wire fields → `validate()` bounds → `RemoteCommandWireFixture`
 /// parse/render helpers. Covers: round-trip, legacy absent-key decode, validate bounds,
 /// mutual-exclusivity (never both Sleep and Exercise), and fail-closed (controlIQMode 0/absent ⇒
 /// no card/timer).
@@ -299,7 +299,7 @@ import faBolusCore
         #expect(throws: Never.self) { try ok.validate() }
     }
 
-    // MARK: - RemoteClientModel — fail-closed default + parse + mutual exclusivity
+    // MARK: - RemoteCommandWireFixture — fail-closed default + parse + mutual exclusivity
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -314,7 +314,7 @@ import faBolusCore
     /// T1-9 card/timer, never a stale/fabricated one.
     @MainActor
     @Test func freshClientHasControlIQModeZeroAndNoActivityPreset() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.controlIQMode == 0)
         #expect(m.ciqActivityPreset == nil)
         #expect(m.ciqActivityCompactLine == nil)
@@ -323,7 +323,7 @@ import faBolusCore
 
     @MainActor
     @Test func handleAdoptsControlIQModeAndExerciseTimer() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         m.controllerVariant = .controlIQ
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controlIQMode = 2
@@ -343,7 +343,7 @@ import faBolusCore
     /// the moment the pump's own state changed.
     @MainActor
     @Test func aLaterNormalModeClearsAPreviouslyKnownExerciseState() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         m.controllerVariant = .controlIQ
         var active = RemoteCommand(kind: .statusRead)
         active.controlIQMode = 2
@@ -364,12 +364,12 @@ import faBolusCore
     }
 
     /// Watch does not render the Sleep window text (D-09.5 explicit scope) even though it IS
-    /// parsed on the shared `RemoteClientModel` base — this test pins that the DATA is present so a
+    /// parsed on the shared `RemoteCommandWireFixture` base — this test pins that the DATA is present so a
     /// future Mac-only renderer can read it, while documenting (via the SUMMARY) that no Watch view
     /// consumes it this plan.
     @MainActor
     @Test func sleepWindowFieldsParseOnTheSharedBaseEvenThoughWatchDoesNotRenderThem() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.inSleepWindow = true
         cmd.sleepWindowStartMinute = 1320

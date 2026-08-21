@@ -5,7 +5,7 @@ import faBolusCore
 
 /// P11 (defect group B) — the SENDER half of the receive-side freshness bound: a remote stamps `sentAt`
 /// on the delivery command it sends, so the host can compute the command's age and refuse it if it arrived
-/// too late. Pins the round trip: `RemoteClientModel` (the shared Watch/Mac/iPhone-remote base) stamps a
+/// too late. Pins the round trip: `RemoteCommandWireFixture` (the shared Watch/Mac/iPhone-remote base) stamps a
 /// fresh send time, and that same stamp, once aged past the bound, is what the host's `RemoteCommandFreshness`
 /// check would reject.
 @Suite(.serialized) @MainActor
@@ -23,7 +23,7 @@ struct SentAtStampTests {
 
     @Test func bolusRequestCarriesAFreshSentAtStamp() throws {
         let link = RecordingLink()
-        let model = RemoteClientModel(link: link)
+        let model = RemoteCommandWireFixture(link: link)
         let before = Int(Date().timeIntervalSince1970)
         model.deliverUnits(2.0)
         let after = Int(Date().timeIntervalSince1970)
@@ -35,7 +35,7 @@ struct SentAtStampTests {
 
     @Test func aStampedBolusGoneStaleWouldBeRejectedByTheHost() throws {
         let link = RecordingLink()
-        let model = RemoteClientModel(link: link)
+        let model = RemoteCommandWireFixture(link: link)
         model.deliverUnits(2.0)
         let cmd = try #require(link.sent.first { $0.kind == .bolusRequest })
         let sentAt = try #require(cmd.sentAt)

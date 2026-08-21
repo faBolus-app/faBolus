@@ -64,9 +64,9 @@ import faBolusCore
         #expect(snap.batteryCharging == false)
     }
 
-    // MARK: - RemoteClientModel.publishSnapshot() forwarding (Watch-render gap closure)
+    // MARK: - RemoteCommandWireFixture.publishSnapshot() forwarding (Watch-render gap closure)
 
-    /// Minimal in-memory transport so a `RemoteClientModel` can be exercised without a real link —
+    /// Minimal in-memory transport so a `RemoteCommandWireFixture` can be exercised without a real link —
     /// mirrors `CrossSurfaceStalenessTests.FakeLink` / `ControllerDisclosureWireTests.FakeLink`.
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -76,13 +76,13 @@ import faBolusCore
         func send(_ command: RemoteCommand) {}
     }
 
-    /// 09.27-VERIFICATION.md Truth #11 gap closure: the BASE `RemoteClientModel.publishSnapshot()`
+    /// 09.27-VERIFICATION.md Truth #11 gap closure: the BASE `RemoteCommandWireFixture.publishSnapshot()`
     /// (which the Watch relies on — it does not override `publishSnapshot`, unlike `MacRemoteModel`)
     /// must forward the ingested `batteryCharging` into the `WidgetSnapshot` it writes to the App
     /// Group, not silently drop it back to the `false` default.
     @MainActor
     @Test func remoteClientModelPublishSnapshotForwardsBatteryChargingIntoWidgetSnapshot() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.batteryPercent = 42
         cmd.batteryCharging = true
@@ -99,7 +99,7 @@ import faBolusCore
     /// never a stale `true` (mirrors the WR-01 fail-closed fix on the ingest side).
     @MainActor
     @Test func remoteClientModelPublishSnapshotPublishesFalseWhenNeverToldCharging() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.batteryPercent = 17
         model.handle(cmd)   // batteryCharging absent on the wire
@@ -109,7 +109,7 @@ import faBolusCore
         #expect(snap?.batteryCharging == false)
     }
 
-    // MARK: - WR-01: RemoteClientModel.handle ingest is fail-closed, never keep-last, on an absent key
+    // MARK: - WR-01: RemoteCommandWireFixture.handle ingest is fail-closed, never keep-last, on an absent key
 
     /// The regression this review fix targets: previously `if let c = cmd.batteryCharging {
     /// batteryCharging = c }` kept the LAST-KNOWN value when a later `statusRead` omitted the key —
@@ -117,7 +117,7 @@ import faBolusCore
     /// reset to `false`, mirroring `faBolusGarmin/source/app/AppState.mc`'s unconditional re-evaluate.
     @MainActor
     @Test func absentBatteryChargingKeyResetsAPreviouslyTrueValueToFalse() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var chargingCmd = RemoteCommand(kind: .statusRead)
         chargingCmd.batteryCharging = true
         model.handle(chargingCmd)
@@ -133,7 +133,7 @@ import faBolusCore
     /// unaffected by this fix — kept as an explicit regression pin).
     @MainActor
     @Test func absentBatteryChargingKeyOnAFreshModelStaysFalse() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.batteryPercent = 90
         model.handle(cmd)
@@ -143,7 +143,7 @@ import faBolusCore
     /// An explicit `false` on the wire must still read as not-charging (not just "absent -> false").
     @MainActor
     @Test func explicitFalseBatteryChargingKeyReadsAsNotCharging() {
-        let model = RemoteClientModel(link: FakeLink())
+        let model = RemoteCommandWireFixture(link: FakeLink())
         var chargingCmd = RemoteCommand(kind: .statusRead)
         chargingCmd.batteryCharging = true
         model.handle(chargingCmd)

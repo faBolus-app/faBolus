@@ -99,7 +99,7 @@ import faBolusCore
     /// ABSENT, never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasCiqZoneAbsent() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.ciqZone == nil)
     }
 
@@ -107,7 +107,7 @@ import faBolusCore
     /// its safe `nil` default when a command never carries the key.
     @MainActor
     @Test func absentCiqZoneOnTheWireKeepsTheSafeNilDefault() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         let cmd = RemoteCommand(kind: .statusRead)   // ciqZone never set ⇒ nil
         m.handle(cmd)
         #expect(m.ciqZone == nil)
@@ -116,11 +116,11 @@ import faBolusCore
     /// SP-5 fail-closed (D-06 guardrail #5): once a zone HAS been shown, a later statusRead that
     /// explicitly clears it (CIQ turns off, or the raw zone becomes unmapped) MUST clear the client's
     /// stored value too — never a stale last-known word surviving past the moment it actually cleared.
-    /// This is the deviation from the standard SP-3 "if let" guard (see AppSettings/RemoteClientModel
+    /// This is the deviation from the standard SP-3 "if let" guard (see AppSettings/RemoteCommandWireFixture
     /// doc comments) — proven here by first setting a real zone, then sending an absent one.
     @MainActor
     @Test func aClearedCiqZoneOverwritesAPreviouslyKnownZoneRatherThanStaying() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmdWithZone = RemoteCommand(kind: .statusRead)
         cmdWithZone.ciqZone = ControlIQZone.increases.rawValue
         m.handle(cmdWithZone)

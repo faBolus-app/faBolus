@@ -81,7 +81,7 @@ import faBolusCore
         #expect(validated.lockoutUntilEpochSec == nil)
     }
 
-    // MARK: - Task 1: RemoteClientModel local fraction compute (fail-closed)
+    // MARK: - Task 1: RemoteCommandWireFixture local fraction compute (fail-closed)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -95,7 +95,7 @@ import faBolusCore
     /// app launch before the first statusRead reply must show the bar ABSENT, never a stale/frozen one.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasNoLockout() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.lockoutUntilDate == nil)
         #expect(m.lockoutRemainingFraction == nil)
         #expect(m.lockoutAvailableAt == nil)
@@ -105,7 +105,7 @@ import faBolusCore
     /// [0, 1) and a matching `lockoutAvailableAt`.
     @MainActor
     @Test func aFutureLockoutEpochProducesAFractionAndAnAvailableAtDate() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controllerVariant = ControllerVariant.controlIQ.rawValue
         cmd.controlIQEnabled = true
@@ -124,7 +124,7 @@ import faBolusCore
     /// present and controller-able/on.
     @MainActor
     @Test func aPastLockoutEpochProducesNoFraction() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controllerVariant = ControllerVariant.controlIQ.rawValue
         cmd.controlIQEnabled = true
@@ -138,7 +138,7 @@ import faBolusCore
     /// Fail-closed: no controller (`.none`) never produces a fraction even with a future epoch present.
     @MainActor
     @Test func noControllerNeverProducesALockoutFraction() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controllerVariant = ControllerVariant.none.rawValue
         cmd.controlIQEnabled = false
@@ -153,7 +153,7 @@ import faBolusCore
     /// last-known lockout.
     @MainActor
     @Test func aLaterReplyThatOmitsTheKeyClearsAPreviouslyKnownLockout() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmdWithLockout = RemoteCommand(kind: .statusRead)
         cmdWithLockout.controllerVariant = ControllerVariant.controlIQ.rawValue
         cmdWithLockout.controlIQEnabled = true

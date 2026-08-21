@@ -22,10 +22,12 @@ import Foundation
 /// (`bandGlyphSymbolNeedles` below), catching a differently-named reintroduction of the same confusing
 /// good/bad-glyph pattern, not just a literal `BandIndicator` type. That check is scoped to lines that
 /// ALSO contain a ternary (`?` … `:`) — a band-conditioned glyph CHOICE — so it does not false-positive
-/// on legitimate, unconditional, unrelated uses of the same common SF Symbols already present in two of
-/// these eight files (`MacComponents.swift`'s `MacAlertsView` pump-alert triangle,
-/// `FaBolusMacWidgetBundle.swift`'s `MacQuickBolusWidget` delivered/failed status icons — both fixed
-/// single icons picked by a plain `case` label, never a glucose-band ternary).
+/// on legitimate, unconditional, unrelated uses of the same common SF Symbols. (Historical note: two of
+/// the original eight pinned files — `mac/faBolusMac/MacComponents.swift`'s `MacAlertsView` pump-alert
+/// triangle and `mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift`'s `MacQuickBolusWidget`
+/// delivered/failed status icons — were the motivating false-positive case for this ternary scoping;
+/// both were git rm'd from `main` in Phase 3's Mac-remote delete-on-main plan (03-01) and removed from
+/// `pinnedSurfaces` below — out-of-scope fix, see 03-02-SUMMARY.md.)
 ///
 /// CR-01 (09.29 review): `everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver` below additionally guards
 /// the VoiceOver zone-word regression this review found — 5 of the 8 pinned surfaces had NO
@@ -57,15 +59,15 @@ struct GlucoseStatusGlyphGuardTests {
     /// CR-01 GUARD: the VoiceOver zone word this guard now requires SOME accessibility annotation to carry.
     static let zoneWordNeedle = ".shortLabel"
 
-    /// All eight glucose surfaces the D-02 sweep (waves 01-04) touched, pinned BY PATH
-    /// (09.29-DIAGNOSIS.md §A table) — the full set this teardown wave's guard now covers.
+    /// The glucose surfaces the D-02 sweep (waves 01-04) touched, pinned BY PATH
+    /// (09.29-DIAGNOSIS.md §A table) — originally eight; now six after Phase 3 (03-01) git rm'd
+    /// `mac/faBolusMac/MacComponents.swift` + `mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift` from
+    /// `main` (preserved on dev/mac) — out-of-scope fix, see 03-02-SUMMARY.md.
     static let pinnedSurfaces = [
         "ios/faBolus/Views/StatusRingView.swift",
         "ios/faBolusWidgets/GlucoseLiveActivity.swift",
         "ios/faBolusWidgets/GlucoseWidget.swift",
         "ios/faBolusWidgets/StatusWidget.swift",
-        "mac/faBolusMac/MacComponents.swift",
-        "mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift",
         "watch/faBolusWatch/WatchHUDView.swift",
         "watch/faBolusWatchWidgets/GlucoseComplication.swift",
     ]
@@ -102,7 +104,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// technique as `BandDriftGuardTests.balancedSlice`. IN-02 (09.29 review): exercised directly by
     /// `balancedSliceExtractsExactlyOneBalancedBraceBlock` below (previously dead code with no caller
     /// and no test coverage); this guard's own scans use the simpler line-prefix `splitIntoRenderBlocks`
-    /// below instead, since the 8 pinned surfaces' switch-based family/region boundaries are more
+    /// below instead, since the pinned surfaces' switch-based family/region boundaries are more
     /// reliably located by line prefix (`case `/`default:`/`struct `/`func `) than by raw brace-depth,
     /// which can't tell a `switch`'s own opening brace apart from a nested `if`/closure's.
     private static func balancedSlice(startingAt startIdx: Int, in lines: [String]) -> String {
@@ -192,8 +194,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(violations.isEmpty,
                 "Band-glyph regression guard violated:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 8,
-                "expected to scan all 8 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 6,
+                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Prong 2 (trend-arrow survives — presence): every pinned surface still renders its trend token
@@ -202,7 +204,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// check ONLY — see `everyRenderBlockRendersItsTrendArrowAtMostOnce` below for the uniqueness prong
     /// (WR-01: the two together give "exactly once per render occasion," which a single whole-file
     /// `contains` can't express since several pinned surfaces legitimately render the trend arrow once
-    /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 8.
+    /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 6.
     @Test func everyPinnedSurfaceStillRendersItsTrendToken() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -222,8 +224,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(missing.isEmpty,
                 "Trend-arrow regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 8,
-                "expected to scan all 8 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 6,
+                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Prong 2b (trend-arrow survives — uniqueness, WR-01): every independent render block
@@ -235,7 +237,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// across multiple mutually-exclusive `WidgetFamily` `case`s or multiple independent region-backing
     /// `struct`s/`func`s (confirmed by inspection — a flat whole-file "exactly one" would false-positive
     /// on today's correct `GlucoseWidget.swift`, `GlucoseLiveActivity.swift`,
-    /// `FaBolusMacWidgetBundle.swift`, and `GlucoseComplication.swift`). Loud-not-vacuous: scanned == 8.
+    /// and `GlucoseComplication.swift`). Loud-not-vacuous: scanned == 6.
     @Test func everyRenderBlockRendersItsTrendArrowAtMostOnce() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -258,8 +260,8 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(violations.isEmpty,
                 "Duplicate trend-arrow render:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 8,
-                "expected to scan all 8 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 6,
+                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// CR-01 GUARD (09.29 review): every pinned surface's (comment-stripped) source contains BOTH the
@@ -269,7 +271,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// where 5 of 8 surfaces lost their ONLY VoiceOver band cue when `BandIndicator` was removed) can't
     /// silently drop it again without failing this test. NOT full UI-tree/snapshot verification — the
     /// review's own words: "the existing text-scan guard can't verify accessibility wiring." Loud-not-
-    /// vacuous: scanned == 8.
+    /// vacuous: scanned == 6.
     @Test func everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -290,17 +292,17 @@ struct GlucoseStatusGlyphGuardTests {
 
         #expect(missing.isEmpty,
                 "VoiceOver zone-word regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 8,
-                "expected to scan all 8 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(scanned == 6,
+                "expected to scan all 6 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
     }
 
     /// Loud-not-vacuous plumbing check (mirrors `BandDriftGuardTests.fileResolutionActuallyFoundTheRepoRoot`):
     /// a path-resolution bug must fail loudly, not pass vacuously. Also pins the exact surface count.
-    @Test func guardResolvesRepoRootAndScansAllEightGlucoseSurfaces() throws {
+    @Test func guardResolvesRepoRootAndScansAllSixGlucoseSurfaces() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
-        #expect(Self.pinnedSurfaces.count == 8,
-                "expected exactly 8 pinned glucose surfaces (09.29-DIAGNOSIS.md §A) — pin list drifted")
+        #expect(Self.pinnedSurfaces.count == 6,
+                "expected exactly 6 pinned glucose surfaces (09.29-DIAGNOSIS.md §A) — pin list drifted")
         var scannedSurfaces = 0
         for path in Self.pinnedSurfaces {
             let url = repoRoot.appendingPathComponent(path)
@@ -312,8 +314,8 @@ struct GlucoseStatusGlyphGuardTests {
             }
             scannedSurfaces += 1
         }
-        #expect(scannedSurfaces == 8,
-                "expected to actually read all 8 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
+        #expect(scannedSurfaces == 6,
+                "expected to actually read all 6 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
     }
 
     /// IN-02 (09.29 review): direct unit coverage for `balancedSlice` — previously dead code with no

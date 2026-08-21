@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P15 G3 (§2.3): the per-surface bolus-auth wire round-trip on the shared `RemoteClientModel`. Pins the
+/// P15 G3 (§2.3): the per-surface bolus-auth wire round-trip on the shared `RemoteCommandWireFixture`. Pins the
 /// **fail-closed** default (a cold launch / glance with no push, and a legacy host that omits the fields,
 /// both keep bolusing hidden) and that a push arms it, with read-only still winning.
 @MainActor
@@ -18,7 +18,7 @@ import faBolusCore
     }
 
     @Test func freshModelFailsClosed() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(!m.watchBolusEnabled)
         #expect(!m.garminBolusEnabled)
         #expect(!m.bolusPasscodeRequired)
@@ -27,14 +27,14 @@ import faBolusCore
 
     @Test func legacyHostWithoutTheFieldsStaysDisabled() {
         // A host predating §2.3 omits the enables entirely; the remote must NOT infer "enabled".
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.remotesReadOnly = false
         m.handle(cmd)
         #expect(!m.watchBolusAllowed)
     }
 
     @Test func pushArmsWatchBolusButReadOnlyStillWins() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var on = RemoteCommand(kind: .statusRead)
         on.message = "Connected"; on.remotesReadOnly = false
         on.watchBolusEnabled = true; on.garminBolusEnabled = true; on.bolusPasscodeRequired = true

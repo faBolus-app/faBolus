@@ -133,7 +133,7 @@ import TandemMessages
         #expect(validated.ciqLastCouldNotDeliverEpochSec == nil)
     }
 
-    // MARK: - Task 2: fail-closed on the client (RemoteClientModel parse)
+    // MARK: - Task 2: fail-closed on the client (RemoteCommandWireFixture parse)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -148,7 +148,7 @@ import TandemMessages
     /// surface ABSENT, never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasNoHistoryMarkers() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.lastAutoCorrectionDate == nil)
         #expect(m.ciqLastCouldNotDeliverDate == nil)
     }
@@ -157,7 +157,7 @@ import TandemMessages
     /// when a command never carries the key.
     @MainActor
     @Test func absentHistoryMarkerFieldsOnTheWireKeepTheSafeNilDefault() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         let cmd = RemoteCommand(kind: .statusRead)   // marker fields never set ⇒ nil
         m.handle(cmd)
         #expect(m.lastAutoCorrectionDate == nil)
@@ -169,7 +169,7 @@ import TandemMessages
     /// simply doesn't repeat the key must keep the last-known value, never clear it back to nil.
     @MainActor
     @Test func onceSeenAHistoryMarkerSurvivesALaterReplyThatOmitsTheKey() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         var cmdWithMarker = RemoteCommand(kind: .statusRead)
         let epoch = Int(Date().timeIntervalSince1970)
         cmdWithMarker.lastAutoCorrectionEpochSec = epoch
@@ -187,7 +187,7 @@ import TandemMessages
     /// A NEWER instant overwrites an older one — the marker always tracks the LATEST occurrence.
     @MainActor
     @Test func aNewerHistoryMarkerOverwritesAnOlderOne() {
-        let m = RemoteClientModel(link: FakeLink())
+        let m = RemoteCommandWireFixture(link: FakeLink())
         let older = Int(Date().timeIntervalSince1970) - 3600
         var cmd1 = RemoteCommand(kind: .statusRead)
         cmd1.lastAutoCorrectionEpochSec = older
