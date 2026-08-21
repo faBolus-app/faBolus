@@ -9,7 +9,8 @@ import faBolusCore
 public enum GlucoseSourceRegistry {
     /// Sources compiled into this build. Empty selection = pump-relayed glucose only (no failover).
     /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
-    /// (last resort), and HealthKit (Eversense).
+    /// (last resort). HealthKit (Eversense) was removed from narrow `main` in Phase 5 (HEALTH-01) —
+    /// see dev/healthkit's REINTEGRATION.md for the pre-removal descriptor shape.
     public static let enabled: [GlucoseSourceDescriptor] = {
         var list: [GlucoseSourceDescriptor] = [
             // dexcom-g7-ble, dexcom-g6-ble, and librelinkup removed from narrow `main` — Phase 1,
@@ -21,15 +22,6 @@ public enum GlucoseSourceRegistry {
             GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
                                     sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
         ]
-        // D-13 (Phase 09.23): the existing HealthKit CGM source is part of the WHOLE HealthKit
-        // surface the single FABOLUS_HEALTHKIT toggle gates — a free/unprovisioned build must not
-        // register it at all, not just skip selecting it, so the entitlement-stripped build never
-        // even references HealthKitGlucoseSource. Gate the call site here, not the Shared/ class
-        // definition (which compiles unconditionally as long as nothing references it).
-        #if FABOLUS_HEALTHKIT
-        list.append(GlucoseSourceDescriptor(id: "healthkit", name: "Apple Health (xDrip / Eversense)",
-                                sensors: ["xDrip4iOS (any sensor)", "Eversense E3", "Eversense 365"]) { _ in HealthKitGlucoseSource() })
-        #endif
         // xdrip-appgroup removed from narrow `main` — Phase 1, Plan 01 (CGM-05), then git rm'd
         // outright in Phase 2.5 (D-07, CLEAN-03); preserved on origin/dev/cgm-extra.
         return list

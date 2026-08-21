@@ -7,10 +7,6 @@ import faBolusCore
 struct CgmCredentialsView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
-    // 09.23-03 (D-14): reactive access to the per-type Apple Health import/export toggles the
-    // healthKitConfigSection rows below bind to — mirrors SettingsView's `@State private var
-    // settings = AppSettings.shared` idiom.
-    @State private var settings = AppSettings.shared
 
     // Dexcom Share (G6 / last-resort)
     @State private var shareUser = ""
@@ -49,15 +45,13 @@ struct CgmCredentialsView: View {
     /// turns that guard RED, so a source with a hard, non-obvious precondition can never become
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
     static let configuredSectionSourceIds: Set<String> = {
-        var ids: Set<String> = [
+        let ids: Set<String> = [
             "dexcom-share", "nightscout",
         ]
-        // D-13 (Phase 09.23): "healthkit" only exists in GlucoseSourceRegistry.enabled when
-        // FABOLUS_HEALTHKIT is ON — keep this set equal to the registry's id set in BOTH flag
-        // states (pinned by CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection).
-        #if FABOLUS_HEALTHKIT
-        ids.insert("healthkit")
-        #endif
+        // HealthKit ("healthkit") was removed from narrow `main` in Phase 5 (HEALTH-01) — this set
+        // stays equal to GlucoseSourceRegistry.enabled's id set (pinned by
+        // CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection) with no HealthKit
+        // entry to insert. See dev/healthkit's REINTEGRATION.md.
         return ids
     }()
 
@@ -187,62 +181,6 @@ struct CgmCredentialsView: View {
         }
     }
 
-    // MARK: - D-11 per-source config sections (HealthKit)
-    //
-    // HealthKit previously had NO section here and gets a short explainer + a precondition list even
-    // though it has no editable credential fields — a source with a hard, non-obvious precondition
-    // (HealthKit "another app must write glucose") must never be selectable with no explanation
-    // (D-11; closes F-01/F-02/F-03). (The G7 section — Phase 1, Plan 03, CGM-01/CGM-02 — and the
-    // xDrip App Group section — Phase 1, Plan 01, CGM-05 — were removed with their sources.)
-    // Extracted into a small `@ViewBuilder` var so the `Form` body stays well within the SwiftUI
-    // type-check budget (the same discipline Plan 04 applied), and mirroring the disclosure/gate
-    // framing rather than a one-off inline alert. Coverage is pinned by `configuredSectionSourceIds`.
-
-    /// Apple Health (HealthKit) — the system permission request, iOS-Settings recovery if denied,
-    /// the non-obvious prerequisite that ANOTHER app must already be writing glucose to Health for
-    /// the failover-source READ path (F-02), and — Phase 09.23-03 (D-08/D-12/D-14) — the per-type
-    /// import/export toggle rows. Only rendered when `FABOLUS_HEALTHKIT` is ON (D-13): the
-    /// "healthkit" registry entry (and this whole feature) doesn't exist under the default build,
-    /// so there is nothing here to configure. Emits THREE sections (explainer, import toggles,
-    /// export toggles) rather than one — the explainer copy must truthfully describe BOTH
-    /// directions now that export ships, and the per-type toggles are grouped for scannability
-    /// rather than crammed into the explainer section.
-    @ViewBuilder private var healthKitConfigSection: some View {
-        #if FABOLUS_HEALTHKIT
-        Section {
-            Text("faBolus can both READ glucose from Apple Health (as a failover CGM source, below) and — opt-in, per type — WRITE your carb, insulin, and glucose entries out to Health so other apps and your clinic can see them. Nothing is written until you turn on an export toggle below; heart rate is never exported, only ever read (faBolus doesn't originate it).")
-                .font(.caption).foregroundStyle(.secondary)
-        } header: {
-            Text("Apple Health (xDrip / Eversense)")
-        } footer: {
-            Text("**Prerequisite:** another app — xDrip4iOS or the Eversense app — must already be writing glucose to Apple Health for faBolus to read it as a failover source. faBolus does not read your sensor directly on this path; it reads whatever that app records. If you denied the permission by mistake, iOS never re-prompts — re-enable it in **iOS Settings › Health › Data Access & Devices › faBolus**.")
-        }
-
-        Section {
-            Toggle("Carbs", isOn: $settings.healthKitImportCarbsEnabled)
-            Toggle("Insulin / bolus", isOn: $settings.healthKitImportInsulinEnabled)
-            Toggle("Heart rate", isOn: $settings.healthKitImportHeartRateEnabled)
-            Toggle("Glucose (gap-fill)", isOn: $settings.healthKitImportGlucoseEnabled)
-            Toggle("Import automatically", isOn: $settings.healthKitAutoImportEnabled)
-        } header: {
-            Text("Import from Apple Health")
-        } footer: {
-            Text("Each history type faBolus pulls in from Apple Health is off until you turn it on. Glucose only fills gaps in faBolus's own CGM history — it never double-counts a reading faBolus already has. \"Import automatically\" adds an hourly background pull on top of the manual import, which is always available regardless.")
-        }
-
-        Section {
-            Toggle("Carbs", isOn: $settings.healthKitExportCarbsEnabled)
-            Toggle("Insulin / bolus", isOn: $settings.healthKitExportInsulinEnabled)
-            Toggle("Glucose", isOn: $settings.healthKitExportGlucoseEnabled)
-            Toggle("Export automatically", isOn: $settings.healthKitAutoExportEnabled)
-        } header: {
-            Text("Export to Apple Health")
-        } footer: {
-            Text("Each faBolus entry type written out to Apple Health is off until you turn it on. Heart rate is never exported — faBolus only ever reads it, since it originates from your own sensors. \"Export automatically\" writes new entries out as you log them, on top of the manual export, which is always available regardless.")
-        }
-        #endif
-    }
-
     var body: some View {
         Form {
             Section {
@@ -275,12 +213,12 @@ struct CgmCredentialsView: View {
                 Text("A Nightscout site for reading (follower) and/or uploading. Token is optional if the site allows unauthenticated reads; the API secret is used for uploads. Turn uploading on under **Settings → CGM & failover → Nightscout upload**.")
             }
 
-            // D-11: HealthKit is the one remaining source that previously had no section. The G7
-            // section was removed with the source (Phase 1, Plan 03 — CGM-01/CGM-02); xDrip App
-            // Group's section was removed with the source (Phase 1, Plan 01 — CGM-05); the
-            // LibreLinkUp and Dexcom G6 sections/descriptors were removed with their sources (Phase
-            // 1, Plan 02 — CGM-03/CGM-04, D-10).
-            healthKitConfigSection
+            // D-11: HealthKit's config section (the one remaining source that previously had no
+            // section) was removed with the source in Phase 5 (HEALTH-01) — see dev/healthkit's
+            // REINTEGRATION.md. The G7 section was removed with the source (Phase 1, Plan 03 —
+            // CGM-01/CGM-02); xDrip App Group's section was removed with the source (Phase 1,
+            // Plan 01 — CGM-05); the LibreLinkUp and Dexcom G6 sections/descriptors were removed
+            // with their sources (Phase 1, Plan 02 — CGM-03/CGM-04, D-10).
 
             Section {
                 Button {
