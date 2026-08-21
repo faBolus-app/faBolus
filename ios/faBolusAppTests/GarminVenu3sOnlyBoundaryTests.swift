@@ -60,4 +60,53 @@ struct GarminVenu3sOnlyBoundaryTests {
             #expect(!box.echoes.contains { $0.requestId == "boundary" && $0.status == .failed })
         }
     }
+
+    // MARK: - Phase 3 (03-02, REMOTE-02, D-03/Pitfall C) — the kept `.quickBolusWidget` delivery seam
+
+    /// Pins the REAL widget call chain after the peer remote's removal: `WidgetBolusReceiver.swift:81`
+    /// calls `AppModel.deliverWidgetBolus(...)` for a units-mode request — NOT `remoteDeliver`, and NOT
+    /// through `PhoneRemoteHost` (Pitfall C). `deliverWidgetBolus` builds its own `accessDecision(...,
+    /// from: .quickBolusWidget)` internally.
+    @Test func quickBolusWidgetUnitsPathStillDeliversABolusRequest() async {
+        await withClean {
+            let (model, backend, box) = makeModel()
+            await backend.connect()
+
+            let out = await model.deliverWidgetBolus(requestId: "boundary-widget-units", units: 1.0)
+
+            #expect(out.error == nil)
+            let deliveredOrCancelled = box.echoes.contains {
+                $0.requestId == "boundary-widget-units" && $0.kind == .bolusStatus &&
+                ($0.status == .delivered || $0.status == .cancelled)
+            }
+            let backendRecordedTheDeliver = backend.lastDeliver?.units == 1.0
+            #expect(deliveredOrCancelled || backendRecordedTheDeliver)
+            #expect(!box.echoes.contains { $0.requestId == "boundary-widget-units" && $0.status == .failed })
+        }
+    }
+
+    /// The carbs-mode widget path (`WidgetBolusReceiver.swift:66-67`) does NOT deliver in place — it
+    /// calls `AppModel.presentRemoteBolus(..., from: .quickBolusWidget, peerId: "widget")` to freeze the
+    /// real dose for an in-app confirm (audit C-03). Pins that this seam still reaches the evaluator and
+    /// stages a pending approval — the real chain, not `remoteDeliver`/`PhoneRemoteHost`.
+    @Test func quickBolusWidgetCarbsPathStillPresentsForInAppApproval() async {
+        await withClean {
+            let (model, backend, _) = makeModel()
+            await backend.connect()
+            let est = await model.recommendBolus(carbsGrams: 20, bgMgdl: nil).recommendedUnits
+
+            await model.presentRemoteBolus(requestId: "boundary-widget-carbs", units: 0, carbsGrams: 20,
+                                           bgMgdl: nil, remoteEstimate: est,
+                                           from: .quickBolusWidget, peerId: "widget")
+
+            #expect(model.pendingRemoteBolus != nil)
+            #expect(model.pendingRemoteBolus?.carbsGrams == 20)
+        }
+    }
+
+    /// D-04 compile-only proof: `PhoneRemoteHost` (the shared WatchConnectivity receiver, kept-but-inert
+    /// once REMOTE-03 lands) still resolves as a type on `main` — this is the MOST this boundary test
+    /// should ever reference it (Pitfall C): never instantiated, never called, never part of either
+    /// delivery seam pinned above.
+    private static let _phoneRemoteHostStillCompiles: PhoneRemoteHost.Type = PhoneRemoteHost.self
 }

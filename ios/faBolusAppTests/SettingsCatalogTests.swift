@@ -19,11 +19,10 @@ import faBolusCore
 /// assertion for the surface it removes. It lives in the test target (not product code) so the
 /// dose/signed + settings product sources stay byte-identical across branches (INV-01).
 enum CompileGateAudit {
-    /// Search tokens owned by every feature that is compile-gated OFF on the CURRENT build. EMPTY on
-    /// `main` today: Phase 0 authors the `FABOLUS_*` gates but flips NONE (all default present). Each
-    /// later removal phase inserts its surface's token(s) guarded by the matching `#if` so a token is
-    /// only expected-orphaned when the feature is genuinely compiled out, e.g.:
-    ///   `#if !FABOLUS_MAC` → `tokens.insert("Set up a Mac remote")` (Phase 3)
+    /// Search tokens owned by every feature removed from narrow `main` so far. Each removal phase adds
+    /// its surface's token(s) UNCONDITIONALLY (no `#if` guard) — this milestone's removals are
+    /// delete-on-main (`git rm`, D-01), not runtime/compile flags, so a token is permanently orphaned
+    /// once added, e.g.: `tokens.formUnion(["Remote access", "Pair a remote"])` (Phase 3, Mac + peer).
     static var gatedOffSearchTokens: Set<String> {
         var tokens: Set<String> = []
         // Phase 1, Plan 01 (CGM-05): xDrip App Group removed from narrow `main` (unconditional —
@@ -31,6 +30,11 @@ enum CompileGateAudit {
         // Phase 1, Plan 02 (CGM-03/CGM-04): Dexcom G6 direct-BLE + LibreLinkUp removed from narrow
         // `main` (unconditional — permanent removal, no `#if` guard per D-01).
         tokens.formUnion(["xdrip", "libre"])
+        // Phase 3, 03-01/03-02 (REMOTE-01/REMOTE-02): the Mac menu-bar remote + iPhone-to-iPhone peer
+        // remote share ONE Settings UI ("Remote access" toggle + "Pair a remote (Mac or iPhone)"
+        // NavigationLink, SettingsView.swift, both git rm'd in 03-02) — both surfaces' tokens land
+        // together since neither can be removed independently of the other's UI.
+        tokens.formUnion(["Remote access", "Pair a remote"])
         return tokens
     }
 

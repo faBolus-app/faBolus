@@ -63,10 +63,12 @@ struct StaleRemoteDoseHostTests {
         try await body()
     }
 
-    private func grantFullControlPeer(_ clientId: String) {
-        RemotePeerPolicyStore.setPairedViaQR(clientId, true)
-        RemotePeerPolicyStore.setPolicy(.fullControl, for: clientId)
-    }
+    // Phase 3 (03-02, REMOTE-02, F-3/Pitfall F): `grantFullControlPeer` (called
+    // `RemotePeerPolicyStore.setPairedViaQR`/`.setPolicy`, both gone from the minimal deny-by-default
+    // stub) is removed, along with `macApprovalPreservesIncludeStaleProvenance` — its entire scenario
+    // ("Mac host-approval path" staging + confirming a peer-approved bolus) is unconstructable through
+    // any public API now that no peer can ever hold a full-control grant. Accepted coverage loss (F-3
+    // disposition (a)), documented per 03-02-SUMMARY.md — not a silent drop.
 
     /// Pin a KNOWN stale reading (10 min old): a fixed value above target so a correction is nonzero, with
     /// a stale timestamp so `freshCorrectionBG == nil` and the include-stale branch is the one under test.
@@ -218,33 +220,6 @@ struct StaleRemoteDoseHostTests {
         }
     }
 
-    // MARK: - (h) Mac host-approval path freezes + delivers with the provenance marker preserved
-
-    @Test func macApprovalPreservesIncludeStaleProvenance() async {
-        try? await withCleanSettings {
-            let (model, backend, rec, ledgerURL) = await makeModel(connected: true)
-            grantFullControlPeer("mac")
-            backend.setLiveIob(1.0)
-            seedStale(backend, staleBg)
-            let staleDose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: staleBg).recommendedUnits
-            // Freeze (present) the acknowledged-stale dose for host approval (Mac path).
-            await model.presentRemoteBolus(requestId: "h1", units: 0, carbsGrams: carbs, bgMgdl: staleBg,
-                                           remoteEstimate: staleDose, includeStaleBG: true,
-                                           from: .macPeer, peerId: "mac")
-            let pending = model.pendingRemoteBolus
-            #expect(pending != nil)
-            #expect(pending?.usedIncludedStaleBG == true)            // frozen provenance carried onto the pending
-            #expect(pending?.bgMgdl == staleBg)                      // frozen off the host's own stale reading
-            #expect((pending?.units ?? -1) > 0)
-            // Confirm → delivers the FROZEN dose, marker preserved into the durable ledger.
-            await model.confirmRemoteBolus()
-            #expect(model.pendingRemoteBolus == nil)
-            #expect(rec.last?.status == .delivered)
-            #expect(backend.lastDeliver?.bg == staleBg)
-            #expect(loadedLedger(ledgerURL).usedIncludedStaleBG(peerId: "mac", requestId: "h1") == true)
-        }
-    }
-
     // MARK: - (i) access gates still deny BEFORE resolve (include-stale intent cannot bypass a gate)
 
     @Test func gatesDenyBeforeResolveEvenWithIncludeStale() async {
@@ -253,16 +228,18 @@ struct StaleRemoteDoseHostTests {
         // (connect/seed/setLiveIob) never touches that read, so no probe is taken here — the estimate value
         // is irrelevant because resolve is never reached.
 
-        // remotesReadOnly (peer surface): denied before resolve.
+        // remotesReadOnly (remote surface): denied before resolve. Phase 3 (03-02, REMOTE-02,
+        // F-3/Pitfall F): re-pointed from the removed `.macPeer`/"mac" to the kept `.garmin`/"garmin" —
+        // an authenticated peer is now ALWAYS denied via Gate 4 (`.notPermittedForPeer`) regardless of
+        // `remotesReadOnly`, so it can no longer pin THIS specific reason/message on a peer surface.
         try? await withCleanSettings {
             let (model, backend, rec, _) = await makeModel(connected: true)
-            grantFullControlPeer("mac")
             backend.setLiveIob(1.0); seedStale(backend, staleBg)
             AppSettings.shared.remotesReadOnly = true
             #expect(backend.refreshCalcInputsNowCount == 0)          // baseline: resolve hasn't run
             await model.remoteDeliver(requestId: "i-ro", carbsGrams: carbs, bgMgdl: staleBg,
                                       remoteEstimate: 5.0, includeStaleBG: true,
-                                      from: .macPeer, peerId: "mac")
+                                      from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("read-only") == true)
             #expect(rec.count(.delivering) == 0)
