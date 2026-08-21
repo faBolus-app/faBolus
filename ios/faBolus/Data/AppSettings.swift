@@ -1156,8 +1156,11 @@ public final class AppSettings {
             "liveActivityShowRangeLines": .bool(liveActivityShowRangeLines),
             "liveActivityShowBolusShortcut": .bool(liveActivityShowBolusShortcut),
             "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
-            // 09.18a (D-10/D-17): SiteAtlas feature toggle — backup-participating (unlike the ciq* flags).
-            "siteAtlasEnabled": .bool(siteAtlasEnabled),
+            // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer emitted here — its
+            // `SettingsCatalog` descriptor was removed (SC2, see the NOTE in SettingsCatalog.swift), so
+            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too. The
+            // property itself still exists and still persists via `didSet`; it just no longer rides a
+            // portable backup/restore.
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
@@ -1256,7 +1259,9 @@ public final class AppSettings {
         if let v = b("liveActivityShowRangeLines") { liveActivityShowRangeLines = v }
         if let v = b("liveActivityShowBolusShortcut") { liveActivityShowBolusShortcut = v }
         if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
-        if let v = b("siteAtlasEnabled") { siteAtlasEnabled = v }
+        // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer restores from a backup — same
+        // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
+        // (same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled` precedents above).
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
         if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
         applyFreshness(); syncWidgetConfig()

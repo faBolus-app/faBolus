@@ -84,14 +84,14 @@ struct SettingsView: View {
     }
 
     // 09.17-02 (D-04, UI-SPEC §2): the regular-width sidebar — the SAME 8 routable categories, same
-    // order, same title/icon, same `.smartAssist`-filtered rule as `settingsList`'s category loop
-    // below, rendered as `List(selection:)` rows instead of `NavigationLink`s. A search hit sets
+    // order, same title/icon, same category loop as `settingsList`'s below, rendered as
+    // `List(selection:)` rows instead of `NavigationLink`s. A search hit sets
     // `selectedItem` (routes to the detail pane) instead of pushing a new stack (RESEARCH Open
     // Questions #1). `destination(_:)` is the SAME @ViewBuilder switch used by both size classes.
     //
     // 09.17-06 (CR-01 gap closure): a second Section mirrors `settingsList`'s non-category rows —
-    // Mode selector, Safety (Read-only mode), Child mode, Backup & restore, Data & history, Privacy &
-    // data, Smart Assist, and the Help link — so every iPhone-reachable setting is also reachable
+    // Mode selector, Safety (Read-only mode), Child mode, Backup & restore, Data & history, and Privacy &
+    // data — so every iPhone-reachable setting is also reachable
     // here. This is deliberate content DUPLICATION (not a shared subview extracted from
     // `settingsList`), because extracting one would require editing `settingsList`'s own lines,
     // breaking its byte-identical guarantee (D-06a) — same precedent 09.17-03's `MainHUDView`
@@ -100,7 +100,7 @@ struct SettingsView: View {
         List(selection: $selectedItem) {
             if query.isEmpty {
                 Section {
-                    ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
+                    ForEach(SettingsCategory.allCases) { cat in
                         Label(cat.title, systemImage: cat.icon).tag(SettingsSidebarItem.category(cat))
                             .hoverEffect(.automatic)
                     }
@@ -123,13 +123,6 @@ struct SettingsView: View {
                         .hoverEffect(.automatic)
                     Label("Privacy & data", systemImage: "hand.raised")
                         .tag(SettingsSidebarItem.privacyData)
-                        .hoverEffect(.automatic)
-                    // 09.18a-03 (D-16): un-gated — Smart Assist is a runtime-toggle-gated submenu that
-                    // compiles in every config, so the sidebar always renders the selectable tag (this
-                    // is now symmetric with `SettingsSidebarItem.allExtras`, which always lists it). The
-                    // "(on)" state stays a runtime read of the unconditional `settings.eatingNudgesEnabled`.
-                    Label(settings.eatingNudgesEnabled ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
-                        .tag(SettingsSidebarItem.smartAssist)
                         .hoverEffect(.automatic)
                     // Not selection-based (no `.tag`) — same as `settingsList`'s Help row, this opens
                     // Safari directly rather than routing to a detail-pane screen.
@@ -183,9 +176,6 @@ struct SettingsView: View {
         case .backupRestore: BackupRestoreView(model: model)
         case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
-        // 09.18a-03 (D-16): reuses `destination(_:)`'s own `.smartAssist` arm (now unconditional after
-        // the compile-gate was dropped) rather than duplicating anything here.
-        case .smartAssist: destination(.smartAssist)
         }
     }
 
@@ -193,11 +183,7 @@ struct SettingsView: View {
             List {
                 if query.isEmpty {
                     Section {
-                        // 09.3-05 (D-06): .smartAssist exists only so SettingsCatalog can categorize the
-                        // eating-nudge keys where their screen actually lives; it is filtered out of this
-                        // generic loop so the existing hand-placed Smart Assist row below (the sole entry
-                        // point, now an unconditional NavigationLink after 09.18a-03) never gets a duplicate.
-                        ForEach(SettingsCategory.allCases.filter { $0 != .smartAssist }) { cat in
+                        ForEach(SettingsCategory.allCases) { cat in
                             NavigationLink { destination(cat) } label: {
                                 Label(cat.title, systemImage: cat.icon)
                             }
@@ -236,14 +222,6 @@ struct SettingsView: View {
                         .hoverEffect(.automatic)
                         NavigationLink { PrivacyDataView(model: model) } label: {
                             Label("Privacy & data", systemImage: "hand.raised")
-                        }
-                        .hoverEffect(.automatic)
-                        // 09.18a-03 (D-16): un-gated — the submenu compiles in every config, so this is
-                        // always the selectable NavigationLink. "(on)" is a runtime read of the
-                        // unconditional `settings.eatingNudgesEnabled`.
-                        NavigationLink { SmartAssistSettingsView(settings: settings, model: model) } label: {
-                            Label(settings.eatingNudgesEnabled
-                                  ? "Smart Assist (on)" : "Smart Assist", systemImage: "sparkles")
                         }
                         .hoverEffect(.automatic)
                     } footer: {
@@ -287,20 +265,12 @@ struct SettingsView: View {
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
         case .about:   AboutSettingsView(model: model)
-        // 09.3-05 (D-06): this arm exists only to keep the switch exhaustive — .smartAssist is filtered
-        // out of the generic root-menu loop above, so this is never reached from that loop. The real,
-        // sole Smart Assist entry point stays the hand-placed NavigationLink block above.
-        // 09.18a-03 (D-16): un-gated — SmartAssistSettingsView compiles in every config now.
-        case .smartAssist:
-            SmartAssistSettingsView(settings: settings, model: model)
         }
     }
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    // 08.1-02 (D-06): `.notifications` renders in the normal unfiltered root loop below — there is no
-    // compile-time gate on it (unlike `.smartAssist`, which IS filtered — see the loop's own comment).
-    case bolus, display, cgm, alerts, notifications, pump, remotes, about, smartAssist
+    case bolus, display, cgm, alerts, notifications, pump, remotes, about
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -312,7 +282,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .pump: return "Pump & control"
         case .remotes: return "Remotes & devices"
         case .about: return "About & help"
-        case .smartAssist: return "Smart Assist"
         }
     }
     var icon: String {
@@ -327,7 +296,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
         case .about: return "info.circle"
-        case .smartAssist: return "sparkles"
         }
     }
 }
@@ -383,7 +351,7 @@ enum SettingsIndex {
 /// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
 /// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
 /// missing from the regular-width sidebar (CR-01) — Mode, Safety (Read-only mode), Child mode,
-/// Backup & restore, Data & history, Privacy & data, and Smart Assist. Lets a single
+/// Backup & restore, Data & history, and Privacy & data. Lets a single
 /// `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
 /// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
 enum SettingsSidebarItem: Hashable {
@@ -394,12 +362,11 @@ enum SettingsSidebarItem: Hashable {
     case backupRestore
     case dataHistory
     case privacyData
-    case smartAssist
 
     /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
     /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
     /// the two can never silently drift apart.
-    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .backupRestore, .dataHistory, .privacyData, .smartAssist]
+    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .backupRestore, .dataHistory, .privacyData]
 }
 
 /// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
@@ -426,7 +393,6 @@ enum SettingsExtraIndex {
         .init(title: "Backup & restore", keywords: "backup restore icloud files settings export import", item: .backupRestore),
         .init(title: "Data & history", keywords: "history data export logs time in range", item: .dataHistory),
         .init(title: "Privacy & data", keywords: "privacy data erase export", item: .privacyData),
-        .init(title: "Smart Assist", keywords: "eating nudges meal detection", item: .smartAssist),
     ]
 }
 
@@ -435,7 +401,7 @@ enum SettingsExtraIndex {
 /// SAME copy as `settingsList`'s inline "Safety" `Section` (compact/iPhone) — duplicated into its own
 /// small `View` rather than extracted into a shared subview, because extracting would require editing
 /// `settingsList`, breaking its byte-identical guarantee (D-06a). Every OTHER extra row
-/// (Mode/Child mode/Backup/Data/Privacy/Smart Assist) already has its own existing View type and is
+/// (Mode/Child mode/Backup/Data/Privacy) already has its own existing View type and is
 /// reused as-is — this is the one group that was previously just an inline `Section`, not a screen.
 struct SafetySettingsView: View {
     @Bindable var settings: AppSettings

@@ -229,14 +229,6 @@ enum SettingsCatalog {
         // MARK: CGM upload (off-device, opt-in)
         .init("nightscoutUploadEnabled", .cgm, from: .advanced, backsUp: true),
 
-        // MARK: Smart Assist (backup-participating)
-        // Phase 09.18a-04 (D-10/D-16/D-17): the SiteAtlas body-map tracker feature toggle. `.smartAssist`
-        // (like `eatingNudgesEnabled`), but — unlike the eating flags — it IS backed up so a restore
-        // preserves the user's SiteAtlas on/off choice. Not command-adjacent and not an ambient
-        // always-on-screen surface, so it takes the default iCloud sync ON (a feature preference the
-        // owner reasonably wants on all their devices, like `glucoseDisplayUnit`).
-        .init("siteAtlasEnabled", .smartAssist, from: .advanced, backsUp: true),
-
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
         // Phase 09.7-02 (D-01): auto-sync toggle, surfaced in the same DataHistoryView "Pump history
@@ -251,12 +243,21 @@ enum SettingsCatalog {
         // `SettingsReachabilityGuardTests.everyNonExemptCatalogKeyIsReachableInViews` (SC2), which requires
         // every non-debug-exempt catalog key to have a literal UI reference — correctly, since the catalog
         // is for user-facing/backup-relevant settings, not arbitrary internal state.
-        // 09.3-05 (D-06): categorized .smartAssist, not .bolus — matches where the eating-nudge screen
-        // actually lives (SmartAssistSettingsView / EatingNudgeSettingsView), reconciling the
-        // catalog-category vs UI-location divergence. Bindings/tier/mode/backsUp unchanged.
-        .init("eatingNudgesEnabled", .smartAssist, from: .advanced, backsUp: false),
-        .init("eatingTriggerConfig", .smartAssist, from: .advanced, backsUp: false),
-        .init("eatingLearnFromFeedback", .smartAssist, from: .advanced, backsUp: false),
+        // NOTE (Phase 4, 04-02, D-05/D-07/NUDGE-01): `AppSettings.eatingNudgesEnabled` / `eatingTriggerConfig`
+        // / `eatingLearnFromFeedback` are deliberately NOT registered here anymore. Their sole UI surfaces
+        // (`SmartAssistSettingsView.swift` / `EatingNudgeSettingsView.swift`) were git rm'd from narrow
+        // `main` (delete-on-main, preserved on `dev/nudge`) — leaving these three descriptors registered
+        // would fail `SettingsReachabilityGuardTests.everyNonExemptCatalogKeyIsReachableInViews` (SC2), which
+        // requires every non-debug-exempt catalog key to have a literal UI reference under `ios/faBolus/
+        // Views/`. The properties themselves survive as hidden/unregistered flags at their existing
+        // defaults — `eatingNudgesEnabled`'s one surviving ungated reader is `AppModel.swift:495`;
+        // `eatingTriggerConfig` is read wherever `eatingNudgesEnabled` gates it (`AppModel.swift:57,1628`);
+        // `eatingLearnFromFeedback` is read at `AppModel.swift:141,145,155,1631,1663,1684`. None are backed
+        // up (`backsUp: false`, unchanged), so this removal needs no `backupSnapshot()`/`applyBackup()`
+        // edit — same historyCoverage-style unregistered-flag idiom as above. `siteAtlasEnabled`'s
+        // `.smartAssist` descriptor (formerly registered just above the historyRetentionDays MARK) is
+        // removed for the same SC2 reason — its property also survives, unregistered, per D-06b
+        // (04-OWNER-FLAGS.md, Plan 03).
     ]
 
     /// Lookup by key.
