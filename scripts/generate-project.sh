@@ -47,16 +47,11 @@ fi
 # all. No variable, no strip_block, no compile flag for any of this remains. Preserved on
 # dev/watch-remote (app + complication) and dev/watch-host (direct-pump subtree, REMOTE-04).
 
-# faBolusNudge advisory SDK (Smart Assist: on-device eating detection + meal-detection intelligence).
-# Auto-detected: if the (private) repo isn't reachable, the package + its 6 products + the
-# FABOLUS_NUDGE compile flag are stripped and those Smart Assist features compile out — the app still
-# builds (retrospective insights live in faBolusCore and are unaffected). Override with FABOLUS_NUDGE=0/1.
-if [ -n "${FABOLUS_NUDGE:-}" ]; then
-  NUDGE="$FABOLUS_NUDGE"
-else
-  NUDGE=1
-  git ls-remote https://github.com/faBolus-app/faBolusNudge.git HEAD >/dev/null 2>&1 || NUDGE=0
-fi
+# Phase 4 (04-01, NUDGE-01): the faBolusNudge advisory SDK (Smart Assist: on-device eating detection +
+# meal-detection intelligence) is permanently removed from narrow main (delete-on-main, D-01/D-03) —
+# there is no package/product/compile-flag cascade left to auto-detect or gate. Relying on the old
+# `git ls-remote` reachability probe was itself the false-pass hazard D-03 exists to remove (a machine
+# with repo access would silently resolve NUDGE=1). Preserved on dev/nudge; see its REINTEGRATION.md.
 # Automatic iCloud settings sync (NSUbiquitousKeyValueStore) defaults OFF: it needs a paid Apple
 # Developer account + the iCloud capability, which would break the free-account build. When off, the
 # entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
@@ -157,10 +152,6 @@ fi
 # watch-direct-pump strip (+ its off-variant) are all retired — the whole Watch target they gated is
 # deleted from project.yml outright (delete-on-main), so there is no compile-flag cascade left to
 # collapse here. See dev/watch-remote / dev/watch-host REINTEGRATION.md to restore any of this.
-if [ "$NUDGE" = 0 ]; then
-  strip_block NUDGE                        # the faBolusNudge package + its 6 product dependencies
-  sed -i '' 's/ FABOLUS_NUDGE//g' "$SPEC"  # drop the compile flag → Smart Assist code compiles out
-fi
 if [ "$TANDEM_LOCAL" = 1 ]; then
   strip_block TANDEM_PINNED   # keep the sibling path: ../TandemKit — unpinned dev/co-dev build
   echo "  → TandemKit consumed by LOCAL PATH (FABOLUS_TANDEM_LOCAL=1) — unpinned dev build"
@@ -224,14 +215,13 @@ if [ "$CGM_G7" = 0 ]; then
   strip_block CGM_G7_KIT
 fi
 
-echo "generate-project: Garmin=$GARMIN Nudge=$NUDGE iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+echo "generate-project: Garmin=$GARMIN iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
 echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 FoodFinder=$FOODFINDER (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout/FoodFinder still default-present)"
 [ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the DexcomG6Kit package/dependency (FABOLUS_CGM_G6=0, default) — the Dexcom G5/G6/ONE BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra; G7SensorKit/ShareClient kept"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
 [ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
-[ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
 [ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
