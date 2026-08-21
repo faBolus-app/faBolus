@@ -23,30 +23,6 @@ struct DashboardView: View {
                             NoPumpConnectedCard(model: model)
                         }
 
-                        if let eating = model.eatingNudge {
-                            HStack {
-                                Button {
-                                    model.eatingNudgeActedOn()
-                                    if !settings.phoneReadOnly { model.openBolusRequested = true }
-                                } label: {
-                                    Label(eating.message, systemImage: "fork.knife")
-                                        .font(.subheadline).foregroundStyle(.orange)
-                                }.buttonStyle(.plain)
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel(eating.message)
-                                .accessibilityHint("Opens bolus entry")
-                                Spacer()
-                                Button { model.dismissEatingNudge() } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Dismiss eating nudge")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
-                        }
-
                         if model.shouldShowLowPowerAdvisory {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "bolt.slash").foregroundStyle(.orange)
@@ -143,36 +119,11 @@ struct DashboardView: View {
 
                         // Phase 09.4 (D-03): the persistent "no dead dashboard" re-entry — shown whenever
                         // there's no stored pairing, right after the status ring (first actionable content,
-                        // no scroll). Unlike the eating-nudge/low-power cards below, this has NO dismiss
-                        // control (`xmark.circle.fill`) — it must persist until `hasStoredPairing` becomes
-                        // true, since it's the phase's literal "no dead dashboard" guarantee (ROADMAP SC1).
+                        // no scroll). Unlike the low-power card below, this has NO dismiss control
+                        // (`xmark.circle.fill`) — it must persist until `hasStoredPairing` becomes true,
+                        // since it's the phase's literal "no dead dashboard" guarantee (ROADMAP SC1).
                         if !model.hasStoredPairing {
                             NoPumpConnectedCard(model: model)
-                        }
-
-                        if let eating = model.eatingNudge {
-                            HStack {
-                                // Tapping = "yes, I'm eating" → open Bolus + teach the on-device personalizer.
-                                Button {
-                                    model.eatingNudgeActedOn()
-                                    if !settings.phoneReadOnly { model.openBolusRequested = true }
-                                } label: {
-                                    Label(eating.message, systemImage: "fork.knife")
-                                        .font(.subheadline).foregroundStyle(.orange)
-                                }.buttonStyle(.plain)
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel(eating.message)
-                                .accessibilityHint("Opens bolus entry")
-                                Spacer()
-                                Button { model.dismissEatingNudge() } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Dismiss eating nudge")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
                         }
 
                         // P16 F3 (WARN-ONLY): iOS Low Power Mode may delay background pump/CGM updates.
@@ -270,7 +221,7 @@ struct DashboardView: View {
 /// `!model.hasStoredPairing`. This is the actual "no dead dashboard" guarantee (ROADMAP SC1): both skip
 /// routes on the first-run `ConnectPumpOnboardingView` (D-01) leave a skipper here, always able to open
 /// the SAME existing `PairingSheet`. Deliberately has NO dismiss control — it persists until a pump is
-/// paired, unlike the neighboring eating-nudge/low-power cards.
+/// paired, unlike the neighboring low-power card.
 private struct NoPumpConnectedCard: View {
     @Bindable var model: AppModel
     @State private var showPairing = false
