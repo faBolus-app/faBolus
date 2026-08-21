@@ -76,7 +76,9 @@ enum SettingsCatalog {
         "advancedControlEnabled",
         "phoneReadOnly",
         "remotesReadOnly",
-        "requireRemoteBolusApproval",
+        // Phase 3 (03-02, F-1): requireRemoteBolusApproval removed from this set — its SettingsCatalog
+        // row is gone (hidden-flag pattern), so it can no longer sync via iCloud by construction; the
+        // AppSettings accessor itself stays (frozen AppModel.swift:1871 still reads it).
         "childModeEnabled",
         // §2.3 per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another
         // device.
@@ -205,10 +207,10 @@ enum SettingsCatalog {
         .init("watchBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         // §2.3 optional remote-only per-bolus ceiling. Command-adjacent (never iCloud-synced); backs up.
         .init("remoteBolusCeiling", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        // §8 N7 = Standard. Caregiver remote over BT + reverse-approval are a SHIPPED Standard feature;
-        // leaving them at .advanced would silently drop them out of Standard once Simple-default lands (E6 G2).
-        .init("remoteBluetoothEnabled", .remotes, from: .standard, backsUp: true),
-        .init("requireRemoteBolusApproval", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): the Mac/peer "Remote access" rows are removed here.
+        // `remoteBluetoothEnabled` is fully gone (accessor + row; never read by AppModel.swift).
+        // `requireRemoteBolusApproval`'s row is removed (hidden-flag pattern) — the accessor stays,
+        // read by frozen AppModel.swift:1871 — see 03-OWNER-FLAGS.md F-1.
         .init("childModeEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("childAllowed", .remotes, from: .standard, backsUp: true),
         .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),

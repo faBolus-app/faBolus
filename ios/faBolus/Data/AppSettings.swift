@@ -382,16 +382,21 @@ public final class AppSettings {
     /// (D-05 — the cache can never suppress the never-suppressible trio).
     public var criticalAlertGrantActive: Bool = false
 
-    /// Master gate for the Bluetooth remote peripheral (Mac + remote iPhone). **Default OFF.** While
-    /// off, the phone never advertises a BLE service, so there's no added attack surface or battery
-    /// cost. Unlike the Apple Watch / Garmin links (bound to your own paired device, not discoverable
-    /// by third parties), the BLE peripheral advertises openly — hence the opt-in + warning. The link
-    /// is authenticated (one-time code + token) and end-to-end encrypted ([[SealedTransport]]).
-    public var remoteBluetoothEnabled: Bool { didSet { d.set(remoteBluetoothEnabled, forKey: "remoteBluetoothEnabled") } }
+    /// Phase 3 (03-02, REMOTE-02, Pitfall B): the Bluetooth remote peripheral (Mac + remote iPhone)
+    /// gate is fully removed — no accessor, no UI, no backup key — since it was never read by
+    /// `AppModel.swift` (verified). Preserved on `dev/phone-remote`.
 
     /// Reverse approval (opt-in): a bolus started on **this** phone must be approved by a paired remote
     /// (e.g. a parent) before it delivers. **Default OFF.** Only takes effect when a remote is paired;
     /// if no paired remote responds within the timeout the bolus is aborted (safe default).
+    ///
+    /// Phase 3 (03-02, F-1, owner-ratified 2026-08-21): the ONLY devices that could ever pair as an
+    /// approver (Mac remote, iPhone-peer remote) are removed from narrow `main`, so this can never take
+    /// effect again (`hasPairedRemote` in the frozen `AppModel.swift:1914` is now permanently false).
+    /// This accessor STAYS — the frozen `AppModel.swift:1871` still reads it — but its
+    /// `SettingsCatalog` row + backup/restore participation + `ChildModeView` UI are removed (hidden,
+    /// unregistered flag; same pattern as `watchBolusEnabled`'s eventual removal). See
+    /// 03-OWNER-FLAGS.md F-1.
     public var requireRemoteBolusApproval: Bool { didSet { d.set(requireRemoteBolusApproval, forKey: "requireRemoteBolusApproval") } }
 
     /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
@@ -1000,7 +1005,6 @@ public final class AppSettings {
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
-        remoteBluetoothEnabled = (d.object(forKey: "remoteBluetoothEnabled") as? Bool) ?? false
         requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
@@ -1120,8 +1124,6 @@ public final class AppSettings {
             "remotesReadOnly": .bool(remotesReadOnly),
             "garminBolusEnabled": .bool(garminBolusEnabled),
             "watchBolusEnabled": .bool(watchBolusEnabled),
-            "remoteBluetoothEnabled": .bool(remoteBluetoothEnabled),
-            "requireRemoteBolusApproval": .bool(requireRemoteBolusApproval),
             "garminScreenOrder": .stringArray(garminScreenOrder),
             "garminDefaultScreen": .string(garminDefaultScreen),
             "garminComplicationDisplay": .string(garminComplicationDisplay),
@@ -1212,8 +1214,11 @@ public final class AppSettings {
         if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
         if let v = b("watchBolusEnabled") { watchBolusEnabled = v }
         if let v = dbl("remoteBolusCeiling"), v > 0 { remoteBolusCeiling = v }   // §2.3: only a positive cap arms it
-        if let v = b("remoteBluetoothEnabled") { remoteBluetoothEnabled = v }
-        if let v = b("requireRemoteBolusApproval") { requireRemoteBolusApproval = v }
+        // Phase 3 (03-02, F-1/Pitfall B): remoteBluetoothEnabled removed entirely (never read by
+        // AppModel); requireRemoteBolusApproval no longer restores from a backup (its catalog row +
+        // backup participation are removed, hidden-flag pattern) — a legacy backup carrying either key
+        // is silently ignored here, same tolerance as the basalScheduleByHour/basalScheduleSource
+        // precedent (restoreToleratesLegacyBasalScheduleKeys).
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
         if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }

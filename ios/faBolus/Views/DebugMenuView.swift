@@ -323,16 +323,6 @@ struct DebugMenuView: View {
         let t = model.connectionTelemetry.snapshot
         let notif = NotificationRuntime().telemetry
 
-        // Task 2 (Part C-4b, D-03.4): [Remote role] — reads MacPairingCoordinator's already-tracked
-        // paired-peer/connection/policy state directly; never re-derives the handshake or grant logic.
-        let pairing = MacPairingCoordinator.shared
-        let peers = pairing.pairedMacs.map {
-            RemoteRoleDiagnostics.PeerInfo(
-                displayName: $0.name,
-                connected: pairing.connected && pairing.connectedName == $0.name,
-                policy: pairing.policy(for: $0.id))
-        }
-
         // Task 1 (Part C-4a, D-03.4): [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send
         // queue/watchdog/device-connection state via its `.shared` app-wide reference; never issues a
         // new ConnectIQ send. `state` is nil (renders the explicit unreachable empty state) when no
@@ -386,7 +376,6 @@ struct DebugMenuView: View {
                 provenance: model.glucoseProvenance,
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,
                 enabled: shareDiagnostics),
-            RemoteRoleDiagnostics.section(role: "host", peers: peers, enabled: shareDiagnostics),
             GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
             WCDiagnostics.section(
                 reachable: wcHost?.reachableForDiagnostics ?? false,

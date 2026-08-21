@@ -1,9 +1,10 @@
 import SwiftUI
 import faBolusCore
 
-/// App root: renders either the normal host tabs (controlling this phone's pump) or the app-wide
-/// Remote mode, per `AppRouter`. Owns the router (and thus the persistent remote client) and injects it
-/// so the "Controlling" switcher in Settings can flip between them.
+/// App root: renders the host tabs (controlling this phone's pump), per `AppRouter`. Phase 3 (03-02,
+/// REMOTE-02): the app-wide Remote mode (`.remote` target) is removed from narrow `main` along with
+/// `PhoneRemoteClientModel`/`RemoteRootView` (preserved on `dev/phone-remote`); `AppRouter` now has a
+/// single target, kept (not deleted) per the plan's scope.
 struct RootContainerView: View {
     @Bindable var model: AppModel
     @State private var router = AppRouter()
@@ -13,18 +14,7 @@ struct RootContainerView: View {
     @State private var modeStore = ModeStore.shared
 
     var body: some View {
-        Group {
-            switch router.target {
-            case .thisPump:
-                RootTabView(model: model)
-            case .remote:
-                if let remote = router.remote {
-                    RemoteRootView(remote: remote)
-                } else {
-                    RootTabView(model: model)   // safety fallback (shouldn't happen)
-                }
-            }
-        }
+        RootTabView(model: model)
         .environment(router)
         .environment(modeStore)
         // First-run mode onboarding, shown exactly once (gated on the store). Not interactively

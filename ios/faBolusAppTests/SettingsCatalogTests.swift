@@ -79,8 +79,10 @@ struct SettingsCatalogTests {
         // liveActivityShowXAxisLine, liveActivityShowYAxisLine, liveActivityShowXAxisTicks,
         // liveActivityShowYAxisTicks, liveActivityShowRangeLines added).
         // Phase 09.26-07 (D-22): 66 → 67 (liveActivityShowBolusShortcut added).
-        #expect(SettingsCatalog.descriptors.count == 67)
-        #expect(SettingsCatalog.byKey.count == 67)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): 67 → 65 (remoteBluetoothEnabled removed entirely;
+        // requireRemoteBolusApproval's row removed — hidden-flag pattern, accessor stays).
+        #expect(SettingsCatalog.descriptors.count == 65)
+        #expect(SettingsCatalog.byKey.count == 65)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -108,7 +110,9 @@ struct SettingsCatalogTests {
         // Phase 09.26-02 (D-15/D-18/D-19): 54 → 61 (the 7 new full-bleed display settings, all
         // unconditional).
         // Phase 09.26-07 (D-22): 61 → 62 (liveActivityShowBolusShortcut, unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 62)                      // 56 unconditional + 6 conditional
+        // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): 62 → 60 (remoteBluetoothEnabled +
+        // requireRemoteBolusApproval, both unconditional, removed from the catalog AND backupSnapshot).
+        #expect(SettingsCatalog.backedUpKeys.count == 60)                      // 54 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

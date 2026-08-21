@@ -7,22 +7,11 @@ struct FaBolusApp: App {
     // the Simulator by default; user-selectable when more than one backend is compiled in).
     @State private var model = AppModel(source: BackendRegistry.makeSelected())
     @State private var remoteHost: PhoneRemoteHost?
-    @State private var peerHost: PeerRemoteHost?
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: NotificationCoordinator?
     @State private var widgetBolus: WidgetBolusReceiver?
     @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
-
-    /// Create or tear down the BLE peripheral host to match the opt-in gate. Off = no advertising.
-    private func syncPeerHost() {
-        if settings.remoteBluetoothEnabled {
-            if peerHost == nil { peerHost = PeerRemoteHost(model: model) }   // Mac / iPhone remote (BLE)
-        } else {
-            peerHost?.stop()
-            peerHost = nil
-        }
-    }
 
     var body: some Scene {
         WindowGroup {
@@ -39,7 +28,6 @@ struct FaBolusApp: App {
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
-                    syncPeerHost()   // BLE peripheral only when the user has opted in (default off)
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
@@ -77,7 +65,6 @@ struct FaBolusApp: App {
                         // is battery-neutral: the kit keeps its notification subscriptions across background.
                     }
                 }
-                .onChange(of: settings.remoteBluetoothEnabled) { _, _ in syncPeerHost() }
                 // A-05: republish the Quick-Bolus widget's lock the instant a gate that governs it toggles
                 // (local read-only, or child mode / its allowed set), so the pad greys without waiting for
                 // the next pump update. Only the gates that affect `.deliverBolus` from a local surface.

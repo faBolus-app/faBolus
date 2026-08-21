@@ -4,6 +4,14 @@ import faBolusDesign
 
 // MARK: - Shared helpers
 
+/// 09.3-04 (SC1, D-04): the stats-card footer copy shared by the host's "Show statistics card" toggle.
+/// Phase 3 (03-02, REMOTE-02): moved here (was `RemoteSettingsView.swift`, now deleted) — it originally
+/// backed a footer shared by two mutually-exclusive screens (host `DisplaySettingsView` and the deleted
+/// remote-mode `RemoteSettingsView`); now only the host screen remains.
+enum StatsCardCopy {
+    static let footer = "Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory."
+}
+
 private func fmtU(_ v: Double) -> String {
     v < 0.1 ? String(format: "%.2f U", v) : (v < 1 ? String(format: "%.1f U", v) : String(format: "%.0f U", v))
 }
@@ -919,7 +927,6 @@ struct PumpSettingsView: View {
 struct RemotesSettingsView: View {
     @Bindable var model: AppModel
     @Bindable var settings: AppSettings
-    @Environment(AppRouter.self) private var router
     // §2.3 (G5): the one-time warning shown the FIRST time each surface's bolusing is enabled.
     @State private var showWatchBolusWarning = false
     @State private var showGarminBolusWarning = false
@@ -1113,33 +1120,12 @@ struct RemotesSettingsView: View {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
             }
             Section {
-                Toggle("Allow remote devices (Bluetooth)", isOn: $settings.remoteBluetoothEnabled)
-            } header: { Text("Remote access") } footer: {
-                Text("Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (with permission) deliver boluses — even when this phone is locked. Each device's permissions (view-only vs. control) are set when you pair it and editable under **Pair a remote → the device**. Pairing is authenticated and end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected.)")
-            }
-            Section {
-                if settings.remoteBluetoothEnabled {
-                    NavigationLink { MacPairingView() } label: {
-                        Label("Pair a remote (Mac or iPhone)", systemImage: "laptopcomputer")
-                    }
-                } else {
-                    Label("Turn on “Allow remote devices” above to pair", systemImage: "lock.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Enable remote access") { settings.remoteBluetoothEnabled = true }
-                }
-            } header: { Text("Remotes") } footer: {
-                Text("Pair the faBolus Mac app or a parent's iPhone to view status and send boluses. First-time pairing needs a one-time code or QR scan; the host grants each remote its own permissions.")
-            }
-            Section {
                 ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
                     Label("“\(p)”", systemImage: "mic.fill").font(.callout)
                 }
             } header: { Text("Siri (read-only)") } footer: {
                 Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
             }
-            // Switch the whole app between controlling this phone's pump and acting as a remote for
-            // another phone. Kept at the bottom since it's a mode change, not a per-remote setting.
-            ControllingSection()
         }
         .navigationTitle("Remotes & devices")
         // C2 §2.3: keep the passcode section's state in sync with the Keychain-backed store.

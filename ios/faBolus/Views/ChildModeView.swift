@@ -106,14 +106,14 @@ struct ChildModeView: View {
                     }
                 }
 
-                Section {
-                    Toggle("Require a parent to approve boluses", isOn: $settings.requireRemoteBolusApproval)
-                        .disabled(!unlockedForEditing)
-                } header: {
-                    Text("Parent approval")
-                } footer: {
-                    Text("When on, a bolus started on this phone waits for a paired parent device (Mac or iPhone) to approve it — it isn't delivered until then, and is cancelled if no one responds within a minute. Requires **Remotes & devices → Allow remote devices** to be on and a parent device paired.")
-                }
+                // Phase 3 (03-02, F-1, owner-ratified 2026-08-21): the "Require a parent to approve
+                // boluses" toggle is HIDDEN — its only possible approver devices (Mac remote, iPhone-peer
+                // remote) are both removed from narrow `main`, so the reverse-approval gate at
+                // `AppModel.swift:1871` can never fire again (fail-closed: falls through to local
+                // delivery, still guarded by the pump's own passcode/limit checks). The
+                // `requireRemoteBolusApproval` `AppSettings` accessor itself STAYS (the frozen
+                // `AppModel.swift:1871` still reads it) — only this now-inert UI is removed, same
+                // hidden-flag pattern as `watchBolusEnabled`. See 03-OWNER-FLAGS.md F-1.
             }
         }
         .navigationTitle("Child mode")
