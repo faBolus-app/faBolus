@@ -95,8 +95,12 @@ struct SettingsCatalogTests {
         // Phase 3 (03-03, REMOTE-03): 65 → 64 (watchBolusEnabled's row removed — hidden-flag pattern,
         // accessor stays; the five Garmin-shared watch*/glucosePlotFloorSmall/CeilingSmall
         // descriptors stay registered, Pitfall E).
-        #expect(SettingsCatalog.descriptors.count == 64)
-        #expect(SettingsCatalog.byKey.count == 64)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 4 (04-02, D-05/D-07/NUDGE-01): 64 → 60 (siteAtlasEnabled + eatingNudgesEnabled +
+        // eatingTriggerConfig + eatingLearnFromFeedback removed — the whole `.smartAssist` submenu
+        // deleted; all 4 properties survive as hidden/unregistered flags, see the NOTE in
+        // SettingsCatalog.swift).
+        #expect(SettingsCatalog.descriptors.count == 60)
+        #expect(SettingsCatalog.byKey.count == 60)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -128,7 +132,9 @@ struct SettingsCatalogTests {
         // requireRemoteBolusApproval, both unconditional, removed from the catalog AND backupSnapshot).
         // Phase 3 (03-03, REMOTE-03): 60 → 59 (watchBolusEnabled, unconditional, removed from the
         // catalog AND backupSnapshot — hidden-flag pattern, accessor stays).
-        #expect(SettingsCatalog.backedUpKeys.count == 59)                      // 53 unconditional + 6 conditional
+        // Phase 4 (04-02, D-05/NUDGE-01): 59 → 58 (siteAtlasEnabled, unconditional, removed from the
+        // catalog AND backupSnapshot — the eating trio was never backed up, so no further drop).
+        #expect(SettingsCatalog.backedUpKeys.count == 58)                      // 52 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

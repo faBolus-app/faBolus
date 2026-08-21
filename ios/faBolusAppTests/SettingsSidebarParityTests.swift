@@ -13,22 +13,25 @@ import Foundation
 /// in this repo), so it pins the two structural facts that would actually regress if a future edit
 /// dropped one of these rows or let search drift out of sync with the sidebar:
 /// 1. `SettingsSidebarItem.allExtras` (the canonical list `sidebarList`'s second section renders)
-///    contains exactly the six CR-01 groups plus Smart Assist (7 total) — not fewer.
+///    contains exactly the six CR-01 groups (6 total) — not fewer.
 /// 2. `SettingsExtraIndex.entries` (the sidebar's search coverage for those rows) has NO drift from
 ///    `allExtras` — every extra sidebar item is searchable, and nothing is searchable that isn't
 ///    also a real sidebar row.
+///
+/// Phase 4 (04-02, D-05/NUDGE-01): the count dropped 7 → 6 and `.smartAssist` was removed from both
+/// `SettingsSidebarItem` and this assertion — the whole Smart Assist settings submenu (and its
+/// sidebar entry point) was git rm'd from narrow `main` (delete-on-main, preserved on `dev/nudge`).
 @Suite struct SettingsSidebarParityTests {
 
-    @Test func allExtrasCoversAllSixCR01GroupsPlusSmartAssist() {
+    @Test func allExtrasCoversAllSixCR01Groups() {
         let extras = Set(SettingsSidebarItem.allExtras)
-        #expect(extras.count == 7)
+        #expect(extras.count == 6)
         #expect(extras.contains(.mode))
         #expect(extras.contains(.safety))
         #expect(extras.contains(.childMode))
         #expect(extras.contains(.backupRestore))
         #expect(extras.contains(.dataHistory))
         #expect(extras.contains(.privacyData))
-        #expect(extras.contains(.smartAssist))
     }
 
     @Test func extraSearchIndexHasNoDriftFromSidebarExtras() {
