@@ -1,7 +1,7 @@
 # iPhone widgets
 
 Surface pump data on your Lock Screen and Home Screen. Widgets read the last snapshot the app
-publishes to a shared **App Group** — they can't drive Bluetooth themselves, so they show the
+publishes to a shared **App Group**; they can't drive Bluetooth themselves, so they show the
 last published value and hide any reading older than 6 minutes.
 
 <div class="cx2-shots" markdown>
@@ -28,7 +28,7 @@ last published value and hide any reading older than 6 minutes.
 
 <figure class="cx2-shot wide" markdown="span">
   ![Quick Bolus widget](../assets/screenshots/quick-bolus-widget.svg)
-  <figcaption>Set the amount, then confirm 1 → 2 → 3 — delivers without opening the app</figcaption>
+  <figcaption>Set the amount, then confirm 1 → 2 → 3: delivers without opening the app</figcaption>
 </figure>
 
 Quick Bolus mirrors the Garmin flow, right on the Home Screen: tap the **Units / Carbs** label to
@@ -45,7 +45,7 @@ isn't connected, the widget shows **"Pump not connected — open app."**
 
 !!! danger "Quick Bolus is a real delivery"
     Completing 1-2-3 delivers the dose. Unlike the plain **Bolus** widget, it is not just a
-    shortcut into the entry screen — treat it like the Garmin confirm. It only works while the app
+    shortcut into the entry screen: treat it like the Garmin confirm. It only works while the app
     is running with the pump connected (typically in the background); otherwise open the app first.
 
 ## Add a widget
@@ -57,7 +57,7 @@ isn't connected, the widget shows **"Pump not connected — open app."**
 </ol>
 
 !!! info "On-device setup (once)"
-    The **App Group** capability must be enabled on both the app and the widget target — automatic
+    The **App Group** capability must be enabled on both the app and the widget target; automatic
     signing usually registers it, and the entitlements are generated from `project.yml`. On a
     free Apple account, extensions and App Groups can be finicky; see
     [Troubleshooting](../troubleshoot.md).

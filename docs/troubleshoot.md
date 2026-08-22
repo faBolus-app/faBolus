@@ -5,7 +5,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 
 ## Building the app
 
-??? question "Build fails right after downloading — missing `mbedtls` files"
+??? question "Build fails right after downloading: missing `mbedtls` files"
     TandemKit's crypto submodule wasn't fetched. Run:
 
     ```sh
@@ -32,17 +32,17 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     Developer Program.
 
 ??? question "I changed `project.yml` and nothing happened"
-    Re-run `xcodegen generate` and reopen `faBolus.xcodeproj` — the project file is generated
+    Re-run `xcodegen generate` and reopen `faBolus.xcodeproj`; the project file is generated
     from `project.yml`, so edits only take effect after regenerating.
 
 ??? question "The app expired / won't open"
     That's the signing certificate's normal life (7 days on free, 1 year on paid). Just
-    reinstall — see [Keeping the app running](build/updating.md).
+    reinstall: see [Keeping the app running](build/updating.md).
 
 ## Connecting & pairing
 
 ??? question "Can't find or connect to the pump"
-    - Make sure the official Tandem **t:connect** app is unpaired/closed — only one control
+    - Make sure the official Tandem **t:connect** app is unpaired/closed; only one control
       connection is allowed at a time.
     - Confirm Bluetooth permission is granted to faBolus (**Settings → faBolus → Bluetooth**).
     - Put the pump in pairing mode; the app scans for the Tandem service (`0000fdfb…`).
@@ -50,28 +50,28 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
 ??? question "Pairing fails"
     - Double-check the code type (16-char vs 6-digit) matches your pump's firmware.
     - For a 6-digit (JPAKE) code, a **wrong** code still completes the handshake but fails
-      **key confirmation** — re-enter the correct code.
+      **key confirmation**: re-enter the correct code.
 
 ## Using it
 
 ??? question "A bolus is rejected"
     - The command must be correctly signed with a recent pump time. Reconnect to refresh timing.
-    - Check the max-units clamp — the pump also rejects anything over its own configured max.
+    - Check the max-units clamp: the pump also rejects anything over its own configured max.
 
 ??? question "A Garmin request doesn't deliver"
     - The iPhone does the actual delivery, so it must be **reachable and connected to the pump**.
     - You confirm the bolus on the watch itself (the deliberate confirmation); the
       phone then delivers.
-    - If the phone is out of range, the request fails cleanly on the watch — reconnect and retry.
+    - If the phone is out of range, the request fails cleanly on the watch; reconnect and retry.
 
 ??? question "A cleared alert comes back"
     Some alerts are **condition-based** (e.g. a high-glucose alert re-raises while BG is still
-    high). Also note the dismiss path isn't fully verified yet — see
+    high). Also note the dismiss path isn't fully verified yet, see
     [Alerts & alarms](operate/alerts.md).
 
 ## Remotes & devices
 
 ??? question "The Garmin complication shows `--` or nothing"
     - It needs the iPhone app open and connected for fresh data.
-    - Stock Garmin faces can't show third-party data — use a **Face It** or CIQ face that
+    - Stock Garmin faces can't show third-party data: use a **Face It** or CIQ face that
       supports complications and add the *faBolus BG* field.

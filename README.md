@@ -1,62 +1,62 @@
 > [!CAUTION]
-> **Not a medical device — do not use it for treatment decisions.** faBolus is experimental software
+> **Not a medical device. Do not use it for treatment decisions.** faBolus is experimental software
 > under active development. It is **not FDA-cleared or approved** and has **not** been clinically
 > validated. **Do not rely on it to make or carry out any insulin-dosing, treatment, or other clinical
-> decision.** It is for software development and evaluation only — always confirm every reading and dose
+> decision.** It is for software development and evaluation only: always confirm every reading and dose
 > directly on your pump and CGM, and talk to your healthcare provider about your therapy.
 
 # faBolus
 
 A remote-bolus and status-viewing app for the **iPhone**, designed to be **pump-agnostic**. The
 iPhone owns the pump's Bluetooth connection; a **Garmin Venu 3S** watch and the **Home/Lock Screen
-widgets** (including Quick Bolus) are thin remotes that relay confirmed commands to the phone —
+widgets** (including Quick Bolus) are thin remotes that relay confirmed commands to the phone;
 they never talk to the pump directly.
 
 **Today it works with one pump:** the Tandem **t:slim X2**, via [`TandemKit`](../TandemKit). (Tandem's
-**Mobi** isn't supported in this build — the app declines to pair with one.) The app talks to the
-pump only through a backend interface, so support for other pumps can be added without forking —
+**Mobi** isn't supported in this build: the app declines to pair with one.) The app talks to the
+pump only through a backend interface, so support for other pumps can be added without forking,
 see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 **Dexcom Share (optional):** glucose normally arrives through the pump. faBolus can also poll
-**Dexcom Share** as a fallback so a reading keeps flowing if the pump's own glucose goes stale — the
+**Dexcom Share** as a fallback so a reading keeps flowing if the pump's own glucose goes stale. The
 pump stays the primary source, and a Share reading is shown marked, never as current. See
 [Glucose (Dexcom Share)](docs/operate/glucose.md).
 
 > _Built by Zev and Tia in tandem._
 
 > [!WARNING]
-> **Experimental — in development.** faBolus is an independent, open-source project in development
+> **Experimental, in development.** faBolus is an independent, open-source project in development
 > for experimental use. It is **not FDA-cleared**; if you build or use it, you assume all
 > responsibility. Not affiliated with, endorsed by, or a product of **Tandem Diabetes Care or
 > Dexcom**.
 
 ## 📖 Documentation
 
-**Full docs — a no-experience-required build guide, usage, and customization — live at the
+**Full docs (a no-experience-required build guide, usage, and customization) live at the
 documentation site:**
 
 ### 👉 https://fabolus.org/
 
-- [Safety](docs/safety.md) — read before anything else.
-- [Build it yourself](docs/build/index.md) — Apple account → Xcode → iPhone, step by step, plus
+- [Safety](docs/safety.md), read before anything else.
+- [Build it yourself](docs/build/index.md): Apple account → Xcode → iPhone, step by step, plus
   the [Garmin](docs/build/garmin-build.md) app (and a [command-line build](docs/build/advanced.md)).
 - [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md).
 
 ## 💬 Feedback
 
-Bug, confusion, or an idea — technical or not? See **[Send feedback](docs/feedback.md)**, or go
+Bug, confusion, or an idea, technical or not? See **[Send feedback](docs/feedback.md)**, or go
 straight to the [feedback form](https://github.com/faBolus-app/faBolus/issues/new?labels=feedback&template=feedback.md)
 (or email [feedback@fabolus.org](mailto:feedback@fabolus.org)). faBolus is experimental and not
-FDA-cleared — for anything urgent about your therapy, contact your healthcare provider.
+FDA-cleared. For anything urgent about your therapy, contact your healthcare provider.
 
 ## Using it alongside the official Tandem app
 
 The pump pairs to **one** controller at a time, so faBolus and the official **t:connect** app can
-both be installed but only one is connected at once — and switching is a full re-pair with a new
+both be installed but only one is connected at once, and switching is a full re-pair with a new
 6-digit code, not a quick toggle (the pump doesn't store two pairings, and the code can't be shared
 between apps). faBolus isn't a full replacement either: some pump settings can only be changed in
 t:connect. Pick faBolus as your everyday controller (it reconnects with no code) and pair t:connect
-only when you need an official-app-only setting — then re-pair faBolus. More in the
+only when you need an official-app-only setting, then re-pair faBolus. More in the
 [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
 
 ## Layout
@@ -65,22 +65,22 @@ only when you need an official-app-only setting — then re-pair faBolus. More i
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
                              #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, GlucoseSource + GlucoseArbiter)
 Packages/ShareClient/        # Dexcom Share follower, vendored from LoopKit/dexcom-share-client-swift (MIT)
-ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
+ios/faBolus/                 # iOS host app, owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
 ios/faBolus/Data/Sources/    # the Dexcom Share glucose follower + its keychain credential store
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
 Shared/                      # WidgetShared (App Group snapshot) + DisplaySettings
-schema/                      # THE phone↔remote message contract — single source of truth
+schema/                      # THE phone↔remote message contract, single source of truth
 hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
 docs/                        # the documentation site (MkDocs Material)
 ```
 
-This is narrow `main` — a small, hardware-validated core. A number of surfaces an earlier build of
+This is narrow `main`: a small, hardware-validated core. A number of surfaces an earlier build of
 this app had (other remotes, other CGM sources, an advisory meal-detection assistant, and more) live
 on `experimental` and their own `dev/<surface>` branch instead; see `BRANCHES.md` §1.2c for the full
 roster and why.
 
-New pumps and new host apps are added **in-tree behind stable interfaces, not by forking** — see
+New pumps and new host apps are added **in-tree behind stable interfaces, not by forking**: see
 **[ARCHITECTURE.md](ARCHITECTURE.md)** for the two seams and **[CONTRIBUTING.md](CONTRIBUTING.md)**
 for step-by-step "add a pump backend" / "host the remotes" guides.
 
@@ -123,9 +123,9 @@ development on top of it.
 
 faBolus is built on **[pumpX2](https://github.com/jwoglom/pumpx2)** by **James Woglom
 ([@jwoglom](https://github.com/jwoglom))**. His reverse-engineering of the Tandem pump's Bluetooth
-protocol is the foundation of this entire project — [`TandemKit`](../TandemKit) is a Swift port of
+protocol is the foundation of this entire project. [`TandemKit`](../TandemKit) is a Swift port of
 that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not exist
-without it.** (faBolus is an independent reimplementation — not a fork of, affiliated with, or
+without it.** (faBolus is an independent reimplementation, not a fork of, affiliated with, or
 endorsed by pumpX2/controlX2.)
 
 It also draws on the wider **[LoopKit](https://github.com/LoopKit)** / **[Loop](https://github.com/LoopKit/Loop)**
@@ -136,7 +136,7 @@ Full attributions are in [NOTICE.md](NOTICE.md).
 
 ## License & trademark
 
-Code is MIT-licensed (see [LICENSE](LICENSE)). **faBolus™** is a trademark of Tia Geri — the license
+Code is MIT-licensed (see [LICENSE](LICENSE)). **faBolus™** is a trademark of Tia Geri; the license
 covers the source code, not the name, logo, or branding. Forks are welcome under the MIT terms;
 please don't use the faBolus name in a way that implies your fork is the official project. See
 [NOTICE.md](NOTICE.md) for details.

@@ -56,7 +56,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     ---
 
-    The in-app **Settings** tab — bolus defaults, chart options, alert rules, and more.
+    The in-app **Settings** tab — bolus defaults, chart options, glucose alert thresholds, and more.
 
     [:octicons-arrow-right-24: Settings](customize/settings.md)
 

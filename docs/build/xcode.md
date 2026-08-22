@@ -8,20 +8,20 @@ from the recipe.
 
 It's a **big** download (several gigabytes), so start it now and read on while it installs.
 
-## Step 1 — Get Xcode from the App Store
+## Step 1: Get Xcode from the App Store
 
 <ol class="cx2-steps">
 <li>On your Mac, open the <strong>App Store</strong> (the blue "A" icon).</li>
 <li>In the search box (top-left), type <strong>Xcode</strong> and press Return.</li>
-<li>Click <strong>Get</strong>, then <strong>Install</strong>. Now wait — it's large and can take 20–60 minutes. That's completely normal.</li>
+<li>Click <strong>Get</strong>, then <strong>Install</strong>. Now wait: it's large and can take 20–60 minutes. That's completely normal.</li>
 </ol>
 
 !!! note "If the App Store won't let you install it"
-    Xcode needs a fairly up-to-date Mac. If it says you can't install it, update your Mac first —
-    click the **Apple menu** (top-left) → **System Settings** → **General** → **Software Update**
-    — then try the App Store again. You need **Xcode 16 or newer**.
+    Xcode needs a fairly up-to-date Mac. If it says you can't install it, update your Mac first:
+    click the **Apple menu** (top-left) → **System Settings** → **General** → **Software Update**,
+    then try the App Store again. You need **Xcode 16 or newer**.
 
-## Step 2 — Open Xcode once and let it finish
+## Step 2: Open Xcode once and let it finish
 
 The very first time you open Xcode, it downloads a few more pieces. Let it.
 
@@ -32,9 +32,9 @@ The very first time you open Xcode, it downloads a few more pieces. Let it.
 </ol>
 
 !!! tip "You can leave Xcode open"
-    Once it's done, you can leave Xcode open — you'll use it in the next step.
+    Once it's done, you can leave Xcode open. You'll use it in the next step.
 
-## Step 3 — Tell Xcode who you are
+## Step 3: Tell Xcode who you are
 
 This connects Xcode to the Apple account you set up in [Step 1](apple-developer.md), so it's
 allowed to put apps on *your* phone.
@@ -47,7 +47,7 @@ allowed to put apps on *your* phone.
 
 <div class="cx2-check" markdown>
 **Success looks like:** your name now appears in the Accounts list, with a **Team** listed under
-it — either **(Personal Team)** for a free account, or your name for a paid one. Xcode will use
+it: either **(Personal Team)** for a free account, or your name for a paid one. Xcode will use
 this "Team" to sign the app later. You don't need to do anything else with it here.
 </div>
 

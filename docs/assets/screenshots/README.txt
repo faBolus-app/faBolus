@@ -14,4 +14,4 @@ Frames (rounded phone/watch bezel + shadow) are applied by CSS via the
 figure classes .cx2-shot.phone / .watch / .wide — you do NOT need to add a
 device frame to the image itself; a plain screenshot is fine.
 
-Suggested capture sizes: iPhone 6.1" portrait, Apple Watch 45mm, Garmin venu3s.
+Suggested capture sizes: iPhone 6.1" portrait, Garmin venu3s.
