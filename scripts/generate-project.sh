@@ -118,7 +118,11 @@ FOODFINDER="${FABOLUS_FOODFINDER:-1}"
 # retired outright — `dev/backup`/`experimental` keep their own copies of these files with the files
 # present and FABOLUS_BACKUP=1 default, unaffected by this main-only flip. Setting FABOLUS_BACKUP=1
 # here is now an env-override-only escape hatch (no shipped effect: the excluded source no longer
-# exists on `main` to bring back).
+# exists on `main` to bring back). CR-01 gap-closure fix: the compile-condition token
+# (SWIFT_ACTIVE_COMPILATION_CONDITIONS' FABOLUS_BACKUP entry) is dropped unconditionally below,
+# independent of this variable's value — see the `drop_flag FABOLUS_BACKUP` call further down for why
+# (previously it only fired when BACKUP=0, so BACKUP=1 defined the flag while the gated types were
+# already gone, breaking the build; that made the "no-op" claim below false until this fix).
 BACKUP="${FABOLUS_BACKUP:-0}"
 # Mobi capability-model placeholder (TOPO-03/D-03, RESEARCH Pattern 3 + Pitfall 5). Mobi support is NOT a
 # strippable block — it is an `enum PumpModel` case + a `.mobiAdvanced` capability floor threaded through
@@ -207,12 +211,16 @@ else
   [ "$FOODFINDER" = 1 ]      && strip_block FOODFINDER        # present → drop the FoodFinder-dir exclude lines
   [ "$BACKUP" = 1 ]          && strip_block BACKUP            # present → drop the Backup/SiteAtlas exclude lines
 fi
-# FABOLUS_BACKUP=0 additionally drops the compile-condition token (not just the file excludes above) —
-# AppModel.swift's/App.swift's #if FABOLUS_BACKUP guards must compile out too. The erase/full-reset MARK
-# section in AppModel.swift is deliberately NOT wrapped in this flag (D-08) so it is unaffected either way.
-if [ "$BACKUP" = 0 ]; then
-  drop_flag FABOLUS_BACKUP
-fi
+# The compile-condition token (not just the file excludes above) is ALWAYS dropped on main, regardless
+# of $BACKUP's value — AppModel.swift's/App.swift's #if FABOLUS_BACKUP guards must compile out
+# unconditionally here, because the 7 files those guards reference (SiteAtlasStore, PrivacyDataExport,
+# ICloudSettingsSync, ...) are physically git rm'd from main (06-02); there is nothing left for the flag
+# to gate even if a developer sets FABOLUS_BACKUP=1 (CR-01 gap-closure fix — see 06-REVIEW.md). Leaving
+# this conditional on `$BACKUP = 0` (the pre-fix code) let FABOLUS_BACKUP=1 define the flag while the
+# gated types were gone, which broke the build; unconditional drop_flag makes the override a genuine
+# no-op instead of a misleading one. The erase/full-reset MARK section in AppModel.swift is deliberately
+# NOT wrapped in this flag (D-08) so it is unaffected either way.
+drop_flag FABOLUS_BACKUP
 # FABOLUS_CGM_G6=0 (default) drops the DexcomG6Kit SPM package + the app-target dependency on it — the
 # ONLY thing CGM_G6 still gates after Phase 2.5 (its source-file exclude entry no longer exists; the
 # source itself is git rm'd, D-01/D-07). Distinct tag from CGM_G6 (word-boundary anchored in
@@ -236,7 +244,7 @@ echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscou
 [ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 [ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
-[ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup)"
+[ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), AND the FABOLUS_BACKUP compile-condition token is unconditionally dropped below regardless of this override, so the #if FABOLUS_BACKUP guards in AppModel.swift/App.swift stay compiled OUT (CR-01 gap-closure fix)"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
