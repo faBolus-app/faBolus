@@ -22,7 +22,13 @@ struct ConnectPumpOnboardingView: View {
     /// Load-bearing (UI-SPEC): `BackendRegistry.makeSelected()` runs once at `App.swift` init — there is
     /// no live backend hot-swap. Selecting the demo pump only persists a choice for NEXT launch, so the
     /// footnote below is the entire state contract (no spinner, no fake progress, no relaunch mechanism).
-    private static let demoBackendId = "mock-mobi"
+    ///
+    /// Phase 9 (09-03, MOBI-01, RESEARCH Pitfall 1): the Simulated-Mobi descriptor this id used to name
+    /// is removed from `BackendRegistry.enabled` in the SAME commit as this edit. Deleting that
+    /// descriptor WITHOUT this patch would make `BackendRegistry.selected()`'s fallback-to-`enabled[0]`
+    /// resolve this button to the REAL `TandemBackend` on a device — a genuine on-device safety hazard,
+    /// not a cosmetic one. `BackendRegistryTests.onboardingDemoIdResolvesToMockBackendNotTandem` pins this.
+    private static let demoBackendId = "mock-tslim"
 
     var body: some View {
         NavigationStack {

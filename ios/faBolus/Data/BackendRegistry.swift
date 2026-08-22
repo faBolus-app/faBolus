@@ -10,15 +10,13 @@ public enum BackendRegistry {
     /// On device the real pump backend leads; in the Simulator the mock leads.
     public static let enabled: [BackendDescriptor] = {
         let tandem = BackendDescriptor(id: "tandem", name: "Tandem t:slim X2 / Mobi (real pump)") { TandemBackend() }
-        // Two simulators so anyone can try the app with no hardware: the Mobi sim exposes the full
-        // advanced-control surface (cartridge/fill, CGM session, profiles…); the t:slim sim is
-        // bolus/status only, matching what a real t:slim X2 supports.
-        let mockMobi = BackendDescriptor(id: "mock-mobi", name: "Simulated Mobi") { MockBackend(isMobi: true) }
+        // Phase 9 (09-03, MOBI-01/D-01): Simulated Mobi is removed — narrow main is t:slim X2 only, so
+        // the one surviving simulator matches what a real t:slim X2 supports (bolus/status only).
         let mockTslim = BackendDescriptor(id: "mock-tslim", name: "Simulated t:slim X2") { MockBackend(isMobi: false) }
         #if targetEnvironment(simulator)
-        return [mockMobi, mockTslim, tandem]
+        return [mockTslim, tandem]
         #else
-        return [tandem, mockMobi, mockTslim]
+        return [tandem, mockTslim]
         #endif
     }()
 
