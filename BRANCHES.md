@@ -121,6 +121,47 @@ the gap was only the trigger key). **TandemKit's `ci.yml` trigger widening is DE
 discipline); open a kit PR if TandemKit ever needs a `dev/*` branch. `watch-host` builds Simulator-only
 (hardware → Phase-11 bench).
 
+## §1.2c — v0.5.0 narrow-main removal roster (final, 2026-08-22)
+
+Phases 1–9 landed the full narrow-main subtraction set decided at 999.5-D1 (below). This is the FINAL
+roster: every surface removed from `main` this milestone, its preservation location, and why. Every
+`dev/<surface>` branch named below is a real, existing branch (`git branch --list 'dev/<name>'` is
+non-empty) — a docs edit does not create, rename, or move any of them.
+
+| Surface | Preserved on | Why `experimental`, not `main` |
+|---|---|---|
+| Dexcom G7 direct-BLE | `dev/cgm-extra` | scope-narrowing per 999.5-D1 (CGM floor = Dexcom Share alone) |
+| Dexcom G6 direct-BLE + local-connection failover | `dev/cgm-extra` | scope-narrowing per 999.5-D1 |
+| LibreLinkUp | `dev/cgm-extra` | scope-narrowing per 999.5-D1 |
+| xDrip App-Group | `dev/cgm-extra` | scope-narrowing per 999.5-D1 |
+| Non-Venu-3S Garmin devices (fr265s / fenix7 / fr245 / edge540 / edge1040) + standalone watch-face app | `dev/garmin-devices` (faBolusGarmin repo) | scope-narrowing per 999.5-D1 (build-target set = Venu 3S alone, §1.3 below) |
+| Mac menu-bar remote | `dev/mac` | scope-narrowing per 999.5-D1 |
+| iPhone-to-iPhone peer remote | `dev/phone-remote` | scope-narrowing per 999.5-D1 (the shared `PhoneRemoteHost` receiver + the Garmin/widget remote path stay on `main`) |
+| Apple-Watch-as-remote | `dev/watch-remote` | scope-narrowing per 999.5-D1 |
+| Apple-Watch-as-host (direct-to-pump) | `dev/watch-host` | scope-narrowing per 999.5-D1 (own sub-branch, kept separate from watch-as-remote per owner instruction) |
+| faBolusNudge / Smart Assist submenu + Control-IQ-awareness readouts | `dev/nudge` | scope-narrowing per 999.5-D1 |
+| Apple HealthKit (incl. HR reader, Health import/export) | `dev/healthkit` | scope-narrowing per 999.5-D1 |
+| Nightscout (source + upload + backfill) | `dev/nightscout` | scope-narrowing per 999.5-D1 |
+| Backup/restore incl. iCloud + SiteAtlas — on-device erase/full-reset is KEPT on `main` per D-08 | `dev/backup` | scope-narrowing per 999.5-D1 |
+| Glucose Live Activity | `dev/live-activity` | maturity per the existing §1.2 rule (produces output the user cannot immediately verify against the pump) |
+| GraphDetail scrubber | `dev/graph-detail` | maturity per the existing §1.2 rule |
+| CGM app-icon glucose badge | `dev/glucose-badge` | maturity per the existing §1.2 rule |
+| Child Mode UI | `dev/child-mode` | scope-narrowing per 999.5-D1 (runtime-gated; the dose-adjacent `AccessPolicy`/`ChildFeature` core stays byte-identical) |
+| Siri / Shortcuts + Temp/Profile/Mode + activity/sleep automations | `dev/siri-shortcuts` | maturity per the existing §1.2 rule (automates a pump-mode decision) |
+| Retrospective insights | `dev/retrospective` | maturity per the existing §1.2 rule |
+| FoodFinder / food-scanner | `dev/food-finder` | scope-narrowing per 999.5-D1 |
+| Custom alert-rules engine | `dev/alert-rules` | scope-narrowing per 999.5-D1 (the glucose LOW/HIGH/urgent-low + safety-trio alerts stay on `main`) |
+| Mobi + all advanced t:slim control (temp-rate / suspend-resume / modes / IDP) | `dev/mobi` | scope-narrowing per 999.5-D1 (`main` = t:slim X2, bolus + status + alerts only) |
+| Simple/Standard experience-mode selector | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (mode is pinned to `.advanced`; the `AppMode`/`AccessPolicy` evaluator stays byte-identical) |
+| mmol/L display-units selector | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (display is locked to mg/dL; dose math is unit-internal, unchanged) |
+| >24h history | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (locked to 24h; no dose/IOB path reads beyond it) |
+| Extended (combo) bolus | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (the signed `deliverExtended` path stays byte-identical) |
+| Pump clock-sync | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (the read-side time-anchor stays) |
+| Insulin Stacking Guard disclosures (SG1/SG2/SG3a) | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (the `StackingGuard` core stays byte-identical) |
+
+No surface in this table is on `main`. See DECISION 999.5-D1/D2 (`.planning/intel/decisions.md`) for the
+ratified as-built record, and each `dev/<surface>` branch's own `REINTEGRATION.md` for reintegration steps.
+
 ## §1.3 — versioning and the cross-repo contract
 
 This is the **canonical** version + cross-repo contract for all three code repos. `AGENTS.md` and
@@ -199,7 +240,12 @@ alerting behavior — it is dependency-resolution metadata only.
 ### Garmin moves in lockstep with the app
 
 > **A Garmin main release accompanies every app main release and holds the same quality bar. Garmin work
-> does not lag behind the app and does not ship separately.**
+> does not lag behind the app and does not ship separately.**[^narrowed-999.5-D1]
+
+[^narrowed-999.5-D1]: **Narrowed by DECISION 999.5-D1** (2026-08-22): this release-lockstep and
+CI-branch-aware discipline is retained in full — only the **on-`main` device breadth** shrinks, from the
+six-product set to Venu 3S alone (see "Minimum Garmin device set" below). A Garmin `main` release is still
+required to accompany every app `main` release; it simply now targets one device instead of six.
 
 The **enforcement mechanism already exists** — it is the P5/P6 **branch-aware cross-repo CI** described
 above (faBolus's `resolve-refs`; faBolusGarmin's inline `fbref` step + the schema-drift check), which
@@ -224,11 +270,16 @@ change that both sides must land together (§1.4-4 + the drift checker).
 ### Minimum Garmin device set
 
 - **Hardware-validated:** `venu3s` is the **sole** hardware-validated Garmin device.
-- **Build-target set:** the `iq:products` in `faBolusGarmin/manifest.xml` — `venu3s`, `fr265s`,
-  `fenix7`, `fr245`, `edge540`, `edge1040` — is the published minimum device set the app compiles for
-  (touch and button watches + Edge cycling computers, adapting to touch vs. buttons); those beyond
-  `venu3s` are compile-verified only, **not** hardware-validated.
-- The store-facing source of truth for this list is `faBolusGarmin/store/connectiq-listing.md`
-  (SUPPORTED DEVICES). On a device that is not supported, the app should fail gracefully with an
-  explicit message rather than misbehave — a datafield/complication that structurally cannot render the
-  honest-staleness `--` must say the value is unavailable rather than show a stale number.
+- **Build-target set on `main` — `venu3s` ALONE** (narrowed by **DECISION 999.5-D1**, 2026-08-22, GARMIN-01):
+  the `iq:products` in `faBolusGarmin/manifest.xml` on `main` compiles for Venu 3S only. The other five
+  products previously in the minimum set — `fr265s`, `fenix7`, `fr245`, `edge540`, `edge1040` (touch and
+  button watches + Edge cycling computers) — are **removed from `main`** and now live in the `experimental`
+  faBolusGarmin manifest on `dev/garmin-devices` (compile-verified there, not hardware-validated; see
+  §1.2c above). The standalone watch-face app (`manifest-watchface.xml` / `watchface.jungle` /
+  `watchface/`) is removed alongside them; the complication publisher (`BgComplication.mc` +
+  `resources-complications/`) is KEPT on `main`.
+- The store-facing source of truth for the `main` list is `faBolusGarmin/store/connectiq-listing.md`
+  (SUPPORTED DEVICES), updated to Venu 3S only. On a device that is not supported, the app should fail
+  gracefully with an explicit message rather than misbehave — a datafield/complication that structurally
+  cannot render the honest-staleness `--` must say the value is unavailable rather than show a stale
+  number.
