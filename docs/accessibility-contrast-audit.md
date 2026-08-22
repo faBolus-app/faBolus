@@ -15,11 +15,22 @@ remote-control view) renders that icon+word under the reading whenever the numbe
 COLOR (a fresh reading; a stale reading is grey, with no band color to duplicate), and the VoiceOver label
 speaks the band word in the same case. So the band no longer depends on color alone there.
 
-**Not yet covered (recorded, lower priority).** The system-color surfaces — `MacTheme.glucoseColor`,
-`watchGlucoseColor`, and the widgets' `WidgetUI.glucoseColor` — still convey the band by color alone. They
-use Apple **system** colors (generally tuned for contrast) and live in space-constrained glanceable
-layouts, so a channel there is a follow-up (and, for the widgets, a shared-target concern since they can't
-link faBolusCore). Tracked as a residual F4 item.
+**`MacTheme`/`watchGlucoseColor` no longer exist.** They named the Mac remote's and watch app's own
+system-color glucose palettes; both surfaces have since been scope-narrowed off `main` (Mac remote and
+Apple-Watch-as-remote/-host, preserved on `dev/mac` / `dev/watch-remote` / `dev/watch-host` per
+`BRANCHES.md` §1.2c), and `MacTheme.swift` itself was deleted even earlier (09.1-04, before the color
+system was unified). This audit's residual F4 item is now scoped to `main` alone.
+
+**Widgets now share the SAME pinned tokens (updated).** `WidgetUI` no longer defines its own
+system-color `glucoseColor` — `GlucoseWidget.swift`/`StatusWidget.swift` call
+`faBolusDesign.AppTheme.glucoseColor(_:stale:)` directly, the identical pinned sRGB tokens measured
+below for the primary iOS surface. So the light/dark contrast ratios in the Findings table apply
+directly to the widgets' Home Screen (`.systemSmall`) presentation — this is no longer a separate,
+unaudited system-color surface. The one open caveat: **Lock Screen accessory families**
+(`.accessoryInline`/`.accessoryCircular`/`.accessoryRectangular`, which `GlucoseWidget` also declares)
+are rendered by iOS in its own Lock Screen tint/vibrancy treatment regardless of the `Color` a widget
+supplies, so the pinned ratios below do not describe what a user sees there — that presentation is
+outside this audit's scope (system-controlled, not app-controlled).
 
 This accompanies the N12 accessibility work (VoiceOver labels + Dynamic Type). It answers one WCAG
 question the VoiceOver/Dynamic-Type work does not: **does the color used to convey a glucose band have
@@ -38,11 +49,11 @@ on the system background. Only the iOS `AppTheme` bands are explicit sRGB values
 | `AppTheme.urgentHigh` | urgent high (> 250) | 0.95, 0.55, 0.15 | `#F28C26` |
 | `AppTheme.low` | low (< 70) | 0.90, 0.25, 0.22 | `#E64038` |
 
-The other surfaces — `MacTheme.glucoseColor`, `watchGlucoseColor` (`WatchApp`), and the widgets'
-`WidgetUI.glucoseColor` — use **system** colors (`.red` / `.green` / `.yellow` / `.orange`). System
-colors are resolved per appearance/vibrancy/increase-contrast at render time and are **not pinnable** the
-same way, so they are not tabulated with fixed ratios here. (Apple's system colors are generally tuned to
-meet contrast on their matching system backgrounds; they are noted as a separate, non-audited surface.)
+The `MacTheme.glucoseColor` / `watchGlucoseColor` (`WatchApp`) system-color surfaces this section
+previously described no longer exist on `main` (see the note above); the widgets render through the
+same pinned `AppTheme` tokens as the primary surface, not a separate system-color palette, so the
+Findings table below is now the complete picture for every `main` surface except the Lock Screen
+accessory presentation (system-controlled, out of scope).
 
 ## Method
 
@@ -105,8 +116,9 @@ Options 1 and 2 are complementary; 1 alone satisfies 1.4.1 and mitigates the pra
 - Light/dark backgrounds are modeled as pure white/black. Real surfaces sometimes sit on material or a
   faint fill; the ring number is effectively on the base system background, so the pure-white/black model
   is the honest worst/best case for it.
-- System-color surfaces (`MacTheme`, watch, widgets) are not pinned — they resolve at render time. If a
-  designer wants them audited too, they'd need to be converted to explicit values first (itself a §13
-  decision).
+- `MacTheme` and the watch app are off `main` (see the note above) and out of scope here. The widgets
+  now render through the same pinned `AppTheme` tokens as the primary surface (no longer a separate
+  system-color surface); the Lock Screen accessory families remain unpinned/system-controlled and are
+  out of scope for the same reason.
 - This audit covers the glucose **band** tokens only, per the F4 mandate. Other palette entries
   (`insulin`, `carbs`, connection ring) are out of scope.

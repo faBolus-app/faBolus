@@ -5,12 +5,20 @@ software-verified (unit tests, deterministic e2e, byte-parity against the vendor
 Garmin compile checks across device types) but has **not** been validated end-to-end on pump hardware.
 These gates must pass before the corresponding feature is relied on for anything real.
 
+**Scope note (v0.5.0 narrow-main milestone):** this matrix spans the full historical feature surface,
+including several surfaces the narrow-main removal (`BRANCHES.md` §1.2c) has since scope-narrowed off
+`main` onto their `dev/<surface>` sub-branches — Apple Watch remote/host, the Mac menu-bar remote, the
+iPhone-peer remote, Mobi + advanced t:slim control (IDP/temp-rate/suspend-resume), non-Venu-3S Garmin
+devices, and Siri/Shortcuts. Those items are marked **[off-main]** below; the gate itself still applies
+wherever the surface lives and must pass before any reintegration onto `main`.
+
 **Hard rule for every insulin-affecting path: validate on a pump filled with saline, on the bench,
 never on a body.** Confirm on the pump / t:connect what actually happened after each step.
 
 ## 1. Bolus delivery matrix (saline bench)
 
-For each surface — phone, Apple Watch, Garmin, Mac, remote-iPhone, iOS/Mac widgets — verify on saline:
+For each surface — phone, Garmin, iOS widgets (on `main`); Apple Watch, the Mac app, and the
+peer-iPhone remote **[off-main]** — verify on saline:
 
 - Units-mode bolus: requested units == pump-recorded units.
 - Carb-mode bolus: host-computed dose delivered; carbs recorded (see §2).
@@ -33,7 +41,7 @@ For each surface — phone, Apple Watch, Garmin, Mac, remote-iPhone, iOS/Mac wid
 - Extended + carbs `foodVolume` split (currently 0 for the extended path — no oracle vector) is verified
   or left disabled.
 
-## 3. IDP profile CRUD & reconfigure (saline bench, Mobi)
+## 3. IDP profile CRUD & reconfigure (saline bench, Mobi) [off-main]
 
 Create / modify / delete profile segments and backup-restore reconfigure are gated behind the central
 unverified-therapy acknowledgment (FB-06) and are **unproven end-to-end**:
@@ -45,7 +53,8 @@ unverified-therapy acknowledgment (FB-06) and are **unproven end-to-end**:
 
 ## 4. Garmin on-hardware
 
-Compile is verified for venu3s (touch), fr245 (button, no Complications), fenix7; **runtime is not**:
+Compile is verified for venu3s (touch, the sole build target on `main`), fr245 (button, no
+Complications) and fenix7 **[off-main — `dev/garmin-devices`]**; **runtime is not**:
 
 - Touch vs button input on each profile: no double-routing (GA-06); hold-to-confirm works; cancel works.
 - BG complication in both display modes at fresh / boundary / stale ages; glance staleness after a cold
@@ -57,9 +66,10 @@ Compile is verified for venu3s (touch), fr245 (button, no Complications), fenix7
 
 Needs a signing-capable Mac + provisioning:
 
-- Signed device build of the iOS app, widgets, and (if shipped) the watch app and Mac app.
-- App Group + widget entitlements resolve on-device; QR camera entitlement on Mac.
-- Siri App Shortcuts register with the spoken/alternate names.
+- Signed device build of the iOS app, widgets, and (if shipped) the watch app and Mac app **[watch
+  app / Mac app off-main]**.
+- App Group + widget entitlements resolve on-device; QR camera entitlement on Mac **[off-main]**.
+- Siri App Shortcuts register with the spoken/alternate names **[off-main — `dev/siri-shortcuts`]**.
 
 ## Status
 

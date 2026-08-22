@@ -21,8 +21,8 @@ Format per row: component · version/revision · SPDX license · source · how f
 
 | Component | Upstream | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| G7SensorKit | LoopKit/G7SensorKit | MIT | `Packages/G7SensorKit` (LICENSE incl.) | Dexcom G7/ONE+ BLE decoders (passive) |
-| DexcomG6Kit | LoopKit/CGMBLEKit | MIT | `Packages/DexcomG6Kit` | Dexcom G5/G6/ONE passive decoders |
+| G7SensorKit | LoopKit/G7SensorKit | MIT | `Packages/G7SensorKit` (LICENSE incl.) | Dexcom G7/ONE+ BLE decoders (passive). Vendored package retained per D-02 (owner has not authorized vendored-package removal) — its only app-tree consumer, `Shared/DexcomG7BLESource.swift`, was deleted from `main` (preserved on `dev/cgm-extra`); currently unused on `main`. |
+| DexcomG6Kit | LoopKit/CGMBLEKit | MIT | `Packages/DexcomG6Kit` | Dexcom G5/G6/ONE passive decoders. Vendored package retained per D-02 (owner has not authorized vendored-package removal) — its only app-tree consumer, `ios/faBolus/Data/Sources/DexcomG6BLESource.swift`, was deleted from `main` (preserved on `dev/cgm-extra`); currently unused on `main`. |
 | ShareClient | LoopKit/dexcom-share-client-swift | MIT | `Packages/ShareClient` (LICENSE incl.) | Dexcom Share follower core |
 | LoopPowerPack (SiteAtlas) | LoopPowerPack/Loop @ ad4c4d4 | MIT | `ios/faBolus/Vendor/LoopPowerPack` | Vendored MIT feature source (infusion-site/CGM body-map tracker), adapted behind a thin faBolus adapter |
 | LoopPowerPack (LoopInsights) | LoopPowerPack/Loop @ ad4c4d4 | MIT | `ios/faBolus/Vendor/LoopPowerPack/LoopInsights` | Vendored MIT report DTO shapes ONLY (benign analysis-period enum + reduced aggregated-stats struct for the endo-visit PDF); NEVER the whole dir (Coordinator/AI/advisor excluded, D-04/D-14). The aggregator + PDF render + view are faBolus rewrites over GlucoseHistoryStore / ImageRenderer (D-15), not vendored |
@@ -48,8 +48,6 @@ license token (§3.1 / plan Q4).
 
 | Component | Upstream | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| XDripAppGroupSource.swift | JohanDegraeve/xdrip-client-swift (© 2016 Mark Wilson) | MIT | `ios/faBolus/Data/Sources/XDripAppGroupSource.swift` | Passive reader of xDrip's "Share to Loop" App-Group JSON |
-| LibreLinkUpSource.swift | community LibreLinkUp API — timoschlueter/nightscout-librelink-up (MIT) + libre-link-unofficial-api | MIT (API knowledge; independent Swift impl, no upstream code copied) | `ios/faBolus/Data/Sources/LibreLinkUpSource.swift` | Independent Swift client of the unofficial LibreLinkUp REST API |
 | ProfileIntents.swift | Apple official `EntityQuery` Developer-documentation sample | LicenseRef-Apple-Sample-Code (API pattern; independent Swift impl, no upstream code copied) | `ios/faBolus/Intents/ProfileIntents.swift` | AppEntity/EntityQuery pattern for the profile picker in the Activate Profile Shortcuts intent (Phase 6 / 06-02; refuse-when-headless, D-02) |
 | GlucoseLiveActivity.swift | kylebshr/luka-ios (© 2024 Kyle Bashour) + LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolusWidgets/GlucoseLiveActivity.swift` | Dynamic Island region split + optional-arrow pattern (luka-ios) and the iOS-18 CarPlay `.small` availability-branch pattern (Loop) rebound to faBolus's own `WidgetSnapshot` projection; content faBolus-original (see 05-REFERENCE-COMPARISON.md §2/§5) |
 | GlucoseLiveActivityManager.swift | LoopKit/Loop (© 2015 Nathan Racklyeft, © 2016 LoopKit Authors) | MIT | `ios/faBolus/Data/GlucoseLiveActivityManager.swift` | App-driven `Activity.update`/re-arm structure only — NOT Loop's APNs push-token flow (faBolus never uses APNs, D-04); see 05-REFERENCE-COMPARISON.md §5 |
