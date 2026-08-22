@@ -301,9 +301,14 @@ public final class AppSettings {
     public var suppressMirroredPumpAlarms: Bool { didSet { d.set(suppressMirroredPumpAlarms, forKey: "suppressMirroredPumpAlarms") } }
     /// §6/S8 B6: use iOS **Critical Alerts** (which alert even under Do Not Disturb / the ringer switch)
     /// for the never-suppressible safety notifications — WHEN the app holds the critical-alerts entitlement;
-    /// it degrades gracefully to a normal notification when the entitlement isn't granted. Defaults **ON for
-    /// a Mobi** (screenless — the phone is the primary annunciator) and OFF otherwise, until the user sets
-    /// it explicitly. Local device pref: not backed up / iCloud-synced.
+    /// it degrades gracefully to a normal notification when the entitlement isn't granted. Phase 9 (09-04,
+    /// MOBI-04, D-06): **Default explicit OFF for t:slim**, DECOUPLED from `PumpModelStore.isMobi()` (the
+    /// old default was "ON for a Mobi" — Simulated Mobi and all Mobi backends are removed this phase, so
+    /// that coupling is now to a permanently-stale flag). The user can still turn it on explicitly — the
+    /// capability path (`NotificationCoordinator.swift:384` read, `NotificationSettingsView.swift` toggle)
+    /// is KEPT, unchanged. A pre-Phase-9 persisted `true` is force-reset to `false` exactly once on upgrade
+    /// (see the `criticalAlertsForceResetV050` guard below `init`) — owner chose uniform state over leaving
+    /// stale persisted values. Local device pref: not backed up / iCloud-synced.
     public var criticalAlertsEnabled: Bool { didSet { d.set(criticalAlertsEnabled, forKey: "criticalAlertsEnabled") } }
     /// D-03/D-04: an OS-DERIVED CACHE, not a user pref — whether `UNUserNotificationCenter`'s async
     /// `notificationSettings().criticalAlertSetting` last reported `.enabled` (the entitlement is granted
@@ -772,8 +777,25 @@ public final class AppSettings {
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
-        // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
-        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
+        // Phase 9 (09-04, MOBI-04, D-06): default explicit OFF for t:slim, DECOUPLED from
+        // `PumpModelStore.isMobi()` (the old "ON for a Mobi" default now couples to a permanently-stale
+        // flag — Mobi backends are removed this phase). The user can still opt in explicitly.
+        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
+        // MOBI-04/D-06: one-time force-reset — a persisted `criticalAlertsEnabled == true` from a
+        // pre-Phase-9 install (the old Mobi-derived default) is force-reset to the new uniform OFF
+        // default EXACTLY ONCE, via this NEW dedicated idempotent-once guard key
+        // (`criticalAlertsForceResetV050`), DISTINCT from the ordinary default-computation line above.
+        // Guarded so a user's LATER re-enable (any launch after this migration has already fired once)
+        // is never re-clobbered — the guard key, once set, is checked and never cleared. Does NOT
+        // re-derive from `PumpModelStore.isMobi()` (stale) and is NOT reused for `advancedControlEnabled`
+        // (that default needs no migration — RESEARCH Anti-Patterns). Both the property (for in-memory
+        // consumers reading `criticalAlertsEnabled` immediately after `init`) and the raw UserDefaults key
+        // (explicit write-through, independent of `didSet`'s init-timing subtlety) are set together.
+        if d.object(forKey: "criticalAlertsForceResetV050") == nil {
+            criticalAlertsEnabled = false
+            d.set(false, forKey: "criticalAlertsEnabled")
+            d.set(true, forKey: "criticalAlertsForceResetV050")
+        }
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): requireRemoteBolusApproval is now a frozen-false
         // computed constant (get { false } set { } ) — no init-restore line needed; the old
         // UserDefaults value, if any, is simply never read again.
