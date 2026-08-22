@@ -316,13 +316,20 @@ public final class AppSettings {
     /// if no paired remote responds within the timeout the bolus is aborted (safe default).
     ///
     /// Phase 3 (03-02, F-1, owner-ratified 2026-08-21): the ONLY devices that could ever pair as an
-    /// approver (Mac remote, iPhone-peer remote) are removed from narrow `main`, so this can never take
-    /// effect again (`hasPairedRemote` in the frozen `AppModel.swift:1914` is now permanently false).
-    /// This accessor STAYS — the frozen `AppModel.swift:1871` still reads it — but its
-    /// `SettingsCatalog` row + backup/restore participation + `ChildModeView` UI are removed (hidden,
-    /// unregistered flag; same pattern as `watchBolusEnabled`'s eventual removal). See
-    /// 03-OWNER-FLAGS.md F-1.
-    public var requireRemoteBolusApproval: Bool { didSet { d.set(requireRemoteBolusApproval, forKey: "requireRemoteBolusApproval") } }
+    /// approver (Mac remote, iPhone-peer remote) are removed from narrow `main`, so this already could
+    /// never take effect again (`hasPairedRemote` in the frozen `AppModel.swift` is now permanently
+    /// false). Its `SettingsCatalog` row + backup/restore participation + `ChildModeView` UI were
+    /// already removed then (hidden, unregistered flag; same pattern as `watchBolusEnabled`'s eventual
+    /// removal). See 03-OWNER-FLAGS.md F-1.
+    ///
+    /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): FROZEN to `false` — belt-and-suspenders, layer 2. Phase 3
+    /// already closed the local-backup round trip (no `backupSnapshot`/`applyBackup` participation
+    /// remained even before this change); this getter-level freeze closes the one remaining route (a
+    /// direct setter call) so this can never become `true` again by ANY means, not just via restore.
+    /// The frozen `AppModel.swift`'s one read of this value (alongside `childModeEnabled` and
+    /// `hasPairedRemote`) stays BYTE-IDENTICAL — only this settable INPUT is forced (D-03). See
+    /// `ChildModeFreezeGuardTests`.
+    public var requireRemoteBolusApproval: Bool { get { false } set { } }
 
     /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
     /// auto-dismiss), persisted as JSON. **Alarms are never auto-acted** regardless of rules — the
@@ -390,9 +397,6 @@ public final class AppSettings {
         set { UserDefaults(suiteName: WidgetStore.appGroup)?.set(newValue, forKey: NotificationRuntime.telemetryEnabledKey) }
     }
 
-    /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
-    /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
-    /// default. The PIN hash lives in the Keychain ([[ChildMode]]), not here.
     /// Show the extended (combo) bolus controls on the bolus screen. **Default OFF** to keep the
     /// screen simple. When on, the user can split a dose into now + over-a-duration.
     public var extendedBolusEnabled: Bool { didSet { d.set(extendedBolusEnabled, forKey: "extendedBolusEnabled") } }
@@ -407,7 +411,22 @@ public final class AppSettings {
     /// computation, only the UI wiring that reads this flag (landing in plan 04).
     public var stackingGuardFrictionEnabled: Bool { didSet { d.set(stackingGuardFrictionEnabled, forKey: "stackingGuardFrictionEnabled") } }
 
-    public var childModeEnabled: Bool { didSet { d.set(childModeEnabled, forKey: "childModeEnabled") } }
+    /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
+    /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
+    /// default. The PIN hash lived in the Keychain (`ChildModeStore`, now removed along with
+    /// `ChildModeView.swift`, its only caller).
+    ///
+    /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): FROZEN to `false` — belt-and-suspenders runtime gate.
+    /// No setter effect can ever make this `true` again, including a restored-from-backup `true` (the
+    /// `applyBackup` restore line that used to accept this key is removed below, so both halves of the
+    /// round trip are closed). Forcing this INPUT false = full adult access = the safe/intended state
+    /// for a single-adult device. The dose-adjacent evaluator (`AccessPolicy`/`ChildFeature`/
+    /// `BolusGate`/`GatedPumpWrite` in faBolusCore) and `AppModel.swift`'s one read of this value stay
+    /// BYTE-IDENTICAL — only this settable INPUT is forced (D-03). `childModeEnabled` already had
+    /// `syncsToICloud: false`, so the iCloud-KV half of the restore concern was already closed before
+    /// this change; this closes the remaining local-backup half. `ChildModeView.swift` (the only UI
+    /// that could ever set this to `true`) is deleted in the next task. See `ChildModeFreezeGuardTests`.
+    public var childModeEnabled: Bool { get { false } set { } }
     public var childAllowed: Set<ChildFeature> {
         didSet { d.set(Self.canonicalChildAllowedData(childAllowed), forKey: "childAllowed") }
     }
@@ -721,7 +740,9 @@ public final class AppSettings {
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
-        requireRemoteBolusApproval = (d.object(forKey: "requireRemoteBolusApproval") as? Bool) ?? false
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): requireRemoteBolusApproval is now a frozen-false
+        // computed constant (get { false } set { } ) — no init-restore line needed; the old
+        // UserDefaults value, if any, is simply never read again.
         alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         // 09.23-02 (D-14/D-11b): every Apple Health import toggle — per-type + automatic — defaults
@@ -741,7 +762,11 @@ public final class AppSettings {
         extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         stackingGuardFrictionEnabled = (d.object(forKey: "stackingGuardFrictionEnabled") as? Bool) ?? true
-        childModeEnabled = (d.object(forKey: "childModeEnabled") as? Bool) ?? false
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): childModeEnabled is now a frozen-false computed
+        // constant (get { false } set { } ) — no init-restore line needed; the old UserDefaults value,
+        // if any, is simply never read again. `childAllowed` itself stays a real, settable property
+        // (still read by AppModel's AccessContext builder + BolusEntryView's UI hint) — only the gate
+        // that made its value matter is frozen.
         childAllowed = d.data(forKey: "childAllowed").flatMap { try? JSONDecoder().decode(Set<ChildFeature>.self, from: $0) } ?? ChildFeature.defaultAllowed
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
@@ -907,7 +932,11 @@ public final class AppSettings {
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
         if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
-        if let v = b("childModeEnabled") { childModeEnabled = v }
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` no longer restores from a backup
+        // either — belt-and-suspenders option (a). A legacy backup carrying this key (or `true`) is
+        // now silently ignored, same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled`
+        // precedents below; the getter-level freeze (option b, above) would reject the value anyway
+        // even if this line still called the setter.
         // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer restores from a backup either —
         // same hidden-flag pattern, same legacy-key tolerance (a restored `true` would have no effect
         // regardless, since `GlucoseBadge` is now a main-only no-op stub).

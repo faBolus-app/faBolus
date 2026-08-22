@@ -12,8 +12,12 @@ import faBolusCore
 ///     when the estimate is missing.
 ///   • **Freeze-before-approve** (C-02): a carb request with no units freezes the *real* dose before
 ///     prompting (never "0.00 U"), and confirm delivers that frozen number with no recompute.
-///   • **Action gates** (A-05): child mode blocks every bolus surface; phone read-only blocks the
-///     local Quick-Bolus widget but (by design) not an authenticated remote peer.
+///   • **Action gates** (A-05): phone read-only blocks the local Quick-Bolus widget but (by design)
+///     not an authenticated remote peer. (Child mode's own "blocks every bolus surface" coverage was
+///     retired in Phase 7, 07-04, FEAT-04 — `childModeEnabled` is now permanently frozen `false`, so
+///     that app-layer behavior can never fire again; the pure-evaluator proof that `AccessPolicy`
+///     WOULD still enforce it if ever given `true` again lives on, untouched, in faBolusCore's own
+///     `AccessPolicyTests`. See `dev/child-mode`'s REINTEGRATION.md.)
 ///   • **Idempotency wiring** (A-02): a duplicate (peer, requestId) hits the backend once; a same-id
 ///     request with a different dose fails closed.
 ///
@@ -245,29 +249,14 @@ struct AppModelBehaviorTests {
     }
 
     // MARK: - Action gates (A-05)
-
-    @Test func childModeBlocksRemoteBolus() async {
-        try? await withCleanSettings {
-            let (model, _, rec) = await makeModel()
-            AppSettings.shared.childModeEnabled = true
-            AppSettings.shared.childAllowed = []   // .bolus not permitted
-            await model.remoteDeliver(requestId: "g1", units: 1.0, from: .appleWatch, peerId: "watch")
-            #expect(rec.last?.status == .failed)
-            #expect(rec.last?.message?.lowercased().contains("child mode") == true)
-            #expect(rec.count(.delivering) == 0)
-        }
-    }
-
-    @Test func childModeBlocksWidgetBolus() async {
-        try? await withCleanSettings {
-            let (model, _, _) = await makeModel()
-            AppSettings.shared.childModeEnabled = true
-            AppSettings.shared.childAllowed = []
-            let r = await model.deliverWidgetBolus(requestId: "g2", units: 1.0)
-            #expect(r.delivered == 0)
-            #expect(r.error?.lowercased().contains("child mode") == true)
-        }
-    }
+    //
+    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeBlocksRemoteBolus` and `childModeBlocksWidgetBolus`
+    // (both set `AppSettings.shared.childModeEnabled = true` through the real app-layer setter) were
+    // retired here — that setter is now a permanent no-op (getter-level freeze), so both tests would
+    // fail against the intentionally-frozen behavior, not pass. Preserved on `dev/child-mode`; see its
+    // REINTEGRATION.md. The pure-evaluator proof (`AccessPolicy` DOES block when `childModeEnabled` is
+    // `true`) is untouched in faBolusCore's `AccessPolicyTests`, which builds `AccessContext` literals
+    // directly and never goes through `AppSettings`.
 
     /// §6 `lastError` Tier-2 — a FAILED / BLOCKED delivery posts exactly one `.bolusDeliveryFailed`, so a
     /// user who isn't watching the screen learns the dose did NOT happen; an INDETERMINATE outcome ("sent,
@@ -361,17 +350,17 @@ struct AppModelBehaviorTests {
                         "cancel on \(s.rawValue) must ALSO be denied — an authenticated peer has zero permissions")
             }
 
-            // Fail-closed: fully locked (child on with nothing allowed, both read-only flags on, advanced
-            // off) denies EVERY action on EVERY surface — no cell escapes.
-            AppSettings.shared.childModeEnabled = true; AppSettings.shared.childAllowed = []
-            AppSettings.shared.phoneReadOnly = true; AppSettings.shared.remotesReadOnly = true
-            AppSettings.shared.advancedControlEnabled = false
-            for a in A.allCases {
-                for s in S.allCases {
-                    #expect(!model.accessDecision(a, from: s, peerId: "mac").allowed,
-                            "\(a.rawValue) on \(s.rawValue) must be denied when fully locked")
-                }
-            }
+            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Fail-closed: fully locked (child on with
+            // nothing allowed, ...) denies EVERY action on EVERY surface" block that used to live here
+            // is retired — it set `AppSettings.shared.childModeEnabled = true`, a setter that is now a
+            // permanent no-op (getter-level freeze), and without child mode actually active,
+            // cancelBolus/dismissNotification legitimately survive phoneReadOnly/remotesReadOnly on
+            // every non-peer surface (proven immediately above), so the original blanket "every action
+            // denied" assertion no longer holds — it tested behavior that has been intentionally
+            // removed, not a live regression. Preserved on `dev/child-mode` (REINTEGRATION.md). The
+            // pure-evaluator fail-closed proof (`AccessPolicy` DOES deny everything when
+            // `childModeEnabled` is `true` AND `childAllowed` is empty) is untouched in faBolusCore's
+            // `AccessPolicyTests`.
         }
     }
 

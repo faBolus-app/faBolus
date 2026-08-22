@@ -247,22 +247,13 @@ struct StaleRemoteDoseHostTests {
             #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
         }
 
-        // child mode (watch surface): denied before resolve.
-        try? await withCleanSettings {
-            let (model, backend, rec, _) = await makeModel(connected: true)
-            backend.setLiveIob(1.0); seedStale(backend, staleBg)
-            AppSettings.shared.childModeEnabled = true
-            AppSettings.shared.childAllowed = []                     // .bolus not permitted
-            #expect(backend.refreshCalcInputsNowCount == 0)
-            await model.remoteDeliver(requestId: "i-child", carbsGrams: carbs, bgMgdl: staleBg,
-                                      remoteEstimate: 5.0, includeStaleBG: true,
-                                      from: .appleWatch, peerId: "watch")
-            #expect(rec.last?.status == .failed)
-            #expect(rec.last?.message?.lowercased().contains("child mode") == true)
-            #expect(rec.count(.delivering) == 0)
-            #expect(backend.lastDeliver == nil)
-            #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
-        }
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "child mode (watch surface): denied before
+        // resolve" block that used to live here is retired — it set `AppSettings.shared.childModeEnabled
+        // = true`, a setter that is now a permanent no-op (getter-level freeze), so the "denied before
+        // resolve because of child mode" assertion no longer holds; it tested behavior that has been
+        // intentionally removed, not a live regression. Preserved on `dev/child-mode`
+        // (REINTEGRATION.md). The pure-evaluator proof (`AccessPolicy` DOES deny when `childModeEnabled`
+        // is `true`) is untouched in faBolusCore's `AccessPolicyTests`.
     }
 
     // MARK: - (j) FIX 2: carbs==0 PURE correction + include-stale (within cap) ⇒ doses off the stale reading
