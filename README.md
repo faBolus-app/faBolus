@@ -47,6 +47,40 @@ model when supported). Everything runs on-device. See [the eating-nudge docs](do
 > responsibility. Not affiliated with, endorsed by, or a product of **Tandem Diabetes Care or
 > Dexcom**.
 
+## In development / experimental-only (not on `main`)
+
+Narrow `main` ships a lean **t:slim X2 / Garmin Venu 3S / Dexcom Share** core — one pump family, one
+watch, one CGM source, locked to Advanced mode. Everything below lives on `experimental` (and its own
+per-surface `dev/<surface>` branch), preserved and promotable back onto `main` under `BRANCHES.md`
+§1.4's promotion criteria (CI-green on the real toolchain, tests pinning the failure path, default-off
+if it automates, and clinical review where required). This list is kept in sync with the final
+narrow-main removal set — see `BRANCHES.md` §1.2c for the authoritative surface-by-branch roster.
+
+**CGM sources:** Dexcom G7 direct-BLE; Dexcom G6 direct-BLE + G6 local-connection failover;
+LibreLinkUp; the xDrip App-Group source. (`main`'s only CGM source is Dexcom Share.)
+
+**Remotes & surfaces:** non-Venu-3S Garmin devices (fr265s / fenix7 / fr245 / edge540 / edge1040) + the
+standalone Garmin watch-face app; the Mac menu-bar remote; the iPhone-to-iPhone peer remote; Apple Watch
+as a remote; Apple Watch as a host (direct-to-pump). (`main` keeps the shared `PhoneRemoteHost` core,
+the Garmin Venu 3S remote, and the Home/Lock widgets incl. Quick Bolus.)
+
+**Integrations & advisory:** faBolusNudge / Smart Assist eating nudges + Control-IQ-awareness readouts;
+all Apple HealthKit (source + HR reader + import/export); Nightscout (source + upload + backfill); all
+backup/restore incl. iCloud + SettingsBackup + PrivacyDataExport + SiteAtlas — **on-device
+erase/full-reset stays on `main`**, it is not part of this removal.
+
+**Feature surfaces:** the glucose Live Activity; the GraphDetail scrubber; the CGM app-icon glucose
+badge; Child Mode UI; Siri + Shortcuts + the Temp/Profile/Mode automations + the activity/sleep
+automation; Retrospective insights; FoodFinder / food-scanner; the custom alert-rules engine.
+
+**Locks & advanced control:** the Simple/Standard/Advanced experience-mode selector (`main` is locked
+to Advanced); mmol/L display units (`main` is locked to mg/dL); more than 24h of history (`main` is
+locked to 24h); Extended (combo) bolus (runtime-hidden on `main`); pump clock-sync; the Insulin
+Stacking Guard disclosures (SG1/SG2/SG3a, runtime-hidden on `main`); Mobi pump support and all advanced
+t:slim control (temp-rate / suspend-resume / modes / IDP-profile).
+
+See `BRANCHES.md` §1.2c for the full surface-by-branch roster.
+
 ## 📖 Documentation
 
 **Full docs — a no-experience-required build guide, usage, customization, Siri & Shortcuts —
