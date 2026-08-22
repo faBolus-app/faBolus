@@ -100,7 +100,22 @@ targets:
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - ios/faBolus
+      - path: ios/faBolus
+        # >>> BACKUP (kept only when FABOLUS_BACKUP=0 → excludes backup/restore + PrivacyData export +
+        #   SiteAtlas; stripped by default. Cross-branch cherry-pick correction (06-01, 2bedebc): this
+        #   preservation branch never received Phase 0's wider APP_SOURCE_EXCLUDES/CGM_NIGHTSCOUT/
+        #   FOODFINDER scaffolding (it forked before that work landed and keeps those surfaces
+        #   unconditionally), so only the BACKUP sub-block is adopted here — PrivacyDataView.swift is
+        #   DELIBERATELY NOT in this list (D-08 carve-out: erase/full-reset UI stays present).)
+        excludes:
+          - Data/SettingsBackup.swift
+          - Data/PrivacyDataExport.swift
+          - Views/BackupRestoreView.swift
+          - Data/ICloudSync.swift
+          - Data/SiteAtlasStore.swift
+          - Views/SiteAtlas
+          - Vendor/LoopPowerPack/SiteAtlas/SiteAtlas_Models.swift
+        # <<< BACKUP
       # WidgetBolusIntents belongs to the widget extensions only (the app uses WidgetBolusReceiver).
       - path: Shared
         excludes:
@@ -274,9 +289,9 @@ targets:
         # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
         # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT FABOLUS_BACKUP
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN WATCH_EMBEDDED FABOLUS_NUDGE FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_HEALTHKIT FABOLUS_BACKUP
 
   # watchOS companion app — embedded in the iPhone app so it installs to the paired watch with it.
   # It also embeds the glucose complication extension (faBolusWatchWidgets) as a target dependency now
