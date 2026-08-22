@@ -23,7 +23,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     (owned by the faBolus team) can't be reused by your account. Set your own: copy
     `LocalConfig.xcconfig.example` to **`LocalConfig.xcconfig`**, set **`APP_BUNDLE_ID`** to a
     value unique to you (and **`DEVELOPMENT_TEAM`** to your Team ID), then run `xcodegen generate`
-    again. The watch app, widgets, and App Group all update from that one value. See the
+    again. The widgets and App Group both update from that one value. See the
     [signing note](build/build-app.md#your-team).
 
 ??? question "The widget target won't sign on a free account"
@@ -58,7 +58,7 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     - The command must be correctly signed with a recent pump time. Reconnect to refresh timing.
     - Check the max-units clamp — the pump also rejects anything over its own configured max.
 
-??? question "A watch/Garmin request doesn't deliver"
+??? question "A Garmin request doesn't deliver"
     - The iPhone does the actual delivery, so it must be **reachable and connected to the pump**.
     - You confirm the bolus on the watch itself (the deliberate confirmation); the
       phone then delivers.
@@ -70,24 +70,6 @@ Common snags, grouped by where you hit them. If something here doesn't cover it,
     [Alerts & alarms](operate/alerts.md).
 
 ## Remotes & devices
-
-??? question "Phone-to-phone pairing doesn't connect when the host is locked"
-    This is fixed. Pairing is now **by the code**: the remote connects to any nearby faBolus host, so
-    scanning the QR or typing the PIN works even when the host phone is **locked or backgrounded**. The
-    device list also prunes hosts that are no longer nearby and shows a readable **“faBolus device
-    (xxxx)”** label for a backgrounded host instead of a long raw UUID. Make sure both phones have
-    Bluetooth on and are in range, and that the host has **Allow remote devices** turned on.
-
-??? question "The Mac QR scanner shows a black window, or the app seems to quit when scanning"
-    Both are fixed. The Mac app now has the camera entitlement, so scanning prompts for macOS camera
-    permission the first time (allow it) and shows the live camera instead of black. The scanner also
-    opens in **its own window** rather than inside the menu-bar popover — **Cancel** or a successful
-    scan closes just that window and the app stays in the menu bar.
-
-??? question "The Apple Watch app won't install"
-    Watch installs are finicky: keep the watch on its charger and unlocked, install the phone app
-    first, then retry — or install from the **Watch** app on the iPhone
-    (**My Watch → Available Apps**).
 
 ??? question "The Garmin complication shows `--` or nothing"
     - It needs the iPhone app open and connected for fresh data.

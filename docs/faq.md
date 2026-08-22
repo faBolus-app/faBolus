@@ -15,16 +15,17 @@
     clinician, and at your own risk. See [Safety](safety.md).
 
 ??? question "Which pumps are supported?"
-    Tandem **t:slim X2** and **Mobi**, on a firmware version that's been pinned and tested. The
+    Tandem **t:slim X2** — and only the t:slim X2. Other Tandem pump models aren't supported in
+    this version; faBolus declines to connect to one and says so rather than trying to talk to it.
+    Support is also pinned to a specific t:slim X2 firmware version that's been tested; the
     protocol can break on a pump firmware update, so the app is treated as disposable against
     vendor changes.
 
 ??? question "Can faBolus get glucose without going through the pump?"
-    Yes — optionally, as a **failover**. Glucose normally comes through the pump; you can add an
-    independent backup feed that fills in when the pump, phone, or sensor link drops: **Dexcom G7 /
-    ONE+** directly over Bluetooth (also on Apple Watch), or **LibreLinkUp** (Libre 2/3), **Dexcom
-    Share** (G6), **Nightscout**, or **Apple Health** (Eversense). The pump stays the primary
-    source. See [CGM failover](operate/cgm-failover.md).
+    Yes — optionally, through **Dexcom Share**: a cloud-polled feed you can turn on so a reading
+    keeps flowing if the pump-to-sensor link drops. The pump stays the primary source; Share is the
+    only fallback in this version. See [Glucose (Dexcom Share)](operate/glucose.md).
+
 ??? question "Can I use faBolus and the official Tandem app (t:connect) at the same time?"
     You can install both, but the pump pairs to **one** controller at a time — so only one can be
     connected at once, and there's **no way to keep both paired or switch instantly**. The pump
@@ -33,15 +34,11 @@
     Switching means putting the pump in **Pair Device** mode, which hands out a **new code**, and
     pairing the app you want — which evicts the other. While faBolus stays the paired app it
     reconnects with **no code** ("Connect (saved pairing)"); the new-code step only comes up when
-    you bounce between the two. On a **Tandem Mobi** switching is even more hands-on: it has no
-    screen, so re-pairing means placing the pump on its **charging pad** and **pressing its button
-    twice** (its PIN is fixed, behind the cartridge). Since that PIN never changes, faBolus offers to
-    **save it** the first time it recognizes a Mobi, so at least you don't re-type it — see
-    [Pairing your pump](setup/pairing.md).
+    you bounce between the two. See [Pairing your pump](setup/pairing.md).
 
-    **faBolus is not a full replacement for the official app.** Some pump settings and configuration
-    — and certain **Mobi** functions — can only be changed in **t:connect**; faBolus doesn't support
-    them yet. A common setup: use faBolus day-to-day for monitoring and remote bolus, and when you
+    **faBolus is not a full replacement for the official app.** Some pump settings and
+    configuration can only be changed in **t:connect**; faBolus doesn't support them yet. A common
+    setup: use faBolus day-to-day for monitoring and remote bolus, and when you
     need an official-app-only setting, pair **t:connect**, make the change, then re-pair faBolus.
     See [Pairing your pump](setup/pairing.md).
 
@@ -51,12 +48,11 @@
 
 ??? question "Do I need to pay Apple?"
     Not necessarily. A **free** Apple ID works but the app expires after 7 days; the **paid**
-    Apple Developer Program ($99/yr) lasts a year and makes widgets/watch features more reliable.
+    Apple Developer Program ($99/yr) lasts a year and makes the widgets more reliable.
     See [Apple ID & Developer account](build/apple-developer.md).
 
-??? question "Does the watch / Garmin talk to the pump directly?"
-    No. The iPhone owns the connection; remotes relay commands to it. A standalone Apple Watch is
-    designed but not built; the Garmin remote lives in the
+??? question "Does the Garmin talk to the pump directly?"
+    No. The iPhone owns the connection; the Garmin remote lives in the
     separate [faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin) repo and always relays
     through the phone.
 
@@ -64,11 +60,6 @@
     Yes. Enter carbs (and optionally BG) and the app uses the pump's own calculator — carb ratio,
     correction factor (ISF), target, and IOB — to recommend a dose you then confirm. Entering
     units directly is always available too. See [Bolus & cancel](operate/bolus.md).
-
-??? question "Can I use Siri or Shortcuts?"
-    Yes, **read-only**: ask Siri for glucose/IOB/pump status, and use a set of value-returning
-    Shortcuts actions in automations. There is no voice/automated bolus by design. See
-    [Siri & Shortcuts](customize/shortcuts.md).
 
 ??? question "How do you know the protocol bytes are right?"
     Every outgoing message is tested **byte-for-byte** against the pumpX2 `cliparser` oracle, in
