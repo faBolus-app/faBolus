@@ -1,5 +1,5 @@
 site_name: faBolus
-site_description: faBolus — an iPhone, Apple Watch, Garmin, and Mac remote for insulin pumps; currently supports the Tandem t:slim X2 / Mobi. Built by Zev and Tia in tandem.
+site_description: faBolus — an iPhone and Garmin (Venu 3S) remote for the Tandem t:slim X2 insulin pump. Built by Zev and Tia in tandem.
 site_url: https://fabolus.org/
 repo_url: https://github.com/faBolus-app/faBolus
 repo_name: faBolus-app/faBolus
@@ -82,6 +82,14 @@ markdown_extensions:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
+validation:
+  nav:
+    omitted_files: info
+    absolute_links: info
+  links:
+    unrecognized_links: warn
+    anchors: warn
+
 nav:
   - Home: index.md
   - Get started:
@@ -93,8 +101,7 @@ nav:
       - 1 · Apple account: build/apple-developer.md
       - 2 · Install Xcode: build/xcode.md
       - 3 · Put it on your iPhone: build/build-app.md
-      - 4 · Add the Apple Watch: build/apple-watch-build.md
-      - 5 · Add a Garmin: build/garmin-build.md
+      - 4 · Add a Garmin (Venu 3S): build/garmin-build.md
       - Advanced (command line): build/advanced.md
       - Keeping the app running: build/updating.md
   - Set up & pair:
@@ -102,20 +109,12 @@ nav:
   - Using the app:
       - Dashboard & status: operate/status.md
       - Bolus & cancel: operate/bolus.md
+      - Glucose (Dexcom Share): operate/glucose.md
       - Alerts & alarms: operate/alerts.md
-      - Eating nudges: operate/eating-nudges.md
-      - CGM failover: operate/cgm-failover.md
-      - Activity & sleep automation: operate/activity-sleep-automation.md
-      - Child (locked) mode: operate/child-mode.md
-      - Backup & restore: operate/backup-restore.md
-  - Customize:
+      - Erase & full reset: operate/erase.md
       - Settings & options: customize/settings.md
-      - Siri & Shortcuts: customize/shortcuts.md
   - Remotes:
-      - Apple Watch: remotes/apple-watch.md
-      - Garmin: remotes/garmin.md
-      - Mac menu bar: remotes/mac.md
-      - iPhone remote: remotes/phone-remote.md
+      - Garmin (Venu 3S): remotes/garmin.md
       - iPhone widgets: remotes/iphone-widgets.md
   - Help:
       - Troubleshooting: troubleshoot.md
