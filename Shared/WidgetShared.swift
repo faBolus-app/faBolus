@@ -315,14 +315,13 @@ public enum WidgetStore {
         defaults?.set(data, forKey: key)
     }
 
-    /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and
-    /// routes to the Bolus tab (iOS 17 can't open a URL directly from an App Intent).
-    public static func requestOpenBolus() { defaults?.set(true, forKey: "openBolusRequest") }
-    public static func takeOpenBolusRequest() -> Bool {
-        guard defaults?.bool(forKey: "openBolusRequest") == true else { return false }
-        defaults?.removeObject(forKey: "openBolusRequest")
-        return true
-    }
+    // Phase 7 (07-03, FEAT-05, D-08): `requestOpenBolus()`/`takeOpenBolusRequest()` are removed —
+    // their entire reason to exist was a Shortcuts "Open Bolus Screen" action (the deleted
+    // `OpenBolusScreenIntent` in the now-git-rm'd Intents surface), which was `requestOpenBolus()`'s
+    // ONLY caller anywhere in the app (confirmed via repo-wide grep — a Rule 1/2 dangling-round-trip
+    // finding, not in RESEARCH's file list). `AppModel.swift`'s `openBolusRequested` flag and
+    // `RootTabView.swift`'s consumer of it are UNTOUCHED — they stay legitimately live, fed by the
+    // separate, still-present `fabolus://bolus` URL-scheme trigger (`App.swift`).
     public static func load() -> WidgetSnapshot? {
         guard let data = defaults?.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)

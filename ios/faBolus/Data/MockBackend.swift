@@ -316,9 +316,10 @@ public final class MockBackend: PumpBackend {
     // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
     public func suspendDelivery() async throws { snapshot.deliverySuspended = true; onChange?() }
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
-    /// 06-01: counts temp-rate writes that reach the backend, so `TempRateAutomationTests` can prove
-    /// an out-of-range/inert headless request never touches the pump (count stays 0) while an in-range
-    /// one passed through by `TempRateAutomation` does (count == 1) — mirrors `idpWriteCount`/`controlWriteCount`.
+    /// 06-01: counts temp-rate writes that reach the backend — mirrors `idpWriteCount`/`controlWriteCount`.
+    /// Phase 7 (07-03, FEAT-05): the original headless-automation caller (`TempRateAutomation`) this
+    /// counter was added for is deleted; `AppModelBehaviorTests` now exercises it via the manual
+    /// `AppModel.setTempBasal` UI path instead — the counter itself stays, still a genuine reader.
     public private(set) var tempRateWriteCount = 0
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws { tempRateWriteCount += 1; onChange?() }
     public func stopTempBasal() async throws { onChange?() }

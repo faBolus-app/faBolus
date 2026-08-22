@@ -264,32 +264,25 @@ public final class AppSettings {
     /// (the opt-in is a plain preference, never re-coupled to the advanced-control gate).
     public var autoSyncPumpTime: Bool { didSet { d.set(autoSyncPumpTime, forKey: "autoSyncPumpTime") } }
 
-    /// **Auto Exercise mode** — when a workout starts (via the Shortcuts automation the user sets up),
-    /// switch the pump into Control-IQ Exercise mode, and back to normal when it ends. **Default OFF.**
-    /// Auto-switching applies only to a **Mobi** (t:slim X2 can't; it gets a reminder if `modeReminders`
-    /// is on). See [[jwoglom-parity-roadmap]].
+    /// **Auto Exercise mode** — switches the pump into Control-IQ Exercise mode when a workout starts,
+    /// and back to normal when it ends. **Default OFF.** Auto-switching applies only to a **Mobi**
+    /// (t:slim X2 can't; it gets a reminder if `modeReminders` is on). See [[jwoglom-parity-roadmap]].
+    /// Phase 7 (07-03, FEAT-05, D-08): FROZEN — hidden (no Settings UI) and unregistered (no
+    /// `SettingsCatalog` descriptor, no backup/restore participation, `historyCoverage` idiom); the kept
+    /// `ModeAutomation.swift` still reads it (`AppModel.swift:1821,2115`, `DOSE_PATHS`).
     public var autoExerciseMode: Bool { didSet { d.set(autoExerciseMode, forKey: "autoExerciseMode") } }
-    /// **Auto Sleep mode** — when the iPhone enters Sleep Focus (via the Shortcuts automation), switch
-    /// the pump into Sleep mode, and back when it ends. **Default OFF.** Mobi-only auto-switch.
+    /// **Auto Sleep mode** — switches the pump into Sleep mode when the iPhone enters Sleep Focus, and
+    /// back when it ends. **Default OFF.** Mobi-only auto-switch. Phase 7 (07-03, FEAT-05, D-08):
+    /// FROZEN — same hidden/unregistered posture as `autoExerciseMode` above.
     public var autoSleepMode: Bool { didSet { d.set(autoSleepMode, forKey: "autoSleepMode") } }
     /// **Mode reminders** — when an auto mode-switch can't be applied automatically (a t:slim, or the
     /// pump isn't connected), post a notification reminding the user to switch modes on the pump
-    /// themselves. **Default OFF.**
+    /// themselves. **Default OFF.** Phase 7 (07-03, FEAT-05, D-08): FROZEN — same hidden/unregistered
+    /// posture as `autoExerciseMode` above.
     public var modeReminders: Bool { didSet { d.set(modeReminders, forKey: "modeReminders") } }
-    /// **Auto temp rate** (999.2, D-01) — permits `SetTempRateIntent` (a Shortcuts action, NOT a Siri
-    /// phrase) to set a temporary basal rate via `TempRateAutomation`. **Default OFF.** Even when ON,
-    /// the intent stays functionally inert until BOTH the pump-derived `supportsTempBasal` capability
-    /// AND the Phase-11 saline-bench flag (`TempRateAutomation.benchVerifiedDefault`) clear (D-03).
-    public var autoTempRate: Bool { didSet { d.set(autoTempRate, forKey: "autoTempRate") } }
-    /// **Auto profile activation** (999.2, D-02) — permits `ActivateProfileIntent` (a Shortcuts action,
-    /// NOT a Siri phrase) to switch the active Personal Profile via `ProfileAutomation`. **Default OFF.**
-    /// Even when ON, `setActiveProfile` is gated `.unverifiedAck` (AccessPolicy.swift:229-232) — a
-    /// headless Shortcuts run can NEVER supply the required live in-app acknowledgment, so this permit
-    /// only ever matters for a Shortcut that opens the app first and lets the user confirm interactively
-    /// (D-02; the `.unverifiedAck` gate is NOT weakened for this toggle). Also gated on the pump-derived
-    /// `supportsProfiles` capability AND the Phase-11 saline-bench flag
-    /// (`ProfileAutomation.profileBenchVerifiedDefault`), mirroring `autoTempRate` (D-03).
-    public var autoProfileActivation: Bool { didSet { d.set(autoProfileActivation, forKey: "autoProfileActivation") } }
+    // Phase 7 (07-03, FEAT-05, D-08): autoTempRate/autoProfileActivation are DELETED — their only
+    // readers were the removed TempRateAutomation/ProfileAutomation engines (Task 2), so no reader
+    // remains anywhere in the app; a genuine delete, not a freeze. Preserved on dev/siri-shortcuts.
 
     /// §6/S8 B6: opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
     /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
@@ -725,8 +718,6 @@ public final class AppSettings {
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
-        autoTempRate = (d.object(forKey: "autoTempRate") as? Bool) ?? false
-        autoProfileActivation = (d.object(forKey: "autoProfileActivation") as? Bool) ?? false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         // B6: default ON for a Mobi (screenless ⇒ phone is the primary annunciator), else OFF — until set.
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? (PumpModelStore.isMobi() == true)
@@ -809,11 +800,9 @@ public final class AppSettings {
             "glucoseStaleMinutes": .int(glucoseStaleMinutes),
             "advancedControlEnabled": .bool(advancedControlEnabled),
             "autoSyncPumpTime": .bool(autoSyncPumpTime),
-            "autoExerciseMode": .bool(autoExerciseMode),
-            "autoSleepMode": .bool(autoSleepMode),
-            "modeReminders": .bool(modeReminders),
-            "autoTempRate": .bool(autoTempRate),
-            "autoProfileActivation": .bool(autoProfileActivation),
+            // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
+            // emitted here (frozen, hidden/unregistered); autoTempRate/autoProfileActivation deleted
+            // outright (see applyBackup below for the matching restore-side removal).
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
@@ -895,11 +884,9 @@ public final class AppSettings {
         if let v = i("glucoseStaleMinutes") { glucoseStaleMinutes = v }
         if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
         if let v = b("advancedControlEnabled") { advancedControlEnabled = v }
-        if let v = b("autoExerciseMode") { autoExerciseMode = v }
-        if let v = b("autoSleepMode") { autoSleepMode = v }
-        if let v = b("modeReminders") { modeReminders = v }
-        if let v = b("autoTempRate") { autoTempRate = v }
-        if let v = b("autoProfileActivation") { autoProfileActivation = v }
+        // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
+        // restore from a backup either (frozen, hidden/unregistered); autoTempRate/autoProfileActivation
+        // deleted outright — same posture as watchBolusEnabled/requireRemoteBolusApproval above.
         if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
@@ -943,8 +930,6 @@ public final class AppSettings {
         autoSyncPumpTime = false
         autoSleepMode = false
         autoExerciseMode = false
-        autoTempRate = false
-        autoProfileActivation = false
         modeReminders = false
         remoteBolusCeiling = nil
         alertRules = []

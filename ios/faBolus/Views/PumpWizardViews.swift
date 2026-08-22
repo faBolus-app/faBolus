@@ -731,8 +731,9 @@ private struct SleepScheduleSlotEditRow: View {
     }
 
     /// The 7-day toggle-chip row — the one genuinely new visual element this phase needs, anchored on
-    /// `ModeAutomationHelpView.step()`'s numbered circle-badge idiom (small filled/outlined `Circle`s).
-    /// Each chip maps DETERMINISTICALLY to its confirmed `activeDays` wire bit (Monday=bit0…Sunday=bit6).
+    /// a numbered circle-badge idiom (small filled/outlined `Circle`s; the view this idiom originated
+    /// from, `ModeAutomationHelpView`, was removed Phase 7 07-03 FEAT-05). Each chip maps
+    /// DETERMINISTICALLY to its confirmed `activeDays` wire bit (Monday=bit0…Sunday=bit6).
     private var dayChipRow: some View {
         HStack(spacing: 8) {
             ForEach(0..<7, id: \.self) { bit in

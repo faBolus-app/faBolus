@@ -38,12 +38,12 @@ struct FaBolusApp: App {
                     model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
-                    if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
+                    // Phase 7 (07-03, FEAT-05): the WidgetStore open-bolus-request round trip removed
+                    // here — its only setter was a Shortcuts intent this phase deletes.
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         widgetBolus?.handlePending()
-                        if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                     } else if phase == .background {
                         #if FABOLUS_BACKUP
                         ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD

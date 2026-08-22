@@ -130,8 +130,8 @@ final class NotificationRuntime {
 
     /// Mutate one category's settings and persist immediately (App-Group-backed) so a fresh
     /// `NotificationRuntime(store:)` construction — including a sibling out-of-process poster
-    /// (`ModeAutomation`/`ProfileAutomation`/`TempRateAutomation`/the widget snooze intent) — honors it on
-    /// its next `evaluate`. The UI (Plan 02) writes through this.
+    /// (`ModeAutomation`/the widget snooze intent) — honors it on its next `evaluate`. The UI (Plan 02)
+    /// writes through this.
     func updateSettings(_ cfg: NotificationBroker.CategorySettings, for category: NotificationBroker.Category) {
         settings[category] = cfg
         persistSettings()

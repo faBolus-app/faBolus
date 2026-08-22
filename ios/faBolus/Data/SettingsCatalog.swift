@@ -94,10 +94,10 @@ enum SettingsCatalog {
     /// here (D-09); see `SettingsCatalogTests` for the current count. History up to Phase 6: 46 → 48,
     /// Phase 5 05-04: `liveActivityEnabled` + `liveActivityFields` added; 48 → 49, Phase 5 05-03: the
     /// glucose-badge opt-in added; 49 → 50, owner-requested "Show unit labels" toggle:
-    /// `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01 (999.2/D-01): `autoTempRate` added; 51 →
-    /// 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation` added; 52 → 55, Phase 09.13-01
-    /// (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added (54→55 corrects a prior
-    /// off-by-one in this comment); 55 → 57, Phase 09.13-02 (D-05): `glucosePlotFloorSmall` +
+    /// `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01 (999.2/D-01): the auto-temp-rate row
+    /// added; 51 → 52, Phase 6 06-02 (999.2/D-02): the auto-profile-activation row added; 52 → 55,
+    /// Phase 09.13-01 (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added (54→55 corrects
+    /// a prior off-by-one in this comment); 55 → 57, Phase 09.13-02 (D-05): `glucosePlotFloorSmall` +
     /// `glucosePlotCeilingSmall` added; 57 → 58, Phase 09.18a-04: `siteAtlasEnabled` added; 58 → 59,
     /// Phase 09.26-01 (D-11/D-21): `liveActivityStyle` added; 59 → 66, Phase 09.26-02 (D-15/D-18/D-19):
     /// `liveActivityTopRightField`, `liveActivityPlotRangeHours`, `liveActivityShowXAxisLine`,
@@ -105,7 +105,8 @@ enum SettingsCatalog {
     /// `liveActivityShowRangeLines` added; 66 → 67, Phase 09.26-07 (D-22): `liveActivityShowBolusShortcut`
     /// added; Phase 7 (07-01, FEAT-01): all 11 `liveActivity*` keys above removed (delete-on-main);
     /// 67 → 48. Phase 7 (07-02, FEAT-03): the glucose-badge opt-in descriptor removed (no-op stub,
-    /// D-04); 48 → 47.
+    /// D-04); 48 → 47. Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation rows (the 3 Standard-tier
+    /// ones + the 2 Advanced-only ones added by 06-01/06-02 above) removed; 47 → 42.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -157,23 +158,11 @@ enum SettingsCatalog {
         // MARK: Pump & control
         .init("advancedControlEnabled", .pump, from: .advanced, backsUp: true, syncsToICloud: false),
         .init("autoSyncPumpTime", .pump, from: .advanced, backsUp: true),
-        // §8 L3 = Standard. Auto exercise/sleep + reminders are a SHIPPED Standard feature; leaving them at
-        // .advanced would silently drop them out of Standard once Simple-default (P14 S3) lands (E6 G1).
-        .init("autoExerciseMode", .pump, from: .standard, backsUp: true),
-        .init("autoSleepMode", .pump, from: .standard, backsUp: true),
-        .init("modeReminders", .pump, from: .standard, backsUp: true),
-        // Phase 6 (06-01, 999.2/D-01): auto temp rate — unlike auto Exercise/Sleep mode (Standard-tier
-        // shipped features, L3 above), a temp rate is only reachable through the Advanced-control
-        // surface (`supportsTempBasal` behind `advancedControlEnabled`), so this row starts at
-        // `.advanced` like `advancedControlEnabled`/`autoSyncPumpTime`. Not command-adjacent (mirrors
-        // autoExerciseMode/autoSleepMode/modeReminders, which permit an automated pump write but are not
-        // in `commandAdjacentFlags` either) — default iCloud sync ON.
-        .init("autoTempRate", .pump, from: .advanced, backsUp: true),
-        // Phase 6 (06-02, 999.2/D-02): auto profile activation — same reasoning as autoTempRate:
-        // only reachable through the Advanced-control surface (`supportsProfiles`), so `.advanced`
-        // minimum. Not command-adjacent (the `.unverifiedAck` gate, not iCloud sync, is what keeps a
-        // headless macro from ever completing this write) — default iCloud sync ON.
-        .init("autoProfileActivation", .pump, from: .advanced, backsUp: true),
+        // Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation descriptors that used to live here
+        // (the 3 Standard-tier ones + the 2 Advanced-only ones) are removed — their Settings UI rows
+        // are gone. The 3 corresponding `AppSettings` accessors stay (frozen, hidden-flag pattern, the
+        // kept `ModeAutomation.swift` still reads them); the other 2 accessors are deleted outright
+        // (their only readers, the automation engines, are gone).
         .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
         .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
         // MARK: Remotes & devices

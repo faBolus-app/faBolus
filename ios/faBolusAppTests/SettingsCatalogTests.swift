@@ -94,6 +94,16 @@ enum CompileGateAudit {
         // an indexed search row, same shape as Live Activity above), so this token is also a genuinely
         // vacuous, correct check.
         tokens.formUnion(["badge"])
+        // Phase 7, 07-03 (FEAT-05): Siri + read-only Shortcuts (the 5 `ios/faBolus/Intents/*` files,
+        // incl. `FaBolusShortcuts`) + the Temp/Profile automation engines removed from narrow `main`
+        // (unconditional — permanent removal, no `#if` guard per D-01); the mode-automation Settings
+        // Section (5 toggles + the help-view link) is also removed, and its `SettingsIndex` row
+        // ("Activity & sleep automation") + the separate, now-meaningless "Siri phrases" row (a §6c
+        // finding not in RESEARCH's file list — the live "Siri (read-only)" Settings section it
+        // pointed to described voice phrases that no longer register anywhere once `FaBolusShortcuts`
+        // is gone) were both removed in the SAME commit as this token addition, so this check is a
+        // genuinely vacuous, correct check by construction (no live row left to flag).
+        tokens.formUnion(["siri", "shortcuts automation", "auto exercise", "auto sleep", "auto profile activation", "auto temp rate"])
         return tokens
     }
 
@@ -129,8 +139,8 @@ struct SettingsCatalogTests {
         // Phase 5 (05-04, D-15/D-17a): 46 → 48 (liveActivityEnabled + liveActivityFields added).
         // Phase 5 (05-03, D-13/D-14): 48 → 49 (glucoseBadgeEnabled added).
         // Owner-requested "Show unit labels" toggle: 49 → 50 (showGlucoseUnitLabels added).
-        // Phase 6 (06-01, 999.2/D-01): 50 → 51 (autoTempRate added).
-        // Phase 6 (06-02, 999.2/D-02): 51 → 52 (autoProfileActivation added).
+        // Phase 6 (06-01, 999.2/D-01): 50 → 51 (the auto-temp-rate row added).
+        // Phase 6 (06-02, 999.2/D-02): 51 → 52 (the auto-profile-activation row added).
         // Phase 09.7-01: historyCoverage (D-04) is intentionally NOT added here — see the NOTE in
         // SettingsCatalog.swift (no UI surface; matches the ack/grant-flag precedent).
         // Phase 09.7-02 (D-01): 52 → 53 (historySyncEnabled added).
@@ -168,8 +178,12 @@ struct SettingsCatalogTests {
         // opt-in, field selection, style, and 7 full-bleed display options — delete-on-main).
         // Phase 7 (07-02, FEAT-03): 48 → 47 (glucoseBadgeEnabled descriptor removed — the badge is a
         // main-only no-op stub now, D-04 literal no-op stub, owner 2026-08-21).
-        #expect(SettingsCatalog.descriptors.count == 47)
-        #expect(SettingsCatalog.byKey.count == 47)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 7 (07-03, FEAT-05): 47 → 42 (the 5 mode-automation descriptors removed — the 3
+        // Standard-tier rows + the 2 Advanced-only rows added by 06-01/06-02 above; their Settings UI
+        // section is gone. 3 of the 5 backing `AppSettings` accessors survive as frozen
+        // hidden/unregistered flags, the other 2 are deleted outright).
+        #expect(SettingsCatalog.descriptors.count == 42)
+        #expect(SettingsCatalog.byKey.count == 42)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -187,8 +201,8 @@ struct SettingsCatalogTests {
         // Phase 5 (05-04): 42 → 44 (liveActivityEnabled + liveActivityFields, both unconditional).
         // Phase 5 (05-03): 44 → 45 (glucoseBadgeEnabled, unconditional).
         // Owner-requested toggle: 45 → 46 (showGlucoseUnitLabels, unconditional).
-        // Phase 6 (06-01, 999.2/D-01): 46 → 47 (autoTempRate, unconditional).
-        // Phase 6 (06-02, 999.2/D-02): 47 → 48 (autoProfileActivation, unconditional).
+        // Phase 6 (06-01, 999.2/D-01): 46 → 47 (the auto-temp-rate row, unconditional).
+        // Phase 6 (06-02, 999.2/D-02): 47 → 48 (the auto-profile-activation row, unconditional).
         // Phase 09.7-02 (D-01): historySyncEnabled is NOT backed up (device-local), no count change here.
         // Phase 09.13-01 (D-01/D-02/D-04): 48 → 50 (glucosePlotFloor + glucosePlotCeiling, both unconditional).
         // Phase 09.13-02 (D-05): 50 → 52 (glucosePlotFloorSmall + glucosePlotCeilingSmall, both conditional).
@@ -212,7 +226,10 @@ struct SettingsCatalogTests {
         // Phase 7 (07-01, FEAT-01): 57 → 46 (all 11 liveActivity* keys removed, all unconditional).
         // Phase 7 (07-02, FEAT-03): 46 → 45 (glucoseBadgeEnabled removed from the catalog AND
         // backupSnapshot/applyBackup, unconditional — the badge is a main-only no-op stub now).
-        #expect(SettingsCatalog.backedUpKeys.count == 45)                      // 39 unconditional + 6 conditional
+        // Phase 7 (07-03, FEAT-05): 45 → 40 (the 5 mode-automation rows removed from the catalog; the
+        // 3 frozen accessors' backup/applyBackup lines removed too — hidden/unregistered, never
+        // backed up going forward; the other 2 accessors are deleted outright).
+        #expect(SettingsCatalog.backedUpKeys.count == 40)                      // 34 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

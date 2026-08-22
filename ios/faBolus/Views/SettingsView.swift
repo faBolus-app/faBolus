@@ -328,13 +328,11 @@ enum SettingsIndex {
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
-        .init(title: "Activity & sleep automation", keywords: "exercise sleep mode workout focus shortcuts automation temp rate profile activation", category: .pump),
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
         .init(title: "Garmin analog clock face", keywords: "analog digital clock face hands watch", category: .remotes),
         .init(title: "Set up Garmin remote", keywords: "connect iq install", category: .remotes),
-        .init(title: "Siri phrases", keywords: "voice shortcuts", category: .remotes),
         .init(title: "Help & documentation", keywords: "docs website fabolus.org support", category: .about),
         .init(title: "Debug diagnostics", keywords: "logs developer", category: .about),
     ]
@@ -679,24 +677,13 @@ struct PumpSettingsView: View {
                     Text("Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation.")
                 }
             }
-            Section {
-                Toggle("Allow auto Exercise mode", isOn: $settings.autoExerciseMode)
-                Toggle("Allow auto Sleep mode", isOn: $settings.autoSleepMode)
-                Toggle("Allow auto temp rate", isOn: $settings.autoTempRate)
-                Toggle("Allow auto profile activation", isOn: $settings.autoProfileActivation)
-                Toggle("Remind me when it can't switch", isOn: $settings.modeReminders)
-                NavigationLink { ModeAutomationHelpView() } label: {
-                    Label("Set up the Shortcuts automation", systemImage: "wand.and.stars")
-                }
-            } header: { Text("Activity & sleep automation") } footer: {
-                // §13 / D-03: the "temp rate and profile activation aren't active yet" sentence below is
-                // insulin-affecting DRAFT copy, §13-pending — it must pass §13 clinical review before any
-                // experimental distribution (BRANCHES.md §13). It discloses the build-inert truth:
-                // `TempRateAutomation.benchVerifiedDefault` and `ProfileAutomation.profileBenchVerifiedDefault`
-                // ship `false`, so both intents refuse every headless run until the Phase-11 saline-bench flag
-                // flips. Display copy only — no gate depends on this string.
-                Text("**Two steps are required — the switch alone does nothing.** (1) Turn a switch on above: that only *permits* faBolus to change the mode. (2) Create the one-time Apple **Shortcuts automation** that actually triggers it (tap **Set up the Shortcuts automation**) — iOS won't let faBolus create it for you. Once both are in place, the pump switches to **Exercise** when a workout starts and **Sleep** when your iPhone enters Sleep Focus. **Mobi-only** (needs Advanced control); a t:slim can't be switched — turn on reminders to be nudged to do it yourself. **Temp rate and profile activation aren't active yet** — those two actions are pending saline-bench validation and will decline every run until a future faBolus update enables them. All off by default.")
-            }
+            // Phase 7 (07-03, FEAT-05, D-08): the mode-automation Settings Section (5 toggles + a
+            // link to the now-deleted help View) is removed — its whole reason to exist was configuring
+            // the Siri/Shortcuts automations this phase deletes. autoTempRate/autoProfileActivation
+            // (only readers were the deleted TempRateAutomation/ProfileAutomation engines) are fully
+            // deleted from AppSettings.swift below. autoExerciseMode/autoSleepMode/modeReminders are
+            // FROZEN at their existing default `false` — the kept ModeAutomation.swift still reads
+            // them (AppModel.swift:1821,2115, DOSE_PATHS).
             if BackendRegistry.enabled.count > 1 {
                 Section {
                     Picker("Pump backend", selection: $selectedBackend) {
@@ -761,10 +748,11 @@ struct RemotesSettingsView: View {
     // the right state without making the store observable.
     @State private var showSetPasscode = false
     @State private var passcodeSet = false
-    static let siriPhrases = [
-        "What's my glucose in faBolus", "Insulin on board in faBolus", "Pump status in faBolus",
-        "Any alerts in faBolus", "Last bolus in faBolus",
-    ]
+    // Phase 7 (07-03, FEAT-05, D-08): the `siriPhrases` list + the Section that rendered it below are
+    // removed — they described the read-only voice queries that the now-deleted Intents surface
+    // registered; with that registration gone, the phrases no longer do anything (a Rule 1/2 dangling
+    // reference to removed functionality, not in RESEARCH's file list — found via a systematic grep
+    // for "Siri"/"Shortcuts"/"automation" across ios/faBolus).
 
     /// §2.3: turning an enable ON routes through the one-time warning on first use (Confirm arms it +
     /// records the ack; Cancel leaves it off — the binding's `get` reads the real, still-false flag so the
@@ -944,13 +932,6 @@ struct RemotesSettingsView: View {
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
-            }
-            Section {
-                ForEach(RemotesSettingsView.siriPhrases, id: \.self) { p in
-                    Label("“\(p)”", systemImage: "mic.fill").font(.callout)
-                }
-            } header: { Text("Siri (read-only)") } footer: {
-                Text("These work automatically — no setup needed. Say “Hey Siri” then a phrase, or add them in the Shortcuts app. Siri never delivers a bolus.")
             }
         }
         .navigationTitle("Remotes & devices")
