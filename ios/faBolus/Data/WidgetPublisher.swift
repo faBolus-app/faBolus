@@ -19,12 +19,11 @@ enum WidgetPublisher {
                              staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
                              hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
         // Phase 09.26-04 (D-14) — widened from 48 (~4h @ 5-min cadence) to 96 (~8h) so the App-Group
-        // snapshot carries enough raw history to feed the Live Activity's OWN 6h plot-range option
-        // (`GlucoseLiveActivityManager.makeContent`'s `LAPlotWindow.recentPoints`, which further
-        // windows/downsamples down to the ActivityKit ~4KB `ContentState` budget). Additive/
-        // snapshot-only — the App-Group `WidgetSnapshot` isn't subject to that 4KB ceiling (it's a
-        // different serialization target than `ContentState`), so widening it here is safe; the Home
-        // Screen widget's own `Sparkline` just renders a denser line, no behavior change there.
+        // snapshot carries enough raw history for consumers that want a denser series (originally
+        // added for the since-removed Live Activity's 6h plot-range option, Phase 7 07-01 FEAT-01).
+        // The Home Screen widget's own `Sparkline` renders whatever density it's given, so keeping
+        // the wider window is harmless and still useful there — no behavior change from narrowing it
+        // back down.
         let points = history.suffix(96).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         return WidgetSnapshot(
             glucose: s.glucose,
@@ -88,9 +87,6 @@ enum WidgetPublisher {
                                 staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
                                 hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
-        // Phase 5 (D-03) — the single BLE-driven choke point also drives the glucose Live Activity.
-        // App-driven only (no APNs); see GlucoseLiveActivityManager.update(from:).
-        GlucoseLiveActivityManager.update(from: snap)
         // Phase 5 (D-13, 05-03) — the same choke point drives the opt-in app-icon badge. The opt-in
         // gate + freshness live inside GlucoseBadge, so this stays a thin call; the arbiter timer
         // re-runs refresh()->publish every ~20s, so the badge re-evaluates and clears to 0 as a

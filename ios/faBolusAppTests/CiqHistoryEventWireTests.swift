@@ -220,33 +220,6 @@ import TandemMessages
         #expect(label == "12 min ago")
     }
 
-    // MARK: - Task 3: LiveActivityShared.ContentState Codable-completeness (T1-3 only, D-08)
-
-    /// `ContentState.lastAutoCorrectionDate` round-trips through JSON, and a legacy payload
-    /// predating this key decodes to the fail-closed `nil` default rather than throwing.
-    @Test func contentStateLastAutoCorrectionRoundTripsAndDefaultsFailClosedOnALegacyPayload() throws {
-        var state = FaBolusGlucoseAttributes.ContentState()
-        let d = Date(timeIntervalSince1970: 1_700_000_000)
-        state.lastAutoCorrectionDate = d
-        let data = try JSONEncoder().encode(state)
-        let back = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: data)
-        #expect(back.lastAutoCorrectionDate == d)
-
-        // Legacy payload predating lastAutoCorrectionDate — must decode, not throw.
-        let legacy = #"{"glucose":100}"#
-        let legacyData = Data(legacy.utf8)
-        let legacyState = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyData)
-        #expect(legacyState.lastAutoCorrectionDate == nil)
-    }
-
-    /// D-08 explicit scope: T1-4 is never surfaced on widgets/LA — the vocabulary must register the
-    /// opt-in T1-3 id and must NOT contain any T1-4-named id.
-    @Test func laFieldVocabularyRegistersLastAutoCorrectionButNoT1FourField() {
-        #expect(LAFieldVocabulary.all.contains("lastAutoCorrection"))
-        #expect(!LAFieldVocabulary.all.contains("couldNotDeliver"))
-        #expect(!LAFieldVocabulary.all.contains("ciqLastCouldNotDeliver"))
-    }
-
     // MARK: - Backstop: Garmin ≤~28-char DetailsView.detailRow budget at FONT_XTINY
 
     /// `DetailsView.mc`'s new rows are hand-mirrored here (Monkey C isn't runnable from this Swift

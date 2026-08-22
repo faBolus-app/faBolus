@@ -181,25 +181,4 @@ import faBolusCore
         #expect(elapsed == "8 min")
     }
 
-    // MARK: - Task 3: LiveActivityShared.ContentState Codable-completeness (D-08)
-
-    /// `ContentState.ciqSuspendedForLow`/`ciqSuspendStartDate` round-trip through JSON, and a legacy
-    /// payload predating these keys decodes to the fail-closed default (false/nil) rather than throwing.
-    @Test func contentStateSuspendFieldsRoundTripAndDefaultFailClosedOnALegacyPayload() throws {
-        var state = FaBolusGlucoseAttributes.ContentState()
-        state.ciqSuspendedForLow = true
-        let start = Date(timeIntervalSince1970: 1_700_000_000)
-        state.ciqSuspendStartDate = start
-        let data = try JSONEncoder().encode(state)
-        let back = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: data)
-        #expect(back.ciqSuspendedForLow == true)
-        #expect(back.ciqSuspendStartDate == start)
-
-        // Legacy payload predating ciqSuspendedForLow/ciqSuspendStartDate — must decode, not throw.
-        let legacy = #"{"glucose":100}"#
-        let legacyData = Data(legacy.utf8)
-        let legacyState = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyData)
-        #expect(legacyState.ciqSuspendedForLow == false)
-        #expect(legacyState.ciqSuspendStartDate == nil)
-    }
 }

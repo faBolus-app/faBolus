@@ -56,11 +56,10 @@ public enum WidgetGlucoseUnit: String {
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
 public struct WidgetSnapshot: Codable, Sendable, Equatable {
-    // Hashable (Phase 5, D-06): Live Activity `ContentState` requires `Hashable`
-    // (`ActivityAttributes.ContentState` protocol constraint), and it carries `[Point]` verbatim
-    // (`Shared/LiveActivityShared.swift`'s `FaBolusGlucoseAttributes.ContentState.recentPoints`) —
-    // do NOT invent a second point type. Purely additive; `Date`/`Int` are both Hashable, so this
-    // doesn't change `Point`'s existing Equatable/Codable behavior.
+    // Hashable (Phase 5, D-06): originally required by the Live Activity `ContentState`
+    // (`ActivityAttributes.ContentState` protocol constraint), which carried `[Point]` verbatim
+    // (removed Phase 7, 07-01, FEAT-01). Kept — harmless and still additive; `Date`/`Int` are both
+    // Hashable, so this doesn't change `Point`'s existing Equatable/Codable behavior.
     public struct Point: Codable, Sendable, Equatable, Hashable {
         public var t: Date
         public var mgdl: Int
@@ -107,15 +106,16 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// Additive-optional: `nil`/missing-key on a legacy snapshot decodes to **false** (labels hidden),
     /// matching the setting's own default-OFF — a widget built before this field existed never starts
     /// showing a caption it wasn't told to. Gates ONLY the persistent mg/dL·mmol/L CAPTION on the
-    /// widget/complication/Live Activity ambient surfaces; the glucose number itself is unaffected.
+    /// widget/complication ambient surfaces; the glucose number itself is unaffected.
     public var showUnitLabel: Bool
 
-    // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields the Live
-    // Activity projects alongside glucose. All additive-optional, defaulted below AND in the
-    // custom `init(from:)` decoder (see Codable conformance) so an old JSON snapshot missing every
-    // one of these still decodes. `iobDate` is the op-109 stamp IOB greys/ages off (mirrors
-    // `PumpSnapshot.iobDate`); the other four are dateless — the Live Activity greys them as a
-    // single cluster off link/last-sync freshness, never their own timestamp (there isn't one).
+    // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields originally
+    // projected alongside glucose by the Live Activity (removed Phase 7, 07-01, FEAT-01); kept
+    // compiled as general PumpSnapshot mirrors (AppModel.swift's write path is byte-identity
+    // protected). All additive-optional, defaulted below AND in the custom `init(from:)` decoder
+    // (see Codable conformance) so an old JSON snapshot missing every one of these still decodes.
+    // `iobDate` is the op-109 stamp IOB greys/ages off (mirrors `PumpSnapshot.iobDate`); the other
+    // four are dateless.
     /// When `iobUnits` was last received from the pump (op-109). `nil` ⇒ unknown age ⇒ always stale.
     public var iobDate: Date?
     /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
@@ -130,9 +130,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
     /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
     /// the same "app computes the gate, the extension/intent only reads it" pattern as
-    /// `iobStale`/`pumpLinkStale` (D-17, §13 Rule 1). Gates BOTH the Live Activity's "Snooze" button
-    /// visibility and, independently, `LiveActivityIntentBridge.snoozeAlertIfSafe`'s own runtime
-    /// re-check — an `.alarm` must never be offered (or receive) a snooze affordance.
+    /// `iobStale`/`pumpLinkStale` (D-17, §13 Rule 1). Originally gated the Live Activity's "Snooze"
+    /// button visibility + its `LiveActivityIntentBridge.snoozeAlertIfSafe` action re-check (both
+    /// removed Phase 7, 07-01, FEAT-01) — kept compiled as a general PumpSnapshot mirror
+    /// (AppModel.swift's write path is byte-identity protected).
     public var hasSnoozeEligibleAlert: Bool
 
     /// Phase 09.9-04 (D-05) — the pump's cartridge-ready DISPLAY signal. Additive, mirroring
@@ -312,167 +313,6 @@ public enum WidgetStore {
     public static func save(_ s: WidgetSnapshot) {
         guard let data = try? JSONEncoder().encode(s) else { return }
         defaults?.set(data, forKey: key)
-    }
-
-    /// Phase 5 (D-15/D-17a) — the Live Activity's current field-selection mirror, JSON-encoded ordered
-    /// `[String]`. Written by `AppSettings.syncWidgetConfig()`; read by
-    /// `GlucoseLiveActivityManager.makeContent` when baking the selection into `ContentState` (the
-    /// extension's SwiftUI views never observe App-Group changes directly — pump-surface research
-    /// §2b). `nil` when absent (a legacy install, or before the first `syncWidgetConfig()` call) — the
-    /// manager falls back to the full LA vocabulary rather than rendering nothing.
-    public static var liveActivityFields: [String]? {
-        get {
-            guard let data = defaults?.data(forKey: "liveActivityFields") else { return nil }
-            return try? JSONDecoder().decode([String].self, from: data)
-        }
-        set {
-            guard let newValue, let data = try? JSONEncoder().encode(newValue) else {
-                defaults?.removeObject(forKey: "liveActivityFields")
-                return
-            }
-            defaults?.set(data, forKey: "liveActivityFields")
-        }
-    }
-
-    /// Phase 09.26 tracer (D-11/D-21) — the Live Activity style mirror ("fullBleed"|"classic"),
-    /// written by `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent`
-    /// when baking `ContentState.liveActivityStyle` (the extension's SwiftUI views never observe
-    /// App-Group changes directly — pump-surface research §2b). `nil` when absent (a legacy install,
-    /// or before the first `syncWidgetConfig()` call) — the manager falls back to "fullBleed" rather
-    /// than baking in a blank style.
-    public static var liveActivityStyle: String? {
-        get { defaults?.string(forKey: "liveActivityStyle") }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityStyle")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityStyle")
-        }
-    }
-
-    /// Phase 09.26 tracer (D-02/D-03) — the phone's own glucose-plot Y-axis floor/ceiling mirror
-    /// (`AppSettings.glucosePlotFloor`/`glucosePlotCeiling`), so the full-bleed LA curve resolves the
-    /// SAME bounds via `GlucosePlotScale.resolve(storedFloor:storedCeiling:)` the phone's own chart
-    /// uses. `nil` when absent (legacy install / not yet synced) — `resolve` already treats a `nil`
-    /// pair as "use the defaults", so no separate fallback is needed here.
-    public static var liveActivityPlotFloor: Int? {
-        get { defaults?.object(forKey: "liveActivityPlotFloor") as? Int }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityPlotFloor")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityPlotFloor")
-        }
-    }
-    public static var liveActivityPlotCeiling: Int? {
-        get { defaults?.object(forKey: "liveActivityPlotCeiling") as? Int }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityPlotCeiling")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityPlotCeiling")
-        }
-    }
-
-    /// Phase 09.26-02 (D-15) — the full-bleed top-right slot content mirror, written by
-    /// `AppSettings.syncWidgetConfig()`, read by `GlucoseLiveActivityManager.makeContent` when baking
-    /// `ContentState.topRightField`. `nil` when absent (a legacy install, or before the first
-    /// `syncWidgetConfig()` call) — the manager falls back to "iobDelta" rather than baking in a blank
-    /// slot.
-    public static var liveActivityTopRightField: String? {
-        get { defaults?.string(forKey: "liveActivityTopRightField") }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityTopRightField")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityTopRightField")
-        }
-    }
-
-    /// Phase 09.26-02 (D-14) — the full-bleed LA-ONLY plot time-range (hours) mirror, independent of
-    /// the watch/phone chart's own range settings. `nil` when absent — the manager falls back to 2h.
-    public static var liveActivityPlotRangeHours: Int? {
-        get { defaults?.object(forKey: "liveActivityPlotRangeHours") as? Int }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityPlotRangeHours")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityPlotRangeHours")
-        }
-    }
-
-    /// Phase 09.26-02 (D-18/D-19) — the four independent axis-chrome toggles + the high/low range-lines
-    /// toggle, each mirrored individually (never one packed bitmask) so a future plan can add another
-    /// independent toggle without a migration. `nil` when absent — the manager falls back to `false`
-    /// (chrome OFF) for every one, matching the owner-approved clean full-bleed default.
-    public static var liveActivityShowXAxisLine: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowXAxisLine") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowXAxisLine")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowXAxisLine")
-        }
-    }
-    public static var liveActivityShowYAxisLine: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowYAxisLine") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowYAxisLine")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowYAxisLine")
-        }
-    }
-    public static var liveActivityShowXAxisTicks: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowXAxisTicks") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowXAxisTicks")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowXAxisTicks")
-        }
-    }
-    public static var liveActivityShowYAxisTicks: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowYAxisTicks") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowYAxisTicks")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowYAxisTicks")
-        }
-    }
-    public static var liveActivityShowRangeLines: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowRangeLines") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowRangeLines")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowRangeLines")
-        }
-    }
-
-    /// Phase 09.26-07 (D-22) — the optional nav-only Bolus-shortcut pill toggle mirror. `nil` when
-    /// absent — the manager falls back to `false` (pill OFF), matching the owner-approved default-OFF
-    /// opt-in.
-    public static var liveActivityShowBolusShortcut: Bool? {
-        get { defaults?.object(forKey: "liveActivityShowBolusShortcut") as? Bool }
-        set {
-            guard let newValue else {
-                defaults?.removeObject(forKey: "liveActivityShowBolusShortcut")
-                return
-            }
-            defaults?.set(newValue, forKey: "liveActivityShowBolusShortcut")
-        }
     }
 
     /// A Shortcuts "Open Bolus Screen" action sets this; the app consumes it on becoming active and

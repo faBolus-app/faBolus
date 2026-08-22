@@ -10,9 +10,9 @@ struct RootTabView: View {
     @State private var selection = 0
 
     private func autoReconnectIfNeeded() async {
-        // Guard now lives on AppModel (D-18, 05-05) so the Live Activity's Refresh intent can reuse
-        // the exact same seam via `LiveActivityIntentBridge.reconnect` — see `AppModel
-        // .autoReconnectIfNeeded()`'s doc comment.
+        // Guard lives on AppModel (D-18, 05-05) — see `AppModel.autoReconnectIfNeeded()`'s doc
+        // comment. Originally shared with the Live Activity's Refresh intent (removed Phase 7,
+        // 07-01, FEAT-01); the guard itself is unaffected.
         await model.autoReconnectIfNeeded()
     }
 

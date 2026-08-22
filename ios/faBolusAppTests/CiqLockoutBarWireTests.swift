@@ -167,24 +167,6 @@ import faBolusCore
         #expect(m.lockoutRemainingFraction == nil)
     }
 
-    // MARK: - Task 3: LiveActivityShared.ContentState Codable-completeness
-
-    /// `ContentState.lockoutUntilDate` round-trips through JSON, and a legacy payload predating this
-    /// key decodes to the fail-closed `nil` default rather than throwing.
-    @Test func contentStateLockoutUntilDateRoundTripsAndDefaultsFailClosedOnALegacyPayload() throws {
-        var state = FaBolusGlucoseAttributes.ContentState()
-        let d = Date(timeIntervalSince1970: 1_700_003_600)
-        state.lockoutUntilDate = d
-        let data = try JSONEncoder().encode(state)
-        let back = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: data)
-        #expect(back.lockoutUntilDate == d)
-
-        let legacy = #"{"glucose":100}"#
-        let legacyData = Data(legacy.utf8)
-        let legacyState = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyData)
-        #expect(legacyState.lockoutUntilDate == nil)
-    }
-
     // MARK: - Backstop: Garmin ≤~28-char budget at FONT_XTINY
 
     /// `CgmView.mc`'s new printed numeral is hand-mirrored here (Monkey C isn't runnable from this

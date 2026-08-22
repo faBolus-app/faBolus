@@ -3,41 +3,16 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.27-02 (D-04/D-05): the Codable absent->false drift-guard for `batteryCharging` on BOTH
-/// App-Group carriers — `FaBolusGlucoseAttributes.ContentState` (Live Activity) and `WidgetSnapshot`
-/// (widgets/complications). Mirrors `CiqSuspendWireTests
-/// .contentStateSuspendFieldsRoundTripAndDefaultFailClosedOnALegacyPayload`'s round-trip + legacy-
-/// payload pattern exactly. A legacy/older snapshot that predates this field must decode to
-/// `batteryCharging == false` — never a fabricated charging badge on an old payload (D-05).
-/// `.serialized`: the two `publishSnapshot()` tests added for the Watch-render gap closure write to
-/// the SAME real App-Group `WidgetStore` key other tests could theoretically share — mirrors
+/// Phase 09.27-02 (D-04/D-05): the Codable absent->false drift-guard for `batteryCharging` on the
+/// `WidgetSnapshot` App-Group carrier (widgets/complications). The parallel `FaBolusGlucoseAttributes
+/// .ContentState` (Live Activity) coverage this suite also carried was removed in Phase 7 (07-01,
+/// FEAT-01) alongside the Live Activity type itself. A legacy/older snapshot that predates this field
+/// must decode to `batteryCharging == false` — never a fabricated charging badge on an old payload
+/// (D-05). `.serialized`: the two `publishSnapshot()` tests added for the Watch-render gap closure
+/// write to the SAME real App-Group `WidgetStore` key other tests could theoretically share — mirrors
 /// `WidgetStalenessTests`/`ModeAutomationPrecedenceTests`'s `.serialized` precedent for any suite
 /// that touches `WidgetStore` directly.
 @Suite(.serialized) struct BatteryChargingCarrierTests {
-
-    // MARK: - ContentState (Live Activity)
-
-    @Test func contentStateBatteryChargingRoundTripsTrue() throws {
-        var state = FaBolusGlucoseAttributes.ContentState()
-        state.batteryCharging = true
-        let data = try JSONEncoder().encode(state)
-        let back = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: data)
-        #expect(back.batteryCharging == true)
-    }
-
-    @Test func contentStateLegacyPayloadMissingBatteryChargingDecodesToFalse() throws {
-        // Legacy payload predating batteryCharging — must decode, not throw, and never fabricate
-        // a charging badge for an in-flight Live Activity started under an older build.
-        let legacy = #"{"glucose":100}"#
-        let legacyData = Data(legacy.utf8)
-        let legacyState = try JSONDecoder().decode(FaBolusGlucoseAttributes.ContentState.self, from: legacyData)
-        #expect(legacyState.batteryCharging == false)
-    }
-
-    @Test func contentStateMemberwiseInitDefaultsBatteryChargingFalse() {
-        let state = FaBolusGlucoseAttributes.ContentState()
-        #expect(state.batteryCharging == false)
-    }
 
     // MARK: - WidgetSnapshot (widgets/complications)
 

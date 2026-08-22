@@ -36,11 +36,11 @@ struct SettingDescriptor: Identifiable {
     /// True iff the key rides the iCloud KV settings sync (S5). Invariant: implies `backsUp` (iCloud only
     /// syncs `SettingsBackup.appSettingsSnapshot()`), and is forced **false** for the command-adjacent
     /// flags so settings sync can never carry a safety/command decision to another device (C5). Also
-    /// forced **false** for the ambient ("ephemeral surface") ones — `liveActivityEnabled`,
-    /// `liveActivityFields`, `glucoseBadgeEnabled` — for a different reason: those opt into an
-    /// always-on-screen surface (Lock Screen Live Activity, home-screen badge), and turning that on is a
-    /// per-device decision the owner does not want silently propagated to a device where they never
-    /// opted in.
+    /// forced **false** for the ambient ("ephemeral surface") one — `glucoseBadgeEnabled` — for a
+    /// different reason: it opts into an always-on-screen surface (home-screen badge), and turning
+    /// that on is a per-device decision the owner does not want silently propagated to a device where
+    /// they never opted in. (The Live Activity descriptors that shared this reasoning were removed in
+    /// Phase 7, 07-01, FEAT-01.)
     let syncsToICloud: Bool
     /// Optional search metadata. Populated `nil` in S1 — the `SettingsIndex` fold is deferred to a later
     /// slice because its rows are category-grouped, not 1:1 with keys, and need a curated overlay (C4).
@@ -57,8 +57,8 @@ struct SettingDescriptor: Identifiable {
         self.tier = tier
         self.modes = Set(AppMode.allCases.filter { $0 >= minMode })
         self.backsUp = backsUp
-        // Default: a backed-up key syncs. The five command-adjacent flags plus the three device-local
-        // ambient-surface flags pass `false` explicitly.
+        // Default: a backed-up key syncs. The five command-adjacent flags plus the device-local
+        // ambient-surface flag (`glucoseBadgeEnabled`) pass `false` explicitly.
         self.syncsToICloud = (syncsToICloud ?? backsUp) && backsUp
         self.searchTitle = searchTitle
         self.searchKeywords = searchKeywords
@@ -92,18 +92,20 @@ enum SettingsCatalog {
         "remoteBolusCeiling",
     ]
 
-    /// All 59 persisted `AppSettings` keys (46 → 48, Phase 5 05-04: `liveActivityEnabled` +
-    /// `liveActivityFields` added; 48 → 49, Phase 5 05-03: `glucoseBadgeEnabled` added; 49 → 50,
-    /// owner-requested "Show unit labels" toggle: `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01
-    /// (999.2/D-01): `autoTempRate` added; 51 → 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation`
-    /// added; 52 → 55, Phase 09.13-01 (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added
-    /// (54→55 corrects a prior off-by-one in this comment); 55 → 57, Phase 09.13-02 (D-05):
-    /// `glucosePlotFloorSmall` + `glucosePlotCeilingSmall` added; 57 → 58, Phase 09.18a-04:
-    /// `siteAtlasEnabled` added; 58 → 59, Phase 09.26-01 (D-11/D-21): `liveActivityStyle` added; 59 →
-    /// 66, Phase 09.26-02 (D-15/D-18/D-19): `liveActivityTopRightField`, `liveActivityPlotRangeHours`,
-    /// `liveActivityShowXAxisLine`, `liveActivityShowYAxisLine`, `liveActivityShowXAxisTicks`,
-    /// `liveActivityShowYAxisTicks`, `liveActivityShowRangeLines` added; 66 → 67, Phase 09.26-07
-    /// (D-22): `liveActivityShowBolusShortcut` added).
+    /// Persisted `AppSettings` keys — recomputed live at each phase's exit gate rather than hardcoded
+    /// here (D-09); see `SettingsCatalogTests` for the current count. History up to Phase 6: 46 → 48,
+    /// Phase 5 05-04: `liveActivityEnabled` + `liveActivityFields` added; 48 → 49, Phase 5 05-03:
+    /// `glucoseBadgeEnabled` added; 49 → 50, owner-requested "Show unit labels" toggle:
+    /// `showGlucoseUnitLabels` added; 50 → 51, Phase 6 06-01 (999.2/D-01): `autoTempRate` added; 51 →
+    /// 52, Phase 6 06-02 (999.2/D-02): `autoProfileActivation` added; 52 → 55, Phase 09.13-01
+    /// (D-01/D-02/D-04): `glucosePlotFloor` + `glucosePlotCeiling` added (54→55 corrects a prior
+    /// off-by-one in this comment); 55 → 57, Phase 09.13-02 (D-05): `glucosePlotFloorSmall` +
+    /// `glucosePlotCeilingSmall` added; 57 → 58, Phase 09.18a-04: `siteAtlasEnabled` added; 58 → 59,
+    /// Phase 09.26-01 (D-11/D-21): `liveActivityStyle` added; 59 → 66, Phase 09.26-02 (D-15/D-18/D-19):
+    /// `liveActivityTopRightField`, `liveActivityPlotRangeHours`, `liveActivityShowXAxisLine`,
+    /// `liveActivityShowYAxisLine`, `liveActivityShowXAxisTicks`, `liveActivityShowYAxisTicks`,
+    /// `liveActivityShowRangeLines` added; 66 → 67, Phase 09.26-07 (D-22): `liveActivityShowBolusShortcut`
+    /// added; Phase 7 (07-01, FEAT-01): all 11 `liveActivity*` keys above removed (delete-on-main).
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -128,8 +130,8 @@ enum SettingsCatalog {
         .init("glucoseDisplayUnit", .display, from: .standard, backsUp: true),
         // Owner request — hide/show the persistent unit CAPTION on ambient display surfaces. Like
         // glucoseDisplayUnit, this is a display-format preference, NOT a per-device feature toggle
-        // (unlike liveActivityEnabled/glucoseBadgeEnabled below) — omitting syncsToICloud gives iCloud
-        // sync ON (SettingDescriptor.init default rule), matching glucoseDisplayUnit's reasoning.
+        // (unlike glucoseBadgeEnabled below) — omitting syncsToICloud gives iCloud sync ON
+        // (SettingDescriptor.init default rule), matching glucoseDisplayUnit's reasoning.
         .init("showGlucoseUnitLabels", .display, from: .standard, backsUp: true),
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
@@ -141,35 +143,12 @@ enum SettingsCatalog {
         .init("showStats", .display, from: .standard, backsUp: true),
         .init("detailsOrder", .display, from: .standard, backsUp: true),
         .init("pillsOrder", .display, from: .standard, backsUp: true),
-        // Phase 5 (D-15/D-17a, 05-04): the ambient Live Activity opt-in + its per-field reorder+hide
-        // selection. Display-only — neither is command-adjacent (SettingsCatalog.commandAdjacentFlags
-        // is unchanged) — but each opts into an always-visible on-device surface (Lock Screen Live
-        // Activity), so `syncsToICloud: false` keeps that opt-in per-device: enabling it on one iPhone
-        // must not silently switch it on for the owner on another device.
-        .init("liveActivityEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityFields", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        // Phase 09.26 tracer (D-11/D-21): the Live Activity presentation style (full-bleed plot vs.
-        // classic chip HUD). Same per-device ambient-surface reasoning as the two rows above —
-        // syncsToICloud: false.
-        .init("liveActivityStyle", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        // Phase 09.26-02 (D-15/D-18/D-19): the full-bleed style's display options — the top-right slot
-        // content, the LA-only plot time-range (D-14, independent of the watch/phone chart's own
-        // range), the four independent axis-chrome toggles, and the high/low range-lines toggle. Same
-        // per-device ambient-surface reasoning as `liveActivityStyle` above — syncsToICloud: false.
-        .init("liveActivityTopRightField", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityPlotRangeHours", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityShowXAxisLine", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityShowYAxisLine", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityShowXAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityShowYAxisTicks", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("liveActivityShowRangeLines", .display, from: .standard, backsUp: true, syncsToICloud: false),
-        // Phase 09.26-07 (D-22): the optional nav-only Bolus-shortcut pill toggle. Same per-device
-        // ambient-surface reasoning as the rows above — syncsToICloud: false.
-        .init("liveActivityShowBolusShortcut", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 5 (D-13/D-14, 05-03): the app-icon glucose badge opt-in. Display-only — not
-        // command-adjacent — but the same per-device ambient-surface reasoning as liveActivityEnabled
-        // applies (a home-screen badge on one device should not silently light up on another), so it is
-        // also excluded from iCloud sync.
+        // command-adjacent — but an always-visible on-device surface (a home-screen badge on one
+        // device should not silently light up on another), so it is excluded from iCloud sync. (The
+        // 11 Live Activity descriptors that shared this per-device ambient-surface reasoning — the
+        // master opt-in, field selection, style, and full-bleed display options — were removed in
+        // Phase 7, 07-01, FEAT-01.)
         .init("glucoseBadgeEnabled", .display, from: .standard, backsUp: true, syncsToICloud: false),
         // MARK: Watch/Garmin display (remotes)
         .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),

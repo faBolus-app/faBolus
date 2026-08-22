@@ -523,39 +523,10 @@ struct DisplaySettingsView: View {
             } header: { Text("Customize") } footer: {
                 Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
             }
-            Section {
-                Toggle("Live Activity", isOn: $settings.liveActivityEnabled)
-                if settings.liveActivityEnabled {
-                    // Phase 09.26-01 tracer (D-11/D-21) — the full-bleed-plot vs. classic style switch,
-                    // placed above "Fields shown" per the UI-SPEC's Settings Surface layout.
-                    Picker("Live Activity style", selection: $settings.liveActivityStyle) {
-                        Text("Full-bleed plot").tag("fullBleed")
-                        Text("Classic").tag("classic")
-                    }
-                    // Phase 09.26-02 (D-15/D-18/D-19) — the full-bleed-only display-options sub-screen
-                    // (top-right slot, plot range, axis chrome, range lines). Classic has no axis
-                    // chrome/top-right slot of its own, so this link only appears for the full-bleed
-                    // style — placed between the style Picker and "Fields shown" per the UI-SPEC's
-                    // Settings Surface layout.
-                    if settings.liveActivityStyle == "fullBleed" {
-                        NavigationLink {
-                            FullBleedLiveActivitySettingsView(settings: settings)
-                        } label: { Text("Full-bleed layout") }
-                    }
-                    NavigationLink {
-                        CustomizeListView(title: "Live Activity fields", allIds: AppSettings.laFieldItems,
-                                          label: AppSettings.laFieldLabel, order: $settings.liveActivityFields,
-                                          shownFooter: "Fields shown on the Lock Screen, Dynamic Island, and CarPlay. Drag to reorder, swipe to hide.",
-                                          allowEmpty: true)
-                    } label: { LabeledContent("Fields shown", value: "\(settings.liveActivityFields.count) shown") }
-                }
-            } header: { Text("Live Activity") } footer: {
-                Text("Shows your glucose (and, optionally, pump status) on the Lock Screen and Dynamic Island. Off by default. faBolus never doses from here — this is a read-only ambient display. Full-bleed plot shows an edge-to-edge glucose curve; Classic shows the original compact layout.")
-            }
             // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
-            // default OFF, SettingsCatalog descriptor) but had no reachable UI — mirrors the "Live
-            // Activity" section above exactly. Copy is the D-14 plain-language caveat verbatim
-            // (05-UI-SPEC.md), plus a short note on the mmol rounding CR-01 introduced.
+            // default OFF, SettingsCatalog descriptor) but had no reachable UI. Copy is the D-14
+            // plain-language caveat verbatim (05-UI-SPEC.md), plus a short note on the mmol rounding
+            // CR-01 introduced.
             Section {
                 Toggle("Glucose badge", isOn: glucoseBadgeBinding)
             } header: { Text("Glucose badge") } footer: {
@@ -573,53 +544,6 @@ struct DisplaySettingsView: View {
     }
 }
 
-// MARK: - Live Activity full-bleed layout (09.26-02, D-15/D-18/D-19)
-
-/// The full-bleed Live Activity's dedicated display-options sub-screen — reachable only when
-/// `settings.liveActivityStyle == "fullBleed"` (`09.26-UI-SPEC.md`'s "Settings Surface" table). Every
-/// control binds straight to an `AppSettings` property that already persists, mirrors to the App
-/// Group, and bakes into `ContentState` via `GlucoseLiveActivityManager.makeContent` — this view adds
-/// no state of its own.
-struct FullBleedLiveActivitySettingsView: View {
-    @Bindable var settings: AppSettings
-
-    var body: some View {
-        Form {
-            Section {
-                Picker("Top-right info", selection: $settings.liveActivityTopRightField) {
-                    Text("IOB + Δ").tag("iobDelta")
-                    Text("IOB").tag("iob")
-                    Text("Δ").tag("delta")
-                    Text("Time in range").tag("tir")
-                    Text("Control-IQ zone").tag("controlIQZone")
-                    Text("Battery").tag("battery")
-                    Text("Reservoir").tag("reservoir")
-                    Text("None").tag("none")
-                }
-                Picker("Live Activity plot range", selection: $settings.liveActivityPlotRangeHours) {
-                    Text("2h").tag(2)
-                    Text("6h").tag(6)
-                }
-                Toggle("X-axis line", isOn: $settings.liveActivityShowXAxisLine)
-                Toggle("Y-axis line", isOn: $settings.liveActivityShowYAxisLine)
-                Toggle("X-axis ticks", isOn: $settings.liveActivityShowXAxisTicks)
-                Toggle("Y-axis ticks", isOn: $settings.liveActivityShowYAxisTicks)
-                Toggle("High/low range lines", isOn: $settings.liveActivityShowRangeLines)
-            } footer: {
-                Text("The Live Activity plot range is independent of the watch/phone chart's own range. 6h shows more history when available; a freshly started Live Activity may only have a shorter window collected yet.")
-            }
-            // Phase 09.26-07 (D-22) — the optional nav-only Bolus shortcut. Off by default; when on,
-            // it becomes the SINGLE bolus entry point in the full-bleed style (the "Open Bolus"
-            // action-row button folds into this pill).
-            Section {
-                Toggle("Show bolus shortcut", isOn: $settings.liveActivityShowBolusShortcut)
-            } footer: {
-                Text("Adds a Bolus button to the Live Activity. It opens the bolus screen in the app — no dose is sent from the Live Activity.")
-            }
-        }
-        .navigationTitle("Full-bleed layout")
-    }
-}
 
 // MARK: - CGM & failover
 
@@ -1222,12 +1146,12 @@ struct GarminScreensView: View {
     }
 }
 
-/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills, Live Activity
-/// fields). Mirrors `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least
-/// one stays shown, UNLESS `allowEmpty` is set (Phase 09.14, D-01/WR-04) — currently only the Live
-/// Activity fields list opts in, since its 0-field state has a real, tested, non-blank fallback
-/// render (`LiveActivityComposer.compose`'s minimal-glyph branch). Every other call site keeps the
-/// default `allowEmpty: false` floor unchanged.
+/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). Mirrors
+/// `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least one stays shown,
+/// UNLESS `allowEmpty` is set (Phase 09.14, D-01/WR-04) — originally opted into by the since-removed
+/// Live Activity fields list (Phase 7, 07-01, FEAT-01), whose 0-field state had a real, tested,
+/// non-blank fallback render. No current call site passes `allowEmpty: true`; the parameter stays as
+/// a general capability for a future reorder/hide list with the same "0 is a valid state" shape.
 struct CustomizeListView: View {
     let title: String
     let allIds: [String]

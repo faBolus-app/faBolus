@@ -69,6 +69,12 @@ enum CompileGateAudit {
         // entry point, not a Settings row), so these tokens are a genuinely vacuous, correct check —
         // they exist to satisfy this phase's own §6c convention, not to catch a live orphan today.
         tokens.formUnion(["foodfinder", "find food", "barcode"])
+        // Phase 7, 07-01 (FEAT-01): the glucose Live Activity (master opt-in, field selection, style,
+        // and full-bleed display options — 11 descriptors) removed from narrow `main` (unconditional
+        // — permanent removal, no dose-set stub per D-01/D-02). No live `SettingsIndex` row ever
+        // advertised Live Activity (it had its own dedicated Settings section, not an indexed search
+        // row), so this token is also a genuinely vacuous, correct check.
+        tokens.formUnion(["liveactivity"])
         return tokens
     }
 
@@ -139,8 +145,10 @@ struct SettingsCatalogTests {
         // `SettingsBackup`/`ICloudSync`/`PrivacyDataExport`/`SiteAtlasStore` types) was ever itself a
         // persisted `AppSettings` key/descriptor — they operated ON the catalog, they were never
         // rows IN it — so BACKUP-01 needed no descriptor removal here at all.
-        #expect(SettingsCatalog.descriptors.count == 59)
-        #expect(SettingsCatalog.byKey.count == 59)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 7 (07-01, FEAT-01): 59 → 48 (all 11 liveActivity* descriptors removed — the master
+        // opt-in, field selection, style, and 7 full-bleed display options — delete-on-main).
+        #expect(SettingsCatalog.descriptors.count == 48)
+        #expect(SettingsCatalog.byKey.count == 48)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -180,7 +188,8 @@ struct SettingsCatalogTests {
         // was already dropped from `backupSnapshot()`/`applyBackup()` by Phase 4 (04-02, see the
         // NOTE at `AppSettings.swift:1143`/`:1247`), so 06-02's property deletion changes nothing
         // here; the removed backup-engine types never emitted their own catalog-backed key.
-        #expect(SettingsCatalog.backedUpKeys.count == 57)                      // 51 unconditional + 6 conditional
+        // Phase 7 (07-01, FEAT-01): 57 → 46 (all 11 liveActivity* keys removed, all unconditional).
+        #expect(SettingsCatalog.backedUpKeys.count == 46)                      // 40 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -298,8 +307,10 @@ struct SettingsCatalogTests {
     /// up (a restore is an explicit user action) and are not command-adjacent — this is a distinct
     /// exclusion reason from C5, so it's asserted independently of `commandAdjacentFlags`.
     @Test func ambientSurfaceFlagsAreBackedUpButNeverICloudSynced() {
+        // Phase 7 (07-01, FEAT-01): liveActivityEnabled/liveActivityFields removed from this set —
+        // the 11 liveActivity* descriptors that shared this ambient-surface reasoning are gone.
         let ambientSurfaceFlags: Set<String> = [
-            "liveActivityEnabled", "liveActivityFields", "glucoseBadgeEnabled",
+            "glucoseBadgeEnabled",
         ]
         let synced = SettingsCatalog.iCloudSyncedKeys
         #expect(synced.isDisjoint(with: ambientSurfaceFlags))
