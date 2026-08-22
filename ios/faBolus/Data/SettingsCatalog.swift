@@ -112,7 +112,8 @@ enum SettingsCatalog {
     /// D-04); 48 → 47. Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation rows (the 3 Standard-tier
     /// ones + the 2 Advanced-only ones added by 06-01/06-02 above) removed; 47 → 42. Phase 7
     /// (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` + `childAllowed` removed (Child Mode UI
-    /// deleted, runtime-gated); 42 → 40.
+    /// deleted, runtime-gated); 42 → 40. Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): the custom
+    /// alert-rules engine's descriptor removed (editor UI deleted, property frozen); 40 → 39.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -197,8 +198,10 @@ enum SettingsCatalog {
         .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),
         .init("garminClockAnalog", .remotes, from: .standard, backsUp: true),
         .init("garminTargetApp", .remotes, from: .advanced, backsUp: true),
-        // MARK: Alerts
-        .init("alertRules", .alerts, from: .advanced, backsUp: true),
+        // Custom alert-rules engine (the "Alerts" descriptor + its editor UI) removed from narrow
+        // `main` in Phase 7 (07-05, FEAT-08, SAFETY) — the property is now a getter-level frozen
+        // constant (belt-and-suspenders, see AppSettings.swift); no catalog descriptor remains since
+        // the editor UI it fed is deleted (see dev/alert-rules's REINTEGRATION.md).
         // Nightscout upload (nightscoutUploadEnabled) removed from narrow `main` in Phase 5
         // (HEALTH-02) — the UserDefaults key is left in place as a hidden device-local flag, no
         // migration (see dev/nightscout's REINTEGRATION.md).

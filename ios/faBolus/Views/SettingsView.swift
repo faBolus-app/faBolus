@@ -250,7 +250,6 @@ struct SettingsView: View {
         case .bolus:   BolusSettingsView(settings: settings)
         case .display: DisplaySettingsView(model: model, settings: settings)
         case .cgm:     CgmSettingsView(model: model, settings: settings)
-        case .alerts:  AlertRulesView(settings: settings)
         case .notifications: NotificationSettingsView(model: model, settings: settings)
         case .pump:    PumpSettingsView(model: model, settings: settings)
         case .remotes: RemotesSettingsView(model: model, settings: settings)
@@ -260,14 +259,13 @@ struct SettingsView: View {
 }
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case bolus, display, cgm, alerts, notifications, pump, remotes, about
+    case bolus, display, cgm, notifications, pump, remotes, about
     var id: String { rawValue }
     var title: String {
         switch self {
         case .bolus: return "Bolus & entry"
         case .display: return "Display & chart"
         case .cgm: return "CGM & failover"
-        case .alerts: return "Alert rules"
         case .notifications: return "Notifications"
         case .pump: return "Pump & control"
         case .remotes: return "Remotes & devices"
@@ -279,9 +277,10 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .bolus: return "syringe.fill"
         case .display: return "chart.xyaxis.line"
         case .cgm: return "sensor.tag.radiowaves.forward.fill"
-        case .alerts: return "bell.badge.fill"
-        // Distinct from `.alerts`'s icon (D-06) — this screen is the pump/app notification-delivery
-        // controls, not the auto-snooze/dismiss rule editor.
+        // Phase 7 (07-05, FEAT-08): the custom alert-rules editor (`.alerts`, "bell.badge.fill") that
+        // this icon used to be distinguished FROM is removed — this screen is still the pump/app
+        // notification-delivery controls, not an auto-snooze/dismiss rule editor (no such editor
+        // remains on narrow main; see dev/alert-rules).
         case .notifications: return "bell.and.waves.left.and.right"
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
@@ -322,7 +321,6 @@ enum SettingsIndex {
         .init(title: "Failover CGM source", keywords: "dexcom share", category: .cgm),
         .init(title: "CGM account credentials", keywords: "login share", category: .cgm),
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
-        .init(title: "Alert auto-rules", keywords: "auto snooze dismiss time of day overnight quiet hours condition", category: .alerts),
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
         .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
@@ -1125,7 +1123,8 @@ struct CustomizeListView: View {
                 if order.isEmpty {
                     // 09.14 D-01: only reachable when allowEmpty == true (Live Activity fields list).
                     // Non-interactive — no .onMove/.onDelete, no drag handle — matches the app's
-                    // existing static empty-list rows (AlertRulesView, PumpWizardViews).
+                    // existing static empty-list rows (PumpWizardViews; the custom alert-rules editor
+                    // this comment used to cite as a second precedent is removed, Phase 7, 07-05, FEAT-08).
                     Text("No fields shown — the Live Activity displays a minimal synced-status glyph. Add a field below to bring it back.")
                         .foregroundStyle(.secondary)
                 } else {
