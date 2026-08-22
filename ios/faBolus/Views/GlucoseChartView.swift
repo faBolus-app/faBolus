@@ -40,14 +40,6 @@ struct GlucoseChartView: View {
     /// so VoiceOver users can step the scrub without the drag gesture (UI-SPEC §1 backstop). nil = not
     /// yet stepped.
     @State private var a11yIndex: Int? = nil
-    /// Phase 09.18b-02 (D-07): the on-demand reader for the Apple-Health `.heartRate` sample nearest the
-    /// scrub point was removed from narrow `main` in Phase 5 (HEALTH-01), along with the whole
-    /// HealthKit surface — see dev/healthkit's REINTEGRATION.md. `refreshScrubbedHealthKitHR` is now
-    /// a permanent no-op; the HR readout row still renders via `latestGarminHeartRate` when present.
-    /// The Apple-Health HR (bpm) resolved for the current scrubbed data point, or nil. Refreshed by the
-    /// `.task(id:)` below as the scrub crosses to a new point; cleared when HR is off or scrubbing ends.
-    @State private var scrubbedHealthKitHR: Double? = nil
-
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
     /// mg/dL-scaled (Pitfall 4) — only the rendered text below changes.
@@ -285,30 +277,18 @@ struct GlucoseChartView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: scrubX == nil)
-        // Phase 09.18b-02 (D-07/D-09): resolve the Apple-Health HR for the point the scrub lands on.
-        // Keyed on `scrubbedPointDate` so it fires only when the scrub crosses to a NEW data point (or
-        // ends), never on every sub-pixel move; a no-op (and no HealthKit query at all) when HR is off.
-        .task(id: scrubbedPointDate) { await refreshScrubbedHealthKitHR() }
     }
 
-    /// The HR value + staleness for the readout row (D-07). Prefers the Apple-Health sample nearest the
-    /// scrub point (fresh by construction — queried within ±5 min); falls back to the last Garmin
-    /// ambient-HR sample, tinted stale when that sample is more than ~15 min from the scrubbed time.
-    /// Returns nil bpm when HR is off or no sample exists → the HR row hides entirely (D-09).
+    /// The HR value + staleness for the readout row (D-07). Sourced from the last Garmin ambient-HR
+    /// sample (Apple-Health was removed from narrow `main` in Phase 5 (HEALTH-01) along with the whole
+    /// HealthKit surface — see dev/healthkit's REINTEGRATION.md), tinted stale when that sample is more
+    /// than ~15 min from the scrubbed time. Returns nil bpm when HR is off or no sample exists → the HR
+    /// row hides entirely (D-09).
     private func resolvedHeartRate(at date: Date) -> (bpm: Double?, stale: Bool) {
         guard heartRateContextEnabled else { return (nil, false) }
-        if let hk = scrubbedHealthKitHR { return (hk, false) }
         if let g = latestGarminHeartRate {
             return (g.bpm, abs(g.date.timeIntervalSince(date)) > 15 * 60)
         }
         return (nil, false)
-    }
-
-    /// On-demand Apple-Health HR read at the scrubbed data point (D-07). Removed from narrow `main`
-    /// in Phase 5 (HEALTH-01) along with the whole HealthKit surface — this is now a permanent no-op.
-    /// The readout row still renders via `resolvedHeartRate`'s Garmin ambient-HR fallback (independent
-    /// of HealthKit) — this only means "no Apple-Health-sourced HR", not "no HR row at all".
-    private func refreshScrubbedHealthKitHR() async {
-        scrubbedHealthKitHR = nil
     }
 }
