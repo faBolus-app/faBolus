@@ -20,7 +20,7 @@ and it scrolls to a details card with everything the pump reports.
 | **Pump** | Battery %. |
 | **CGM** | Sensor status. |
 | **Last bolus** | Amount and time of the most recent bolus. |
-| **Details card** | Scroll down for carb ratio, correction factor (ISF), target, max bolus, reservoir, battery, CGM status, last bolus, and pump time. |
+| **Details card** | Scroll down for carb ratio, correction factor (ISF), target, max bolus, reservoir, battery, CGM status, and last bolus. |
 
 ## Connecting
 
@@ -31,11 +31,12 @@ auto-reconnects when you open it or bring it to the foreground. See
 
 ## Staleness
 
-Every glucose reading shows its **age**. A reading older than **6 minutes** is treated as stale so
-it's never mistaken for a current one: on the HUD and the watches it is still shown but **greyed,
-with its age called out**; the widgets and Siri report it as not-current. If you set up an optional
-[CGM failover](cgm-failover.md) source, an independent reading fills in when the pump's glucose goes
-stale.
+Every glucose reading shows its **age**. A reading older than **6 minutes** is treated as stale
+so it's never mistaken for a current one: on the phone (and the Garmin remote) it's still shown,
+just **greyed, with its age called out**; the Quick-Bolus widget greys the number the same way and
+drops the trend arrow, then shows "–" once it's past the hide delay you set in Settings. If the
+pump's own glucose goes stale and you've turned on [Dexcom Share](glucose.md) as a fallback, an
+independent reading fills in until the pump's own feed recovers.
 
 !!! note "Terminology"
     "Active Insulin" (IOB) means insulin on board. faBolus is a manual remote-bolus + status

@@ -36,11 +36,11 @@
 
 ## Carb boluses from a remote (single calculator + safety guard)
 
-When you enter **carbs** on the Apple Watch, Garmin, Mac, or a remote iPhone, the **host phone is the
-single calculator**: it recomputes the dose from your carbs using its live settings and delivers that.
-The remote also sends the estimate it showed you, and the phone **compares** the two — if they differ
-by more than **0.10 U** (a sign the remote was working from stale settings, IOB, or glucose) the bolus
-is **not delivered**; the remote shows "Dose changed since your estimate — reopen and confirm," and you
+When you enter **carbs** on the Garmin remote, the **host phone is the single calculator**: it
+recomputes the dose from your carbs using its live settings and delivers that. The Garmin also
+sends the estimate it showed you, and the phone **compares** the two — if they differ by more than
+**0.10 U** (a sign the remote was working from stale settings, IOB, or glucose) the bolus is **not
+delivered**; the remote shows "Dose changed since your estimate — reopen and confirm," and you
 retry with fresh data. Units-mode entries are delivered exactly as confirmed.
 
 ## Cancel & partial delivery
@@ -51,20 +51,16 @@ before the stop — so a cancelled bolus tells you exactly how much went through
 
 ## From a remote
 
-An Apple Watch or Garmin can *request* a bolus, but the phone stays in control — it is the single
-calculator and the only device that talks to the pump:
+Your Garmin watch can *request* a bolus, but the phone stays in control — it is the single
+calculator and the only device that talks to the pump. You complete a hold-to-deliver confirmation
+on the wrist — tap **1 → 2 → 3** on a touchscreen (like the Venu 3S), or a two-button hold on a
+button-only device. The phone then **recomputes the dose from the carbs**, checks it against the
+estimate the watch showed (a divergence beyond the tolerance above is rejected, not delivered), and
+carries it out. There is *not* a second confirm tap on the iPhone for a Garmin request.
 
-- **Apple Watch / Garmin:** you complete a hold-to-deliver confirmation **on the wrist** (tap 1-2-3 on
-  a touchscreen, or the two-button hold on a button device). The phone then **recomputes the dose from
-  the carbs**, checks it against the estimate the wrist showed (a divergence beyond a small tolerance is
-  rejected, not delivered), and carries it out. There is *not* a second confirm tap on the iPhone for a
-  watch/Garmin request.
-- **Parent remote (another iPhone):** a bolus a parent requests for a child's pump *does* raise an
-  explicit **approval dialog on the child's phone** showing the frozen dose, carbs, BG, and IOB before
-  anything is delivered.
-- If the phone is unreachable, the remote shows a clean failure and **nothing is delivered**.
-
-See [Apple Watch](../remotes/apple-watch.md) and [Garmin](../remotes/garmin.md).
+If the phone is unreachable, the watch shows a clean failure and **nothing is delivered**. Garmin
+bolusing is off by default and has its own switch, plus an optional 4-digit passcode you can require
+instead of the tap-to-confirm — see [Garmin remote](../remotes/garmin.md).
 
 ## Under the hood (for the curious)
 
@@ -82,9 +78,3 @@ Under the recommended dose there's a collapsible **Show reasoning** breakdown: t
 total and the **active insulin (IOB)** subtracted. Hide the whole breakdown with **Settings → Bolus &
 entry → Show recommendation reasoning**. (The enforced pump-max limit still caps the dose — see the
 max-units clamp above.)
-
-## Extended (combo) bolus
-
-Turn on **Settings → Bolus & entry → Extended (combo) bolus** to split a dose into a **now** portion
-and a portion delivered **over a duration** (e.g. 50% now, the rest over 2 hours). The total must be at
-least 0.40 U. It goes through the same confirm + max-bolus clamp + signed path as a standard bolus.
