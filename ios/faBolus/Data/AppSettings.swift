@@ -129,25 +129,18 @@ public final class AppSettings {
     /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
     public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
 
-    /// Phase 09.18b (D-05/D-06/D-17): gate the GraphDetailView scrubbable readout overlay on the
-    /// glucose chart. **Default ON** (a display-context convenience, off-able from the Smart Assist
-    /// submenu); when off the chart renders exactly as today with no scrubber. Same persisted-Bool idiom
-    /// as `eatingNudgesEnabled`. Deliberately a DEVICE-LOCAL display toggle — NOT a `SettingsCatalog`
-    /// row and NOT in `backupSnapshot` (it gates a transient read-only overlay, carries no dose logic,
-    /// and never rides a backup/iCloud round-trip), so the catalog drift guards stay untouched.
-    public var graphDetailEnabled: Bool { didSet { d.set(graphDetailEnabled, forKey: "graphDetailEnabled") } }
-    /// Phase 09.18b (D-07/D-09/D-17): gate heart-rate as GraphDetailView chart context. **Default ON**
-    /// with the readout (D-17), independently off-able. When OFF (D-09): the phone stops the on-demand
-    /// HealthKit HR query, the phone signals the watch to stop appending HR (`hr_ctl` off), and the HR
-    /// readout row is HIDDEN ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input.
-    /// Device-local display toggle (same idiom as `graphDetailEnabled`): deliberately NOT a
+    /// Phase 09.18b (D-07/D-09/D-17): background heart-rate-as-chart-context gate. **Default ON**,
+    /// independently off-able. When OFF (D-09): the phone stops the on-demand HealthKit HR query, the
+    /// phone signals the watch to stop appending HR (`hr_ctl` off), and the HR readout row is HIDDEN
+    /// ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input. Device-local display
+    /// toggle (same device-local persisted-Bool idiom as `eatingNudgesEnabled`): deliberately NOT a
     /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
     public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
     /// Phase 09.18d-01 (D-15/D-17): gate the LoopInsights endo-visit PDF report surface. **Default ON**
     /// — a benign records-export feature (glucose/insulin/carb summary rendered to a shareable PDF),
     /// discoverable and off-able from the Smart Assist submenu. Advisory only: the report is a summary
     /// of what already happened and never suggests/changes/blocks a dose (§13). Same device-local
-    /// persisted-Bool idiom as `graphDetailEnabled` — deliberately NOT a `SettingsCatalog` row and NOT
+    /// persisted-Bool idiom as `eatingNudgesEnabled` — deliberately NOT a `SettingsCatalog` row and NOT
     /// in `backupSnapshot` (it gates a read-only display surface, carries no dose logic), so the catalog
     /// drift guards stay untouched.
     public var endoReportEnabled: Bool { didSet { d.set(endoReportEnabled, forKey: "endoReportEnabled") } }
@@ -721,10 +714,7 @@ public final class AppSettings {
             historyCoverage = HistoryCoverageMap()
         }
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
-        // Phase 09.18b (D-17): default ON — a fresh install (and any device with no stored value)
-        // gets the scrubbable readout, discoverable and off-able from Smart Assist.
-        graphDetailEnabled = (d.object(forKey: "graphDetailEnabled") as? Bool) ?? true
-        // Phase 09.18b (D-09/D-17): HR chart context defaults ON with GraphDetailView, off-able.
+        // Phase 09.18b (D-09/D-17): HR chart context defaults ON, off-able.
         heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
         // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
         endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true

@@ -15,31 +15,6 @@ struct GlucoseChartView: View {
     var showGlucose: Bool = true
     var showIOB: Bool = true
     var showBolusBars: Bool = true
-    /// Phase 09.18b (D-06): the pump's CURRENT known basal rate (units/hr) for the scrubber readout's
-    /// basal row, or nil when unknown (→ "—"). faBolus has no per-timestamp basal history, so this is a
-    /// single scalar handed in by the caller — never a synthesized schedule. Default nil so callers that
-    /// don't surface basal (e.g. the slim remote chart) simply render "—".
-    var basalUnitsPerHour: Double? = nil
-    /// Phase 09.18b-02 (D-07/D-09): whether the HR chart-context toggle is ON. When off, no HealthKit HR
-    /// query runs and the HR readout row is hidden entirely. Default false so callers that don't surface
-    /// HR (e.g. the slim remote chart) never query Health.
-    var heartRateContextEnabled: Bool = false
-    /// Phase 09.18b-02 (D-07): the last Garmin ambient-HR sample (bpm + when), used as the HR value when
-    /// Apple Health has no sample near the scrub point. Display-only chart context; nil hides the row.
-    var latestGarminHeartRate: (bpm: Double, date: Date)? = nil
-
-    // Phase 09.18b (D-05/D-06): the transient scrub x-position (in plot-area points) while the user
-    // long-presses/drags the chart, or nil when idle. Read-only, never committed anywhere — cleared on
-    // release. Each GlucoseChartView instance owns its own scrub state.
-    @State private var scrubX: CGFloat? = nil
-    /// The date of the glucose data point the scrub currently resolves to (nil when idle). Drives the
-    /// haptic: a change fires `.selection` — on scrub start (nil → a point) and on crossing to a NEW
-    /// data point while dragging (UI-SPEC §1 long-press-active + dragging states).
-    @State private var scrubbedPointDate: Date? = nil
-    /// VoiceOver scrub position: an index into `visible` moved by the `.accessibilityAdjustableAction`
-    /// so VoiceOver users can step the scrub without the drag gesture (UI-SPEC §1 backstop). nil = not
-    /// yet stepped.
-    @State private var a11yIndex: Int? = nil
     /// Phase 04-02 (D-10): the display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L"
     /// caption route through. The chart domain, PointMark data, and AxisMarks tick VALUES stay
     /// mg/dL-scaled (Pitfall 4) — only the rendered text below changes.
@@ -130,18 +105,6 @@ struct GlucoseChartView: View {
                 AxisGridLine(); AxisValueLabel(format: .dateTime.hour())
             }
         }
-        // Phase 09.18b (D-05/D-06) — the scrubbable readout, attached INSIDE this existing Chart via
-        // `.chartOverlay` + `ChartProxy` (UI-SPEC §1 primary approach; NOT a bolted-on screen). Gated
-        // behind `graphDetailEnabled` (default ON) — when off, nothing renders and the chart behaves
-        // exactly as today. This plan (09.18b-01 tracer) shows the GLUCOSE row only.
-        .chartOverlay(alignment: .top) { proxy in
-            GeometryReader { geo in
-                if AppSettings.shared.graphDetailEnabled {
-                    scrubberLayer(proxy: proxy, size: geo.size)
-                }
-            }
-        }
-        .sensoryFeedback(.selection, trigger: scrubbedPointDate)
         .overlay(alignment: .topLeading) {
             // Owner-requested toggle: this axis caption is the only persistent unit label the chart
             // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
@@ -164,131 +127,5 @@ struct GlucoseChartView: View {
         case ...12: return 2
         default: return 4
         }
-    }
-
-    // MARK: - GraphDetailView scrubber (Phase 09.18b, D-05/D-06)
-
-    /// The ViewModel is rewritten over faBolus's OWN feed — the same `visible` glucose/IOB/bolus arrays
-    /// this chart already renders (`model.glucoseHistory`/`iobHistory`/`bolusMarkers`) plus the current
-    /// pump-snapshot basal scalar handed in — never Loop's stores (D-05).
-    private var detailViewModel: GraphDetailViewModel {
-        GraphDetailViewModel(glucose: visible, iob: visibleIOB, boluses: visibleBoluses,
-                             currentBasalUnitsPerHour: basalUnitsPerHour)
-    }
-
-    /// The VoiceOver value string for the adjustable scrubber: the readout at the currently-stepped
-    /// data point, or a prompt when the user hasn't stepped yet / there is nothing to scrub.
-    private var a11yValue: String {
-        guard let idx = a11yIndex, visible.indices.contains(idx) else {
-            return visible.isEmpty ? "No readings to inspect" : "Not scrubbing"
-        }
-        return detailViewModel.readout(at: visible[idx].date)
-            .accessibilityDescription(unit: AppSettings.shared.glucoseDisplayUnit)
-    }
-
-    /// The scrubber layer inside `.chartOverlay`: a full-plot transparent hit area carrying a
-    /// `LongPressGesture` SEQUENCED with a `DragGesture(minimumDistance: 0)` so a plain tap/pan of the
-    /// chart is NOT hijacked (only a deliberate ≥0.3s press begins a scrub). While scrubbing, the touch
-    /// x maps through `ChartProxy.value(atX:)` to a `Date`, the ViewModel/`GraphDetailReadout` resolve
-    /// the nearest values, and a vertical rule + grab handle + readout card render — the card offset to
-    /// the side opposite the scrub point and clamped inside the 160px frame. Nothing is committed; the
-    /// scrub clears on release.
-    @ViewBuilder
-    private func scrubberLayer(proxy: ChartProxy, size: CGSize) -> some View {
-        let scrub = LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                if case .second(true, let drag?) = value {
-                    let x = min(max(drag.location.x, 0), size.width)
-                    scrubX = x
-                    // Track which glucose data point the scrub resolves to, so the haptic fires only on
-                    // crossing to a NEW point (and on scrub start), not on every sub-pixel move.
-                    if let date: Date = proxy.value(atX: x) {
-                        scrubbedPointDate = GraphDetailReadout.nearest(
-                            to: date, in: visible, key: \.date,
-                            within: GraphDetailViewModel.tolerance)?.date
-                    }
-                }
-            }
-            .onEnded { _ in scrubX = nil; scrubbedPointDate = nil }
-
-        ZStack(alignment: .topLeading) {
-            // Full-plot hit area (≥44px in both dimensions at 160px height) — the deliberate-press
-            // gate lives in the gesture, not a small handle, so the whole chart is scrubbable.
-            // VoiceOver: exposed as an adjustable element so increment/decrement steps the scrub
-            // through glucose data points without the drag gesture (UI-SPEC §1 accessibility backstop).
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-                .gesture(scrub)
-                .accessibilityElement()
-                .accessibilityLabel("Glucose chart detail")
-                .accessibilityHint("Swipe up or down to inspect glucose, insulin, bolus, and basal at each reading")
-                .accessibilityValue(a11yValue)
-                .accessibilityAdjustableAction { direction in
-                    guard !visible.isEmpty else { return }
-                    let current = a11yIndex ?? (visible.count - 1)
-                    let next: Int
-                    switch direction {
-                    case .increment: next = min(current + 1, visible.count - 1)
-                    case .decrement: next = max(current - 1, 0)
-                    @unknown default: return
-                    }
-                    a11yIndex = next
-                    let point = visible[next]
-                    scrubbedPointDate = point.date
-                    if let x = proxy.position(forX: point.date) { scrubX = min(max(x, 0), size.width) }
-                }
-
-            if let x = scrubX, let date: Date = proxy.value(atX: x) {
-                let readout = detailViewModel.readout(at: date)
-                let hr = resolvedHeartRate(at: date)
-                let onLeftHalf = x < size.width / 2
-
-                // Vertical rule + grab handle marking the active timestamp.
-                Rectangle()
-                    .fill(AppTheme.insulin)
-                    .frame(width: 1.5, height: size.height)
-                    .position(x: x, y: size.height / 2)
-                Circle()
-                    .fill(AppTheme.insulin)
-                    .frame(width: 8, height: 8)
-                    .position(x: x, y: 4)
-
-                // Readout card, pinned to the plot edge OPPOSITE the scrub point (so it never sits
-                // under the finger) and width-capped so it stays inside the chart bounds.
-                HStack(spacing: 0) {
-                    if !onLeftHalf {
-                        GraphDetailCard(readout: readout, heartRate: hr.bpm,
-                                        heartRateEnabled: heartRateContextEnabled, heartRateStale: hr.stale)
-                        Spacer(minLength: 0)
-                    }
-                    if onLeftHalf {
-                        Spacer(minLength: 0)
-                        GraphDetailCard(readout: readout, heartRate: hr.bpm,
-                                        heartRateEnabled: heartRateContextEnabled, heartRateStale: hr.stale)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: onLeftHalf ? .trailing : .leading)
-                .padding(.horizontal, 4)
-                .padding(.top, 2)
-                .allowsHitTesting(false)
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.2), value: scrubX == nil)
-    }
-
-    /// The HR value + staleness for the readout row (D-07). Sourced from the last Garmin ambient-HR
-    /// sample (Apple-Health was removed from narrow `main` in Phase 5 (HEALTH-01) along with the whole
-    /// HealthKit surface — see dev/healthkit's REINTEGRATION.md), tinted stale when that sample is more
-    /// than ~15 min from the scrubbed time. Returns nil bpm when HR is off or no sample exists → the HR
-    /// row hides entirely (D-09).
-    private func resolvedHeartRate(at date: Date) -> (bpm: Double?, stale: Bool) {
-        guard heartRateContextEnabled else { return (nil, false) }
-        if let g = latestGarminHeartRate {
-            return (g.bpm, abs(g.date.timeIntervalSince(date)) > 15 * 60)
-        }
-        return (nil, false)
     }
 }
