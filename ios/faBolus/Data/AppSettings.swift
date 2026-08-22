@@ -742,9 +742,10 @@ public final class AppSettings {
         // §2.3: nil (absent, or a stored non-positive) ⇒ the ceiling is OFF; only a positive value arms it.
         let rbc = d.object(forKey: "remoteBolusCeiling") as? Double
         remoteBolusCeiling = (rbc.map { $0.isFinite && $0 > 0 } ?? false) ? rbc : nil
-        // P15 E2 exit criterion: default OFF so a first connect never silently writes the pump clock
-        // without an explicit opt-in. NOT re-coupled to advancedControlEnabled.
-        autoSyncPumpTime = (d.object(forKey: "autoSyncPumpTime") as? Bool) ?? false
+        // Phase 8 (08-01, LOCK-05): force-set OFF unconditionally — the pump-clock Settings/
+        // PumpControlView UI is removed this phase, so no path exists to turn this back on; a
+        // restored/legacy UserDefaults value carrying `true` must not silently re-arm it (Pitfall 1).
+        autoSyncPumpTime = false
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
@@ -837,7 +838,10 @@ public final class AppSettings {
             "watchChartRanges": .intArray(watchChartRanges),
             "glucoseStaleMinutes": .int(glucoseStaleMinutes),
             "advancedControlEnabled": .bool(advancedControlEnabled),
-            "autoSyncPumpTime": .bool(autoSyncPumpTime),
+            // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer emitted into the backup snapshot
+            // either — its `SettingsCatalog` descriptor is gone (pump-clock UI deleted, the property is
+            // now a force-set-false init pin), so `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot`
+            // requires this key drop too — same hidden-flag posture as `watchBolusEnabled` above.
             // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
             // emitted here (frozen, hidden/unregistered); autoTempRate/autoProfileActivation deleted
             // outright (see applyBackup below for the matching restore-side removal).
@@ -934,7 +938,10 @@ public final class AppSettings {
         // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
         // restore from a backup either (frozen, hidden/unregistered); autoTempRate/autoProfileActivation
         // deleted outright — same posture as watchBolusEnabled/requireRemoteBolusApproval above.
-        if let v = b("autoSyncPumpTime") { autoSyncPumpTime = v }
+        // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer restores from a backup either — same
+        // hidden-flag pattern. A legacy backup carrying `true` is silently ignored (same tolerance as
+        // the precedents above); the force-set-false init pin would reject it on next launch regardless,
+        // but the restore line itself is removed too, closing both halves of the round trip.
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
         if let v = b("remotesReadOnly") { remotesReadOnly = v }

@@ -636,19 +636,10 @@ struct PumpSettingsView: View {
                     Button("Forget pairing", role: .destructive) { unpairStep = .confirm(repairAfter: false) }
                 }
             }
-            // Pump clock sync isn't advanced control, so it's its own section — no need to enable
-            // advanced control. Only shown on pumps that honor the time write (Mobi; t:slim X2 rejects it).
-            if model.capabilities.supportsTimeSync {
-                Section {
-                    Toggle("Keep pump clock synced to phone", isOn: $settings.autoSyncPumpTime)
-                    Button {
-                        Task { await model.syncTimeToNow() }
-                    } label: { Label("Sync pump time now", systemImage: "clock.arrow.2.circlepath") }
-                        .disabled(model.snapshot.connection != .connected)
-                } header: { Text("Pump clock") } footer: {
-                    Text("Sets the pump's clock to this phone — automatically at most once a day while connected, and immediately when your phone's time or time zone changes (travel / DST).")
-                }
-            }
+            // Phase 8 (08-01, LOCK-05): the pump-clock Section (toggle + "Sync pump time now" button) is
+            // removed — `autoSyncPumpTime` is force-set OFF in `AppSettings.init` and no UI can turn it
+            // back on. `TandemBackend.syncTimeToNow()` / `GatedPumpWrite.syncTimeToNow` stay
+            // byte-identical (D-07); see `ClockSyncHiddenBoundaryTests` for the headless proof.
             // Advanced control needs a pump that advertises it (Mobi-only in practice), so the whole
             // section is hidden unless the pump has an advanced capability (or it's already enabled, so
             // it can still be turned off). P13: keyed on the pump-derived capability set, not `isMobi`.

@@ -114,6 +114,8 @@ enum SettingsCatalog {
     /// (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` + `childAllowed` removed (Child Mode UI
     /// deleted, runtime-gated); 42 → 40. Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): the custom
     /// alert-rules engine's descriptor removed (editor UI deleted, property frozen); 40 → 39.
+    /// Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` removed (pump-clock UI deleted, force-set-false
+    /// init pin); 39 → 38.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -164,7 +166,9 @@ enum SettingsCatalog {
         .init("glucoseHideDelayMinutes", .cgm, from: .standard, backsUp: true),
         // MARK: Pump & control
         .init("advancedControlEnabled", .pump, from: .advanced, backsUp: true, syncsToICloud: false),
-        .init("autoSyncPumpTime", .pump, from: .advanced, backsUp: true),
+        // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime`'s row is removed here — the pump-clock
+        // Settings/PumpControlView UI it fed is deleted; the accessor stays as a force-set-false init
+        // pin (hidden-flag pattern, same posture as `watchBolusEnabled` above).
         // Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation descriptors that used to live here
         // (the 3 Standard-tier ones + the 2 Advanced-only ones) are removed — their Settings UI rows
         // are gone. The 3 corresponding `AppSettings` accessors stay (frozen, hidden-flag pattern, the

@@ -123,6 +123,13 @@ enum CompileGateAudit {
         // than a bare word like "quiet hours"/"auto snooze" — either would false-positive against the
         // still-LIVE "Notification controls" row, which legitimately shares that vocabulary.
         tokens.formUnion(["alertrules"])
+        // Phase 8, 08-01 (LOCK-05): the pump-clock Section ("Keep pump clock synced to phone" toggle +
+        // "Sync pump time now" button, `SettingsView.swift`'s `PumpSettingsView`) removed — `autoSyncPumpTime`
+        // is now a force-set-false init pin. This token was NEVER a `SettingsIndex` row (the pump-clock
+        // Section had no header/footer search-keyword entry of its own — it lived under "Pump connection"'s
+        // row, which stays live for the connect/pair/forget controls that remain), so this is a genuinely
+        // vacuous, correct check, same posture as several Phase 7 tokens above.
+        tokens.formUnion(["pump clock"])
         return tokens
     }
 
@@ -215,8 +222,10 @@ struct SettingsCatalogTests {
         // Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): 40 → 39 (the custom alert-rules engine's
         // descriptor removed — editor UI deleted; the backing accessor survives as a getter-level
         // frozen constant).
-        #expect(SettingsCatalog.descriptors.count == 39)
-        #expect(SettingsCatalog.byKey.count == 39)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 8 (08-01, LOCK-05): 39 → 38 (`autoSyncPumpTime` removed — pump-clock UI deleted; the
+        // backing accessor survives as a force-set-false init pin).
+        #expect(SettingsCatalog.descriptors.count == 38)
+        #expect(SettingsCatalog.byKey.count == 38)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -270,7 +279,9 @@ struct SettingsCatalogTests {
         // Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): 38 → 37 (the custom alert-rules engine's
         // persisted key, conditional, removed from the catalog AND backupSnapshot/applyBackup —
         // getter-level frozen constant now, same posture as `childModeEnabled`).
-        #expect(SettingsCatalog.backedUpKeys.count == 37)                      // 33 unconditional + 4 conditional
+        // Phase 8 (08-01, LOCK-05): 37 → 36 (`autoSyncPumpTime`, unconditional, removed from the
+        // catalog AND backupSnapshot/applyBackup — force-set-false init pin now).
+        #expect(SettingsCatalog.backedUpKeys.count == 36)                      // 32 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

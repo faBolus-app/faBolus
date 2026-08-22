@@ -272,12 +272,10 @@ struct PumpControlView: View {
             } header: { Text("Limits") } footer: { Text(ClinicianTierAck.sectionLabel).font(.footnote) }
         }
 
-        if caps.supportsTimeSync {
-            Section("Time") {
-                Button { ask("Sync pump time?", "Set the pump clock to this phone's current time.", destructive: false) { await model.syncTimeToNow() } }
-                    label: { Label("Sync pump time to phone", systemImage: "clock.arrow.2.circlepath") }
-            }
-        }
+        // Phase 8 (08-01, LOCK-05): the "Time" Section (the "Sync pump time to phone" button) is
+        // removed — `autoSyncPumpTime` is force-set OFF in `AppSettings.init` and no UI can reach
+        // `model.syncTimeToNow()` here anymore. The write path itself stays byte-identical (D-07); see
+        // `ClockSyncHiddenBoundaryTests` for the headless proof.
     }
 
     @ViewBuilder private var settingsNavSections: some View {
