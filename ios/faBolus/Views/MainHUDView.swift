@@ -206,6 +206,15 @@ struct DashboardView: View {
         }
         // N12 (Dynamic Type): let the dashboard scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
+        // Phase 9 Plan 01 (MOBI-01/MOBI-03, D-03): reject-at-pairing observer, anchored at
+        // DashboardView's root so it OUTLIVES the transient `PairingSheet` (RESEARCH Pitfall 3/
+        // Pattern 2 — the sheet dismisses immediately via `onDone()` without awaiting
+        // `connectWithCode`, so an observer inside its button action never fires). Reacts to the
+        // typed pump-model identity the instant the protected discovery callback
+        // (`TandemBackend.swift`, unedited) sets it; the shared helper
+        // (`ios/faBolus/Data/AppModel+MobiReject.swift`) decides + tears down via the existing
+        // public `disconnect()`/`forgetPairing()`.
+        .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 }
 
