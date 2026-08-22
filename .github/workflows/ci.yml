@@ -182,43 +182,11 @@ jobs:
   # the whole Apple Watch app + complication + direct-pump target tree it built — delete-on-main,
   # preserved on dev/watch-remote / dev/watch-host. There is no watch target left for CI to build.
 
-  mac-build:
-    name: macOS remote app + widgets build
-    runs-on: macos-15
-    needs: resolve-refs
-    steps:
-      # Same two-level checkout as the iOS/watch jobs so relative package paths resolve.
-      - name: Checkout faBolus
-        uses: actions/checkout@v4
-        with:
-          path: repos/faBolus
-
-      - name: Checkout TandemKit (local package dependency, branch-aware — see resolve-refs)
-        uses: actions/checkout@v4
-        with:
-          repository: faBolus-app/TandemKit
-          ref: ${{ needs.resolve-refs.outputs.tandemkit_ref }}
-          submodules: recursive
-          path: repos/TandemKit
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Generate the Xcode project (no private SDK, no Garmin)
-        working-directory: repos/faBolus
-        run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
-
-      # §1.5 asks whether macOS is `main`-ready. It could not be answered while the macOS remote app
-      # and its widgets were built by no CI job at all. The faBolusMac scheme embeds faBolusMacWidgets,
-      # so this one build covers both. The Mac app is a BLE remote for the phone host — it never links
-      # TandemKit or ConnectIQ, so the same no-SDK generation path works.
-      - name: Build macOS remote app + widgets
-        working-directory: repos/faBolus
-        run: |
-          set -o pipefail
-          xcodebuild -project faBolus.xcodeproj -scheme faBolusMac \
-            -destination 'generic/platform=macOS' \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+  # Phase 3 (03-01, REMOTE-01): the mac-build job (faBolusMac scheme, which embedded faBolusMacWidgets)
+  # is retired along with the whole macOS menu-bar remote target tree it built — delete-on-main,
+  # preserved on dev/mac. There is no faBolusMac target left on narrow `main` for CI to build; keeping
+  # the job made every push fail with `xcodebuild: error: ... does not contain a scheme named "faBolusMac"`.
+  # The full-surface branches (experimental / dev/mac) retain their own copy of this job on their ci.yml.
 
   # Proves the DEFAULT dependency path — the exact one a fresh `git clone && ./scripts/generate-
   # project.sh` gets, with no override — resolves cleanly. See the Option A / D-04 comment on
