@@ -161,8 +161,7 @@ library). Wait for that to finish.
 <li>In the <strong>Team</strong> dropdown, pick your name (the account from <a href="apple-developer.md">Step 1</a>).</li>
 </ol>
 
-Then do the same **Team** choice for the other rows in the TARGETS list:
-**faBolusWidgets**, **faBolusWatch**, and **faBolusWatchWidgets**.
+Then do the same **Team** choice for the other row in the TARGETS list: **faBolusWidgets**.
 
 !!! warning "\"Identifier is not available\"? Set your own bundle ID — it's one line"
     Every App ID and App Group must be **unique across all of Apple**, so the project's default
@@ -173,8 +172,8 @@ Then do the same **Team** choice for the other rows in the TARGETS list:
        same folder and rename the copy to **`LocalConfig.xcconfig`** (just drop the `.example`).
     2. Open `LocalConfig.xcconfig` in **TextEdit** and set:
         - **`APP_BUNDLE_ID`** — a reverse-domain string unique to you, e.g. `com.janesmith.fabolus`
-          (based on a domain or name you control). The watch app, widgets, and the shared App
-          Group are all derived from this automatically — you don't touch them.
+          (based on a domain or name you control). The widgets and the shared App Group are all
+          derived from this automatically — you don't touch them.
         - **`DEVELOPMENT_TEAM`** — your 10-character Team ID (or leave it blank and pick your Team
           in Xcode's Signing tab).
     3. Save, then re-do **Step 3b** (`./scripts/generate-project.sh`) and reopen the project.
@@ -249,7 +248,7 @@ use Bluetooth — tap **Allow**. (Without Bluetooth the app can't find your pump
 Next:
 
 - [Pair it with your pump →](../setup/pairing.md)
-- Optional: [add the Apple Watch app](apple-watch-build.md) or [a Garmin](garmin-build.md)
+- Optional: [add a Garmin](garmin-build.md)
 - Learn [what everything does](../operate/status.md)
 </div>
 

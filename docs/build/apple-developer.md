@@ -26,8 +26,8 @@ Both work. The only real difference is how often you have to re-install the app.
 
     ---
 
-    The app lasts **a whole year**, and the widgets and watch app are more reliable. Worth it if
-    you'll use this regularly.
+    The app lasts **a whole year**, and the widgets are more reliable. Worth it if you'll use
+    this regularly.
 
 </div>
 

@@ -53,8 +53,7 @@ When the project gets updates, refresh your copy with **GitHub Desktop** — no 
 If a build ever fails right after updating, see [Troubleshooting](../troubleshoot.md) — the usual
 fixes are re-fetching the helper files and re-running `./scripts/generate-project.sh`.
 
-## Updating the watch and Garmin apps
+## Updating the Garmin app
 
-- **Apple Watch:** run it again from Xcode — see [Add the Apple Watch](apple-watch-build.md).
-- **Garmin:** rebuild and re-install it — see [Add a Garmin](garmin-build.md). The Garmin app
-  doesn't expire like the iOS app does; you only reinstall it to get changes.
+Rebuild and re-install it — see [Add a Garmin](garmin-build.md). The Garmin app doesn't expire
+like the iOS app does; you only reinstall it to get changes.

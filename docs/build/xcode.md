@@ -28,7 +28,7 @@ The very first time you open Xcode, it downloads a few more pieces. Let it.
 <ol class="cx2-steps">
 <li>Open <strong>Xcode</strong> from your Applications folder (or Launchpad).</li>
 <li>If a window offers to install <strong>additional required components</strong>, click <strong>Install</strong> and type your Mac password.</li>
-<li>If it asks which <strong>platforms</strong> you want to support, make sure <strong>iOS</strong> is ticked. Tick <strong>watchOS</strong> too if you plan to use an Apple Watch. Let them download.</li>
+<li>If it asks which <strong>platforms</strong> you want to support, make sure <strong>iOS</strong> is ticked. Let it download.</li>
 </ol>
 
 !!! tip "You can leave Xcode open"
