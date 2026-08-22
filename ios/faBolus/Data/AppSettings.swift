@@ -332,11 +332,22 @@ public final class AppSettings {
     public var requireRemoteBolusApproval: Bool { get { false } set { } }
 
     /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
-    /// auto-dismiss), persisted as JSON. **Alarms are never auto-acted** regardless of rules — the
-    /// engine hard-excludes them. See [[AlertRuleEngine]].
-    public var alertRules: [AlertRule] {
-        didSet { d.set((try? JSONEncoder().encode(alertRules)) ?? Data(), forKey: "alertRules") }
-    }
+    /// auto-dismiss). **Alarms are never auto-acted** regardless of rules — the engine hard-excludes
+    /// them. See [[AlertRuleEngine]].
+    ///
+    /// Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): the custom alert-rules ENGINE
+    /// (`AlertRule`/`AlertRuleEngine`/`AlertAction` in the byte-identity-protected `faBolusCore`)
+    /// cannot be literally deleted — `TandemBackend.swift`'s `applyAutoRules` reads this property and
+    /// is itself DOSE_PATHS-protected. FROZEN to always-`[]` instead — belt-and-suspenders, same
+    /// posture as `childModeEnabled`/`requireRemoteBolusApproval` (FEAT-04, 07-04): a getter-level
+    /// freeze (`get { [] } set { } }`) AND removal of the `UserDefaults` init-restore /
+    /// `backupSnapshot` / `applyBackup` lines below, so neither a direct setter call nor a restored
+    /// settings backup carrying a non-empty rule-set can ever re-arm the engine. This makes
+    /// `TandemBackend.swift`'s `guard !rules.isEmpty else { return }` fire unconditionally — a
+    /// behavior-neutral early-return; `TandemBackend.swift` and `AlertRuleEngine.swift` themselves
+    /// stay BYTE-IDENTICAL (never edited). `Views/AlertRulesView.swift` (the only UI that could ever
+    /// set this to non-empty) is deleted in the next task. See `AlertRulesFreezeGuardTests`.
+    public var alertRules: [AlertRule] { get { [] } set { } }
 
     /// Upload glucose + boluses + pump status to a Nightscout site. Nightscout was removed from
     /// narrow `main` in Phase 5 (HEALTH-02) — this accessor STAYS (a hidden, unregistered
@@ -743,7 +754,9 @@ public final class AppSettings {
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): requireRemoteBolusApproval is now a frozen-false
         // computed constant (get { false } set { } ) — no init-restore line needed; the old
         // UserDefaults value, if any, is simply never read again.
-        alertRules = d.data(forKey: "alertRules").flatMap { try? JSONDecoder().decode([AlertRule].self, from: $0) } ?? []
+        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): alertRules is now a frozen-empty computed constant
+        // (get { [] } set { } ) — no init-restore line needed either; the old UserDefaults value, if
+        // any, is simply never read again.
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         // 09.23-02 (D-14/D-11b): every Apple Health import toggle — per-type + automatic — defaults
         // OFF, so a fresh install (and any device with no stored value) never silently imports.
@@ -862,7 +875,10 @@ public final class AppSettings {
         // D-05: the small-screen override pair — emitted only when set (nil ⇒ Same as phone ⇒ omitted).
         if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
         if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
-        if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
+        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): `alertRules` is no longer emitted into the backup
+        // snapshot either — its `SettingsCatalog` descriptor was removed (the editor UI is deleted;
+        // the property itself is now a getter-level frozen constant), so
+        // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` is no longer emitted here either —
         // its `SettingsCatalog` descriptor was removed (Child Mode UI deleted; the value is already
         // access-irrelevant now that `childModeEnabled` is force-false), so
@@ -949,7 +965,11 @@ public final class AppSettings {
         // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer restores from a backup — same
         // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
         // (same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled` precedents above).
-        if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
+        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): `alertRules` no longer restores from a backup
+        // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy
+        // backup carrying a non-empty rule-set is silently ignored (the getter-level freeze would
+        // reject it regardless, but the restore line itself is removed too, closing both halves of
+        // the round trip per D-07's belt-and-suspenders shape).
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` no longer restores from a backup
         // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy backup
         // carrying this key is silently ignored (same tolerance as the `remoteBluetoothEnabled`/
