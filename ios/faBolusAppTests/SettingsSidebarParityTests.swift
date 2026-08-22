@@ -24,9 +24,13 @@ import Foundation
 ///
 /// Phase 6 (06-02, D-06/D-08, Rule 3 — minimal interim fix): the count drops 6 → 5 —
 /// `.backupRestore` is removed (the backup/restore sidebar row is gone); `.privacyData` is KEPT
-/// (D-08, routes to the trimmed erase-only view). This is the minimal compile/assertion fix Task 2's
-/// own `SettingsSidebarItem` enum edit requires; Plan 03 supersedes it with the full §6c token-audit
-/// treatment (dated comment idiom, `CompileGateAudit.gatedOffSearchTokens` extension).
+/// (D-08, routes to the trimmed erase-only view).
+///
+/// Phase 6 (06-03, BACKUP-01 — FINALIZED, Open Question 1): re-derived LIVE against the post-06-02
+/// tree per this phase's own `SettingsSidebarItem.allExtras`/`SettingsExtraIndex.entries` — 5 → 5, NO
+/// FURTHER CHANGE. This supersedes 06-02's "minimal interim fix" framing above: the count was already
+/// correct, and `CompileGateAudit.gatedOffSearchTokens` (SettingsCatalogTests.swift) now separately
+/// carries the §6c token-audit extension for this phase's removed backup/restore surface.
 @Suite struct SettingsSidebarParityTests {
 
     @Test func allExtrasCoversAllFiveGroups() {

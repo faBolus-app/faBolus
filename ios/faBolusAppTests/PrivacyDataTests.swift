@@ -14,6 +14,13 @@ import faBolusCore
 /// task). The full (export + erase) coverage still exists on `dev/backup`/`experimental`, unchanged.
 /// The erase/full-reset tests below are UNCHANGED — `AppModel.eraseAllOnDeviceHealthData`/
 /// `eraseEverythingFullReset` stay permanently ungated (D-08) regardless of `FABOLUS_BACKUP`.
+///
+/// Phase 6 (06-03, BACKUP-01 — FINALIZED): the split above is complete and permanent on `main` — the
+/// export half is not deferred or partially removed, it already lives in full on `dev/backup` (same
+/// filename, unmodified since before this phase started) as the reintegration target; nothing further
+/// moves out of this file. `BackupRemovalBoundaryTests.swift` (new, ungated) is the complementary
+/// capability-level proof that the erase/full-reset half these 4 tests exercise in detail also stays
+/// reachable end-to-end after the `FABOLUS_BACKUP=0` compile-gate flip.
 @MainActor
 @Suite(.serialized) struct PrivacyDataTests {
 

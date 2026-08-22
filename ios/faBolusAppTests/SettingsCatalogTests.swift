@@ -46,6 +46,22 @@ enum CompileGateAudit {
         // import/export) and Nightscout (source + upload + backfill) both removed from narrow
         // `main` (unconditional — permanent removal, no `#if` guard per D-01).
         tokens.formUnion(["nightscout", "healthkit", "heart rate"])
+        // Phase 6 (06-02/06-03, BACKUP-01): the "Backup & restore" row (keywords: "backup restore
+        // icloud files settings export import") was `git rm`'d from `SettingsView.swift` in 06-02 —
+        // its `.backupRestore` case, tag, NavigationLink, and `SettingsExtraIndex`/`allExtras` entry
+        // are all gone (confirmed by a live grep of this tree before adding these tokens, per this
+        // plan's own instruction not to guess the strings). Only "icloud", "restore", "files", and
+        // "import" are added here: "backup" and "export" are DELIBERATELY EXCLUDED even though the
+        // removed row also used them, because both terms are still legitimately owned by DIFFERENT,
+        // STILL-LIVE rows today — "Read-only mode" keywords contain "...caregiver backup phone..."
+        // (a spare/backup DEVICE, unrelated to the removed backup ENGINE) and "Data & history"
+        // keywords contain "...export logs..." (CSV history export, a different still-present
+        // feature) — adding either would make `orphanedSettingsIndexEntries` wrongly flag a live row
+        // (the exact §6c false-positive this phase's D-08 carve-out must not trigger). "settings" is
+        // also excluded as too generic to be backup-specific. SiteAtlas never had its own
+        // `SettingsIndex`/`SettingsExtraIndex` row (it was reached from elsewhere in the app, not
+        // Settings search), so it contributes no additional token here.
+        tokens.formUnion(["icloud", "restore", "files", "import"])
         return tokens
     }
 
@@ -107,6 +123,15 @@ struct SettingsCatalogTests {
         // survives as a hidden/unregistered UserDefaults flag, no migration; HealthKit's
         // healthKit*Enabled properties were never a catalog row per D-13, so HEALTH-01 required no
         // count change here).
+        // Phase 6 (06-02/06-03, BACKUP-01): 59 → 59, NO CHANGE — re-derived LIVE (Pitfall 4, Open
+        // Question 1) against the post-Phase-4 tree rather than trusting the RESEARCH snapshot.
+        // `siteAtlasEnabled` was deleted from `AppSettings.swift` in 06-02 (A3), but it was already
+        // REMOVED from `SettingsCatalog.descriptors` by Phase 4 (04-02) as an unregistered hidden
+        // flag (see the NOTE at `SettingsCatalog.swift:258`) — so this phase's deletion has zero
+        // effect on the descriptor count. No other backup-engine surface (the removed
+        // `SettingsBackup`/`ICloudSync`/`PrivacyDataExport`/`SiteAtlasStore` types) was ever itself a
+        // persisted `AppSettings` key/descriptor — they operated ON the catalog, they were never
+        // rows IN it — so BACKUP-01 needed no descriptor removal here at all.
         #expect(SettingsCatalog.descriptors.count == 59)
         #expect(SettingsCatalog.byKey.count == 59)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
@@ -144,6 +169,10 @@ struct SettingsCatalogTests {
         // catalog AND backupSnapshot — the eating trio was never backed up, so no further drop).
         // Phase 5 (05-02, HEALTH-02): 58 → 57 (nightscoutUploadEnabled, unconditional, removed from
         // the catalog AND backupSnapshot).
+        // Phase 6 (06-02/06-03, BACKUP-01): 57 → 57, NO CHANGE — re-derived LIVE. `siteAtlasEnabled`
+        // was already dropped from `backupSnapshot()`/`applyBackup()` by Phase 4 (04-02, see the
+        // NOTE at `AppSettings.swift:1143`/`:1247`), so 06-02's property deletion changes nothing
+        // here; the removed backup-engine types never emitted their own catalog-backed key.
         #expect(SettingsCatalog.backedUpKeys.count == 57)                      // 51 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
@@ -523,5 +552,23 @@ struct SettingsCatalogTests {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: ["libre", "xdrip"])
         #expect(orphans.isEmpty,
                 "G6/LibreLinkUp were removed but a SettingsIndex row still advertises them: \(orphans.map(\.title))")
+    }
+
+    /// Phase 6 (06-02/06-03, BACKUP-01) — the §6c non-vacuous proof for the backup/restore removal:
+    /// before 06-02, "icloud"/"restore"/"files"/"import" were all part of the "Backup & restore" row's
+    /// keyword string; after it (and after 06-02's `.backupRestore` case/tag/link/index removal), no
+    /// live `SettingsIndex` OR `SettingsExtraIndex` row advertises any of them. Checked against BOTH
+    /// indices — the removed row lived in `SettingsExtraIndex` (the iPad-sidebar extra-row index), not
+    /// `SettingsIndex` (the category index `CompileGateAudit` reads) — so this test also proves the
+    /// audit tokens don't collide with a still-live `SettingsIndex` row (e.g. "restore"/"icloud"/
+    /// "files"/"import" appear in none of its entries either).
+    @Test func backupRestoreRemovalLeavesNoOrphanedSettingsIndexEntry() {
+        let tokens = Set(["icloud", "restore", "files", "import"])
+        let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: tokens)
+        #expect(orphans.isEmpty,
+                "Backup & restore was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
+        let extraOrphans = SettingsExtraIndex.entries.filter { entry in tokens.contains { entry.matches($0) } }
+        #expect(extraOrphans.isEmpty,
+                "Backup & restore was removed but a SettingsExtraIndex row still advertises it: \(extraOrphans.map(\.title))")
     }
 }
