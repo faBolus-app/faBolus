@@ -107,9 +107,14 @@ struct SettingsView: View {
                     Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         .tag(SettingsSidebarItem.childMode)
                         .hoverEffect(.automatic)
+                    // Rule 3 (06-01): `BackupRestoreView` lives in a FABOLUS_BACKUP-excluded file — this
+                    // row is #if-gated so the FABOLUS_BACKUP=0 compile-out proof builds; Plan 02 removes
+                    // this row (and the sidebar enum case) outright once the default flips.
+                    #if FABOLUS_BACKUP
                     Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         .tag(SettingsSidebarItem.backupRestore)
                         .hoverEffect(.automatic)
+                    #endif
                     Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         .tag(SettingsSidebarItem.dataHistory)
                         .hoverEffect(.automatic)
@@ -172,7 +177,12 @@ struct SettingsView: View {
         case .mode: ModeSettingsView()
         case .safety: SafetySettingsView(settings: settings)
         case .childMode: ChildModeView(settings: settings)
-        case .backupRestore: BackupRestoreView(model: model)
+        case .backupRestore:
+            #if FABOLUS_BACKUP
+            BackupRestoreView(model: model)
+            #else
+            EmptyView()
+            #endif
         case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
         // 09.18a-03 (D-16): reuses `destination(_:)`'s own `.smartAssist` arm (now unconditional after
@@ -218,10 +228,12 @@ struct SettingsView: View {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
                         .hoverEffect(.automatic)
+                        #if FABOLUS_BACKUP
                         NavigationLink { BackupRestoreView(model: model) } label: {
                             Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
                         }
                         .hoverEffect(.automatic)
+                        #endif
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
@@ -914,7 +926,11 @@ struct PumpSettingsView: View {
         }
         // The backup sheet; on dismiss (saved or not) advance to the model-appropriate confirm.
         .sheet(isPresented: $showBackupSheet, onDismiss: { unpairStep = .confirm(repairAfter: repairAfterBackup) }) {
+            #if FABOLUS_BACKUP
             NavigationStack { BackupRestoreView(model: model) }
+            #else
+            EmptyView()
+            #endif
         }
         // P14 S12 (§2.2.3): STEP 2 — the unpair confirm, carrying the model-appropriate warning
         // (Mobi ⇒ charging-base caveat). One funnel for both entry points. Presented as a
