@@ -7,37 +7,20 @@
 
 # faBolus
 
-A remote-bolus and status-viewing app — iPhone, Apple Watch, Garmin, a Mac menu-bar app, and a
-**second iPhone as a remote** — designed to be **pump-agnostic**. The iPhone owns the pump's Bluetooth
-connection; the watch, Garmin, Mac, and a remote iPhone are thin remotes that relay confirmed commands
-to the phone. The **Mac and a remote iPhone** connect over Bluetooth LE, so they keep working when the
-host iPhone is locked or backgrounded.
+A remote-bolus and status-viewing app for the **iPhone**, designed to be **pump-agnostic**. The
+iPhone owns the pump's Bluetooth connection; a **Garmin Venu 3S** watch and the **Home/Lock Screen
+widgets** (including Quick Bolus) are thin remotes that relay confirmed commands to the phone —
+they never talk to the pump directly.
 
-The **iPhone-to-iPhone remote** (e.g. a parent controlling a child's pump) is local-only (no cloud),
-authenticated (one-time QR/code) and **end-to-end encrypted**, opt-in and off by default, with
-per-remote permissions, a read-only mode, and optional reverse approval. It's proximity-range
-(Bluetooth), not internet-distance. See [docs/remotes/phone-remote.md](docs/remotes/phone-remote.md).
+**Today it works with one pump:** the Tandem **t:slim X2**, via [`TandemKit`](../TandemKit). (Tandem's
+**Mobi** isn't supported in this build — the app declines to pair with one.) The app talks to the
+pump only through a backend interface, so support for other pumps can be added without forking —
+see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Today it supports one pump:** the Tandem **t:slim X2 / Mobi** (via [`TandemKit`](../TandemKit)).
-The app talks only to a backend interface, so support for other pumps can be added as new backends
-**without forking** — see [ARCHITECTURE.md](ARCHITECTURE.md).
-
-**CGM failover (optional):** glucose normally arrives through the pump; faBolus can also read an
-**independent CGM feed** as a backup so a reading keeps flowing if the pump, phone, or sensor link
-drops. Sources: **Dexcom G7/ONE+** directly over Bluetooth (also on Apple Watch); **Dexcom G6/G5/ONE**
-directly over Bluetooth (passively, alongside the official Dexcom app); **xDrip4iOS** via Apple Health
-or a local App Group (universal — Libre 1/2, Dexcom G5/G6/ONE, …); and **LibreLinkUp** (Libre 2/3),
-**Dexcom Share** (G6), **Nightscout**, and **Apple Health** (Eversense). The pump stays
-the primary source; a stale reading is shown marked (never as current). See
-[the CGM failover docs](docs/operate/cgm-failover.md).
-
-**Eating nudges (optional, off by default):** faBolus can remind you to bolus when you're probably
-eating — **advisory only, never doses**. It fuses wrist motion (a small on-device model, from a
-**Garmin** or **Apple Watch**), a **CGM unannounced-meal** signal (a port of Loop's missed-meal
-detection), a no-recent-bolus gate, and an optional on-device **location** gate. You choose which
-signals must agree, with live "≈ false alerts/day · % meals caught · time-to-alert · battery"
-guidance, and it **learns from your feedback on-device** (adapts the threshold, and fine-tunes the
-model when supported). Everything runs on-device. See [the eating-nudge docs](docs/operate/eating-nudges.md).
+**Dexcom Share (optional):** glucose normally arrives through the pump. faBolus can also poll
+**Dexcom Share** as a fallback so a reading keeps flowing if the pump's own glucose goes stale — the
+pump stays the primary source, and a Share reading is shown marked, never as current. See
+[Glucose (Dexcom Share)](docs/operate/glucose.md).
 
 > _Built by Zev and Tia in tandem._
 
@@ -49,17 +32,15 @@ model when supported). Everything runs on-device. See [the eating-nudge docs](do
 
 ## 📖 Documentation
 
-**Full docs — a no-experience-required build guide, usage, customization, Siri & Shortcuts —
-live at the documentation site:**
+**Full docs — a no-experience-required build guide, usage, and customization — live at the
+documentation site:**
 
 ### 👉 https://fabolus.org/
 
 - [Safety](docs/safety.md) — read before anything else.
 - [Build it yourself](docs/build/index.md) — Apple account → Xcode → iPhone, step by step, plus
-  the [Apple Watch](docs/build/apple-watch-build.md) and [Garmin](docs/build/garmin-build.md) apps
-  (and a [command-line build](docs/build/advanced.md)).
-- [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md) ·
-  [Siri & Shortcuts](docs/customize/shortcuts.md).
+  the [Garmin](docs/build/garmin-build.md) app (and a [command-line build](docs/build/advanced.md)).
+- [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md).
 
 ## 💬 Feedback
 
@@ -73,32 +54,31 @@ FDA-cleared — for anything urgent about your therapy, contact your healthcare 
 The pump pairs to **one** controller at a time, so faBolus and the official **t:connect** app can
 both be installed but only one is connected at once — and switching is a full re-pair with a new
 6-digit code, not a quick toggle (the pump doesn't store two pairings, and the code can't be shared
-between apps). faBolus also isn't a full replacement: some pump settings and certain **Mobi**
-functions can only be changed in t:connect. Pick faBolus as your everyday controller (it reconnects
-with no code) and pair t:connect only when you need an official-app-only setting — then re-pair
-faBolus. To make that re-pair a easier on a **Tandem Mobi** (whose PIN is fixed), faBolus offers to
-**save the PIN** the first time it recognizes a Mobi, so switching back is a bit easier; you can clear or
-change it on the Connect screen. More in the [FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
+between apps). faBolus isn't a full replacement either: some pump settings can only be changed in
+t:connect. Pick faBolus as your everyday controller (it reconnects with no code) and pair t:connect
+only when you need an official-app-only setting — then re-pair faBolus. More in the
+[FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
 
 ## Layout
 
 ```
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
-                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, the transport
-                             #    seam — RemoteLink (watch) / BLELink (Mac+iPhone) + SealedTransport — GlucoseSource + GlucoseArbiter)
-Packages/G7SensorKit/        # Dexcom G7/ONE+ BLE decoders, vendored from LoopKit (MIT), LoopKit-free
+                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, GlucoseSource + GlucoseArbiter)
 Packages/ShareClient/        # Dexcom Share follower, vendored from LoopKit/dexcom-share-client-swift (MIT)
 ios/faBolus/                 # iOS host app — owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
-ios/faBolus/Data/Sources/    # CGM failover impls: cloud (LibreLinkUp/Nightscout/Share) + HealthKit + creds
+ios/faBolus/Data/Sources/    # the Dexcom Share glucose follower + its keychain credential store
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
 Shared/                      # WidgetShared (App Group snapshot) + DisplaySettings
-                             #   (the Apple Watch remote — WatchConnectivity + direct-G7 failover —
-                             #   and its complication are removed from main; see dev/watch-remote)
 schema/                      # THE phone↔remote message contract — single source of truth
 hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
 docs/                        # the documentation site (MkDocs Material)
 ```
+
+This is narrow `main` — a small, hardware-validated core. A number of surfaces an earlier build of
+this app had (other remotes, other CGM sources, an advisory meal-detection assistant, and more) live
+on `experimental` and their own `dev/<surface>` branch instead; see `BRANCHES.md` §1.2c for the full
+roster and why.
 
 New pumps and new host apps are added **in-tree behind stable interfaces, not by forking** — see
 **[ARCHITECTURE.md](ARCHITECTURE.md)** for the two seams and **[CONTRIBUTING.md](CONTRIBUTING.md)**
@@ -106,8 +86,7 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
 
 - The iOS app + widgets are targets of one Xcode project (`faBolus.xcodeproj`), generated from
   `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `TandemKit` via
-  SPM. (The Apple Watch app/complication and the Mac menu-bar app/widgets are removed from `main` —
-  delete-on-main — preserved on `dev/watch-remote` and `dev/mac` respectively.)
+  SPM.
 - The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
   **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
   here and talks to it over the shared `schema/`.
@@ -132,22 +111,7 @@ Requires **Xcode 16+** and an **Apple ID** (free works; paid recommended).
 Mobile SDK for iOS**: if it's not present, the app builds **without** Garmin (no SDK needed) and shows
 a note where Garmin pairing would be. To use a Garmin watch, place the Connect IQ SDK where
 `project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script (force Garmin
-on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works. (The Apple Watch remote is
-removed from `main` — see `dev/watch-remote` — not a build-time toggle.)
-
-**Smart Assist is optional too.** The advisory eating-detection features (on-device meal detection and
-the eating nudge) are powered by the private
-[faBolusNudge](https://github.com/faBolus-app/faBolusNudge) SDK. `scripts/generate-project.sh`
-auto-detects whether that repo is reachable — **if you don't have access, it's dropped automatically**,
-those features compile out, and the app still builds (the Smart Assist settings section is hidden).
-Force it with `FABOLUS_NUDGE=1/0`. Retrospective **Insights** (time-in-range, recurring patterns) are
-built into `faBolusCore` and are always available, with or without the SDK.
-
-**On-watch eating detection needs a paid account** (HealthKit + a workout session). It's **off by
-default and auto-excluded on a free account** — every paid-only piece (the HealthKit entitlement,
-background modes, the model, the compile flag) is stripped so the app still builds and installs. Turn
-it on once you have the paid program with `FABOLUS_ONWATCH_EATING=1 ./scripts/generate-project.sh`.
-The **Garmin** eating path (phone-side inference) needs none of this and works on a free account.
+on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works.
 
 ## Status
 
