@@ -1,23 +1,19 @@
 import SwiftUI
 import faBolusCore
 
-/// F1 (§13) — Privacy & data. One place to **export** everything faBolus holds on this device (glucose /
-/// insulin / carb history + the setting-change log + the remote-bolus ledger audit trail) as a single
-/// shareable JSON file, and to **erase** all of it. faBolus has no servers; export saves the user's own
-/// copy wherever they choose. Erase is owner-only and refuses while a delivery is unresolved (see
+/// F1 (§13) — Privacy & data. One place to **erase** everything faBolus holds on this device
+/// (glucose / insulin / carb history + the setting-change log + the remote-bolus ledger audit trail).
+/// faBolus has no servers. Erase is owner-only and refuses while a delivery is unresolved (see
 /// `AppModel.eraseAllOnDeviceHealthData`).
+///
+/// D-08 (06-02): this view used to also offer a JSON **export** of the same data (via
+/// `PrivacyDataExport`/`BackupDocument`, part of the removed backup engine). The owner carve-out
+/// keeps the erase/full-reset UI on narrow `main` while the export half is trimmed out along with the
+/// rest of the backup surface; the full (export + erase) view still exists on `dev/backup`/`experimental`.
 struct PrivacyDataView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
 
-    // Export (Rule 3 / 06-01: `BackupDocument` lives in SettingsBackup.swift, excluded at
-    // FABOLUS_BACKUP=0 — D-08 deliberately keeps this whole file on `main` for the erase/full-reset
-    // UI below, so only the export-specific state/UI/action are individually gated. Plan 02 trims
-    // this export surface out of the file entirely once the default flips to 0.)
-    #if FABOLUS_BACKUP
-    @State private var exporting = false
-    @State private var exportDoc: BackupDocument?
-    #endif
     @State private var message: String?
 
     // Erase
@@ -31,20 +27,6 @@ struct PrivacyDataView: View {
 
     var body: some View {
         Form {
-            #if FABOLUS_BACKUP
-            Section {
-                Button {
-                    export()
-                } label: {
-                    Label("Export my data…", systemImage: "square.and.arrow.up")
-                }
-            } header: {
-                Text("Export")
-            } footer: {
-                Text("Saves everything faBolus keeps on this device — your glucose, insulin and carb history, the settings change log, and the bolus delivery audit trail — as a single **`.json`** file you can save to Files or iCloud Drive. It never leaves the device except to the file you choose; faBolus has no servers.")
-            }
-            #endif
-
             if isOwner {
                 Section {
                     Button(role: .destructive) { confirmErase = true } label: {
@@ -73,14 +55,6 @@ struct PrivacyDataView: View {
         }
         .navigationTitle("Privacy & data")
         .navigationBarTitleDisplayMode(.inline)
-        #if FABOLUS_BACKUP
-        .fileExporter(isPresented: $exporting, document: exportDoc, contentType: .json,
-                      defaultFilename: PrivacyDataExport.suggestedFilename()) { result in
-            if case .failure(let e) = result { message = "Export failed: \(e.localizedDescription)" }
-            else { message = "Data exported." }
-            exportDoc = nil
-        }
-        #endif
         .confirmationDialog("Delete all on-device data?", isPresented: $confirmErase, titleVisibility: .visible) {
             Button("Delete everything", role: .destructive) { erase() }
             Button("Cancel", role: .cancel) {}
@@ -94,18 +68,6 @@ struct PrivacyDataView: View {
             Text("This deletes all on-device health data AND your saved logins (pump pairing, PIN, CGM credentials), and unpairs the pump. \(model.unpairConfirmation) Your app preferences are kept. This can't be undone — export first. Refused while a bolus is unresolved.")
         }
     }
-
-    #if FABOLUS_BACKUP
-    private func export() {
-        message = nil
-        do {
-            exportDoc = BackupDocument(data: try model.exportPrivacyDataJSON())
-            exporting = true
-        } catch {
-            message = "Couldn't build the export: \(error.localizedDescription)"
-        }
-    }
-    #endif
 
     private func erase() {
         switch model.eraseAllOnDeviceHealthData() {

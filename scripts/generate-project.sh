@@ -105,15 +105,21 @@ CGM_G7="${FABOLUS_CGM_G7:-0}"
 # Vendor/LoopPowerPack/FoodFinder) are excluded via the APP_SOURCE_EXCLUDES list — a nested-directory excludes:
 # shape validated with a real xcodegen generate at both default and =0. The removal flip is Phase 7's job.
 FOODFINDER="${FABOLUS_FOODFINDER:-1}"
-# BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-01/D-08 owner carve-out). Default 1 = the
-# backup/restore, PrivacyData-export, and SiteAtlas surface is PRESENT (today's behavior). At 0, the 7
-# app-layer files/dirs are excluded via APP_SOURCE_EXCLUDES AND the FABOLUS_BACKUP compile flag is
-# dropped, so AppModel.swift's/App.swift's identical #if FABOLUS_BACKUP guards compile out cleanly with
-# no dead engine retained. Per the owner's D-08 carve-out, the on-device "Delete all on-device data" /
-# "Full reset" erase path (AppModel.EraseOutcome/eraseAllOnDeviceHealthData/eraseEverythingFullReset) is
-# NOT gated by this flag — it stays reachable + compiled regardless of BACKUP's value. The removal flip
-# to 0 on narrow main is Plan 02's job, NOT Plan 01.
-BACKUP="${FABOLUS_BACKUP:-1}"
+# BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-02/D-08 owner carve-out). REMOVAL FLIP: `main`'s
+# backup/restore, PrivacyData-export, and SiteAtlas surface is now permanently ABSENT — the 7
+# app-layer files/dirs this flag used to gate are physically git rm'd from `main` (delete-on-main,
+# preserved on dev/backup), and the default here flips to 0 so AppModel.swift's/App.swift's identical
+# #if FABOLUS_BACKUP guards compile out with no dead engine retained by default. Per the owner's D-08
+# carve-out, the on-device "Delete all on-device data" / "Full reset" erase path
+# (AppModel.EraseOutcome/eraseAllOnDeviceHealthData/eraseEverythingFullReset) is NOT gated by this flag
+# — it stays reachable + compiled regardless of BACKUP's value; PrivacyDataView.swift itself stays on
+# `main` (trimmed to erase-only) for exactly that reason. The flag/gate machinery (this var, the
+# project.yml BACKUP excludes block, the SWIFT_ACTIVE_COMPILATION_CONDITIONS token) is kept, not
+# retired outright — `dev/backup`/`experimental` keep their own copies of these files with the files
+# present and FABOLUS_BACKUP=1 default, unaffected by this main-only flip. Setting FABOLUS_BACKUP=1
+# here is now an env-override-only escape hatch (no shipped effect: the excluded source no longer
+# exists on `main` to bring back).
+BACKUP="${FABOLUS_BACKUP:-0}"
 # Mobi capability-model placeholder (TOPO-03/D-03, RESEARCH Pattern 3 + Pitfall 5). Mobi support is NOT a
 # strippable block — it is an `enum PumpModel` case + a `.mobiAdvanced` capability floor threaded through
 # dose-adjacent faBolusCore / AccessPolicy / GatedPumpWrite. Phase 0 reserves ONLY the env-var plumbing here
@@ -224,12 +230,13 @@ if [ "$CGM_G7" = 0 ]; then
 fi
 
 echo "generate-project: Garmin=$GARMIN iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 FoodFinder=$FOODFINDER Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout/FoodFinder/Backup still default-present)"
+echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 FoodFinder=$FOODFINDER Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout/FoodFinder still default-present)"
 [ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the DexcomG6Kit package/dependency (FABOLUS_CGM_G6=0, default) — the Dexcom G5/G6/ONE BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra; G7SensorKit/ShareClient kept"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
 [ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
 [ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
-[ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0) — 7 source files/dirs excluded; the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
+[ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
+[ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup)"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"

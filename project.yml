@@ -121,11 +121,14 @@ targets:
           - Views/FoodFinder
           - Vendor/LoopPowerPack/FoodFinder
           # <<< FOODFINDER
-          # >>> BACKUP (kept only when FABOLUS_BACKUP=0 → excludes backup/restore + PrivacyData export +
-          #   SiteAtlas; stripped by default. Phase 6 (06-01, BACKUP-01/D-08 owner carve-out): PrivacyDataView.swift
-          #   is DELIBERATELY NOT in this list — it stays on main (trimmed to erase-only in Plan 02) so the
-          #   on-device "Delete all on-device data" / "Full reset" affordance survives FABOLUS_BACKUP=0. The
-          #   removal flip is Plan 02's job, not Plan 01's.)
+          # >>> BACKUP (Phase 6, 06-02, BACKUP-01/D-02/D-08 owner carve-out): these 7 paths are now
+          #   PHYSICALLY git rm'd from `main` (delete-on-main, preserved on dev/backup) — this exclude
+          #   list is a harmless no-op on `main` (the paths no longer exist to exclude) kept intact only
+          #   as documentation of the D-02 file set + so the block shape matches dev/backup/experimental's
+          #   own (unaffected, still-FABOLUS_BACKUP=1) copy of this file, where the paths are real and
+          #   this list is load-bearing. PrivacyDataView.swift is DELIBERATELY NOT in this list — it stays
+          #   on main (trimmed to erase-only, Plan 02) so the on-device "Delete all on-device data" /
+          #   "Full reset" affordance survives FABOLUS_BACKUP=0 (main's new default).
           - Data/SettingsBackup.swift
           - Data/PrivacyDataExport.swift
           - Views/BackupRestoreView.swift
