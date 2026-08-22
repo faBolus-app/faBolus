@@ -94,5 +94,9 @@ struct ConnectPumpOnboardingView: View {
                 modeStore.completePumpOnboarding()
             }
         }
+        // Phase 9 Plan 01 (MOBI-01/MOBI-03, D-03): reject-at-pairing observer — same shared helper as
+        // MainHUDView's/SettingsView's triggers (`ios/faBolus/Data/AppModel+MobiReject.swift`), anchored
+        // at this view's root so it OUTLIVES the transient `PairingSheet` presented above.
+        .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 }
