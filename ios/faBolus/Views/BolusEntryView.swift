@@ -44,9 +44,10 @@ struct BolusEntryView: View {
     @State private var sgReenterText = ""
     @State private var sgReenterMismatch = false
     @State private var sgOriginalUnits: Double = 0
-    // FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior notice, shown once
-    // at the first bolus-screen appearance (`.onAppear` below).
-    @State private var showStackingGuardNotice = false
+    // LOCK-06 (Phase 8, 08-02): the FLAG-4 one-time DosingSafetyKit→SG advisory-behavior notice's state
+    // variable, trigger, and render are all REMOVED — its copy referenced friction behavior which, with
+    // friction permanently off (08-01), can no longer happen. AppSettings.shared's ack-state accessors
+    // (AppSettings.swift, out of this plan's scope) stay untouched but now have no caller here.
     /// Where the correction BG came from: auto-filled from the CGM, or typed by the user. Only a
     /// CGM-sourced BG is auto-refreshed / re-checked for freshness (a typed BG is the user's own).
     private enum BGSource { case none, cgm, manual }
@@ -315,11 +316,9 @@ struct BolusEntryView: View {
     /// distribution) has one home; no control flow or dose logic depends on the string.
     static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
 
-    /// FLAG-4 (§1.5, REQ-D16-flags) DRAFT copy, §13-pending — the DosingSafetyKit→SG advisory-behavior
-    /// change notice, shown once at the first bolus-screen appearance. Plain-language, non-alarming —
-    /// mirrors the `TherapyEditAck` tone. Kept as one string constant (same idiom as
-    /// `awaitingPumpSettingsCopy` above) so the wording has one home; no control flow depends on it.
-    static let stackingGuardNoticeCopy = "This version adds Insulin Stacking Guard: extra on-screen context, and for larger overrides an extra confirmation or a re-type step before an unusually large dose delivers. It's advisory only — it never blocks, resizes, or changes the amount you choose to deliver."
+    // LOCK-06 (Phase 8, 08-02): the FLAG-4 one-shot notice's DRAFT copy constant is REMOVED — orphaned
+    // copy describing a friction path that can no longer fire now that friction is permanently off
+    // (08-01). See `StackingGuardNoticeAckTests` for the absence proof.
 
     /// SG3a `.reenter` exact-match rule: a re-typed value must equal `original` (within floating-point
     /// tolerance) to proceed — ANY other value is rejected/re-prompted, never delivered as a new (resized)
@@ -709,10 +708,8 @@ struct BolusEntryView: View {
             // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
             // fresh from the start (never the ~10-min-stale cache).
             Task { await model.refreshGlucoseNow(); await model.refreshCalcInputsNow(); syncBGFromCGM() }
-            // FLAG-4 (§1.5, REQ-D16-flags): first-use disclosure that this version adds Insulin Stacking
-            // Guard's advisory friction. Shown once (persisted), non-blocking — the screen stays usable
-            // regardless, same idiom as `TherapyEditAck` (PumpWizardViews.swift).
-            if !AppSettings.shared.hasAcknowledgedStackingGuardNotice { showStackingGuardNotice = true }
+            // LOCK-06 (Phase 8, 08-02): the FLAG-4 first-use stacking-guard notice's onAppear trigger is
+            // REMOVED here — the notice never presents now that friction is permanently off (08-01).
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
@@ -895,13 +892,14 @@ struct BolusEntryView: View {
         }
     }
 
-    /// SG3a's escalated-friction dialogs (`.confirmExtra`/`.reenter`) + the FLAG-4 one-time notice, applied
-    /// as a SEPARATE modifier group (not inline in `content`'s chain above). Splitting these out keeps each
-    /// chained-modifier expression small enough for the type-checker — `content`'s chain was already long
-    /// before this plan, and appending these three `.confirmationDialog`/`.alert` modifiers directly onto it
-    /// pushed a single SwiftUI modifier-chain expression past what the compiler can type-check in
-    /// reasonable time (no behavior difference: `.alert`/`.confirmationDialog` attach presentation state via
-    /// the view hierarchy regardless of which ancestor they're applied to).
+    /// SG3a's escalated-friction dialogs (`.confirmExtra`/`.reenter`), applied as a SEPARATE modifier group
+    /// (not inline in `content`'s chain above). Splitting these out keeps each chained-modifier expression
+    /// small enough for the type-checker — `content`'s chain was already long before this plan, and
+    /// appending these `.confirmationDialog`/`.alert` modifiers directly onto it pushed a single SwiftUI
+    /// modifier-chain expression past what the compiler can type-check in reasonable time (no behavior
+    /// difference: `.alert`/`.confirmationDialog` attach presentation state via the view hierarchy
+    /// regardless of which ancestor they're applied to). LOCK-06 (Phase 8, 08-02): the FLAG-4 one-time
+    /// stacking-guard notice `.alert` that used to be the third modifier here is REMOVED.
     @ViewBuilder
     private func withSG3aFriction<V: View>(_ view: V) -> some View {
         view
@@ -940,14 +938,6 @@ struct BolusEntryView: View {
                 Button("Cancel", role: .cancel) { sgReenterMismatch = false }
             } message: {
                 Text(sgReenterMessage)
-            }
-            // FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior notice, shown
-            // once at the first bolus-screen appearance (`.onAppear`). Non-blocking — never gates a dose; it
-            // only records that the disclosure was shown and accepted, same idiom as `TherapyEditAck`.
-            .alert("New: Insulin Stacking Guard", isPresented: $showStackingGuardNotice) {
-                Button("I understand") { AppSettings.shared.acknowledgeStackingGuardNotice() }
-            } message: {
-                Text(Self.stackingGuardNoticeCopy)
             }
     }
 
