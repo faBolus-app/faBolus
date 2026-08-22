@@ -8,7 +8,9 @@ options:
   # The mechanism is the String Catalog `ios/faBolus/Localizable.xcstrings` — XcodeGen auto-includes
   # it as a resource of the `faBolus` app target because it lives under that target's source dir
   # (`ios/faBolus`), so Xcode's build system compiles it into the app's .lproj tables. The seeded
-  # slice is the P14 mode/Objectives copy (see ios/faBolus/Views/ModeCopy.swift + ModeViews.swift).
+  # slice was the P14 mode/Objectives copy (`ModeCopy.swift` + `ModeViews.swift`) — both deleted from
+  # narrow `main` by Phase 8 (08-01, LOCK-01)/Phase 9 (09-02, MOBI-02); the String Catalog mechanism
+  # itself stays in place for any future localized string that lands under this target.
   # Follow-up (deferred): faBolusCore-package strings (e.g. AppMode.title) need Package.swift
   # defaultLocalization + Bundle.module and are intentionally left English for now.
   developmentLanguage: en

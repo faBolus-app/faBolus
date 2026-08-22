@@ -135,7 +135,10 @@ struct CiqAwarenessScopeGuardTests {
     private static let knownCiqAwarenessSignatureSources: [(file: String, typeMarker: String)] = [
         ("Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift", "public enum AutoCorrectionDisclosure"),
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
-        ("ios/faBolus/Views/PumpWizardViews.swift", "enum ControlIQDisableWarning"),
+        // Phase 9 (09-02, MOBI-02): moved verbatim from the deleted `Views/PumpWizardViews.swift`
+        // to its own file — the type survives as orphaned-but-tested pure logic (see the file's own
+        // header comment); only the path here needs to follow it.
+        ("ios/faBolus/Data/ControlIQDisableWarning.swift", "enum ControlIQDisableWarning"),
         // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
         // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`
