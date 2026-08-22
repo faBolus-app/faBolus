@@ -136,35 +136,6 @@ public final class AppSettings {
     /// toggle (same device-local persisted-Bool idiom as `eatingNudgesEnabled`): deliberately NOT a
     /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
     public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
-    /// Phase 09.18d-01 (D-15/D-17): gate the LoopInsights endo-visit PDF report surface. **Default ON**
-    /// — a benign records-export feature (glucose/insulin/carb summary rendered to a shareable PDF),
-    /// discoverable and off-able from the Smart Assist submenu. Advisory only: the report is a summary
-    /// of what already happened and never suggests/changes/blocks a dose (§13). Same device-local
-    /// persisted-Bool idiom as `eatingNudgesEnabled` — deliberately NOT a `SettingsCatalog` row and NOT
-    /// in `backupSnapshot` (it gates a read-only display surface, carries no dose logic), so the catalog
-    /// drift guards stay untouched.
-    public var endoReportEnabled: Bool { didSet { d.set(endoReportEnabled, forKey: "endoReportEnabled") } }
-    /// Phase 09.18d-02 (D-14/D-17): gate the benign caffeine tracker log surface. **Default ON** — a
-    /// standalone informational log (amount + time, surfaced alongside glucose), discoverable and
-    /// off-able from the Smart Assist submenu. Never suggests/changes/blocks a dose (§13). Same
-    /// device-local persisted-Bool idiom as `endoReportEnabled` — deliberately NOT a `SettingsCatalog`
-    /// row and NOT in `backupSnapshot` (it gates a display surface, carries no dose logic), so the
-    /// catalog drift guards stay untouched. (The logged ENTRIES ride the `trackers` backup section; this
-    /// visibility flag does not.)
-    public var caffeineTrackerEnabled: Bool { didSet { d.set(caffeineTrackerEnabled, forKey: "caffeineTrackerEnabled") } }
-    /// Phase 09.18d-02 (D-14/D-17): gate the benign alcohol tracker log surface. **Default ON** — same
-    /// standalone informational log + device-local idiom as `caffeineTrackerEnabled`. Never suggests/
-    /// changes/blocks a dose, and carries NO delayed-hypo risk inference (D-14).
-    public var alcoholTrackerEnabled: Bool { didSet { d.set(alcoholTrackerEnabled, forKey: "alcoholTrackerEnabled") } }
-    /// Phase 09.18d-03 (D-14/D-17): gate the caregiver-digest PHI-sharing surface. **Default OFF** — the
-    /// digest externalizes glucose + activity PHI to whoever the user shares with (the highest-exposure
-    /// benign LoopInsights surface), and is AI-adjacent (D-17), so it stays inert until the user
-    /// explicitly enables it AND acknowledges the one-time "About Smart Features" explainer
-    /// (`hasAcknowledgedCaregiverDigestNotice`). The digest is a summary of what already happened — never
-    /// advice, a directive, or a dose (§13). Same device-local persisted-Bool idiom as `endoReportEnabled`
-    /// — deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (it gates a read-only share
-    /// surface, carries no dose logic), so the catalog drift guards stay untouched.
-    public var caregiverDigestEnabled: Bool { didSet { d.set(caregiverDigestEnabled, forKey: "caregiverDigestEnabled") } }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -198,14 +169,6 @@ public final class AppSettings {
     public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
     public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
     public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
-    // Caregiver-digest one-time explainer (09.18d-03, D-14/D-17) — the "About Smart Features" notice fired
-    // on first ENABLE of the caregiver digest (PHI-sharing, AI-adjacent). Same durable per-install-marker
-    // idiom as `smartFeaturesNoticeAckAt`: NOT a `SettingsCatalog` row, never
-    // backed up / iCloud-synced (a synced ack must not silently pre-suppress the notice on another
-    // device). nil ⇒ never shown. NEVER gates a write / a share.
-    public var caregiverDigestNoticeAckAt: Date? { didSet { d.set(caregiverDigestNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "caregiverDigestNoticeAckAt") } }
-    public var hasAcknowledgedCaregiverDigestNotice: Bool { caregiverDigestNoticeAckAt != nil }
-    public func acknowledgeCaregiverDigestNotice() { if caregiverDigestNoticeAckAt == nil { caregiverDigestNoticeAckAt = Date() } }
 
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
@@ -390,7 +353,7 @@ public final class AppSettings {
     /// `#if FABOLUS_HEALTHKIT` (unlike the AppModel import hook) — the settings MODEL stays
     /// unconditional so it compiles/tests under the default OFF build; only the FEATURE REACH (the
     /// actual HealthKit calls) is gated. Same device-local persisted-Bool idiom as
-    /// `heartRateContextEnabled`/`caffeineTrackerEnabled`: deliberately NOT a `SettingsCatalog` row
+    /// `heartRateContextEnabled`/`eatingNudgesEnabled`: deliberately NOT a `SettingsCatalog` row
     /// and NOT in `backupSnapshot` THIS WAVE — the UI surface these toggles gate (per-type rows in
     /// `CgmCredentialsView`, D-14) ships in a later wave, and `SettingsReachabilityGuardTests`' SC2
     /// requires every catalog row to have a literal UI reference; adding the catalog row before the
@@ -716,14 +679,6 @@ public final class AppSettings {
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
         // Phase 09.18b (D-09/D-17): HR chart context defaults ON, off-able.
         heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
-        // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
-        endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true
-        // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol trackers are discoverable / ON by default.
-        caffeineTrackerEnabled = (d.object(forKey: "caffeineTrackerEnabled") as? Bool) ?? true
-        alcoholTrackerEnabled = (d.object(forKey: "alcoholTrackerEnabled") as? Bool) ?? true
-        // Phase 09.18d-03 (D-14/D-17): the caregiver digest is OFF by default (PHI leaves the device on
-        // share; AI-adjacent) — a fresh install / absent key never enables it silently.
-        caregiverDigestEnabled = (d.object(forKey: "caregiverDigestEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
@@ -734,8 +689,6 @@ public final class AppSettings {
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
-        let cdAck = d.double(forKey: "caregiverDigestNoticeAckAt") // 0 (absent) ⇒ never acknowledged
-        caregiverDigestNoticeAckAt = cdAck > 0 ? Date(timeIntervalSince1970: cdAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data) {
             eatingTriggerConfig = cfg

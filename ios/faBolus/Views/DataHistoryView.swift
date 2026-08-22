@@ -9,7 +9,6 @@ struct DataHistoryView: View {
     @State private var settings = AppSettings.shared
     @State private var confirmClear = false
     @State private var stats: GlucoseStatistics?
-    @State private var insights: [TherapyInsightItem] = []
 
     private let retentionOptions: [(label: String, days: Int)] = [
         ("Keep everything", 0), ("90 days", 90), ("1 year", 365),
@@ -31,17 +30,6 @@ struct DataHistoryView: View {
                 } else {
                     Text("No stored history yet — it fills in as glucose comes in.")
                         .foregroundStyle(.secondary)
-                }
-            }
-
-            if !insights.isEmpty {
-                Section("Insights") {
-                    ForEach(insights.indices, id: \.self) { i in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(insights[i].title).font(.subheadline.weight(.semibold))
-                            Text(insights[i].detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
                 }
             }
 
@@ -119,7 +107,6 @@ struct DataHistoryView: View {
 
     private func reload() {
         stats = model.storedStatistics(days: 90)
-        insights = model.therapyInsights()
     }
 
     // MARK: - Pump history sync (Phase 09.7-02, D-01/D-05)
