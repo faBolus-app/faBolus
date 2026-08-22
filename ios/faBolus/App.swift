@@ -37,6 +37,12 @@ struct FaBolusApp: App {
                     AppSettings.shared.syncWidgetConfig()
                     model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
+                    // Phase 8 (08-01, LOCK-03, Pitfall 2): apply the pinned 24h retention at every
+                    // launch — the Data/History view (the only prior caller of `applyRetention`) is
+                    // deleted this phase, so without this line the pin would be locked-looking but
+                    // inert (the setting reads 1, but nothing ever prunes older glucose). Proved by
+                    // `HistoryRetentionAppliedBoundaryTests`.
+                    model.applyRetention(days: AppSettings.shared.historyRetentionDays)
                     widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
                     // Phase 7 (07-03, FEAT-05): the WidgetStore open-bolus-request round trip removed
                     // here — its only setter was a Shortcuts intent this phase deletes.

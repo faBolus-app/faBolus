@@ -659,10 +659,16 @@ public final class AppSettings {
         watchBolusIncrement = max(0.05, (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05))
         watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
-        // D-03: default mg/dL (behavior-preserving); an unrecognized/absent stored token also falls
-        // back to mg/dL (fail-closed to the pre-existing display, never to an unexpected unit).
-        glucoseDisplayUnit = GlucoseUnit(rawValue: d.string(forKey: "glucoseDisplayUnit") ?? "mgdl") ?? .mgdl
-        // Owner request: default OFF (labels hidden on ambient surfaces) for a fresh install / absent key.
+        // Phase 8 (08-01, LOCK-02): force-set `.mgdl` unconditionally — the unit Picker is removed this
+        // phase, so no UI can select mmol/L; a restored/legacy UserDefaults value carrying "mmol" must
+        // not silently change the display unit (Pitfall 1). The dose path is mg/dL-canonical regardless
+        // (`BolusMath`) — this pin only removes the display-conversion surface, never touches it.
+        glucoseDisplayUnit = .mgdl
+        // Owner request: default OFF (labels hidden on ambient surfaces) for a fresh install / absent
+        // key. Not a LOCK-02 force-set pin — the "Show unit labels" toggle is removed with the unit
+        // Picker (both lived in the same now-deleted Section), but this is a cosmetic caption
+        // preference, not a safety-adjacent lock, so the accessor stays a normal read/writable flag
+        // (hidden-flag pattern, same posture as other UI-only removals this milestone).
         showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
         showIOBAxis = (d.object(forKey: "showIOBAxis") as? Bool) ?? true
         showBolusBars = (d.object(forKey: "showBolusBars") as? Bool) ?? true
@@ -687,7 +693,12 @@ public final class AppSettings {
             glucosePlotCeilingSmall = nil
         }
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
-        historyRetentionDays = (d.object(forKey: "historyRetentionDays") as? Int) ?? 0
+        // Phase 8 (08-01, LOCK-03): force-set 1 (24h — this field's unit is days, 0 = keep everything)
+        // unconditionally — the retention Picker + the whole Data/History view are removed this phase;
+        // a restored/legacy UserDefaults value carrying `0`/a longer window must not silently keep more
+        // than 24h of glucose (Pitfall 1). Actually ENFORCED at launch via the new `App.swift`
+        // `model.applyRetention(days:)` call site (Pitfall 2) — this pin alone is not self-applying.
+        historyRetentionDays = 1
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
         let hsAck = d.double(forKey: "historyLastSyncedAt")   // 0 (absent) ⇒ never synced
@@ -776,9 +787,17 @@ public final class AppSettings {
         healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
         healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
         healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
-        extendedBolusEnabled = (d.object(forKey: "extendedBolusEnabled") as? Bool) ?? false
+        // Phase 8 (08-01, LOCK-04): force-set OFF unconditionally — the "Extended (combo) bolus" toggle
+        // is removed this phase; a restored/legacy UserDefaults value carrying `true` must not silently
+        // re-arm the (now-unreachable) `extendedBolusSection` UI (Pitfall 1).
+        extendedBolusEnabled = false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
-        stackingGuardFrictionEnabled = (d.object(forKey: "stackingGuardFrictionEnabled") as? Bool) ?? true
+        // Phase 8 (08-01, LOCK-06 friction half): force-set OFF unconditionally — the "Extra
+        // confirmation on unusually large overrides" toggle is removed this phase; a restored/legacy
+        // UserDefaults value carrying `true` must not silently re-arm it (Pitfall 1). This never
+        // disables `StackingGuard.escalation`'s own disclosure computation (byte-identical,
+        // `Packages/faBolusCore`) — only the UI wiring for the EXTRA confirmation/re-type step.
+        stackingGuardFrictionEnabled = false
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): childModeEnabled is now a frozen-false computed
         // constant (get { false } set { } ) — no init-restore line needed; the old UserDefaults value,
         // if any, is simply never read again. `childAllowed` itself stays a real, settable property
@@ -821,15 +840,21 @@ public final class AppSettings {
             "defaultBolusMode": .string(defaultBolusMode.rawValue),
             "bolusIncrement": .double(bolusIncrement),
             "carbIncrement": .double(carbIncrement),
-            "extendedBolusEnabled": .bool(extendedBolusEnabled),
+            // Phase 8 (08-01, LOCK-04/LOCK-06): `extendedBolusEnabled`/`stackingGuardFrictionEnabled` no
+            // longer emitted into the backup snapshot either — their `SettingsCatalog` descriptors are
+            // gone (the toggles' UI deleted, both are now force-set-false init pins), so
+            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too — same
+            // hidden-flag posture as `autoSyncPumpTime` above.
             "showBolusReasoning": .bool(showBolusReasoning),
-            "stackingGuardFrictionEnabled": .bool(stackingGuardFrictionEnabled),
             "watchDefaultBolusMode": .string(watchDefaultBolusMode.rawValue),
             "watchBolusIncrement": .double(watchBolusIncrement),
             "watchCarbIncrement": .double(watchCarbIncrement),
             "showGlucoseAxis": .bool(showGlucoseAxis),
-            "glucoseDisplayUnit": .string(glucoseDisplayUnit.rawValue),
-            "showGlucoseUnitLabels": .bool(showGlucoseUnitLabels),
+            // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`/`showGlucoseUnitLabels` no longer emitted
+            // into the backup snapshot either — their `SettingsCatalog` descriptors are gone (the unit
+            // Picker + "Show unit labels" toggle UI deleted); `glucoseDisplayUnit` is now a force-set
+            // `.mgdl` init pin, `showGlucoseUnitLabels` survives as an ordinary hidden/unregistered flag
+            // (same hidden-flag posture as `autoSyncPumpTime`/`extendedBolusEnabled` above).
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
             "glucosePlotFloor": .int(glucosePlotFloor),
@@ -910,15 +935,18 @@ public final class AppSettings {
         if let v = s("defaultBolusMode"), let mode = BolusMode(rawValue: v) { defaultBolusMode = mode }
         if let v = dbl("bolusIncrement") { bolusIncrement = v }
         if let v = dbl("carbIncrement") { carbIncrement = v }
-        if let v = b("extendedBolusEnabled") { extendedBolusEnabled = v }
+        // Phase 8 (08-01, LOCK-04/LOCK-06): `extendedBolusEnabled`/`stackingGuardFrictionEnabled` no
+        // longer restore from a backup either — same hidden-flag pattern. A legacy backup carrying
+        // `true` for either is silently ignored (same tolerance as `autoSyncPumpTime` above); the
+        // force-set-false init pins would reject them on next launch regardless.
         if let v = b("showBolusReasoning") { showBolusReasoning = v }
-        if let v = b("stackingGuardFrictionEnabled") { stackingGuardFrictionEnabled = v }
         if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
         if let v = dbl("watchBolusIncrement") { watchBolusIncrement = v }
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
         if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
-        if let v = s("glucoseDisplayUnit"), let unit = GlucoseUnit(rawValue: v) { glucoseDisplayUnit = unit }
-        if let v = b("showGlucoseUnitLabels") { showGlucoseUnitLabels = v }
+        // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`/`showGlucoseUnitLabels` no longer restore from
+        // a backup either — same hidden-flag pattern. A legacy backup carrying "mmol"/`true` for either
+        // is silently ignored; the force-set `.mgdl` init pin would reject the unit regardless.
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
         if let v = i("glucosePlotFloor") { glucosePlotFloor = v }

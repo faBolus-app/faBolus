@@ -39,13 +39,16 @@ import Foundation
 /// Phase 8 (08-01, LOCK-01, Rule 3 — compile-break fix outside this task's own `files_modified`): the
 /// count drops 4 → 3 — `.mode` is removed (`ModeSettingsView`/`ModeOnboardingView` are deleted;
 /// `appMode` is force-set `.advanced` in both `ModeStore.init` and `AppSettings.init`).
+///
+/// Phase 8 (08-01, LOCK-03, Rule 3 — compile-break fix outside this task's own `files_modified`): the
+/// count drops 3 → 2 — `.dataHistory` is removed (`DataHistoryView.swift` is deleted;
+/// `historyRetentionDays` is force-set to the 24h pin and actually applied via `App.swift`).
 @Suite struct SettingsSidebarParityTests {
 
-    @Test func allExtrasCoversAllThreeGroups() {
+    @Test func allExtrasCoversBothRemainingGroups() {
         let extras = Set(SettingsSidebarItem.allExtras)
-        #expect(extras.count == 3)
+        #expect(extras.count == 2)
         #expect(extras.contains(.safety))
-        #expect(extras.contains(.dataHistory))
         #expect(extras.contains(.privacyData))
     }
 
@@ -63,8 +66,7 @@ import Foundation
         #expect(SettingsExtraIndex.entries.contains { $0.matches("safe viewer") && $0.item == .safety })
     }
 
-    @Test func searchFindsDataHistoryAndPrivacy() {
-        #expect(SettingsExtraIndex.entries.contains { $0.matches("history") && $0.item == .dataHistory })
+    @Test func searchFindsPrivacy() {
         #expect(SettingsExtraIndex.entries.contains { $0.matches("privacy") && $0.item == .privacyData })
     }
 }

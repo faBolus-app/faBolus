@@ -137,6 +137,22 @@ enum CompileGateAudit {
         // that would false-positive against the still-LIVE "Default bolus mode" row, or "advanced"
         // against the still-LIVE "Advanced control" row, via this helper's plain `.contains` match.
         tokens.formUnion(["modeselector"])
+        // Phase 8, 08-01 (LOCK-04/LOCK-06 friction half): the "Extended (combo) bolus" toggle and the
+        // "Extra confirmation on unusually large overrides" toggle (the shared "Bolus screen" Section,
+        // `SettingsView.swift`'s `BolusSettingsView`) removed — both accessors are now force-set-false
+        // init pins. The `SettingsIndex` row that used to advertise the extended-bolus half was trimmed
+        // to "Recommendation reasoning" (reasoning-only keywords) in the SAME commit as this token
+        // addition, so this is a genuinely vacuous, correct check by construction.
+        tokens.formUnion(["combo", "square wave"])
+        // Phase 8, 08-01 (LOCK-02): the "Glucose unit" Section (the mg/dL·mmol/L Picker + "Show unit
+        // labels" toggle, `SettingsView.swift`'s `DisplaySettingsView`) removed — `glucoseDisplayUnit`
+        // is now a force-set `.mgdl` init pin. The "Glucose unit" `SettingsIndex` row was removed in the
+        // SAME commit as this token addition, so this is a genuinely vacuous, correct check by
+        // construction. Deliberately "mmol" (not a bare "unit"/"display") — either bare word would
+        // false-positive against several still-LIVE rows ("Default bolus mode" contains "mode", not
+        // "unit"; "iPhone increments" keywords contain "unit"; "Notification controls" is unrelated) —
+        // "mmol" is the unique, unambiguous glucose-unit term this row alone ever owned.
+        tokens.formUnion(["mmol"])
         return tokens
     }
 
@@ -231,8 +247,16 @@ struct SettingsCatalogTests {
         // frozen constant).
         // Phase 8 (08-01, LOCK-05): 39 → 38 (`autoSyncPumpTime` removed — pump-clock UI deleted; the
         // backing accessor survives as a force-set-false init pin).
-        #expect(SettingsCatalog.descriptors.count == 38)
-        #expect(SettingsCatalog.byKey.count == 38)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 8 (08-01, LOCK-02/LOCK-04/LOCK-06): 38 → 34 (`extendedBolusEnabled`,
+        // `stackingGuardFrictionEnabled`, `glucoseDisplayUnit`, `showGlucoseUnitLabels` removed — the
+        // Bolus-screen rows + unit selector Section deleted; `extendedBolusEnabled`/
+        // `stackingGuardFrictionEnabled`/`glucoseDisplayUnit` are now force-set init pins,
+        // `showGlucoseUnitLabels` survives as an ordinary hidden/unregistered flag).
+        // Phase 8 (08-01, LOCK-03): 34 → 32 (`historyRetentionDays` + `historySyncEnabled` removed —
+        // the whole Data/History view deleted; neither was backed up, so `backedUpKeys.count` below is
+        // unaffected by this change).
+        #expect(SettingsCatalog.descriptors.count == 32)
+        #expect(SettingsCatalog.byKey.count == 32)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -288,7 +312,10 @@ struct SettingsCatalogTests {
         // getter-level frozen constant now, same posture as `childModeEnabled`).
         // Phase 8 (08-01, LOCK-05): 37 → 36 (`autoSyncPumpTime`, unconditional, removed from the
         // catalog AND backupSnapshot/applyBackup — force-set-false init pin now).
-        #expect(SettingsCatalog.backedUpKeys.count == 36)                      // 32 unconditional + 4 conditional
+        // Phase 8 (08-01, LOCK-02/LOCK-04/LOCK-06): 36 → 32 (`extendedBolusEnabled`,
+        // `stackingGuardFrictionEnabled`, `glucoseDisplayUnit`, `showGlucoseUnitLabels` — all
+        // unconditional — removed from the catalog AND backupSnapshot/applyBackup).
+        #expect(SettingsCatalog.backedUpKeys.count == 32)                      // 28 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -385,17 +412,15 @@ struct SettingsCatalogTests {
         #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
     }
 
-    // MARK: Phase 01-03 (task #93, SG3a) — the escalating-friction disable toggle's registration
+    // MARK: Phase 8 (08-01, LOCK-06 friction half) — the escalating-friction disable toggle's removal
 
-    /// The SG3a escalating-friction disable toggle must be a `.user`-tier row visible from Simple minimum
-    /// mode (never `.clinician`/`.fixed`) — it only gates a UI friction-tier presentation choice, not a
-    /// therapy parameter.
-    @Test func stackingGuardFrictionEnabledIsRegisteredAtUserTierFromSimple() {
-        let d = SettingsCatalog.byKey["stackingGuardFrictionEnabled"]
-        #expect(d != nil, "stackingGuardFrictionEnabled missing from the catalog")
-        #expect(d?.tier == .user)
-        #expect(d?.isVisible(in: .simple) == true)
-        #expect(d?.backsUp == true)
+    /// Phase 01-03 (task #93, SG3a) registered this as a `.user`-tier row visible from Simple minimum
+    /// mode. Phase 8 (08-01, LOCK-06) removes its UI (the "Extra confirmation on unusually large
+    /// overrides" toggle) and its catalog row — `stackingGuardFrictionEnabled` is now a force-set-false
+    /// init pin (proved in `AppSettingsInitTests`/`FirstLaunchDefaultsTests`-style boundary coverage);
+    /// this test now pins the ABSENCE, mirroring the removal-proof shape used throughout this milestone.
+    @Test func stackingGuardFrictionEnabledIsNoLongerRegistered() {
+        #expect(SettingsCatalog.byKey["stackingGuardFrictionEnabled"] == nil)
     }
 
     // MARK: Ambient-surface flags are per-device (never iCloud-synced)
@@ -428,47 +453,40 @@ struct SettingsCatalogTests {
         }
     }
 
-    // MARK: Phase 04-01 (mmol/L display-unit support, D-03) — the glucoseDisplayUnit setting's registration
+    // MARK: Phase 8 (08-01, LOCK-02) — the glucoseDisplayUnit setting's removal
 
-    /// D-03: `.display` category, `backsUp: true` with iCloud ON (a display unit is NOT command-adjacent).
-    @Test func glucoseDisplayUnitIsRegisteredInDisplayWithICloudSyncOn() {
-        let d = SettingsCatalog.byKey["glucoseDisplayUnit"]
-        #expect(d != nil, "glucoseDisplayUnit missing from the catalog")
-        #expect(d?.category == .display)
-        #expect(d?.backsUp == true)
-        #expect(d?.syncsToICloud == true)
-        #expect(!SettingsCatalog.commandAdjacentFlags.contains("glucoseDisplayUnit"))
+    /// Phase 04-01 (mmol/L display-unit support, D-03) registered this `.display`, `backsUp: true`,
+    /// iCloud ON. Phase 8 (08-01, LOCK-02) removes its UI (the mg/dL·mmol/L Picker) and its catalog
+    /// row — `glucoseDisplayUnit` is now a force-set `.mgdl` init pin; this test now pins the ABSENCE.
+    @Test func glucoseDisplayUnitIsNoLongerRegistered() {
+        #expect(SettingsCatalog.byKey["glucoseDisplayUnit"] == nil)
     }
 
-    /// D-03: default = mg/dL (behavior-preserving for existing users) on a fresh install, and the setting
-    /// round-trips across a re-init of `AppSettings` over the SAME backing store (persists, doesn't just
-    /// live in memory).
-    @Test @MainActor func glucoseDisplayUnitDefaultsToMgdlAndRoundTripsAcrossReinit() {
+    /// LOCK-02: the pin holds even against a stored value that pre-dates this phase — a restored/legacy
+    /// UserDefaults value carrying "mmol" must not silently un-pin the display unit (Pitfall 1).
+    @Test @MainActor func glucoseDisplayUnitIsForceSetMgdlRegardlessOfAnyStoredValue() {
         let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("mmol", forKey: "glucoseDisplayUnit")   // simulate a pre-Phase-8 stored value
 
         let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.glucoseDisplayUnit == .mgdl)   // D-03: behavior-preserving default
+        #expect(fresh.glucoseDisplayUnit == .mgdl)   // force-set pin wins over the stored value
 
-        fresh.glucoseDisplayUnit = .mmol
+        fresh.glucoseDisplayUnit = .mmol   // the property setter itself is unchanged (still writable)…
         let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.glucoseDisplayUnit == .mmol)   // persisted across re-init
+        #expect(reloaded.glucoseDisplayUnit == .mgdl)   // …but the NEXT init still force-sets .mgdl
     }
 
-    // MARK: Owner-requested "Show unit labels" toggle — the setting's registration
+    // MARK: Phase 8 (08-01, LOCK-02) — the "Show unit labels" toggle's catalog removal
 
-    /// Registered `.display`, `backsUp: true`, iCloud ON (a display-format preference, mirroring
-    /// `glucoseDisplayUnit`'s reasoning — NOT a per-device ambient-surface toggle like
-    /// `liveActivityEnabled`/`glucoseBadgeEnabled`, so it is deliberately excluded from
-    /// `ambientSurfaceFlags` above).
-    @Test func showGlucoseUnitLabelsIsRegisteredInDisplayWithICloudSyncOn() {
-        let d = SettingsCatalog.byKey["showGlucoseUnitLabels"]
-        #expect(d != nil, "showGlucoseUnitLabels missing from the catalog")
-        #expect(d?.category == .display)
-        #expect(d?.backsUp == true)
-        #expect(d?.syncsToICloud == true)
-        #expect(!SettingsCatalog.commandAdjacentFlags.contains("showGlucoseUnitLabels"))
+    /// Phase (owner-requested) registered this `.display`, `backsUp: true`, iCloud ON. Phase 8 (08-01,
+    /// LOCK-02) removes its UI (the "Show unit labels" toggle, deleted alongside the unit Picker) and
+    /// its catalog row — the accessor itself survives as an ordinary hidden/unregistered flag (NOT
+    /// force-set, unlike `glucoseDisplayUnit` — see `showGlucoseUnitLabelsDefaultsToOffAndRoundTripsAcrossReinit`
+    /// below, unchanged); this test now pins the ABSENCE from the catalog.
+    @Test func showGlucoseUnitLabelsIsNoLongerRegistered() {
+        #expect(SettingsCatalog.byKey["showGlucoseUnitLabels"] == nil)
     }
 
     /// Default OFF (owner request) on a fresh install, and round-trips across a re-init of

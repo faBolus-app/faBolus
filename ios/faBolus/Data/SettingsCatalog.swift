@@ -115,7 +115,10 @@ enum SettingsCatalog {
     /// deleted, runtime-gated); 42 → 40. Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): the custom
     /// alert-rules engine's descriptor removed (editor UI deleted, property frozen); 40 → 39.
     /// Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` removed (pump-clock UI deleted, force-set-false
-    /// init pin); 39 → 38.
+    /// init pin); 39 → 38. Phase 8 (08-01, LOCK-02/LOCK-04/LOCK-06): `extendedBolusEnabled`,
+    /// `stackingGuardFrictionEnabled`, `glucoseDisplayUnit`, `showGlucoseUnitLabels` removed (Bolus
+    /// screen + unit selector UI deleted); 38 → 34. Phase 8 (08-01, LOCK-03): `historyRetentionDays` +
+    /// `historySyncEnabled` removed (Data/History view deleted); 34 → 32.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -124,25 +127,25 @@ enum SettingsCatalog {
         .init("defaultBolusMode", .bolus, from: .simple, backsUp: true),
         .init("bolusIncrement", .bolus, from: .simple, backsUp: true),
         .init("carbIncrement", .bolus, from: .simple, backsUp: true),
-        .init("extendedBolusEnabled", .bolus, from: .advanced, backsUp: true),
+        // Phase 8 (08-01, LOCK-04): `extendedBolusEnabled`'s row is removed here — the "Extended
+        // (combo) bolus" toggle it fed is deleted; the accessor stays as a force-set-false init pin.
         .init("showBolusReasoning", .bolus, from: .standard, backsUp: true),
-        // Insulin Stacking Guard SG3a escalating-friction disable (task #93). .user tier, Simple minimum
-        // mode — a Simple bolus toggle exactly like the other rows in this section.
-        .init("stackingGuardFrictionEnabled", .bolus, from: .simple, backsUp: true),
+        // Phase 8 (08-01, LOCK-06 friction half): `stackingGuardFrictionEnabled`'s row is removed here
+        // too — the "Extra confirmation on unusually large overrides" toggle it fed (Insulin Stacking
+        // Guard SG3a escalating-friction disable, task #93) is deleted; the accessor stays as a
+        // force-set-false init pin. `StackingGuard.escalation` itself (Packages/faBolusCore) is
+        // byte-identical and unaffected — only the UI wiring for the EXTRA confirmation step is gone.
         // MARK: Watch / Garmin entry (remotes)
         .init("watchDefaultBolusMode", .remotes, from: .standard, backsUp: true),
         .init("watchBolusIncrement", .remotes, from: .standard, backsUp: true),
         .init("watchCarbIncrement", .remotes, from: .standard, backsUp: true),
         // MARK: Display & chart
         .init("showGlucoseAxis", .display, from: .standard, backsUp: true),
-        // Phase 04-01 (mmol/L display-unit support, D-03): a display unit is NOT command-adjacent —
-        // omitting syncsToICloud gives iCloud sync ON (SettingDescriptor.init default rule).
-        .init("glucoseDisplayUnit", .display, from: .standard, backsUp: true),
-        // Owner request — hide/show the persistent unit CAPTION on ambient display surfaces. Like
-        // glucoseDisplayUnit, this is a display-format preference, NOT a per-device feature toggle
-        // (unlike the command-adjacent flags above) — omitting syncsToICloud gives iCloud sync ON
-        // (SettingDescriptor.init default rule), matching glucoseDisplayUnit's reasoning.
-        .init("showGlucoseUnitLabels", .display, from: .standard, backsUp: true),
+        // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`'s row (Phase 04-01, mmol/L display-unit
+        // support, D-03) and `showGlucoseUnitLabels`'s row (owner request) are both removed here — the
+        // mg/dL·mmol/L Picker + "Show unit labels" toggle Section they fed is deleted.
+        // `glucoseDisplayUnit`'s accessor is now a force-set `.mgdl` init pin; `showGlucoseUnitLabels`'s
+        // accessor survives as an ordinary hidden/unregistered flag (not safety-adjacent, no pin needed).
         .init("showIOBAxis", .display, from: .standard, backsUp: true),
         .init("showBolusBars", .display, from: .standard, backsUp: true),
         // Phase 09.13 (D-01/D-04): glucose plot Y-axis floor/ceiling presets — a display-format
@@ -211,11 +214,12 @@ enum SettingsCatalog {
         // migration (see dev/nightscout's REINTEGRATION.md).
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
-        .init("historyRetentionDays", .about, from: .advanced, backsUp: false),
-        // Phase 09.7-02 (D-01): auto-sync toggle, surfaced in the same DataHistoryView "Pump history
-        // sync" section as the retention picker above. Device-local sync preference, not backup/
-        // iCloud-relevant — same reasoning as `historyRetentionDays`.
-        .init("historySyncEnabled", .about, from: .advanced, backsUp: false),
+        // Phase 8 (08-01, LOCK-03): `historyRetentionDays`'s and `historySyncEnabled`'s rows are both
+        // removed here — `DataHistoryView.swift` (their only UI host) is deleted.
+        // `historyRetentionDays` is now a force-set-1 (24h) init pin, actually applied at launch via
+        // `App.swift`'s new `model.applyRetention(days:)` call site; `historySyncEnabled` survives as
+        // an ordinary hidden/unregistered flag (not safety-adjacent — it only gated the AUTOMATIC
+        // on-connect history sync, never dose/glucose retention).
         // NOTE (Phase 09.7-01): `AppSettings.historyCoverage` (D-04, the gap-sync coverage-map bookkeeping)
         // is deliberately NOT registered here — it has no UI surface at all (pure sync bookkeeping, never
         // shown/edited), matching the existing precedent for other internal-only persisted properties

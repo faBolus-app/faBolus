@@ -117,9 +117,9 @@ struct SettingsView: View {
                         .hoverEffect(.automatic)
                     // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Child mode" sidebar row is removed —
                     // ChildModeView.swift is deleted; childModeEnabled is permanently frozen false.
-                    Label("Data & history", systemImage: "chart.bar.doc.horizontal")
-                        .tag(SettingsSidebarItem.dataHistory)
-                        .hoverEffect(.automatic)
+                    // Phase 8 (08-01, LOCK-03): the "Data & history" sidebar row is removed —
+                    // DataHistoryView.swift is deleted; historyRetentionDays is force-set to the 24h
+                    // pin and actually applied via the new App.swift launch call site.
                     Label("Privacy & data", systemImage: "hand.raised")
                         .tag(SettingsSidebarItem.privacyData)
                         .hoverEffect(.automatic)
@@ -170,7 +170,6 @@ struct SettingsView: View {
         switch item {
         case .category(let cat): destination(cat)
         case .safety: SafetySettingsView(settings: settings)
-        case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
         }
     }
@@ -202,11 +201,10 @@ struct SettingsView: View {
                     // to lead this Section is removed — ChildModeView.swift is deleted;
                     // childModeEnabled is permanently frozen false. The footer's "Child mode locks this
                     // device behind a PIN." text is dropped too (it described the removed row only).
+                    // Phase 8 (08-01, LOCK-03): the "Data & history" NavigationLink that used to lead
+                    // this Section is removed — DataHistoryView.swift is deleted; historyRetentionDays
+                    // is force-set to the 24h pin and actually applied via the new App.swift call site.
                     Section {
-                        NavigationLink { DataHistoryView(model: model) } label: {
-                            Label("Data & history", systemImage: "chart.bar.doc.horizontal")
-                        }
-                        .hoverEffect(.automatic)
                         NavigationLink { PrivacyDataView(model: model) } label: {
                             Label("Privacy & data", systemImage: "hand.raised")
                         }
@@ -300,8 +298,13 @@ enum SettingsIndex {
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
         .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
-        .init(title: "Extended bolus & reasoning", keywords: "combo square wave extended duration max safe reasoning iob", category: .bolus),
-        .init(title: "Glucose unit", keywords: "mmol mg/dl mg dl unit display convert show unit labels caption", category: .display),
+        // Phase 8 (08-01, LOCK-04): trimmed from "Extended bolus & reasoning" — the extended-bolus
+        // keywords (combo/square wave/extended/duration) are dropped; "max safe"/"iob" stay (they
+        // describe the surviving Reasoning breakdown's own footer copy, not the removed toggle).
+        .init(title: "Recommendation reasoning", keywords: "reasoning iob max safe estimate breakdown", category: .bolus),
+        // Phase 8 (08-01, LOCK-02): the "Glucose unit" row is removed — the unit Picker + "Show unit
+        // labels" toggle Section it advertised is deleted; `glucoseDisplayUnit` is a force-set `.mgdl`
+        // init pin with no UI to change it.
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
@@ -331,25 +334,25 @@ enum SettingsIndex {
 
 /// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
 /// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
-/// missing from the regular-width sidebar (CR-01) — Safety (Read-only mode),
-/// Data & history, and Privacy & data. Lets a single
-/// `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
+/// missing from the regular-width sidebar (CR-01) — Safety (Read-only mode) and Privacy & data. Lets a
+/// single `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
 /// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
 /// Phase 6 (06-02, D-06/D-08): `.backupRestore` is removed (the backup/restore surface is gone from
 /// narrow `main`); `.privacyData` STAYS — it routes to the trimmed, erase-only `PrivacyDataView`.
 /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): `.childMode` is removed — `ChildModeView.swift` is deleted.
 /// Phase 8 (08-01, LOCK-01): `.mode` is removed — `ModeSettingsView`/`ModeOnboardingView` are deleted;
 /// `appMode` is force-set `.advanced`.
+/// Phase 8 (08-01, LOCK-03): `.dataHistory` is removed — `DataHistoryView.swift` is deleted;
+/// `historyRetentionDays` is force-set to the 24h pin and actually applied via `App.swift`.
 enum SettingsSidebarItem: Hashable {
     case category(SettingsCategory)
     case safety
-    case dataHistory
     case privacyData
 
     /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
     /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
     /// the two can never silently drift apart.
-    static let allExtras: [SettingsSidebarItem] = [.safety, .dataHistory, .privacyData]
+    static let allExtras: [SettingsSidebarItem] = [.safety, .privacyData]
 }
 
 /// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
@@ -373,7 +376,8 @@ enum SettingsExtraIndex {
         // Phase 8 (08-01, LOCK-01): the "Mode: Simple / Standard / Advanced" entry is removed —
         // `ModeSettingsView`/`ModeOnboardingView` are deleted; `appMode` is force-set `.advanced`.
         .init(title: "Read-only mode", keywords: "safe viewer caregiver backup phone bolusing disabled pump control hidden clearing alerts", item: .safety),
-        .init(title: "Data & history", keywords: "history data export logs time in range", item: .dataHistory),
+        // Phase 8 (08-01, LOCK-03): the "Data & history" entry is removed — `DataHistoryView.swift` is
+        // deleted; `historyRetentionDays` is force-set to the 24h pin and actually applied at launch.
         .init(title: "Privacy & data", keywords: "privacy data erase", item: .privacyData),
     ]
 }
@@ -426,15 +430,15 @@ struct BolusSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("iPhone increments") } footer: { Text("Steps for the iPhone bolus screen and the Home-Screen widget.") }
+            // Phase 8 (08-01, LOCK-04/LOCK-06 friction half): the "Extended (combo) bolus" toggle and
+            // the "Extra confirmation on unusually large overrides" toggle are both removed from this
+            // Section (they shared one footer) — `extendedBolusEnabled`/`stackingGuardFrictionEnabled`
+            // are now force-set-false init pins. The Section stays — it still hosts the reasoning
+            // toggle — and the footer is trimmed to describe only Reasoning.
             Section {
                 Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
-                Toggle("Extended (combo) bolus", isOn: $settings.extendedBolusEnabled)
-                // 09.3-04 (D-02): plain Toggle, NOT guardedToggle — this only writes the existing
-                // stackingGuardFrictionEnabled key; BolusEntryView caps applied friction to .disclose when
-                // off (never blocks, never changes the dose). Not a suppress-style safety-reducing toggle.
-                Toggle("Extra confirmation on unusually large overrides", isOn: $settings.stackingGuardFrictionEnabled)
             } header: { Text("Bolus screen") } footer: {
-                Text("**Reasoning**: a collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose. **Extended bolus**: split a dose into now + over-a-duration. **Extra confirmation**: when an override looks unusually large, the bolus screen always shows a note about it; this switch controls whether an extra tap (or, for the largest overrides, re-typing the amount) is also required before delivering. Turning it off still shows the same note — it only skips the extra step. Both off/hidden keep the screen simple.")
+                Text("A collapsible breakdown (IOB, carb + correction, an advisory max-safe estimate) under the recommended dose.")
             }
         }
         .navigationTitle("Bolus & entry")
@@ -449,21 +453,12 @@ struct DisplaySettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                Picker("Glucose unit", selection: $settings.glucoseDisplayUnit) {
-                    Text("mg/dL").tag(GlucoseUnit.mgdl)
-                    Text("mmol/L").tag(GlucoseUnit.mmol)
-                }
-                .pickerStyle(.segmented)
-                // Owner request: hides/shows the persistent mg/dL·mmol/L CAPTION on ambient display
-                // surfaces only. Default OFF. Dose prompts, VoiceOver, config/setup screens, and this
-                // picker are never affected — see `AppSettings.showGlucoseUnitLabels`.
-                Toggle("Show unit labels", isOn: $settings.showGlucoseUnitLabels)
-            } header: { Text("Glucose unit") } footer: {
-                // WR-08 gap closure (04-07): narrowed from "everywhere" — the developer debug menu
-                // (reachable via a 7-tap gesture, not mainline UI) intentionally stays mg/dL-only.
-                Text("Applies to the glucose reading, correction factor (ISF), and target on every mainline screen where they're shown or entered. The pump and every wire message stay mg/dL internally; only display and entry convert. \"Show unit labels\" shows or hides the mg/dL/mmol/L caption on glucose readouts, widgets, and the chart — dose prompts, VoiceOver, and this picker always show the unit regardless.")
-            }
+            // Phase 8 (08-01, LOCK-02): the whole "Glucose unit" Section (the mg/dL·mmol/L Picker + the
+            // "Show unit labels" toggle — its only two rows) is removed — `glucoseDisplayUnit` is now a
+            // force-set `.mgdl` init pin with no UI to change it; `showGlucoseUnitLabels` survives as an
+            // ordinary hidden/unregistered flag. The `Chart` Section below still READS
+            // `settings.glucoseDisplayUnit` (for `GlucosePlotScale.boundLabel`) — that read is
+            // unaffected, it always resolves to `.mgdl` now.
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)

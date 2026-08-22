@@ -29,13 +29,15 @@ struct RetrospectiveAbsenceGuardTests {
 
     // MARK: - The Retrospective insights DISPLAY section is gone from DataHistoryView
 
-    @Test func dataHistoryViewContainsNoTherapyInsightsReference() throws {
+    /// Phase 8 (08-01, LOCK-03, Rule 3 — compile/runtime-break fix outside this task's own
+    /// `files_modified`): `DataHistoryView.swift` itself is now deleted entirely (the whole Data/
+    /// History view, not just its Insights section) — the file this test used to scan no longer
+    /// exists, so `TherapyInsightItem`/`therapyInsights` cannot be referenced by it either way. Pins
+    /// the file's absence instead, superseding the FEAT-06 content scan (which is now vacuously true).
+    @Test func dataHistoryViewNoLongerExists() {
         let url = Self.repoRoot.appendingPathComponent("ios/faBolus/Views/DataHistoryView.swift")
-        let source = try String(contentsOf: url, encoding: .utf8)
-        for forbidden in ["TherapyInsightItem", "therapyInsights"] {
-            #expect(!source.contains(forbidden),
-                    "DataHistoryView.swift must not reference \"\(forbidden)\" — the Insights section is removed (FEAT-06)")
-        }
+        #expect(!FileManager.default.fileExists(atPath: url.path),
+                "DataHistoryView.swift must not exist — the whole Data/History view is removed (Phase 8, 08-01, LOCK-03)")
     }
 
     // MARK: - The 9 LoopInsights sub-feature files (EndoReport/caffeine/alcohol/caregiver) are gone
