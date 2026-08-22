@@ -13,7 +13,7 @@ and it scrolls to a details card with everything the pump reports.
 
 | Element | Shows |
 | --- | --- |
-| **Glucose chart** | Recent CGM readings from the pump, with an in-range band (70–180 mg/dL) and range-colored points. Pick the window (3 / 6 / 12 / 24 h), and optionally overlay **IOB** and **bolus bars** — see [Settings](../customize/settings.md#dashboard-chart). |
+| **Glucose chart** | Recent CGM readings from the pump, with an in-range band (70–180 mg/dL) and range-colored points. Pick the window (3 / 6 / 12 / 24 h), and optionally overlay **IOB** and **bolus bars** — see [Settings](../customize/settings.md#display-chart). |
 | **Status ring** | Current glucose + trend, ringed by a color for **connection/activity** (connected, delivering, scanning, disconnected). It is **not** a closed-loop indicator — faBolus never automates dosing. |
 | **Active Insulin (IOB)** | Insulin on board. |
 | **Reservoir** | Units remaining in the cartridge. |
