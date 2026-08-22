@@ -110,9 +110,10 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   xDrip4iOS's Dexcom setup, and re-authentication happens every ~5-min cycle regardless of when a
   sensor was originally paired — no authenticated session is needed for a SECOND passive listener.
   Marked **experimental** still means only ONE thing now: it is **validation-pending** (D-14) — the
-  mechanism itself is confident, but the on-device UAT (`09.20-UAT.md`, D-13) hasn't run yet. See
-  `docs/operate/cgm-failover.md` for the user-facing explanation and `09.20-CONTEXT.md`/
-  `09.20-RESEARCH.md` for the full evidence trail.
+  mechanism itself is confident, but the on-device UAT (`09.20-UAT.md`, D-13) hasn't run yet. The
+  user-facing `docs/operate/cgm-failover.md` page was retired from `main` in the v0.5.0 docs refactor
+  (this is an off-main feature — the failover UI lives only on `dev/cgm-extra`/`experimental`); see
+  `09.20-CONTEXT.md`/`09.20-RESEARCH.md` for the full evidence trail.
 
 ## 6. Mobi native Sleep-schedule write (`SetSleepScheduleRequest.flag`) — Phase 09.10 [off-main, `dev/mobi`]
 - **Narrowed (not removed):** the write's `activeDays` day-of-week bitmask is now **CONFIRMED** —
