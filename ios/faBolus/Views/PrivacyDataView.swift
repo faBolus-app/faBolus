@@ -45,7 +45,7 @@ struct PrivacyDataView: View {
                 } header: {
                     Text("Full reset")
                 } footer: {
-                    Text("A complete reset: deletes everything above **plus** your saved logins (pump pairing, PIN, and CGM credentials) and **unpairs the pump**. Your app preferences (modes, toggles) are kept. This can't be undone — export first. Like the delete above, it's refused while a bolus is unresolved.")
+                    Text("A complete reset: deletes everything above **plus** your saved logins (pump pairing, PIN, and CGM credentials) and **unpairs the pump**. Your app preferences (modes, toggles) are kept. This can't be undone. Like the delete above, it's refused while a bolus is unresolved.")
                 }
             }
 
@@ -59,13 +59,13 @@ struct PrivacyDataView: View {
             Button("Delete everything", role: .destructive) { erase() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes all on-device health data (history, settings change log, bolus audit trail, diagnostics). Your pump pairing and saved logins are kept. This can't be undone — export first if you want a copy.")
+            Text("This permanently deletes all on-device health data (history, settings change log, bolus audit trail, diagnostics). Your pump pairing and saved logins are kept. This can't be undone.")
         }
         .confirmationDialog("Full reset?", isPresented: $confirmFullReset, titleVisibility: .visible) {
             Button("Erase everything & unpair", role: .destructive) { fullReset() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes all on-device health data AND your saved logins (pump pairing, PIN, CGM credentials), and unpairs the pump. \(model.unpairConfirmation) Your app preferences are kept. This can't be undone — export first. Refused while a bolus is unresolved.")
+            Text("This deletes all on-device health data AND your saved logins (pump pairing, PIN, CGM credentials), and unpairs the pump. \(model.unpairConfirmation) Your app preferences are kept. This can't be undone. Refused while a bolus is unresolved.")
         }
     }
 

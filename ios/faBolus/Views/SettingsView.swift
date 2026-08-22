@@ -49,8 +49,8 @@ struct SettingsView: View {
     // via `selectedItem ?? .category(.bolus)` (nothing in this file ever sets it to `nil`).
     //
     // 09.17-06 (CR-01 gap closure): widened from `SettingsCategory?` to `SettingsSidebarItem?` so the
-    // SAME `List(selection:)` binding can also drive the six non-`SettingsCategory` groups (Mode,
-    // Safety, Child mode, Backup & restore, Data & history, Privacy & data) that were reachable on
+    // SAME `List(selection:)` binding can also drive the five non-`SettingsCategory` groups (Mode,
+    // Safety, Child mode, Data & history, Privacy & data) that were reachable on
     // iPhone (`settingsList`) but had no path at all — not even via search — from the iPad sidebar.
     // See `SettingsSidebarItem` below.
     @State private var selectedItem: SettingsSidebarItem? = .category(.bolus)
@@ -61,7 +61,7 @@ struct SettingsView: View {
             // not just the sidebar, so Child mode's PIN lock still applies at regular width — the
             // compact branch's lock gate covers 100% of Settings; omitting it here would silently
             // bypass Child mode on iPad. SettingsLockGate itself is untouched (D-06a/UI-SPEC §2).
-            // 09.17-06: this gate now also covers the six newly-reachable extra rows below — they're
+            // 09.17-06: this gate now also covers the five newly-reachable extra rows below — they're
             // rendered/routed entirely INSIDE this same SettingsLockGate wrapper, so Child mode's PIN
             // lock (and, circularly, the Child mode toggle itself) stay behind the lock exactly as on
             // iPhone. Nothing new escapes the gate.
@@ -90,7 +90,7 @@ struct SettingsView: View {
     // Questions #1). `destination(_:)` is the SAME @ViewBuilder switch used by both size classes.
     //
     // 09.17-06 (CR-01 gap closure): a second Section mirrors `settingsList`'s non-category rows —
-    // Mode selector, Safety (Read-only mode), Child mode, Backup & restore, Data & history, and Privacy &
+    // Mode selector, Safety (Read-only mode), Child mode, Data & history, and Privacy &
     // data — so every iPhone-reachable setting is also reachable
     // here. This is deliberate content DUPLICATION (not a shared subview extracted from
     // `settingsList`), because extracting one would require editing `settingsList`'s own lines,
