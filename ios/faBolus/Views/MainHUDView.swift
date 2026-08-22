@@ -358,7 +358,13 @@ struct PairingSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!PumpPairingCode.isValid(code))
                 } footer: {
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device (Mobi: on the charging pad, press the pump button twice; its PIN is behind the cartridge). Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nOn a Tandem Mobi the PIN never changes, so after connecting faBolus offers to save it and skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
+                    // Phase 9 (09-04, Pitfall 5): the Mobi-specific pairing instruction ("on the charging
+                    // pad, press the pump button twice; its PIN is behind the cartridge") and the
+                    // Mobi-specific saved-PIN explanation are trimmed — narrow main rejects a Mobi at
+                    // pairing (MOBI-01/03), so instructing users how to pair one it will then reject was
+                    // misleading. The generic t:slim pairing instruction and the (pump-agnostic)
+                    // saved-PIN affordance stay, unchanged in behavior.
+                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nIf faBolus has a saved PIN for this pump, it's prefilled here to skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
                 }
             }
             .navigationTitle("Connect to pump")
