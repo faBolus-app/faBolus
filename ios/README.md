@@ -1,11 +1,10 @@
 # ios — iOS host app
 
 The iPhone app. It owns the pump's Bluetooth connection via
-[`TandemKit`](https://github.com/faBolus-app/TandemKit) and provides the tabbed modern UI
-(Dashboard, Bolus, Alerts, Settings), the widget extension, Siri/App Intents, and the bridges to
-the Apple Watch and Garmin remotes.
+[`TandemKit`](https://github.com/faBolus-app/TandemKit) and provides the tabbed UI (Dashboard,
+Bolus, Alerts, Settings), the widget extension, and the bridge to the Garmin remote.
 
-- `faBolus/` — the main app (Data sources, Views, Models, Intents, remote bridges).
+- `faBolus/` — the main app (Data sources, Views, Models, the Garmin remote bridge).
 - `faBolusWidgets/` — the WidgetKit extension (Lock/Home Screen widgets + Quick Bolus).
 
 **Build & usage:** see the docs — [build guide](../docs/build/build-app.md) and
