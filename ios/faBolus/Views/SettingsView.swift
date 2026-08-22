@@ -57,27 +57,29 @@ struct SettingsView: View {
 
     var body: some View {
         if horizontalSizeClass == .regular {
-            // 09.17-02 (Rule 2 — deviation): SettingsLockGate wraps the WHOLE split view (both panes),
-            // not just the sidebar, so Child mode's PIN lock still applies at regular width — the
-            // compact branch's lock gate covers 100% of Settings; omitting it here would silently
-            // bypass Child mode on iPad. SettingsLockGate itself is untouched (D-06a/UI-SPEC §2).
-            // 09.17-06: this gate now also covers the five newly-reachable extra rows below — they're
-            // rendered/routed entirely INSIDE this same SettingsLockGate wrapper, so Child mode's PIN
-            // lock (and, circularly, the Child mode toggle itself) stay behind the lock exactly as on
-            // iPhone. Nothing new escapes the gate.
-            SettingsLockGate(settings: settings) {
-                NavigationSplitView {
-                    sidebarList
-                        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
-                        .navigationTitle("Settings")
-                } detail: {
-                    sidebarDestination(selectedItem ?? .category(.bolus))
-                }
+            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the `SettingsLockGate` wrapper that used to sit
+            // here is removed — Child mode's `childModeEnabled` is now a permanently-frozen `false`
+            // (belt-and-suspenders, `AppSettings.swift`), so `SettingsLockGate.locked` could never
+            // evaluate `true` again; unlocked, it rendered `content()` with zero wrapping chrome, so
+            // this is a pixel-identical no-op removal (confirmed via `SettingsSnapshotTests`), not a
+            // behavior change. `SettingsLockGate`/`ChildModeView.swift` (its only definition site) are
+            // deleted; preserved on `dev/child-mode`.
+            NavigationSplitView {
+                sidebarList
+                    .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
+                    .navigationTitle("Settings")
+            } detail: {
+                sidebarDestination(selectedItem ?? .category(.bolus))
             }
         } else {
-            // TODAY'S body — byte-identical (D-06a). Do not modify.
+            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): same `SettingsLockGate` removal as the
+            // regular-width branch above — pixel-identical no-op (see that comment). This branch was
+            // previously marked "byte-identical (D-06a), do not modify" for a DIFFERENT reason (keeping
+            // it pinned while the regular-width sidebar+detail branch was being added, 09.17-02) — that
+            // constraint was about the compact/regular split staying visually decoupled, not about this
+            // specific dead wrapper surviving forever.
             NavigationStack {
-                SettingsLockGate(settings: settings) { settingsList }
+                settingsList
                     .navigationTitle("Settings")
             }
         }
@@ -112,9 +114,8 @@ struct SettingsView: View {
                     Label("Safety (read-only mode)", systemImage: "shield.lefthalf.filled")
                         .tag(SettingsSidebarItem.safety)
                         .hoverEffect(.automatic)
-                    Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
-                        .tag(SettingsSidebarItem.childMode)
-                        .hoverEffect(.automatic)
+                    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Child mode" sidebar row is removed —
+                    // ChildModeView.swift is deleted; childModeEnabled is permanently frozen false.
                     Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         .tag(SettingsSidebarItem.dataHistory)
                         .hoverEffect(.automatic)
@@ -169,7 +170,6 @@ struct SettingsView: View {
         case .category(let cat): destination(cat)
         case .mode: ModeSettingsView()
         case .safety: SafetySettingsView(settings: settings)
-        case .childMode: ChildModeView(settings: settings)
         case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
         }
@@ -203,11 +203,11 @@ struct SettingsView: View {
                     } header: { Text("Safety") } footer: {
                         Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
                     }
+                    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Child mode" NavigationLink that used
+                    // to lead this Section is removed — ChildModeView.swift is deleted;
+                    // childModeEnabled is permanently frozen false. The footer's "Child mode locks this
+                    // device behind a PIN." text is dropped too (it described the removed row only).
                     Section {
-                        NavigationLink { ChildModeView(settings: settings) } label: {
-                            Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
-                        }
-                        .hoverEffect(.automatic)
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
@@ -216,8 +216,6 @@ struct SettingsView: View {
                             Label("Privacy & data", systemImage: "hand.raised")
                         }
                         .hoverEffect(.automatic)
-                    } footer: {
-                        Text("Child mode locks this device behind a PIN.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {
@@ -340,24 +338,24 @@ enum SettingsIndex {
 
 /// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
 /// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
-/// missing from the regular-width sidebar (CR-01) — Mode, Safety (Read-only mode), Child mode,
+/// missing from the regular-width sidebar (CR-01) — Mode, Safety (Read-only mode),
 /// Data & history, and Privacy & data. Lets a single
 /// `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
 /// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
 /// Phase 6 (06-02, D-06/D-08): `.backupRestore` is removed (the backup/restore surface is gone from
 /// narrow `main`); `.privacyData` STAYS — it routes to the trimmed, erase-only `PrivacyDataView`.
+/// Phase 7 (07-04, FEAT-04, D-05, SAFETY): `.childMode` is removed — `ChildModeView.swift` is deleted.
 enum SettingsSidebarItem: Hashable {
     case category(SettingsCategory)
     case mode
     case safety
-    case childMode
     case dataHistory
     case privacyData
 
     /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
     /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
     /// the two can never silently drift apart.
-    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .dataHistory, .privacyData]
+    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .dataHistory, .privacyData]
 }
 
 /// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
@@ -380,7 +378,6 @@ enum SettingsExtraIndex {
     static let entries: [Entry] = [
         .init(title: "Mode: Simple / Standard / Advanced", keywords: "mode selector simple standard advanced unlock", item: .mode),
         .init(title: "Read-only mode", keywords: "safe viewer caregiver backup phone bolusing disabled pump control hidden clearing alerts", item: .safety),
-        .init(title: "Child mode", keywords: "pin lock child mode security", item: .childMode),
         .init(title: "Data & history", keywords: "history data export logs time in range", item: .dataHistory),
         .init(title: "Privacy & data", keywords: "privacy data erase", item: .privacyData),
     ]
@@ -958,8 +955,9 @@ struct RemotesSettingsView: View {
 
 /// C2 §2.3 — set (or change) the OPTIONAL 4-digit Garmin bolus passcode. Enters it twice to confirm and
 /// stores it via `BolusPasscodeStore` (salted SHA-256 in the Keychain; the raw code is never persisted).
-/// Modeled on `PinEntryView`'s `.set` mode but fixed at exactly 4 digits (`BolusPasscodeStore.isValidFormat`),
-/// with its own store so the bolus passcode and the child-mode PIN stay fully independent.
+/// A double-entry-to-confirm flow like the now-removed `PinEntryView`'s `.set` mode (Phase 7, 07-04,
+/// FEAT-04, D-05; preserved on `dev/child-mode`) but fixed at exactly 4 digits
+/// (`BolusPasscodeStore.isValidFormat`), with its own independent store.
 struct BolusPasscodeEntryView: View {
     /// The validated 4-digit code to store.
     let onSet: (String) -> Void

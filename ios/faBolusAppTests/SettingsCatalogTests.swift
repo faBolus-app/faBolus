@@ -104,6 +104,16 @@ enum CompileGateAudit {
         // is gone) were both removed in the SAME commit as this token addition, so this check is a
         // genuinely vacuous, correct check by construction (no live row left to flag).
         tokens.formUnion(["siri", "shortcuts automation", "auto exercise", "auto sleep", "auto profile activation", "auto temp rate"])
+        // Phase 7, 07-04 (FEAT-04): Child Mode (`ChildModeView.swift`, its 3 SettingsView.swift nav
+        // sites, and the `SettingsCatalog` `childModeEnabled`/`childAllowed` descriptors) removed from
+        // narrow `main` via a runtime gate (childModeEnabled frozen false; the evaluator itself stays
+        // byte-identical). "Child mode" was NEVER a `SettingsIndex` row (only `SettingsExtraIndex`,
+        // the sidebar-only index this helper does not scan), so this token is a genuinely vacuous,
+        // correct check, same posture as Live Activity/badge/GraphDetail/Retrospective above.
+        // Deliberately "childmode" (concatenated, no space) rather than "lock"/"pin" — either bare
+        // word would false-positive against the still-LIVE "Garmin analog clock face" row (contains
+        // "clock", which contains "lock" as a substring) via this helper's plain `.contains` match.
+        tokens.formUnion(["childmode"])
         return tokens
     }
 
@@ -124,9 +134,14 @@ struct SettingsCatalogTests {
     /// int and the §2.3 remote-bolus ceiling double — and two JSON blobs). Everything else is unconditional.
     /// Declared here so the drift guard can tolerate their absence on a fresh `AppSettings` without weakening it.
     private let conditionalBackupKeys: Set<String> = [
-        "glucoseHideDelayMinutes", "remoteBolusCeiling", "alertRules", "childAllowed",
+        "glucoseHideDelayMinutes", "remoteBolusCeiling", "alertRules",
         // Phase 09.13-02 (D-05): the small-screen plot override pair — emitted only when non-nil.
         "glucosePlotFloorSmall", "glucosePlotCeilingSmall",
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` removed from this set — its
+        // `SettingsCatalog` descriptor is gone (Child Mode UI deleted), so it no longer appears in
+        // `SettingsCatalog.backedUpKeys` at all (conditional or otherwise). The property itself stays
+        // (still read by the frozen `AppModel.swift` AccessContext builder + `BolusEntryView`'s UI
+        // hint) — only its catalog/backup participation is removed.
     ]
 
     // MARK: Coverage
@@ -182,8 +197,11 @@ struct SettingsCatalogTests {
         // Standard-tier rows + the 2 Advanced-only rows added by 06-01/06-02 above; their Settings UI
         // section is gone. 3 of the 5 backing `AppSettings` accessors survive as frozen
         // hidden/unregistered flags, the other 2 are deleted outright).
-        #expect(SettingsCatalog.descriptors.count == 42)
-        #expect(SettingsCatalog.byKey.count == 42)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): 42 → 40 (`childModeEnabled` + `childAllowed`
+        // descriptors removed — Child Mode UI deleted; both backing accessors survive,
+        // `childModeEnabled` as a getter-level frozen constant, `childAllowed` unchanged).
+        #expect(SettingsCatalog.descriptors.count == 40)
+        #expect(SettingsCatalog.byKey.count == 40)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -229,7 +247,12 @@ struct SettingsCatalogTests {
         // Phase 7 (07-03, FEAT-05): 45 → 40 (the 5 mode-automation rows removed from the catalog; the
         // 3 frozen accessors' backup/applyBackup lines removed too — hidden/unregistered, never
         // backed up going forward; the other 2 accessors are deleted outright).
-        #expect(SettingsCatalog.backedUpKeys.count == 40)                      // 34 unconditional + 6 conditional
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): 40 → 38 (`childModeEnabled`, unconditional, removed
+        // from the catalog AND backupSnapshot/applyBackup — getter-level frozen constant now;
+        // `childAllowed`, conditional, removed from the catalog only — its own backupSnapshot/
+        // applyBackup participation is unchanged, but it no longer counts toward this total since it
+        // has no catalog descriptor to be "backed up" through).
+        #expect(SettingsCatalog.backedUpKeys.count == 38)                      // 33 unconditional + 5 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

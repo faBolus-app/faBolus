@@ -6,9 +6,10 @@ import Security
 /// watch / Apple Watch). When set, it **replaces** the surface's tap-a-sequence / two-button-hold confirm
 /// (it does not stack on top of it): the user confirms the dose by entering the passcode instead.
 ///
-/// Modeled 1:1 on `ChildModeStore` (this-device-only Keychain, salted **SHA-256**, never the raw PIN) with
-/// a **distinct Keychain service and distinct lockout keys** so the bolus passcode and the child-mode PIN
-/// are fully independent. Per §2.3 a wrong entry backs off with **exponential delay** — a soft rate-limit,
+/// This-device-only Keychain store, salted **SHA-256**, never the raw PIN — the same shape as the
+/// now-removed `ChildModeStore` (Phase 7, 07-04, FEAT-04, D-05; preserved on `dev/child-mode`), with
+/// its own **distinct Keychain service and distinct lockout keys** so this store was always fully
+/// independent of it. Per §2.3 a wrong entry backs off with **exponential delay** — a soft rate-limit,
 /// never a hard permanent lock — and it is resettable from the phone (set to `nil`). Validation is
 /// phone-side (the host holds the hash); a remote never sees or checks it.
 enum BolusPasscodeStore {

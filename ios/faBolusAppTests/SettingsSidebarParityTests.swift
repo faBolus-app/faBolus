@@ -31,14 +31,17 @@ import Foundation
 /// FURTHER CHANGE. This supersedes 06-02's "minimal interim fix" framing above: the count was already
 /// correct, and `CompileGateAudit.gatedOffSearchTokens` (SettingsCatalogTests.swift) now separately
 /// carries the §6c token-audit extension for this phase's removed backup/restore surface.
+///
+/// Phase 7 (07-04, FEAT-04, D-05, SAFETY): the count drops 5 → 4 — `.childMode` is removed (Child
+/// mode's PIN-lock sidebar row + `ChildModeView.swift` are deleted; `childModeEnabled` is now a
+/// permanently-frozen `false`, so there is no longer any UI for it to route to).
 @Suite struct SettingsSidebarParityTests {
 
-    @Test func allExtrasCoversAllFiveGroups() {
+    @Test func allExtrasCoversAllFourGroups() {
         let extras = Set(SettingsSidebarItem.allExtras)
-        #expect(extras.count == 5)
+        #expect(extras.count == 4)
         #expect(extras.contains(.mode))
         #expect(extras.contains(.safety))
-        #expect(extras.contains(.childMode))
         #expect(extras.contains(.dataHistory))
         #expect(extras.contains(.privacyData))
     }
@@ -49,11 +52,10 @@ import Foundation
         #expect(sidebarItems == indexedItems)
     }
 
-    @Test func searchFindsChildModeAndReadOnlyModeBySafetyCriticalKeywords() {
-        // The two safety/access-control groups CR-01 called out by name must be searchable —
-        // Child mode's PIN lock and Read-only ("safe viewer") mode.
-        #expect(SettingsExtraIndex.entries.contains { $0.matches("child") && $0.item == .childMode })
-        #expect(SettingsExtraIndex.entries.contains { $0.matches("pin") && $0.item == .childMode })
+    @Test func searchFindsReadOnlyModeBySafetyCriticalKeywords() {
+        // The remaining safety/access-control group CR-01 called out by name must be searchable —
+        // Read-only ("safe viewer") mode. (Child mode's own PIN-lock keywords were removed here in
+        // Phase 7, 07-04, FEAT-04 — see `dev/child-mode`'s REINTEGRATION.md.)
         #expect(SettingsExtraIndex.entries.contains { $0.matches("read-only") && $0.item == .safety })
         #expect(SettingsExtraIndex.entries.contains { $0.matches("safe viewer") && $0.item == .safety })
     }

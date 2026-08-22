@@ -77,7 +77,11 @@ enum SettingsCatalog {
         // Phase 3 (03-02, F-1): requireRemoteBolusApproval removed from this set — its SettingsCatalog
         // row is gone (hidden-flag pattern), so it can no longer sync via iCloud by construction; the
         // AppSettings accessor itself stays (frozen AppModel.swift:1871 still reads it).
-        "childModeEnabled",
+        //
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` removed from this set too — its
+        // SettingsCatalog row is gone (below), and the accessor itself is now a getter-level frozen
+        // constant (`get { false } set { } }`), so it can never sync via iCloud OR any other route by
+        // construction — a stronger guarantee than "just not synced".
         // §2.3 per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another
         // device.
         "garminBolusEnabled",
@@ -106,7 +110,9 @@ enum SettingsCatalog {
     /// added; Phase 7 (07-01, FEAT-01): all 11 `liveActivity*` keys above removed (delete-on-main);
     /// 67 → 48. Phase 7 (07-02, FEAT-03): the glucose-badge opt-in descriptor removed (no-op stub,
     /// D-04); 48 → 47. Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation rows (the 3 Standard-tier
-    /// ones + the 2 Advanced-only ones added by 06-01/06-02 above) removed; 47 → 42.
+    /// ones + the 2 Advanced-only ones added by 06-01/06-02 above) removed; 47 → 42. Phase 7
+    /// (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` + `childAllowed` removed (Child Mode UI
+    /// deleted, runtime-gated); 42 → 40.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -178,8 +184,14 @@ enum SettingsCatalog {
         // `remoteBluetoothEnabled` is fully gone (accessor + row; never read by AppModel.swift).
         // `requireRemoteBolusApproval`'s row is removed (hidden-flag pattern) — the accessor stays,
         // read by frozen AppModel.swift:1871 — see 03-OWNER-FLAGS.md F-1.
-        .init("childModeEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("childAllowed", .remotes, from: .standard, backsUp: true),
+        //
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled`'s and `childAllowed`'s rows are
+        // ALSO removed here now — `ChildModeView.swift` (their only UI reader/editor) is deleted, and
+        // `childModeEnabled` is a getter-level frozen constant (belt-and-suspenders, see
+        // `AppSettings.swift`). Both accessors stay (still read by the frozen `AppModel.swift`
+        // `AccessContext` builder + `BolusEntryView`'s `childAllows(.bolus)` UI hint) — only their
+        // catalog/backup participation is removed, same hidden-flag posture as
+        // `requireRemoteBolusApproval`/`watchBolusEnabled` above.
         .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),
         .init("garminDefaultScreen", .remotes, from: .standard, backsUp: true),
         .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),

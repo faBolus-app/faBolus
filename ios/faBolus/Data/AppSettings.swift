@@ -843,7 +843,10 @@ public final class AppSettings {
             // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled is no longer emitted into the
             // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
             // same posture as watchBolusEnabled/requireRemoteBolusApproval (see applyBackup below).
-            "childModeEnabled": .bool(childModeEnabled),
+            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` is no longer emitted here
+            // either — its `SettingsCatalog` descriptor was removed (Child Mode UI deleted, the
+            // property itself is now a getter-level frozen constant), so
+            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
             // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer emitted here — its
             // `SettingsCatalog` descriptor was removed (the badge is a main-only no-op stub now), so
             // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
@@ -860,10 +863,13 @@ public final class AppSettings {
         if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
         if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
         if let d1 = d.data(forKey: "alertRules") { m["alertRules"] = .data(d1) }
-        // Emit a canonical (sorted) encoding of the in-memory set rather than the raw persisted bytes, so the
-        // snapshot for a given set of features is byte-identical regardless of process hash-seed or persist
-        // history (see `canonicalChildAllowedData`). Still conditional on the key having ever been persisted.
-        if d.data(forKey: "childAllowed") != nil { m["childAllowed"] = .data(Self.canonicalChildAllowedData(childAllowed)) }
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` is no longer emitted here either —
+        // its `SettingsCatalog` descriptor was removed (Child Mode UI deleted; the value is already
+        // access-irrelevant now that `childModeEnabled` is force-false), so
+        // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too. The
+        // property itself stays (still read by the frozen `AppModel.swift` AccessContext builder +
+        // `BolusEntryView`'s UI hint, still persisted via `UserDefaults` `didSet`) — only its portable
+        // backup participation is removed, same hidden-flag posture as `childModeEnabled` above.
         return m
     }
 
@@ -944,7 +950,11 @@ public final class AppSettings {
         // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
         // (same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled` precedents above).
         if let data = dat("alertRules"), let rules = try? JSONDecoder().decode([AlertRule].self, from: data) { alertRules = rules }
-        if let data = dat("childAllowed"), let set = try? JSONDecoder().decode(Set<ChildFeature>.self, from: data) { childAllowed = set }
+        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` no longer restores from a backup
+        // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy backup
+        // carrying this key is silently ignored (same tolerance as the `remoteBluetoothEnabled`/
+        // `watchBolusEnabled` precedents above); the value is already access-irrelevant regardless
+        // since `childModeEnabled` is force-false.
         applyFreshness(); syncWidgetConfig()
     }
 
