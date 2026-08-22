@@ -207,10 +207,6 @@ public final class AppSettings {
     public var ciqPlusTempRateEnabled: Bool { didSet { d.set(ciqPlusTempRateEnabled, forKey: "ciqPlusTempRateEnabled") } }
     /// T2-1 — direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
     public var ciqCeilingFlagsEnabled: Bool { didSet { d.set(ciqCeilingFlagsEnabled, forKey: "ciqCeilingFlagsEnabled") } }
-    /// SiteAtlas infusion-site / CGM-sensor body-map tracker (09.18a, D-10/D-16/D-17). Advisory/
-    /// display-only — never originates or gates a dose. Default **ON** (discoverable, D-17); unlike the
-    /// `ciq*` flags this one is backup-participating (`SettingsCatalog`), so a restore preserves it.
-    public var siteAtlasEnabled: Bool { didSet { d.set(siteAtlasEnabled, forKey: "siteAtlasEnabled") } }
     // Generic "About Smart Features" one-time explainer (09.18a, D-16) — a durable per-install marker,
     // same idiom as `stackingGuardNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-
     // synced (a synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of
@@ -954,8 +950,6 @@ public final class AppSettings {
         ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
         ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
-        // 09.18a (D-17): SiteAtlas is discoverable / ON by default.
-        siteAtlasEnabled = (d.object(forKey: "siteAtlasEnabled") as? Bool) ?? true
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged

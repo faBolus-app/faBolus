@@ -115,14 +115,6 @@ struct SettingsView: View {
                     Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         .tag(SettingsSidebarItem.childMode)
                         .hoverEffect(.automatic)
-                    // Rule 3 (06-01): `BackupRestoreView` lives in a FABOLUS_BACKUP-excluded file — this
-                    // row is #if-gated so the FABOLUS_BACKUP=0 compile-out proof builds; Plan 02 removes
-                    // this row (and the sidebar enum case) outright once the default flips.
-                    #if FABOLUS_BACKUP
-                    Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
-                        .tag(SettingsSidebarItem.backupRestore)
-                        .hoverEffect(.automatic)
-                    #endif
                     Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         .tag(SettingsSidebarItem.dataHistory)
                         .hoverEffect(.automatic)
@@ -178,12 +170,6 @@ struct SettingsView: View {
         case .mode: ModeSettingsView()
         case .safety: SafetySettingsView(settings: settings)
         case .childMode: ChildModeView(settings: settings)
-        case .backupRestore:
-            #if FABOLUS_BACKUP
-            BackupRestoreView(model: model)
-            #else
-            EmptyView()
-            #endif
         case .dataHistory: DataHistoryView(model: model)
         case .privacyData: PrivacyDataView(model: model)
         }
@@ -222,12 +208,6 @@ struct SettingsView: View {
                             Label(settings.childModeEnabled ? "Child mode (on)" : "Child mode", systemImage: "lock.fill")
                         }
                         .hoverEffect(.automatic)
-                        #if FABOLUS_BACKUP
-                        NavigationLink { BackupRestoreView(model: model) } label: {
-                            Label("Backup & restore", systemImage: "arrow.clockwise.icloud")
-                        }
-                        .hoverEffect(.automatic)
-                        #endif
                         NavigationLink { DataHistoryView(model: model) } label: {
                             Label("Data & history", systemImage: "chart.bar.doc.horizontal")
                         }
@@ -237,7 +217,7 @@ struct SettingsView: View {
                         }
                         .hoverEffect(.automatic)
                     } footer: {
-                        Text("Child mode locks this device behind a PIN. Backup & restore saves your settings (and optionally pump settings) to a file in your own iCloud/Files — never our servers.")
+                        Text("Child mode locks this device behind a PIN.")
                     }
                     Section {
                         Link(destination: faBolusHelpURL) {
@@ -363,22 +343,23 @@ enum SettingsIndex {
 /// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
 /// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
 /// missing from the regular-width sidebar (CR-01) — Mode, Safety (Read-only mode), Child mode,
-/// Backup & restore, Data & history, and Privacy & data. Lets a single
+/// Data & history, and Privacy & data. Lets a single
 /// `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
 /// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
+/// Phase 6 (06-02, D-06/D-08): `.backupRestore` is removed (the backup/restore surface is gone from
+/// narrow `main`); `.privacyData` STAYS — it routes to the trimmed, erase-only `PrivacyDataView`.
 enum SettingsSidebarItem: Hashable {
     case category(SettingsCategory)
     case mode
     case safety
     case childMode
-    case backupRestore
     case dataHistory
     case privacyData
 
     /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
     /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
     /// the two can never silently drift apart.
-    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .backupRestore, .dataHistory, .privacyData]
+    static let allExtras: [SettingsSidebarItem] = [.mode, .safety, .childMode, .dataHistory, .privacyData]
 }
 
 /// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
@@ -402,9 +383,8 @@ enum SettingsExtraIndex {
         .init(title: "Mode: Simple / Standard / Advanced", keywords: "mode selector simple standard advanced unlock", item: .mode),
         .init(title: "Read-only mode", keywords: "safe viewer caregiver backup phone bolusing disabled pump control hidden clearing alerts", item: .safety),
         .init(title: "Child mode", keywords: "pin lock child mode security", item: .childMode),
-        .init(title: "Backup & restore", keywords: "backup restore icloud files settings export import", item: .backupRestore),
         .init(title: "Data & history", keywords: "history data export logs time in range", item: .dataHistory),
-        .init(title: "Privacy & data", keywords: "privacy data erase export", item: .privacyData),
+        .init(title: "Privacy & data", keywords: "privacy data erase", item: .privacyData),
     ]
 }
 
@@ -748,18 +728,15 @@ struct PumpSettingsView: View {
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
     // P14 S12 (§2.2.3): the unpair flow. `repairAfter` re-opens pairing after unpair (the "Re-pair with
-    // new code" path). One funnel for both unpair entry points. A4 (owner 2026-08-09): the flow is now
-    // TWO steps — step 1 offers a settings backup (or explicit skip), step 2 is the model-appropriate
-    // confirm — so an unpair can't complete without a backup-or-skip choice first (UnpairAdvisory.steps).
+    // new code" path). One funnel for both unpair entry points. Phase 6 (06-02, D-06): the A4
+    // (owner 2026-08-09) two-step "back up before unpair" gate is removed along with the rest of the
+    // backup/restore surface — both entry points now go straight to the confirm step.
     @State private var unpairStep: UnpairStep?
     private enum UnpairStep: Identifiable {
-        case backup(repairAfter: Bool)    // step 1: back up or skip
-        case confirm(repairAfter: Bool)   // step 2: S12 charging-base confirm
-        var id: String { switch self { case .backup(let r): return "backup-\(r)"; case .confirm(let r): return "confirm-\(r)" } }
-        var repairAfter: Bool { switch self { case .backup(let r), .confirm(let r): return r } }
+        case confirm(repairAfter: Bool)   // S12 charging-base confirm
+        var id: String { switch self { case .confirm(let r): return "confirm-\(r)" } }
+        var repairAfter: Bool { switch self { case .confirm(let r): return r } }
     }
-    @State private var showBackupSheet = false
-    @State private var repairAfterBackup = false
     var body: some View {
         Form {
             Section("Pump") {
@@ -767,8 +744,8 @@ struct PumpSettingsView: View {
                 connectionControls
                 if model.hasStoredPairing && model.capabilities.supportsPairing {
                     // P14 S12 (§2.2.3): confirm before an unpair; a Mobi gets the unconditional
-                    // charging-base warning (re-pairing needs the base). A4: step 1 is the backup gate.
-                    Button("Forget pairing", role: .destructive) { unpairStep = .backup(repairAfter: false) }
+                    // charging-base warning (re-pairing needs the base).
+                    Button("Forget pairing", role: .destructive) { unpairStep = .confirm(repairAfter: false) }
                 }
             }
             // Pump clock sync isn't advanced control, so it's its own section — no need to enable
@@ -836,39 +813,10 @@ struct PumpSettingsView: View {
         }
         .navigationTitle("Pump & control")
         .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-        // A4 (§2.2.3, owner 2026-08-09): STEP 1 — the backup gate. Before the unpair confirm, offer a
-        // settings backup or an explicit skip (never a default), so an unpair can't complete without that
-        // choice. "Back up settings" opens the Backup & restore sheet; whichever way that sheet is
-        // dismissed, the flow advances to step 2 (the user was given the chance to back up).
-        .confirmationDialog(UnpairAdvisory.backupPromptTitle,
-                            isPresented: Binding(get: { if case .backup = unpairStep { return true } else { return false } },
-                                                 set: { if !$0, case .backup = unpairStep { unpairStep = nil } }),
-                            titleVisibility: .visible) {
-            if case .backup(let repair) = unpairStep {
-                Button(UnpairAdvisory.backUpNowLabel) {
-                    repairAfterBackup = repair
-                    unpairStep = nil
-                    showBackupSheet = true
-                }
-                Button(UnpairAdvisory.skipBackupLabel, role: .destructive) {
-                    unpairStep = .confirm(repairAfter: repair)   // explicit skip → straight to the confirm
-                }
-                Button("Cancel", role: .cancel) { unpairStep = nil }
-            }
-        } message: {
-            Text(UnpairAdvisory.backupPromptMessage)
-        }
-        // The backup sheet; on dismiss (saved or not) advance to the model-appropriate confirm.
-        .sheet(isPresented: $showBackupSheet, onDismiss: { unpairStep = .confirm(repairAfter: repairAfterBackup) }) {
-            #if FABOLUS_BACKUP
-            NavigationStack { BackupRestoreView(model: model) }
-            #else
-            EmptyView()
-            #endif
-        }
-        // P14 S12 (§2.2.3): STEP 2 — the unpair confirm, carrying the model-appropriate warning
+        // P14 S12 (§2.2.3): the unpair confirm, carrying the model-appropriate warning
         // (Mobi ⇒ charging-base caveat). One funnel for both entry points. Presented as a
-        // confirmationDialog (09.3-03, D-05/SC3) to match step 1's presentation above.
+        // confirmationDialog (09.3-03, D-05/SC3). Phase 6 (06-02, D-06): this is now the ONLY step —
+        // the A4 "back up first" step-1 gate is removed along with the backup/restore surface.
         .confirmationDialog("Forget pairing?",
                isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
                                     set: { if !$0, case .confirm = unpairStep { unpairStep = nil } }),
@@ -892,7 +840,7 @@ struct PumpSettingsView: View {
                 Button("Connect") { Task { await model.connect() } }
             } else if model.hasStoredPairing {
                 Button("Connect (saved pairing)") { Task { await model.connect() } }
-                Button("Re-pair with new code") { unpairStep = .backup(repairAfter: true) }
+                Button("Re-pair with new code") { unpairStep = .confirm(repairAfter: true) }
             } else {
                 Button("Connect") { showPairing = true }
             }

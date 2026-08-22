@@ -3,99 +3,19 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// F1 (§13) — the unified on-device health-data export + gated complete-erase.
+/// F1 (§13) — the on-device gated complete-erase (erase / full reset).
 ///
-/// Export must carry the setting-change provenance log and the remote-bolus ledger audit trail and
-/// round-trip losslessly. (Glucose/insulin/carb history is pulled from the shared on-disk SwiftData
-/// store, so these tests assert on the deterministic seams — the injected ledger + change log — not on
-/// the ambient history contents.)
+/// Phase 6 (06-02, D-08 owner carve-out, Rule 3 deviation): this file used to ALSO cover the JSON
+/// export (`AppModel.buildPrivacyExport`/`exportPrivacyDataJSON`, `PrivacyDataExport` round-trips,
+/// the caffeine/alcohol tracker export). That surface is part of the removed backup/restore engine —
+/// `PrivacyDataExport.swift` is git rm'd from `main` and `buildPrivacyExport`/`exportPrivacyDataJSON`
+/// compile out at `main`'s new `FABOLUS_BACKUP=0` default — so those two tests are removed here (a
+/// direct compile-break consequence of 06-02 Task 1's deletions, not a files_modified item of either
+/// task). The full (export + erase) coverage still exists on `dev/backup`/`experimental`, unchanged.
+/// The erase/full-reset tests below are UNCHANGED — `AppModel.eraseAllOnDeviceHealthData`/
+/// `eraseEverythingFullReset` stay permanently ungated (D-08) regardless of `FABOLUS_BACKUP`.
 @MainActor
 @Suite(.serialized) struct PrivacyDataTests {
-
-    /// A settled (terminal) ledger, pre-saved to a temp file, that an `AppModel` will load as its audit
-    /// trail — no delivery path or gating dependency.
-    private func seededLedgerURL() throws -> (URL, RemoteBolusLedger) {
-        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("privacy-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("ledger.json")
-        var seed = RemoteBolusLedger()
-        _ = seed.begin(peerId: "watch", requestId: "r1",
-                       doseKey: RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil))
-        seed.settle(peerId: "watch", requestId: "r1", status: "delivered", message: nil, deliveredUnits: 2.0)
-        try RemoteBolusLedgerStore(url: url).save(seed)
-        return (url, seed)
-    }
-
-    private func tempSettingChangeStore() -> (StoredSettingChangeStore, URL) {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("scl-\(UUID().uuidString).json")
-        return (StoredSettingChangeStore(url: url), url)
-    }
-
-    private var settledDoseKey: String {
-        RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil)
-    }
-
-    @Test func exportCarriesSettingChangeLogAndLedgerAndRoundTrips() throws {
-        let (ledgerURL, _) = try seededLedgerURL()
-        let model = AppModel(source: MockBackend(), ledgerStoreURL: ledgerURL)
-
-        // Seed one setting-change record via an injected temp store.
-        let (scl, _) = tempSettingChangeStore()
-        model.settingChangeStore = scl
-        let change = StoredSettingChange(key: .global("maxBolus"), before: .double(10), after: .double(12),
-                                         provenance: .selfSet, atSeconds: 1_700_000_000)
-        model.settingChangeStore.record(change)
-
-        let export = model.buildPrivacyExport()
-
-        // Setting-change provenance log is present (latest + audit trail).
-        #expect(export.settingChangeLog.log.count == 1)
-        #expect(export.settingChangeLog.log.first == change)
-        #expect(export.settingChangeLog.current(.global("maxBolus"))?.after == .double(12))
-
-        // The remote-bolus ledger audit trail is carried: the seeded terminal entry still replays.
-        var carried = export.remoteBolusLedger
-        #expect(carried.begin(peerId: "watch", requestId: "r1", doseKey: settledDoseKey)
-                == .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
-
-        // Metadata + lossless round-trip of the whole shareable payload.
-        #expect(export.meta.schemaVersion == PrivacyDataExport.currentSchema)
-        let data = try export.encoded()
-        let decoded = try PrivacyDataExport.decode(data)
-        #expect(decoded.settingChangeLog == export.settingChangeLog)
-        var decodedLedger = decoded.remoteBolusLedger
-        #expect(decodedLedger.begin(peerId: "watch", requestId: "r1", doseKey: settledDoseKey)
-                == .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
-    }
-
-    // MARK: 09.18d-02 — caffeine/alcohol tracker export round-trip + back-compat
-
-    /// The tracker arrays round-trip losslessly, and a legacy payload written before the trackers
-    /// shipped (no `caffeine`/`alcohol` keys) decodes to empty arrays (decode-optional back-compat).
-    @Test func trackerExportRoundTripsAndDecodesLegacyPayload() throws {
-        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
-        let export = PrivacyDataExport(
-            meta: .init(createdAt: t0, appVersion: "0.3.0", schemaVersion: PrivacyDataExport.currentSchema),
-            glucose: [], boluses: [], carbs: [],
-            caffeine: [.init(date: t0, milligrams: 95, source: "Coffee")],
-            alcohol: [.init(date: t0.addingTimeInterval(60), standardDrinks: 1.5, source: "Wine")],
-            settingChangeLog: SettingChangeLog(), remoteBolusLedger: RemoteBolusLedger())
-        let decoded = try PrivacyDataExport.decode(export.encoded())
-        #expect(decoded.caffeine == export.caffeine)
-        #expect(decoded.alcohol == export.alcohol)
-
-        // A legacy payload lacking the tracker keys still decodes → empty arrays. Derived from a real
-        // encoded payload with the two keys stripped, so every nested encoding matches the decoder.
-        var obj = try JSONSerialization.jsonObject(with: export.encoded()) as! [String: Any]
-        obj.removeValue(forKey: "caffeine")
-        obj.removeValue(forKey: "alcohol")
-        let legacyData = try JSONSerialization.data(withJSONObject: obj)
-        let legacyDecoded = try PrivacyDataExport.decode(legacyData)
-        #expect(legacyDecoded.caffeine.isEmpty)
-        #expect(legacyDecoded.alcohol.isEmpty)
-    }
 
     // MARK: Complete erase — gated + health-data-only
 

@@ -21,15 +21,20 @@ import Foundation
 /// Phase 4 (04-02, D-05/NUDGE-01): the count dropped 7 → 6 and `.smartAssist` was removed from both
 /// `SettingsSidebarItem` and this assertion — the whole Smart Assist settings submenu (and its
 /// sidebar entry point) was git rm'd from narrow `main` (delete-on-main, preserved on `dev/nudge`).
+///
+/// Phase 6 (06-02, D-06/D-08, Rule 3 — minimal interim fix): the count drops 6 → 5 —
+/// `.backupRestore` is removed (the backup/restore sidebar row is gone); `.privacyData` is KEPT
+/// (D-08, routes to the trimmed erase-only view). This is the minimal compile/assertion fix Task 2's
+/// own `SettingsSidebarItem` enum edit requires; Plan 03 supersedes it with the full §6c token-audit
+/// treatment (dated comment idiom, `CompileGateAudit.gatedOffSearchTokens` extension).
 @Suite struct SettingsSidebarParityTests {
 
-    @Test func allExtrasCoversAllSixCR01Groups() {
+    @Test func allExtrasCoversAllFiveGroups() {
         let extras = Set(SettingsSidebarItem.allExtras)
-        #expect(extras.count == 6)
+        #expect(extras.count == 5)
         #expect(extras.contains(.mode))
         #expect(extras.contains(.safety))
         #expect(extras.contains(.childMode))
-        #expect(extras.contains(.backupRestore))
         #expect(extras.contains(.dataHistory))
         #expect(extras.contains(.privacyData))
     }
@@ -49,9 +54,8 @@ import Foundation
         #expect(SettingsExtraIndex.entries.contains { $0.matches("safe viewer") && $0.item == .safety })
     }
 
-    @Test func searchFindsModeBackupDataHistoryAndPrivacy() {
+    @Test func searchFindsModeDataHistoryAndPrivacy() {
         #expect(SettingsExtraIndex.entries.contains { $0.matches("mode") && $0.item == .mode })
-        #expect(SettingsExtraIndex.entries.contains { $0.matches("backup") && $0.item == .backupRestore })
         #expect(SettingsExtraIndex.entries.contains { $0.matches("history") && $0.item == .dataHistory })
         #expect(SettingsExtraIndex.entries.contains { $0.matches("privacy") && $0.item == .privacyData })
     }
