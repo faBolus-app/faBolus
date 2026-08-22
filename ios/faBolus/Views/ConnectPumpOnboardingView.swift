@@ -71,7 +71,7 @@ struct ConnectPumpOnboardingView: View {
                     // leaving the screen via any of the three actions above already skips it.
                     VStack(spacing: 8) {
                         Text("Optional: add a backup glucose feed").font(.headline)
-                        Text("faBolus can use an independent glucose feed — such as Dexcom Share, xDrip, or Nightscout — as a backup. It's only shown if the pump's own reading goes stale. This is optional and you can skip it.")
+                        Text("faBolus can use an independent glucose feed — such as Dexcom Share — as a backup. It's only shown if the pump's own reading goes stale. This is optional and you can skip it.")
                             .font(.subheadline)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
