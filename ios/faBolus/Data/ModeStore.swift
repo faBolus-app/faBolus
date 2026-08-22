@@ -2,16 +2,19 @@ import Foundation
 import faBolusCore
 import Observation
 
-/// P14 Slice 3 — the mode state machine: the **earned ceiling**, the guided **sequential unlock**, and
-/// the **expert opt-out**, with all clamping IN the store (never the UI) — modeled on
+/// P14 Slice 3 — originally the mode state machine: the **earned ceiling**, the guided **sequential
+/// unlock**, and the **expert opt-out**, with all clamping IN the store (never the UI) — modeled on
 /// `RemotePeerPolicyStore.setPolicy`, which clamps a requested grant down rather than trusting the caller.
 ///
 /// `AppSettings.appMode` is the ACTIVE mode the single access evaluator reads (S2). This store is the sole
-/// sanctioned writer of it and keeps the active mode ≤ the earned ceiling, so no UI path can activate a
-/// mode the user hasn't unlocked. Owner decision (2026-08-06): everyone — fresh installs AND existing
-/// upgraded users — starts in **Simple** and re-earns Advanced via the guided Objectives sequence; the
-/// expert opt-out is a warned fast path straight to Advanced (not a fourth mode). No silent migration from
-/// `advancedControlEnabled`.
+/// sanctioned writer of it. Phase 8 (08-01, LOCK-01), tightened by the CR-01 gap-closure (08-REVIEW.md):
+/// narrow `main` is advanced-only — `init` unconditionally forces BOTH the earned ceiling AND the active
+/// mode to `.advanced` on EVERY launch, first-run or returning, regardless of any "modeEarned" value a
+/// pre-Phase-8 build may have persisted. `ModeViews.swift` (the only UI that could ever raise the ceiling)
+/// is deleted this phase, so there is no live UI path that can lower `appMode` below `.advanced` either —
+/// the guided-unlock methods below (`completeNextObjective`/`expertOptOutToAdvanced`/`select`/`returnTo`)
+/// stay compiled per 08-OWNER-FLAGS.md Flag 1 but are unreachable dead code, exercised only by tests that
+/// seed the returning-user path directly.
 ///
 /// §13: the Objectives COPY is experimental-distribution surface and needs clinical review before an
 /// `experimental` build is distributed. The mechanism here is copy-agnostic; the shipped strings are draft.
@@ -52,20 +55,19 @@ final class ModeStore {
         // touching that file's logic at all (Pitfall 3, RESEARCH option (a)).
         hasCompletedOnboarding = true
         hasCompletedPumpOnboarding = d.object(forKey: Self.pumpOnboardedKey) as? Bool ?? false
-        if let raw = d.string(forKey: Self.earnedKey), let m = AppMode(rawValue: raw) {
-            // Returning user: keep the earned ceiling and clamp the (possibly stale/over-high) persisted
-            // active mode down to it, so a lowered ceiling can never leave a higher mode active.
-            earnedMode = m
-            if settings.appMode > m { settings.appMode = m }
-        } else {
-            // Phase 8 (08-01, LOCK-01): first run now starts at Advanced directly — the guided
-            // Simple→Standard→Advanced re-earn sequence (mode picker/unlock/expert-opt-out UI) is
-            // deleted this phase; narrow `main` is a single-adult advanced t:slim X2 device (D-02).
-            // Still does NOT read `advancedControlEnabled` (no silent migration) — same posture as before.
-            earnedMode = .advanced
-            settings.appMode = .advanced
-            d.set(AppMode.advanced.rawValue, forKey: Self.earnedKey)
-        }
+        // CR-01 gap-closure (08-REVIEW.md), tightening Phase 8 (08-01, LOCK-01): force BOTH the earned
+        // ceiling AND the active mode to `.advanced` on EVERY launch — first-run OR returning — never
+        // reading (and so never clamping down to) whatever "modeEarned" a pre-Phase-8 build may have
+        // persisted. The prior returning-user branch only clamped the ACTIVE mode DOWN to that stale
+        // ceiling and otherwise left it in place; since `ModeViews.swift` (the only UI that could ever
+        // raise the ceiling back to Advanced) is deleted this phase, a device carrying a stale
+        // sub-.advanced value was PERMANENTLY stranded below Advanced with zero recovery UI — silently
+        // losing `GatedPumpWrite`-gated pump-control functionality. Narrow `main` is a single-adult
+        // advanced t:slim X2 device (D-02); still does NOT read `advancedControlEnabled` (no silent
+        // migration) — same posture as before.
+        earnedMode = .advanced
+        settings.appMode = .advanced
+        d.set(AppMode.advanced.rawValue, forKey: Self.earnedKey)
     }
 
     /// Select an active mode. **Clamped to the earned ceiling in the store** — the UI may offer a higher
