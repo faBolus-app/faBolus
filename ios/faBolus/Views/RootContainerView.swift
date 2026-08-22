@@ -17,11 +17,10 @@ struct RootContainerView: View {
         RootTabView(model: model)
         .environment(router)
         .environment(modeStore)
-        // First-run mode onboarding, shown exactly once (gated on the store). Not interactively
-        // dismissable — the "Start in Simple" tap is the acknowledgment that sets the flag.
-        .fullScreenCover(isPresented: .init(get: { !modeStore.hasCompletedOnboarding }, set: { _ in })) {
-            ModeOnboardingView(modeStore: modeStore)
-        }
+        // Phase 8 (08-01, LOCK-01): the first-run mode-onboarding `fullScreenCover` (`ModeOnboardingView`)
+        // is removed — everyone now starts directly at Advanced (`ModeStore.init` force-sets
+        // `hasCompletedOnboarding = true`), so the KEPT `ConnectPumpOnboardingView` step below's `&&`
+        // condition is trivially satisfied without any change to its own gate logic.
         // Phase 09.4 (D-01): the skippable "Connect your pump" step, shown exactly once — AFTER the mode
         // step, and only while there's no stored pairing. Not gated by `router.target`/tabs, so it
         // presents regardless of which tab would otherwise render underneath.

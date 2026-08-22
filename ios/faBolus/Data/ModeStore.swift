@@ -45,7 +45,12 @@ final class ModeStore {
     init(defaults: UserDefaults = .standard, settings: AppSettings = .shared) {
         self.d = defaults
         self.settings = settings
-        hasCompletedOnboarding = d.object(forKey: Self.onboardedKey) as? Bool ?? false
+        // Phase 8 (08-01, LOCK-01): `hasCompletedOnboarding` is force-set `true` unconditionally — the
+        // Simple-mode first-run overlay (`ModeOnboardingView`) is deleted this phase, so there is
+        // nothing left to gate on it. Forcing it true (rather than editing `RootContainerView`'s gate)
+        // keeps the KEPT `ConnectPumpOnboardingView` step's `&&` condition trivially satisfied without
+        // touching that file's logic at all (Pitfall 3, RESEARCH option (a)).
+        hasCompletedOnboarding = true
         hasCompletedPumpOnboarding = d.object(forKey: Self.pumpOnboardedKey) as? Bool ?? false
         if let raw = d.string(forKey: Self.earnedKey), let m = AppMode(rawValue: raw) {
             // Returning user: keep the earned ceiling and clamp the (possibly stale/over-high) persisted
@@ -53,11 +58,13 @@ final class ModeStore {
             earnedMode = m
             if settings.appMode > m { settings.appMode = m }
         } else {
-            // First run of a mode-aware build (owner-locked): EVERYONE starts at Simple and re-earns
-            // Advanced. Deliberately does NOT read `advancedControlEnabled` (no silent migration).
-            earnedMode = .simple
-            settings.appMode = .simple
-            d.set(AppMode.simple.rawValue, forKey: Self.earnedKey)
+            // Phase 8 (08-01, LOCK-01): first run now starts at Advanced directly — the guided
+            // Simple→Standard→Advanced re-earn sequence (mode picker/unlock/expert-opt-out UI) is
+            // deleted this phase; narrow `main` is a single-adult advanced t:slim X2 device (D-02).
+            // Still does NOT read `advancedControlEnabled` (no silent migration) — same posture as before.
+            earnedMode = .advanced
+            settings.appMode = .advanced
+            d.set(AppMode.advanced.rawValue, forKey: Self.earnedKey)
         }
     }
 

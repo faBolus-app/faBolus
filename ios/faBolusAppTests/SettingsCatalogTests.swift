@@ -130,6 +130,13 @@ enum CompileGateAudit {
         // row, which stays live for the connect/pair/forget controls that remain), so this is a genuinely
         // vacuous, correct check, same posture as several Phase 7 tokens above.
         tokens.formUnion(["pump clock"])
+        // Phase 8, 08-01 (LOCK-01): the "Mode: Simple / Standard / Advanced" `SettingsExtraIndex` entry
+        // (sidebar-only; never a `SettingsIndex` row) removed — `ModeSettingsView`/`ModeOnboardingView`
+        // are deleted; `appMode` is force-set `.advanced` in both `ModeStore.init` and
+        // `AppSettings.init`. Deliberately "modeselector" (concatenated) rather than a bare "mode" —
+        // that would false-positive against the still-LIVE "Default bolus mode" row, or "advanced"
+        // against the still-LIVE "Advanced control" row, via this helper's plain `.contains` match.
+        tokens.formUnion(["modeselector"])
         return tokens
     }
 

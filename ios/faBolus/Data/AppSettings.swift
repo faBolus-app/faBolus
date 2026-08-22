@@ -720,8 +720,11 @@ public final class AppSettings {
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int    // nil = Never
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
-        // P14 S2: default Advanced (behavior-preserving no-op); S3 flips the default to Simple + Objectives.
-        appMode = AppMode(rawValue: d.string(forKey: "appMode") ?? "") ?? .advanced
+        // Phase 8 (08-01, LOCK-01): force-set `.advanced` unconditionally — defense-in-depth belt-and-
+        // suspenders alongside `ModeStore.init` (the primary/sole sanctioned writer). A restored/legacy
+        // UserDefaults value carrying `.simple`/`.standard` must not silently downgrade the mode before
+        // `ModeStore` runs (Pitfall 1).
+        appMode = .advanced
         let ackTs = d.double(forKey: "clinicianTierAckAt")   // P14 S8: 0 (absent) ⇒ never acknowledged
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
         let teAck = d.double(forKey: "therapyEditAckAt")     // B1(e): 0 (absent) ⇒ never acknowledged

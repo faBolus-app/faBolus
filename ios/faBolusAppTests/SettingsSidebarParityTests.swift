@@ -35,12 +35,15 @@ import Foundation
 /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): the count drops 5 → 4 — `.childMode` is removed (Child
 /// mode's PIN-lock sidebar row + `ChildModeView.swift` are deleted; `childModeEnabled` is now a
 /// permanently-frozen `false`, so there is no longer any UI for it to route to).
+///
+/// Phase 8 (08-01, LOCK-01, Rule 3 — compile-break fix outside this task's own `files_modified`): the
+/// count drops 4 → 3 — `.mode` is removed (`ModeSettingsView`/`ModeOnboardingView` are deleted;
+/// `appMode` is force-set `.advanced` in both `ModeStore.init` and `AppSettings.init`).
 @Suite struct SettingsSidebarParityTests {
 
-    @Test func allExtrasCoversAllFourGroups() {
+    @Test func allExtrasCoversAllThreeGroups() {
         let extras = Set(SettingsSidebarItem.allExtras)
-        #expect(extras.count == 4)
-        #expect(extras.contains(.mode))
+        #expect(extras.count == 3)
         #expect(extras.contains(.safety))
         #expect(extras.contains(.dataHistory))
         #expect(extras.contains(.privacyData))
@@ -60,8 +63,7 @@ import Foundation
         #expect(SettingsExtraIndex.entries.contains { $0.matches("safe viewer") && $0.item == .safety })
     }
 
-    @Test func searchFindsModeDataHistoryAndPrivacy() {
-        #expect(SettingsExtraIndex.entries.contains { $0.matches("mode") && $0.item == .mode })
+    @Test func searchFindsDataHistoryAndPrivacy() {
         #expect(SettingsExtraIndex.entries.contains { $0.matches("history") && $0.item == .dataHistory })
         #expect(SettingsExtraIndex.entries.contains { $0.matches("privacy") && $0.item == .privacyData })
     }
