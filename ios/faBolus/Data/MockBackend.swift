@@ -166,6 +166,18 @@ public final class MockBackend: PumpBackend {
     /// Test knob (FB-04): set the LIVE IOB, so a test can prove a delivery sends the FROZEN calc IOB, not
     /// the live snapshot value.
     public func setLiveIob(_ u: Double) { snapshot.iobUnits = u; onChange?() }
+    /// Test knob (Phase 9 CR-01 gap closure): simulate a MID-SESSION pump-identity change — e.g. a
+    /// Mobi discovered while a t:slim was connected — by flipping `isMobi`/`pumpModelName` post-
+    /// construction and firing `onChange()`, exactly like the protected `TandemBackend` discovery
+    /// callback does for a real peripheral. `MockBackend`'s `isMobi` ctor arg only seeds the INITIAL
+    /// snapshot, so it can't reproduce a transition after `AppModel` already exists — this can, letting
+    /// `MobiRejectBackstopBoundaryTests` drive `AppModel.refresh()`'s real merge pipeline (via
+    /// `source.onChange`) without a live BLE peripheral or a SwiftUI view.
+    public func simulatePumpIdentityChange(isMobi: Bool) {
+        snapshot.isMobi = isMobi
+        snapshot.pumpModelName = isMobi ? "Mobi (simulated)" : "t:slim X2 (simulated)"
+        onChange?()
+    }
     /// Test knob (Phase 09.17-01, D-06b): `seedHistory()`'s glucose trace uses `Double.random` so the
     /// Simulator/SwiftUI-preview experience never looks robotic — but that same randomness makes the
     /// default `MockBackend()` fixture unusable as a `SnapshotTesting` reference (a golden image must

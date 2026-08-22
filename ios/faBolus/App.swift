@@ -10,6 +10,10 @@ struct FaBolusApp: App {
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: NotificationCoordinator?
     @State private var widgetBolus: WidgetBolusReceiver?
+    // CR-01 gap closure: always-on Mobi reject-at-pairing backstop, owned here (outside the SwiftUI
+    // view tree) so it runs regardless of which screen is on screen and while backgrounded — see
+    // `AppModel+MobiRejectBackstop.swift`.
+    @State private var mobiRejectBackstop: MobiRejectBackstop?
     @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
 
@@ -31,6 +35,13 @@ struct FaBolusApp: App {
                     if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
+                    // CR-01 gap closure: start the always-on Mobi reject backstop exactly once — it
+                    // then runs for the process's lifetime independent of any view's presence.
+                    if mobiRejectBackstop == nil {
+                        let backstop = MobiRejectBackstop(model: model)
+                        backstop.start()
+                        mobiRejectBackstop = backstop
+                    }
                     #if FABOLUS_BACKUP
                     ICloudSettingsSync.shared.start()   // optional; no-op unless built with FABOLUS_ICLOUD
                     #endif
