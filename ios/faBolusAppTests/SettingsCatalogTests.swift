@@ -62,6 +62,13 @@ enum CompileGateAudit {
         // `SettingsIndex`/`SettingsExtraIndex` row (it was reached from elsewhere in the app, not
         // Settings search), so it contributes no additional token here.
         tokens.formUnion(["icloud", "restore", "files", "import"])
+        // Phase 7, 07-01 (FEAT-07): FoodFinder / food-scanner (barcode + OpenFoodFacts lookup, the
+        // opt-in BYO-key AI carb-estimate path, and the BolusEntryView "Find food" carb-seam entry
+        // point) removed from narrow `main` (unconditional — permanent removal, no dose-set stub per
+        // D-01/D-03). No live `SettingsIndex` row ever advertised FoodFinder (it was a Bolus-screen
+        // entry point, not a Settings row), so these tokens are a genuinely vacuous, correct check —
+        // they exist to satisfy this phase's own §6c convention, not to catch a live orphan today.
+        tokens.formUnion(["foodfinder", "find food", "barcode"])
         return tokens
     }
 

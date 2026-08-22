@@ -67,7 +67,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>faBolus connects to your pump over Bluetooth to read status and deliver boluses.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you.</string>
+	<string>faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default.</string>
 	<key>NSSupportsLiveActivities</key>

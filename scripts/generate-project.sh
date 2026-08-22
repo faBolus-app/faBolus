@@ -100,11 +100,11 @@ CGM_G7="${FABOLUS_CGM_G7:-0}"
 # peer remote is git rm'd from main outright (delete-on-main, D-01), preserved on dev/phone-remote, the
 # same posture as the Phase 2.5 CGM retro-clean. The SHARED PhoneRemoteHost.swift Garmin/widget receiver
 # core stays on main unconditionally (part of the always-included ios/faBolus tree).
-# FoodFinder compile gate (TOPO-03/D-03, RESEARCH Pattern 2). Default 1 = the barcode/food-carb surface is
-# PRESENT. At 0, exactly the three FoodFinder source dirs (Data/FoodFinder, Views/FoodFinder,
-# Vendor/LoopPowerPack/FoodFinder) are excluded via the APP_SOURCE_EXCLUDES list — a nested-directory excludes:
-# shape validated with a real xcodegen generate at both default and =0. The removal flip is Phase 7's job.
-FOODFINDER="${FABOLUS_FOODFINDER:-1}"
+# Phase 7 (07-01, FEAT-07): the FoodFinder compile gate (env override was named for this surface) is
+# retired — the barcode/OpenFoodFacts + AI carb-estimate surface (Data/FoodFinder, Views/FoodFinder,
+# Vendor/LoopPowerPack/FoodFinder) is git rm'd from main outright (delete-on-main, D-01/D-03),
+# preserved on dev/food-finder, the same posture as the Phase 2.5 CGM retro-clean / Phase 3 phone-peer
+# retirement. No env-var declaration, no strip_block call, no exclude-list entry remains for it.
 # BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-02/D-08 owner carve-out). REMOVAL FLIP: `main`'s
 # backup/restore, PrivacyData-export, and SiteAtlas surface is now permanently ABSENT — the 7
 # app-layer files/dirs this flag used to gate are physically git rm'd from `main` (delete-on-main,
@@ -197,18 +197,19 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). Only Nightscout/FOODFINDER still gate a
-# source FILE via this APP_SOURCE_EXCLUDES excludes: list — G6/LibreLinkUp/G7/xDrip's file-exclude
-# entries were retired in Phase 2.5 (their source files are git rm'd outright, D-01/D-07); PHONE_PEER's
-# were retired in Phase 3 (03-02, same posture — the peer files are git rm'd outright, not excluded).
+# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). Only Nightscout still gates a source
+# FILE via this APP_SOURCE_EXCLUDES excludes: list — G6/LibreLinkUp/G7/xDrip's file-exclude entries were
+# retired in Phase 2.5 (their source files are git rm'd outright, D-01/D-07); PHONE_PEER's were retired
+# in Phase 3 (03-02, same posture — the peer files are git rm'd outright, not excluded); FoodFinder's
+# gate was retired in Phase 7 (07-01, same posture — the FoodFinder dirs are git rm'd outright, not
+# excluded).
 # When EVERY remaining gate is at its default (=1, surface PRESENT) the entire excludes: block is
 # removed; otherwise the block is kept and only the still-present (=1) surfaces' exclude lines are
 # dropped, leaving the =0 surface(s) excluded.
-if [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$FOODFINDER" = 1 ] && [ "$BACKUP" = 1 ]; then
+if [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$BACKUP" = 1 ]; then
   strip_block APP_SOURCE_EXCLUDES   # all remaining app-source surfaces present → drop the whole excludes: block
 else
   [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
-  [ "$FOODFINDER" = 1 ]      && strip_block FOODFINDER        # present → drop the FoodFinder-dir exclude lines
   [ "$BACKUP" = 1 ]          && strip_block BACKUP            # present → drop the Backup/SiteAtlas exclude lines
 fi
 # The compile-condition token (not just the file excludes above) is ALWAYS dropped on main, regardless
@@ -238,11 +239,10 @@ if [ "$CGM_G7" = 0 ]; then
 fi
 
 echo "generate-project: Garmin=$GARMIN iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 FoodFinder=$FOODFINDER Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout/FoodFinder still default-present)"
+echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; FoodFinder git rm'd from main outright — Phase 7, 07-01; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout still default-present)"
 [ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the DexcomG6Kit package/dependency (FABOLUS_CGM_G6=0, default) — the Dexcom G5/G6/ONE BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra; G7SensorKit/ShareClient kept"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
 [ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
-[ "$FOODFINDER" = 0 ] && echo "  → building WITHOUT FoodFinder (FABOLUS_FOODFINDER=0) — the 3 FoodFinder source dirs excluded"
 [ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
 [ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), AND the FABOLUS_BACKUP compile-condition token is unconditionally dropped below regardless of this override, so the #if FABOLUS_BACKUP guards in AppModel.swift/App.swift stay compiled OUT (CR-01 gap-closure fix)"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"

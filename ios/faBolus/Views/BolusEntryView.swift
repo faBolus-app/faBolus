@@ -31,10 +31,6 @@ struct BolusEntryView: View {
     // computes a delivery outcome itself (D-08).
     @State private var successBanner: BolusSuccessBanner?
     @State private var showReasoning = false
-    // 09.18c-01 (D-12): presents the FoodFinder carb-estimate surface. Its ONLY effect on this screen is
-    // the `onApplyGrams` callback writing a grams string into `carbsText` (below) — no calc, units, or
-    // delivery. The existing `.onChange(of: carbsText)` then runs the user-driven recommendation.
-    @State private var showFoodFinder = false
     // Extended (combo) bolus
     @State private var extendedOn = false
     @State private var extendedDurationMin = 120
@@ -521,15 +517,6 @@ struct BolusEntryView: View {
                     .font(.caption)
                     .foregroundStyle(stale ? .orange : .secondary)
             }
-            // 09.18c-01 (D-12/D-13): non-destructive entry point to the FoodFinder carb estimator.
-            // A plain tap-only row (no hardware-key binding — the D-08 dose-surface guard must stay
-            // green); it only presents a sheet.
-            Button {
-                showFoodFinder = true
-            } label: {
-                Label("Find food", systemImage: "magnifyingglass")
-            }
-            .accessibilityHint("Search a food to estimate carbs and add them to the carb field")
         }
     }
 
@@ -704,14 +691,6 @@ struct BolusEntryView: View {
         }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
-        // 09.18c-01 (D-12): the FoodFinder carb-estimate surface. The callback body is the ENTIRE seam —
-        // assign the confirmed grams string into `carbsText`. No `calculate()` here (the existing
-        // `.onChange(of: carbsText)` runs it), no units pre-fill, no CarbStore, no delivery.
-        .sheet(isPresented: $showFoodFinder) {
-            NavigationStack {
-                FoodFinderView(onApplyGrams: { grams in carbsText = String(grams) })
-            }
-        }
         // N12 (Dynamic Type): scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         .onAppear {

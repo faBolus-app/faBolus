@@ -143,15 +143,6 @@ public final class AppSettings {
     /// Device-local display toggle (same idiom as `graphDetailEnabled`): deliberately NOT a
     /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
     public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
-    /// Phase 09.18c-03 (D-12/D-13): master opt-in for the FoodFinder BYO-key AI carb-estimate path
-    /// (photo/text → a user-connected AI provider). **Default OFF** — this is the ONLY FoodFinder path
-    /// where PHI leaves the device, so it stays inert until the user explicitly enables it AND
-    /// acknowledges the one-time PHI disclosure (`hasAcknowledgedFoodFinderAINotice`). AI-estimated carbs
-    /// still reach the dose ONLY through the shared "Add to carbs" → `carbsText` seam — this flag never
-    /// changes that. Device-local display/behavior toggle (same idiom as `graphDetailEnabled`):
-    /// deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot` (the BYO KEY rides the
-    /// encrypted secrets backup instead, D-13), so the catalog drift guards stay untouched.
-    public var foodFinderAIEnabled: Bool { didSet { d.set(foodFinderAIEnabled, forKey: "foodFinderAIEnabled") } }
     /// Phase 09.18d-01 (D-15/D-17): gate the LoopInsights endo-visit PDF report surface. **Default ON**
     /// — a benign records-export feature (glucose/insulin/carb summary rendered to a shareable PDF),
     /// discoverable and off-able from the Smart Assist submenu. Advisory only: the report is a summary
@@ -214,16 +205,9 @@ public final class AppSettings {
     public var smartFeaturesNoticeAckAt: Date? { didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") } }
     public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
     public func acknowledgeSmartFeaturesNotice() { if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() } }
-    // FoodFinder AI PHI disclosure (09.18c-03, D-13) — the one-time explainer that MUST be acknowledged
-    // before the first AI call sends any PHI off-device. Same durable per-install-marker idiom as
-    // `smartFeaturesNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-synced (a synced
-    // ack must not silently pre-suppress the PHI disclosure on another device). nil ⇒ never shown.
-    public var foodFinderAINoticeAckAt: Date? { didSet { d.set(foodFinderAINoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "foodFinderAINoticeAckAt") } }
-    public var hasAcknowledgedFoodFinderAINotice: Bool { foodFinderAINoticeAckAt != nil }
-    public func acknowledgeFoodFinderAINotice() { if foodFinderAINoticeAckAt == nil { foodFinderAINoticeAckAt = Date() } }
     // Caregiver-digest one-time explainer (09.18d-03, D-14/D-17) — the "About Smart Features" notice fired
     // on first ENABLE of the caregiver digest (PHI-sharing, AI-adjacent). Same durable per-install-marker
-    // idiom as `smartFeaturesNoticeAckAt`/`foodFinderAINoticeAckAt`: NOT a `SettingsCatalog` row, never
+    // idiom as `smartFeaturesNoticeAckAt`: NOT a `SettingsCatalog` row, never
     // backed up / iCloud-synced (a synced ack must not silently pre-suppress the notice on another
     // device). nil ⇒ never shown. NEVER gates a write / a share.
     public var caregiverDigestNoticeAckAt: Date? { didSet { d.set(caregiverDigestNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "caregiverDigestNoticeAckAt") } }
@@ -931,9 +915,6 @@ public final class AppSettings {
         graphDetailEnabled = (d.object(forKey: "graphDetailEnabled") as? Bool) ?? true
         // Phase 09.18b (D-09/D-17): HR chart context defaults ON with GraphDetailView, off-able.
         heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
-        // Phase 09.18c-03 (D-13): the FoodFinder AI path is OFF by default (PHI leaves the device only
-        // here) — a fresh install / absent key never enables it silently.
-        foodFinderAIEnabled = (d.object(forKey: "foodFinderAIEnabled") as? Bool) ?? false
         // Phase 09.18d-01 (D-15/D-17): the endo-report PDF is discoverable / ON by default.
         endoReportEnabled = (d.object(forKey: "endoReportEnabled") as? Bool) ?? true
         // Phase 09.18d-02 (D-14/D-17): the benign caffeine + alcohol trackers are discoverable / ON by default.
@@ -952,8 +933,6 @@ public final class AppSettings {
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
-        let ffAck = d.double(forKey: "foodFinderAINoticeAckAt")    // 0 (absent) ⇒ never acknowledged
-        foodFinderAINoticeAckAt = ffAck > 0 ? Date(timeIntervalSince1970: ffAck) : nil
         let cdAck = d.double(forKey: "caregiverDigestNoticeAckAt") // 0 (absent) ⇒ never acknowledged
         caregiverDigestNoticeAckAt = cdAck > 0 ? Date(timeIntervalSince1970: cdAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),

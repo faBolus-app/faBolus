@@ -114,13 +114,10 @@ targets:
           # not a compile-gated exclude. PeerRemoteHost.swift/PhoneRemoteClientModel.swift/
           # RemotePeerPolicyStore.swift (now a minimal stub)/RemoteControlView.swift/RemoteRootView.swift/
           # RemoteSettingsView.swift no longer exist on main at all.
-          # >>> FOODFINDER (kept only when FABOLUS_FOODFINDER=0 → excludes exactly the 3 FoodFinder source dirs;
-          #   stripped by default. The foodFinderAIEnabled runtime flag gates the AI sub-path separately and is
-          #   unaffected. First nested-directory excludes: shape in this repo — validated by real xcodegen generate.)
-          - Data/FoodFinder
-          - Views/FoodFinder
-          - Vendor/LoopPowerPack/FoodFinder
-          # <<< FOODFINDER
+          # Phase 7 (07-01, FEAT-07): the FoodFinder compile gate is retired — the barcode/OpenFoodFacts
+          # + AI carb-estimate surface is now physically git rm'd from main (delete-on-main, D-01/D-03),
+          # preserved on dev/food-finder, not a compile-gated exclude. Data/FoodFinder/Views/FoodFinder/
+          # Vendor/LoopPowerPack/FoodFinder no longer exist on main at all.
           # >>> BACKUP (Phase 6, 06-02, BACKUP-01/D-02/D-08 owner carve-out): these 7 paths are now
           #   PHYSICALLY git rm'd from `main` (delete-on-main, preserved on dev/backup) — this exclude
           #   list is a harmless no-op on `main` (the paths no longer exist to exclude) kept intact only
@@ -246,7 +243,7 @@ targets:
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
         # Scan a host phone's pairing QR code when using this phone as a remote, AND scan food barcodes
         # in FoodFinder for a carb estimate the user reviews (09.18c-02, D-13) — never a dose.
-        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote, and to scan food barcodes for a carb estimate you review — it never doses for you."
+        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
         # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
         # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
         NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
