@@ -292,11 +292,10 @@ struct BolusEntryView: View {
             parts.append("⚠️ Your CGM reading is \(m) min old — this correction may be based on outdated glucose.")
         }
         if let w = carbOverrideWarning { parts.append(w) }
-        // SG3a: compose the escalating-friction message into the STANDARD confirm dialog too — the
-        // `.disclose` tier's "no extra tap" contract (the message shows here; nothing further gates it).
-        // For `.confirmExtra`/`.reenter` this still shows as context BEFORE the extra step (added below at
-        // the confirm seam), never a replacement for it.
-        if let sg3a = sg3aDisclosure, let message = sg3a.message { parts.append(message) }
+        // LOCK-06 (Phase 8, 08-02): the SG3a escalating-friction message is no longer composed into the
+        // STANDARD confirm dialog — this presentation site's use of `sg3aDisclosure.message` is removed.
+        // `sg3aDisclosure` itself (and the friction tier it drives via `sg3aAppliedFriction`, which the
+        // confirm seam below still routes on) is UNCHANGED — only the disclosure TEXT is hidden here.
         parts.append("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
         return parts.joined(separator: "\n\n")
     }
@@ -573,17 +572,19 @@ struct BolusEntryView: View {
         // changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
         ForEach(Self.rankedWarnings(
             overMax: overMax, maxUnits: maxUnits,
-            sg2Message: sg2Disclosure?.message,
+            // LOCK-06 (Phase 8, 08-02): sg1/sg2/sg3a disclosure TEXT is nil'd at this presentation seam,
+            // so `rankedWarnings` has no SG advisory text left to rank/render. `sg1Disclosure`/
+            // `sg2Disclosure`/`sg3aDisclosure` (and `sg3aAppliedFriction`, which the confirm seam still
+            // routes on) stay UNCHANGED — only these three message arguments are suppressed.
+            sg2Message: nil,
             childBlocked: !settings.childAllows(.bolus),
             pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
             bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
             carbOverride: carbOverrideWarning,
             autoAmbient: autoCorrectionAmbient,
             autoLockout: autoCorrectionLockout,
-            sg1Message: sg1Disclosure?.message,
-            // Preserve the pre-existing sg3a==sg1 dedup guard: only a confirmExtra/reenter-tier
-            // message (which differs from SG1's) renders as an additional line.
-            sg3aMessage: sg3aDisclosure?.message.flatMap { $0 != sg1Disclosure?.message ? $0 : nil },
+            sg1Message: nil,
+            sg3aMessage: nil,
             insufficientReservoirMessage: insufficientReservoirDisclosure?.message
         )) { item in
             Label(item.text, systemImage: item.systemImage)
