@@ -6,9 +6,11 @@
 # Default owner for everything.
 *                                   @zgranowitz
 
-# The cross-app contract. A change here ripples to the watch, Garmin, Mac, and widgets, and to the
-# faBolusGarmin repo's Monkey C mirror — the schema-drift checks enforce the mirror, but the semantics
-# are a human-review concern.
+# The cross-app contract. On narrow `main` a change here ripples to Garmin (Venu 3S) and the widgets, and
+# to the faBolusGarmin repo's Monkey C mirror — the schema-drift checks enforce the mirror, but the
+# semantics are a human-review concern. The Apple Watch remote and the Mac menu-bar remote are
+# EXPERIMENTAL-ONLY (v0.5.0 narrow-main; preserved on `dev/watch-remote` / `dev/mac`, not on `main`) — a
+# schema change there is a `dev/*`/`experimental` concern, not a `main` one.
 /schema/                            @zgranowitz
 
 # Safety-critical core: the idempotency ledger, remote-command classification/validation, the send
