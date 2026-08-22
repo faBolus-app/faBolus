@@ -59,36 +59,37 @@ xcrun devicectl device install app --device <UDID> \
 - **`DEVELOPMENT_TEAM`** is your Apple team id (the signing cert's OU). It isn't stored in the
   repo — pass it on the command line. For a compile-only check, add `CODE_SIGNING_ALLOWED=NO` and
   drop the team.
-- **App Group** (`group.com.fabolus.app`) is shared by the app, the widget extension,
-  and the watch complication. It registers automatically on first signed build; entitlements are
-  generated from `project.yml`.
-- The **WidgetKit extension**, **Apple Watch app**, and **watch complication** build as targets of
-  the same project.
+- **App Group** (`group.com.fabolus.app`) is shared by the app and the widget extension. It
+  registers automatically on first signed build; entitlements are generated from `project.yml`.
+- The **WidgetKit extension** builds as a target of the same project.
 
 ### Choosing what's included (env flags)
 
-`./scripts/generate-project.sh` reads a few environment variables to decide what to bake into the
-generated `.xcodeproj`. When either optional component is dropped, its package/dependency and its
+`./scripts/generate-project.sh` reads an environment variable to decide whether Garmin support is
+baked into the generated `.xcodeproj`. When it's dropped, the ConnectIQ package/dependency and its
 compile flag are stripped from a derived spec (`project.generated.yml`), and the app shows a note in
-its **Remotes & devices** settings section explaining what was left out and how to add it back
-(rebuild with the piece present).
+its **Remotes & devices** settings section explaining that it was left out and how to add it back
+(rebuild with the SDK present).
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `FABOLUS_WATCH` | `1` (included) | `FABOLUS_WATCH=0` builds the phone app **without** embedding the Apple Watch app (drops the embed dependency + `WATCH_EMBEDDED` flag). |
 | `FABOLUS_GARMIN` | auto-detected | Unset: Garmin is included only if the Connect IQ SDK is present at the vendored path. `FABOLUS_GARMIN=1` / `=0` forces Garmin on/off, overriding auto-detection (`=1` requires the SDK; `=0` drops the ConnectIQ package + `GARMIN` flag). |
-| `FABOLUS_NUDGE` | auto-detected | Unset: the [faBolusNudge](https://github.com/faBolus-app/faBolusNudge) advisory SDK is included only if its repo is reachable (`git ls-remote`). If you don't have access, it's dropped automatically — the **Smart Assist** features (on-device eating detection + meal-detection intelligence) compile out and the app still builds. Retrospective insights (time-in-range, recurring patterns) live in `faBolusCore` and build either way. `FABOLUS_NUDGE=1` / `=0` forces it on/off (`=1` requires repo access; `=0` drops the package, its 6 products, and the `FABOLUS_NUDGE` flag). Forcing it off also forces on-watch eating off. |
-| `FABOLUS_ONWATCH_EATING` | `0` (off) | `=1` compiles the Apple-Watch **on-device** eating detector in (needs the paid HealthKit entitlement + the nudge SDK). Off by default so the app builds/installs on a free account. |
 
 ```sh
-# phone app only — no watch, no Garmin, no Smart Assist SDK
-FABOLUS_WATCH=0 FABOLUS_GARMIN=0 FABOLUS_NUDGE=0 ./scripts/generate-project.sh
+# phone app only — no Garmin
+FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 ```
+
+That's the only optional component left to gate — the watchOS companion app and its on-device
+eating detector were removed from `main` entirely, so there's no target or SDK left for a flag to
+control. A handful of other flags (`FABOLUS_ICLOUD`, `FABOLUS_TANDEM_LOCAL`, and similar) exist for
+paid-account entitlements and co-development — read the comments at the top of
+`generate-project.sh` if you need one of those.
 
 !!! note "Plain `xcodegen generate` includes everything"
     Running `xcodegen generate` directly (instead of the script) still works, but always builds the
-    full project — watch embedded and Garmin linked — so it requires the Connect IQ SDK to be
-    present. Use the script if you want the optional-component handling.
+    full project — Garmin linked — so it requires the Connect IQ SDK to be present. Use the script
+    if you want the optional-component handling.
 
 ## Garmin watch app (Connect IQ)
 

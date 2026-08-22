@@ -29,9 +29,9 @@ takes about a minute (see [Keeping the app running](updating.md)).
 
 ## The whole process, start to finish
 
-Five short chapters. The first three get the app on your iPhone; the last two are optional
-watches. Both watches are optional at build time — the phone app builds and runs fine on its own,
-and you can add either one later.
+Four short chapters. The first three get the app on your iPhone; the last is an optional Garmin
+watch. The Garmin app is optional at build time — the phone app builds and runs fine on its own,
+and you can add the watch later.
 
 <div class="grid cards" markdown>
 
@@ -59,19 +59,11 @@ and you can add either one later.
 
     [:octicons-arrow-right-24: Build the app](build-app.md)
 
--   :material-watch:{ .lg .middle } **4 · Add the Apple Watch (optional)**
+-   :material-watch-variant:{ .lg .middle } **4 · Add a Garmin (Venu 3S)**
 
     ---
 
-    Install the matching watch app.
-
-    [:octicons-arrow-right-24: Add the watch](apple-watch-build.md)
-
--   :material-watch-variant:{ .lg .middle } **5 · Add a Garmin (optional)**
-
-    ---
-
-    Build the Garmin remote for a Garmin watch.
+    Build the Garmin remote for a Garmin Venu 3S — the one watch this app supports. Optional.
 
     [:octicons-arrow-right-24: Build for Garmin](garmin-build.md)
 
@@ -84,8 +76,8 @@ You'll want all of these before you start (details on [What you'll need](../requ
 - [x] A **Mac** computer (any recent one).
 - [x] An **iPhone** (iOS 17 or newer) and a cable to plug it into the Mac.
 - [x] An **Apple ID** — the same email/password you use for the App Store.
-- [x] A **Tandem t:slim X2 or Mobi** pump.
-- [x] *Optional:* an **Apple Watch** or a **Garmin venu3s**.
+- [x] A **Tandem t:slim X2** pump.
+- [x] *Optional:* a **Garmin Venu 3S**.
 
 ## How much time and money?
 
@@ -93,12 +85,12 @@ You'll want all of these before you start (details on [What you'll need](../requ
 | --- | --- | --- |
 | Time for the first build | About 1–2 hours, mostly waiting on downloads | About 1–2 hours |
 | App keeps working for | **7 days**, then you redo one step | **1 year** |
-| Widgets & watch app | Can be fiddly | Work smoothly |
+| Widgets | Can be fiddly | Work smoothly |
 
 !!! tip "Which should I pick?"
     **Start free** — it costs nothing and works. If you end up using the app regularly, the
-    $99/year account means you only re-install once a year instead of weekly, and the widgets and
-    watch app behave better. You can switch to paid later without redoing anything.
+    $99/year account means you only re-install once a year instead of weekly, and the widgets
+    behave better. You can switch to paid later without redoing anything.
 
 <div class="cx2-check" markdown>
 **Ready?** Go to [Step 1 · Apple account](apple-developer.md). Just follow each page in order and
