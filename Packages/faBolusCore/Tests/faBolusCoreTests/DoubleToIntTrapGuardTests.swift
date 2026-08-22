@@ -142,8 +142,15 @@ struct DoubleToIntTrapGuardTests {
         #expect(!Self.hasRawIntCall(Self.codePortion(of: "        let id = UInt(bitPattern: h)")))
         // A prose mention of Int(_:) inside a comment is stripped before scanning → not caught.
         #expect(!Self.hasRawIntCall(Self.codePortion(of: "        // a raw Int(_:) here would trap")))
-        // The FoodFinder Data root resolves (so `clampedInt` sites are actually reachable by the scan).
-        #expect(Self.resolve("ios/faBolus/Data/FoodFinder") != nil,
-                "liveness — ios/faBolus/Data/FoodFinder must resolve from #filePath=\(#filePath).")
+        // At least one of the guard's feature roots resolves (so `clampedInt` sites are actually
+        // reachable by the scan above). Checks the SET, not one hardcoded directory, because each
+        // individual root is a permanent, one-at-a-time narrow-main removal target (FoodFinder,
+        // Phase 7 07-01; LoopInsights, Phase 7 07-02) — pinning this liveness check to a single root
+        // would make it fail the moment THAT root's removal phase runs, even though the invariant test
+        // above stays meaningful as long as any root remains. This file lives in the dose-set-adjacent
+        // `Packages/faBolusCore` (byte-identity-protected, D-03); an edit here must be cherry-picked
+        // identically onto every dev/<surface> branch + experimental (see 07-01-SUMMARY.md).
+        #expect(Self.featureDirs.contains(where: { Self.resolve($0) != nil }),
+                "liveness — none of the DoubleToIntTrapGuardTests feature roots resolved from #filePath=\(#filePath); the raw-Int scan above would be vacuous.")
     }
 }
