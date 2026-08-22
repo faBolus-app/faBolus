@@ -27,9 +27,9 @@ create one, use email below.
 
 ## What helps us most
 
-- **Which app** — iPhone, Apple Watch, Garmin, Mac, or the phone-to-phone remote.
+- **Which app** — iPhone or Garmin.
 - **What you did**, step by step, and **what you expected vs. what happened**.
-- **Your setup** — pump model (t:slim X2 / Mobi), iOS/watchOS/Garmin version, and CGM.
+- **Your setup** — pump model (t:slim X2), iOS/Garmin version, and CGM.
 - A **screenshot** or the on-screen error text.
 
 !!! warning "Safety first"

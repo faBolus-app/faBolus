@@ -23,19 +23,18 @@ LLM) reading the code.
   current or to auto-fill a correction.
 
 ## Devices / roles
-- **Host** — the device physically paired to the pump over Bluetooth (normally the iPhone). It owns the
+- **Host** — the device physically paired to the pump over Bluetooth (the iPhone). It owns the
   pump link and is the only thing that dispenses insulin.
-- **Remote** — a device that shows status and *requests* actions the host carries out: Apple Watch,
-  Garmin, Mac, or a second iPhone. A remote never touches the pump.
-- **Failover CGM source** — an independent glucose feed (Dexcom BLE, Nightscout, xDrip, Apple Health…)
-  used when the pump's relayed glucose goes stale.
-- **Child / locked mode** — a PIN-locked mode limiting what can be done on a child's own phone.
+- **Remote** — something that shows status and *requests* actions the host carries out: the Garmin
+  **Venu 3S** watch, or a Home Screen/Lock Screen widget on the phone itself. Neither one touches
+  the pump directly.
+- **Dexcom Share** — the optional cloud CGM source you can turn on so glucose keeps flowing if the
+  pump-to-sensor link drops; it's the only fallback source in this version (**Settings → CGM &
+  failover**).
 
 ## Security / protocol (developer)
 - **JPAKE** — the password-authenticated key exchange used to pair with the pump (a code proves both
-  sides without sending it). Also the basis of the one-time-code Mac/phone pairing (`MacPairing`).
-- **Sealed transport** — the AES-GCM layer that end-to-end-encrypts every command on the Bluetooth
-  remote link (`SealedTransport`).
+  sides without sending it).
 - **WritePolicy** — the transport interlock (`.readOnly` / `.allowNonDelivery` / `.allowDelivery`) that
   blocks insulin-affecting messages unless explicitly permitted.
 - **Oracle** — the reference Java implementation the Swift pump messages are tested byte-exact against
