@@ -12,8 +12,9 @@ struct EatingAlert: Sendable, Equatable {
     }
 }
 
-// App-local, kit-free mirrors of the therapy-advice results so views (DataHistoryView) never reference
-// faBolusNudge types — the Smart Assist features can then compile out when the SDK is unavailable.
+// App-local, kit-free mirrors of the therapy-advice results so views (originally `DataHistoryView`,
+// since deleted; no current UI surface consumes this) never reference faBolusNudge types — the Smart
+// Assist features can then compile out when the SDK is unavailable.
 public struct TherapyInsightItem: Identifiable, Equatable { public let id = UUID(); public let title: String; public let detail: String }
 
 /// faBolus's app-side glue for the retrospective `PatternInsights` reporting (now vendored in
