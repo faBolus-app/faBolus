@@ -10,9 +10,14 @@ struct PrivacyDataView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
 
-    // Export
+    // Export (Rule 3 / 06-01: `BackupDocument` lives in SettingsBackup.swift, excluded at
+    // FABOLUS_BACKUP=0 — D-08 deliberately keeps this whole file on `main` for the erase/full-reset
+    // UI below, so only the export-specific state/UI/action are individually gated. Plan 02 trims
+    // this export surface out of the file entirely once the default flips to 0.)
+    #if FABOLUS_BACKUP
     @State private var exporting = false
     @State private var exportDoc: BackupDocument?
+    #endif
     @State private var message: String?
 
     // Erase
@@ -26,6 +31,7 @@ struct PrivacyDataView: View {
 
     var body: some View {
         Form {
+            #if FABOLUS_BACKUP
             Section {
                 Button {
                     export()
@@ -37,6 +43,7 @@ struct PrivacyDataView: View {
             } footer: {
                 Text("Saves everything faBolus keeps on this device — your glucose, insulin and carb history, the settings change log, and the bolus delivery audit trail — as a single **`.json`** file you can save to Files or iCloud Drive. It never leaves the device except to the file you choose; faBolus has no servers.")
             }
+            #endif
 
             if isOwner {
                 Section {
@@ -66,12 +73,14 @@ struct PrivacyDataView: View {
         }
         .navigationTitle("Privacy & data")
         .navigationBarTitleDisplayMode(.inline)
+        #if FABOLUS_BACKUP
         .fileExporter(isPresented: $exporting, document: exportDoc, contentType: .json,
                       defaultFilename: PrivacyDataExport.suggestedFilename()) { result in
             if case .failure(let e) = result { message = "Export failed: \(e.localizedDescription)" }
             else { message = "Data exported." }
             exportDoc = nil
         }
+        #endif
         .confirmationDialog("Delete all on-device data?", isPresented: $confirmErase, titleVisibility: .visible) {
             Button("Delete everything", role: .destructive) { erase() }
             Button("Cancel", role: .cancel) {}
@@ -86,6 +95,7 @@ struct PrivacyDataView: View {
         }
     }
 
+    #if FABOLUS_BACKUP
     private func export() {
         message = nil
         do {
@@ -95,6 +105,7 @@ struct PrivacyDataView: View {
             message = "Couldn't build the export: \(error.localizedDescription)"
         }
     }
+    #endif
 
     private func erase() {
         switch model.eraseAllOnDeviceHealthData() {
