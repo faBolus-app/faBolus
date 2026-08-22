@@ -1150,6 +1150,7 @@ public final class AppModel {
     var sharedHistoryStore: GlucoseHistoryStore? { history }
 
     // MARK: WR-01 — SiteAtlas ⇄ unified backup
+#if FABOLUS_BACKUP
 
     /// Snapshot every logged SiteAtlas placement for the unified backup (schema 2+). Reads the SAME
     /// shared store the UI writes and the export reads, so a `.faBolus` backup reflects exactly the
@@ -1174,8 +1175,10 @@ public final class AppModel {
                                note: e.note, date: e.date, sourceID: SiteAtlasStore.sourceID)
         }
     }
+#endif
 
     // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
+#if FABOLUS_BACKUP
 
     /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
     /// `SiteAtlasStore.sourceID`). Benign log data only. IN-02: aliases the single shared constant on
@@ -1214,8 +1217,10 @@ public final class AppModel {
                                   date: e.date, sourceID: Self.trackerSourceID)
         }
     }
+#endif
 
     // MARK: F1 (§13) — unified export of on-device health data
+#if FABOLUS_BACKUP
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
     /// provenance log + the remote-bolus ledger audit trail. Pure read; safe to call any time.
@@ -1248,8 +1253,14 @@ public final class AppModel {
     func exportPrivacyDataJSON(now: Date = Date()) throws -> Data {
         try buildPrivacyExport(now: now).encoded()
     }
+#endif
 
     // MARK: F1 (§13) — complete erase of on-device health data (GATED)
+    // D-08 (06-01): the whole erase MARK section below (EraseOutcome, eraseAllOnDeviceHealthData,
+    // eraseEverythingFullReset) stays LIVE/UNGATED on every branch regardless of FABOLUS_BACKUP — the
+    // owner requires the on-device "Delete all on-device data" / "Full reset" affordance to survive
+    // FABOLUS_BACKUP=0. Its one dependency on backup-adjacent code (the CGM Keychain-account list) is
+    // relocated to the always-present CredentialStore (see :1316 below), not gated here.
 
     /// Outcome of a complete on-device erase attempt.
     public enum EraseOutcome: Equatable {
@@ -1313,7 +1324,7 @@ public final class AppModel {
         PairingStore.clear()          // pump JPAKE derived secret + legacy V1 code
         clearSavedPin()               // fixed PIN (PairingStore.clearPin)
         PumpPeripheralStore.clear()   // persisted peripheral id (the cold-launch retrieve target)
-        for account in SettingsBackup.cgmSecretAccounts { CredentialStore.set(nil, account: account) }   // CGM logins
+        for account in CredentialStore.cgmSecretAccounts { CredentialStore.set(nil, account: account) }   // CGM logins
         // Also tell the active backend to drop its in-memory pairing/auth state + run its own cleanup.
         forgetPairing()
         return .erased
@@ -2402,12 +2413,14 @@ public final class AppModel {
             try await self.source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
         }
     }
+#if FABOLUS_BACKUP
     /// Ungated create — used ONLY by the batch reconfigure in `applyPumpSettings`, which gates the whole
     /// batch once (one ack + one capability/child/read-only check) then drives these raw helpers, so a
     /// single confirmation authorizes the entire reconfigure rather than one profile.
     private func createProfileRaw(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
         await performControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
     }
+#endif
     public func refreshProfileSegments(idpId: Int) async {
         await source.refreshProfileSegments(idpId: idpId); refresh()
         // §2.1(4) B1(c): capture a consensus-default baseline for any not-yet-recorded field of this
@@ -2431,10 +2444,12 @@ public final class AppModel {
                                    beforeISF: nil, afterISF: isf,
                                    beforeTarget: nil, afterTarget: targetBg)
     }
+#if FABOLUS_BACKUP
     /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
     private func addProfileSegmentRaw(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
         await performControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
     }
+#endif
     public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
         // §2.1(2): capture the pre-edit values BEFORE the write (the write then refreshes the segment array).
         let before = snapshot.viewedProfileSegments.first { $0.segmentIndex == segmentIndex }
@@ -2453,6 +2468,7 @@ public final class AppModel {
         }
     }
     // MARK: Backup / reconfigure
+#if FABOLUS_BACKUP
 
     /// Read the pump's therapy settings for a backup. Works on **t:slim X2 and Mobi** (all reads are
     /// `SupportedDevices.ALL`). Reads each profile's segments sequentially.
@@ -2535,6 +2551,7 @@ public final class AppModel {
         }
         return true
     }
+#endif
 
     public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
     public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl(.setAutoOffAlert) { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
