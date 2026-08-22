@@ -1,8 +1,8 @@
 # Garmin remote
 
-A Connect IQ (Monkey C) companion, currently supporting the **Garmin Venu 3S**. It's a **thin
-remote**: it messages the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm
-interlock and delivers through TandemKit. To build and install it, see
+A Connect IQ (Monkey C) companion for the **Garmin Venu 3S**. It's a **thin remote**: it messages
+the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm interlock and
+delivers through TandemKit. To build and install it, see
 [Build the Garmin remote](../build/garmin-build.md).
 
 !!! note "Garmin support is an optional build"
@@ -15,11 +15,9 @@ interlock and delivers through TandemKit. To build and install it, see
     **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
     bridge is part of the faBolus app, so the two talk over the shared command contract.
 
-!!! note "Which Garmin devices work"
-    **Tested:** the Garmin **Venu 3S**. The app also runs on button-only Garmin watches (e.g. the
-    fenix and Forerunner lines) and on **Edge cycling computers**, adapting to each device's buttons
-    or touchscreen automatically — but those haven't been tested on real hardware yet, so treat them
-    as **experimental**.
+!!! note "Venu 3S only"
+    The Connect IQ manifest builds for the **Venu 3S** alone — it's the one device this app
+    supports, and the one it's actually been tested on.
 
 <div class="cx2-shots" markdown>
 <figure class="cx2-shot watch" markdown="span">
@@ -55,15 +53,10 @@ first. The layout is sent to the watch on its next status update and is remember
 (it survives restarts and offline launches). Default: Glance → Alerts → History → Details,
 opening on Glance.
 
-## Using it: touch or buttons
+## Using it
 
-faBolus adapts to your device automatically:
-
-- **Touchscreen** (e.g. Venu 3S): **tap** the on-screen buttons (bolus −/+, Deliver, the confirm
-  targets, an alert row), and **swipe up/down** to move between screens.
-- **Button watches / Edge** (no touchscreen): use the physical buttons — **UP / DOWN** move between
-  screens (and set the amount on the bolus screen), **START** selects/delivers, **MENU** switches
-  Units/Carbs, **BACK** goes back. No on-screen cursor.
+**Tap** the on-screen buttons — bolus −/+, Deliver, the confirm targets, an alert row — and
+**swipe up/down** to move between screens.
 
 ## Bolus flow
 
@@ -79,8 +72,8 @@ faBolus adapts to your device automatically:
 </div>
 
 <ol class="cx2-steps">
-<li><strong>Set the amount.</strong> <em>Touch:</em> tap the mode chip to switch <strong>Units / Carbs</strong>, tap <strong>−/+</strong> to set the amount, then <strong>Deliver</strong>. <em>Buttons:</em> <strong>UP/DOWN</strong> set the amount, <strong>MENU</strong> switches Units/Carbs, <strong>START</strong> delivers.</li>
-<li><strong>Confirm.</strong> <em>Touch:</em> tap <strong>1 → 2 → 3</strong> in order (like unlocking a t:slim) — a wrong tap resets. <em>Buttons:</em> a deliberate two-button hold — <strong>hold UP</strong> to arm, then <strong>hold START</strong> to deliver; let go early to cancel.</li>
+<li><strong>Set the amount.</strong> Tap the mode chip to switch <strong>Units / Carbs</strong>, tap <strong>−/+</strong> to set the amount, then <strong>Deliver</strong>.</li>
+<li><strong>Confirm.</strong> Tap <strong>1 → 2 → 3</strong> in order (like unlocking a t:slim) — a wrong tap resets.</li>
 <li>Completing the confirm sends the request to the phone, which carries it out. The remote never delivers on its own, and the pump still enforces its max and signature.</li>
 </ol>
 

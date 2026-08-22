@@ -44,10 +44,9 @@ delivers through the validated signed path and writes progress back to the widge
 isn't connected, the widget shows **"Pump not connected — open app."**
 
 !!! danger "Quick Bolus is a real delivery"
-    Completing 1-2-3 delivers the dose (experimental). Unlike the plain **Bolus** widget,
-    it is not just a shortcut into the entry screen — treat it like the Garmin hold-to-deliver. It
-    only works while the app is running with the pump connected (typically in the background);
-    otherwise open the app first.
+    Completing 1-2-3 delivers the dose. Unlike the plain **Bolus** widget, it is not just a
+    shortcut into the entry screen — treat it like the Garmin confirm. It only works while the app
+    is running with the pump connected (typically in the background); otherwise open the app first.
 
 ## Add a widget
 
