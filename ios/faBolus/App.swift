@@ -44,7 +44,9 @@ struct FaBolusApp: App {
                         guard let model, AppModel.snoozeGateAllows(model.activeNotifications) else { return }
                         NotificationRuntime().snooze(.pumpAlert, until: Date().addingTimeInterval(NotificationCoordinator.snoozeSeconds))
                     }
+                    #if FABOLUS_BACKUP
                     ICloudSettingsSync.shared.start()   // optional; no-op unless built with FABOLUS_ICLOUD
+                    #endif
                     AppSettings.shared.syncWidgetConfig()
                     model.publishWidgetLockState()   // A-05: seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
@@ -56,7 +58,9 @@ struct FaBolusApp: App {
                         widgetBolus?.handlePending()
                         if WidgetStore.takeOpenBolusRequest() { model.openBolusRequested = true }
                     } else if phase == .background {
+                        #if FABOLUS_BACKUP
                         ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD
+                        #endif
                         // debug pump-background-disconnect: no app-side action needed on background. A drop
                         // that happens while suspended is recovered by the kit's INLINE background-safe
                         // connect (H1, PumpBLEClient.planUnintendedDropRecovery); the app-side belt-and-
