@@ -153,6 +153,15 @@ enum CompileGateAudit {
         // "unit"; "iPhone increments" keywords contain "unit"; "Notification controls" is unrelated) —
         // "mmol" is the unique, unambiguous glucose-unit term this row alone ever owned.
         tokens.formUnion(["mmol"])
+        // Phase 9, 09-02 (MOBI-02): the "Advanced control" `SettingsIndex` row (title "Advanced
+        // control", keywords "suspend resume temp basal mode cartridge profile") is removed —
+        // `SettingsView.swift`'s `PumpSettingsView` Section (the toggle + its `PumpControlView.swift`
+        // NavigationLink) and the row are gone in the SAME commit as this token addition, so this is a
+        // genuinely vacuous, correct check by construction. Deliberately "suspend resume"/"temp
+        // basal"/"advancedcontrol" (compound/concatenated) rather than bare "mode" — that would
+        // false-positive against the still-LIVE "Default bolus mode" row's title via this helper's
+        // plain `.contains` match. "cartridge" is unique and safe bare (no other row uses it).
+        tokens.formUnion(["suspend resume", "temp basal", "cartridge", "advancedcontrol"])
         return tokens
     }
 
@@ -255,8 +264,11 @@ struct SettingsCatalogTests {
         // Phase 8 (08-01, LOCK-03): 34 → 32 (`historyRetentionDays` + `historySyncEnabled` removed —
         // the whole Data/History view deleted; neither was backed up, so `backedUpKeys.count` below is
         // unaffected by this change).
-        #expect(SettingsCatalog.descriptors.count == 32)
-        #expect(SettingsCatalog.byKey.count == 32)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 9 (09-02, MOBI-02): 32 → 31 (`advancedControlEnabled` removed — the "Advanced control"
+        // Settings toggle + its `PumpControlView.swift` destination are both deleted; the accessor
+        // survives as an ordinary hidden/unregistered flag, so `backedUpKeys.count` below drops by 1).
+        #expect(SettingsCatalog.descriptors.count == 31)
+        #expect(SettingsCatalog.byKey.count == 31)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -315,7 +327,9 @@ struct SettingsCatalogTests {
         // Phase 8 (08-01, LOCK-02/LOCK-04/LOCK-06): 36 → 32 (`extendedBolusEnabled`,
         // `stackingGuardFrictionEnabled`, `glucoseDisplayUnit`, `showGlucoseUnitLabels` — all
         // unconditional — removed from the catalog AND backupSnapshot/applyBackup).
-        #expect(SettingsCatalog.backedUpKeys.count == 32)                      // 28 unconditional + 4 conditional
+        // Phase 9 (09-02, MOBI-02): 32 → 31 (`advancedControlEnabled`, unconditional, removed from the
+        // catalog AND backupSnapshot/applyBackup — hidden-flag pattern, accessor stays).
+        #expect(SettingsCatalog.backedUpKeys.count == 31)                      // 27 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -421,6 +435,37 @@ struct SettingsCatalogTests {
     /// this test now pins the ABSENCE, mirroring the removal-proof shape used throughout this milestone.
     @Test func stackingGuardFrictionEnabledIsNoLongerRegistered() {
         #expect(SettingsCatalog.byKey["stackingGuardFrictionEnabled"] == nil)
+    }
+
+    // MARK: Phase 9 (09-02, MOBI-02) — the "Advanced control" toggle's removal
+
+    /// Phase 9 (09-02, MOBI-02) removes the "Advanced control" Settings Section (the toggle +
+    /// `PumpControlView.swift` NavigationLink) and its catalog row. Unlike `stackingGuardFrictionEnabled`/
+    /// `autoSyncPumpTime` (force-set-false init pins), `advancedControlEnabled`'s accessor is left as an
+    /// ordinary hidden/unregistered flag — no migration is needed because `advancedControlAllowed`
+    /// (`AppSettings.swift`) is already always-false via its OTHER operand
+    /// (`capabilities.supportsAnyAdvancedControl`, always false on the t:slim-only capability model).
+    @Test func advancedControlEnabledIsNoLongerRegisteredButAccessorSurvives() {
+        #expect(SettingsCatalog.byKey["advancedControlEnabled"] == nil)
+        #expect(!SettingsCatalog.commandAdjacentFlags.contains("advancedControlEnabled"))
+    }
+
+    @Test @MainActor func advancedControlEnabledRoundTripsAcrossReinitButAllowedStaysFalse() {
+        let suiteName = "SettingsCatalogTests.advancedControlEnabled.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.advancedControlEnabled == false)   // default OFF, unchanged
+
+        fresh.advancedControlEnabled = true   // the property setter itself is unchanged (still writable —
+        // no force-set pin — the toggle that called this setter is what's gone, not the setter itself)
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.advancedControlEnabled == true)   // persists like any ordinary flag
+
+        // But `advancedControlAllowed` stays false regardless, via the OTHER operand — the t:slim-only
+        // `.full` capability preset floors every advanced capability OFF (Models.swift:762-785).
+        #expect(reloaded.advancedControlAllowed(capabilities: .full) == false)
     }
 
     // MARK: Ambient-surface flags are per-device (never iCloud-synced)
@@ -710,5 +755,16 @@ struct SettingsCatalogTests {
         let extraOrphans = SettingsExtraIndex.entries.filter { entry in tokens.contains { entry.matches($0) } }
         #expect(extraOrphans.isEmpty,
                 "Backup & restore was removed but a SettingsExtraIndex row still advertises it: \(extraOrphans.map(\.title))")
+    }
+
+    /// Phase 9, 09-02 (MOBI-02) — the §6c non-vacuous proof for the "Advanced control" Settings
+    /// Section removal: before this plan, "suspend resume"/"temp basal"/"cartridge" were all part of
+    /// the "Advanced control" row's keyword string; after it (same commit as the row's removal), no
+    /// live `SettingsIndex` row advertises any of them.
+    @Test func advancedControlRemovalLeavesNoOrphanedSettingsIndexEntry() {
+        let tokens = Set(["suspend resume", "temp basal", "cartridge", "advancedcontrol"])
+        let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: tokens)
+        #expect(orphans.isEmpty,
+                "Advanced control was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
     }
 }

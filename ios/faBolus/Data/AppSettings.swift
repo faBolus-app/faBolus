@@ -199,6 +199,14 @@ public final class AppSettings {
     /// action is additionally gated on the pump advertising the capability (pump-derived, Mobi-only in
     /// practice) via `advancedControlAllowed(capabilities:)`. Insulin-affecting actions still go through
     /// the confirm/hold + max-bolus-clamp + WritePolicy interlocks.
+    ///
+    /// Phase 9 (09-02, MOBI-02): its ONLY UI writer (the Settings "Advanced control" Toggle) is
+    /// deleted — the persisted value can never be flipped back to `true` from this build again
+    /// (LOCK-01 "pin at the sole writer" pattern). No force-reset migration is added: `AppModel.swift`
+    /// (DOSE_PATHS, unedited) still reads this via `advancedControlOptIn`/`advancedControlAllowed`, and
+    /// `advancedControlAllowed` is ALREADY always-false via its other operand
+    /// (`capabilities.supportsAnyAdvancedControl`, always false on the t:slim-only model) — same
+    /// ordinary-hidden-flag posture as `showGlucoseUnitLabels`, not `autoSyncPumpTime`'s force-set pin.
     public var advancedControlEnabled: Bool { didSet { d.set(advancedControlEnabled, forKey: "advancedControlEnabled") } }
 
     /// P14 — the active experience **mode** (Simple / Standard / Advanced), the axis the access evaluator
@@ -865,7 +873,10 @@ public final class AppSettings {
             "pillsOrder": .stringArray(pillsOrder),
             "watchChartRanges": .intArray(watchChartRanges),
             "glucoseStaleMinutes": .int(glucoseStaleMinutes),
-            "advancedControlEnabled": .bool(advancedControlEnabled),
+            // Phase 9 (09-02, MOBI-02): `advancedControlEnabled` no longer emitted into the backup
+            // snapshot either — its `SettingsCatalog` descriptor is gone (the "Advanced control"
+            // Settings toggle it fed is deleted); the accessor survives as an ordinary hidden/
+            // unregistered flag (same posture as `showGlucoseUnitLabels` above, not a force-set pin).
             // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer emitted into the backup snapshot
             // either — its `SettingsCatalog` descriptor is gone (pump-clock UI deleted, the property is
             // now a force-set-false init pin), so `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot`
@@ -965,7 +976,10 @@ public final class AppSettings {
         if let v = ia("watchChartRanges") { watchChartRanges = v }
         if let v = i("glucoseStaleMinutes") { glucoseStaleMinutes = v }
         if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
-        if let v = b("advancedControlEnabled") { advancedControlEnabled = v }
+        // Phase 9 (09-02, MOBI-02): `advancedControlEnabled` no longer restores from a backup either —
+        // same hidden-flag pattern. A legacy backup carrying `true` is silently ignored (the property's
+        // only UI writer, the Settings toggle, is deleted, and `advancedControlAllowed` is already
+        // always-false via its other operand regardless).
         // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
         // restore from a backup either (frozen, hidden/unregistered); autoTempRate/autoProfileActivation
         // deleted outright — same posture as watchBolusEnabled/requireRemoteBolusApproval above.

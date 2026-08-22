@@ -321,7 +321,8 @@ enum SettingsIndex {
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
-        .init(title: "Advanced control", keywords: "suspend resume temp basal mode cartridge profile", category: .pump),
+        // Phase 9 (09-02, MOBI-02): the "Advanced control" row is removed — the Settings Section it
+        // advertised (below), and the PumpControlView.swift screen it linked to, are both deleted.
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
@@ -632,29 +633,25 @@ struct PumpSettingsView: View {
             // removed — `autoSyncPumpTime` is force-set OFF in `AppSettings.init` and no UI can turn it
             // back on. `TandemBackend.syncTimeToNow()` / `GatedPumpWrite.syncTimeToNow` stay
             // byte-identical (D-07); see `ClockSyncHiddenBoundaryTests` for the headless proof.
-            // Advanced control needs a pump that advertises it (Mobi-only in practice), so the whole
-            // section is hidden unless the pump has an advanced capability (or it's already enabled, so
-            // it can still be turned off). P13: keyed on the pump-derived capability set, not `isMobi`.
-            if model.capabilities.supportsAnyAdvancedControl || settings.advancedControlEnabled {
-                Section {
-                    Toggle("Advanced control", isOn: $settings.advancedControlEnabled)
-                    if settings.advancedControlEnabled {
-                        if model.advancedControlAllowed {
-                            NavigationLink { PumpControlView(model: model) } label: {
-                                Label("Pump Control", systemImage: "slider.horizontal.3")
-                            }
-                        } else {
-                            // P13c: user-facing BRAND copy, now keyed on the typed `PumpModel` identity
-                            // (not a raw `isMobi` read) — a model-identity fact, not a capability gate.
-                            Text(model.snapshot.pumpModel == .mobi ? "Connect to a Mobi to enable pump control."
-                                 : "Advanced control requires a Tandem Mobi pump.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
-                } header: { Text("Advanced control") } footer: {
-                    Text("Suspend/resume, temp basal, modes, cartridge & fill, CGM session, profiles, limits, and reminders. Mobi only, off by default. Insulin-affecting actions ask for confirmation.")
-                }
-            }
+            // Phase 9 (09-02, MOBI-02): the "Advanced control" Section (the opt-in toggle + its
+            // `NavigationLink { PumpControlView(model: model) }` destination) is removed — narrow
+            // `main` is bolus + status + alerts only. Both operands of the old entry gate
+            // (`model.capabilities.supportsAnyAdvancedControl || settings.advancedControlEnabled`)
+            // are always false on the t:slim-only capability model (`.full` floors every advanced
+            // capability OFF, Models.swift:762-785), so this Section could never actually be reached
+            // with a live "Pump Control" destination on this build anyway — removing it deletes dead
+            // reachability, not a live feature. Removing the Toggle removes `advancedControlEnabled`'s
+            // ONLY UI writer (the LOCK-01 "pin at the sole writer" pattern, Phase 8 precedent): the
+            // persisted value can never be flipped back to true from this build again. The accessor
+            // itself stays in `AppSettings.swift` (unedited, D-08) — `AppModel.swift` (DOSE_PATHS,
+            // protected) still reads it at `advancedControlOptIn`/`advancedControlAllowed`, and
+            // `advancedControlAllowed` is ALREADY always-false via its OTHER operand
+            // (`capabilities.supportsAnyAdvancedControl`), so no force-reset migration is needed
+            // (RESEARCH Anti-Patterns) — this mirrors `showGlucoseUnitLabels`'s "ordinary hidden/
+            // unregistered flag" posture, not `autoSyncPumpTime`'s force-set-false pin.
+            // `PumpControlView.swift` (its sole destination) is deleted wholesale (Task 1) — every
+            // section inside it was ALSO gated by a `caps.supportsX` capability that is always false
+            // on this model, so nothing in that file was reachable regardless of this Section.
             // Phase 7 (07-03, FEAT-05, D-08): the mode-automation Settings Section (5 toggles + a
             // link to the now-deleted help View) is removed — its whole reason to exist was configuring
             // the Siri/Shortcuts automations this phase deletes. autoTempRate/autoProfileActivation

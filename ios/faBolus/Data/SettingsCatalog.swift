@@ -71,7 +71,11 @@ enum SettingsCatalog {
     /// otherwise flip a safety/command decision on another device (C5 / iPhone-only-writes). Named here so
     /// the invariant is greppable and test-anchored, not implicit in the table below.
     static let commandAdjacentFlags: Set<String> = [
-        "advancedControlEnabled",
+        // Phase 9 (09-02, MOBI-02): advancedControlEnabled removed from this set — its
+        // SettingsCatalog row is gone (below; the Settings toggle it fed is deleted), so it can no
+        // longer sync via iCloud by construction; the AppSettings accessor itself stays (frozen
+        // `advancedControlAllowed` reads it, always false via the OTHER operand regardless — see
+        // SettingsView.swift's removal comment). Same hidden-flag posture as the removals below.
         "phoneReadOnly",
         "remotesReadOnly",
         // Phase 3 (03-02, F-1): requireRemoteBolusApproval removed from this set — its SettingsCatalog
@@ -118,7 +122,9 @@ enum SettingsCatalog {
     /// init pin); 39 → 38. Phase 8 (08-01, LOCK-02/LOCK-04/LOCK-06): `extendedBolusEnabled`,
     /// `stackingGuardFrictionEnabled`, `glucoseDisplayUnit`, `showGlucoseUnitLabels` removed (Bolus
     /// screen + unit selector UI deleted); 38 → 34. Phase 8 (08-01, LOCK-03): `historyRetentionDays` +
-    /// `historySyncEnabled` removed (Data/History view deleted); 34 → 32.
+    /// `historySyncEnabled` removed (Data/History view deleted); 34 → 32. Phase 9 (09-02, MOBI-02):
+    /// `advancedControlEnabled` removed (its Settings toggle + `PumpControlView.swift` destination
+    /// are both deleted); 32 → 31.
     /// Order mirrors `AppSettings.swift` for reviewability.
     /// `notificationTelemetryEnabled` is intentionally absent — it is App-Group-backed (not in `d`) and
     /// not part of this settings surface (`AppSettings.swift:148`).
@@ -168,7 +174,11 @@ enum SettingsCatalog {
         .init("glucoseStaleMinutes", .cgm, from: .standard, backsUp: true),
         .init("glucoseHideDelayMinutes", .cgm, from: .standard, backsUp: true),
         // MARK: Pump & control
-        .init("advancedControlEnabled", .pump, from: .advanced, backsUp: true, syncsToICloud: false),
+        // Phase 9 (09-02, MOBI-02): `advancedControlEnabled`'s row is removed here — the "Advanced
+        // control" Settings toggle it fed (SettingsView.swift's `PumpSettingsView`) is deleted; the
+        // accessor stays as an ordinary hidden/unregistered flag (not force-set — `advancedControlAllowed`
+        // is already always-false via its OTHER operand, `capabilities.supportsAnyAdvancedControl`, so no
+        // pin is needed; same posture as `showGlucoseUnitLabels` above, not `autoSyncPumpTime`'s pin).
         // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime`'s row is removed here — the pump-clock
         // Settings/PumpControlView UI it fed is deleted; the accessor stays as a force-set-false init
         // pin (hidden-flag pattern, same posture as `watchBolusEnabled` above).
