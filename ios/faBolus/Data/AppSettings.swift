@@ -465,15 +465,14 @@ public final class AppSettings {
     public var watchDetailsOrder: [String] { didSet { d.set(watchDetailsOrder, forKey: "watchDetailsOrder") } }
     /// Which status pills show, and in what order, on the phone dashboard.
     public var pillsOrder: [String] { didSet { d.set(pillsOrder, forKey: "pillsOrder") } }
-    /// Phase 5 (D-13/D-14, 05-03; UI reachability + unit-awareness closed in 05-06/WR-01/CR-01) —
-    /// master opt-in for the app-icon glucose badge. **Default OFF** (opt-in, matching every other
-    /// device-capability switch in this file). Reachable via the "Glucose badge" toggle in Display &
-    /// chart Settings. The badge can show only a bare number (no units/age/trend; in mmol/L it rounds
-    /// to the nearest whole number — `GlucoseBadge.value(for:now:)`'s CR-01 fix) and is set from
-    /// `GlucoseBadge.apply(_:now:)`, which is itself a pure function of freshness — never a frozen last
-    /// value (D-13). `didSet` clears the app-icon badge the instant this is toggled OFF, so a disabled
-    /// badge never lingers showing a stale number. Backed up, but **not** iCloud-synced — a home-screen
-    /// badge opt-in should not silently light up on another device.
+    /// Phase 7 (07-02, FEAT-03, D-04 literal no-op stub — owner decision 2026-08-21): ORPHANED-BUT-
+    /// COMPILED. Its Settings UI + `SettingsCatalog` descriptor + `backupSnapshot`/`applyBackup`
+    /// participation are all removed — nothing in the app can set this to `true` anymore, and even if a
+    /// value somehow persisted from before this removal, `GlucoseBadge` is now a main-only inert stub
+    /// whose `apply(_:now:)` does nothing regardless of this value. The `didSet` below stays, calling
+    /// the stub's no-op `clear()` — kept for interface symmetry, not because it does anything now. The
+    /// real opt-in (a pure freshness function + a `UNUserNotificationCenter.setBadgeCount` I/O sink) is
+    /// preserved on `dev/glucose-badge`.
     public var glucoseBadgeEnabled: Bool {
         didSet {
             d.set(glucoseBadgeEnabled, forKey: "glucoseBadgeEnabled")
@@ -831,7 +830,9 @@ public final class AppSettings {
             // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
             // same posture as watchBolusEnabled/requireRemoteBolusApproval (see applyBackup below).
             "childModeEnabled": .bool(childModeEnabled),
-            "glucoseBadgeEnabled": .bool(glucoseBadgeEnabled),
+            // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer emitted here — its
+            // `SettingsCatalog` descriptor was removed (the badge is a main-only no-op stub now), so
+            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
             // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer emitted here — its
             // `SettingsCatalog` descriptor was removed (SC2, see the NOTE in SettingsCatalog.swift), so
             // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too. The
@@ -920,7 +921,9 @@ public final class AppSettings {
         if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
         if let v = b("childModeEnabled") { childModeEnabled = v }
-        if let v = b("glucoseBadgeEnabled") { glucoseBadgeEnabled = v }
+        // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer restores from a backup either —
+        // same hidden-flag pattern, same legacy-key tolerance (a restored `true` would have no effect
+        // regardless, since `GlucoseBadge` is now a main-only no-op stub).
         // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer restores from a backup — same
         // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
         // (same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled` precedents above).

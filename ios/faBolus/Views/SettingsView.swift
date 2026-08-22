@@ -456,20 +456,7 @@ struct BolusSettingsView: View {
 struct DisplaySettingsView: View {
     let model: AppModel
     @Bindable var settings: AppSettings
-    @State private var showBadgeMmolWarning = false
 
-    /// WR-01/CR-01: enabling the glucose badge while the display unit is mmol requires an explicit
-    /// confirm (the badge rounds to a whole number in mmol); enabling in mg/dL, or turning it off, is
-    /// always immediate. Routed through the shared `guardedToggle` factory (09.3-01, D-05/SC3) — the one
-    /// idiom every confirm-gated settings toggle uses.
-    private var glucoseBadgeBinding: Binding<Bool> {
-        guardedToggle(
-            get: { settings.glucoseBadgeEnabled },
-            set: { settings.glucoseBadgeEnabled = $0 },
-            skipConfirmIf: { settings.glucoseDisplayUnit != .mmol },
-            requestConfirm: { showBadgeMmolWarning = true }
-        )
-    }
     var body: some View {
         Form {
             Section {
@@ -522,22 +509,6 @@ struct DisplaySettingsView: View {
                 } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
             } header: { Text("Customize") } footer: {
                 Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
-            }
-            // WR-01 gap closure (05-06): the opt-in existed end-to-end (AppSettings.glucoseBadgeEnabled,
-            // default OFF, SettingsCatalog descriptor) but had no reachable UI. Copy is the D-14
-            // plain-language caveat verbatim (05-UI-SPEC.md), plus a short note on the mmol rounding
-            // CR-01 introduced.
-            Section {
-                Toggle("Glucose badge", isOn: glucoseBadgeBinding)
-            } header: { Text("Glucose badge") } footer: {
-                Text("Shows your current glucose number on the app icon. It can't show units, trend, or how old the reading is — it clears automatically whenever the reading goes stale, so it should never show an old number as current. In mmol/L, the badge rounds to the nearest whole number.")
-            }
-            .confirmationDialog("Glucose badge rounds in mmol/L", isPresented: $showBadgeMmolWarning,
-                                 titleVisibility: .visible) {
-                Button("Enable") { settings.glucoseBadgeEnabled = true }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("The app-icon badge can only show a whole number, so in mmol/L your glucose will be shown ROUNDED to the nearest whole number (e.g. 5.5 shows as 6).")
             }
         }
         .navigationTitle("Display & chart")

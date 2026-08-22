@@ -75,6 +75,25 @@ enum CompileGateAudit {
         // advertised Live Activity (it had its own dedicated Settings section, not an indexed search
         // row), so this token is also a genuinely vacuous, correct check.
         tokens.formUnion(["liveactivity"])
+        // Phase 7, 07-02 (FEAT-02): the GraphDetailView scrubbable readout overlay removed from narrow
+        // `main` (the view + the GlucoseChartView scrubber section; the chart itself is unaffected).
+        // No live `SettingsIndex` row ever advertised it (it was a chart-overlay gesture, not a
+        // Settings row), so this token is a genuinely vacuous, correct check.
+        tokens.formUnion(["graphdetail"])
+        // Phase 7, 07-02 (FEAT-06): the Retrospective insights section (DataHistoryView.swift) + the 9
+        // Views/LoopInsights + Vendor/LoopPowerPack/LoopInsights files (EndoReport PDF, caffeine/
+        // alcohol trackers, caregiver digest) removed from narrow `main`. No live `SettingsIndex` row
+        // ever advertised "insights"/"retrospective" ("Data & history"'s keywords are "history data
+        // export logs time in range" — no collision), so this token is also a genuinely vacuous,
+        // correct check.
+        tokens.formUnion(["retrospective", "insights"])
+        // Phase 7, 07-02 (FEAT-03): the CGM app-icon glucose badge removed from narrow `main` — real
+        // `GlucoseBadge.swift` `git rm`'d and replaced by a main-only no-op stub (D-04 literal no-op
+        // stub, owner 2026-08-21); its Settings UI + `SettingsCatalog` descriptor are gone too. No live
+        // `SettingsIndex` row ever advertised "badge" (it had its own dedicated Settings section, not
+        // an indexed search row, same shape as Live Activity above), so this token is also a genuinely
+        // vacuous, correct check.
+        tokens.formUnion(["badge"])
         return tokens
     }
 
@@ -147,8 +166,10 @@ struct SettingsCatalogTests {
         // rows IN it — so BACKUP-01 needed no descriptor removal here at all.
         // Phase 7 (07-01, FEAT-01): 59 → 48 (all 11 liveActivity* descriptors removed — the master
         // opt-in, field selection, style, and 7 full-bleed display options — delete-on-main).
-        #expect(SettingsCatalog.descriptors.count == 48)
-        #expect(SettingsCatalog.byKey.count == 48)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 7 (07-02, FEAT-03): 48 → 47 (glucoseBadgeEnabled descriptor removed — the badge is a
+        // main-only no-op stub now, D-04 literal no-op stub, owner 2026-08-21).
+        #expect(SettingsCatalog.descriptors.count == 47)
+        #expect(SettingsCatalog.byKey.count == 47)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -189,7 +210,9 @@ struct SettingsCatalogTests {
         // NOTE at `AppSettings.swift:1143`/`:1247`), so 06-02's property deletion changes nothing
         // here; the removed backup-engine types never emitted their own catalog-backed key.
         // Phase 7 (07-01, FEAT-01): 57 → 46 (all 11 liveActivity* keys removed, all unconditional).
-        #expect(SettingsCatalog.backedUpKeys.count == 46)                      // 40 unconditional + 6 conditional
+        // Phase 7 (07-02, FEAT-03): 46 → 45 (glucoseBadgeEnabled removed from the catalog AND
+        // backupSnapshot/applyBackup, unconditional — the badge is a main-only no-op stub now).
+        #expect(SettingsCatalog.backedUpKeys.count == 45)                      // 39 unconditional + 6 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -301,17 +324,22 @@ struct SettingsCatalogTests {
 
     // MARK: Ambient-surface flags are per-device (never iCloud-synced)
 
-    /// The three ambient always-on-screen opt-ins — `liveActivityEnabled`, `liveActivityFields`,
-    /// `glucoseBadgeEnabled` — must stay per-device: enabling the Live Activity or the glucose badge on
-    /// one iPhone must never silently switch it on for the same owner on another device. They still back
-    /// up (a restore is an explicit user action) and are not command-adjacent — this is a distinct
-    /// exclusion reason from C5, so it's asserted independently of `commandAdjacentFlags`.
+    /// The ambient always-on-screen opt-ins (`liveActivityEnabled`, `liveActivityFields`,
+    /// `glucoseBadgeEnabled`) had to stay per-device: enabling the Live Activity or the glucose badge on
+    /// one iPhone must never silently switch it on for the same owner on another device. They still
+    /// backed up (a restore is an explicit user action) and were not command-adjacent — a distinct
+    /// exclusion reason from C5, asserted independently of `commandAdjacentFlags`.
     @Test func ambientSurfaceFlagsAreBackedUpButNeverICloudSynced() {
         // Phase 7 (07-01, FEAT-01): liveActivityEnabled/liveActivityFields removed from this set —
         // the 11 liveActivity* descriptors that shared this ambient-surface reasoning are gone.
-        let ambientSurfaceFlags: Set<String> = [
-            "glucoseBadgeEnabled",
-        ]
+        // Phase 7 (07-02, FEAT-03): glucoseBadgeEnabled removed from this set too — its descriptor is
+        // gone (the badge is a main-only no-op stub now, D-04). The set is now empty: EVERY ambient-
+        // surface flag this milestone ever tracked here has been removed from narrow `main`. This
+        // remains a deliberately non-tautological, vacuous-green check (same posture as
+        // `CompileGateAudit.gatedOffSearchTokens`'s per-surface entries) — the loop below is a no-op on
+        // an empty set, so the test trivially passes; it stays in the suite as a live placeholder in
+        // case a future ambient-surface flag is added.
+        let ambientSurfaceFlags: Set<String> = []
         let synced = SettingsCatalog.iCloudSyncedKeys
         #expect(synced.isDisjoint(with: ambientSurfaceFlags))
         for flag in ambientSurfaceFlags {
