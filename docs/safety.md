@@ -23,8 +23,9 @@ Several checks are built in so a bolus can't happen by accident:
 
     ---
 
-    Delivery always requires a deliberate confirmation. Widget and touchscreen-remote boluses use a
-    1-2-3 confirm sequence; button-only Garmin devices use a two-different-button hold.
+    Delivery always requires a deliberate confirmation: the Quick Bolus widget and the Garmin
+    Venu 3S both use the same sequential 1-2-3 tap. (Button-only Garmin watches use a two-button
+    hold instead, but that hardware isn't part of this build — it lives on `experimental`.)
 
 -   :material-shield-lock:{ .lg .middle } **Signed commands**
 

@@ -11,8 +11,8 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
     ---
 
-    faBolus currently supports the Tandem **t:slim X2** or **Mobi**, plus the usual cartridges and
-    infusion sets.
+    faBolus currently supports the Tandem **t:slim X2**, plus the usual cartridges and infusion
+    sets.
 
 -   :material-cellphone:{ .lg .middle } **An iPhone**
 
@@ -26,12 +26,12 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
     Running a recent macOS — needed to run Xcode and build the app.
 
--   :material-watch:{ .lg .middle } **Optional: a watch remote**
+-   :material-watch:{ .lg .middle } **Optional: a Garmin remote**
 
     ---
 
-    An **Apple Watch** (watchOS 10+) and/or a **Garmin** watch or cycling computer if you want a
-    wrist/handlebar remote (the **Venu 3S** is the tested Garmin device).
+    A **Garmin Venu 3S** if you want a wrist remote for bolusing and checking glucose without
+    pulling out your phone.
 
 </div>
 
@@ -47,7 +47,7 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 | Tool | What it's for | Where |
 | --- | --- | --- |
-| **Xcode 16+** | Builds the iPhone / Apple Watch app | [Install Xcode](build/xcode.md) |
+| **Xcode 16+** | Builds the iPhone app | [Install Xcode](build/xcode.md) |
 | **XcodeGen** | Generates the Xcode project from `project.yml` (`brew install xcodegen`) | [Install Xcode](build/xcode.md) |
 | **[TandemKit](https://github.com/faBolus-app/TandemKit)** | The protocol/Bluetooth core the app is built on (downloaded alongside the app) | [Build the app](build/build-app.md#download) |
 | **Connect IQ Mobile SDK for iOS** *(optional)* | Lets the iPhone talk to a Garmin watch — only needed if you want the Garmin remote. If it's absent, the app auto-builds without Garmin. | [Build the app](build/build-app.md#connectiq) |
@@ -63,8 +63,8 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 Your pump uses one of two pairing schemes; faBolus supports both and auto-selects:
 
-- A **6-digit** code — t:slim X2 v7.7+ and Mobi (via a modern JPAKE handshake). Most current
-  pumps.
+- A **6-digit** code — t:slim X2 running firmware v7.7 or later (a modern JPAKE handshake). Most
+  current pumps.
 - A **16-character** code — older t:slim X2 (pre-v7.7).
 
 See [Pairing your pump](setup/pairing.md).
