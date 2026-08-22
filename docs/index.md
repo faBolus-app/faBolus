@@ -9,9 +9,8 @@ hide:
 # faBolus — your pump, on your wrist and your phone.
 
 faBolus is a remote for insulin pumps: see your glucose and pump status at a glance, and deliver a
-bolus from your iPhone, Apple Watch, or Garmin device — a watch or a cycling computer. It currently
-supports the **Tandem t:slim X2 / Mobi** pump, and the **Garmin Venu 3S** is the tested Garmin
-device.
+bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. It supports the
+**Tandem t:slim X2** — the Mobi isn't supported in this version.
 
 <span class="cx2-cta" markdown>
 [Build it yourself :material-arrow-right:](build/index.md){ .md-button .md-button--primary }
@@ -48,8 +47,8 @@ device.
 
     ---
 
-    A step-by-step, no-experience-required guide: Apple account → Xcode → your iPhone, Apple
-    Watch, and Garmin.
+    A step-by-step, no-experience-required guide: Apple account → Xcode → your iPhone and
+    Garmin.
 
     [:octicons-arrow-right-24: Build guide](build/index.md)
 
@@ -57,10 +56,9 @@ device.
 
     ---
 
-    The in-app **Settings** tab, plus **Siri** and **Apple Shortcuts**, so it fits how you
-    already use your phone.
+    The in-app **Settings** tab — bolus defaults, chart options, alert rules, and more.
 
-    [:octicons-arrow-right-24: Settings & Shortcuts](customize/settings.md)
+    [:octicons-arrow-right-24: Settings](customize/settings.md)
 
 </div>
 
@@ -86,31 +84,32 @@ device.
     bolus has a max-units clamp and an explicit confirmation, can be **cancelled mid-delivery**,
     and reports the actual amount delivered.
 
--   :material-watch:{ .lg .middle } **Apple Watch & Garmin remotes**
+-   :material-watch:{ .lg .middle } **Garmin Venu 3S remote**
 
     ---
 
-    Request a bolus from your wrist. Remotes never touch the pump — the iPhone owns the
-    connection and confirms every request. Both watches get a glucose complication; the Apple
-    Watch has a full chart/details/alerts, and the Garmin a history screen.
+    Request a bolus from your wrist. The remote never touches the pump directly — the iPhone owns
+    the connection and confirms every request. The watch gets a glucose complication and a
+    history screen.
 
--   :material-microphone:{ .lg .middle } **Widgets & Siri**
+    [:octicons-arrow-right-24: Garmin remote](remotes/garmin.md)
 
-    ---
-
-    Lock/Home Screen widgets (glucose, overview, a bolus shortcut, and a **Quick Bolus** with a
-    1-2-3 confirm), plus **read-only Siri** ("what's my glucose in faBolus") and a set of
-    Shortcuts data actions.
-
--   :material-backup-restore:{ .lg .middle } **CGM failover**
+-   :material-cellphone:{ .lg .middle } **Widgets**
 
     ---
 
-    An optional **independent glucose feed** as a backup, so a reading keeps flowing if the pump,
-    phone, or sensor link drops — Dexcom G7 **and G6/G5/ONE** direct over Bluetooth, **xDrip4iOS**
-    (universal — via Apple Health or a local App Group), or LibreLinkUp / Dexcom Share / Nightscout /
-    Apple Health.
-    The pump stays primary; stale readings are never shown as current. [Learn more](operate/cgm-failover.md).
+    Lock/Home Screen widgets for glucose and an overview, plus a **Quick Bolus** widget with a
+    1-2-3 confirm you can trigger without opening the app.
+
+    [:octicons-arrow-right-24: iPhone widgets](remotes/iphone-widgets.md)
+
+-   :material-water-outline:{ .lg .middle } **Glucose via Dexcom Share**
+
+    ---
+
+    Glucose normally comes through the pump. **Dexcom Share** is the one optional backup source —
+    a cloud-polled feed that keeps a reading flowing if the pump-to-sensor link drops. Stale
+    readings are never shown as current. [Learn more](operate/glucose.md).
 
 </div>
 
@@ -121,7 +120,7 @@ faBolus is built on an open protocol core, and the Garmin watch app lives in its
 | Repository | What it is |
 | --- | --- |
 | **[TandemKit](https://github.com/faBolus-app/TandemKit)** | The Swift protocol / auth / Bluetooth core: message framing, HMAC signing, pairing, Core Bluetooth. Every outgoing message is tested byte-for-byte against the [pumpX2](https://github.com/jwoglom/pumpx2) `cliparser` oracle. |
-| **[faBolus](https://github.com/faBolus-app/faBolus)** | The faBolus iPhone app, Apple Watch remote, iPhone widgets, and the shared phone↔remote command contract. Consumes TandemKit. |
+| **[faBolus](https://github.com/faBolus-app/faBolus)** | The faBolus iPhone app, iPhone widgets, and the shared phone↔remote command contract. Consumes TandemKit. |
 | **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** | The faBolus Garmin (Connect IQ) watch remote. Pairs to the iPhone app. |
 
 !!! quote "Built on pumpX2 — thank you, James Woglom"
