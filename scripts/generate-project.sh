@@ -114,6 +114,15 @@ TIME_SENSITIVE="${FABOLUS_TIME_SENSITIVE:-0}"
 # version-pin, D-01). FABOLUS_TANDEM_LOCAL=1 swaps in the sibling path (../TandemKit) for day-to-day
 # co-development (never for a build you keep — see project.yml comment on the TandemKit package).
 TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
+# BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-01/D-08 owner carve-out). Default 1 = the
+# backup/restore, PrivacyData-export, and SiteAtlas surface is PRESENT (today's behavior, unchanged on
+# this preservation branch). At 0, the 7 app-layer files/dirs are excluded via the BACKUP excludes:
+# block AND the FABOLUS_BACKUP compile flag is dropped, so AppModel.swift's/App.swift's #if
+# FABOLUS_BACKUP guards compile out cleanly. Per D-08, the on-device "Delete all on-device data" /
+# "Full reset" erase path is NOT gated by this flag. Cross-branch cherry-pick correction (06-01,
+# 2bedebc): this branch never received Phase 0's wider CGM_NIGHTSCOUT/FOODFINDER/MOBI plumbing (it
+# forked before that work landed), so only the BACKUP piece is adopted here.
+BACKUP="${FABOLUS_BACKUP:-1}"
 
 SPEC="project.generated.yml"
 cp project.yml "$SPEC"
@@ -200,8 +209,19 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+# BACKUP compile gate (06-01/D-08, cross-branch cherry-pick correction). This preservation branch has
+# no other app-source excludes: gate, so — unlike main's combined APP_SOURCE_EXCLUDES AND/else block —
+# BACKUP's own excludes: block is stripped/kept independently of any other surface.
+if [ "$BACKUP" = 1 ]; then
+  strip_block BACKUP            # present (default) → drop the Backup/SiteAtlas exclude lines
+else
+  drop_flag FABOLUS_BACKUP      # FABOLUS_BACKUP=0 also drops the compile-condition token so
+                                 # AppModel.swift's/App.swift's #if FABOLUS_BACKUP guards compile out
+fi
+
+echo "generate-project: Garmin=$GARMIN Watch=$WATCH Mac=$MAC OnWatchEating=$ONWATCH Nudge=$NUDGE WatchDirectPump=$DIRECT_PUMP iCloud=$ICLOUD HealthKit=$HEALTHKIT DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL Backup=$BACKUP"
 [ "$NUDGE" = 0 ] && echo "  → building WITHOUT the faBolusNudge SDK (repo unavailable) — Smart Assist features excluded"
+[ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0) — 7 source files/dirs excluded; the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
 [ "$WATCH" = 0 ]  && echo "  → building WITHOUT the Apple Watch app (FABOLUS_WATCH=0)"
 [ "$MAC" = 0 ] && echo "  → building WITHOUT the macOS menu-bar remote (FABOLUS_MAC=0) — faBolusMac + faBolusMacWidgets targets stripped"
