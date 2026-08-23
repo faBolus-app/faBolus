@@ -105,6 +105,9 @@ struct BolusEntryView: View {
     /// so no dose can be safely sized — drives a cancel-only "settings not read yet" notice (fail-closed),
     /// never a deliverable dose off a guessed carb ratio. Per-attempt; reset on recompute / mode switch.
     @State private var calcInputBlocked = false
+    /// VA-09: drives a cancel-only "re-check your glucose" notice when a MANUALLY-typed correction BG is
+    /// outside the plausible range (see `manualBGImplausible`). Fail-closed — the dose is NOT delivered.
+    @State private var manualBGBlocked = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
     /// N12: drives the size-gated `.fixedSize()` on the compact carbs/units fields — kept at normal text
@@ -130,6 +133,18 @@ struct BolusEntryView: View {
     /// True when the shown dose leans on a CGM value that is now stale (advisory, not a block).
     private var staleCGMCorrection: Bool {
         mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0
+    }
+    /// VA-09: a MANUALLY-typed correction BG outside the plausible physiological range
+    /// `[GlucosePlausibility.minimum, .maximum]` (40–400 mg/dL). A typed value below 40 would hit
+    /// `BolusMath`'s D-04 "implausible BG → no correction" rule, which SILENTLY drops the negative
+    /// (dose-reducing) correction — so faBolus would recommend MORE than the pump's own calculator would,
+    /// in the unsafe direction, exactly when the user's typed glucose says they are low. D-04 is correct
+    /// for the AUTO CGM feed (decode/transport noise) but wrong for a deliberate manual entry, so the
+    /// manual entry is gated here at the compose/deliver boundary and D-04 is left untouched. Blocks the
+    /// full implausible range (both the dangerous LOW and the merely-untrustworthy HIGH). Keys on the
+    /// existing `.manual` discriminator, so an auto-filled (`.cgm`) value is never gated by this.
+    private var manualBGImplausible: Bool {
+        bgSource == .manual && settings.glucoseDisplayUnit.parse(bg).map { !GlucosePlausibility.isPlausible(mgdl: $0) } ?? false
     }
 
     /// Phase 04-01 (D-07/D-09) — the entry-parse boundary. `bg` is typed in whichever unit
@@ -864,6 +879,13 @@ struct BolusEntryView: View {
         } message: {
             Text("faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again.")
         }
+        // VA-09: a manually-typed BG outside the plausible range is blocked cancel-only (fail-closed) —
+        // never passed to `recommendBolus`, where D-04 would silently drop a low's dose-reducing effect.
+        .alert("Check your glucose", isPresented: $manualBGBlocked) {
+            Button("OK", role: .cancel) { manualBGBlocked = false }   // sends NOTHING
+        } message: {
+            Text("That glucose reading looks out of range — re-check your glucose before dosing.")
+        }
         // DIF-ux: the calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
         // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
         // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
@@ -1054,6 +1076,15 @@ struct BolusEntryView: View {
     /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
     /// stale on-screen value.
     private func attemptDeliver(extended: Bool) async {
+        // VA-09: a MANUALLY-typed correction BG outside the plausible range (40–400 mg/dL) is blocked at
+        // the deliver boundary with a cancel-only notice, BEFORE any `recommendBolus`/deliver. Passing a
+        // sub-40 typed value onward would let `BolusMath`'s D-04 rule silently drop the dose-REDUCING
+        // correction — over-delivering during an apparent hypo. D-04 stays intact for the auto-CGM path
+        // (`bgSource == .cgm` is never gated here). This changes WHEN a dose is allowed, not the math.
+        if manualBGImplausible {
+            manualBGBlocked = true
+            return   // sends NOTHING
+        }
         // DIF-ux: the deliver-time gate is the PURE, unit-tested `CalcInputGate.decide` (faBolusCore) — no
         // gating logic lives inline here anymore. It fires ONLY in carbs mode, keys on `!inputsVerified`
         // BEFORE any staleness flag (so the unconfirmed-but-in-window case is caught → `.both`), and skips
