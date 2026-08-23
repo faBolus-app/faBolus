@@ -901,6 +901,27 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// real 2.5 s `Timer` — mirrors `simulateRecurringFastAndStaticReadTickForTesting`'s "synchronous
     /// effect only" shape. A test calls this once per page/window boundary it wants to force.
     func fireHistorySyncTickForTesting() { backfillPageDone() }
+
+    /// CR-01 test seam: override the pairing-handshake watchdog deadline so a timeout test doesn't wait
+    /// the real 30 s. `nil` (default) uses the production deadline — changes no production behavior.
+    var pairingTimeoutSecForTesting: Double?
+
+    /// CR-01 test seam: fire the armed pairing-handshake watchdog synchronously (mirrors
+    /// `firePollTimerTickForTesting`), so a test can drive `beginPairingForTesting(code:)` then assert the
+    /// fail-closed teardown without a live 30 s `Timer`.
+    func firePairingWatchdogForTesting() { firePairingWatchdog() }
+
+    /// CR-02 test accessor: the scheduler's current poll-cycle generation, forwarded so a `.connecting`
+    /// unintended-drop test can assert `linkDroppedCleanup()` advanced it.
+    var pollCycleGenerationForTesting: Int { readScheduler.pollCycleGenerationForTesting }
+
+    /// CR-02/CR-03 test accessor: whether the backend currently holds a non-empty `authenticationKey`
+    /// (drives `isPaired`), so a teardown test can assert the auth key/coordinator were cleared.
+    var isPairedForTesting: Bool { isPaired }
+
+    /// CR-03 test accessor: whether the pairing `coordinator` is currently live (non-nil), so a
+    /// forget/teardown test can assert it was torn down.
+    var pairingCoordinatorIsLiveForTesting: Bool { coordinator != nil }
     #endif
 
     // MARK: - PumpDataSource
@@ -2164,7 +2185,15 @@ extension TandemBackend: PumpBLEClientDelegate {
         case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
         case .connecting, .discovering: snapshot.connection = .connecting; snapshot.connectionDetail = nil
         case .ready:
-            snapshot.connection = .connected; snapshot.connectionDetail = nil
+            // CR-01 (R2-01): transport-ready ≠ application-usable. The kit's `.ready` only means the BLE
+            // link is up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
+            // not started. Publish `.connecting` (the not-usable intermediate the UI/gate already treat as
+            // unusable — `isLinked == .connected || .bolusing`), NOT `.connected`. The application-usable
+            // `.connected` state is published at the single "we are now polling" moment via
+            // `markUsableAndStartPolling()`. This closes the ghost-"Connected" window where a lost handshake
+            // frame or a thrown pairing write would otherwise pin a green HUD that never polls and never
+            // escalates staleness. Keep `linkDidBecomeReady()` (transport-level recovery signal).
+            snapshot.connection = .connecting; snapshot.connectionDetail = nil
             bgSession.linkDidBecomeReady()   // debug pump-background-disconnect: reconnect recovered → release the H1 window
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
@@ -2230,7 +2259,83 @@ extension TandemBackend: PumpBLEClientDelegate {
         // the link is confirmed down, stops it at the source — this is additive to (not a replacement
         // for) `scheduleAlertRead()`'s own new generation guard, which also closes the narrower gap of
         // a call already in flight when this fires.
-        readScheduler.invalidatePollTimerOnDisconnect()
+        //
+        // CR-01 (R2-01) / WR-04 (R2-20) part 2: stop BOTH timers (`pollTimer` AND `predictivePollTimer`)
+        // instead of only `pollTimer` — an armed predictive one-shot / in-flight predictive burst must not
+        // survive a drop and fire reads into a dead link. `stopAllTimers()` replaces the old
+        // `invalidatePollTimerOnDisconnect()` (pollTimer-only).
+        readScheduler.stopAllTimers()
+        // CR-01/CR-02 (R2-01/R2-05): advance the scheduler's poll-cycle generation so any already-armed
+        // `scheduleAlertRead()` / queued read from the cycle that just ended recognizes it is stale and
+        // no-ops immediately, rather than injecting a rogue read into the reconnect gap or the next cycle.
+        readScheduler.notePollCycleEnded()
+        // CR-01 (R2-01): a late/stale pairing coordinator must not survive a link-down — a late
+        // AUTHORIZATION frame could otherwise advance a dead handshake. Rebuilt fresh in
+        // `pumpClientDidBecomeReady` on the next connect.
+        coordinator = nil
+        // CR-01 (R2-01): drop the auth key so `isPaired` fails closed across the gap — a signed read must
+        // never land in the pre-auth window before `onPaired` rebuilds the key. `validateDeliver` (which
+        // gates on `.connected` AND `isPaired`) therefore also fails closed until the next real pair.
+        authenticationKey = []
+        // CR-01 (R2-01): the pairing-handshake watchdog is per-connection — cancel it here so a drop that
+        // happens mid-handshake doesn't leave a stale timer that later fires against a torn-down link.
+        cancelPairingWatchdog()
+    }
+
+    /// CR-01 (R2-01) shared spine: publish the application-usable `.connected` state and start polling at
+    /// the SINGLE "we are now polling" moment. Every terminal site in `pumpClientDidBecomeReady` that used
+    /// to call `readScheduler.startPolling()` directly now routes through here, so `.connected` is published
+    /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
+    private func markUsableAndStartPolling() {
+        snapshot.connection = .connected
+        onChange?()
+        readScheduler.startPolling()
+    }
+
+    // MARK: - CR-01 (R2-01) pairing-handshake watchdog
+    //
+    // `PairingCoordinator`/`LegacyPairingCoordinator` (external kit) have NO deadline, and the
+    // `onSendRequest` catch-and-log means a lost reply / thrown write never calls `fail`/`onError`. Without
+    // a watchdog, `step` can stick in a `sentN` state forever with the link up: `onPaired`/`onError` never
+    // fire, polling never starts, and no staleness/disconnect escalation runs. This watchdog fails closed
+    // after `pairingTimeoutSec` if pairing hasn't completed. Armed at `coord.start()`; cancelled in
+    // `onPaired`, `onError`, and `linkDroppedCleanup()`.
+    private var pairingWatchdog: Timer?
+    private var pairingWatchdogClearStore = false
+    private static let defaultPairingTimeoutSec: Double = 30
+    private var pairingTimeoutSec: Double {
+        #if DEBUG
+        if let override = pairingTimeoutSecForTesting { return override }
+        #endif
+        return Self.defaultPairingTimeoutSec
+    }
+
+    private func armPairingWatchdog(clearStoreOnTimeout: Bool) {
+        pairingWatchdog?.invalidate()
+        pairingWatchdogClearStore = clearStoreOnTimeout
+        pairingWatchdog = Timer.scheduledTimer(withTimeInterval: pairingTimeoutSec, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.firePairingWatchdog() }
+        }
+    }
+
+    private func cancelPairingWatchdog() {
+        pairingWatchdog?.invalidate(); pairingWatchdog = nil
+    }
+
+    private func firePairingWatchdog() {
+        cancelPairingWatchdog()
+        // If pairing actually completed, do nothing (defensive — `onPaired` already cancels the watchdog).
+        guard !isPaired else { return }
+        Self.pairingLog.log("pairing outcome → watchdog timeout (fail-closed)")
+        // Mirror `onError`'s branch: a resume / V1 re-challenge with SAVED material (onFirstPair == nil)
+        // drops the saved material so the UI re-pairs; a fresh full pair keeps whatever was there.
+        if pairingWatchdogClearStore { PairingStore.clear() }
+        coordinator = nil
+        linkDroppedCleanup()
+        client.disconnect()   // re-enter the kit's bounded reconnect ladder
+        snapshot.connection = .error
+        snapshot.connectionDetail = "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
+        onChange?()
     }
 
     /// A short human explanation for a specific down state; nil for the benign/transitional ones where
@@ -2278,26 +2383,26 @@ extension TandemBackend: PumpBLEClientDelegate {
             let code = pairingCode
             switch PairingAuth.detectType(code) {
             case .short6Char:                                   // modern EC-JPAKE, resumable
-                guard let full = try? PairingCoordinator(pairingCode: code) else { readScheduler.startPolling(); return }
+                guard let full = try? PairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
                 coord = full
                 schemeName = "JPAKE (fresh)"
                 onFirstPair = { [weak self] in PairingStore.save(full.derivedSecret); self?.pairingCode = "" }
             case .long16Char:                                   // legacy V1 — no resume, persist the code
-                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { readScheduler.startPolling(); return }
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
                 coord = v1
                 schemeName = "V1/legacy (fresh)"
                 onFirstPair = { [weak self] in PairingStore.saveV1Code(code); self?.pairingCode = "" }
             }
         } else if let v1Code = PairingStore.loadV1Code() {      // legacy reconnect: silent full re-challenge
             guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
-                PairingStore.clear(); readScheduler.startPolling(); return
+                PairingStore.clear(); markUsableAndStartPolling(); return
             }
             coord = v1; onFirstPair = nil; schemeName = "V1/legacy (resume re-challenge)"
         } else if let stored = PairingStore.load() {            // modern reconnect: JPAKE quick-pair resume
             coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
             schemeName = "JPAKE (quick-pair resume)"
         } else {
-            readScheduler.startPolling(); return   // no code and no saved pairing — reads will be rejected
+            markUsableAndStartPolling(); return   // no code and no saved pairing — reads will be rejected
         }
         Self.pairingLog.log("pairing scheme selected → \(schemeName, privacy: .public)")
 
@@ -2328,6 +2433,7 @@ extension TandemBackend: PumpBLEClientDelegate {
         }
         coord.onError = { [weak self] _ in
             Self.pairingLog.log("pairing outcome → error")
+            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
             // A resume / V1 re-challenge with SAVED material can fail if the pump forgot us; drop the
             // saved material so the UI re-pairs. A fresh full-pair failure keeps whatever was there.
             if onFirstPair == nil { PairingStore.clear() }
@@ -2335,14 +2441,18 @@ extension TandemBackend: PumpBLEClientDelegate {
         }
         coord.onPaired = { [weak self] key, _ in
             Self.pairingLog.log("pairing outcome → paired")
+            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (success) — disarm the watchdog
             self?.authenticationKey = key
             onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
-            self?.readScheduler.startPolling()
+            self?.markUsableAndStartPolling()   // CR-01: publish `.connected` + start polling at the single usable moment
             // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
             // drop), reconcile it against the pump now so new deliveries can unblock.
             Task { [weak self] in await self?.reconcileIndeterminateDelivery() }
         }
         coordinator = coord
+        // CR-01 (R2-01): arm the pairing-handshake watchdog when the handshake starts, so a lost reply /
+        // thrown write can't pin a ghost link forever. `clearStoreOnTimeout` mirrors `onError`'s policy.
+        armPairingWatchdog(clearStoreOnTimeout: onFirstPair == nil)
         coord.start()
     }
 

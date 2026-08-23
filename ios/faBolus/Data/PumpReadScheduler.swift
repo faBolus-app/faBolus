@@ -812,6 +812,13 @@ final class PumpReadScheduler {
         predictivePollTimer?.invalidate(); predictivePollTimer = nil
     }
 
+    /// CR-01/CR-02 (R2-01/R2-05): advance the poll-cycle generation WITHOUT arming a new cycle. Called from
+    /// `TandemBackend.linkDroppedCleanup()` on every link-down/recovery path so any already-armed
+    /// `scheduleAlertRead()` (which captured the prior generation, see `scheduleAlertRead()`'s doc comment)
+    /// or a queued read from the cycle that just ended recognizes it is stale and no-ops immediately — the
+    /// same generation-guard mechanism `startPolling()` relies on, but for the teardown side.
+    func notePollCycleEnded() { pollCycleGeneration += 1 }
+
     #if DEBUG
     // MARK: - Test seams (forwarded from TandemBackend under the same names, D-01/D-06)
 
@@ -850,6 +857,11 @@ final class PumpReadScheduler {
     }
     /// Test accessor: whether `pollTimer` currently holds a live (non-nil) `Timer`.
     var pollTimerIsActiveForTesting: Bool { pollTimer != nil }
+
+    /// Test accessor (CR-01/CR-02): the current poll-cycle generation, so a test can assert
+    /// `notePollCycleEnded()` (via `linkDroppedCleanup`) actually advanced it — proving an armed stale
+    /// `scheduleAlertRead()` would no-op after a drop.
+    var pollCycleGenerationForTesting: Int { pollCycleGeneration }
 
     /// Test accessor (Phase 09.2 Task 3, gap B5): the predictive-burst deadline `schedulePredictiveBurst`
     /// last armed — read-only, mirrors `pollTimerIsActiveForTesting`'s shape. Lets a test pin that an
