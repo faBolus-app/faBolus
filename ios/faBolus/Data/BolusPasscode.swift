@@ -35,6 +35,15 @@ enum BolusPasscodeStore {
     /// VA-29: the in-memory seam also backs the Keychain-stored lockout item so the `.serialized` tests can
     /// exercise the backoff without touching the real Keychain.
     nonisolated(unsafe) private static var memLockout: String?
+
+    /// VA-29 test seam: seed a LEGACY (pre-v2) `"saltHex:hashHex"` SHA-256 blob so a test can exercise the
+    /// migration path (`setPasscode` only ever writes v2, so there is no other way to produce an old blob).
+    /// DEBUG only; never used in production. Uses a fixed salt for determinism.
+    static func seedLegacyBlobForTesting(pin: String) {
+        let salt = [UInt8](repeating: 0xAB, count: 16)
+        deleteBlob(); clearLockout()
+        _ = storeBlob(hex(salt) + ":" + legacyHash(pin: pin, salt: salt))
+    }
     #endif
 
     /// A valid passcode is **exactly 4 digits** (§2.3). Used to reject bad input before it is ever stored.

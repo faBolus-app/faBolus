@@ -914,4 +914,85 @@ struct AppModelBehaviorTests {
             #expect(backend2.lastAssignedBolusId == nil)               // blocked ⇒ backend2 never initiated
         }
     }
+
+    // MARK: - VA-07-host (WR-A3): a remote request COMPOSED before a completed host delivery is refused
+    //
+    // `remoteDeliver(..., sentAt:)` carries the remote's compose-time wall clock. On a remote surface, if a
+    // host bolus has since DELIVERED (stamping `lastHostDeliveryAt`), a request whose `sentAt` predates that
+    // stamp dosed off pre-bolus state — a double-dose hazard — so it is refused BEFORE the backend, echoing
+    // `.failed` with the "delivered after this request was created" message. Defense-in-depth over the
+    // transport-layer VA-02 `sentAt` freshness gate (which `remoteDeliver` bypasses when called directly, so
+    // a future `sentAt` here is fine — the compose guard is the only `sentAt` check on this path).
+    //
+    // These use the `.garmin` surface so `surface.isRemote` is true (the divergence/idempotency tests above
+    // all use the default `.phoneUI`, where the compose guard never fires). `.garmin` bolusing is a default-OFF
+    // opt-in NOT managed by `withCleanSettings`, so it is enabled + restored locally.
+
+    /// A remote request whose `sentAt` PREDATES a completed host delivery is refused, `lastError` carries the
+    /// reason, and the backend delivers no second bolus (the request never reaches `executeResolved`).
+    @Test func remoteRequestSupersededByHostDeliveryIsRejected() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true                 // §2.3: opt in the Garmin surface
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            // A prior host delivery stamps `lastHostDeliveryAt = Date()` (local path emits no `.delivering`).
+            let iob0 = backend.snapshot.iobUnits
+            await model.deliverBolus(units: 1.0)
+            let iobAfterHost = backend.snapshot.iobUnits
+            #expect(iobAfterHost > iob0 + 0.9)                          // the host bolus really delivered
+            #expect(rec.count(.delivering) == 0)                        // the local path never echoes .delivering
+
+            // A remote request COMPOSED 120 s ago (before that stamp) → superseded → refused pre-backend.
+            await model.remoteDeliver(requestId: "r-old", units: 1.0,
+                                      sentAt: Int(Date().timeIntervalSince1970) - 120,
+                                      from: .garmin, peerId: "garmin")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("delivered after this request was created") == true)
+            #expect(model.lastError?.contains("delivered after this request was created") == true)
+            #expect(rec.count(.delivering) == 0)                        // the SECOND request never reached the backend
+            #expect(abs(backend.snapshot.iobUnits - iobAfterHost) < tol) // and delivered no second bolus
+        }
+    }
+
+    /// The counterpart: with a prior host delivery stamped, a remote request whose `sentAt` is AFTER the
+    /// stamp is NOT rejected by the VA-07-host compose guard — it proceeds to normal handling. Robust: the
+    /// point is that the supersession message never fires.
+    @Test func remoteRequestComposedAfterHostDeliveryProceeds() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let iob0 = backend.snapshot.iobUnits
+            await model.deliverBolus(units: 1.0)                        // stamps lastHostDeliveryAt = now
+            #expect(backend.snapshot.iobUnits > iob0 + 0.9)
+
+            // `sentAt` 120 s in the FUTURE (after the stamp) ⇒ compose guard does NOT fire. remoteDeliver is
+            // called directly (bypasses the VA-02 transport freshness gate), so a future stamp is fine here.
+            await model.remoteDeliver(requestId: "r-new", units: 1.0,
+                                      sentAt: Int(Date().timeIntervalSince1970) + 120,
+                                      from: .garmin, peerId: "garmin")
+            // The supersession message never appears on ANY echo …
+            #expect(rec.commands.allSatisfy {
+                ($0.message?.contains("delivered after this request was created") ?? false) == false
+            })
+            // … and the request proceeds to a normal delivery instead.
+            #expect(rec.last?.status == .delivered)
+        }
+    }
+
+    // MARK: - R2-15 phone-side (WR-A5): a status reply correlates to the request it answers
+
+    /// `statusCommand(includeHistory:replyingTo:)` stamps the incoming request's id onto the reply when
+    /// `replyingTo` is non-nil (true correlation), and keeps a fresh UUID when it is nil (an unsolicited push).
+    @Test func statusCommandEchoesReplyingToRequestId() async {
+        try? await withCleanSettings {
+            let (model, _, _) = await makeModel()
+            #expect(model.statusCommand(includeHistory: true, replyingTo: "req-123").requestId == "req-123")
+            #expect(model.statusCommand(includeHistory: true).requestId != "req-123")   // fresh id when not replying
+        }
+    }
 }

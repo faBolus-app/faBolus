@@ -55,4 +55,41 @@ struct RemoteCommandFreshnessTests {
         #expect(!RemoteCommandFreshness.isStale(cmd(.dismissAlert, ageSec: 3600), now: now))
         #expect(!RemoteCommandFreshness.isStale(cmd(.statusRead, ageSec: 3600), now: now))
     }
+
+    /// VA-07 host-side: a request composed BEFORE the host's most recent bolus delivery is superseded (the
+    /// remote dosed off pre-bolus state), so applying it now is a double-dose hazard.
+    @Test func composeSupersededWhenHostDeliveredStrictlyAfterCompose() {
+        #expect(RemoteCommandFreshness.composeSupersededByHostDelivery(
+            sentAt: 1_000_000_000,
+            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
+    }
+
+    /// A host delivery BEFORE the compose time did not act on this request's state → not superseded.
+    @Test func composeNotSupersededWhenHostDeliveredBeforeCompose() {
+        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
+            sentAt: 1_000_000_000,
+            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000 - 50)))
+    }
+
+    /// Equal timestamps are NOT superseded — the check is strict `>`.
+    @Test func composeNotSupersededWhenHostDeliveredAtExactlyComposeTime() {
+        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
+            sentAt: 1_000_000_000,
+            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000)))
+    }
+
+    /// No compose stamp to compare against → no supersession possible (VA-02 freshness + the access gate
+    /// remain the other lines of defense).
+    @Test func composeNotSupersededWhenSentAtIsAbsent() {
+        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
+            sentAt: nil,
+            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
+    }
+
+    /// No prior host delivery → nothing could have superseded the request.
+    @Test func composeNotSupersededWhenNoPriorHostDelivery() {
+        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
+            sentAt: 1_000_000_000,
+            lastHostDeliveryAt: nil))
+    }
 }

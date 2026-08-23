@@ -235,4 +235,57 @@ final class RemoteBolusLedgerTests: XCTestCase {
                                                      inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
                        Self.genuinelyUnresolvedMessage)
     }
+
+    // MARK: - R2-12: terminal-outcome re-echo query (terminalOutcomes)
+    //
+    // The durable ledger can re-echo terminal outcomes to a remote that missed them across an app restart.
+    // The query returns only TERMINAL entries for the asked peer, oldest→newest, and never mutates state.
+
+    func testTerminalOutcomesReturnsSettledEntryForPeer() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "garmin", requestId: "r1", doseKey: key(2.0))
+        l.settle(peerId: "garmin", requestId: "r1", status: "delivered", message: "ok", deliveredUnits: 2.0)
+        let outcomes = l.terminalOutcomes(peerId: "garmin")
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertEqual(outcomes.first?.requestId, "r1")
+        XCTAssertEqual(outcomes.first?.status, "delivered")
+        XCTAssertEqual(outcomes.first?.message, "ok")
+        XCTAssertEqual(outcomes.first?.deliveredUnits, 2.0)
+    }
+
+    func testTerminalOutcomesExcludesNonTerminalEntries() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "garmin", requestId: "awaiting", doseKey: key(1.0))   // begun, never settled
+        _ = l.begin(peerId: "garmin", requestId: "delivering", doseKey: key(3.0))
+        l.markDelivering(peerId: "garmin", requestId: "delivering", bolusId: 7)    // delivering, never settled
+        XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
+    }
+
+    func testTerminalOutcomesExcludesOtherPeers() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "watch", requestId: "w1", doseKey: key(2.0))
+        l.settle(peerId: "watch", requestId: "w1", status: "delivered", deliveredUnits: 2.0)
+        _ = l.begin(peerId: "garmin", requestId: "g1", doseKey: key(4.0))
+        l.settle(peerId: "garmin", requestId: "g1", status: "delivered", deliveredUnits: 4.0)
+        // Only garmin's terminal entry is returned; the watch entry is another peer's business.
+        let outcomes = l.terminalOutcomes(peerId: "garmin")
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertEqual(outcomes.first?.requestId, "g1")
+    }
+
+    func testTerminalOutcomesAreOldestToNewest() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "garmin", requestId: "first", doseKey: key(1.0))
+        l.settle(peerId: "garmin", requestId: "first", status: "delivered", deliveredUnits: 1.0)
+        _ = l.begin(peerId: "garmin", requestId: "second", doseKey: key(2.0))
+        l.settle(peerId: "garmin", requestId: "second", status: "failed", message: "not connected")
+        _ = l.begin(peerId: "garmin", requestId: "third", doseKey: key(3.0))
+        l.settle(peerId: "garmin", requestId: "third", status: "delivered", deliveredUnits: 3.0)
+        XCTAssertEqual(l.terminalOutcomes(peerId: "garmin").map(\.requestId), ["first", "second", "third"])
+    }
+
+    func testTerminalOutcomesEmptyLedgerReturnsEmpty() {
+        let l = RemoteBolusLedger()
+        XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
+    }
 }

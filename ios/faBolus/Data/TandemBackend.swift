@@ -958,6 +958,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// CR-03 test accessor: whether the pairing `coordinator` is currently live (non-nil), so a
     /// forget/teardown test can assert it was torn down.
     var pairingCoordinatorIsLiveForTesting: Bool { coordinator != nil }
+
+    /// R2-07 test seam: the bounded quick-pair RESUME retry budget consumed this reconnect cycle
+    /// (0…`maxResumeRetries`). Read-only, so a resume-failure test can pin the budget progression
+    /// exactly — incremented on each bounded retry, reset to 0 once the budget is exhausted (and by a
+    /// successful `onPaired`) — rather than only inferring "retried vs errored" from the connection
+    /// state. Mirrors the existing `isPairedForTesting`/`pollCycleGenerationForTesting` accessors.
+    var resumeRetryCountForTesting: Int { resumeRetryCount }
     #endif
 
     // MARK: - PumpDataSource

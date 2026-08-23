@@ -17,7 +17,22 @@ enum PairingStore {
     /// at most one of {derived secret, V1 code} is ever present; `clear()` wipes both.
     private static let v1CodeAccount = "legacyV1PairingCode"
 
+    #if DEBUG
+    /// R2-07 test seam. xctest hosted inside the app lacks the keychain-sharing entitlement, so `SecItemAdd`
+    /// silently fails there — which makes the quick-pair RESUME path (gated on `load()` returning saved
+    /// material) otherwise undrivable in a unit test. A test flips this to hold the pairing material in
+    /// memory so the REAL resume/watchdog policy runs. Mirrors `BolusPasscodeStore.useInMemoryBackingForTests`.
+    /// Compiled out of Release entirely; never set in production.
+    nonisolated(unsafe) static var useInMemoryBackingForTests = false
+    nonisolated(unsafe) private static var memSecret: [UInt8]?
+    nonisolated(unsafe) private static var memV1Code: String?
+    nonisolated(unsafe) private static var memPin: String?
+    #endif
+
     static func save(_ secret: [UInt8]) {
+        #if DEBUG
+        if useInMemoryBackingForTests { memSecret = secret; return }
+        #endif
         let data = Data(secret)
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -32,6 +47,9 @@ enum PairingStore {
     }
 
     static func load() -> [UInt8]? {
+        #if DEBUG
+        if useInMemoryBackingForTests { return memSecret }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -46,6 +64,9 @@ enum PairingStore {
     }
 
     static func clear() {
+        #if DEBUG
+        if useInMemoryBackingForTests { memSecret = nil; memV1Code = nil; return }
+        #endif
         // Wipe whichever scheme is stored — JPAKE derived secret AND/OR legacy V1 code.
         for acct in [account, v1CodeAccount] {
             SecItemDelete([
@@ -61,6 +82,9 @@ enum PairingStore {
     /// Persist the canonical 16-char V1 pairing code so a legacy pump reconnects without re-entry
     /// (V1 has no resume — the code drives a silent full re-challenge each connect).
     static func saveV1Code(_ code: String) {
+        #if DEBUG
+        if useInMemoryBackingForTests { memV1Code = code; return }
+        #endif
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -74,6 +98,9 @@ enum PairingStore {
     }
 
     static func loadV1Code() -> String? {
+        #if DEBUG
+        if useInMemoryBackingForTests { return memV1Code }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -100,6 +127,9 @@ enum PairingStore {
     private static let pinAccount = "mobiPin"
 
     static func savePin(_ pin: String) {
+        #if DEBUG
+        if useInMemoryBackingForTests { memPin = pin; return }
+        #endif
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -113,6 +143,9 @@ enum PairingStore {
     }
 
     static func loadPin() -> String? {
+        #if DEBUG
+        if useInMemoryBackingForTests { return memPin }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -128,6 +161,9 @@ enum PairingStore {
     }
 
     static func clearPin() {
+        #if DEBUG
+        if useInMemoryBackingForTests { memPin = nil; return }
+        #endif
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

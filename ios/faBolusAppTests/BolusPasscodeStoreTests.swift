@@ -81,4 +81,62 @@ struct BolusPasscodeStoreTests {
         }
         #expect(BolusPasscodeStore.lockoutRemaining == 0)       // not yet locked → counter really reset
     }
+
+    // MARK: - VA-29 hardening (PBKDF2 v2 blob, legacy migration, Keychain-backed backoff)
+
+    @Test func pbkdf2RoundTrips() {
+        reset(); defer { reset() }
+        #expect(BolusPasscodeStore.setPasscode("1234"))         // stores a versioned v2: PBKDF2 blob
+        #expect(BolusPasscodeStore.isRequired)
+        #expect(BolusPasscodeStore.verify("1234"))              // correct → PBKDF2 verify of the v2 blob
+        // A single miss stays under the threshold, so it can't arm a backoff and mask the re-check below.
+        #expect(!BolusPasscodeStore.verify("9999"))             // wrong
+        #expect(BolusPasscodeStore.lockoutRemaining == 0)
+        #expect(BolusPasscodeStore.verify("1234"))             // still verifies against the same v2 blob
+    }
+
+    @Test func legacyBlobMigratesOnCorrectEntry() {
+        reset(); defer { reset() }
+        // setPasscode only ever writes v2, so seed a pre-v2 "saltHex:hashHex" SHA-256 blob directly.
+        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "4321")
+        #expect(BolusPasscodeStore.isRequired)
+        // The old SHA-256 blob still verifies, and a correct entry transparently rehashes it to v2.
+        #expect(BolusPasscodeStore.verify("4321"))
+        // A second correct entry now runs against the migrated v2 blob — proves the rehash didn't corrupt it.
+        // (No public blob getter exists, so this successful re-verify is the migration evidence.)
+        #expect(BolusPasscodeStore.verify("4321"))
+
+        // A WRONG PIN against a freshly-seeded legacy blob must NOT succeed (and so must not migrate).
+        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "4321")
+        #expect(!BolusPasscodeStore.verify("0000"))
+    }
+
+    @Test func keychainBackedBackoffStillArmsAndClears() {
+        reset(); defer { reset() }
+        #expect(BolusPasscodeStore.setPasscode("9999"))
+        #expect(BolusPasscodeStore.lockoutRemaining == 0)
+        // Cross the threshold. The counter now lives in the Keychain (routed through the in-memory seam),
+        // no longer in UserDefaults — yet the backoff still arms.
+        for _ in 0..<BolusPasscodeStore.maxAttemptsBeforeLockout {
+            _ = BolusPasscodeStore.verify("0001")
+        }
+        let backoff = BolusPasscodeStore.lockoutRemaining
+        #expect(backoff > 0)                                    // armed
+        #expect(backoff <= 3600)                                // soft cap — never a hard/permanent lock
+        #expect(!BolusPasscodeStore.verify("9999"))            // even the correct PIN is refused while backing off
+
+        // Clearing the passcode clears the Keychain-backed counter (works even mid-backoff).
+        #expect(BolusPasscodeStore.setPasscode(nil))
+        #expect(BolusPasscodeStore.lockoutRemaining == 0)
+
+        // And a correct entry *before* the threshold clears the counter — same behavior, now Keychain-backed.
+        #expect(BolusPasscodeStore.setPasscode("9999"))
+        _ = BolusPasscodeStore.verify("0001")                   // one miss (under threshold)
+        _ = BolusPasscodeStore.verify("0001")                   // two misses (under threshold)
+        #expect(BolusPasscodeStore.verify("9999"))             // correct → clears
+        for _ in 0..<(BolusPasscodeStore.maxAttemptsBeforeLockout - 1) {
+            _ = BolusPasscodeStore.verify("0001")
+        }
+        #expect(BolusPasscodeStore.lockoutRemaining == 0)       // counter really reset
+    }
 }
