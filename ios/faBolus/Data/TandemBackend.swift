@@ -390,6 +390,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // arm/fire/cancel). Stored here because Swift forbids stored properties in an extension.
     private var pairingWatchdog: Timer?
     private var pairingWatchdogClearStore = false
+    // R2-07: bounded quick-pair RESUME retry budget. A failed resume must RETRY (never auto-wipe the stored
+    // secret); only after this budget is exhausted do we surface a RETRYABLE error that KEEPS the secret.
+    private var resumeRetryCount = 0
+    private static let maxResumeRetries = 2
     private static let backfillPageSize = 255   // numberOfLogs is one byte
     private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
 
@@ -2390,20 +2394,46 @@ extension TandemBackend: PumpBLEClientDelegate {
         pairingWatchdog?.invalidate(); pairingWatchdog = nil
     }
 
+    /// R2-07: a quick-pair RESUME failed (a handshake `onError` or a watchdog timeout on the resume path).
+    /// NEVER auto-wipe the stored secret — a transient link glitch must not force a full manual re-pair.
+    /// Retry the resume (bounded, on the live link); when the budget is exhausted, surface a RETRYABLE error
+    /// that KEEPS the derived secret. Only an explicit `forgetPairing()` (R2-06) wipes it. Factored so both
+    /// the `onError` resume branch and `firePairingWatchdog`'s resume branch share one policy (no divergence).
+    private func handleResumeFailure() {
+        coordinator = nil
+        if resumeRetryCount < Self.maxResumeRetries {
+            resumeRetryCount += 1
+            Self.pairingLog.log("pairing resume retry \(self.resumeRetryCount, privacy: .public)/\(Self.maxResumeRetries, privacy: .public) — keeping stored secret")
+            linkDroppedCleanup()   // drops the auth key (delivery gate fails closed), stops timers
+            client.disconnect()    // re-enter the kit's bounded reconnect ladder → next .ready re-attempts resume
+        } else {
+            Self.pairingLog.log("pairing resume retries exhausted — retryable error, secret RETAINED")
+            resumeRetryCount = 0
+            linkDroppedCleanup()
+            snapshot.connection = .error
+            snapshot.connectionDetail = "Couldn’t reconnect securely. Tap to retry — or Forget Pairing in Settings to re-pair."
+            onChange?()
+        }
+    }
+
     private func firePairingWatchdog() {
         cancelPairingWatchdog()
         // If pairing actually completed, do nothing (defensive — `onPaired` already cancels the watchdog).
         guard !isPaired else { return }
         Self.pairingLog.log("pairing outcome → watchdog timeout (fail-closed)")
-        // Mirror `onError`'s branch: a resume / V1 re-challenge with SAVED material (onFirstPair == nil)
-        // drops the saved material so the UI re-pairs; a fresh full pair keeps whatever was there.
-        if pairingWatchdogClearStore { PairingStore.clear() }
-        coordinator = nil
-        linkDroppedCleanup()
-        client.disconnect()   // re-enter the kit's bounded reconnect ladder
-        snapshot.connection = .error
-        snapshot.connectionDetail = "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
-        onChange?()
+        // R2-07: a RESUME timeout (saved material, pairingWatchdogClearStore == true) must NEVER auto-wipe the
+        // stored secret — route to the SAME bounded-retry / retryable-keep-secret path as `onError`. A FRESH
+        // full-pair timeout keeps its existing fail-closed behavior (it never had a stored secret to protect).
+        if pairingWatchdogClearStore {
+            handleResumeFailure()
+        } else {
+            coordinator = nil
+            linkDroppedCleanup()
+            client.disconnect()   // re-enter the kit's bounded reconnect ladder
+            snapshot.connection = .error
+            snapshot.connectionDetail = "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
+            onChange?()
+        }
     }
 
     /// A short human explanation for a specific down state; nil for the benign/transitional ones where
@@ -2509,16 +2539,25 @@ extension TandemBackend: PumpBLEClientDelegate {
             #endif
         }
         coord.onError = { [weak self] _ in
+            guard let self else { return }
             Self.pairingLog.log("pairing outcome → error")
-            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
-            // A resume / V1 re-challenge with SAVED material can fail if the pump forgot us; drop the
-            // saved material so the UI re-pairs. A fresh full-pair failure keeps whatever was there.
-            if onFirstPair == nil { PairingStore.clear() }
-            self?.snapshot.connection = .error; self?.onChange?()
+            self.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
+            if onFirstPair == nil {
+                // R2-07: a quick-pair RESUME failed. NEVER auto-wipe the stored secret — a transient link
+                // glitch must not force a full manual re-pair. Retry the resume (bounded, on the live link);
+                // when exhausted, surface a RETRYABLE error that KEEPS the derived secret. Only an explicit
+                // forgetPairing() wipes it.
+                self.handleResumeFailure()
+            } else {
+                // A FRESH full pair failed — no stored secret to protect; keep the prior behavior.
+                self.snapshot.connection = .error
+                self.onChange?()
+            }
         }
         coord.onPaired = { [weak self] key, _ in
             Self.pairingLog.log("pairing outcome → paired")
             self?.cancelPairingWatchdog()   // CR-01: pairing resolved (success) — disarm the watchdog
+            self?.resumeRetryCount = 0   // R2-07: a successful pair clears the resume-retry budget
             self?.authenticationKey = key
             onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
             self?.markUsableAndStartPolling()   // CR-01: publish `.connected` + start polling at the single usable moment
