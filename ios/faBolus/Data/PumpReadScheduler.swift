@@ -603,16 +603,17 @@ final class PumpReadScheduler {
     /// Master switch; if predictive polling ever proves costly, set false to fall back to age-fix-only.
     var predictivePollingEnabled = true
 
-    /// Convert a pump-clock reading timestamp to a real `Date` via the phone↔pump anchor. Clamps to
-    /// `now`; falls back to `now` when there's no anchor or the result is implausibly far off (a sign
-    /// the timestamp base is wrong), so a bad value can never masquerade as fresh or ancient. Called
-    /// from `TandemBackend.applyEgvReading` (stays local this wave, D-07) via the injected
+    /// Convert a pump-clock reading timestamp to a real `Date` via the phone↔pump anchor. Returns
+    /// `nil` when the reading time is UNTRUSTWORTHY — no anchor yet, a zero pump-time, a time > 60 s in
+    /// the future, or > 24 h in the past — so a bad value is represented as "unknown age" and fails
+    /// closed at the shared `GlucoseFreshness` gate (never stamped as `now`, which would read as fresh).
+    /// Called from `TandemBackend.applyEgvReading` (stays local this wave, D-07) via the injected
     /// `pumpTimeAnchor` provider.
-    func cgmReadingDate(pumpSec: UInt32, now: Date) -> Date {
-        guard pumpSec > 0, let a = pumpTimeAnchor() else { return now }
+    func cgmReadingDate(pumpSec: UInt32, now: Date) -> Date? {
+        guard pumpSec > 0, let a = pumpTimeAnchor() else { return nil }
         let candidate = a.phone.addingTimeInterval(Double(Int64(pumpSec) - Int64(a.pump)))
-        if candidate > now.addingTimeInterval(60) { return now }                 // future → clamp
-        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return now }         // absurd past → fall back
+        if candidate > now.addingTimeInterval(60) { return nil }            // future → untrusted
+        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return nil }   // absurd past → untrusted
         return candidate
     }
 

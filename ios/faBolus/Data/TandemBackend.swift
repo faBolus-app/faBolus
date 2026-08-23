@@ -701,7 +701,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.noteCalcInputArrived = { [weak self] iob in self?.readScheduler.noteCalcInputArrived(iob: iob) }
         responseApplier.completeGlucoseRead = { [weak self] in self?.readScheduler.completeGlucoseRead() }
         responseApplier.schedulePredictiveBurst = { [weak self] date in self?.readScheduler.schedulePredictiveBurst(afterReadingAt: date) }
-        responseApplier.cgmReadingDate = { [weak self] pumpSec, now in self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now) ?? now }
+        responseApplier.cgmReadingDate = { [weak self] pumpSec, now in self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now) }
         responseApplier.insertBadOpcode = { [weak self] opcode in self?.readScheduler.insertBadOpcode(opcode) }
         // Mechanism B (debug pump-pairing-loop-api25): resolve an inbound op77 to the true failing
         // opcode (cargo requestCodeId when named, else the outstanding read correlated by echoed txId /

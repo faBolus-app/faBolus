@@ -60,8 +60,8 @@ final class PumpResponseApplier {
     var completeGlucoseRead: () -> Void = {}
     /// Bound to `readScheduler.schedulePredictiveBurst(afterReadingAt:)`.
     var schedulePredictiveBurst: (Date) -> Void = { _ in }
-    /// Bound to `readScheduler.cgmReadingDate(pumpSec:now:)`.
-    var cgmReadingDate: (UInt32, Date) -> Date = { _, now in now }
+    /// Bound to `readScheduler.cgmReadingDate(pumpSec:now:)`. `nil` ⇒ the reading time is untrustworthy.
+    var cgmReadingDate: (UInt32, Date) -> Date? = { _, _ in nil }
     /// Bound to `readScheduler.insertBadOpcode(_:)`.
     var insertBadOpcode: (UInt8) -> Void = { _ in }
     /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)` (debug pump-pairing-loop-api25,
@@ -521,28 +521,34 @@ final class PumpResponseApplier {
             // via the same phone↔pump clock anchor the LastBolus case uses (timezone-agnostic).
             // Fall back to receive time if there's no anchor yet or the timestamp looks bad.
             let now = Date()
-            let readingDate = cgmReadingDate(pumpSec, now)
+            let readingDate = cgmReadingDate(pumpSec, now)   // Date? — nil when untrusted
             withSnapshot { snap in
                 snap.glucose = cgmReading
-                snap.glucoseDate = readingDate
+                snap.glucoseDate = readingDate   // nil ⇒ GlucoseFreshness.isStale == true (fail-closed for dosing)
             }
             // Append on a value change OR every ~4.5 min, so a stable BG still advances the
             // plot (a value-only de-dup left the newest point drifting into the past).
-            withGlucoseHistory { history in
-                if let last = history.last {
-                    if last.mgdl != cgmReading || readingDate.timeIntervalSince(last.date) > 270 {
+            // History/plot: only seed with a trustworthy reading time (an untrusted time must not be
+            // promoted into the live snapshot via the plot history).
+            if let readingDate {
+                withGlucoseHistory { history in
+                    if let last = history.last {
+                        if last.mgdl != cgmReading || readingDate.timeIntervalSince(last.date) > 270 {
+                            history.append(GlucoseReading(date: readingDate, mgdl: cgmReading))
+                        }
+                    } else {
                         history.append(GlucoseReading(date: readingDate, mgdl: cgmReading))
                     }
-                } else {
-                    history.append(GlucoseReading(date: readingDate, mgdl: cgmReading))
+                    if history.count > 288 { history.removeFirst() }
                 }
-                if history.count > 288 { history.removeFirst() }
             }
-            // Predictive polling: as soon as the pump's reading timestamp advances, line up a
-            // short burst near the next expected reading so the phone grabs it within seconds.
+            // Predictive polling (a polling-cadence optimization, NOT a dose input): as soon as the
+            // pump's reading timestamp advances, line up a short burst near the next expected reading
+            // so the phone grabs it within seconds — falling back to `now` when the time is untrusted
+            // so the phone keeps chasing a good reading.
             if pumpSec > lastCgmPumpSec {
                 lastCgmPumpSec = pumpSec
-                schedulePredictiveBurst(readingDate)
+                schedulePredictiveBurst(readingDate ?? now)
             }
         }
         // Wake any coalesced `refreshGlucoseNow()` waiters now that a reading has arrived. Unconditional
