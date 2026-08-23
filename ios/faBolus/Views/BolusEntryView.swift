@@ -401,7 +401,8 @@ struct BolusEntryView: View {
     static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
                                 pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
                                 autoAmbient: String?, autoLockout: String?, sg1Message: String?,
-                                sg3aMessage: String?, insufficientReservoirMessage: String? = nil) -> [BolusWarning] {
+                                sg3aMessage: String?, insufficientReservoirMessage: String? = nil,
+                                noCartridge: Bool = false) -> [BolusWarning] {
         var items: [BolusWarning] = []
         if overMax {
             items.append(BolusWarning(
@@ -422,6 +423,10 @@ struct BolusEntryView: View {
         }
         if bolusInFlight {
             items.append(BolusWarning(id: "bolusInFlight", text: BolusBlockReason.bolusInFlight.userMessage,
+                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+        }
+        if noCartridge {
+            items.append(BolusWarning(id: "noCartridge", text: BolusBlockReason.noCartridge.userMessage,
                                        systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
         }
         if let w = carbOverride {
@@ -599,7 +604,8 @@ struct BolusEntryView: View {
             autoLockout: autoCorrectionLockout,
             sg1Message: nil,
             sg3aMessage: nil,
-            insufficientReservoirMessage: insufficientReservoirDisclosure?.message
+            insufficientReservoirMessage: insufficientReservoirDisclosure?.message,
+            noCartridge: model.bolusGate(amount: units, minimum: 0.05).reason == .noCartridge
         )) { item in
             Label(item.text, systemImage: item.systemImage)
                 .font(item.tone.font)
