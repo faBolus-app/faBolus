@@ -947,11 +947,17 @@ public final class AppModel {
                     UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
                 }
             }
-            // Re-arbitrate on a timer too: onChange only fires on NEW data, so when the pump is
-            // disconnected/quiet the failover would not otherwise take over (or a value would not age).
-            arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            }
+        }
+        // WR-01 (R2-08): arm the ~20 s `refresh()` heartbeat UNCONDITIONALLY, for every config — not only
+        // when a failover glucose source is selected. `refresh()` is the only repeating driver of the aging
+        // work (§6 CGM-data-loss notification, WidgetPublisher badge re-eval + App-Group re-stamp, Garmin/
+        // watch mirror); on a pump-only user with a connected-but-silent link, `source.onChange` never fires,
+        // so without this the aging work stalls indefinitely. Hoisted out of the failover-only `else if`
+        // above; identical body. Safe re "no BLE I/O into a dead/pre-auth link": `refresh()`'s only outbound
+        // action, `maybeAutoSyncPumpTime()`, is already gated on `snapshot.connection == .connected` and
+        // rate-limited to once/24 h, so a heartbeat tick never sends into a silent/pre-auth link.
+        arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
         }
         setupEatingPersonalization()
         // P0: surface any restored global block immediately, then reconcile at launch. Entries with no

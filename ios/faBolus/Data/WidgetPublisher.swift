@@ -90,7 +90,10 @@ enum WidgetPublisher {
         // Phase 5 (D-13, 05-03) — the same choke point drives the opt-in app-icon badge. The opt-in
         // gate + freshness live inside GlucoseBadge, so this stays a thin call; the arbiter timer
         // re-runs refresh()->publish every ~20s, so the badge re-evaluates and clears to 0 as a
-        // reading ages past stale even with no new pump data.
+        // reading ages past stale even with no new pump data. WR-01 (R2-08): that ~20s heartbeat is
+        // now armed for EVERY config (see AppModel.init) — previously it existed only when a failover
+        // glucose source was selected, so a pump-only user's badge never aged; this comment was false
+        // for that config until the heartbeat was hoisted unconditionally.
         GlucoseBadge.apply(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
