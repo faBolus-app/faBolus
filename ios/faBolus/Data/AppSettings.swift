@@ -966,7 +966,10 @@ public final class AppSettings {
         func dat(_ k: String) -> Data? { if case .data(let v)? = m[k] { return v }; return nil }
 
         if let v = s("defaultBolusMode"), let mode = BolusMode(rawValue: v) { defaultBolusMode = mode }
-        if let v = dbl("bolusIncrement") { bolusIncrement = v }
+        // VA-03: mirror init's `max(0.05, …)` clamp (init ~:669) so a restored/cross-version sub-pump-
+        // minimum increment (e.g. a legacy 0.01) can't install a value absent from `bolusIncrements`
+        // (empty Picker + sub-0.05 step) until the next relaunch.
+        if let v = dbl("bolusIncrement") { bolusIncrement = max(0.05, v) }
         if let v = dbl("carbIncrement") { carbIncrement = v }
         // Phase 8 (08-01, LOCK-04/LOCK-06): `extendedBolusEnabled`/`stackingGuardFrictionEnabled` no
         // longer restore from a backup either — same hidden-flag pattern. A legacy backup carrying
@@ -974,7 +977,8 @@ public final class AppSettings {
         // force-set-false init pins would reject them on next launch regardless.
         if let v = b("showBolusReasoning") { showBolusReasoning = v }
         if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
-        if let v = dbl("watchBolusIncrement") { watchBolusIncrement = v }
+        // VA-03: same `max(0.05, …)` clamp init applies (~:672).
+        if let v = dbl("watchBolusIncrement") { watchBolusIncrement = max(0.05, v) }
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
         if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
         // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`/`showGlucoseUnitLabels` no longer restore from
@@ -982,21 +986,42 @@ public final class AppSettings {
         // is silently ignored; the force-set `.mgdl` init pin would reject the unit regardless.
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
-        if let v = i("glucosePlotFloor") { glucosePlotFloor = v }
-        if let v = i("glucosePlotCeiling") { glucosePlotCeiling = v }
+        // VA-03: route restored plot bounds through the SAME `GlucosePlotScale.resolve` init uses
+        // (~:690) so an inverted/out-of-set backup pair can't install invalid bounds (guarantees
+        // floor < ceiling + in-set). When only one half is present, resolve against the current value
+        // for the other so the "absent keys left unchanged" contract still holds for a fully-absent pair.
+        if i("glucosePlotFloor") != nil || i("glucosePlotCeiling") != nil {
+            let bounds = GlucosePlotScale.resolve(
+                storedFloor: i("glucosePlotFloor") ?? glucosePlotFloor,
+                storedCeiling: i("glucosePlotCeiling") ?? glucosePlotCeiling)
+            glucosePlotFloor = bounds.floor
+            glucosePlotCeiling = bounds.ceiling
+        }
         // D-05: only apply the override when BOTH halves are present in the backup (same one-unit
         // treatment as init); a backup missing one half leaves the current override unchanged, per
-        // applyBackup's documented "absent keys are left unchanged" contract.
+        // applyBackup's documented "absent keys are left unchanged" contract. VA-03: snap the present
+        // pair through `GlucosePlotScale.resolve` exactly as init does (~:701) — never assigned raw.
         if let f = i("glucosePlotFloorSmall"), let c = i("glucosePlotCeilingSmall") {
-            glucosePlotFloorSmall = f
-            glucosePlotCeilingSmall = c
+            let bounds = GlucosePlotScale.resolve(storedFloor: f, storedCeiling: c)
+            glucosePlotFloorSmall = bounds.floor
+            glucosePlotCeilingSmall = bounds.ceiling
         }
         if let v = b("showStats") { showStats = v }
-        if let v = sa("detailsOrder") { detailsOrder = v }
-        if let v = sa("watchDetailsOrder") { watchDetailsOrder = v }
-        if let v = sa("pillsOrder") { pillsOrder = v }
-        if let v = ia("watchChartRanges") { watchChartRanges = v }
-        if let v = i("glucoseStaleMinutes") { glucoseStaleMinutes = v }
+        // VA-03: reuse the SAME `restoreOrder` / chart-range filter+sort init uses (~:852-860) so a
+        // restored/cross-version list can't install unknown/duplicate/out-of-set entries until relaunch.
+        if let v = sa("detailsOrder") { detailsOrder = Self.restoreOrder(v, all: Self.detailFields) }
+        if let v = sa("watchDetailsOrder") { watchDetailsOrder = Self.restoreOrder(v, all: Self.detailFields) }
+        if let v = sa("pillsOrder") { pillsOrder = Self.restoreOrder(v, all: Self.pillItems) }
+        if let v = ia("watchChartRanges") {
+            let filtered = v.filter { Self.chartRangeOptions.contains($0) }
+            watchChartRanges = filtered.isEmpty ? Self.chartRangeOptions : filtered.sorted()
+        }
+        // VA-03 (dose-adjacent): clamp a restored `glucoseStaleMinutes` into the valid option range so a
+        // corrupt/cross-version backup can't widen the "fresh glucose" correction window (the VA-01 stale
+        // vector via the restore door) until the next relaunch.
+        if let v = i("glucoseStaleMinutes") {
+            glucoseStaleMinutes = min(max(v, Self.glucoseStaleOptions.min()!), Self.glucoseStaleOptions.max()!)
+        }
         if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
         // Phase 9 (09-02, MOBI-02): `advancedControlEnabled` no longer restores from a backup either —
         // same hidden-flag pattern. A legacy backup carrying `true` is silently ignored (the property's
