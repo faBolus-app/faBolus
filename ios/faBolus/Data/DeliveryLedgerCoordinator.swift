@@ -210,6 +210,13 @@ final class DeliveryLedgerCoordinator {
         remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId)
     }
 
+    /// R2-12: the durable terminal outcomes recorded for the Garmin peer, oldest→newest, so the bridge can
+    /// re-seed its terminal-echo outbox at launch (a bolus outcome recorded in the ledger but never echoed
+    /// across an app restart). Thin read-only passthrough — the bridge never touches the private ledger.
+    func garminTerminalOutcomes() -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
+        remoteBolusLedger.terminalOutcomes(peerId: "garmin")
+    }
+
     /// F1: the SAME refusal gate `eraseAllOnDeviceHealthData` enforces — never erase over an in-flight or
     /// otherwise unresolved delivery (the ledger + snapshot are needed to reconcile it). Returns the
     /// worded refusal reason, or nil when it's safe to proceed.

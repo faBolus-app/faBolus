@@ -2845,6 +2845,12 @@ public final class AppModel {
         await deliveryLedgerCoordinator.reconcileUnresolvedDeliveries()
     }
 
+    /// R2-12: the durable Garmin terminal outcomes (oldest→newest) for the bridge's launch-time echo re-seed.
+    /// Thin adapter over `DeliveryLedgerCoordinator.garminTerminalOutcomes()` (D-04).
+    func garminTerminalOutcomes() -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
+        deliveryLedgerCoordinator.garminTerminalOutcomes()
+    }
+
     /// Deliver a frozen `ResolvedBolus` through the durable ledger + validated signed path, echoing status
     /// to the remote. `doseKey` is derived from the ORIGINAL request params so a retry idempotently replays
     /// (audit A-02); the delivered dose/carbs/BG are the frozen resolved values.

@@ -24,7 +24,14 @@ struct FaBolusApp: App {
         // init happens at launch. Constructed AFTER `model` (the bridge holds a weak model ref and wires
         // echo/status listeners) and retained in the @State below so its `Self.shared` weak ref survives.
         // Mirrors CR-01 (FB-4), which moved the Mobi reject backstop out of the view tree for the same gap.
-        _garmin = State(initialValue: GarminRemoteBridge(model: model))
+        let bridge = GarminRemoteBridge(model: model)
+        _garmin = State(initialValue: bridge)
+        #if GARMIN
+        // R2-12: re-seed the terminal-echo outbox from the durable ledger at launch, so a bolus outcome
+        // recorded but never echoed to the watch across an app kill/relaunch is replayed once the watch is
+        // message-ready. Called right after the bridge is built (WR-08 launch-time construction).
+        bridge.seedTerminalEchoesFromLedger()
+        #endif
     }
 
     var body: some Scene {

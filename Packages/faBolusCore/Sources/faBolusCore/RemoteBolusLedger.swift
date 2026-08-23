@@ -215,6 +215,17 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 
+    /// R2-12: the terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
+    /// have missed them across an app restart. Read-only; does not mutate ledger state.
+    public func terminalOutcomes(peerId: String) -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
+        order.compactMap { k in
+            guard let e = entries[k], e.state == .terminal else { return nil }
+            let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, String(parts[0]) == peerId else { return nil }
+            return (String(parts[1]), e.terminalStatus ?? "unknown", e.terminalMessage, e.deliveredUnits)
+        }
+    }
+
     private mutating func evictIfNeeded() {
         // Never evict a non-terminal (still-tracked) entry — only settle-able history is LRU-dropped.
         while order.count > cap {

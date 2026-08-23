@@ -45,6 +45,20 @@ func garminSendDisposition(success: Bool, isEcho: Bool) -> GarminSendDisposition
     return isEcho ? .reenqueueFront : .drop
 }
 
+/// R2-12 (cross-restart echo persistence): a terminal outcome to re-enqueue as a `bolusStatus` echo on
+/// launch. Pure/ConnectIQ-free (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so the seeding
+/// decision gets unit coverage in the default (non-GARMIN) target.
+struct GarminEchoSeed: Equatable { let requestId: String; let status: String; let deliveredUnits: Double?; let message: String? }
+
+/// R2-12: which of the ledger's durable terminal outcomes to re-enqueue as echoes on launch — those NOT
+/// already confirmed-sent to the watch. `alreadyEchoed` is the durable set of requestIds whose echo was
+/// previously acked. Pure/ConnectIQ-free (unit-testable in the default target).
+func garminEchoesToSeed(terminalOutcomes: [(requestId: String, status: String, message: String?, deliveredUnits: Double?)],
+                        alreadyEchoed: Set<String>) -> [GarminEchoSeed] {
+    terminalOutcomes.filter { !alreadyEchoed.contains($0.requestId) }
+                    .map { GarminEchoSeed(requestId: $0.requestId, status: $0.status, deliveredUnits: $0.deliveredUnits, message: $0.message) }
+}
+
 #if GARMIN
 import ConnectIQ
 
@@ -104,12 +118,17 @@ final class GarminRemoteBridge: NSObject {
     private var readiness = GarminMessageReadiness()
     private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
     private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
-    // TODO(R2-12 follow-up): cross-restart echo persistence. This durable outbox is in-memory only
-    // (replay-until-transport-acked within a process). The phone-side RemoteBolusLedger /
-    // DeliveryLedgerCoordinator already persist the authoritative (peerId,requestId) terminal outcome, so
-    // on launch we could seed echoQueue from the ledger's UNACKED terminal outcomes (composes with WR-08's
-    // launch/state-restoration) — recovering a terminal echo across an app kill/relaunch, not just a
-    // reconnect. Out of scope for R2-12; flagged as follow-up.
+    // R2-12 (cross-restart echo persistence): the in-memory `echoQueue` above replays terminal echoes
+    // until transport-acked WITHIN a process. `seedTerminalEchoesFromLedger()` (called at launch) closes
+    // the across-restart gap by re-seeding it from the durable RemoteBolusLedger's terminal Garmin
+    // outcomes that were NOT already confirmed-sent (tracked in `alreadyEchoedKey`). `didSeedTerminalEchoes`
+    // makes the seed idempotent per launch.
+    private var didSeedTerminalEchoes = false
+    // R2-12: durable set of requestIds whose terminal echo was already confirmed-sent to the watch, so the
+    // launch-time re-seed does not re-echo an outcome the watch already received. Bounded (~256, oldest
+    // dropped) in UserDefaults to avoid unbounded growth.
+    private static let alreadyEchoedKey = "garminEchoedRequestIds"
+    private static let alreadyEchoedCap = 256
     // A2 send-watchdog: ConnectIQ's `sendMessage` completion has NO timeout, so a lost/never-fired
     // completion (watch app died, out of range, Garmin Connect dropped it) would leave `sendInFlight`
     // true forever — the `guard !sendInFlight` below then makes every later status push AND every
@@ -257,6 +276,36 @@ final class GarminRemoteBridge: NSObject {
         pump()
     }
 
+    /// R2-12: seed the durable terminal-echo outbox from the ledger at launch, so a bolus outcome recorded
+    /// in the durable RemoteBolusLedger but never echoed to the watch (app killed/relaunched before the echo
+    /// was transport-acked) is replayed once the watch is message-ready. Filters out outcomes already
+    /// confirmed-sent (durable `alreadyEchoedKey` set). Idempotent per launch (`didSeedTerminalEchoes`).
+    func seedTerminalEchoesFromLedger() {
+        guard !didSeedTerminalEchoes, let model else { return }
+        didSeedTerminalEchoes = true
+        let outcomes = model.garminTerminalOutcomes()
+        let seeds = garminEchoesToSeed(terminalOutcomes: outcomes, alreadyEchoed: Self.alreadyEchoedRequestIds())
+        for seed in seeds {
+            let cmd = RemoteCommand(kind: .bolusStatus, requestId: seed.requestId,
+                                    status: RemoteCommand.Status(rawValue: seed.status),
+                                    deliveredUnits: seed.deliveredUnits, message: seed.message)
+            if let dict = try? cmd.asDictionary() { echoQueue.append(dict) }
+        }
+        pump()   // WR-07 readiness gate defers the actual transmit until the device is message-ready
+    }
+
+    // R2-12: durable already-echoed requestId set (UserDefaults, bounded).
+    private static func alreadyEchoedRequestIds() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: alreadyEchoedKey) ?? [])
+    }
+    private static func markAlreadyEchoed(_ requestId: String) {
+        var ids = UserDefaults.standard.stringArray(forKey: alreadyEchoedKey) ?? []
+        guard !ids.contains(requestId) else { return }
+        ids.append(requestId)
+        if ids.count > alreadyEchoedCap { ids.removeFirst(ids.count - alreadyEchoedCap) }
+        UserDefaults.standard.set(ids, forKey: alreadyEchoedKey)
+    }
+
     private func pump() {
         // WR-07: also gate on message-readiness — a send before characteristics discovery is silently
         // lost. Enqueue-before-pump means gating here only DEFERS the transmit; discovery drains it.
@@ -291,7 +340,13 @@ final class GarminRemoteBridge: NSObject {
                 switch garminSendDisposition(success: success, isEcho: self.inFlight?.isEcho ?? false) {
                 case .reenqueueFront:
                     if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
-                case .ack, .drop:
+                case .ack:
+                    // R2-12: a terminal echo was confirmed sent — record its requestId durably so a
+                    // launch-time re-seed from the ledger does not re-echo an outcome the watch already got.
+                    if let f = self.inFlight, f.isEcho, let rid = f.payload["requestId"] as? String {
+                        Self.markAlreadyEchoed(rid)
+                    }
+                case .drop:
                     break
                 }
                 self.inFlight = nil
