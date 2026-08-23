@@ -73,6 +73,31 @@ struct PumpLearnedOpcodePersistenceTests {
         #expect(store.entry(for: "A").firmware == "3.0")
     }
 
+    /// R2-10 (CR-02): a dose-input READ rejection (op108 `ControlIQIOBRequest` IOB / op115
+    /// `BolusCalcDataSnapshotRequest` therapy) must NEVER be durably persisted — op109 is the SOLE IOB
+    /// source, so a persisted skip would fail-close `recommendBolus` forever with no re-probe (bricks the
+    /// bolus calculator on that pump). The store's belt-and-suspenders guard drops these before any write.
+    /// Contrast with op20, which persists normally (its cartridge pre-guard self-heal is unchanged).
+    @Test func doseInputReadRejectionsAreNeverPersistedWhileOp20Is() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let iob = ControlIQIOBRequest.props.opCode                 // op108 (dose input)
+        let therapy = BolusCalcDataSnapshotRequest.props.opCode    // op115 (dose input)
+        store.record(iob, for: "A", firmware: "2.5")
+        store.record(therapy, for: "A", firmware: "2.5")
+        #expect(!store.learnedOpcodes(for: "A").contains(iob),
+                "op108 (IOB) must never be durably blacklisted — no re-probe would ever run (bricks the calculator)")
+        #expect(!store.learnedOpcodes(for: "A").contains(therapy),
+                "op115 (therapy settings) must never be durably blacklisted")
+        #expect(store.learnedOpcodes(for: "A").isEmpty,
+                "recording only dose-input reads must persist nothing at all")
+
+        // Contrast / regression guard: op20 (the cartridge pre-guard read) still persists normally.
+        store.record(loadStatusOpcode, for: "A", firmware: "2.5")
+        #expect(store.learnedOpcodes(for: "A") == [loadStatusOpcode],
+                "op20 must still persist normally — its self-heal is unchanged by the R2-10 dose-input allowlist")
+    }
+
     /// `reset(for:)` forgets one pump only.
     @Test func resetForgetsOnlyThatPump() {
         let (store, suite, defaults) = isolatedStore()

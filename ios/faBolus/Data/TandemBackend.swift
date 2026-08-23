@@ -765,9 +765,22 @@ public final class TandemBackend: NSObject, PumpBackend {
         // `validateDeliver` doesn't block every pre-existing delivery test that never scripts an op-115
         // reply. Tests that specifically want the unread window use `setTherapyParamsDateForTesting(nil)`.
         self.snapshot.therapyParamsDate = Date()
+        // CR-01 (VA-05): default this test-double to an IDENTIFIED t:slim X2 — mirrors the
+        // connection/auth/op-115 default-to-ready precedents above — so the new fail-closed pump-family
+        // guard in `validateDeliver` (`snapshot.pumpModel == .tslimX2`) doesn't block every pre-existing
+        // delivery test that never scripts an op33 identity. Tests that want a `.mobi` / `.unknown` family
+        // use `setPumpModelIdentityForTesting(...)` (or inject an op33 `apiVersion` frame).
+        self.snapshot.pumpModelName = "t:slim X2"
     }
     /// Test-only: flip the connection state to simulate a mid-delivery link drop.
     func setConnectionForTesting(_ c: PumpConnectionState) { snapshot.connection = c }
+    /// Test-only (CR-01/VA-05): directly set the pump-family identity, since `snapshot`'s setter is
+    /// private outside this file. Used to recreate the `.mobi` / `.unknown` families the new fail-closed
+    /// pump-family guard in `validateDeliver` blocks on (the default test-double is an identified t:slim X2).
+    func setPumpModelIdentityForTesting(pumpModelName: String, isMobi: Bool) {
+        snapshot.pumpModelName = pumpModelName
+        snapshot.isMobi = isMobi
+    }
     /// Test-only (Phase 2): directly set/clear the op-115 freshness stamp, since `snapshot`'s setter is
     /// private outside this file. Used to recreate the never-read-op-115 window that the new fail-closed
     /// guard in `validateDeliver` blocks on.

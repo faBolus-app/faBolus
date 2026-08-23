@@ -54,6 +54,31 @@ struct MobiRejectBackstopBoundaryTests {
         #expect(model.savedPin == nil)
     }
 
+    /// CR-01 (VA-05) Step A: a Mobi that is ALREADY the current identity BEFORE `start()` runs — a
+    /// CoreBluetooth state-restoration reconnect, or a stored/identified Mobi applied before the backstop
+    /// wires up — must still be rejected. `withObservationTracking`'s `onChange` fires only on the NEXT
+    /// mutation, never against the value already present, so the transition test above would miss this;
+    /// `start()` now calls `rejectMobiIfDetected()` synchronously BEFORE arming observation to close the
+    /// gap. No transition (`simulatePumpIdentityChange`) is used here — the Mobi is current from birth.
+    @Test func backstopRejectsAlreadyCurrentMobiAtStartup() {
+        let (model, _) = makeModel(isMobi: true)
+
+        // The Mobi identity is already present, before ANY observer (foreground or this backstop) runs.
+        #expect(model.snapshot.pumpModel == .mobi)
+        #expect(model.lastError == nil)
+
+        // No view of any kind is constructed; this is the only observer of `model`. `start()`'s pre-arm
+        // `rejectMobiIfDetected()` runs synchronously — no transition, no `.onChange`, no re-arm hop.
+        let backstop = MobiRejectBackstop(model: model)
+        backstop.start()
+
+        // OUTCOME: torn down against the ALREADY-CURRENT value, purely by `start()`'s pre-arm reject.
+        #expect(model.lastError == MobiRejectCopy.mobiNotSupported)
+        #expect(model.snapshot.connection == .disconnected)
+        #expect(model.savePinPrompt == nil)
+        #expect(model.savedPin == nil)
+    }
+
     /// Companion negative check: a backend that never becomes Mobi never trips the backstop — it must
     /// stay a true no-op for the kept t:slim path (mirrors `tslimStillPairsAndDelivers`).
     @Test func backstopIsNoOpWhenNeverMobi() async {

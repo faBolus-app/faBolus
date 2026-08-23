@@ -110,4 +110,48 @@ struct PumpUnsupportedReadSelfHealTests {
         #expect(!dispatchedOps.contains(loadStatusOpcode),
                 "op20 must never be dispatched again this connection-lifetime")
     }
+
+    // MARK: - R2-10 (CR-02) — a dose-input read (op108/op115) is RE-PROBED each connection, never durably skipped
+
+    /// op108 `ControlIQIOBRequest` (IOB) and op115 `BolusCalcDataSnapshotRequest` (therapy settings) feed the
+    /// bolus calculator; op109 is the ONLY IOB source, so a DURABLE skip would fail-close `recommendBolus`
+    /// forever with no re-probe. Unlike op20 (which learns-and-STAYS-skipped across reconnects), a dose-input
+    /// read op77'd this connection is skipped only for the REST of this session and is DROPPED from
+    /// `badOpcodes` on the next `startPolling()`, so it is re-sent every connection. op20 (NOT a dose input)
+    /// stays skipped across the reconnect — the contrast that proves the R2-10 allowlist is dose-input-scoped.
+    @Test func aDoseInputReadOp77dThisConnectionIsReProbedNextConnectionWhileOp20StaysSkipped() {
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        let iob = ControlIQIOBRequest.props.opCode                 // op108 (dose input)
+        let therapy = BolusCalcDataSnapshotRequest.props.opCode    // op115 (dose input)
+        let op20 = loadStatusOpcode                                // op20 (cartridge pre-guard read)
+
+        // Connection N: run the full post-pair burst and release the identity-gated op20, so op108, op115 and
+        // op20 are all outstanding with distinct wire txIds.
+        b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify a supported pump → deferred op20 goes out
+        guard let iobTxId = b.outstandingReadsForTesting.first(where: { $0.opcode == iob })?.txId,
+              let therapyTxId = b.outstandingReadsForTesting.first(where: { $0.opcode == therapy })?.txId,
+              let op20TxId = b.outstandingReadsForTesting.first(where: { $0.opcode == op20 })?.txId else {
+            Issue.record("op108, op115 and op20 must all be outstanding after the burst"); return
+        }
+        // The pump op77's each of them (opcode-less [0,0], correlated by the echoed request txId in frame[1]).
+        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: iobTxId))
+        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: therapyTxId))
+        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: op20TxId))
+        #expect(b.badOpcodesForTesting.isSuperset(of: [iob, therapy, op20]),
+                "all three op77'd reads are skipped for the rest of THIS session (in-memory badOpcodes)")
+
+        // Connection N+1: startPolling re-probes the dose-input reads (dropped from badOpcodes) but keeps op20.
+        var dispatched: [UInt8] = []
+        b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
+        b.startPollingForTesting()
+        #expect(!b.badOpcodesForTesting.contains(iob),
+                "op108 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped (R2-10)")
+        #expect(!b.badOpcodesForTesting.contains(therapy),
+                "op115 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped (R2-10)")
+        #expect(dispatched.contains(iob), "op108 must be RE-SENT on connection N+1")
+        #expect(dispatched.contains(therapy), "op115 must be RE-SENT on connection N+1")
+        #expect(b.badOpcodesForTesting.contains(op20),
+                "op20 (NOT a dose-input read) must STAY skipped across the reconnect — the contrast that scopes the allowlist")
+    }
 }

@@ -20,6 +20,8 @@ import TandemMessages
 
     private var cartridgeOpcode: UInt8 { LoadStatusRequest.props.opCode }          // op-20 (safety-relevant)
     private var batteryOpcode: UInt8 { CurrentBatteryV2Request.props.opCode }      // op-144 (not safety-relevant)
+    private var iobOpcode: UInt8 { ControlIQIOBRequest.props.opCode }              // op-108 (dose input)
+    private var calcSnapshotOpcode: UInt8 { BolusCalcDataSnapshotRequest.props.opCode } // op-115 (dose input)
 
     // MARK: - 4a — human-readable read names
 
@@ -71,5 +73,45 @@ import TandemMessages
                                                   badOpcodes: [cartridgeOpcode], enabled: false)
         #expect(!block.contains("Cartridge/load status"))
         #expect(!block.contains("Safety note:"))
+    }
+
+    // MARK: - R2-10 (CR-02) — dose-input reads emit a DOSE-SPECIFIC note (not the op20 "pump's own protection")
+
+    /// An excluded op108 (IOB) dose-input read must disclose that the bolus calculator fail-closes and will
+    /// NOT recommend a dose — distinct from the op20 "relying on the pump's own protection" pre-guard note
+    /// (there is no pump-side substitute for the IOB/therapy inputs, so that wording would be wrong here).
+    @Test func excludedDoseInputIOBReadEmitsADoseSpecificNoteNotTheOp20Wording() {
+        let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [iobOpcode])
+        #expect(notes.count == 1)
+        #expect(notes.first?.contains("Control-IQ IOB (op-\(iobOpcode))") == true,
+                "the dose-input note must name the read (human-readable + opcode)")
+        #expect(notes.first?.contains("will not recommend a dose") == true,
+                "op108 unavailable must disclose the calculator fail-closes and won't recommend a dose")
+        #expect(notes.allSatisfy { !$0.contains("own protection") },
+                "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
+    }
+
+    /// Same for op115 (therapy settings: CR/ISF/target/max) — the other dose-input read.
+    @Test func excludedBolusCalcSnapshotReadEmitsADoseSpecificNote() {
+        let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [calcSnapshotOpcode])
+        #expect(notes.count == 1)
+        #expect(notes.first?.contains("Bolus-calculator settings (op-\(calcSnapshotOpcode))") == true,
+                "the dose-input note must name the read (human-readable + opcode)")
+        #expect(notes.first?.contains("will not recommend a dose") == true,
+                "op115 unavailable must disclose the calculator fail-closes and won't recommend a dose")
+        #expect(notes.allSatisfy { !$0.contains("own protection") },
+                "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
+    }
+
+    /// The two wordings are DISTINCT and coexist: excluding both op20 (safety pre-guard read) and op108
+    /// (dose input) yields two separate notes — the op20 "own protection" note AND the dose-input
+    /// "will not recommend a dose" note — never one substituted for the other.
+    @Test func op20AndADoseInputReadEmitTwoDistinctNotes() {
+        let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [cartridgeOpcode, iobOpcode])
+        #expect(notes.count == 2, "each excluded safety/dose read gets its own note")
+        #expect(notes.contains { $0.contains("own protection") },
+                "op20 keeps its 'relying on the pump's own protection' pre-guard note")
+        #expect(notes.contains { $0.contains("will not recommend a dose") },
+                "op108 gets the distinct dose-input 'will not recommend a dose' note")
     }
 }

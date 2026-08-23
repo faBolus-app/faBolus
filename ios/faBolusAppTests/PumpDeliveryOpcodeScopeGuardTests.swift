@@ -55,6 +55,21 @@ struct PumpDeliveryOpcodeScopeGuardTests {
             "the read-only never-resend set and the delivery/control-write set must be disjoint")
     }
 
+    /// R2-10 (CR-02): the dose-input READ allowlist (op108 IOB / op115 therapy) must be DISJOINT from the
+    /// delivery/control-WRITE guard set — a dose-input read is a CURRENT_STATUS read, never a delivery
+    /// command, so the two sets can never reclassify each other. It must also be a SUBSET of the read set
+    /// (the only opcodes that may legitimately enter `badOpcodes`). This is what lets the write-opcode
+    /// fail-closed guardrail and the dose-input re-probe allowlist coexist without interfering.
+    @Test func doseInputReadSetIsDisjointFromDeliveryWritesAndIsASubsetOfReads() {
+        #expect(!PumpReadCatalog.doseInputReadOpcodes.isEmpty)
+        #expect(PumpReadCatalog.doseInputReadOpcodes
+            .isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
+            "the dose-input read allowlist and the delivery/control-write guard set must be DISJOINT (R2-10)")
+        #expect(PumpReadCatalog.doseInputReadOpcodes
+            .isSubset(of: PumpReadCatalog.currentStatusReadOpcodes),
+            "dose-input reads are currentStatus reads — they live in the read space, not the write space")
+    }
+
     /// The read-colliding opcodes (op164 SetTempRate ↔ LastBolusStatusV2, op144 EnterChangeCartridge ↔
     /// CurrentBatteryV2) are DELIBERATELY excluded from the guard set, and are `.control` writes vs
     /// `.currentStatus` reads — documenting why a raw-value denylist would be wrong and why the collision is

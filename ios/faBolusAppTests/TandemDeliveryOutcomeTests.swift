@@ -44,6 +44,16 @@ struct TandemDeliveryOutcomeTests {
     private func capture(_ op: () async throws -> Double) async -> Error? {
         do { _ = try await op(); return nil } catch { return error }
     }
+    /// Mirrors `R3CLedgerFaultTests.withCleanSettings` — clear the global gates so the AppModel-driven
+    /// ledger path can actually deliver, and restore them after (this suite is `.serialized`). Only the
+    /// ledger-level companion test below needs it; the pure-backend tests bypass AppModel's gate funnel.
+    private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
+        let s = AppSettings.shared
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
+        s.phoneReadOnly = false; s.childModeEnabled = false
+        defer { s.phoneReadOnly = ro; s.childModeEnabled = child }
+        try await body()
+    }
 
     // MARK: pre-write vs post-write
 
@@ -73,12 +83,48 @@ struct TandemDeliveryOutcomeTests {
         #expect(b.deliveryOutcomeUnknown)
     }
 
-    @Test func explicitInitiateNackIsCleanFailureNotIndeterminate() async {
+    /// CR-03 (VA-04, iOS half): a matching-bolus-id, non-accepted `InitiateBolusResponse` is NOT
+    /// HMAC-verified — TandemKit CRC-checks the frame and strips the trailing auth block WITHOUT
+    /// authenticating it, so an unauthenticable NACK carries no trustworthy signal. It must be treated as
+    /// INDETERMINATE and HOLD the delivery lock, never settled as a clean, lock-releasing failure: an
+    /// active BLE attacker could let the real initiate reach the pump, suppress the genuine ACCEPT, and
+    /// race in a CRC-valid forged NACK while the pump is delivering — a clean release here would invite a
+    /// re-dose (double-dose window). Only the authoritative pump reconciliation path may clear it.
+    @Test func unauthenticatedInitiateNackIsIndeterminateNotCleanFailure() async {
         let (b, fake) = make()
         fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
         let e = await capture { try await deliver(b) }
-        #expect(e != nil && !indeterminate(e))            // authoritative NACK → clean failed
-        #expect(!b.deliveryOutcomeUnknown)                // not blocked
+        #expect(indeterminate(e))                 // unauthenticable NACK → INDETERMINATE (was: clean failed)
+        #expect(b.deliveryOutcomeUnknown)         // …and the delivery lock is HELD (was: not blocked)
+        #expect(fake.initiateWriteCount == 1)     // the initiate DID go out — the NACK is post-write
+    }
+
+    /// CR-03 (VA-04) ledger half — end-to-end through the durable ledger (`AppModel` over the REAL
+    /// `TandemBackend`, driven by the deterministic `FakePumpTransport`): a CRC-valid, matching-bolus-id,
+    /// non-accepted (forged/garbled) `InitiateBolusResponse` must settle the ledgered delivery as
+    /// INDETERMINATE and keep the GLOBAL unresolved-delivery block HELD — never release it as a clean
+    /// `.failed`. Placed here (not in the LedgerFault/BlockPrecedence suites) because those drive
+    /// `MockBackend`, which cannot emit a signed NACK frame; only this suite has the `FakePumpTransport`
+    /// NACK-scripting machinery. It reuses the ledger idiom from those suites: `withCleanSettings`,
+    /// `R3CLedgerFaultTests.FakeLedgerStore`, and the `deliveryGloballyBlocked`/`deliveryBlockedReason`
+    /// public surface (the `computeDeliveryBlockReason() != nil` equivalent).
+    @Test func unauthenticatedInitiateNackHoldsTheGlobalLedgerBlock() async {
+        await withCleanSettings {
+            let fake = FakePumpTransport()
+            let backend = TandemBackend(testTransport: fake)
+            fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
+            fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
+            let store = R3CLedgerFaultTests.FakeLedgerStore()
+            let model = AppModel(source: backend, ledgerStore: store)
+            await model.deliverBolus(units: 2.0)
+            // The ledgered outcome is .indeterminate (surfaced as the verify-on-pump message) — a .failed
+            // outcome would carry the error's own message AND release the block instead.
+            #expect(model.lastError == "Bolus sent but outcome is unknown — verify on the pump before retrying.")
+            // …and the GLOBAL block stays HELD; only authoritative reconciliation clears it.
+            #expect(model.deliveryGloballyBlocked)
+            #expect(model.deliveryBlockedReason != nil)
+        }
     }
 
     // MARK: accepted, but no authoritative terminal
@@ -341,21 +387,25 @@ struct TandemDeliveryOutcomeTests {
         #expect(!b.deliveryOutcomeUnknown)  // never blocked
     }
 
-    /// InitiateBolusResponse non-accept site: the same low-reservoir inference applies to the
-    /// initiate-nack path, not only the permission-nack path.
-    @Test func initiateNackWithLowReservoirIsPossiblyOutOfInsulin() async {
+    /// InitiateBolusResponse non-accept site with a low reservoir: post-CR-03 (VA-04) this is NO LONGER a
+    /// clean `.possiblyOutOfInsulin` failure. An unauthenticable initiate NACK is INDETERMINATE and HOLDS
+    /// the delivery lock (unlike the permission-nack site, which is authenticated before initiate and stays
+    /// a clean `.possiblyOutOfInsulin`). The reservoir-based "possibly out of insulin" hint is NOT lost —
+    /// Phase 09.9 D-02 carries it INSIDE the indeterminate reason so the human-readable detail survives
+    /// without over-claiming a clean, retryable outcome.
+    @Test func initiateNackWithLowReservoirIsIndeterminateCarryingTheReservoirHint() async {
         let (b, fake) = make()
         b.setReservoirUnitsForTesting(0.4)
         fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
         let e = await capture { try await deliver(b, 2.0) }
-        guard case .possiblyOutOfInsulin(let reservoirUnits, _)? = e as? BolusError else {
-            Issue.record("expected BolusError.possiblyOutOfInsulin, got \(String(describing: e))")
+        guard case .indeterminate(let reason)? = e as? BolusError else {
+            Issue.record("expected BolusError.indeterminate (unauthenticable initiate NACK), got \(String(describing: e))")
             return
         }
-        #expect(reservoirUnits == 0.4)
-        #expect(!indeterminate(e))
-        #expect(!b.deliveryOutcomeUnknown)
-        #expect(fake.initiateWriteCount == 1)   // the initiate DID go out at this site — still a clean failure
+        #expect(reason.contains("possibly out of insulin (reservoir 0.4 u)"))  // hint preserved in the reason
+        #expect(indeterminate(e))
+        #expect(b.deliveryOutcomeUnknown)       // lock HELD (was: not blocked)
+        #expect(fake.initiateWriteCount == 1)   // the initiate DID go out — the NACK is post-write
     }
 
     /// Control (no over-claim): the SAME nack reason fires while the reservoir reading was ample — the
