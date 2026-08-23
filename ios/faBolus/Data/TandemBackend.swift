@@ -1942,12 +1942,26 @@ public final class TandemBackend: NSObject, PumpBackend {
         pendingGapWindows.removeAll(); currentGapWindow = nil
         defer { backfillBuffer.removeAll(keepingCapacity: false); backfillBoluses.removeAll(keepingCapacity: false) }
         let now = Date()
-        // The pump logs time as local wall-clock. Adding the 2008 epoch treats it as UTC, which
-        // lands records a timezone away (they showed ~7-8 h in the past in PDT); subtract the
-        // local UTC offset to place them at the correct real instant, aligned with live data.
-        let tzOffset = Double(TimeZone.current.secondsFromGMT())
+        // VA-18: the pump logs time as local WALL-CLOCK (the clock reading shown on its face), so each
+        // record must be placed using the UTC offset in effect at THAT record's own instant — not a single
+        // offset captured today. The prior code subtracted `TimeZone.current.secondsFromGMT()` (today's
+        // offset) from every record, so across a DST boundary or travel it shifted historical records by
+        // the wrong offset (~1 h at a DST edge, whole hours across zones), corrupting the medical timeline
+        // and which record is promoted as "latest glucose". Fix: recover the naive wall-clock components by
+        // reading the pump seconds against the UTC-anchored 2008 epoch, then re-anchor those components in
+        // the pump/user zone — Calendar applies the DST-correct offset for each record's actual date.
+        // NOTE: live-path instants (pumpTimeAnchor / lastBolusDate, and PumpReadScheduler.cgmReadingDate)
+        // are already timezone-agnostic via the pump↔phone delta anchor and are intentionally untouched.
+        let pumpTZ = TimeZone.current
+        var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
+        var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = pumpTZ
         let pumpDate: (UInt32) -> Date = { sec in
-            min(Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(sec) - tzOffset), now)
+            let naive = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(sec))
+            let c = utcCal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: naive)
+            // `zoneCal.date(from:)` resolves DST gaps/repeats deterministically; fall back to the naive
+            // instant only if component re-composition ever fails (it does not for valid history seconds).
+            let instant = zoneCal.date(from: c) ?? naive
+            return min(instant, now)
         }
 
         // --- CGM readings ---
