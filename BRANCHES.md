@@ -74,6 +74,30 @@ This is a constraint on **distributing the branch**, so it lives with the branch
 This plan/repo work **cannot** satisfy this gate — it needs a clinician. It is stated so the constraint
 travels with the branch rather than being lost.
 
+### RECORDED 2026-08-23 — owner-accepted AI-panel review (NOT a licensed clinician)
+
+**Verdict: APPROVED, with documentation/copy changes (all applied) — no dose-path code change.**
+
+The §2.1 therapy-editing copy (A1/B1/C2) and the insulin-affecting include-stale (#96) + two-way
+stale-IOB/therapy behaviors were reviewed by an **owner-directed panel of two independent AI reviewers
+(Claude + Codex)** — explicitly **NOT** a licensed endocrinologist/CDCES. The owner (Zev Granowitz, F5 §13
+approver of record) accepts this AI-panel review as satisfying the copy-distribution gate **for the
+still-saline-only experimental build**. This is a deliberate owner substitution for the clinician review
+described above; it carries no licensed-clinician authority.
+
+- **Outcome:** A1 / C2 / §4b approved as-is; B1a reworded (Control-IQ automation attributed to basal +
+  correction factor only); B1b gained an acute-danger carve-out — both re-blessed in `TherapyEditAck.swift`
+  (§13-cleared 2026-08-23). §4a/§3 framing corrected (path is bidirectional; the 0.10 U divergence guard
+  bounds the fallback either way). Full record + sources + reviewer trail:
+  `.planning/intel/prep/phase4-clinical-signoff/AI-PANEL-REVIEW-DECISIONS.md`.
+- **Distribution:** experimental distribution to a non-developer is **UNBLOCKED** as of this record (once
+  the blessed copy has propagated to `experimental` — landing in progress).
+- **Standing (UNCHANGED): the saline-only NO-GO for real insulin remains fully in force.** Widening
+  distribution here does **not** authorize real-insulin use — that stays gated on Phase 12 (on-hardware
+  saline bench) and is a separate, explicit owner decision, never automatic.
+- The DS1 / L6 / H1–H4 / K1–K2 advisory features named above are ranked / not-yet-built; their clinical
+  design review is deferred until they exist (out of scope for this shipped-copy gate).
+
 ## Cross-repo CI is branch-aware (§1.2)
 
 The three repos build against each other (faBolus consumes TandemKit as a local package; faBolusGarmin
