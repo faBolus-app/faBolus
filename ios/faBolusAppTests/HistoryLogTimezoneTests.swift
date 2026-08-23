@@ -19,12 +19,14 @@ import TandemBLE
 /// with records placed relative to a REAL DST transition (`TimeZone.nextDaylightSavingTimeTransition`,
 /// mirroring `DSTGuardTests`), never a hardcoded instant, so they are not tied to a specific year.
 ///
-/// The fix hardcodes `TimeZone.current`, so the only seam that makes this exercise DST deterministically
-/// is the process-wide default zone: each test sets `NSTimeZone.default` to a DST-observing zone
-/// (America/Los_Angeles) for its duration and restores it via `defer` — `TimeZone.current` (what the fix
-/// reads) then reflects it. `@Suite(.serialized)` keeps that mutation from racing sibling tests here.
-/// Every expected instant is recomputed with the SAME zone `Calendar` reinterpretation the fix uses
-/// (never a literal), so the assertions stay self-consistent with the fix regardless of the CI host zone.
+/// The fix reads its zone via the `#if DEBUG historyBackfillTimeZoneForTesting` seam (production:
+/// `TimeZone.current`). Each test injects a DST-observing zone (`America/Los_Angeles`) directly into the
+/// backend AND uses that same explicit zone for its own `Calendar` math — so the boundary is exercised
+/// DETERMINISTICALLY on any host. (The earlier approach set `NSTimeZone.default` and hoped `TimeZone.current`
+/// would follow; it does on a Pacific dev box but NOT on the UTC CI runner, so those tests passed locally and
+/// failed CI. `withDefaultTimeZone` is kept as harmless belt-and-suspenders.) Every expected instant is
+/// recomputed with the SAME zone `Calendar` reinterpretation the fix uses (never a literal), so the
+/// assertions stay self-consistent with the fix regardless of the CI host zone.
 @Suite(.serialized) @MainActor
 struct HistoryLogTimezoneTests {
 
@@ -111,7 +113,7 @@ struct HistoryLogTimezoneTests {
     @Test func standardTimeRecordPlacedAtItsOwnOffsetNotTodays() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone.current
+                let tz = TimeZone(identifier: "America/Los_Angeles")!   // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
@@ -125,6 +127,7 @@ struct HistoryLogTimezoneTests {
 
                 let sec = pumpSec(placingRecordAt: target, zoneCal: zoneCal, utcCal: utcCal)
                 let (backend, _) = makeBackend()
+                backend.historyBackfillTimeZoneForTesting = tz   // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 runSync(backend, cgm: [(seq: 1, pumpTimeSec: sec, mgdl: 120)])
 
                 #expect(backend.glucoseHistory.count == 1)
@@ -158,7 +161,7 @@ struct HistoryLogTimezoneTests {
     @Test func straddlingSpringForwardKeepsTrueElapsedSpacing() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone.current
+                let tz = TimeZone(identifier: "America/Los_Angeles")!   // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
@@ -177,6 +180,7 @@ struct HistoryLogTimezoneTests {
                 let secAfter  = pumpSec(placingRecordAt: tAfter,  zoneCal: zoneCal, utcCal: utcCal)
 
                 let (backend, _) = makeBackend()
+                backend.historyBackfillTimeZoneForTesting = tz   // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 runSync(backend, cgm: [(seq: 1, pumpTimeSec: secBefore, mgdl: 90),
                                        (seq: 2, pumpTimeSec: secAfter,  mgdl: 150)])
 
@@ -214,7 +218,7 @@ struct HistoryLogTimezoneTests {
     @Test func latestGlucosePromotionUsesDSTCorrectNewestInstant() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone.current
+                let tz = TimeZone(identifier: "America/Los_Angeles")!   // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
@@ -228,6 +232,7 @@ struct HistoryLogTimezoneTests {
                 let secNewer = pumpSec(placingRecordAt: tNewer, zoneCal: zoneCal, utcCal: utcCal)
 
                 let (backend, _) = makeBackend()
+                backend.historyBackfillTimeZoneForTesting = tz   // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 // Inject newest-first to prove promotion is by placed instant, not arrival/stream order.
                 runSync(backend, cgm: [(seq: 2, pumpTimeSec: secNewer, mgdl: 155),
                                        (seq: 1, pumpTimeSec: secOlder, mgdl: 88)])

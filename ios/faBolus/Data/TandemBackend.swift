@@ -386,6 +386,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     // very next connect, never lost and never re-looped within this one.
     private var backfillPages = 0
     private var backfillTimer: Timer?
+    #if DEBUG
+    // VA-18 test seam: the zone `finishBackfill` re-anchors history records into (production reads
+    // `TimeZone.current`). `HistoryLogTimezoneTests` inject a DST-observing zone here because setting
+    // `NSTimeZone.default` does NOT reliably propagate to `TimeZone.current` across hosts (notably it does
+    // not on the UTC CI runner), which made those tests pass locally (Pacific host) but fail on CI. nil ⇒
+    // production behavior (`TimeZone.current`). Compiled out of Release.
+    var historyBackfillTimeZoneForTesting: TimeZone?
+    #endif
     // CR-01 (R2-01): pairing-handshake watchdog (armed at `coord.start()`; see the extension for
     // arm/fire/cancel). Stored here because Swift forbids stored properties in an extension.
     private var pairingWatchdog: Timer?
@@ -2051,7 +2059,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         // the pump/user zone — Calendar applies the DST-correct offset for each record's actual date.
         // NOTE: live-path instants (pumpTimeAnchor / lastBolusDate, and PumpReadScheduler.cgmReadingDate)
         // are already timezone-agnostic via the pump↔phone delta anchor and are intentionally untouched.
+        #if DEBUG
+        let pumpTZ = historyBackfillTimeZoneForTesting ?? TimeZone.current   // VA-18 test seam (nil ⇒ TimeZone.current)
+        #else
         let pumpTZ = TimeZone.current
+        #endif
         var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
         var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = pumpTZ
         let pumpDate: (UInt32) -> Date = { sec in
