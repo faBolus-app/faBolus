@@ -377,6 +377,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // very next connect, never lost and never re-looped within this one.
     private var backfillPages = 0
     private var backfillTimer: Timer?
+    // CR-01 (R2-01): pairing-handshake watchdog (armed at `coord.start()`; see the extension for
+    // arm/fire/cancel). Stored here because Swift forbids stored properties in an extension.
+    private var pairingWatchdog: Timer?
+    private var pairingWatchdogClearStore = false
     private static let backfillPageSize = 255   // numberOfLogs is one byte
     private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
 
@@ -2342,8 +2346,9 @@ extension TandemBackend: PumpBLEClientDelegate {
     // fire, polling never starts, and no staleness/disconnect escalation runs. This watchdog fails closed
     // after `pairingTimeoutSec` if pairing hasn't completed. Armed at `coord.start()`; cancelled in
     // `onPaired`, `onError`, and `linkDroppedCleanup()`.
-    private var pairingWatchdog: Timer?
-    private var pairingWatchdogClearStore = false
+    // CR-01 (R2-01): `pairingWatchdog` / `pairingWatchdogClearStore` are STORED properties and therefore
+    // declared in the main class body (next to `backfillTimer`) — Swift forbids stored properties in an
+    // extension. The static default + computed timeout below are allowed here.
     private static let defaultPairingTimeoutSec: Double = 30
     private var pairingTimeoutSec: Double {
         #if DEBUG
