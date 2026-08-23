@@ -351,16 +351,16 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// (`benchVerifiedDefault == false`). Display-only, never a dose input (C3); ALWAYS independent
     /// booleans, never merged into one generic flag.
     ///
-    /// **DOCUMENTED STUB — pin deliberately held (09.14 D-05 pin-hygiene).** The kit decode itself landed
-    /// in TandemKit (commit `8f29a4f`, kit PR #20, green CI) but the faBolus `TandemKit` pin in
-    /// `project.yml` is NOT advanced yet — re-pinning happens only once the Phase-11 saline bench
-    /// validates the change (never before, per pin-hygiene discipline). So these two fields are `nil`
-    /// unconditionally today: `PumpResponseApplier`'s `BolusCalcDataSnapshotResponse` case does NOT yet
-    /// read `m.maxBolusEventsExceeded`/`m.maxIobEventsExceeded` (those symbols don't exist in the
-    /// currently-pinned kit revision; referencing them now would break the build). Wiring this read is
-    /// deferred to the plan that advances the pin post-bench — this stub exists so the wire-level
-    /// (`RemoteCommand`) and UI (`StatusPillsView`) shapes are already in place and reviewed ahead of
-    /// that trivial follow-up.
+    /// **DOCUMENTED STUB — read deliberately not wired (09.14 D-05 + CiqCeilingFlags bench gate).** The kit
+    /// decode landed in TandemKit (commit `8f29a4f`, kit PR #20) and — as of the V-Audit re-pin to
+    /// `f72e872` — the symbols `BolusCalcDataSnapshotResponse.maxBolusEventsExceeded`/`.maxIobEventsExceeded`
+    /// DO now exist in the pinned kit. But `PumpResponseApplier`'s `BolusCalcDataSnapshotResponse` case still
+    /// deliberately does NOT read them, so these two fields stay `nil` unconditionally: the true-case is
+    /// bench-gated (`CiqCeilingFlags.benchVerifiedDefault == false`, and the wire-composers return `nil`
+    /// pre-bench), and the LAYOUT is oracle-backed only for the KNOWN-FALSE case (the `true` case has never
+    /// been observed in a first-party capture — the Phase-11 bench blocker). Wiring the applier read is
+    /// deferred to the post-bench follow-up; this stub keeps the wire-level (`RemoteCommand`) and UI
+    /// (`StatusPillsView`) shapes in place and reviewed ahead of that trivial change.
     public var ciqMaxBolusEventsExceeded: Bool? = nil
     public var ciqMaxIobEventsExceeded: Bool? = nil
     public init() {}
