@@ -2471,9 +2471,20 @@ extension TandemBackend: PumpBLEClientDelegate {
 
     public var hasStoredPairing: Bool { PairingStore.hasAnyPairing }
     public func forgetPairing() {
-        // debug pump-pairing-loop-api25 (refinement): forget this pump's durable learned-bad-opcode set too
-        // (captured BEFORE clearing the peripheral identity, since the key derives from it) so a fresh pair
-        // re-tests every read rather than inheriting a prior pairing's skips.
+        // CR-03 (R2-06): atomic teardown-BEFORE-clear. The old body cleared durable creds only, leaving the
+        // live transport + poll timers + pairing coordinator running — so the subsequent re-pair scan
+        // (`SettingsView` "Forget pairing" → `PairingSheet` → `connect()` → `startScan()`) began against a
+        // STILL-connected peripheral. A connected pump is not a dependable discovery target, so the recovery
+        // action could wedge the very connection it means to repair (Codex RA-01). Tear the link fully down
+        // first, reusing existing helpers (no new teardown code), mirroring the disconnect-then-forget order
+        // `AppModel+MobiReject.swift` already relies on.
+        disconnect()          // stopAllTimers() + client.disconnect() (cancels connected/pending peripheral, scan timeout, reconnect watchdog)
+        coordinator = nil     // a late AUTHORIZATION frame can't advance a stale handshake (didReceiveFrame → coordinator?.handle)
+        linkDroppedCleanup()  // fail in-flight waiters; invalidate backfill/history timers; clear authKey/coordinator/watchdog
+        snapshot.connection = .disconnected; onChange?()   // no stale "Connected"/"Bolusing" survives
+        // THEN the durable creds, keeping the existing order — the learned-bad-opcode key derives from the
+        // peripheral identity, so reset it BEFORE `PumpPeripheralStore.clear()` (debug pump-pairing-loop-api25).
+        // A fresh pair then re-tests every read rather than inheriting a prior pairing's skips.
         if let key = currentPumpKey() { badOpcodeStore.reset(for: key) }
         PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = []
     }
