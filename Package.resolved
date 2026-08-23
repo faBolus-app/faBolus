@@ -48,7 +48,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/faBolus-app/TandemKit.git",
       "state" : {
-        "revision" : "09c3d0edc2582db9e2a3ab9a3cb4fc93749c4fbc"
+        "revision" : "f72e8721fee7ffa0c8242a02d629dfa30cd29425"
       }
     },
     {

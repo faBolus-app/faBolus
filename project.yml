@@ -89,7 +89,12 @@ packages:
     # cancel-reject + cold-connect establishment watchdog). TandemKit swift test + oracle parity green
     # (325/39). NOT byte-identical vs 89c208e — VA-04 changes signed-RESPONSE handling. STILL bench-pending:
     # NO-GO for real insulin until the Phase-11 saline bench confirms a real pump's signed responses verify.
-    revision: 09c3d0edc2582db9e2a3ab9a3cb4fc93749c4fbc
+    # Pin BUMP 2026-08-23 (V-Audit ADDENDUM batch): 09c3d0e -> f72e872. Lands VA-06 annotations
+    # (EnterFillTubingMode / SetIDPSegment / SetIDPSettings marked supportedDevices:[.mobi] — NOT on
+    # the wire, byte-identical, oracle-parity neutral) + VA-20 hardening (length-guard the 14 fixed-size
+    # pure-read response inits — defense-in-depth, unreachable via ResponseParser). TandemKit swift test +
+    # oracle parity green (326/39, JDK21). No signed-request/response encode change vs 09c3d0e.
+    revision: f72e8721fee7ffa0c8242a02d629dfa30cd29425
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
