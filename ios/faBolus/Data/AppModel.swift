@@ -1885,6 +1885,13 @@ public final class AppModel {
     /// catch real drift, loose enough to ignore pure rounding.
     static let remoteDivergenceLimitUnits = 0.10
 
+    /// The ACTUAL committed units of the most recent phone/extended delivery (from the ledger outcome),
+    /// so the success banner reports what the pump actually gave rather than the frozen requested amount.
+    /// nil until a delivery settles (and reset at the top of each delivery so a stale value never leaks).
+    public private(set) var lastDeliveredUnits: Double?
+    /// Whether that most recent delivery was cut short by a mid-flight cancel/partial (actual < requested).
+    public private(set) var lastDeliveredWasCancelled: Bool = false
+
     public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
         // P8: the phone's own standard bolus, gated through the single evaluator (child mode + phone
         // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
@@ -1908,12 +1915,15 @@ public final class AppModel {
         // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
         let requestId = "local:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        lastDeliveredUnits = nil   // clear any prior value so a stale amount can't leak into this banner
         let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
             try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
         switch outcome {
-        case .delivered:
+        case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
+            lastDeliveredUnits = delivered
+            lastDeliveredWasCancelled = cancelled
             lastError = nil
         case .indeterminate:
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
@@ -1987,14 +1997,17 @@ public final class AppModel {
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
         let requestId = "local-ext:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        lastDeliveredUnits = nil   // clear any prior value so a stale amount can't leak into this banner
         let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
             try await self.source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
                                                        durationMinutes: durationMinutes,
                                                        carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
         switch outcome {
-        case .delivered:
+        case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
+            lastDeliveredUnits = delivered
+            lastDeliveredWasCancelled = cancelled
             lastError = nil
         case .indeterminate:
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."

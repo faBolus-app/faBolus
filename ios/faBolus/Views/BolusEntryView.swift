@@ -756,7 +756,8 @@ struct BolusEntryView: View {
         .onChange(of: model.pendingApproval) { oldValue, newValue in
             guard let resolved = oldValue, newValue == nil else { return }
             let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
-            present(BolusConfirmation.banner(for: signal, units: resolved.units))
+            // WR-02 (VA-22): prefer the ledger's ACTUAL committed units over the staged requested amount.
+            present(BolusConfirmation.banner(for: signal, units: model.lastDeliveredUnits ?? resolved.units))
         }
         // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
         // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
@@ -1239,10 +1240,18 @@ struct BolusEntryView: View {
         // state right after the delivery call returns. `deliverBolus`/`deliverExtendedBolus` return
         // having staged a `pendingApproval` for the child-mode reverse-approval path — that resolves
         // LATER, via the `.onChange(of: model.pendingApproval)` handler above, not here (D-05).
-        let extended: BolusConfirmation.ExtendedDetail? = f.extendedNow.map {
-            BolusConfirmation.ExtendedDetail(nowUnits: $0, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
+        // WR-02 (VA-22): report the ledger's ACTUAL committed units, not the frozen requested amount,
+        // so a mid-flight cancel/partial delivery isn't overstated. On a cancelled extended delivery the
+        // now/total split can't be decomposed from the single returned total → fall back to the plain
+        // "%.2f U delivered" line (fail-safe: never assert the full requested now/total when cancelled).
+        let bannerUnits = model.lastDeliveredUnits ?? f.units
+        let extended: BolusConfirmation.ExtendedDetail?
+        if let now = f.extendedNow, !model.lastDeliveredWasCancelled {
+            extended = BolusConfirmation.ExtendedDetail(nowUnits: now, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
+        } else {
+            extended = nil
         }
-        present(BolusConfirmation.banner(for: confirmationSignal(), units: f.units, extended: extended))
+        present(BolusConfirmation.banner(for: confirmationSignal(), units: bannerUnits, extended: extended))
         finishDelivery()
     }
 
