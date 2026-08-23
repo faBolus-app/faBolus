@@ -186,8 +186,12 @@ final class GarminRemoteBridge: NSObject {
         // readiness stuck false. Probe the app's status; a reachable, installed IQAppStatus means the
         // device is communicable → arm readiness and drain. (Fail-safe: nil/not-installed keeps it false.)
         ConnectIQ.sharedInstance().getAppStatus(app) { [weak self] appStatus in
+            // Read the one Sendable bit (installed?) HERE, in the nonisolated completion, so only a `Bool`
+            // crosses to the main actor — capturing the non-Sendable `IQAppStatus` into the @MainActor Task
+            // trips Swift 6 "Sending 'appStatus' risks causing data races".
+            let installed = appStatus?.isInstalled == true
             Task { @MainActor in
-                guard let self, appStatus?.isInstalled == true else { return }
+                guard let self, installed else { return }
                 self.readiness.characteristicsDiscovered()
                 self.pump()
             }
