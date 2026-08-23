@@ -285,6 +285,22 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         if elapsed < -Self.futureSkewTolerance { return false }  // future-dated → stale, not hidden
         return elapsed >= Swift.max(hide, staleLimit)
     }
+    /// WR-02 (R2-09) TTL for the `connected` flag + the dateless pump metrics (iob/reservoir/battery/
+    /// basal). Unlike glucose (keyed off `glucoseDate`, the sample time), those values carry no intrinsic
+    /// timestamp — they age ONLY against `updatedAt` (publish time). If the host is killed, no publish
+    /// re-stamps `updatedAt`, so past this TTL the persisted snapshot's connection state is no longer
+    /// trustworthy. Chosen to mirror the glucose stale window (well beyond the ~20 s publish heartbeat, so
+    /// normal operation never trips it) while greying a host-killed snapshot within a few minutes.
+    public static let connectionStaleAfter: TimeInterval = 6 * 60
+
+    /// True when the snapshot's publish time (`updatedAt`) is older than `connectionStaleAfter` at `now` —
+    /// i.e. the host stopped re-publishing (killed/suspended long enough). Keyed off `updatedAt`, NOT
+    /// `glucoseDate`. Callers treat `!connected || isConnectionStale(asOf:)` as not-connected so the
+    /// connection chip stops reading "connected" and the dateless pump metrics grey once the snapshot ages.
+    public func isConnectionStale(asOf now: Date) -> Bool {
+        now.timeIntervalSince(updatedAt) > Self.connectionStaleAfter
+    }
+
     /// Glucose string, or "--" when missing/stale. A non-positive value is treated as "no reading"
     /// (defends the complication against ever rendering a literal "0").
     public var displayGlucose: String {

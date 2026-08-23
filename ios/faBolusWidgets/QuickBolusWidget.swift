@@ -9,7 +9,7 @@ import AppIntents
 struct QuickBolusWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "FaBolusQuickBolus", provider: FaBolusProvider()) { entry in
-            QuickBolusView(snap: entry.snap)
+            QuickBolusView(snap: entry.snap, now: entry.date)
         }
         .configurationDisplayName("Quick Bolus")
         .description("Set an amount and deliver a bolus with a 1-2-3 confirm (like the Garmin).")
@@ -19,6 +19,13 @@ struct QuickBolusWidget: Widget {
 
 struct QuickBolusView: View {
     let snap: WidgetSnapshot
+    /// Entry display date — connection-freshness (WR-02) is evaluated against this, not wall-clock
+    /// (mirrors `StatusWidgetView.now`), since in a widget `Date()` is prep time, not display time.
+    var now: Date = Date()
+    /// WR-02 (R2-09): treat a snapshot whose publish time (`updatedAt`) has aged past the TTL as
+    /// not-connected — a killed host leaves the last snapshot persisted, so `snap.connected` alone would
+    /// keep the pad interactive indefinitely. Keyed off `updatedAt` (publish time), not `glucoseDate`.
+    private var isConnected: Bool { snap.connected && !snap.isConnectionStale(asOf: now) }
     private var stage: String { WidgetBolusStore.stage }
     private var mode: String { WidgetBolusStore.mode }
     private var draft: Double { WidgetBolusStore.draft }
@@ -50,7 +57,7 @@ struct QuickBolusView: View {
                 // in-flight cases above are untouched: a bolus already delivering keeps its Cancel, which
                 // the evaluator never read-only-blocks.
                 if bolusLocked { lockedBody }
-                else if !snap.connected { notConnectedBody }
+                else if !isConnected { notConnectedBody }   // WR-02: not-connected OR stale-publish (host killed)
                 else if stage == "confirm" { confirmBody }
                 else { amountBody }
             }

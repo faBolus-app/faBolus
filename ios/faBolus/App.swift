@@ -61,6 +61,19 @@ struct FaBolusApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         widgetBolus?.handlePending()
+                        // WR-02 (R2-09): force a fresh status on foreground-resume even when the snapshot
+                        // already says connected. `RootTabView.autoReconnectIfNeeded()` returns early on a
+                        // warm `.connected` link, and while suspended the poll timers didn't tick — so
+                        // HUD/widget/Garmin can show pre-suspension IOB/reservoir/battery as current.
+                        // `publicRefresh()` (re-publish + staleness re-eval, no BLE read) is always safe and
+                        // runs unconditionally; a REAL read via `refreshGlucoseNow()` runs ONLY when the link
+                        // is genuinely usable — post-auth `.connected` per the CR-01/CR-02 spine (`.connected`
+                        // is no longer published at bare BLE `.ready`), so a resume never sends BLE I/O into a
+                        // dead or pre-auth link.
+                        Task { @MainActor in
+                            model.publicRefresh()
+                            if model.snapshot.connection == .connected { await model.refreshGlucoseNow() }
+                        }
                     } else if phase == .background {
                         #if FABOLUS_BACKUP
                         ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD

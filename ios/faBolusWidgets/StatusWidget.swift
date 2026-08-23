@@ -37,6 +37,12 @@ struct StatusWidgetView: View {
         return unit.format(mgdl: g)
     }
     private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
+    /// WR-02 (R2-09): the dateless pump metrics (Active Insulin / Reservoir / Battery) carry no intrinsic
+    /// timestamp, so they age only against the snapshot's publish time (`updatedAt`). If the host is killed,
+    /// no publish re-stamps it — past the TTL these values are no longer trustworthy and must render "--"
+    /// rather than freezing pre-suspension numbers as current. Glucose (keyed off `glucoseDate`) and the
+    /// dated "Last bolus" row (a real historical fact) are unaffected.
+    private var connectionStale: Bool { snap.isConnectionStale(asOf: now) }
     /// CR-01 (09.29 review): the classified band, kept ONLY to restore the VoiceOver zone word that
     /// the deleted `BandIndicator(...)` used to speak via its own `.accessibilityLabel(shortLabel)` —
     /// no visual glyph is reintroduced. `nil` while stale/hidden/unknown, mirroring `bg`'s gating.
@@ -80,8 +86,8 @@ struct StatusWidgetView: View {
 
             // Right: pump metrics.
             VStack(alignment: .leading, spacing: 6) {
-                metric("syringe", "Active Insulin", String(format: "%.2f U", snap.iobUnits))
-                metric("drop", "Reservoir", "\(Int(snap.reservoirUnits)) U")
+                metric("syringe", "Active Insulin", connectionStale ? "--" : String(format: "%.2f U", snap.iobUnits))
+                metric("drop", "Reservoir", connectionStale ? "--" : "\(Int(snap.reservoirUnits)) U")
                 if let u = snap.lastBolusUnits, let d = snap.lastBolusDate {
                     metric("clock.arrow.circlepath", "Last bolus",
                            "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .numeric)))")
@@ -97,8 +103,10 @@ struct StatusWidgetView: View {
                     // instead of always showing a full battery below 88%.
                     let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
                     // WR-02 review fix: consume the centralized `valueText` instead of
-                    // re-interpolating the "N% · Charging" string here.
-                    metric(battery.symbolName, "Battery", battery.valueText)
+                    // re-interpolating the "N% · Charging" string here. WR-02 (R2-09): once the snapshot's
+                    // publish time is stale (host killed), the battery value greys to "--" — it is a
+                    // dateless metric with no intrinsic timestamp to age against.
+                    metric(battery.symbolName, "Battery", connectionStale ? "--" : battery.valueText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

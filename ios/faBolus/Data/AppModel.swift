@@ -1856,6 +1856,12 @@ public final class AppModel {
                                     allowStaleIob: allowStaleIob, allowStaleTherapy: allowStaleTherapy)
     }
 
+    /// WR-02 (R2-09): public entry point to the always-safe `refresh()` (re-publish + staleness re-eval;
+    /// its only outbound action, `maybeAutoSyncPumpTime()`, is self-gated on `.connected` and rate-limited).
+    /// Called on foreground-resume so a warm link's HUD/widget/Garmin mirror re-age even when no new pump
+    /// frame arrived while suspended (poll timers don't tick while suspended). Issues no BLE read itself.
+    public func publicRefresh() { refresh() }
+
     /// Force the pump to report its newest CGM reading and wait briefly for it (bolus screen uses this
     /// on open and again right before delivery so a correction is off the freshest value).
     public func refreshGlucoseNow() async { await source.refreshGlucoseNow(); refresh() }
