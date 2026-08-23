@@ -1278,7 +1278,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         // InitiateBolus below still fires. Also mirrored inline in InitiateBolusRequest.bolusCarbs/BG.
         // Bound carbs before the Int/UInt16 conversion so a garbage value can't overflow or land as an
         // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
-        let carbsInt = max(0, min(Self.maxCarbGrams, carbsGrams.map { Int($0.rounded()) } ?? 0))
+        // Clamp in Double space BEFORE the Int(_:) conversion — mirrors the iobU pattern below — so a
+        // finite out-of-range Double (> Int.max) or a non-finite Double (.infinity/.nan) can never trap
+        // the conversion. Carbs is pump metadata only; clamp, never reject (units are separately validated).
+        let carbsInt: Int = {
+            guard let c = carbsGrams, c.isFinite else { return 0 }
+            return Int(min(max(c.rounded(), 0), Double(Self.maxCarbGrams)))
+        }()
         let bgInt = max(0, min(600, bgMgdl ?? 0))
         // bolusIOB metadata (audit C-07 / FB-04): send the **frozen calculator IOB** — the active insulin
         // the dose was computed against, captured at freeze time and threaded through the delivery API —

@@ -207,7 +207,7 @@ struct BolusEntryView: View {
         Self.staleCgmDialogTitle(newBG: cgmUpdate?.newBG, staleBG: cgmUpdate?.staleBG)
     }
 
-    private var carbs: Double { Double(carbsText) ?? 0 }
+    private var carbs: Double { min(max(Double(carbsText) ?? 0, 0), 1000) }
     private var units: Double { Double(unitsText) ?? 0 }
     /// Advisory (never blocks): the user has adjusted the dose away from the calculator's recommendation
     /// for a carb bolus, so the carbs recorded on the pump won't match the delivered units. Uses the same
