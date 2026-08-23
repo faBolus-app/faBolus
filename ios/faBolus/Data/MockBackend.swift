@@ -150,6 +150,11 @@ public final class MockBackend: PumpBackend {
     /// Test knob (FB-02): when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
+    /// Test knob (WR-02 · VA-22): when set, the NEXT `deliverBolus`/`deliverExtendedBolus` COMMITS only
+    /// `delivered` units (a mid-flight cancel/partial) instead of the full requested amount, and reports
+    /// `cancelled` via `lastBolusCancelled`. One-shot; nil in production (like `forceIndeterminateNextDelivery`).
+    /// Lets a test prove the success banner reports the ACTUAL committed units, not the frozen request.
+    public var forceNextDeliveryPartial: (delivered: Double, cancelled: Bool)?
     /// Test hook (P11/S6): when set, `deliverBolus`/`deliverExtendedBolus` awaits this once the delivery
     /// is IN FLIGHT (bolus id recorded, `.bolusing`, before completion) instead of the fixed sleep — so a
     /// test can hold one delivery open on the pump and issue a concurrent one to exercise the cross-client
@@ -279,16 +284,26 @@ public final class MockBackend: PumpBackend {
         snapshot.connection = .bolusing; onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
+        // WR-02 (VA-22): honor the partial/cancel knob so a test can drive delivered < requested; otherwise
+        // commit the full amount and report not-cancelled (resets any prior partial so the knob is one-shot).
+        var committed = totalUnits
+        if let partial = forceNextDeliveryPartial {
+            forceNextDeliveryPartial = nil
+            committed = partial.delivered
+            lastBolusCancelled = partial.cancelled
+        } else {
+            lastBolusCancelled = false
+        }
         // (§3.2 R3 / Q5.4) INTENTIONAL simulator state, NOT the C4 invented-IOB defect: a MockBackend has
         // no pump to read, so its IOB is necessarily synthesized. The C4 violation was the REAL backend
         // fabricating IOB instead of reading the pump — removed in TandemBackend. Kept so a demo's IOB
         // responds to a demo bolus (use `setLiveIob` to override). See also the sibling site below.
-        snapshot.iobUnits += totalUnits
-        snapshot.lastBolusUnits = totalUnits
+        snapshot.iobUnits += committed
+        snapshot.lastBolusUnits = committed
         snapshot.lastBolusDate = Date()
-        bolusMarkers.append(BolusMarker(date: Date(), units: totalUnits))
+        bolusMarkers.append(BolusMarker(date: Date(), units: committed))
         onChange?()
-        return totalUnits
+        return committed
     }
 
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
@@ -314,11 +329,21 @@ public final class MockBackend: PumpBackend {
         snapshot.connection = .bolusing; onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
-        snapshot.iobUnits += units   // (§3.2 R3 / Q5.4) intentional simulator IOB — see the carb-path note above (C4 N/A to a mock)
-        snapshot.lastBolusUnits = units
+        // WR-02 (VA-22): honor the partial/cancel knob so a test can drive delivered < requested; otherwise
+        // commit the full amount and report not-cancelled (resets any prior partial so the knob is one-shot).
+        var committed = units
+        if let partial = forceNextDeliveryPartial {
+            forceNextDeliveryPartial = nil
+            committed = partial.delivered
+            lastBolusCancelled = partial.cancelled
+        } else {
+            lastBolusCancelled = false
+        }
+        snapshot.iobUnits += committed   // (§3.2 R3 / Q5.4) intentional simulator IOB — see the carb-path note above (C4 N/A to a mock)
+        snapshot.lastBolusUnits = committed
         snapshot.lastBolusDate = Date()
         onChange?()
-        return units
+        return committed
     }
 
     public func cancelBolus() async {

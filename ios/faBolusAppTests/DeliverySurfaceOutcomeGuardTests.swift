@@ -237,4 +237,87 @@ struct DeliverySurfaceOutcomeGuardTests {
             #expect(backend.lastAssignedBolusId == nil)
         }
     }
+
+    // MARK: - WR-02 / VA-22: lastDeliveredUnits reports the ACTUAL committed amount (AppModel.swift :1891-1926, :2000-2010)
+    //
+    // The success banner must report the units the pump ACTUALLY committed (the ledger outcome's
+    // `.delivered(units:cancelled:)` payload), not the frozen requested amount. `deliverBolus`/
+    // `deliverExtendedBolus` reset `lastDeliveredUnits` to nil at the top of each delivery and set
+    // `lastDeliveredUnits`/`lastDeliveredWasCancelled` only in the `.delivered` case.
+
+    /// A full standard delivery (delivered == requested, not cancelled) publishes the actual committed
+    /// units and a not-cancelled flag.
+    @Test func localStandardFullDeliveryPublishesActualDeliveredUnits() async {
+        await withCleanSettings {
+            let (model, _, _) = await makeModel(connected: true)
+            await model.deliverBolus(units: 2.0)
+            #expect(model.lastDeliveredUnits == 2.0)
+            #expect(model.lastDeliveredWasCancelled == false)
+        }
+    }
+
+    /// Same for a full extended delivery — the mock returns the full `totalUnits`, so the banner reports it.
+    @Test func localExtendedFullDeliveryPublishesActualDeliveredUnits() async {
+        await withCleanSettings {
+            let (model, _, _) = await makeModel(connected: true)
+            await model.deliverExtendedBolus(totalUnits: 3.0, nowUnits: 1.0, durationMinutes: 30)
+            #expect(model.lastDeliveredUnits == 3.0)
+            #expect(model.lastDeliveredWasCancelled == false)
+        }
+    }
+
+    /// Reset semantics — a freshly constructed model, before any delivery has settled, has no stale amount
+    /// that could leak into a banner.
+    @Test func lastDeliveredUnitsIsNilBeforeAnyDelivery() async {
+        let (model, _, _) = await makeModel(connected: true)
+        #expect(model.lastDeliveredUnits == nil)
+        #expect(model.lastDeliveredWasCancelled == false)
+    }
+
+    /// Reset semantics — `lastDeliveredUnits` is cleared at the TOP of each delivery (:1918/:2000), so a
+    /// prior delivery's amount can never survive into a delivery that doesn't reach `.delivered`. A full
+    /// delivery publishes 2.0 U; a following indeterminate delivery (which never republishes) must clear it
+    /// back to nil rather than leave the stale 2.0.
+    @Test func lastDeliveredUnitsIsClearedAtTheStartOfEachDelivery() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            await model.deliverBolus(units: 2.0)
+            #expect(model.lastDeliveredUnits == 2.0)   // a real amount is now published
+            backend.forceIndeterminateNextDelivery = true
+            await model.deliverBolus(units: 1.0)
+            #expect(model.lastError == Self.indeterminateLocalMessage)
+            #expect(model.lastDeliveredUnits == nil,
+                    "the reset at the top of deliverBolus must clear the prior 2.0 U — an indeterminate outcome never republishes lastDeliveredUnits")
+        }
+    }
+
+    // The CORE case WR-02/VA-22 fixes — a mid-flight cancel/partial where the pump commits LESS than
+    // requested. `DeliveryLedgerCoordinator.runLedgeredDelivery` builds `.delivered(units:cancelled:)` from
+    // `delivered = try await deliver()` and `cancelled = source.lastBolusCancelled`. Driven via MockBackend's
+    // one-shot `forceNextDeliveryPartial` seam (added with this test). The load-bearing assertion:
+    // `lastDeliveredUnits` is the ACTUAL committed amount, NOT the frozen requested amount the pre-fix banner
+    // reported — the full-delivery tests above can't prove this because there delivered == requested.
+
+    /// Standard delivery cut short: requested 2.0 U, pump commits only 0.5 U and reports cancelled. The
+    /// banner state must publish 0.5 U (actual) and cancelled == true, never the requested 2.0 U.
+    @Test func localStandardCancelledPartialPublishesActualNotRequested() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            backend.forceNextDeliveryPartial = (delivered: 0.5, cancelled: true)
+            await model.deliverBolus(units: 2.0)
+            #expect(model.lastDeliveredUnits == 0.5)          // ACTUAL committed, NOT the requested 2.0
+            #expect(model.lastDeliveredWasCancelled == true)
+        }
+    }
+
+    /// Extended delivery cut short: requested 3.0 U total, pump commits only 1.0 U and reports cancelled.
+    @Test func localExtendedCancelledPartialPublishesActualNotRequested() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            backend.forceNextDeliveryPartial = (delivered: 1.0, cancelled: true)
+            await model.deliverExtendedBolus(totalUnits: 3.0, nowUnits: 1.0, durationMinutes: 30)
+            #expect(model.lastDeliveredUnits == 1.0)          // ACTUAL committed, NOT the requested 3.0
+            #expect(model.lastDeliveredWasCancelled == true)
+        }
+    }
 }

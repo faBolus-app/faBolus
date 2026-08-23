@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import faBolusCore
 @testable import faBolus
 
 /// Phase 09.2 Fix 4 (SC4, D-04): pins that `BolusEntryView.rankedWarnings(...)` — the pure classification/
@@ -102,5 +103,40 @@ struct BolusWarningRankingTests {
         let firstAdvisoryIndex = warnings.firstIndex { $0.severity == .advisory }!
         #expect(warnings[..<firstAdvisoryIndex].allSatisfy { $0.severity == .blocking })
         #expect(warnings[firstAdvisoryIndex...].allSatisfy { $0.severity == .advisory })
+    }
+
+    // MARK: - WR-06 / VA-24: noCartridge surfaces an on-screen blocking reason
+
+    /// During a cartridge change the gate returns `.noCartridge` and disables Deliver; the user must see
+    /// WHY. `rankedWarnings(... noCartridge: true)` surfaces a `.blocking`, neutral-tone row whose text is
+    /// the gate's own message (asserted against `BolusBlockReason.noCartridge.userMessage`, not a literal).
+    @Test func noCartridgeSurfacesBlockingRow() {
+        let warnings = BolusEntryView.rankedWarnings(
+            overMax: false, maxUnits: 5.0,
+            sg2Message: nil, childBlocked: false,
+            pumpNotLinked: false, bolusInFlight: false,
+            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            sg1Message: nil, sg3aMessage: nil,
+            noCartridge: true
+        )
+        let byId = Dictionary(uniqueKeysWithValues: warnings.map { ($0.id, $0) })
+        let row = byId["noCartridge"]
+        #expect(row != nil)
+        #expect(row?.severity == .blocking)
+        #expect(row?.tone == .neutral)
+        #expect(row?.text == BolusBlockReason.noCartridge.userMessage)
+    }
+
+    /// Regression: with `noCartridge` omitted (defaulted false) the row is absent — the new defaulted
+    /// param never invents a warning, so every existing call site is behaviorally unchanged.
+    @Test func noCartridgeAbsentByDefault() {
+        let warnings = BolusEntryView.rankedWarnings(
+            overMax: false, maxUnits: 5.0,
+            sg2Message: nil, childBlocked: false,
+            pumpNotLinked: false, bolusInFlight: false,
+            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            sg1Message: nil, sg3aMessage: nil
+        )
+        #expect(!warnings.contains { $0.id == "noCartridge" })
     }
 }

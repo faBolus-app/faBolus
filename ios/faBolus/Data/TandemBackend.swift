@@ -269,6 +269,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     private static let food2 = 8    // units-only (no carbs)
     private static let extendedBit = 4
     private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion (audit C-07)
+    /// Clamp a carb-grams value to a pump-safe `Int` in `0...maxCarbGrams` (audit C-07 / WR-01 · VA-10).
+    /// Extracted verbatim from `perform(...)` so it can be exercised directly. Clamps in Double space
+    /// BEFORE the `Int(_:)` conversion — mirrors the `iobU` pattern — so a finite out-of-range Double
+    /// (> `Int.max`), `nil`, or a non-finite Double (`.infinity`/`.nan`) can never trap the conversion.
+    /// Carbs is pump metadata only; clamp, never reject (units are separately validated).
+    static func clampCarbGrams(_ c: Double?) -> Int {
+        guard let c = c, c.isFinite else { return 0 }
+        return Int(min(max(c.rounded(), 0), Double(Self.maxCarbGrams)))
+    }
     /// DIF-core IOB cross-check tolerance (owner-confirmable, §13). The dose is built from op-109
     /// `swan6hrIOB` (hardware-verified to match the pump display); op-115 `iob` is only a divergence
     /// check. If the two pump reads of active insulin disagree by more than this, we can't stand behind
@@ -1281,10 +1290,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Clamp in Double space BEFORE the Int(_:) conversion — mirrors the iobU pattern below — so a
         // finite out-of-range Double (> Int.max) or a non-finite Double (.infinity/.nan) can never trap
         // the conversion. Carbs is pump metadata only; clamp, never reject (units are separately validated).
-        let carbsInt: Int = {
-            guard let c = carbsGrams, c.isFinite else { return 0 }
-            return Int(min(max(c.rounded(), 0), Double(Self.maxCarbGrams)))
-        }()
+        let carbsInt = Self.clampCarbGrams(carbsGrams)
         let bgInt = max(0, min(600, bgMgdl ?? 0))
         // bolusIOB metadata (audit C-07 / FB-04): send the **frozen calculator IOB** — the active insulin
         // the dose was computed against, captured at freeze time and threaded through the delivery API —
