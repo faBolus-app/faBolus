@@ -85,8 +85,11 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     public var isReachable: Bool {
         switch role {
-        case .peripheral: return !subscribedCentrals.isEmpty
-        case .central: return connectedPeripheral != nil && commandChar != nil
+        // R2-04: a stale-true reachability with Bluetooth OFF must not let a pump-mutating command enqueue into
+        // txChunks for a late flush. Gate on the manager actually being powered on (mirrors the .poweredOn guard
+        // the delegate callbacks already enforce). DEAD on main (BLELink is never constructed) — hardening only.
+        case .peripheral: return peripheralManager?.state == .poweredOn && !subscribedCentrals.isEmpty
+        case .central:    return centralManager?.state == .poweredOn && connectedPeripheral != nil && commandChar != nil
         }
     }
     public var connectedPeerName: String? { connectedPeripheral?.name }
