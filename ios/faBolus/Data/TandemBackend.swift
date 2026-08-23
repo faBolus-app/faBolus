@@ -757,6 +757,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setPumpTimeAnchor = { [weak self] anchor in self?.pumpTimeAnchor = anchor }
         responseApplier.viewedProfileId = { [weak self] in self?.viewedProfileId ?? -1 }
         responseApplier.detectedIsMobi = { [weak self] in self?.detectedIsMobi }
+        responseApplier.applyDeviceContext = { [weak self] isMobi in
+            self?.client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)   // VA-06: apiVersion deferred
+        }
         // debug pump-pairing-loop-api25 (static-registry hardening): once op33 identifies the pump, let the
         // scheduler consult the static registry and dispatch the deferred identity-gated read(s).
         responseApplier.noteBootstrapVersionIdentified = { [weak self] in self?.readScheduler.noteBootstrapVersionIdentified() }
@@ -2431,6 +2434,10 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.isMobi = isMobi
             snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
             PumpModelStore.set(isMobi: isMobi)
+            // VA-06: wire the identified MODEL into the kit's device-support send gate (a live second layer that
+            // agrees with PumpCapabilities — t:slim never offers the [.mobi] control ops, so this only ever fires on
+            // an isMobi-misdetection). apiVersion DEFERRED (nil → API dimension stays fail-open); see the fix report.
+            c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)
         }
         // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
         // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.

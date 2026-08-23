@@ -106,6 +106,12 @@ final class PumpResponseApplier {
     /// deferred identity-gated read(s) — suppressing op20 BEFORE the first send on a KNOWN-bad combo. Bound
     /// to `readScheduler.noteBootstrapVersionIdentified`; default no-op so a bare applier is unchanged.
     var noteBootstrapVersionIdentified: () -> Void = {}
+    /// VA-06: re-wire the kit's device-support MODEL gate (`client.setDeviceContext(model:)`) every connection
+    /// cycle once op33 has identified the pump. `setDeviceContext` resets to nil on every link change and
+    /// `didDiscover` does NOT re-fire on a silent reconnect, so op33 is the robust per-cycle re-wire point.
+    /// Bound to `{ isMobi in client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil) }`;
+    /// default no-op so a bare applier is unchanged.
+    var applyDeviceContext: (Bool) -> Void = { _ in }
     /// Bound to `{ pumpFeatureBits = $0 }`.
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
     /// Bound to `{ calcSnapshot = $0 }` — read elsewhere (the dose-calculator path).
@@ -373,6 +379,7 @@ final class PumpResponseApplier {
                 }
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
             }
+            applyDeviceContext(detectedIsMobi() ?? m.isMobi)   // VA-06: re-wire the MODEL gate every connection cycle (survives a silent reconnect where didDiscover doesn't re-fire)
             // debug pump-pairing-loop-api25 (static-registry hardening): the pump is now IDENTIFIED (model
             // class + firmware just written above), so the scheduler can consult the STATIC known-unsupported
             // registry and dispatch the deferred identity-gated read(s) (op20) — suppressing op20 before the
