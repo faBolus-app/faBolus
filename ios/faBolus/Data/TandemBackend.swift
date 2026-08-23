@@ -2183,7 +2183,20 @@ extension TandemBackend: PumpBLEClientDelegate {
     func applyClientState(_ state: PumpBLEClient.State) {
         switch state {
         case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
-        case .connecting, .discovering: snapshot.connection = .connecting; snapshot.connectionDetail = nil
+        case .connecting, .discovering:
+            // CR-02 (R2-05): an unintended BLE drop often surfaces HERE as `.connecting` (the kit skips the
+            // `.disconnected` flicker and goes straight to reconnecting), so `linkDroppedCleanup()` — which
+            // otherwise runs only from the `.disconnected…`/`.reconnectExhausted` cases — never fires across
+            // the reconnect gap. If the link was PREVIOUSLY live, run the shared teardown so the cycle-N
+            // `pollTimer`, an armed `scheduleAlertRead` (via `pollCycleGeneration`), and the prior
+            // `coordinator`/`authenticationKey` don't survive into the gap and inject stale reads / a signed
+            // read into the pre-auth window before `pumpClientDidBecomeReady` rebuilds them. Guard on the
+            // PRE-transition state so a normal first-connect `.scanning → .connecting` climb is untouched.
+            // Keep `.connecting` (not `.disconnected`) so the reconnect-window semantics pinned by
+            // `TandemConnectionStateTests` are preserved. All teardown lives in CR-01's `linkDroppedCleanup()`.
+            let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
+            snapshot.connection = .connecting; snapshot.connectionDetail = nil
+            if wasLive { linkDroppedCleanup() }
         case .ready:
             // CR-01 (R2-01): transport-ready ≠ application-usable. The kit's `.ready` only means the BLE
             // link is up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
