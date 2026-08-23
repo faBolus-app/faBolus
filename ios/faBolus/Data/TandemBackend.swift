@@ -361,6 +361,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     // safety pacing", it's how the code learns a page's stream has gone quiet).
     private var pendingGapWindows: [ClosedRange<UInt32>] = []
     private var currentGapWindow: ClosedRange<UInt32>?
+    // WR-03 (R2-17): the set of sequence numbers whose RESPONSE frames actually arrived for the current
+    // gap window (recorded from the received records in `appendHistoryStreamFrame`, not the request cursor).
+    // `creditCurrentWindow()` credits ONLY the top-anchored contiguous received sub-range, so a swallowed
+    // send-throw / lost response / mid-window drop leaves the un-received lower sub-range a real, resumable
+    // gap instead of being silently marked covered. Reset per window in `advanceToNextGapWindow`.
+    private var receivedSeqsThisWindow: Set<UInt32> = []
     private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page within currentGapWindow
     private var backfillFirstSeq: UInt32 = 0    // lower bound of currentGapWindow
     // T-09.7-02 (DoS/battery): total pages issued across the WHOLE gap sync (every window), not just the
@@ -718,6 +724,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             for b in m.bolusRecords { self.backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
             self.backfillEventLogs.append(contentsOf: m.events)
             if self.backfillEventLogs.count > 2000 { self.backfillEventLogs.removeFirst(self.backfillEventLogs.count - 2000) }
+            // WR-03 (R2-17): record every RECEIVED sequence that falls inside the current gap window.
+            // `m.events` decodes ALL record kinds (CGM/bolus/event) to `HistoryLogEvent`, so it is the
+            // single accessor for every received sequence — coverage is then credited from what actually
+            // landed (see `creditCurrentWindow`), never from the request cursor that advances at send time.
+            if let window = self.currentGapWindow {
+                for e in m.events where window.contains(e.sequenceNum) { self.receivedSeqsThisWindow.insert(e.sequenceNum) }
+            }
             self.scheduleBackfillTick()   // debounce: page ends when frames stop arriving
         }
         responseApplier.historySyncState = { [weak self] in self?.historySyncState ?? .idle(lastSynced: nil) }
@@ -1864,6 +1877,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         backfillBuffer.removeAll(keepingCapacity: true)
         backfillBoluses.removeAll(keepingCapacity: true)
         backfillEventLogs.removeAll(keepingCapacity: true)
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: clean slate at the start of each sync
         backfillPages = 0
         pendingGapWindows = windows
         advanceToNextGapWindow()
@@ -1877,6 +1891,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         let window = pendingGapWindows.removeFirst()
         currentGapWindow = window
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: fresh per-window received-sequence accumulator
         backfillFirstSeq = window.lowerBound
         backfillNextEnd = window.upperBound
         requestBackfillPage()
@@ -1920,23 +1935,25 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
-    /// Record into the persisted coverage map exactly the sub-range of `currentGapWindow` that was
-    /// actually fetched so far (D-04). `backfillNextEnd` narrows down to the first NOT-yet-fetched
-    /// sequence as pages complete, so `(backfillNextEnd fully consumed ? window.lowerBound :
-    /// backfillNextEnd + 1)...window.upperBound` is exactly what landed in the buffers below — crediting
-    /// only that slice means a safety-cap trip (or a user-initiated cancel, `cancelHistorySync`) mid-
-    /// window still leaves a real, resumable gap for the next connect (never silently marked covered,
-    /// never re-looped within this one — T-09.7-02).
+    /// WR-03 (R2-17): record into the persisted coverage map ONLY the sub-range of `currentGapWindow` whose
+    /// response frames were actually RECEIVED — never the request cursor. Pages walk backward from
+    /// `window.upperBound`, so received sequences form a top-anchored contiguous run; walk down from the top
+    /// while each sequence arrived and credit exactly `[lowest ... window.upperBound]`. This fixes the prior
+    /// cursor-based crediting, where a swallowed send-throw, total response loss, or a BLE drop mid-window
+    /// (`backfillNextEnd` advances at SEND time regardless of receipt) still inserted the un-received range
+    /// as covered — a silent, durable history gap `missingRanges()` never re-fetched. Now an un-received
+    /// sub-range stays a real, resumable gap; a fully-received window still credits the whole range; a
+    /// window with nothing received credits nothing. A safety-cap trip or user cancel (`cancelHistorySync`)
+    /// mid-window likewise credits only what landed (same T-09.7-02 resumability, now receipt-accurate).
     private func creditCurrentWindow() {
         guard let window = currentGapWindow else { return }
-        if backfillNextEnd < backfillFirstSeq {
-            AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage.inserting(window)
-        } else if backfillNextEnd < window.upperBound {
-            AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage
-                .inserting((backfillNextEnd + 1)...window.upperBound)
+        // Nothing received at the top of the window → credit nothing (never mark an un-received range covered).
+        guard receivedSeqsThisWindow.contains(window.upperBound) else { return }
+        var lowest = window.upperBound
+        while lowest > window.lowerBound, receivedSeqsThisWindow.contains(lowest - 1) {
+            lowest -= 1
         }
-        // else: zero pages were ever issued for this window (cap already tripped before it started) —
-        // nothing fetched, nothing to credit.
+        AppSettings.shared.historyCoverage = AppSettings.shared.historyCoverage.inserting(lowest...window.upperBound)
     }
 
     /// Credit the current window (see `creditCurrentWindow`), then move on to the next queued window
