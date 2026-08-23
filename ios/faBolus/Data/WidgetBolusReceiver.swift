@@ -79,6 +79,18 @@ final class WidgetBolusReceiver {
                                                              message: "No insulin needed"))
                 reload(); return
             }
+            // VA-26: only deliver in place for a live handoff (age ~0, the Darwin-woke path). A request
+            // that only surfaced via a foreground fallback (app was suspended when confirmed) could be up
+            // to ~2 min old — do NOT auto-dose it late by surprise. Convert it to a host-owned in-app
+            // re-confirm, exactly like the carbs branch above.
+            let age = Date().timeIntervalSince(r.createdAt)
+            if age > WidgetBolusStore.promptTTL {
+                await model.presentRemoteBolus(requestId: r.requestId, units: units, carbsGrams: nil,
+                                               bgMgdl: nil, remoteEstimate: units, from: .quickBolusWidget, peerId: "widget")
+                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
+                                                             message: "Open faBolus to confirm the dose"))
+                reload(); return
+            }
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: r.requestId))
             reload()
             let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units, carbsGrams: nil, bgMgdl: nil)

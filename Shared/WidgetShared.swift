@@ -388,6 +388,10 @@ public enum WidgetBolusStore {
     public static let confirmTTL: TimeInterval = 20
     /// The app must consume a completed request within this window (else it's ignored as stale).
     public static let pendingTTL: TimeInterval = 120
+    /// VA-26: only DELIVER a units-mode widget bolus in place when it's this fresh (a live Darwin
+    /// handoff, age ~0). Older-but-still-within-`pendingTTL` requests (a suspended-app foreground
+    /// fallback) are converted to an in-app re-confirm rather than auto-dosing up to ~2 min late.
+    public static let promptTTL: TimeInterval = 15
     /// Darwin notification names that wake the app to deliver / cancel a widget bolus.
     public static let darwinPending = "com.fabolus.app.widgetBolus"
     public static let darwinCancel = "com.fabolus.app.widgetBolusCancel"
