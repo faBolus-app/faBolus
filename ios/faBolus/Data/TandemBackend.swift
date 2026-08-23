@@ -1299,15 +1299,25 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw indeterminate(perm.bolusId, "initiate response bolus id mismatch")
         }
         guard ini.accepted else {
-            // Authoritative, matching NACK → clean failure (nothing is delivering).
-            snapshot.connection = .connected; onChange?()
-            let detail = "initiate not accepted (status \(ini.status))"
+            // CR-03 (VA-04, iOS half): the parsed response is NOT HMAC-verified — TandemKit's
+            // ResponseParser CRC-checks the frame and strips the trailing auth block WITHOUT
+            // authenticating it, so a matching-bolus-id, non-accepted frame carries NO trustworthy
+            // authentication signal. An active BLE attacker could let the real initiate reach the
+            // pump, suppress the genuine ACCEPT, and race in a CRC-valid forged/garbled NACK while the
+            // pump is actually delivering — a clean, lock-releasing failure here would then invite a
+            // re-dose (double-dose window). With no verified-auth flag available today, an
+            // unauthenticable NACK is UNVERIFIABLE → treat it as INDETERMINATE and HOLD the delivery
+            // lock (the isIndeterminate ledger arm keeps the global block ON; only the authoritative
+            // pump reconciliation path clears it). Full HMAC verification is a separate TandemKit
+            // batch; this is the pure iOS-side safety half. Do NOT change dose math.
+            var detail = "initiate not accepted (status \(ini.status))"
             // Phase 09.9 D-02: InitiateBolusResponse carries no insulin-specific status either (RESEARCH
-            // Pitfall 2) — same reservoir-based inference rule as the permission-nack site above.
+            // Pitfall 2). Preserve the reservoir-based "possibly out of insulin" hint inside the
+            // indeterminate reason so that human-readable detail is not lost.
             if reservoirBeforeAttempt < units {
-                throw BolusError.possiblyOutOfInsulin(reservoirUnits: reservoirBeforeAttempt, nackDetail: detail)
+                detail += " — possibly out of insulin (reservoir \(reservoirBeforeAttempt) u)"
             }
-            throw BolusError.pumpRejected(detail)
+            throw indeterminate(perm.bolusId, detail)
         }
 
         // Accepted ≠ delivered. Poll for an AUTHORITATIVE terminal — the pump reporting THIS bolus id is
