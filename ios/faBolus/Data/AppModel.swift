@@ -2685,6 +2685,25 @@ public final class AppModel {
         guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
                                                      bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
                                                      includeStaleBG: includeStaleBG) else { return }
+        // VA-08: enforce the app-level remote-only per-bolus ceiling on the DELIVER path — it was
+        // previously only ADVERTISED via `statusCommand`, so a stale/buggy Watch/Garmin that computed
+        // off an earlier, higher ceiling could deliver above the user's just-lowered per-bolus cap. Remote
+        // surfaces ONLY (`surface.isRemote`); the phone-owner path gates on `snapshot.maxBolusUnits`
+        // directly and stays unchanged (the ceiling is a remote-only cap). When the ceiling is off,
+        // `remoteBolusMaximum` is an identity passthrough (== pump max), so this is behavior-preserving
+        // there. Mirror the pump-max clamp's report style (`TandemBackend` throws `exceedsMax` → `.failed`):
+        // fail closed with an honest echo rather than silently short-delivering an unapproved amount. This
+        // is a bound + failure echo, not a change to dose math.
+        if surface.isRemote {
+            let ceiling = remoteBolusMaximum(pumpMax: snapshot.maxBolusUnits)
+            if ceiling > 0, resolved.units > ceiling {
+                let msg = String(format: "Dose %.2f U is above your remote limit of %.2f U — lower it and try again.",
+                                 resolved.units, ceiling)
+                echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+                lastError = msg; notifyRemoteBolusRejected(msg)
+                return
+            }
+        }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
     }
