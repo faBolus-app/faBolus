@@ -25,6 +25,23 @@ struct RootTabView: View {
         (phoneReadOnly && current == 1) ? 0 : current
     }
 
+    /// WR-03 (VA-23): SwiftUI presents at most one `.alert` per view, so three sibling alerts on the
+    /// TabView can drop the loser when two conditions hold at one render. Resolve a single active alert by
+    /// priority — the high-stakes remote-bolus confirm always wins and is never the one dropped. Pure /
+    /// static so it's unit-testable without the TabView (mirrors the `resolveSelection` idiom).
+    enum RootAlert { case remoteBolus, remoteControl, pumpSwitch }
+    static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool, pumpSwitch: Bool) -> RootAlert? {
+        if hasRemoteBolus   { return .remoteBolus }
+        if hasRemoteControl { return .remoteControl }
+        if pumpSwitch       { return .pumpSwitch }
+        return nil
+    }
+    private var active: RootAlert? {
+        Self.activeAlert(hasRemoteBolus: model.pendingRemoteBolus != nil,
+                         hasRemoteControl: model.pendingRemoteControl != nil,
+                         pumpSwitch: model.pendingPumpSwitch)
+    }
+
     var body: some View {
         TabView(selection: $selection) {
             DashboardView(model: model)
@@ -54,7 +71,7 @@ struct RootTabView: View {
             // SC3 (D-03): never strand the user on a tab the toggle just hid.
             selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
         }
-        .alert("Remote bolus request", isPresented: .constant(model.pendingRemoteBolus != nil)) {
+        .alert("Remote bolus request", isPresented: .constant(active == .remoteBolus)) {
             Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
                 Task { await model.confirmRemoteBolus() }
             }
@@ -82,7 +99,7 @@ struct RootTabView: View {
             }
             return Text("Confirm to deliver.")
         }
-        .alert("Remote pump-control request", isPresented: .constant(model.pendingRemoteControl != nil)) {
+        .alert("Remote pump-control request", isPresented: .constant(active == .remoteControl)) {
             let action = model.pendingRemoteControl?.action
             Button(action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil) {
                 Task { await model.confirmRemoteControl() }
@@ -94,7 +111,7 @@ struct RootTabView: View {
         // B4 (owner 2026-08-09): a DIFFERENT pump connected. Its therapy values were already refreshed
         // automatically; offer to also reset pump-specific app settings so two pumps' configs don't mix.
         .alert("A different pump is connected", isPresented: Binding(
-            get: { model.pendingPumpSwitch },
+            get: { active == .pumpSwitch },
             set: { if !$0 { model.pendingPumpSwitch = false } })) {
             Button("Reset pump settings", role: .destructive) { model.resetPumpRelevantSettingsAfterSwitch() }
             Button("Keep everything", role: .cancel) { model.keepSettingsAfterPumpSwitch() }
