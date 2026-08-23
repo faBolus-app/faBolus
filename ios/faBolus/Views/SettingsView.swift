@@ -106,6 +106,13 @@ struct SettingsView: View {
                     ForEach(SettingsCategory.allCases) { cat in
                         Label(cat.title, systemImage: cat.icon).tag(SettingsSidebarItem.category(cat))
                             .hoverEffect(.automatic)
+                        // Privacy & data sits among the category rows now — between "Remotes & devices"
+                        // and "About & help" — instead of in the Safety group below.
+                        if cat == .remotes {
+                            Label("Privacy & data", systemImage: "hand.raised")
+                                .tag(SettingsSidebarItem.privacyData)
+                                .hoverEffect(.automatic)
+                        }
                     }
                 }
                 Section {
@@ -120,9 +127,8 @@ struct SettingsView: View {
                     // Phase 8 (08-01, LOCK-03): the "Data & history" sidebar row is removed —
                     // DataHistoryView.swift is deleted; historyRetentionDays is force-set to the 24h
                     // pin and actually applied via the new App.swift launch call site.
-                    Label("Privacy & data", systemImage: "hand.raised")
-                        .tag(SettingsSidebarItem.privacyData)
-                        .hoverEffect(.automatic)
+                    // Privacy & data moved UP into the category section above (between Remotes & devices
+                    // and About & help); it is no longer in this Safety group.
                     // Not selection-based (no `.tag`) — same as `settingsList`'s Help row, this opens
                     // Safari directly rather than routing to a detail-pane screen.
                     Link(destination: faBolusHelpURL) {
@@ -183,6 +189,15 @@ struct SettingsView: View {
                                 Label(cat.title, systemImage: cat.icon)
                             }
                             .hoverEffect(.automatic)
+                            // Privacy & data lives among the category rows now — between "Remotes &
+                            // devices" and "About & help" — instead of in its own section below the
+                            // Safety (read-only) toggle.
+                            if cat == .remotes {
+                                NavigationLink { PrivacyDataView(model: model) } label: {
+                                    Label("Privacy & data", systemImage: "hand.raised")
+                                }
+                                .hoverEffect(.automatic)
+                            }
                         }
                     }
                     // Phase 8 (08-01, LOCK-01): the mode-selector Section (NavigationLink to
@@ -197,19 +212,10 @@ struct SettingsView: View {
                     } header: { Text("Safety") } footer: {
                         Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
                     }
-                    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Child mode" NavigationLink that used
-                    // to lead this Section is removed — ChildModeView.swift is deleted;
-                    // childModeEnabled is permanently frozen false. The footer's "Child mode locks this
-                    // device behind a PIN." text is dropped too (it described the removed row only).
-                    // Phase 8 (08-01, LOCK-03): the "Data & history" NavigationLink that used to lead
-                    // this Section is removed — DataHistoryView.swift is deleted; historyRetentionDays
-                    // is force-set to the 24h pin and actually applied via the new App.swift call site.
-                    Section {
-                        NavigationLink { PrivacyDataView(model: model) } label: {
-                            Label("Privacy & data", systemImage: "hand.raised")
-                        }
-                        .hoverEffect(.automatic)
-                    }
+                    // Privacy & data moved UP into the category section above (between Remotes & devices
+                    // and About & help); its former standalone section here is gone. (History: that
+                    // section had also hosted the now-removed "Child mode" (Phase 7, 07-04) and
+                    // "Data & history" (Phase 8, 08-01, LOCK-03) rows before they were deleted.)
                     Section {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")

@@ -3,11 +3,12 @@ import Foundation
 import SnapshotTesting
 @testable import faBolus
 
-/// **D-06b (Phase 09.17-02).** Compact-width iPhone visual-regression net for `SettingsView`,
-/// recorded against the CURRENT (pre-`NavigationSplitView`) code — before plan 02's Task 2 adds the
-/// regular-width sidebar+detail branch. The compact/`else` branch (`NavigationStack { SettingsLockGate
-/// { settingsList } }`) is byte-identical before and after that change (D-06a structural isolation);
-/// this test is the regression net proving it stays that way.
+/// **D-06b (Phase 09.17-02).** Compact-width iPhone visual-regression net for `SettingsView`'s
+/// compact/`else` branch (`NavigationStack { SettingsLockGate { settingsList } }`). The reference image
+/// was re-recorded 2026-08-23 after an intentional layout change: "Privacy & data" moved out of its own
+/// section (below the Safety read-only toggle) up into the category list, between "Remotes & devices" and
+/// "About & help" (owner request). The earlier D-06a "byte-identical settingsList" invariant no longer
+/// holds — this test is now the regression net for the CURRENT layout.
 ///
 /// Mirrors `DashboardSnapshotTests`'s idiom exactly (Phase 09.17-01): `.image(layout: .sizeThatFits)`
 /// is device-agnostic (Pitfall 5) — tracks whatever Simulator `scripts/test-ios.sh` auto-detects,
