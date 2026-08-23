@@ -82,7 +82,14 @@ packages:
     # changed signed files. Owner chose "bump to kit main + H1" and to re-verify #17–21 under Phase-11
     # discipline. STILL bench-pending: NO-GO for real insulin until the v0.4.0 Phase-11 saline bench
     # validates the dose-path changes this SHA now carries. See .planning/OWNER-DECISIONS.md + the debug session.
-    revision: 89c208e12474ee97470a111c6d818426773866b8
+    # Pin BUMP 2026-08-23 (V-Audit Phase 10 TandemKit batch): 89c208e -> 09c3d0e. Lands VA-04 (full
+    # HMAC-SHA1 verification of signed pump responses, fail-closed/constant-time/oracle-exact), VA-06
+    # (MessageProps.isSupported independent-dimension eval), VA-19 (signed one-byte CGM-history decode),
+    # VA-20 (signed-ack short-buffer fail-closed), VA-21 (PacketReassembler bound), R2-11 (bounded scan +
+    # cancel-reject + cold-connect establishment watchdog). TandemKit swift test + oracle parity green
+    # (325/39). NOT byte-identical vs 89c208e — VA-04 changes signed-RESPONSE handling. STILL bench-pending:
+    # NO-GO for real insulin until the Phase-11 saline bench confirms a real pump's signed responses verify.
+    revision: 09c3d0edc2582db9e2a3ab9a3cb4fc93749c4fbc
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:

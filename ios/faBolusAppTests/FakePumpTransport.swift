@@ -92,9 +92,25 @@ final class FakePumpTransport: PumpTransport {
     /// behavior). WR-03 (debug pump-pairing-loop-api25, deep review): the op77 correlation backstop keys on
     /// this echoed txId, so a NON-vacuous correlation test must be able to set it to a SPECIFIC outstanding
     /// read's txId (distinct from the FIFO-oldest) under a real multi-read burst.
+    /// The session HMAC key the test backend holds by default (mirrors `TandemBackend.init(testTransport:)`'s
+    /// `authKey` default of `[0x01]`). Signed response frames are signed with THIS so VA-04's parser-side
+    /// HMAC verification passes on the delivery path — keep in sync with that init default.
+    static let signedResponseTestKey: [UInt8] = [0x01]
+
     static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool, txId: UInt8 = 0) -> [UInt8] {
         var body = cargo
-        if signed { body += [UInt8](repeating: 0, count: 24) }   // fake HMAC (parser strips, doesn't verify)
+        if signed {
+            // VA-04: the parser now VERIFIES the 24-byte signed trailer (4-byte pumpTimeSinceReset +
+            // 20-byte HMAC-SHA1), so build a VALID one under the test key rather than 24 zero bytes — this
+            // lets the delivery-path tests exercise the real verify. The HMAC covers messageData
+            // (`[opCode, txId, length] + cargo + pumpTime`) minus its last 20 bytes, i.e. everything before
+            // the HMAC itself (byte-exact with ResponseParser / the oracle's PacketArrayList.validate).
+            let pumpTime = [UInt8](repeating: 0, count: 4)
+            let length = UInt8(cargo.count + 24)
+            let signedOver: [UInt8] = [opCode, txId, length] + cargo + pumpTime
+            let hmac = Packetize.doHmacSha1(signedOver, key: signedResponseTestKey)
+            body = cargo + pumpTime + hmac
+        }
         var f: [UInt8] = [opCode, txId, UInt8(body.count)] + body
         f += Bytes.calculateCRC16(f)
         return f

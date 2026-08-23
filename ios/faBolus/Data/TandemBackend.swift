@@ -482,8 +482,11 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw error
         }
         onCommandLatency?(elapsedSeconds())   // a response arrived
-        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic),
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic,
+                                                     authenticationKey: authenticationKey),
               let typed = parsed.message as? T else {
+            // VA-04: a signed response now fails-closed (throws) unless its HMAC verifies under the session
+            // key — a forged/tampered signed control ack is rejected here rather than trusted.
             throw BolusError.pumpRejected("could not parse \(T.self) response")
         }
         return typed
@@ -1354,8 +1357,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         // The write went out and a frame returned; a parse/type failure is now POST-write → indeterminate.
         guard let iniParsed = try? ResponseParser.parse(frame: iniFrame,
-                                                        characteristic: InitiateBolusRequest.props.characteristic),
+                                                        characteristic: InitiateBolusRequest.props.characteristic,
+                                                        authenticationKey: authenticationKey),
               let ini = iniParsed.message as? InitiateBolusResponse else {
+            // VA-04: a forged/tampered/absent-HMAC initiate response no longer parses — it fails closed
+            // here and, being post-write, is routed to indeterminate + HOLD (never a trusted clean NACK).
             throw indeterminate(perm.bolusId, "unparseable initiate response")
         }
         guard ini.bolusId == perm.bolusId else {
@@ -2410,6 +2416,11 @@ extension TandemBackend: PumpBLEClientDelegate {
     }
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
+        // R2-11 companion (defense-in-depth): only act on a discovery while we are actually scanning. A
+        // late `didDiscover` that lands after the user cancelled (snapshot moved off `.scanning`) must not
+        // auto-connect. The kit already rejects late discoveries at the source (intentionalDisconnect +
+        // stopScan on cancel); this ensures the app never auto-connects a stray discovery either.
+        guard snapshot.connection == .scanning else { return }
         // Authoritative model detection from the BLE advertised name: the Mobi advertises with
         // "Mobi" in its name; anything else Tandem is a t:slim X2. This directly names the model,
         // unlike the API version (a current t:slim X2 can report API >= 3.5, which would falsely
@@ -2563,7 +2574,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         } else {
             Self.pairingLog.log("read recv ← empty frame")
         }
-        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch) else {
+        guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch,
+                                                     authenticationKey: authenticationKey) else {
             // D-05: a genuinely unparseable frame on the history-log characteristic while a gap sync is
             // active is the "genuine sync failure" UI-SPEC state (red, distinct from the benign
             // `.paused` disconnect case) — surfaced rather than silently dropped. The persisted coverage
