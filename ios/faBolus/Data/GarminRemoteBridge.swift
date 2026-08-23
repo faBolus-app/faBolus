@@ -1,5 +1,23 @@
 import Foundation
 import faBolusCore
+
+/// WR-07 (R2-13): ConnectIQ-free readiness state machine for Garmin outbound sends. The vendored SDK is
+/// explicit (ConnectIQ.h:53-58,64-68) that `IQDeviceStatus_Connected` does NOT mean the device's services
+/// and characteristics are discovered — the companion app must wait for `deviceCharacteristicsDiscovered:`
+/// before it can communicate. This tiny helper encodes just the boolean readiness transitions so they get
+/// unit-test coverage in the default (non-GARMIN) target, where the `#if GARMIN` bridge below is NOT
+/// compiled. Callers still AND-in their ConnectIQ-typed preconditions (`app != nil`, `!sendInFlight`).
+struct GarminMessageReadiness {
+    private(set) var isReady = false
+    /// Characteristics discovered → the device is ready for communication.
+    mutating func characteristicsDiscovered() { isReady = true }
+    /// Any non-connected device status clears readiness; a later discovery re-arms it. The `true`
+    /// transition is owned solely by `characteristicsDiscovered()`, never by a bare `.connected`.
+    mutating func deviceStatusChanged(isConnected: Bool) { if !isConnected { isReady = false } }
+    /// Whether a send may proceed with respect to message readiness.
+    var canSend: Bool { isReady }
+}
+
 #if GARMIN
 import ConnectIQ
 
@@ -53,6 +71,10 @@ final class GarminRemoteBridge: NSObject {
     // behind it. We keep at most ONE send in flight, coalesce status pushes (only the latest matters),
     // and never drop command echoes (bolus outcome, etc.) — echoes are sent first.
     private var sendInFlight = false
+    // WR-07 (R2-13): message-readiness gate. ConnectIQ `.connected` does NOT mean characteristics are
+    // discovered; sending before `deviceCharacteristicsDiscovered:` silently loses messages. Gate pump()
+    // on this and drain the queue when discovery lands (single-device bridge, so a scalar is enough).
+    private var readiness = GarminMessageReadiness()
     private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
     private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
     // A2 send-watchdog: ConnectIQ's `sendMessage` completion has NO timeout, so a lost/never-fired
@@ -154,6 +176,17 @@ final class GarminRemoteBridge: NSObject {
         self.app = app
         ConnectIQ.sharedInstance().register(forDeviceEvents: device, delegate: self)
         ConnectIQ.sharedInstance().register(forAppMessages: app, delegate: self)
+        // WR-07 already-connected-at-registration edge case (ConnectIQ.h:58): if the device was already
+        // connected before we registered, `deviceCharacteristicsDiscovered:` may not re-fire, leaving
+        // readiness stuck false. Probe the app's status; a reachable, installed IQAppStatus means the
+        // device is communicable → arm readiness and drain. (Fail-safe: nil/not-installed keeps it false.)
+        ConnectIQ.sharedInstance().getAppStatus(app) { [weak self] appStatus in
+            Task { @MainActor in
+                guard let self, appStatus?.isInstalled == true else { return }
+                self.readiness.characteristicsDiscovered()
+                self.pump()
+            }
+        }
     }
 
     /// Enqueue a command for the watch. Status pushes are coalesced (latest wins); everything else
@@ -177,7 +210,9 @@ final class GarminRemoteBridge: NSObject {
     }
 
     private func pump() {
-        guard let app, !sendInFlight else { return }
+        // WR-07: also gate on message-readiness — a send before characteristics discovery is silently
+        // lost. Enqueue-before-pump means gating here only DEFERS the transmit; discovery drains it.
+        guard let app, readiness.canSend, !sendInFlight else { return }
         let next: [String: Any]; let isEcho: Bool; let attempts: Int
         if let f = inFlight {                       // re-attempt of a payload whose completion was lost
             next = f.payload; isEcho = f.isEcho; attempts = f.attempts
@@ -316,7 +351,21 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
         guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }   // audit A-07
         Task { @MainActor in self.handle(cmd) }
     }
-    nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {}
+    nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {
+        // WR-07: clear readiness whenever the device is not connected; the `true` transition is owned
+        // solely by deviceCharacteristicsDiscovered (a bare `.connected` is NOT message-ready). Hop to
+        // the main actor like the other ConnectIQ callbacks.
+        Task { @MainActor in self.readiness.deviceStatusChanged(isConnected: status == .connected) }
+    }
+
+    /// WR-07: characteristics discovered → messaging is ready. Set readiness and drain anything that
+    /// queued during the post-connect / pre-discovery window (echoes, coalesced status).
+    nonisolated func deviceCharacteristicsDiscovered(_ device: IQDevice!) {
+        Task { @MainActor in
+            self.readiness.characteristicsDiscovered()
+            self.pump()
+        }
+    }
 
     /// Strict, fail-safe parse of the out-of-band `hr_window` envelope (T-09.18b-05). Pulls the newest
     /// `[bpm, epoch]` pair from `samples` (mirroring the `imu_window` `data`-array idiom), or a single
