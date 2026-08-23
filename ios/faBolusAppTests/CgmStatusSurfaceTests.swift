@@ -13,7 +13,7 @@ struct CgmStatusSurfaceTests {
 
     private let configured: [(id: String, name: String)] = [
         (id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)"),
-        (id: "dexcom-share",  name: "Dexcom Share (cloud, last resort)"),
+        (id: "dexcom-share",  name: "Dexcom Share (cloud)"),
         (id: "nightscout",    name: "Nightscout (any CGM)"),
     ]
 
@@ -151,7 +151,7 @@ struct CgmStatusSurfaceTests {
     /// distinct from both the active-failover and the nil/not-selected cases above.
     @Test func selectionStatusSubtitleReflectsSelectedNotArmed() {
         let result = CgmStatusView.selectionStatusSubtitle(
-            selected: (id: "dexcom-share", name: "Dexcom Share (cloud, last resort)"),
+            selected: (id: "dexcom-share", name: "Dexcom Share (cloud)"),
             armedId: "dexcom-g7-ble",
             provenance: .failover(sourceID: "dexcom-g7-ble", reason: .pumpStale))
 

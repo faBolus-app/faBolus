@@ -9,7 +9,7 @@ import faBolusCore
 public enum GlucoseSourceRegistry {
     /// Sources compiled into this build. Empty selection = pump-relayed glucose only (no failover).
     /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
-    /// (last resort). HealthKit (Eversense) was removed from narrow `main` in Phase 5 (HEALTH-01) —
+    /// (cloud fallback). HealthKit (Eversense) was removed from narrow `main` in Phase 5 (HEALTH-01) —
     /// see dev/healthkit's REINTEGRATION.md for the pre-removal descriptor shape. Nightscout was
     /// removed from narrow `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md.
     public static let enabled: [GlucoseSourceDescriptor] = {
@@ -18,7 +18,7 @@ public enum GlucoseSourceRegistry {
             // Plan 03 (G7, CGM-01/CGM-02) and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04), then
             // retro-cleaned to a physical `git rm` in Phase 2.5 (D-01/D-07, CLEAN-03) — the source
             // files no longer exist on `main` at all; they are preserved on origin/dev/cgm-extra.
-            GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud, last resort)",
+            GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud)",
                                     sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
         ]
         // xdrip-appgroup removed from narrow `main` — Phase 1, Plan 01 (CGM-05), then git rm'd

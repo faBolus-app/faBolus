@@ -11,8 +11,8 @@ protocol ShareGlucoseFetching {
 }
 extension ShareClient: ShareGlucoseFetching {}
 
-/// Dexcom Share follower — **last resort** for Dexcom (G6 has no free BLE slot; Share is the only
-/// independent feed, and it is notoriously flaky). The official Dexcom app must have Share enabled
+/// Dexcom Share follower — **cloud fallback** for Dexcom (G6 has no free BLE slot; Share is the only
+/// independent feed, and it can be delayed/flaky). The official Dexcom app must have Share enabled
 /// and uploading. Config: `dexcomshare.username` + `dexcomshare.region` (UserDefaults),
 /// `dexcomshare.password` (Keychain). Read-only.
 ///

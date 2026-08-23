@@ -195,7 +195,7 @@ public final class AppModel {
     }
 
     /// A compact source name for the small "via …" failover badge — drops the parenthetical/qualifier
-    /// so no source name overruns the ring (e.g. "Dexcom Share (cloud, last resort)" → "Dexcom Share",
+    /// so no source name overruns the ring (e.g. "Dexcom Share (cloud)" → "Dexcom Share",
     /// "Dexcom G7 / ONE+ (direct BLE)" → "Dexcom G7").
     static func shortSourceName(_ full: String) -> String {
         var s = full

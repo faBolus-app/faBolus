@@ -8,7 +8,7 @@ struct CgmCredentialsView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    // Dexcom Share (G6 / last-resort)
+    // Dexcom Share (G6 / cloud fallback)
     @State private var shareUser = ""
     @State private var sharePass = ""
     @State private var shareRegion = "us"
@@ -193,9 +193,9 @@ struct CgmCredentialsView: View {
                     Text("Asia-Pacific (Japan)").tag("apac")
                 }
             } header: {
-                Text("Dexcom Share (last resort)")
+                Text("Dexcom Share")
             } footer: {
-                Text("Your Dexcom account with Share enabled and uploading. Cloud-only and unreliable — a last-resort feed for G6.")
+                Text("Your Dexcom account with Share enabled and uploading. Cloud-only and can lag — a backup feed for G6.")
             }
 
             // D-11: HealthKit's config section (the one remaining source that previously had no
