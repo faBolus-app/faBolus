@@ -56,8 +56,10 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            backend.injectHistoryLogFrameForTesting(
-                FakePumpTransport.historyLogStream(cgmReadings: [(seq: 100, pumpTimeSec: 100_000, mgdl: 110)]))
+            // WR-03: coverage now credits only RECEIVED sequences, so the first sync must genuinely receive
+            // the whole 1...100 window to hold [1...100] (a single reading would credit only [100...100]).
+            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 110) })
             backend.fireHistorySyncTickForTesting()   // debounce: window 1...100 exhausted → finishBackfill
 
             // Simulate a disconnect + reconnect where the pump now reports 1...130 — 30 NEW records were
@@ -100,8 +102,10 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            backend.injectHistoryLogFrameForTesting(
-                FakePumpTransport.historyLogStream(cgmReadings: [(seq: 100, pumpTimeSec: 500_000, mgdl: 111)]))
+            // WR-03: receive the whole 1...100 window so held coverage is [1...100] and the second sync's
+            // gap is exactly the forward window 101...130 (seq 100 stays the newest ingested reading).
+            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111) })
             backend.fireHistorySyncTickForTesting()
 
             // Second sync (same connection, no need to disconnect — injecting another status response
@@ -159,8 +163,9 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            backend.injectHistoryLogFrameForTesting(
-                FakePumpTransport.historyLogStream(cgmReadings: [(seq: 100, pumpTimeSec: 100_000, mgdl: 100)]))
+            // WR-03: receive the whole 1...100 window so the credited (and persisted) coverage is [1...100].
+            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 100) })
             backend.fireHistorySyncTickForTesting()   // window 1...100 credited to AppSettings.shared.historyCoverage
 
             backend.applyClientState(.disconnected)   // linkDroppedCleanup — must NOT clear historyCoverage
@@ -251,7 +256,7 @@ struct HistoryLogSyncTests {
             withHistorySyncEnabled(false) {
                 let (backend, fake) = makeBackend()
                 let model = AppModel(source: backend)
-                backend.applyClientState(.ready)   // "Sync now" requires an already-connected pump
+                backend.setConnectionForTesting(.connected)   // "Sync now" requires an already-connected pump (CR-01: bare .ready is now only .connecting)
 
                 model.syncHistoryNow()
                 #expect(fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
@@ -262,6 +267,87 @@ struct HistoryLogSyncTests {
                 #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
                         "the manual trigger's response must still drive the gap-window fetch, disabled toggle notwithstanding")
             }
+        }
+    }
+
+    // MARK: - WR-03 (R2-17): coverage is credited from RECEIVED sequences, never the request cursor
+
+    /// `HistoryLogStreamResponse` frames carry a one-byte cargo length (`[count, streamId, records…]`),
+    /// so a single injected frame can hold at most 9 × 26-byte records — inject a received sub-range in
+    /// ≤9-record frames. Each frame accumulates into the current window's `receivedSeqsThisWindow`
+    /// (`appendHistoryStreamFrame`); one `fireHistorySyncTickForTesting()` then credits from what landed.
+    private func injectHistoryStreamChunked(
+        _ backend: TandemBackend, _ readings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)]) {
+        var idx = 0
+        while idx < readings.count {
+            let chunk = Array(readings[idx..<min(idx + 9, readings.count)])
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(cgmReadings: chunk))
+            idx += 9
+        }
+    }
+
+    /// WR-03 (partial receipt): the pump reports 1...100, but only the TOP contiguous sub-range (seq
+    /// 100…60) is actually RECEIVED before the stream stops — the un-received 1...59 is swallowed. Coverage
+    /// must credit ONLY the received `60...100`; `1...59` must stay uncovered so `missingRanges` re-requests
+    /// it on the next sync. Pre-fix, crediting keyed off the request cursor (`backfillNextEnd`, which
+    /// advances at SEND time), so the whole 1...100 was marked covered and 1...59 became a silent, durable
+    /// history gap that was never re-fetched.
+    @Test func partialReceiptCreditsOnlyReceivedSubRange() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
+
+            // Only the top sub-range seq 100…60 arrives (the pump paged backward from the top, then went
+            // silent before reaching 59) — 41 records injected across ≤9-record frames.
+            let received: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] =
+                stride(from: UInt32(100), through: UInt32(60), by: -1).map { (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 110) }
+            injectHistoryStreamChunked(backend, received)
+            backend.fireHistorySyncTickForTesting()   // window 1...100 exhausted → credit received sub-range
+
+            #expect(AppSettings.shared.historyCoverage.ranges == [60...100],
+                    "only the RECEIVED top sub-range may be credited, never the un-received request cursor")
+            #expect(TandemBackend.missingRanges(pumpFirst: 1, pumpLast: 100, retentionFloor: 1,
+                                                held: AppSettings.shared.historyCoverage.ranges) == [1...59],
+                    "the swallowed 1...59 must remain a resumable gap the next sync re-requests")
+        }
+    }
+
+    /// WR-03 (nothing received): the pump reports 1...100 and a page is requested, but NO stream frame ever
+    /// arrives (total response loss / a swallowed send / a BLE drop before the first record). Coverage must
+    /// stay EMPTY — an un-received window is credited nothing. Pre-fix, the request cursor advanced at send
+    /// time and inserted the full 1...100 as covered despite zero records landing.
+    @Test func zeroFramesCreditNothing() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
+            // No injectHistoryLogFrameForTesting — the requested page yields nothing.
+            backend.fireHistorySyncTickForTesting()
+
+            #expect(AppSettings.shared.historyCoverage.ranges.isEmpty,
+                    "a window with nothing received must credit nothing to the coverage map")
+        }
+    }
+
+    /// WR-03 (success-path regression): a fully-received window still credits its whole range. The pump
+    /// reports 1...9 and every record (seq 9…1) arrives in a single frame; coverage must be exactly
+    /// `1...9`, confirming the receipt-based crediting did not regress the ordinary fully-synced case.
+    @Test func fullReceiptCreditsWholeRange() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 9, firstSequenceNum: 1, lastSequenceNum: 9))
+            let full: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] =
+                stride(from: UInt32(9), through: UInt32(1), by: -1).map { (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 120) }
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(cgmReadings: full))
+            backend.fireHistorySyncTickForTesting()
+
+            #expect(AppSettings.shared.historyCoverage.ranges == [1...9],
+                    "a fully-received window must still credit its whole range (success-path regression)")
         }
     }
 }

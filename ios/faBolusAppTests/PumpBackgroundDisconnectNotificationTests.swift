@@ -56,7 +56,10 @@ struct PumpBackgroundDisconnectNotificationTests {
         #expect(scheduled.isEmpty, "no escalation may be scheduled during the reconnect window")
 
         // Recovery in the background → the `.clear` edge withdraws the (never-fired) banner + escalation.
-        b.applyClientState(.ready); b.onChange?()
+        // CR-01 (R2-01): bare BLE `.ready` now only reaches `.connecting`; the usable `.connected` (which
+        // fires the `.connecting`→`.connected` recovery edge) is published at the polling/onPaired moment.
+        // Drive that usable transition directly so the recovery edge fires.
+        b.setConnectionForTesting(.connected); b.onChange?()
         #expect(b.snapshot.connection == .connected)
         #expect(withdrawn.contains(disconnectKey), "recovery must withdraw the disconnect family")
     }

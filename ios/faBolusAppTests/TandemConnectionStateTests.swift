@@ -48,7 +48,9 @@ struct TandemConnectionStateTests {
         b.applyClientState(.poweredOff)
         #expect(b.snapshot.connectionDetail == "Bluetooth is off")
         b.applyClientState(.ready)
-        #expect(b.snapshot.connection == .connected)
+        // CR-01 (R2-01): bare BLE `.ready` now publishes the not-yet-usable `.connecting` (the usable
+        // `.connected` is published only at the polling/onPaired moment). The stale reason must still clear.
+        #expect(b.snapshot.connection == .connecting)
         #expect(b.snapshot.connectionDetail == nil)   // stale "Bluetooth is off" must not linger
     }
 
