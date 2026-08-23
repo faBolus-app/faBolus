@@ -1363,7 +1363,19 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.lastBolusDate = Date()
         onChange?()
         readScheduler.pausePollingForDelivery()   // pause routine polling so its reads don't interfere
-        defer { readScheduler.startPolling() }    // resume routine polling on any exit (success or indeterminate throw)
+        // WR-04 (R2-20) part 1: resume routine polling on exit ONLY if the link is still live. On the
+        // `throw indeterminate(..., "connection lost during delivery")` exit the link is already down (a
+        // drop ran `linkDroppedCleanup()` → `stopAllTimers()`); an unconditional re-arm here would start a
+        // fresh 15s `pollTimer` on a dead link whose first tick fires bootstrap/fast/static reads that
+        // throw against a disconnected central. A genuine reconnect re-arms via
+        // `onPaired → markUsableAndStartPolling()` (CR-01 spine), so nothing is lost on the dropped-mid-
+        // bolus path. (Part 2 — stopping `predictivePollTimer` on drop — is handled by CR-01's
+        // `stopAllTimers()` inside `linkDroppedCleanup()`.)
+        defer {
+            if snapshot.connection == .connected || snapshot.connection == .bolusing {
+                readScheduler.startPolling()
+            }
+        }
 
         let timeout = deliveryPollTimeoutOverride ?? min(600.0, max(60.0, units * 90.0))
         let deadline = Date().addingTimeInterval(timeout)
