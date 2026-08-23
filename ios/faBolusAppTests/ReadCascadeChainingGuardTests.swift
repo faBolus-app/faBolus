@@ -182,6 +182,34 @@ struct ReadCascadeChainingGuardTests {
                 "an EGV reading whose pump timestamp advances (0 → 1000) must schedule a predictive burst")
     }
 
+    /// VA-01 (freshness fail-closed): an EGV reading whose pump timestamp CANNOT be trusted — here no
+    /// pump↔phone clock anchor exists yet (bootstrap-early), so `cgmReadingDate` returns nil — must set the
+    /// glucose VALUE but leave `glucoseDate` nil, so `GlucoseFreshness.isStale` reads it as stale/ineligible
+    /// for dosing rather than stamping receive-time and letting a bootstrap-early reading masquerade as
+    /// fresh. Predictive-poll cadence still fires (it falls back to `now`), which the test above covers.
+    @Test func untrustworthyReadingTimeIsStaleNotStampedNow() {
+        let (backend, _) = makeBackend()
+        // No timeResponse injected → no anchor → the reading time is untrustworthy.
+        backend.injectStatusFrameForTesting(Self.currentEgvV1Frame(pumpSec: 1000, mgdl: 120))
+        #expect(backend.snapshot.glucose == 120, "the value still lands — only its timestamp is untrusted")
+        #expect(backend.snapshot.glucoseDate == nil, "an untrusted reading time must be nil, never stamped as now")
+        #expect(GlucoseFreshness.isStale(backend.snapshot.glucoseDate),
+                "a nil reading time is stale — never presented as fresh to the dose path")
+    }
+
+    /// VA-01 happy path: with the pump↔phone clock anchor established, an EGV whose pump timestamp maps to a
+    /// recent (trusted) `Date` DOES stamp `glucoseDate` (fresh) and IS promoted into the plot history —
+    /// proving the fail-closed change did not break the normal, trusted-timestamp reading.
+    @Test func trustedReadingTimeSetsGlucoseDateAndPromotesToHistory() {
+        let (backend, _) = makeBackend()
+        backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse(currentTime: 1000))
+        backend.injectStatusFrameForTesting(Self.currentEgvV1Frame(pumpSec: 990, mgdl: 118))   // ~10 s before the anchor
+        #expect(backend.snapshot.glucose == 118)
+        #expect(backend.snapshot.glucoseDate != nil, "a trusted reading time IS stamped on the snapshot")
+        #expect(!GlucoseFreshness.isStale(backend.snapshot.glucoseDate), "a just-taken reading is fresh")
+        #expect(backend.glucoseHistory.last?.mgdl == 118, "a trusted reading is promoted into the plot history")
+    }
+
     @Test func aLaterAdvancingReadingReschedulesTheBurstDeadlineForward() {
         let (backend, _) = makeBackend()
         // Anchor the pump↔phone clock close to "now" so each reading's `pumpSec` maps to a real, ordered

@@ -5,8 +5,8 @@ import Foundation
 /// P11 (defect group B) — the receive-side freshness bound. A delivery-authorizing command that reached
 /// the host too long after it was composed is refused (a bolus/resume/approval applied minutes late is a
 /// double-dose hazard). Insulin-REDUCING and neutral commands are never freshness-gated (refusing a late
-/// safety action would be the unsafe direction), and an absent stamp (a legacy sender that predates the
-/// field) is not rejected here.
+/// safety action would be the unsafe direction). VA-02: an absent stamp on a freshness-sensitive command
+/// is refused as stale (fail-closed, retryable) — its age can't be verified, so it must not be trusted.
 struct RemoteCommandFreshnessTests {
     private let now = Date(timeIntervalSince1970: 2_000_000_000)   // well under the Int32.max (2038) ceiling
 
@@ -38,9 +38,13 @@ struct RemoteCommandFreshnessTests {
         #expect(!RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: -5), now: now))
     }
 
-    @Test func absentStampIsNotRejectedHere() {
-        // Additive field: a sender that predates it (or a non-first-party client) is not gated here.
-        #expect(!RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: nil), now: now))
+    @Test func absentStampIsStaleForFreshnessSensitive() {
+        // VA-02 (fail-closed): a delivery-authorizing command with no trustworthy creation time can't be
+        // age-verified, so it is refused as stale (retryable) rather than trusted as fresh.
+        #expect(RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: nil), now: now))
+        // A NON-freshness-sensitive kind with no stamp stays ungated (a late cancel/status is always safe).
+        #expect(!RemoteCommandFreshness.isStale(cmd(.cancelBolus, ageSec: nil), now: now))
+        #expect(!RemoteCommandFreshness.isStale(cmd(.statusRead, ageSec: nil), now: now))
     }
 
     @Test func insulinReducingAndNeutralCommandsAreNeverGated() {

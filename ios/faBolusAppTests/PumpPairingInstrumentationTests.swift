@@ -312,10 +312,16 @@ struct PumpV1EgvResponseTests {
         let b = backend()
         #expect(b.snapshot.glucose == nil)
         b.injectStatusFrameForTesting(FakePumpTransport.currentEgvV1(mgdl: 137, trendRate: 0))
-        #expect(b.snapshot.glucose == 137)
+        #expect(b.snapshot.glucose == 137)       // the value still lands on the snapshot
         #expect(b.snapshot.cgmActive)
-        #expect(b.snapshot.glucoseDate != nil)
-        #expect(b.glucoseHistory.last?.mgdl == 137, "the V1 reading must also reach the plot history")
+        // VA-01: this fixture carries NO reading timestamp (pumpSec == 0) and no pump↔phone clock anchor was
+        // established, so the reading time is untrustworthy. It must FAIL CLOSED — `glucoseDate` stays nil
+        // (never stamped as `now`, which the shared GlucoseFreshness policy would read as fresh) and the
+        // value is NOT promoted into the plot history (an untrusted time must not seed a point that later
+        // gets promoted to the live snapshot). A trusted-timestamp reading is covered by
+        // ReadCascadeChainingGuardTests.trustedReadingTimeSetsGlucoseDateAndPromotesToHistory.
+        #expect(b.snapshot.glucoseDate == nil)
+        #expect(b.glucoseHistory.last == nil, "a timestamp-less reading must not reach the plot history")
     }
 
     /// V1 and V2 must be indistinguishable downstream — the pump's firmware generation must not change
