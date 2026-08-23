@@ -36,7 +36,7 @@ public enum GlucoseFreshness {
     /// an *unacknowledged* stale reading always has. Without this bound the include-stale branch could
     /// recompute a full insulin-INCREASING correction off a reading of arbitrary age (30 min, 2 h, older)
     /// — the hazard this cap closes. Default 15 minutes, anchored to LoopKit's `inputDataRecencyInterval`
-    /// (its 15-minute maximum glucose age for a dosing decision). §13-clinical-review-pending;
+    /// (its 15-minute maximum glucose age for a dosing decision). §13-cleared 2026-08-23 (AI-panel review);
     /// owner-adjustable at runtime like `staleAfter`/`hideAfter`.
     public static var maxIncludableStaleness: TimeInterval {
         get { _maxIncludableStaleness.withLock { $0 } }
