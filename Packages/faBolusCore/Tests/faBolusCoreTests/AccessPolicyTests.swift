@@ -50,6 +50,26 @@ import Testing
         #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: openCtx()).allowed)
     }
 
+    /// VA-30: the per-surface remote-bolus enable gate AND the Garmin passcode gate must cover
+    /// `.deliverExtendedBolus`, not only `.deliverBolus` — otherwise an extended bolus from a paired remote
+    /// would bypass both. Latent today (extended bolus isn't Garmin/Watch-reachable), but the single
+    /// evaluator must not drift.
+    @Test func extendedBolusIsGatedLikeNormalBolusOnRemotes() {
+        let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
+                                  phoneReadOnly: false, remotesReadOnly: false,
+                                  advancedControlOptIn: true, capabilities: .mobiAdvanced,
+                                  hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
+                                  garminBolusEnabled: false, watchBolusEnabled: false)
+        // Enable OFF ⇒ extended deliver denied on both remotes, exactly like a normal bolus.
+        #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
+        #expect(P.evaluate(.deliverExtendedBolus, surface: .appleWatch, context: off).reason == .remoteBolusDisabled)
+        // Garmin passcode required-but-unsatisfied ⇒ extended deliver denied by the passcode gate too.
+        var needsCode = openCtx(); needsCode.bolusPasscodeRequired = true; needsCode.bolusPasscodeSatisfied = false
+        #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: needsCode).reason == .remoteBolusPasscodeRequired)
+        // Enabled + no passcode ⇒ allowed (parity with normal bolus).
+        #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: openCtx()).allowed)
+    }
+
     /// Q1.2: a context built WITHOUT the per-surface remote-bolus flags must default them fail-CLOSED, so a
     /// future call site that forgets to thread them cannot silently arm Garmin/Watch bolusing.
     @Test func accessContextDefaultsFailClosedForRemoteBolus() {

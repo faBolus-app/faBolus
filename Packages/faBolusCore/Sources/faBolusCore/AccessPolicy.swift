@@ -194,7 +194,11 @@ public enum AccessPolicy {
         // above if set). Only the actual deliver from those two paired remotes is gated — every other
         // surface/action, and the authenticated-peer paths, are unaffected. Fail-closed: a phone that never
         // enabled the surface denies here regardless of what the remote UI showed.
-        if action == .deliverBolus {
+        // VA-30: gate BOTH ledgered deliveries (normal AND extended bolus). Keying on `.deliverBolus`
+        // alone left `.deliverExtendedBolus` from a paired remote ungated by the per-surface enable —
+        // latent today (extended bolus isn't Garmin/Watch-reachable) but exactly the drift this single
+        // evaluator exists to prevent.
+        if action == .deliverBolus || action == .deliverExtendedBolus {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
             if surface == .appleWatch && !context.watchBolusEnabled { return .deny(.remoteBolusDisabled) }
         }
@@ -207,7 +211,7 @@ public enum AccessPolicy {
         // not require a passcode there; gating only `.garmin` keeps the watch's existing confirm. Every
         // other surface/action is unaffected (`required` defaults false). Ordered after the enable gate so
         // "bolusing off" still takes precedence over "needs a passcode".
-        if action == .deliverBolus && surface == .garmin
+        if (action == .deliverBolus || action == .deliverExtendedBolus) && surface == .garmin
             && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied {
             return .deny(.remoteBolusPasscodeRequired)
         }
