@@ -18,6 +18,33 @@ struct GarminMessageReadiness {
     var canSend: Bool { isReady }
 }
 
+/// CR (R2-12): ConnectIQ-free classification of a Garmin outbound `sendMessage` result, so the durable
+/// terminal-echo outbox policy gets unit coverage in the default (non-GARMIN) target — mirroring
+/// `GarminMessageReadiness` above, which lives OUTSIDE `#if GARMIN` for the same reason.
+///
+/// A terminal command echo (bolus outcome, etc.; `isEcho == true`) must survive an EXPLICIT send-failure:
+/// it is re-enqueued to the FRONT of the durable `echoQueue` (WR-07's readiness drain replays it on
+/// reconnect/discovery) rather than dropped. Dropping a terminal `bolusStatus` echo permanently loses the
+/// outcome and leaves the watch stuck "delivering…" forever (it makes the watch-side R2-02 stuck-terminal
+/// permanent). A coalesced status snapshot (`isEcho == false`) MAY still be dropped on failure — a newer
+/// status supersedes it, so it is coalescing-safe.
+enum GarminSendDisposition: Equatable {
+    /// Transport acknowledged the send (ConnectIQ `.success`) — clear it from the outbox.
+    case ack
+    /// Explicit failure of a durable echo — re-enqueue to the front of `echoQueue` (never drop).
+    case reenqueueFront
+    /// Explicit failure of a coalescing-safe status snapshot — safe to drop.
+    case drop
+}
+
+/// success ⇒ `.ack`; failure of an echo ⇒ `.reenqueueFront`; failure of a non-echo status ⇒ `.drop`.
+/// Both the `#if GARMIN` `sendMessage` completion AND the send-watchdog's `maxSendAttempts`-exhaustion
+/// path route their keep/drop decision through this one helper.
+func garminSendDisposition(success: Bool, isEcho: Bool) -> GarminSendDisposition {
+    if success { return .ack }
+    return isEcho ? .reenqueueFront : .drop
+}
+
 #if GARMIN
 import ConnectIQ
 
@@ -77,6 +104,12 @@ final class GarminRemoteBridge: NSObject {
     private var readiness = GarminMessageReadiness()
     private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
     private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
+    // TODO(R2-12 follow-up): cross-restart echo persistence. This durable outbox is in-memory only
+    // (replay-until-transport-acked within a process). The phone-side RemoteBolusLedger /
+    // DeliveryLedgerCoordinator already persist the authoritative (peerId,requestId) terminal outcome, so
+    // on launch we could seed echoQueue from the ledger's UNACKED terminal outcomes (composes with WR-08's
+    // launch/state-restoration) — recovering a terminal echo across an app kill/relaunch, not just a
+    // reconnect. Out of scope for R2-12; flagged as follow-up.
     // A2 send-watchdog: ConnectIQ's `sendMessage` completion has NO timeout, so a lost/never-fired
     // completion (watch app died, out of range, Garmin Connect dropped it) would leave `sendInFlight`
     // true forever — the `guard !sendInFlight` below then makes every later status push AND every
@@ -90,6 +123,12 @@ final class GarminRemoteBridge: NSObject {
     private var inFlight: (payload: [String: Any], isEcho: Bool, attempts: Int)?
     private static let sendTimeout: TimeInterval = 8
     private static let maxSendAttempts = 3
+    // R2-12: after an EXPLICIT send-failure we deliberately do NOT re-pump synchronously (re-sending the
+    // just-failed payload immediately is a busy tight-loop). A single bounded-backoff timer schedules one
+    // deferred pump() so a transient failure still recovers even without a reconnect/discovery event; the
+    // WR-07 readiness gate in pump() still defers the actual transmit until the device is message-ready.
+    private var sendBackoff: Timer?
+    private static let sendBackoffInterval: TimeInterval = 4
 
     // 09.6-04 (Part C-4a, D-03.4): read-only, additive diagnostics state — no new send path. The
     // last completed send's outcome (mapped from ConnectIQ's `IQSendMessageResult` onto the
@@ -244,10 +283,27 @@ final class GarminRemoteBridge: NSObject {
                 // 09.6-04: decode ConnectIQ's raw result onto the neutral, ConnectIQ-free
                 // GarminDiagnostics.SendOutcome vocabulary right at this boundary — no raw
                 // IQSendMessageResult ever crosses into GarminDiagnostics.
-                self.lastSendOutcomeForDiagnostics = (result == .success) ? .delivered : .failed
+                let success = (result == .success)
+                self.lastSendOutcomeForDiagnostics = success ? .delivered : .failed
+                // R2-12: classify the result. On an EXPLICIT send-failure a terminal command echo must NOT
+                // be dropped — durable-park it to the FRONT of echoQueue so WR-07's readiness-gated
+                // reconnect/discovery drain replays it. A coalesced status snapshot is safe to drop.
+                switch garminSendDisposition(success: success, isEcho: self.inFlight?.isEcho ?? false) {
+                case .reenqueueFront:
+                    if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
+                case .ack, .drop:
+                    break
+                }
                 self.inFlight = nil
                 self.sendInFlight = false
-                self.pump()   // drain the next queued message (echo first, else the latest status)
+                if success {
+                    self.pump()   // drain the next queued message (echo first, else the latest status)
+                } else {
+                    // Do NOT synchronously re-pump on an explicit failure — re-sending the just-failed
+                    // payload immediately busy-loops. Recovery rides WR-07's readiness-gated reconnect drain
+                    // plus a bounded backoff.
+                    self.scheduleBackoffPump()
+                }
             }
         }
     }
@@ -274,9 +330,37 @@ final class GarminRemoteBridge: NSObject {
         sendWatchdogFireCountForDiagnostics += 1
         if var f = inFlight {
             f.attempts += 1
-            inFlight = f.attempts < Self.maxSendAttempts ? f : nil   // bounded re-attempt; else drop
+            if f.attempts < Self.maxSendAttempts {
+                inFlight = f   // bounded re-attempt
+            } else {
+                // R2-12: attempts exhausted. Route through the SAME disposition helper as the completion
+                // path — a terminal echo durable-parks to the FRONT of echoQueue (never dropped) so WR-07's
+                // readiness drain replays it; a coalescing-safe status snapshot is dropped.
+                if garminSendDisposition(success: false, isEcho: f.isEcho) == .reenqueueFront {
+                    echoQueue.insert(f.payload, at: 0)
+                }
+                inFlight = nil
+            }
         }
         pump()
+    }
+
+    /// R2-12: schedule a single bounded-backoff pump() after an explicit send-failure. We do this instead
+    /// of re-pumping synchronously so we don't busy-loop re-sending the just-failed payload; a transient
+    /// failure still recovers even absent a reconnect/discovery event. Coalesced — one pending backoff is
+    /// enough (a reconnect drain or a later send may beat it; both are harmless no-ops). The pump() it fires
+    /// still honors the WR-07 readiness gate, so it only transmits when the device is message-ready.
+    private func scheduleBackoffPump() {
+        guard sendBackoff == nil else { return }
+        sendBackoff = Timer.scheduledTimer(withTimeInterval: Self.sendBackoffInterval, repeats: false) { [weak self] _ in
+            // Fires on the main run loop (scheduled from the @MainActor completion), so we're really on the
+            // main actor — hop in explicitly, matching armSendWatchdog.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.sendBackoff = nil
+                self.pump()
+            }
+        }
     }
 
     private func handle(_ cmd: RemoteCommand) {
