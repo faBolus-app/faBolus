@@ -40,6 +40,15 @@ final class MobiRejectBackstop {
     func start() {
         guard !running else { return }
         running = true
+        // CR-01 (VA-05): reject an ALREADY-CURRENT Mobi before arming future observation.
+        // `withObservationTracking`'s `onChange` fires only on the NEXT mutation, never against the
+        // value already present — so a Mobi made current before `start()` runs (CoreBluetooth
+        // state-restoration reconnect, or a stored/identified Mobi applied before the backstop wires
+        // up) would otherwise never trigger a reject. `rejectMobiIfDetected()` is @MainActor,
+        // idempotent, and guards `snapshot.pumpModel == .mobi`, so this is a no-op when no Mobi is
+        // present. This closes the startup-ordering gap; the delivery-boundary preflight in
+        // `TandemBackend.validateDeliver` is the structural interlock that backs it up.
+        model.rejectMobiIfDetected()
         observeNext()
     }
 

@@ -1083,6 +1083,16 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
+        // CR-01 (VA-05): fail closed unless the identified family is exactly t:slim X2. Blocks .mobi
+        // AND .unknown (not-yet-identified) — a synchronous structural interlock at the single delivery
+        // chokepoint, independent of the async MobiReject backstop. This covers every delivery surface
+        // (phone owner, Watch, Garmin, widget) at once and preserves phone-owner semantics; no change
+        // to dose bytes or InitiateBolus serialization. A genuinely paired t:slim always reports
+        // `.tslimX2` before op-115 is read, so the `therapyParamsDate` guard below still gates real
+        // delivery correctly.
+        guard snapshot.pumpModel == .tslimX2 else {
+            throw BolusError.pumpRejected(MobiRejectCopy.mobiNotSupported)
+        }
         // Phase 2 (D-01/D-02/D-03, SC1): fail-closed until the pump's OWN configured max-bolus (op-115)
         // has been read at least once. Before this guard, an unread `maxBolusUnits` silently fell back to
         // `PumpSnapshot`'s permissive 25 U default — the absolute ceiling, not necessarily the pump's real
