@@ -171,6 +171,15 @@ final class PumpReadScheduler {
         // union and `PumpBadOpcodeStore.record`.
         guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
         badOpcodes.insert(opcode)
+        // R2-10: a dose-input READ (op108 IOB / op115 therapy) may be skipped for the REST of this
+        // session (it stays in the in-memory `badOpcodes` above, so it is not re-thrashed every 15 s
+        // poll), but it must NEVER be written to the durable per-pump store — persisting it bricks the
+        // bolus calculator forever with no re-probe (op109 is the sole IOB source). `startPolling`'s
+        // hydration union drops these from the carried-over set each connect, so a one-off op77 self-
+        // heals on the next connection/relaunch instead of permanently starving `recommendBolus`.
+        // (The in-memory session skip already backs off to one probe per connection cycle, so no
+        // explicit per-opcode rejection counter is needed.)
+        guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
         persistBadOpcode(opcode)
     }
 
@@ -697,6 +706,13 @@ final class PumpReadScheduler {
         // mutation.
         let persisted = loadPersistedBadOpcodes()
         badOpcodes.formUnion(persisted.subtracting(PumpReadCatalog.deliveryControlWriteOpcodes))
+        // R2-10: re-probe the dose-input reads (op108 IOB / op115 therapy) on EVERY connection cycle so a
+        // single op77 that named one on a prior connection can't permanently starve the bolus calculator.
+        // These are never persisted (see `insertBadOpcode`), so this also guarantees a relaunch re-probes;
+        // dropping them from the carried-over in-memory set makes an intra-session reconnect re-probe too.
+        // If the pump genuinely rejects it again, `insertBadOpcode` re-adds it in-memory for the rest of
+        // THIS session (one send per connect — negligible), while `safetyDegradedNotes` discloses it.
+        badOpcodes.subtract(PumpReadCatalog.doseInputReadOpcodes)
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()

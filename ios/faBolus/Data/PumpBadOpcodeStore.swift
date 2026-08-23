@@ -82,6 +82,12 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         // hydrate into `badOpcodes`. Read-colliding opcodes (op164/op144) are NOT in this set, so a
         // legitimately-learned READ still persists.
         guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
+        // R2-10: defense-in-depth mirror of the write-opcode guard — never PERSIST a dose-input READ
+        // (op108 IOB / op115 therapy). `PumpReadScheduler.insertBadOpcode` already refuses these before
+        // calling `persistBadOpcode`; this second choke point guarantees a future direct caller — or a
+        // foreign/legacy persisted entry replayed through here — can never durably blacklist a dose-input
+        // read and brick the bolus calculator with no re-probe.
+        guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {

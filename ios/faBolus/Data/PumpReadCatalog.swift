@@ -108,12 +108,32 @@ enum PumpReadCatalog {
     /// this note discloses the degraded state instead of silently presenting confirmed-ready).
     static let safetyRelevantReadOpcodes: Set<UInt8> = [LoadStatusRequest.props.opCode]
 
+    /// R2-10: the dose-input READ opcodes that feed the bolus calculator — op108 `ControlIQIOBRequest`
+    /// (active insulin / IOB, delivered via its sole op109 response) and op115 `BolusCalcDataSnapshotRequest`
+    /// (CR/ISF/target/max). Unlike op20, these must NEVER be durably blacklisted: op109 is the ONLY IOB
+    /// source, so a persisted skip fail-closes `recommendBolus` forever with no re-probe (bricks the
+    /// calculator on that pump). Held out of the durable store (`insertBadOpcode` / `PumpBadOpcodeStore.record`),
+    /// re-probed each connect (`startPolling`), and disclosed when currently unavailable (below).
+    static let doseInputReadOpcodes: Set<UInt8> = [
+        ControlIQIOBRequest.props.opCode,
+        BolusCalcDataSnapshotRequest.props.opCode,
+    ]
+
     /// One user-facing safety-degraded note per excluded safety-relevant read (transparency 4b). Empty when
     /// no safety-relevant read is excluded.
     static func safetyDegradedNotes(excludedOpcodes: Set<UInt8>) -> [String] {
-        excludedOpcodes.intersection(safetyRelevantReadOpcodes).sorted().map { op in
+        var notes: [String] = excludedOpcodes.intersection(safetyRelevantReadOpcodes).sorted().map { op in
             "\(readName(for: op)) (op-\(op)) is unavailable on this pump — "
                 + "relying on the pump's own protection for that check."
         }
+        // R2-10: a dose-input read being unavailable is NOT "the pump handles it" — there is no pump-side
+        // substitute for the IOB/therapy inputs, so the "relying on the pump's own protection" wording is
+        // wrong here. The bolus calculator simply fail-closes and will not recommend a dose. Disclose that
+        // explicitly, distinct from the op20 pre-guard note.
+        for op in excludedOpcodes.intersection(doseInputReadOpcodes).sorted() {
+            notes.append("\(readName(for: op)) (op-\(op)) is unavailable on this pump — "
+                + "the bolus calculator can't confirm active insulin/therapy settings and will not recommend a dose.")
+        }
+        return notes
     }
 }
