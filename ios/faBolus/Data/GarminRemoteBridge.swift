@@ -102,7 +102,12 @@ final class GarminRemoteBridge: NSObject {
         self.model = model
         super.init()
         Self.shared = self
-        ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil)
+        // WR-08 (R2-14): opt into CoreBluetooth state restoration (ConnectIQ.h:133-135) so iOS can
+        // relaunch us in the background on BLE activity — paired with early (launch-time) construction so
+        // a background relaunch has a live bridge to answer a remote request. `restoreDevice()` below is
+        // the intended reconnect-on-launch behavior (the SDK does not handle willRestoreState itself).
+        ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil,
+                                              stateRestorationIdentifier: "fabolus.connectiq")
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }

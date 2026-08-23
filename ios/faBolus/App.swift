@@ -17,6 +17,16 @@ struct FaBolusApp: App {
     @State private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // WR-08 (R2-14): construct the Garmin bridge at process launch — including a background BLE
+        // relaunch, where no view (and thus no `.onAppear`) ever runs — so a remote request always has a
+        // live bridge to answer, and (in a GARMIN build) so ConnectIQ's CoreBluetooth state-restoration
+        // init happens at launch. Constructed AFTER `model` (the bridge holds a weak model ref and wires
+        // echo/status listeners) and retained in the @State below so its `Self.shared` weak ref survives.
+        // Mirrors CR-01 (FB-4), which moved the Mobi reject backstop out of the view tree for the same gap.
+        _garmin = State(initialValue: GarminRemoteBridge(model: model))
+    }
+
     var body: some Scene {
         WindowGroup {
             RootContainerView(model: model)
@@ -32,7 +42,8 @@ struct FaBolusApp: App {
                 .onAppear {
                     // Start listening for remote commands (double-confirm host).
                     if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
-                    if garmin == nil { garmin = GarminRemoteBridge(model: model) }             // Garmin venu3s
+                    // WR-08 (R2-14): the Garmin bridge is now constructed at launch in `init()` (above),
+                    // not lazily here, so a background BLE relaunch has a live bridge before any view appears.
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
                     // CR-01 gap closure: start the always-on Mobi reject backstop exactly once — it
