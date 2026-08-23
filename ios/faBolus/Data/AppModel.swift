@@ -1891,6 +1891,10 @@ public final class AppModel {
     public private(set) var lastDeliveredUnits: Double?
     /// Whether that most recent delivery was cut short by a mid-flight cancel/partial (actual < requested).
     public private(set) var lastDeliveredWasCancelled: Bool = false
+    /// VA-07 host-side: wall-clock instant of the most recent host bolus DELIVERY (local or remote), used to
+    /// refuse a remote request composed BEFORE it (the remote dosed off pre-bolus state → double-dose hazard).
+    /// Wall-clock (not the pump-clock `snapshot.lastBolusDate`) so it is comparable to a remote's `sentAt`.
+    private(set) var lastHostDeliveryAt: Date?
 
     public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
         // P8: the phone's own standard bolus, gated through the single evaluator (child mode + phone
@@ -1924,6 +1928,7 @@ public final class AppModel {
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
             lastDeliveredUnits = delivered
             lastDeliveredWasCancelled = cancelled
+            lastHostDeliveryAt = Date()   // VA-07 host-side: stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
@@ -2008,6 +2013,7 @@ public final class AppModel {
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             lastDeliveredUnits = delivered
             lastDeliveredWasCancelled = cancelled
+            lastHostDeliveryAt = Date()   // VA-07 host-side: stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
             lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
@@ -2682,7 +2688,7 @@ public final class AppModel {
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
     public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
                               bgMgdl: Int? = nil, remoteEstimate: Double? = nil, passcode: String? = nil,
-                              includeStaleBG: Bool = false,
+                              includeStaleBG: Bool = false, sentAt: Int? = nil,
                               from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
         // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
@@ -2728,6 +2734,17 @@ public final class AppModel {
                 lastError = msg; notifyRemoteBolusRejected(msg)
                 return
             }
+        }
+        // VA-07 host-side: refuse a remote request composed BEFORE a host bolus that has since completed — the
+        // remote dosed off pre-bolus state (double-dose hazard). Defense-in-depth over VA-02 sentAt freshness.
+        // Placed BEFORE executeResolved (and thus before the ledger `begin`), so a superseded request never
+        // reaches the pump and records no entry; a legitimate recompose with a fresh `sentAt` proceeds normally.
+        if surface.isRemote,
+           RemoteCommandFreshness.composeSupersededByHostDelivery(sentAt: sentAt, lastHostDeliveryAt: lastHostDeliveryAt) {
+            let msg = "A bolus was delivered after this request was created — reopen the remote and try again."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return
         }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
@@ -2880,6 +2897,7 @@ public final class AppModel {
             lastError = msg; notifyRemoteBolusRejected(msg)
         case .delivered(let units, _):
             if let c = r.carbsGrams, c > 0 { recordCarbs(grams: c) }
+            lastHostDeliveryAt = Date()   // VA-07 host-side: stamp a completed host delivery (double-dose backstop)
             echo(bolusOutcome(requestId: requestId, delivered: units))
             lastError = nil
         case .indeterminate:

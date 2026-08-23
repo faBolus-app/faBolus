@@ -447,7 +447,7 @@ final class GarminRemoteBridge: NSObject {
             Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
                                              remoteEstimate: cmd.remoteEstimateUnits, passcode: cmd.bolusPasscode,
-                                             includeStaleBG: cmd.includeStaleBG ?? false,
+                                             includeStaleBG: cmd.includeStaleBG ?? false, sentAt: cmd.sentAt,
                                              from: .garmin, peerId: "garmin") }
         case .cancelBolus:
             // Just request the cancel; the in-flight delivery loop echoes the single final

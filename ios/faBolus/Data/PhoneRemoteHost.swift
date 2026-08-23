@@ -84,7 +84,7 @@ public final class PhoneRemoteHost {
                 await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                           carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
                                           remoteEstimate: cmd.remoteEstimateUnits,
-                                          includeStaleBG: cmd.includeStaleBG ?? false,
+                                          includeStaleBG: cmd.includeStaleBG ?? false, sentAt: cmd.sentAt,
                                           from: .appleWatch, peerId: "watch")
             }
         case .cancelBolus:

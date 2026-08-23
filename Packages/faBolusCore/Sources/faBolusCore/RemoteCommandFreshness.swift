@@ -52,4 +52,13 @@ public enum RemoteCommandFreshness {
     /// User-facing reason for a refused-as-stale command (shown on the remote that sent it).
     public static let rejectionMessage =
         "This request is too old to apply safely — send it again."
+
+    /// VA-07 host-side: true when a remote request composed at `sentAt` predates the host's most recent
+    /// bolus delivery — the remote dosed off pre-bolus state, so applying it now is a double-dose hazard.
+    /// Absent `sentAt` or no prior host delivery ⇒ false (no supersession possible; VA-02 freshness + the
+    /// access gate remain the other lines of defense). Both sides are wall-clock Unix seconds.
+    public static func composeSupersededByHostDelivery(sentAt: Int?, lastHostDeliveryAt: Date?) -> Bool {
+        guard let sentAt, let last = lastHostDeliveryAt else { return false }
+        return last.timeIntervalSince1970 > Double(sentAt)
+    }
 }
