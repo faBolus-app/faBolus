@@ -57,6 +57,16 @@ struct BolusGateTests {
         #expect(gate().canBolus)   // no staleness knob exists; the gate can't be tripped by an old reading
     }
 
+    /// VA-11: a non-finite amount (NaN / ±inf) must fail closed. It satisfies neither `< minimum` nor
+    /// `> maximum`, so without the explicit `isFinite` guard it would fall through and arm the affordance.
+    @Test func nonFiniteAmountFailsClosed() {
+        for bad in [Double.nan, .infinity, -.infinity] {
+            let r = gate(amount: bad)
+            #expect(!r.canBolus, "amount \(bad) must not arm the bolus")
+            #expect(r.reason == .belowMinimum(0.05))
+        }
+    }
+
     @Test func pumpSnapshotSeamsSeparateLinkFromInFlight() {
         var s = PumpSnapshot()
         s.connection = .connected

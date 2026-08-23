@@ -73,6 +73,10 @@ public enum BolusGate {
         if bolusInFlight { return (false, .bolusInFlight) }
         if !cartridgeReady { return (false, .noCartridge) }
         if !access.allowed { return (false, .accessDenied(access.reason ?? .notPermittedForPeer)) }
+        // A non-finite amount (NaN/±inf) satisfies neither `< minimum` nor `> maximum`, so without this
+        // guard it would fall through to `(true, nil)` and arm the affordance (VA-11). `validateDeliver`
+        // fail-closes it before the pump write, but the gate itself must reject it too — fail-closed.
+        if !amount.isFinite { return (false, .belowMinimum(minimum)) }
         if amount < minimum { return (false, .belowMinimum(minimum)) }
         if amount > maximum { return (false, .aboveMax(maximum)) }
         return (true, nil)
