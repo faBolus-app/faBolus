@@ -107,7 +107,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// is too old to apply safely — a bolus queued or retransmitted minutes late is a double-dose hazard
     /// (v3 handoff group B). Same Int32.max (2038-01-19) ceiling as `glucoseEpochSec`: watchOS `Int` and
     /// Monkey C `Lang.Number` are signed 32-bit. Absent ⇒ a legacy/foreign sender that predates the field;
-    /// only a present-and-stale stamp is rejected. See `RemoteCommandFreshness`.
+    /// for a freshness-sensitive (insulin-increasing) kind an absent stamp is refused as stale (fail-closed,
+    /// retryable) since its age cannot be verified, as is a present-and-stale stamp. See
+    /// `RemoteCommandFreshness`.
     public var sentAt: Int?
     public var units: Double?
     public var carbsGrams: Double?

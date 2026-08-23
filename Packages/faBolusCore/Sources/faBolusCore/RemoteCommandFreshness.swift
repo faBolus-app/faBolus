@@ -11,6 +11,10 @@ import Foundation
 /// Only `RemoteCommand.Kind.isFreshnessSensitive` commands are gated — the insulin-INCREASING set. A late
 /// insulin-*reducing* command (cancel/suspend) must still be honored, so those are never rejected here.
 ///
+/// A freshness-sensitive command with an **absent** `sentAt` is refused as stale (fail-closed, retryable):
+/// a delivery-authorizing command whose age cannot be verified must not be trusted as fresh. Every
+/// first-party sender stamps `sentAt`; a legacy/foreign sender that does not must resend with a stamp.
+///
 /// **Ordering invariant (load-bearing).** Hosts apply this gate at dispatch, *before* the idempotency
 /// ledger's replay check. That is safe **only** because no transport ever late-redelivers a pump-mutating
 /// command: a mutating command is sent live or reported undeliverable, never queued/retransmitted across a
@@ -31,12 +35,16 @@ public enum RemoteCommandFreshness {
     /// a delivery command whose age can't be trusted must not be applied.
     public static let futureSkewToleranceSec: TimeInterval = 30
 
-    /// Whether an inbound command must be refused as stale. `true` only for a freshness-sensitive kind whose
-    /// `sentAt` is present AND outside the acceptable window. Absent `sentAt` ⇒ not rejected here (a
-    /// legacy/foreign sender predating the field; every first-party sender stamps it). Non-sensitive kinds
-    /// are never gated, so this is safe to call unconditionally at a host's dispatch entry.
+    /// Whether an inbound command must be refused as stale. For a freshness-sensitive (insulin-INCREASING)
+    /// kind: `true` when `sentAt` is absent (age can't be verified — fail closed, retryable) OR present but
+    /// outside the acceptable window. Non-sensitive kinds are never gated, so this is safe to call
+    /// unconditionally at a host's dispatch entry.
     public static func isStale(_ command: RemoteCommand, now: Date = Date()) -> Bool {
-        guard command.kind.isFreshnessSensitive, let sentAt = command.sentAt else { return false }
+        guard command.kind.isFreshnessSensitive else { return false }
+        // Fail-closed: a delivery-authorizing command with no trustworthy creation time cannot be
+        // age-verified, so it is refused (retryable) rather than trusted as fresh. Every first-party
+        // sender stamps `sentAt`; a legacy/foreign sender that does not must resend with a stamp.
+        guard let sentAt = command.sentAt else { return true }
         let age = now.timeIntervalSince1970 - Double(sentAt)
         return age > maxAgeSec || age < -futureSkewToleranceSec
     }
