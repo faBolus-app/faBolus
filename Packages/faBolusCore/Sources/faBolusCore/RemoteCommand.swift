@@ -258,7 +258,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var remoteEstimateUnits: Double? = nil
 
     /// Addendum B (Option B) — the remote's per-attempt INTENT to INCLUDE a stale-but-real CGM reading in the
-    /// correction on a carb `bolusRequest` (inbound remote → host). Insulin-INCREASING: it authorizes the host
+    /// correction on a carb `bolusRequest` (inbound remote → host). Insulin-INCREASING is the gated hazard
+    /// (though the recompute is BIDIRECTIONAL — a below-target stale reading REDUCES the dose); §13-cleared
+    /// 2026-08-23 (AI-panel review). It authorizes the host
     /// to add a correction off a reading it would otherwise drop as stale. Set `true` ONLY when the user
     /// explicitly chose "include the stale reading" for THIS attempt (never sticky, never on a fresh reading);
     /// absent otherwise. The host honors it only when it can recompute from its OWN matching stale reading
