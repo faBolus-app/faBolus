@@ -33,7 +33,10 @@ final class WidgetBolusReceiver {
         }
         NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let model = self?.model else { return }
+                // VA-28: only act on a cancel corroborated by the App-Group token the widget's own
+                // cancel intent wrote (single-use + TTL-bounded). A bare/replayed Darwin post from a
+                // co-resident app finds no token and is dropped.
+                guard let model = self?.model, WidgetBolusStore.takeCancelIntent() else { return }
                 Task { await model.cancelBolus(from: .quickBolusWidget, peerId: "widget") }
             }
         }

@@ -477,6 +477,23 @@ public enum WidgetBolusStore {
         return Date().timeIntervalSince(r.createdAt) > pendingTTL ? nil : r
     }
 
+    // --- Cancel authentication (VA-28) — give the cancel path the same App-Group corroboration the
+    // deliver path already has via setPending/takePending. A Darwin post is system-wide, unauthenticated,
+    // and payload-less, so a co-resident app could otherwise fire cancelBolus with a bare post. The
+    // widget's own cancel button writes this single-use, TTL-bounded token BEFORE posting; the receiver
+    // consumes it. A co-resident app cannot write the App-Group container, so a blind post finds no token.
+    public static func setCancelIntent(requestId: String) {
+        d?.set(requestId, forKey: "wbCancelReq")
+        d?.set(Date().timeIntervalSince1970, forKey: "wbCancelAt")
+    }
+    /// Read-and-clear; true only if written within `confirmTTL` (single-use).
+    public static func takeCancelIntent() -> Bool {
+        guard let d else { return false }
+        let at = d.double(forKey: "wbCancelAt")
+        d.removeObject(forKey: "wbCancelReq"); d.removeObject(forKey: "wbCancelAt")   // consume
+        return at != 0 && Date().timeIntervalSince1970 - at <= confirmTTL
+    }
+
     /// Delivery status the app writes and the widget renders.
     public static func setStatus(_ s: WidgetBolusStatus) {
         guard let data = try? JSONEncoder().encode(s) else { return }

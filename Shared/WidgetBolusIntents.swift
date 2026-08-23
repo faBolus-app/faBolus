@@ -116,6 +116,10 @@ struct WidgetBolusCancelIntent: AppIntent {
     static let title: LocalizedStringResource = "Cancel Widget Bolus"
     static let openAppWhenRun = false
     func perform() async throws -> some IntentResult {
+        // VA-28: write a single-use, TTL-bounded App-Group token BEFORE posting (mirror deliver's
+        // write-then-post order) so the receiver can distinguish this legit cancel from a bare/replayed
+        // Darwin post by a co-resident app (which cannot write the App-Group container).
+        WidgetBolusStore.setCancelIntent(requestId: WidgetBolusStore.status().requestId)
         postDarwin(WidgetBolusStore.darwinCancel)
         return .result()
     }
