@@ -314,10 +314,10 @@ struct BolusEntryView: View {
     private var unitsStep: Binding<Double> {
         Binding(get: { units }, set: { unitsText = $0 <= 0 ? "" : Self.trimUnits($0) })
     }
-    /// §13 Rule-1 (A1) DRAFT copy, §13-pending — shown in the "Recommended" card when the pump's bolus
-    /// settings haven't been read yet, in place of a numeric dose sized off a hardcoded guess. Kept as a
-    /// single constant so the wording (which must pass §13 clinical review before any experimental
-    /// distribution) has one home; no control flow or dose logic depends on the string.
+    /// §13 Rule-1 (A1) copy — §13-cleared 2026-08-23 (owner-accepted AI-panel clinical review; approved
+    /// as-is). Shown in the "Recommended" card when the pump's bolus settings haven't been read yet, in
+    /// place of a numeric dose sized off a hardcoded guess. Kept as a single constant so the wording has
+    /// one home; no control flow or dose logic depends on the string.
     static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
 
     /// FLAG-4 (§1.5, REQ-D16-flags) DRAFT copy, §13-pending — the DosingSafetyKit→SG advisory-behavior
@@ -563,8 +563,8 @@ struct BolusEntryView: View {
                     // target) have NOT been read this session, so any recommendation would be sized off
                     // a hardcoded CR 10 / ISF 40 / target 110 guess — an uncited literal. Suppress the
                     // numeric dose entirely (`rec.displaysNumericDose == false`) and prompt to wait for
-                    // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy). DRAFT
-                    // copy, §13-pending.
+                    // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy).
+                    // §13-cleared 2026-08-23 (AI-panel review, approved as-is).
                     Label(BolusEntryView.awaitingPumpSettingsCopy, systemImage: "hourglass")
                         .font(.callout).foregroundStyle(.secondary)
                 }
