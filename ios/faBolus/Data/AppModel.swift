@@ -431,7 +431,7 @@ public final class AppModel {
 
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
-    public func statusCommand(includeHistory: Bool) -> RemoteCommand {
+    public func statusCommand(includeHistory: Bool, replyingTo requestId: String? = nil) -> RemoteCommand {
         let s = snapshot
         let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
         let alertList = activeNotifications.map {
@@ -606,6 +606,7 @@ public final class AppModel {
         cmd.ciqSleepExerciseAwarenessEnabled = AppSettings.shared.ciqSleepExerciseAwarenessEnabled
         cmd.ciqPlusTempRateEnabled = AppSettings.shared.ciqPlusTempRateEnabled
         cmd.ciqCeilingFlagsEnabled = AppSettings.shared.ciqCeilingFlagsEnabled
+        if let requestId { cmd.requestId = requestId }   // R2-15: echo the incoming statusRead's id for true correlation
         return cmd
     }
 
