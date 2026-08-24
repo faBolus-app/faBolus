@@ -29,6 +29,25 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# ── PAUSED — owner-directed 2026-08-23 ─────────────────────────────────────────────
+# The cross-branch dose/signed byte-identity FREEZE is PAUSED to unblock the
+# AppModel.swift / TandemBackend.swift god-object refactor (splitting those files makes
+# the 18 dev/<surface> sub-branches diverge from main in these paths, which this check
+# would otherwise flag). Pausing this cross-branch check does NOT relax dose-to-pump
+# safety: the real correctness net — the TandemKit oracle byte-parity fixtures and the
+# delivery/gate test suites — is SEPARATE and remains fully in force. See
+# docs/NARROW-MAIN-GATES.md for the full rationale and how to resume.
+#
+# To run the legacy hard check anyway (e.g. to measure how far a branch has drifted):
+#   ENFORCE_BYTE_IDENTITY=1 scripts/check-dose-byte-identity.sh [branch...]
+if [ "${ENFORCE_BYTE_IDENTITY:-0}" != "1" ]; then
+  echo "⏸  check-dose-byte-identity is PAUSED (owner-directed 2026-08-23, for the god-object refactor)."
+  echo "   Cross-branch byte-identity is intentionally not enforced right now."
+  echo "   Dose-wire correctness is still covered by the oracle byte-parity + delivery/gate test suites."
+  echo "   Re-run with ENFORCE_BYTE_IDENTITY=1 to perform the legacy hard check."
+  exit 0
+fi
+
 BASE_REF="${BASE_REF:-main}"
 
 # The dose/signed source set. Add here (once) and every phase inherits the wider guard.

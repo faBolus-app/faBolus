@@ -4,6 +4,20 @@
 gates below. Later phases (1–9.5) implement removals against this single convention instead of
 inventing their own shapes.
 
+> **⏸ PAUSED — cross-branch dose/signed byte-identity FREEZE (owner-directed 2026-08-23).**
+> The requirement that `Packages/faBolusCore`, `ios/faBolus/Data/AppModel.swift`, and
+> `ios/faBolus/Data/TandemBackend.swift` stay **byte-identical between `main` and every `dev/<surface>`
+> sub-branch** (INV-01/INV-03) is **paused** to unblock the `AppModel` / `TandemBackend` god-object
+> refactor — splitting those files necessarily makes the sub-branches diverge in these paths.
+> `scripts/check-dose-byte-identity.sh` is now non-blocking by default (prints a PAUSED banner, exits 0);
+> run it with `ENFORCE_BYTE_IDENTITY=1` to perform the legacy hard check / measure drift.
+>
+> **This does NOT relax dose-to-pump safety.** The real dose-wire correctness net is *separate* and
+> stays fully in force: the TandemKit **oracle byte-parity** fixtures, the `BolusMathParity`/`GatedPumpWrite`/
+> gate test suites, and `check-schema-drift.sh`. Any refactor touching delivery code must still keep those
+> green. **To resume the freeze:** revert this notice + the `ENFORCE_BYTE_IDENTITY` guard in the script, and
+> replay the dose/signed sources across the `dev/*` sub-branches so they are byte-identical to `main` again.
+
 The v0.5.0 "narrow main" milestone subtracts surfaces from `main` one at a time. Every removal takes
 **exactly one of two shapes**, and which shape is allowed is decided by whether the surface is
 dose-adjacent:
@@ -87,6 +101,8 @@ reusable pieces this capstone stood up. Run from the faBolus repo root:
 ./scripts/verify-pre-narrow-tags.sh
 
 # (2) DOSE/SIGNED BYTE-IDENTICAL: main vs every dev/<surface> sub-branch (empty diff)
+#     ⏸ PAUSED (owner-directed 2026-08-23, for the god-object refactor) — now non-blocking by default.
+#     Use ENFORCE_BYTE_IDENTITY=1 to run the legacy hard check. See the PAUSED banner at the top of this doc.
 ./scripts/check-dose-byte-identity.sh
 
 # (3) GREEN MAIN + full safety suite
