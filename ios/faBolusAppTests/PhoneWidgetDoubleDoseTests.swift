@@ -199,4 +199,59 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(abs((backend.lastDeliver?.units ?? -1) - dose) < tol)
         }
     }
+
+    // MARK: - Task 3: C3-01 — deliverWidgetBolus stamps lastHostDeliveryAt
+    //
+    // Every OTHER completed host delivery stamps `lastHostDeliveryAt` (local, extended, remote) so a
+    // remote request composed BEFORE it is caught by VA-07's `composeSupersededByHostDelivery`. The
+    // widget path is the one delivery site that historically does NOT stamp it — a blind spot: a remote
+    // request composed before a widget delivery sails through unrefused.
+
+    /// After a widget `.delivered` outcome, `lastHostDeliveryAt` advances — proven indirectly through the
+    /// VA-07 supersession check it feeds (the property itself is `private(set)`, not directly assertable
+    /// from a test target).
+    @Test func widgetDeliveryStampsLastHostDeliveryAt() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let w = await model.deliverWidgetBolus(requestId: "c301-widget", units: 1.0)
+            #expect(w.delivered > 0)
+            #expect(backend.snapshot.iobUnits > 0.9)
+
+            // A remote request composed BEFORE the widget delivery must now be caught as superseded.
+            await model.remoteDeliver(requestId: "c301-remote-old", units: 2.0,
+                                      sentAt: Int(Date().timeIntervalSince1970) - 120,
+                                      from: .garmin, peerId: "garmin")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("delivered after this request was created") == true)
+            #expect(abs((backend.lastDeliver?.units ?? -1) - 1.0) < tol)   // only the widget's 1.0 U landed
+        }
+    }
+
+    /// The two-actor WIDGET double-dose regression: a remote request composed BEFORE a widget delivery is
+    /// refused — no second pump write. Robust to today's behavior (which is expected to FAIL until C3-01
+    /// lands: today the widget path never stamps `lastHostDeliveryAt`, so this superseded request would
+    /// incorrectly proceed).
+    @Test func twoActorWidgetDoubleDoseRejectsRequestComposedBeforeWidgetDelivery() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let composedBefore = Int(Date().timeIntervalSince1970) - 5   // "composed" just before the widget tap
+            let w = await model.deliverWidgetBolus(requestId: "c301-w2", units: 1.0)
+            #expect(w.delivered > 0)
+            let iobAfterWidget = backend.snapshot.iobUnits
+
+            await model.remoteDeliver(requestId: "c301-r2", units: 3.0, sentAt: composedBefore,
+                                      from: .garmin, peerId: "garmin")
+            #expect(rec.last?.status == .failed)
+            #expect(rec.count(.delivering) == 1)                          // only the widget ever delivered
+            #expect(abs(backend.snapshot.iobUnits - iobAfterWidget) < tol)  // no second pump write
+        }
+    }
 }
