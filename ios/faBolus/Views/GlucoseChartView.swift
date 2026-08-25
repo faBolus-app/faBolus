@@ -2,6 +2,93 @@ import SwiftUI
 import faBolusCore
 import faBolusDesign
 import Charts
+import Accessibility
+
+/// D2-01/D2-02 (Phase 17 remediation) — `GlucoseChartView` used to encode low/in-range/high by
+/// color alone and exposed zero accessibility content, so a VoiceOver user got nothing and a
+/// colorblind user couldn't tell hypo from hyper. These pure, UI-independent helpers back both
+/// fixes and are unit-tested directly (`GlucoseChartAccessibilityTests`) without a running host:
+///   - `dataPoints(for:unit:)` builds the `AXChartDescriptor` content (D2-01) — one `AXDataPoint`
+///     per visible reading, its label speaking the formatted value + band word. Reuses
+///     `GlucoseRange.classify(...).shortLabel`, the SAME "speak the band word" source
+///     `StatusRingView.a11yLabel(now:)` already uses, so the spoken and visual bands never drift.
+///   - `symbolKind(for:)` / `symbolShape(for:)` supply the non-color range cue (D2-02): a
+///     per-point symbol SHAPE distinct across all four `GlucoseRange` bands. Split into a pure
+///     `Equatable` enum (`SymbolKind`) plus a mapping to Swift Charts' `BasicChartSymbolShape`
+///     (which is not `Equatable`) so the band→shape mapping itself stays directly testable.
+enum GlucoseChartAccessibility {
+    /// The non-color range cue (D2-02), as a pure `Equatable` enum — testable without depending on
+    /// Swift Charts' `BasicChartSymbolShape` (not `Equatable`, so two shapes can't be compared with
+    /// `==` in a test). Mirrors `GlucoseRange`'s four bands 1:1 so `.high` and `.urgentHigh` stay
+    /// visually distinguishable from each other, not just from `.inRange`.
+    enum SymbolKind: Equatable {
+        case low, inRange, high, urgentHigh
+    }
+
+    static func symbolKind(for mgdl: Int) -> SymbolKind {
+        switch GlucoseRange.classify(mgdl) {
+        case .low: return .low
+        case .inRange: return .inRange
+        case .high: return .high
+        case .urgentHigh: return .urgentHigh
+        }
+    }
+
+    /// Maps the pure `SymbolKind` to the actual shape Swift Charts draws on each `PointMark`.
+    static func symbolShape(for kind: SymbolKind) -> BasicChartSymbolShape {
+        switch kind {
+        case .low: return .square
+        case .inRange: return .circle
+        case .high: return .triangle
+        case .urgentHigh: return .diamond
+        }
+    }
+
+    /// D2-01: one `AXDataPoint` per visible reading, labeled `"<value> <unit>, <band word>"` (e.g.
+    /// "124 mg/dL, In range") — the spoken parallel of the on-screen value + color band, so
+    /// VoiceOver can swipe through glucose data points and hear value + band.
+    static func dataPoints(for readings: [GlucoseReading], unit: GlucoseUnit) -> [AXDataPoint] {
+        let unitLabel = unit == .mmol ? "mmol/L" : "mg/dL"
+        return readings.map { r in
+            let band = GlucoseRange.classify(r.mgdl)
+            let label = "\(unit.format(mgdl: r.mgdl)) \(unitLabel), \(band.shortLabel)"
+            return AXDataPoint(x: r.date.timeIntervalSinceReferenceDate, y: Double(r.mgdl), label: label)
+        }
+    }
+}
+
+/// `AXChartDescriptorRepresentable` adapter (D2-01): wraps the visible glucose readings so
+/// `.accessibilityChartDescriptor(_:)` can build an `AXChartDescriptor` from them. Kept as a plain
+/// `Equatable` value type distinct from the view itself, per Apple's documented pattern for this
+/// modifier — SwiftUI diffs `representable` across body re-evaluations to decide when to rebuild
+/// the descriptor.
+private struct GlucoseChartAccessibilityRepresentable: AXChartDescriptorRepresentable, Equatable {
+    let readings: [GlucoseReading]
+    let unit: GlucoseUnit
+
+    func makeChartDescriptor() -> AXChartDescriptor {
+        let dataPoints = GlucoseChartAccessibility.dataPoints(for: readings, unit: unit)
+        let mgdlValues = readings.map { Double($0.mgdl) }
+        let dateValues = readings.map { $0.date.timeIntervalSinceReferenceDate }
+        // Guard against an empty visible window (e.g. glucose toggled off) so the range stays a
+        // valid non-inverted ClosedRange instead of crashing.
+        let now = Date().timeIntervalSinceReferenceDate
+        let xAxis = AXNumericDataAxisDescriptor(
+            title: "Time",
+            range: (dateValues.min() ?? now)...(dateValues.max() ?? now + 1),
+            gridlinePositions: [],
+            valueDescriptionProvider: { _ in "" }
+        )
+        let yAxis = AXNumericDataAxisDescriptor(
+            title: "Glucose",
+            range: (mgdlValues.min() ?? 0)...(mgdlValues.max() ?? 1),
+            gridlinePositions: [],
+            valueDescriptionProvider: { value in "\(Int(value)) mg/dL" }
+        )
+        let series = AXDataSeriesDescriptor(name: "Glucose", isContinuous: false, dataPoints: dataPoints)
+        return AXChartDescriptor(title: "Glucose", summary: nil, xAxis: xAxis, yAxis: yAxis, series: [series])
+    }
+}
 
 /// modern chart: glucose (left axis, in-range band, range-colored points) plus an optional
 /// **IOB line** and optional **vertical bolus bars** (height ∝ units) on a second (right) axis.
@@ -57,8 +144,13 @@ struct GlucoseChartView: View {
                     // only: r.mgdl itself (used for the point's color below) is never altered.
                     let plottedY = GlucosePlotScale.clamp(r.mgdl, floor: AppSettings.shared.glucosePlotFloor,
                                                            ceiling: AppSettings.shared.glucosePlotCeiling)
+                    // D2-02: color stays the primary cue, but the SHAPE is an added, non-color
+                    // channel — a colorblind user can still tell low/in-range/high apart.
+                    let symbolKind = GlucoseChartAccessibility.symbolKind(for: r.mgdl)
                     PointMark(x: .value("Time", r.date), y: .value("Glucose", plottedY))
-                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
+                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl))
+                        .symbol(GlucoseChartAccessibility.symbolShape(for: symbolKind))
+                        .symbolSize(24)
                 }
             }
             if showBolusBars {
@@ -105,6 +197,11 @@ struct GlucoseChartView: View {
                 AxisGridLine(); AxisValueLabel(format: .dateTime.hour())
             }
         }
+        // D2-01: lets VoiceOver swipe through individual glucose data points (value + band word)
+        // instead of announcing the chart as a single opaque image. Empty when glucose is hidden —
+        // nothing to describe in that state.
+        .accessibilityChartDescriptor(GlucoseChartAccessibilityRepresentable(
+            readings: showGlucose ? visible : [], unit: unit))
         .overlay(alignment: .topLeading) {
             // Owner-requested toggle: this axis caption is the only persistent unit label the chart
             // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
