@@ -78,6 +78,30 @@ public struct RemoteBolusLedger: Codable, Sendable {
     private var order: [String] = []
     private let cap: Int
 
+    /// T-14-01 (CX-G-01 phone half): an ADDITIVE content+time duplicate-recency index —
+    /// `[peerId+doseKey: Date]` mapping a PEER's dose-content fingerprint to the most recent time an
+    /// outcome for it became authoritatively delivered-or-maybe-delivered (see `settle`/
+    /// `markIndeterminate`). LoopKit's `syncIdentifier` content-identity philosophy layered ON TOP of the
+    /// existing `(peer,requestId)` exactly-once key: `begin()` NEVER reads this map and this map NEVER
+    /// influences `.conflict`/`.replay`/`.duplicateInFlight`. Callers (e.g. `AppModel.remoteDeliver`)
+    /// consult `hasRecentlyDeliveredDuplicate(peerId:doseKey:)` SEPARATELY, BEFORE calling `begin()`, so a
+    /// re-composed dose under a FRESH requestId is caught independent of the exactly-once key.
+    ///
+    /// Scoped PER PEER (not global): the hazard this closes is a settled-echo-loss RETRY — the SAME
+    /// remote actor recomposing its own just-settled request under a new id because it never saw the
+    /// terminal echo — not a coincidental content match from an unrelated actor (e.g. the phone's own
+    /// separate local dose happening to use the same units). Still transport/session-independent within
+    /// that peer (a peer's authenticated identity survives a BLE reconnect / sealed-transport session
+    /// reset, unlike its requestId), matching CONTEXT.md's "protects all remotes" framing.
+    ///
+    /// Deliberately NOT part of `CodingKeys` (in-process only, not persisted): the (peer,requestId)
+    /// ledger remains the sole durable-across-restart defense; this recency map only needs to survive the
+    /// seconds-scale window while the app process is alive.
+    private var recentAuthoritativeDeliveries: [String: Date] = [:]
+
+    /// Composite key for `recentAuthoritativeDeliveries` — same separator convention as `key(_:_:)`.
+    private func recencyKey(_ peerId: String, _ doseKey: String) -> String { peerId + "\u{1F}" + doseKey }
+
     // Codable: persist entries + order + cap (the maps use the composite key string).
     private enum CodingKeys: String, CodingKey { case entries, order, cap }
 
@@ -100,6 +124,12 @@ public struct RemoteBolusLedger: Codable, Sendable {
         func f(_ d: Double?) -> String { d.map { String(format: "%.4f", $0) } ?? "-" }
         return "u:\(f(units))|c:\(f(carbsGrams))|bg:\(bgMgdl.map(String.init) ?? "-")"
     }
+
+    /// T-14-01: the recency window for `hasRecentlyDeliveredDuplicate`. Mirrors
+    /// `RemoteCommandFreshness.maxAgeSec` — both bound "how long is a remote's stale view of host state
+    /// still a double-dose hazard," so keeping the two windows equal avoids reasoning about two different
+    /// double-dose time bounds in the same codebase.
+    public static let recentDuplicateWindowSec: TimeInterval = RemoteCommandFreshness.maxAgeSec
 
     /// Record intent to deliver. Returns the decision the caller must honor. `usedIncludedStaleBG` is a
     /// DURABLE provenance sidecar only (Addendum B): it is stored on a freshly-created entry but plays NO
@@ -156,20 +186,63 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Mark the outcome UNKNOWN (FB-02): a timeout/disconnect after the initiate write. The request is
     /// neither retryable nor confirmed until reconciled against the pump's bolus history by `bolusId`.
-    public mutating func markIndeterminate(peerId: String, requestId: String) {
-        mutate(peerId, requestId) { if $0.state != .terminal { $0.state = .indeterminate } }
+    ///
+    /// - Parameter now: T-14-01 — the ambiguous (may-have-delivered) outcome fail-closes into the
+    ///   content+time recency index (see `hasRecentlyDeliveredDuplicate`), stamped at `now`. Only when
+    ///   this call ACTUALLY transitions the entry to `.indeterminate` (not already `.terminal`).
+    public mutating func markIndeterminate(peerId: String, requestId: String, now: Date = Date()) {
+        let k = key(peerId, requestId)
+        guard var e = entries[k], e.state != .terminal else { return }
+        e.state = .indeterminate
+        entries[k] = e
+        recentAuthoritativeDeliveries[recencyKey(peerId, e.doseKey)] = now
     }
 
     /// Record the terminal outcome for a request that `begin` returned `.proceed` for (or that was
     /// reconciled from an indeterminate state).
+    ///
+    /// - Parameter now: T-14-01 — when this outcome was authoritatively delivered or MAY have been
+    ///   (`sentToPump == true` OR `(deliveredUnits ?? 0) > 0`), the doseKey is stamped into the
+    ///   content+time recency index at `now` (see `hasRecentlyDeliveredDuplicate`). A clean pre-pump
+    ///   failure (`sentToPump == false`, 0/nil units) or a genuine 0 U cancellation before the pump write
+    ///   is deliberately EXCLUDED — it must never block a legitimate retry (Addresses codex HIGH: this
+    ///   method sets `.terminal` for EVERY outcome, so a naive "scan terminal entries" would wrongly flag
+    ///   those too).
     public mutating func settle(peerId: String, requestId: String, status: String,
-                                message: String? = nil, deliveredUnits: Double? = nil) {
-        mutate(peerId, requestId) {
-            $0.state = .terminal
-            $0.terminalStatus = status
-            $0.terminalMessage = message
-            $0.deliveredUnits = deliveredUnits
+                                message: String? = nil, deliveredUnits: Double? = nil, now: Date = Date()) {
+        let k = key(peerId, requestId)
+        guard var e = entries[k] else { return }
+        e.state = .terminal
+        e.terminalStatus = status
+        e.terminalMessage = message
+        e.deliveredUnits = deliveredUnits
+        entries[k] = e
+        if e.sentToPump || (deliveredUnits ?? 0) > 0 {
+            recentAuthoritativeDeliveries[recencyKey(peerId, e.doseKey)] = now
         }
+    }
+
+    /// T-14-01 (CX-G-01 phone half): true when `peerId`'s `doseKey` was recorded (by `settle`/
+    /// `markIndeterminate`) as authoritatively delivered-or-maybe-delivered within `window` seconds of
+    /// `now` — REGARDLESS of which requestId a FRESH `begin()` call for the same content would use. Scoped
+    /// to `peerId` (a settled-echo-loss retry is the SAME actor recomposing its own request; see the
+    /// `recentAuthoritativeDeliveries` doc comment). NEVER consulted by `begin()` itself; callers must
+    /// query this SEPARATELY, before `begin()`, to close the cross-requestId gap the exactly-once key
+    /// cannot see.
+    public func hasRecentlyDeliveredDuplicate(peerId: String, doseKey: String,
+                                              within window: TimeInterval = recentDuplicateWindowSec,
+                                              now: Date = Date()) -> Bool {
+        guard let at = recentAuthoritativeDeliveries[recencyKey(peerId, doseKey)] else { return false }
+        return now.timeIntervalSince(at) <= window
+    }
+
+    /// T-14-01: whether ANY ledger entry already exists for this EXACT `(peerId, requestId)`, in any
+    /// lifecycle state. Callers use this to skip the content+time recency guard for a genuine protocol
+    /// retry of the SAME id — `begin()` already handles that case correctly via `.replay`/
+    /// `.duplicateInFlight`/`.conflict`. The recency guard exists ONLY to catch a FRESH requestId reusing
+    /// recently-authoritative content, never to override the exactly-once key's own handling of its id.
+    public func hasExistingEntry(peerId: String, requestId: String) -> Bool {
+        entries[key(peerId, requestId)] != nil
     }
 
     private mutating func mutate(_ peerId: String, _ requestId: String, _ body: (inout Entry) -> Void) {

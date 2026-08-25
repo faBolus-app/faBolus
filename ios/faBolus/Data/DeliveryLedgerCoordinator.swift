@@ -210,6 +210,23 @@ final class DeliveryLedgerCoordinator {
         remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId)
     }
 
+    /// T-14-01 (CX-G-01 phone half): thin read-only passthrough to the durable ledger's additive
+    /// content+time duplicate-recency query (scoped per peer — see `RemoteBolusLedger`'s doc comment).
+    /// `AppModel.remoteDeliver` consults this BEFORE `runLedgeredDelivery`/`begin()` so a re-composed dose
+    /// under a FRESH requestId is refused independent of the (peer,requestId) exactly-once key. Never
+    /// mutates the ledger.
+    func hasRecentlyDeliveredDuplicate(peerId: String, doseKey: String) -> Bool {
+        remoteBolusLedger.hasRecentlyDeliveredDuplicate(peerId: peerId, doseKey: doseKey)
+    }
+
+    /// T-14-01: thin read-only passthrough — whether the EXACT `(peerId, requestId)` already has a
+    /// tracked ledger entry, in any lifecycle state. `AppModel.remoteDeliver` uses this to skip the
+    /// recency guard for a genuine protocol retry of the SAME id (`begin()` already replays/blocks it
+    /// correctly); the recency guard exists ONLY to catch a FRESH requestId reusing recent content.
+    func hasExistingEntry(peerId: String, requestId: String) -> Bool {
+        remoteBolusLedger.hasExistingEntry(peerId: peerId, requestId: requestId)
+    }
+
     /// R2-12: the durable terminal outcomes recorded for the Garmin peer, oldest→newest, so the bridge can
     /// re-seed its terminal-echo outbox at launch (a bolus outcome recorded in the ledger but never echoed
     /// across an app restart). Thin read-only passthrough — the bridge never touches the private ledger.

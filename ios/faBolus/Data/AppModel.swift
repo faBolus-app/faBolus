@@ -2907,6 +2907,22 @@ public final class AppModel {
             return
         }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+        // T-14-01 (CX-G-01 phone half): reject a re-composed dose whose CONTENT matches this SAME peer's
+        // delivery that was authoritatively delivered-or-maybe-delivered within the recency window,
+        // REGARDLESS of a FRESH requestId — begin()'s (peer,requestId) key alone cannot see this (a
+        // settled-echo-loss retry hazard: the remote never saw the terminal echo and resends with a new
+        // id). Skip when THIS EXACT id already has a tracked entry — that is a genuine protocol retry,
+        // which begin() itself replays/blocks correctly below; the recency guard exists only to catch a
+        // FRESH id reusing recent content. Placed BEFORE executeResolved/runLedgeredDelivery/begin(),
+        // mirroring the VA-07 placement above, so a rejected recompose never reaches the pump and records
+        // no new entry.
+        if !deliveryLedgerCoordinator.hasExistingEntry(peerId: peerId, requestId: requestId),
+           deliveryLedgerCoordinator.hasRecentlyDeliveredDuplicate(peerId: peerId, doseKey: dkey) {
+            let msg = "A matching bolus was just delivered — if you meant to dose again, wait a moment and resend."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return
+        }
         await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
     }
 
