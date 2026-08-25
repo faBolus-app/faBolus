@@ -66,3 +66,21 @@ public enum DisconnectEscalation {
     /// T0 key in `AppModel`'s withdraw path).
     public static var stepIds: [String] { steps.map(\.id) }
 }
+
+/// **CX-F-02 — the pre-armed CGM-staleness background watchdog.**
+///
+/// Companion to `DisconnectEscalation` above, reusing the SAME `UNTimeIntervalNotificationTrigger` OS
+/// mechanism (13-PATTERNS.md Pattern E) for a different purpose: instead of a fixed post-disconnect
+/// schedule, `NotificationCoordinator` re-arms a SINGLE delayed notification carrying this copy every
+/// time a fresh glucose datum lands (`StalenessWatchdogEdge`, `NotificationCoordinator.swift`), so it
+/// fires `GlucoseFreshness.staleAfter` seconds past the LAST known-fresh reading unless a fresher one
+/// re-arms it first — this is what catches the case the suspended 15s poll/20s arbiter timer otherwise
+/// misses: a background suspension with no wake event before the staleness window elapses still gets
+/// the pre-armed OS notification, because it was scheduled *before* the process ever stopped running.
+/// Cancelled once the real staleness edge fires for real (`SafetyEdge.freshness` → `.cgmDataLoss`), so a
+/// user who is actually looking at the phone never sees a redundant watchdog after the real alert.
+public enum StalenessWatchdog {
+    public static let dedupeKey = "safety.cgmStalenessWatchdog"
+    public static let title = "CGM data may be stale"
+    public static let body = "faBolus hasn't confirmed a fresh CGM reading recently. Check your sensor/transmitter, or open the app."
+}

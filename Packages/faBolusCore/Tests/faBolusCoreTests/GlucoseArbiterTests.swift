@@ -87,4 +87,25 @@ final class GlucoseArbiterTests: XCTestCase {
         XCTAssertEqual(merged.last?.mgdl, 160)
         XCTAssertTrue(merged[0].date <= merged[1].date)      // sorted oldest→newest
     }
+
+    // MARK: - C2-01: the app-owned urgent-low alarm's pure activation rule
+
+    func testProvenanceIsFailoverTrueOnlyForTheFailoverCase() {
+        XCTAssertFalse(GlucoseProvenance.pump.isFailover)
+        XCTAssertTrue(GlucoseProvenance.failover(sourceID: "x", reason: .pumpStale).isFailover)
+        XCTAssertTrue(GlucoseProvenance.failover(sourceID: "x", reason: .pumpMissing).isFailover)
+    }
+
+    func testUrgentLowAlarmActiveOnlyWhenFailoverAndAtOrBelowThreshold() {
+        let failover = GlucoseProvenance.failover(sourceID: "dexcom-share", reason: .pumpStale)
+        XCTAssertTrue(UrgentLowAlarm.isActive(mgdl: UrgentLowAlarm.thresholdMgdl, provenance: failover),
+                      "AT the threshold must count as active (Dexcom's own Urgent Low fires AT 55, not only below it)")
+        XCTAssertTrue(UrgentLowAlarm.isActive(mgdl: 40, provenance: failover))
+        XCTAssertFalse(UrgentLowAlarm.isActive(mgdl: UrgentLowAlarm.thresholdMgdl + 1, provenance: failover),
+                       "above the threshold must not be urgent-low")
+        XCTAssertFalse(UrgentLowAlarm.isActive(mgdl: 40, provenance: .pump),
+                       "must never fire while the pump's own feed is live — it remains the primary annunciator")
+        XCTAssertFalse(UrgentLowAlarm.isActive(mgdl: nil, provenance: failover),
+                       "no live value at all is never 'urgent low'")
+    }
 }

@@ -18,6 +18,35 @@ public enum GlucoseProvenance: Equatable, Sendable {
         case pumpStale    // the pump had a reading but it went stale
         case pumpMissing  // the pump has no reading at all
     }
+    /// True while the CURRENTLY-SHOWN live value came from a failover source rather than the pump —
+    /// i.e. the pump's own CGM feed (and therefore its own `cgmAlerts`) is unavailable right now. Used
+    /// by `UrgentLowAlarm.isActive` (C2-01) so the app-owned alarm fires ONLY in that gap; the pump
+    /// remains the primary annunciator whenever its own feed is live.
+    public var isFailover: Bool {
+        if case .failover = self { return true }
+        return false
+    }
+}
+
+/// **C2-01 — the app-owned urgent-low alarm.** Advisory, source-agnostic: it reads only the already-
+/// ARBITRATED live value `GlucoseArbiter.merge` publishes, never a specific source id, and feeds NO
+/// dose-path calculation (the app layer posts it through the notification pipeline only). Fires ONLY
+/// during a failover (`GlucoseProvenance.isFailover`) — while the pump's own feed is live it remains the
+/// sole annunciator (C2-01's add-alongside decision, not a promote/replace of the pump's own cgmAlerts).
+public enum UrgentLowAlarm {
+    /// 55 mg/dL — Dexcom's OWN published "Urgent Low" alert threshold (a vendor-defined clinical value
+    /// this app reuses, not one it invents). Advisory only; never read by the bolus calculator/dose path.
+    public static let thresholdMgdl = 55
+    public static let dedupeKey = "safety.cgmUrgentLow"
+    public static let title = "Urgent low glucose (backup CGM)"
+    public static let body = "A backup CGM source is reporting an urgent-low reading while the pump's own CGM feed is unavailable. This is advisory only — verify and treat per your care plan."
+
+    /// True iff `mgdl` is at/below `thresholdMgdl` AND the reading is showing via a FAILOVER provenance.
+    /// A `nil` mgdl (no live value at all) is never active.
+    public static func isActive(mgdl: Int?, provenance: GlucoseProvenance) -> Bool {
+        guard provenance.isFailover, let mgdl else { return false }
+        return mgdl <= thresholdMgdl
+    }
 }
 
 @MainActor
