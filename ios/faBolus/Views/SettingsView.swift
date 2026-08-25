@@ -943,9 +943,13 @@ struct RemotesSettingsView: View {
         // C2 §2.3: keep the passcode section's state in sync with the Keychain-backed store.
         .onAppear { passcodeSet = BolusPasscodeStore.isRequired }
         .sheet(isPresented: $showSetPasscode) {
+            // CX-F-10: honor setPasscode's Bool return — a Keychain upsert failure must surface as a
+            // failure (BolusPasscodeEntryView keeps the sheet open with an error), NOT be reported as a
+            // successful change. `passcodeSet` is only refreshed when the store confirms it actually wrote.
             BolusPasscodeEntryView { code in
-                BolusPasscodeStore.setPasscode(code)
-                passcodeSet = BolusPasscodeStore.isRequired
+                let ok = BolusPasscodeStore.setPasscode(code)
+                if ok { passcodeSet = BolusPasscodeStore.isRequired }
+                return ok
             }
         }
         // §2.3: one-time warning. Confirm arms the enable + records the ack; Cancel leaves it off. The
@@ -967,8 +971,10 @@ struct RemotesSettingsView: View {
 /// FEAT-04, D-05; preserved on `dev/child-mode`) but fixed at exactly 4 digits
 /// (`BolusPasscodeStore.isValidFormat`), with its own independent store.
 struct BolusPasscodeEntryView: View {
-    /// The validated 4-digit code to store.
-    let onSet: (String) -> Void
+    /// The validated 4-digit code to store. Returns whether it was actually stored — CX-F-10: a Keychain
+    /// upsert failure must be surfaced here rather than assumed to have succeeded, so `submit()` can keep
+    /// the sheet open with an error instead of dismissing as if the passcode had changed.
+    let onSet: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var pin = ""
     @State private var confirm = ""
@@ -1000,7 +1006,10 @@ struct BolusPasscodeEntryView: View {
         let digits = pin.filter(\.isNumber)
         guard BolusPasscodeStore.isValidFormat(digits) else { error = "Use exactly 4 digits."; return }
         guard pin == confirm else { error = "Passcodes don't match."; return }
-        onSet(digits); dismiss()
+        // CX-F-10: honor the store's Bool return — a failed save keeps the sheet open with an error
+        // instead of dismissing as if the passcode had changed.
+        guard onSet(digits) else { error = "Couldn't save the passcode. Try again."; return }
+        dismiss()
     }
 }
 

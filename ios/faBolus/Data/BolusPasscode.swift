@@ -36,13 +36,30 @@ enum BolusPasscodeStore {
     /// exercise the backoff without touching the real Keychain.
     nonisolated(unsafe) private static var memLockout: String?
 
+    /// CX-F-10 test seam: which raw op the last `upsertBlob` call actually took. Lets a test assert the
+    /// REPLACE path used `SecItemUpdate` (never `SecItemAdd` against an existing item, which throws
+    /// `errSecDuplicateItem`) and the FIRST-SET path used `SecItemAdd` — without needing the real Keychain.
+    enum UpsertOp: Equatable { case update, add }
+    nonisolated(unsafe) static var lastUpsertOp: UpsertOp?
+    /// CX-F-10 test seam: force the in-memory-backed `upsertBlob` to behave as if the underlying
+    /// `SecItemUpdate`/`SecItemAdd` call had returned this `OSStatus`, so a test can exercise the
+    /// store-failure branch of the atomic replace (a generic failure, or — because the real code path
+    /// never issues a bare `SecItemAdd` against an existing key — statuses like `errSecDuplicateItem` that
+    /// the design specifically avoids). `nil` (the default) means "succeed," matching the always-succeeds
+    /// in-memory backing every other test in this file already relies on.
+    nonisolated(unsafe) static var injectedUpsertStatus: OSStatus?
+    /// CX-F-10 test seam: force `SecRandomCopyBytes`'s reported status, so a test can exercise the
+    /// discarded-RNG-result fail-closed path without a real RNG failure (which can't be induced on demand).
+    nonisolated(unsafe) static var injectedRNGStatus: OSStatus?
+
     /// VA-29 test seam: seed a LEGACY (pre-v2) `"saltHex:hashHex"` SHA-256 blob so a test can exercise the
     /// migration path (`setPasscode` only ever writes v2, so there is no other way to produce an old blob).
-    /// DEBUG only; never used in production. Uses a fixed salt for determinism.
+    /// DEBUG only; never used in production. Uses a fixed salt for determinism. Seeds directly (bypassing
+    /// `upsertBlob`) since this is establishing a FIRST item, not exercising the replace logic itself.
     static func seedLegacyBlobForTesting(pin: String) {
         let salt = [UInt8](repeating: 0xAB, count: 16)
         deleteBlob(); clearLockout()
-        _ = storeBlob(hex(salt) + ":" + legacyHash(pin: pin, salt: salt))
+        _ = upsertBlob(hex(salt) + ":" + legacyHash(pin: pin, salt: salt))
     }
     #endif
 
@@ -53,18 +70,32 @@ enum BolusPasscodeStore {
 
     /// Set (or clear, with `nil`/empty) the passcode. Stores a versioned `v2:saltHex:iterations:hashHex` blob
     /// (VA-29). A non-empty PIN that is not exactly 4 digits is **rejected** (returns `false`, nothing stored)
-    /// so a malformed value can never become the gate. Clearing always succeeds. Also resets the lockout
-    /// counter.
+    /// so a malformed value can never become the gate.
+    ///
+    /// CX-F-10: this is an ATOMIC replace, never delete-then-add. Format is validated and the RNG result is
+    /// checked BEFORE anything is touched, and the new blob is written via an upsert (`SecItemUpdate` when a
+    /// passcode already exists, `SecItemAdd` only when absent) — the OLD blob is never deleted first. On ANY
+    /// failure (malformed input, RNG failure, KDF failure, or a store failure) this returns `false` and the
+    /// OLD passcode + its lockout counter are left completely untouched, so the gate can never end up open
+    /// mid-replace. The lockout counter is only reset AFTER a successful replace (a fresh counter for the
+    /// new passcode). Clearing (`nil`/empty) is a distinct, always-succeeding user action, not a replace.
     @discardableResult
     static func setPasscode(_ pin: String?) -> Bool {
-        deleteBlob()
-        clearLockout()
-        guard let pin, !pin.isEmpty else { return true }         // clear
-        guard isValidFormat(pin) else { return false }           // reject malformed
+        guard let pin, !pin.isEmpty else {
+            deleteBlob(); clearLockout()                          // explicit clear — always succeeds
+            return true
+        }
+        guard isValidFormat(pin) else { return false }             // reject malformed BEFORE touching the store
         var salt = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, salt.count, &salt)
+        var rngStatus = SecRandomCopyBytes(kSecRandomDefault, salt.count, &salt)
+        #if DEBUG
+        if let injected = injectedRNGStatus { rngStatus = injected }
+        #endif
+        guard rngStatus == errSecSuccess else { return false }     // a bad salt never becomes the gate
         guard let blob = hashV2(pin: pin, salt: salt, iterations: pbkdf2Iterations) else { return false }
-        return storeBlob(blob)
+        guard upsertBlob(blob) else { return false }                // atomic replace; old blob left intact on failure
+        clearLockout()                                              // only reached once the replace succeeded
+        return true
     }
 
     /// Whether a passcode is currently required for remote bolusing.
@@ -104,11 +135,14 @@ enum BolusPasscodeStore {
                legacyHash(pin: pin, salt: salt) == String(parts[1]) {
                 matched = true
                 // VA-29 migration: silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
+                // CX-F-10: the SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
+                // legacy blob (which just matched) untouched, so it is still verifiable next time. `matched`
+                // is already `true` regardless of whether this best-effort upgrade succeeds: migration
+                // failure never turns a correct entry into a rejected one, and never opens the gate.
                 var newSalt = [UInt8](repeating: 0, count: 16)
                 _ = SecRandomCopyBytes(kSecRandomDefault, newSalt.count, &newSalt)
                 if let upgraded = hashV2(pin: pin, salt: newSalt, iterations: pbkdf2Iterations) {
-                    deleteBlob()
-                    _ = storeBlob(upgraded)
+                    _ = upsertBlob(upgraded)   // never delete-then-add — on failure the legacy blob remains
                 }
             }
         }
@@ -140,14 +174,38 @@ enum BolusPasscodeStore {
         ]
     }
 
-    private static func storeBlob(_ blob: String) -> Bool {
+    /// CX-F-10: atomically replace the stored blob — `SecItemUpdate` when an item already exists at the
+    /// fixed service/account, `SecItemAdd` only when absent. NEVER delete-then-add (which would leave the
+    /// gate briefly/permanently open on a failure) and never store-new-before-delete-old (which would
+    /// `errSecDuplicateItem` against the fixed key). Returns `false` on any failure WITHOUT deleting
+    /// anything, so the caller's contract ("old blob untouched on failure") holds structurally.
+    private static func upsertBlob(_ blob: String) -> Bool {
         #if DEBUG
-        if useInMemoryBackingForTests { memBlob = blob; return true }
+        if useInMemoryBackingForTests {
+            let existed = memBlob != nil
+            lastUpsertOp = existed ? .update : .add
+            if let injected = injectedUpsertStatus, injected != errSecSuccess { return false }
+            memBlob = blob
+            return true
+        }
         #endif
-        var add = keychainBase
-        add[kSecValueData as String] = Data(blob.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        let data = Data(blob.utf8)
+        let updateStatus = SecItemUpdate(keychainBase as CFDictionary,
+                                          [kSecValueData as String: data] as CFDictionary)
+        if updateStatus == errSecItemNotFound {
+            // Nothing to update — this is a first-set, not a replace. Add fresh.
+            var add = keychainBase
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            #if DEBUG
+            lastUpsertOp = .add
+            #endif
+            return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+        }
+        #if DEBUG
+        lastUpsertOp = .update
+        #endif
+        return updateStatus == errSecSuccess
     }
 
     private static func deleteBlob() {
