@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import faBolusDesign
 
 /// Home-Screen widget that delivers a bolus with the same flow as the Garmin remote: **choose an
 /// amount** (− / +), tap **Bolus**, then a **1-2-3** sequential-tap confirm. Completing it delivers
@@ -89,7 +90,7 @@ struct QuickBolusView: View {
         }
         Button(intent: WidgetBolusBeginConfirmIntent()) {
             Text("Bolus").font(.subheadline.weight(.bold))
-                .foregroundStyle(draft > 0 ? Color(red: 0.24, green: 0.28, blue: 0.75) : .white.opacity(0.5))
+                .foregroundStyle(draft > 0 ? AppTheme.insulin : .white.opacity(0.5))
                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                 .background(draft > 0 ? Color.white : Color.white.opacity(0.15), in: Capsule())
         }.buttonStyle(.plain)
@@ -114,8 +115,12 @@ struct QuickBolusView: View {
     @ViewBuilder private var deliveringBody: some View {
         HStack(spacing: 5) {
             ProgressView().tint(.white).scaleEffect(0.8)
+            // D2-10: this numeric dose readout has no lineLimit(1)/wrap fallback of its own — without
+            // a scale factor it truncates (not wraps) at large Dynamic Type, silently hiding the
+            // in-flight dose amount.
             Text(String(format: "Delivering %.2f U", status.units))
                 .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                .minimumScaleFactor(0.6).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         Spacer(minLength: 0)
@@ -129,8 +134,11 @@ struct QuickBolusView: View {
     @ViewBuilder private func doneBody(icon: String, text: String) -> some View {
         Spacer(minLength: 0)
         Image(systemName: icon).font(.title2).foregroundStyle(.white)
+        // D2-10: carries the delivered/cancelled numeric dose amount — scale it down before it
+        // truncates at large Dynamic Type (wrapping alone can still clip in the small widget family).
         Text(text).font(.caption).foregroundStyle(.white)
             .multilineTextAlignment(.center).frame(maxWidth: .infinity)
+            .minimumScaleFactor(0.7).lineLimit(2)
         Spacer(minLength: 0)
     }
 
@@ -167,22 +175,45 @@ struct QuickBolusView: View {
         Spacer(minLength: 0)
     }
 
-    // − / + amount buttons (sized to leave room for the amount on the small widget).
+    // − / + amount buttons. D2-05: floored at WidgetA11y.minHitTarget (Apple's documented 44×44pt
+    // minimum tappable size — was a below-minimum 34×34) and VoiceOver-labeled/hinted via the same
+    // WidgetA11y builder the test suite asserts against, so the announced action always matches the
+    // actual mode/step (e.g. "Increase bolus by 5 grams" in carbs mode, "…by 0.05 units" in units mode).
     @ViewBuilder private func stepper(delta: Int, symbol: String) -> some View {
+        let carbs = mode == "carbs"
+        let step = carbs ? WidgetBolusStore.carbIncrement : WidgetBolusStore.increment
+        let unitLabel = carbs ? "grams" : "units"
+        let label = WidgetA11y.stepperLabel(increasing: delta > 0, step: step, unitLabel: unitLabel)
         Button(intent: WidgetBolusAdjustIntent(delta: delta)) {
             Image(systemName: symbol).font(.subheadline.weight(.bold)).foregroundStyle(.white)
-                .frame(width: 34, height: 34)
+                .frame(width: WidgetA11y.minHitTarget, height: WidgetA11y.minHitTarget)
                 .background(Color.white.opacity(0.18), in: Circle())
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityHint(WidgetA11y.stepperHint)
     }
 
-    // Numbered confirm circle. 1 and 2 advance; 3 delivers.
+    // Numbered confirm circle. 1 and 2 advance; 3 delivers. D2-05: each carries one grouped VoiceOver
+    // element with a full-sentence label/hint (StatusPillsView idiom) instead of speaking the bare
+    // digit — "1"/"2"/"3" alone would tell a VoiceOver user nothing about what the tap does.
     @ViewBuilder private func stepButton(_ n: Int) -> some View {
-        if n == 3 {
-            Button(intent: WidgetBolusDeliverIntent()) { circle(n) }.buttonStyle(.plain)
-        } else {
-            Button(intent: WidgetBolusStepIntent(step: n)) { circle(n) }.buttonStyle(.plain)
+        let done = progress >= n
+        let label = WidgetA11y.confirmStepLabel(step: n, done: done)
+        let hint = WidgetA11y.confirmStepHint(step: n)
+        Group {
+            if n == 3 {
+                Button(intent: WidgetBolusDeliverIntent()) { circle(n) }
+            } else {
+                Button(intent: WidgetBolusStepIntent(step: n)) { circle(n) }
+            }
         }
+        .buttonStyle(.plain)
+        .frame(minWidth: WidgetA11y.minHitTarget, minHeight: WidgetA11y.minHitTarget)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityHint(hint)
     }
 
     @ViewBuilder private func circle(_ n: Int) -> some View {
@@ -191,7 +222,7 @@ struct QuickBolusView: View {
             Circle().fill(done ? Color.white : Color.white.opacity(0.18))
             Text("\(n)")
                 .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(done ? Color(red: 0.24, green: 0.28, blue: 0.75) : .white)
+                .foregroundStyle(done ? AppTheme.insulin : .white)
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
