@@ -311,6 +311,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
         // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
+        // CX-F-02: arm/cancel the pre-armed background staleness watchdog.
+        model.notificationStalenessSink = { [weak self] date in self?.scheduleStalenessWatchdog(from: date) }
+        model.notificationStalenessCancelSink = { [weak self] in self?.cancelStalenessWatchdog() }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
         // CX-F-03 depth (T3-01/02): replay any still-unresolved safety alert persisted from a prior
         // launch, AFTER the sink is wired + the pending-safety buffer flushed above, so a restoration
@@ -444,6 +447,32 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
                  deadline: now.addingTimeInterval(step.afterSeconds))
         }
+    }
+
+    // MARK: CX-F-02 — pre-armed background CGM-staleness watchdog
+
+    /// Pre-arm (or re-arm) `StalenessWatchdog`'s single delayed notification to fire
+    /// `GlucoseFreshness.staleAfter` seconds past `date` (the fresh datum that just triggered the
+    /// re-arm), using the SAME `UNTimeIntervalNotificationTrigger` + persist-then-replay `deadline` path
+    /// `scheduleDisconnectEscalation` uses — a fixed identifier (`StalenessWatchdog.dedupeKey`) means
+    /// each re-arm REPLACES the previous pending request rather than stacking. If `date` is somehow
+    /// already at/past the staleness window (shouldn't happen — `refresh()` only calls this while
+    /// `cgmFresh` is true, which itself requires the reading to be within the window), `replayTrigger`
+    /// returns nil and nothing is scheduled — never a crash on an invalid 0/negative-interval trigger.
+    private func scheduleStalenessWatchdog(from date: Date, now: Date = Date()) {
+        let deadline = date.addingTimeInterval(GlucoseFreshness.staleAfter)
+        guard let trigger = Self.replayTrigger(deadline: deadline, now: now) else { return }
+        let msg = NotificationBroker.Message(
+            category: .cgmDataLoss, severity: .warning,
+            title: StalenessWatchdog.title, body: StalenessWatchdog.body,
+            dedupeKey: StalenessWatchdog.dedupeKey)
+        post(msg, trigger: trigger, deadline: deadline)
+    }
+
+    /// Cancel a pre-armed staleness watchdog — the feed is no longer fresh (the real `.cgmDataLoss` edge
+    /// already alarmed for real by then), so a stale/redundant watchdog notification must not also fire.
+    private func cancelStalenessWatchdog() {
+        withdraw([StalenessWatchdog.dedupeKey])
     }
 
     // MARK: CX-F-03 depth — persisted safety-alert replay on launch
@@ -632,6 +661,34 @@ enum SafetyEdge: Equatable {
     static func freshness(wasFresh: Bool, isFresh: Bool) -> SafetyEdge {
         if wasFresh && !isFresh { return .raise }
         if !wasFresh && isFresh { return .clear }
+        return .none
+    }
+
+    /// C2-01: a generic boolean-condition edge-detector, for a safety condition (like the urgent-low
+    /// alarm) whose "active" test is a plain `Bool` rather than a typed state transition — raise once on
+    /// false→true, clear once on true→false, never re-fire while the condition is steady.
+    static func edge(wasActive: Bool, isActive: Bool) -> SafetyEdge {
+        if !wasActive && isActive { return .raise }
+        if wasActive && !isActive { return .clear }
+        return .none
+    }
+}
+
+/// CX-F-02: pure decision for the pre-armed background staleness watchdog (`StalenessWatchdog`,
+/// faBolusCore) — arm/re-arm on an ADVANCED fresh glucose datum, cancel once the feed is no longer
+/// fresh (the real `SafetyEdge.freshness` → `.cgmDataLoss` edge has already alarmed for real by then).
+/// Kept beside `SafetyEdge` for the same reason: unit-testable without driving a full `refresh()` cycle.
+/// Distinct from `SafetyEdge` (whose cases are about POSTING/WITHDRAWING an immediate alert): this is
+/// about a DELAYED, pre-armed OS notification that may fire later even if this process never runs again.
+enum StalenessWatchdogEdge: Equatable {
+    case none, arm(Date), cancel
+
+    /// `lastArmedDate` is the fresh-datum date the watchdog is CURRENTLY armed against (nil while
+    /// cancelled). Re-arms only when `glucoseDate` genuinely ADVANCES (not on every heartbeat
+    /// re-affirming the same already-armed reading); cancels exactly once when `cgmFresh` goes false.
+    static func decide(cgmFresh: Bool, glucoseDate: Date?, lastArmedDate: Date?) -> StalenessWatchdogEdge {
+        if cgmFresh, let date = glucoseDate, date != lastArmedDate { return .arm(date) }
+        if !cgmFresh, lastArmedDate != nil { return .cancel }
         return .none
     }
 }

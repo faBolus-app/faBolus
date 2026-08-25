@@ -6,6 +6,9 @@ import GlucoseIntelligenceKit
 import AlertIntelligenceKit
 #endif
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 #if FABOLUS_HEALTHKIT
 /// Phase 09.23-03 (D-08/D-12/D-14): the seam `AppModel`'s export hook calls through — lets a test
@@ -243,6 +246,13 @@ public final class AppModel {
     /// the app is suspended. Like the other sinks, nil when no coordinator is installed (unit tests, an
     /// out-of-process intent). Notification-only — it never blocks/delays/affects a dose or pump command.
     public var notificationScheduleSink: (([DisconnectEscalation.Step]) -> Void)?
+    /// CX-F-02: arm/re-arm the pre-armed background staleness watchdog (a single delayed OS notification
+    /// that fires if no fresher glucose datum re-arms it first) with the date of the fresh datum that just
+    /// (re-)armed it. Nil when no coordinator is installed (unit tests) — a no-op then.
+    public var notificationStalenessSink: ((Date) -> Void)?
+    /// CX-F-02: cancel a pre-armed staleness watchdog (the feed is no longer fresh, or the real
+    /// `.cgmDataLoss` edge already alarmed for real). Nil when no coordinator is installed.
+    public var notificationStalenessCancelSink: (() -> Void)?
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
@@ -256,6 +266,14 @@ public final class AppModel {
     private static let cgmDataLossKey = "safety.cgmDataLoss"
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
     @ObservationIgnored private var previousGlucoseFresh = false
+    /// CX-F-02: the fresh glucose datum's date the staleness watchdog is CURRENTLY armed against, or nil
+    /// while cancelled. Lets `refresh()` re-arm only on a genuinely ADVANCED reading (not every ~20s
+    /// heartbeat re-affirming the same one) and cancel exactly once when the feed stops being fresh.
+    @ObservationIgnored private var lastArmedGlucoseDate: Date?
+    /// C2-01: whether the app-owned urgent-low alarm is CURRENTLY active (failover + at/below threshold,
+    /// OR the sub-40 `UrgentLowSentinel` fresh during failover) — for edge-detecting raise/clear exactly
+    /// once per episode, mirroring `previousGlucoseFresh`/`SafetyEdge.freshness` above.
+    @ObservationIgnored private var urgentLowActive = false
 
     /// CX-F-03: safety alerts issued BEFORE the notification sink attaches (a viewless CoreBluetooth
     /// cold-restoration launch constructs `AppModel` before `NotificationCoordinator`'s init-time wiring
@@ -984,27 +1002,55 @@ public final class AppModel {
                                                object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refreshLowPowerMode() }
         }
-        // Optional glucose failover source, with a crash-loop guard: if the selected source was armed
-        // on the previous launch and never disarmed, it crashed during start — do NOT auto-start it
-        // again (that would brick every launch). The user re-enables it by re-selecting it in
-        // Settings (which clears the guard); by then any fix has shipped.
+        // CX-F-07: optional glucose failover source, guarded by a BOUNDED crash-loop recovery policy —
+        // NOT a jetsam-vs-crash classifier (iOS cannot implement one reliably; see
+        // `GlucoseSourceRecoveryPolicy`'s doc comment). `wasClean` reads whether the PREVIOUS run left
+        // its clean-shutdown marker (set on an orderly teardown — see the `willTerminateNotification`
+        // observer below); its absence means the process ended without cleanup (cause UNKNOWN — jetsam,
+        // watchdog, OOM, or crash are all indistinguishable), fed through the pure, testable
+        // `GlucoseSourceRecoveryPolicy.decide`. A SINGLE unclean start never disables failover; only a
+        // bounded run of them does, and even that disable auto-re-probes once its window elapses — the
+        // user is never required to manually re-select the source in Settings to recover from a benign
+        // background termination (the old permanent-until-reselect guard this replaces).
         let selId = GlucoseSourceRegistry.selectedId()
-        if let selId, UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
-            UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
-            self.glucoseSource = nil
-            self.failoverAutoDisabled = selId
-        } else if let gs = GlucoseSourceRegistry.makeSelected(), let selId {
-            self.glucoseSource = gs
-            gs.onChange = { [weak self] in self?.refresh() }
-            UserDefaults.standard.set(selId, forKey: Self.sourceCrashGuardKey)   // arm
-            Task { await gs.start() }
-            // Disarm once it survives ~10s without crashing the launch.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                if UserDefaults.standard.string(forKey: Self.sourceCrashGuardKey) == selId {
-                    UserDefaults.standard.removeObject(forKey: Self.sourceCrashGuardKey)
-                }
+        if let selId {
+            let now = Date()
+            let wasClean = UserDefaults.standard.bool(forKey: Self.sourceCleanShutdownKey)
+            UserDefaults.standard.removeObject(forKey: Self.sourceCleanShutdownKey)   // cleared for THIS
+            // run; set again only on the NEXT observed orderly teardown.
+            let (nextState, shouldStart) = GlucoseSourceRecoveryPolicy.decide(
+                GlucoseSourceRegistry.loadRecoveryState(), wasClean: wasClean, now: now)
+            GlucoseSourceRegistry.saveRecoveryState(nextState)
+            if shouldStart, let gs = GlucoseSourceRegistry.makeSelected() {
+                self.glucoseSource = gs
+                gs.onChange = { [weak self] in self?.refresh() }
+                Task { await gs.start() }
+            } else {
+                self.glucoseSource = nil
+                self.failoverAutoDisabled = selId
             }
         }
+        #if canImport(UIKit)
+        // CX-F-07: mark an ORDERLY teardown of the failover CGM source (the clean-shutdown marker) —
+        // its absence at the next launch means the process ended without cleanup; never asserted as a
+        // "crash" (see `GlucoseSourceRecoveryPolicy`). `willTerminateNotification` is the best-effort
+        // signal iOS gives for an orderly exit; it is simply never posted for a jetsam/watchdog/OOM
+        // kill, which is exactly the case this design treats as UNKNOWN rather than "clean".
+        NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.glucoseSource?.stop()
+                UserDefaults.standard.set(true, forKey: Self.sourceCleanShutdownKey)
+            }
+        }
+        // CX-F-06: the scene just entered the background — re-evaluate whether the concrete Tandem
+        // backend's background-execution window is needed (see `TandemBackend.appDidEnterBackground` /
+        // `PumpBackgroundSession.enteredBackground`). Self-registered here (not from App.swift's
+        // scenePhase handler) to match this file's own existing app-lifecycle-observer idiom (the
+        // clock-change / Low-Power-Mode observers above).
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in (self?.source as? TandemBackend)?.appDidEnterBackground() }
+        }
+        #endif
         // WR-01 (R2-08): arm the ~20 s `refresh()` heartbeat UNCONDITIONALLY, for every config — not only
         // when a failover glucose source is selected. `refresh()` is the only repeating driver of the aging
         // work (§6 CGM-data-loss notification, WidgetPublisher badge re-eval + App-Group re-stamp, Garmin/
@@ -1037,9 +1083,15 @@ public final class AppModel {
     /// on restart; never uploaded. Appended from the SAME connection edges below — no new BLE poll/cadence.
     @ObservationIgnored let bleSessionLog = BLESessionLog()
 
-    static let sourceCrashGuardKey = "glucoseSourceCrashGuard"
-    /// Non-nil ⇒ the failover source (this id) was auto-disabled after a launch crash; re-select it
-    /// in Settings to try again.
+    /// CX-F-07: cleared at the start of every run; set again ONLY on an observed orderly teardown (the
+    /// `willTerminateNotification` observer in `init`). Its ABSENCE at the next launch means the
+    /// process ended without cleanup — cause UNKNOWN, never asserted as "crash" — and feeds
+    /// `GlucoseSourceRecoveryPolicy.decide` via `wasClean`. Internal (not `private`) so
+    /// `GlucoseSourceRegistry.select` can clear it too on a re-selection.
+    static let sourceCleanShutdownKey = "glucoseSourceCleanShutdown"
+    /// Non-nil ⇒ the failover source (this id) is currently disabled by the CX-F-07 bounded-recovery
+    /// policy after repeated unclean starts within its window; it AUTO-RE-PROBES once that window
+    /// elapses, or the user can re-select it in Settings sooner to try again immediately.
     public private(set) var failoverAutoDisabled: String?
 
     // MARK: - CGM Test flow (Phase 09.20-04, change 3, D-13 UX)
@@ -1054,7 +1106,8 @@ public final class AppModel {
 
     /// Read-only probe of the selected failover source's live production instance — id, latest,
     /// status — mirroring `glucoseSourceDiagnosticsInfo`'s pattern (`glucoseSource` stays private,
-    /// never widened). nil when no failover source is selected, or the crash guard auto-disabled it.
+    /// never widened). nil when no failover source is selected, or the CX-F-07 bounded-recovery policy
+    /// currently has it disabled.
     public var glucoseSourceProbe: (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
         guard let glucoseSource else { return nil }
         return (glucoseSource.id, glucoseSource.connectionKind, glucoseSource.latest, glucoseSource.status)
@@ -1103,12 +1156,12 @@ public final class AppModel {
     /// Start (or restart) the Test flow. OBSERVES `glucoseSourceProbe` on a 1s poll instead of
     /// building a second central, so an already-buffered reading resolves `.success` on the very
     /// first tick. Reports an immediate `.timeout` (not a spin) when no production instance exists —
-    /// no fallback selected, or the crash guard auto-disabled it after a launch crash.
+    /// no fallback selected, or the CX-F-07 bounded-recovery policy currently has it disabled.
     public func startCgmTest() {
         cgmTestPollTask?.cancel()
         guard let probe = glucoseSourceProbe else {
             cgmTestOutcome = .timeout(detail: failoverAutoDisabled != nil
-                ? "The fallback source was auto-disabled after a launch crash — re-select it in Settings to try again."
+                ? "The fallback source was temporarily disabled after repeated unclean starts — it will automatically retry, or re-select it in Settings now."
                 : "No fallback source is selected.")
             cgmTestInProgress = false
             cgmTestElapsedSeconds = 0
@@ -1180,6 +1233,17 @@ public final class AppModel {
         }
         lastPersistedBolusKeys = bolusKeys
     }
+
+    #if DEBUG
+    /// Test seam (C2-01): substitute the failover `glucoseSource` so a test can drive `refresh()`'s
+    /// urgent-low-alarm edge (arbitrated value OR the sentinel, during a real `GlucoseArbiter.merge`
+    /// failover) with a fake `GlucoseSource`, without depending on `GlucoseSourceRegistry.selectedId()`
+    /// reading the SHARED `UserDefaults.standard` at init (which would leak across tests/suites).
+    /// Production never calls this — `glucoseSource` is set once at init from the registry.
+    func setGlucoseSourceForTesting(_ source: GlucoseSource?) {
+        glucoseSource = source
+    }
+    #endif
 
     #if DEBUG
     /// Test seam: substitute the persistent history store (e.g. an in-memory `GlucoseHistoryStore`) so a
@@ -1850,6 +1914,45 @@ public final class AppModel {
         case .none: break
         }
         previousGlucoseFresh = cgmFresh
+        // CX-F-02: pre-arm/cancel the background staleness watchdog off the SAME `cgmFresh` signal —
+        // driven by each `refresh()` call (a BLE event/heartbeat), NOT the suspended 20s arbiterTimer
+        // alone, since the watchdog itself is what catches the case where `refresh()` never runs again
+        // before the app is fully suspended (see `StalenessWatchdogEdge`/`StalenessWatchdog`).
+        switch StalenessWatchdogEdge.decide(cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
+                                            lastArmedDate: lastArmedGlucoseDate) {
+        case .arm(let date):
+            lastArmedGlucoseDate = date
+            notificationStalenessSink?(date)
+        case .cancel:
+            lastArmedGlucoseDate = nil
+            notificationStalenessCancelSink?()
+        case .none: break
+        }
+        // C2-01: the app-owned urgent-low alarm — fires ONLY while the pump's own feed is unavailable
+        // (its own cgmAlerts are unavailable then too), on EITHER the arbitrated live value crossing
+        // `UrgentLowAlarm.thresholdMgdl` (gated on `provenance.isFailover` — the DISPLAYED value came
+        // from the backup source) OR the sub-40 `UrgentLowSentinel` (13-03) being fresh. The sentinel
+        // case is gated on `!pumpFresh` directly (NOT `provenance.isFailover`): a sub-40 raw reading
+        // never becomes the backup source's own `latest`, so `GlucoseArbiter.merge` never sees a sample
+        // to fail over TO and reports plain `.pump` provenance even though the pump itself has nothing —
+        // gating on provenance here would silently miss the exact "pump has no reading AND the only
+        // backup signal is a below-range LOW" case C2-01 exists to catch. Advisory only: reads
+        // `snapshot`/`provenance`/`pumpFresh`/the sentinel for NOTIFICATION purposes only — never feeds
+        // `recommendBolus`/`freshCorrectionBG` or any other dose-path input.
+        let sentinelFresh = !pumpFresh
+            && ((glucoseSource as? PollingGlucoseSource)?.urgentLowSentinel)
+                .map { !GlucoseFreshness.isStale($0.date) } == true
+        let urgentLowNow = UrgentLowAlarm.isActive(mgdl: snapshot.glucose, provenance: provenance) || sentinelFresh
+        switch SafetyEdge.edge(wasActive: urgentLowActive, isActive: urgentLowNow) {
+        case .raise:
+            urgentLowActive = true
+            postSafety(.cgmDataLoss, severity: .critical, title: UrgentLowAlarm.title, body: UrgentLowAlarm.body,
+                       dedupeKey: UrgentLowAlarm.dedupeKey)
+        case .clear:
+            urgentLowActive = false
+            withdrawNotifications([UrgentLowAlarm.dedupeKey])
+        case .none: break
+        }
         glucoseHistory = hist
         glucoseProvenance = provenance
         iobHistory = source.iobHistory
