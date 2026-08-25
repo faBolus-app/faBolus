@@ -61,17 +61,42 @@ struct CrossClientMutexTests {
         }
     }
 
-    /// The mutex is IN-FLIGHT only, not a permanent dedup: once the first delivery settles, a later request
-    /// for the same dose (different requestId) delivers normally. A user genuinely may bolus 2 U twice.
-    @Test func sameDoseAfterTheFirstSettlesDeliversAgain() async {
+    /// The IN-FLIGHT mutex itself is not a permanent dedup — `begin()`'s `(peer,requestId)` key alone
+    /// would let a settled entry's id be reused only as a `.replay`, never a fresh second delivery, so
+    /// this test used a DIFFERENT id ("watch-2") to prove the mutex releases once "watch-1" settles.
+    ///
+    /// Phase 14 Plan 01 (T-14-01 / CX-G-01 phone half) INTENTIONALLY changed what happens next: the new
+    /// content+time recency guard now ALSO catches a same-peer, same-content recompose under a fresh id
+    /// within the recency window — closing exactly the "genuinely dose 2 U twice in a row" gap this test
+    /// used to exercise. That is the plan's documented accepted behavior change (a legitimate identical
+    /// re-dose within the window now needs to wait past it, or vary the content, to proceed) — see
+    /// `PhoneWidgetDoubleDoseTests.twoActorPhoneDoubleDoseRejectsRecomposedContentWithFreshRequestId` for
+    /// the cross-peer analog. This test now pins the NEW invariant instead of the retired one.
+    @Test func sameDoseFromSameClientShortlyAfterSettlingIsRefusedByRecencyGuard() async {
         await AppSettingsGate.withCleanRemoteBolusAllowed {
             let (model, backend, rec) = await makeModel()
             let startIob = backend.snapshot.iobUnits
             await model.remoteDeliver(requestId: "watch-1", units: 2.0, from: .appleWatch, peerId: "watch")
             await model.remoteDeliver(requestId: "watch-2", units: 2.0, from: .appleWatch, peerId: "watch")
-            #expect(backend.snapshot.iobUnits == startIob + 4.0)   // both sequential doses delivered
+            #expect(backend.snapshot.iobUnits == startIob + 2.0)   // only the FIRST dose delivered
             #expect(rec.delivered("watch-1"))
-            #expect(rec.delivered("watch-2"))
+            #expect(!rec.delivered("watch-2"))                      // recency guard refused the recompose
+            #expect(rec.message("watch-2")?.contains("matching bolus was just delivered") == true)
+        }
+    }
+
+    /// The positive-path counterpart the retired test's title promised: a user genuinely dosing twice in a
+    /// row still works — just with a DIFFERENT dose (a different doseKey is never flagged by the recency
+    /// guard, matching `PhoneWidgetDoubleDoseTests.differentContentShortlyAfterAPriorDeliveryStillProceeds`).
+    @Test func differentDoseFromSameClientShortlyAfterSettlingStillDeliversNormally() async {
+        await AppSettingsGate.withCleanRemoteBolusAllowed {
+            let (model, backend, rec) = await makeModel()
+            let startIob = backend.snapshot.iobUnits
+            await model.remoteDeliver(requestId: "watch-3", units: 2.0, from: .appleWatch, peerId: "watch")
+            await model.remoteDeliver(requestId: "watch-4", units: 1.5, from: .appleWatch, peerId: "watch")
+            #expect(backend.snapshot.iobUnits == startIob + 3.5)   // both distinct doses delivered
+            #expect(rec.delivered("watch-3"))
+            #expect(rec.delivered("watch-4"))
         }
     }
 }
