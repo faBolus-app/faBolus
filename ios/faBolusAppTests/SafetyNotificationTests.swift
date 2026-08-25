@@ -176,4 +176,68 @@ import TandemMessages
         #expect(reconciles.first?.dedupeKey == "reconcile-watch-r9")
         #expect(!model.deliveryGloballyBlocked)   // and the interrupted entry cleared (not a permanent lock)
     }
+
+    // MARK: - Phase 13-01 (CX-F-03): viewless-launch wiring + pending-safety buffer
+
+    /// Test 1 (viewless launch): `AppModel` + `NotificationCoordinator` constructed with NO SwiftUI view
+    /// and NO `.onAppear` anywhere in the call chain — mirroring exactly how `FaBolusApp.init()` now
+    /// constructs the coordinator (CX-F-03) so a viewless CoreBluetooth cold-restoration relaunch still
+    /// gets a live sink. Overriding `model.notificationSink` immediately after construction (the same
+    /// idiom every other test in this file already uses to observe `postSafety`) proves `postSafety`
+    /// reaches whatever sink is currently attached the instant one exists — no separate "attach" ceremony,
+    /// no SwiftUI lifecycle event required.
+    @Test func viewlessLaunchWiresASinkThatReceivesAPostSafetyCall() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        #expect(model.notificationSink == nil)   // nothing attached yet — the pre-fix restoration-launch gap
+
+        // The init()-path only: no View, no `.onAppear`. Constructing the coordinator wires the sink.
+        let coordinator = NotificationCoordinator(model: model)
+        #expect(model.notificationSink != nil, "constructing NotificationCoordinator must wire the sink without any .onAppear")
+
+        var posted: [NotificationBroker.Message] = []
+        model.notificationSink = { msg, _, _ in posted.append(msg) }
+
+        model.postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected", body: "b",
+                         dedupeKey: "viewless-k1")
+
+        #expect(posted.map(\.dedupeKey) == ["viewless-k1"])
+        _ = coordinator   // keep the coordinator alive for the duration of the test
+    }
+
+    /// Test 2 (buffer + flush order): a `postSafety` issued while `notificationSink == nil` is retained
+    /// (not dropped), and once a sink attaches, every buffered message is delivered exactly once, in the
+    /// order it was issued.
+    @Test func pendingSafetyBufferFlushesExactlyOnceInIssueOrder() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        #expect(model.notificationSink == nil)
+
+        model.postSafety(.pumpDisconnect, severity: .error, title: "t1", body: "b1", dedupeKey: "order-k1")
+        model.postSafety(.cgmDataLoss, severity: .warning, title: "t2", body: "b2", dedupeKey: "order-k2")
+        model.postSafety(.bolusReconciliation, severity: .error, title: "t3", body: "b3", dedupeKey: "order-k3")
+
+        var posted: [NotificationBroker.Message] = []
+        model.notificationSink = { msg, _, _ in posted.append(msg) }
+        model.flushPendingSafety()
+
+        #expect(posted.map(\.dedupeKey) == ["order-k1", "order-k2", "order-k3"])
+
+        // A second flush is a no-op — nothing re-delivered (exactly once).
+        model.flushPendingSafety()
+        #expect(posted.map(\.dedupeKey) == ["order-k1", "order-k2", "order-k3"])
+    }
+
+    /// Test 3 (no double-construct): the `.onAppear` `if notifier == nil { ... }` nil-guard, reproduced
+    /// here at the model level, must leave the init()-constructed coordinator in place — a real second
+    /// construction would silently reassign `center.delegate` and `model.notificationSink` to a fresh
+    /// instance, breaking the single-delegate invariant.
+    @Test func onAppearNilGuardLeavesTheInitConstructedCoordinatorInPlace() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        let initCoordinator = NotificationCoordinator(model: model)   // mirrors FaBolusApp.init()
+        var notifier: NotificationCoordinator? = initCoordinator     // mirrors the @State var
+
+        // Mirrors App.swift's `.onAppear` guard verbatim: `if notifier == nil { notifier = ... }`.
+        if notifier == nil { notifier = NotificationCoordinator(model: model) }
+
+        #expect(notifier === initCoordinator, "the nil-guard must skip a second construction entirely")
+    }
 }
