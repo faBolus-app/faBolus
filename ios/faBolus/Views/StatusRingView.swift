@@ -86,7 +86,7 @@ struct StatusRingView: View {
             // permission denied, …) say so, instead of a bare "Disconnected". nil on remotes (asSnapshot
             // never sets it), so this line only appears on the phone that owns the pump link.
             if let detail = snapshot.connectionDetail {
-                Text(detail)
+                Text(Self.humanized(detail))
                     .font(.caption2).foregroundStyle(AppTheme.low)
                     .multilineTextAlignment(.center).lineLimit(2)
             }
@@ -131,8 +131,20 @@ struct StatusRingView: View {
             parts.append(snapshot.glucose == nil ? "Glucose unavailable" : "No recent CGM")
         }
         parts.append(snapshot.connection.rawValue)
-        if let detail = snapshot.connectionDetail { parts.append(detail) }
+        if let detail = snapshot.connectionDetail { parts.append(Self.humanized(detail)) }
         if let f = failover { parts.append("via \(f.name)") }
         return parts.joined(separator: ", ")
+    }
+
+    /// D3-03: `TandemBackend.applyClientError` (byte-guarded — not editable here) has one fallback path
+    /// that sets `connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"` when no more
+    /// specific, already-human state string applies. Every OTHER `connectionDetail` assignment in
+    /// TandemBackend is already a curated sentence ("Bluetooth is off", "Couldn't reconnect securely.
+    /// Tap to retry…", …) and passes through this check byte-identical — only the recognizable bare
+    /// "domain#code " token is replaced with one plain fallback sentence.
+    private static func humanized(_ detail: String) -> String {
+        detail.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
+            ? "Connection error — try reconnecting"
+            : detail
     }
 }

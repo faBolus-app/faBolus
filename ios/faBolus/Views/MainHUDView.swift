@@ -33,7 +33,13 @@ struct DashboardView: View {
                                 Spacer(minLength: 0)
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }.buttonStyle(.plain)
+                                }
+                                // D2-09: the icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
+                                // 44×44pt minimum (the visible glyph stays its original small size, only the
+                                // tappable region grows) so a low-vision/motor-impaired user can reliably hit it.
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .buttonStyle(.plain)
                                 .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss low power notice")
                             }
@@ -135,7 +141,13 @@ struct DashboardView: View {
                                 Spacer(minLength: 0)
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }.buttonStyle(.plain)
+                                }
+                                // D2-09: the icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
+                                // 44×44pt minimum (the visible glyph stays its original small size, only the
+                                // tappable region grows) so a low-vision/motor-impaired user can reliably hit it.
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                                .buttonStyle(.plain)
                                 .hoverEffect(.automatic)
                                 .accessibilityLabel("Dismiss low power notice")
                             }
@@ -195,7 +207,7 @@ struct DashboardView: View {
                     }
 
                     if let err = model.lastError {
-                        Label(err, systemImage: "exclamationmark.triangle.fill")
+                        Label(Self.humanizedDashboardError(err), systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(AppTheme.low).padding(.horizontal)
                     }
                 }
@@ -215,6 +227,20 @@ struct DashboardView: View {
         // (`ios/faBolus/Data/AppModel+MobiReject.swift`) decides + tears down via the existing
         // public `disconnect()`/`forgetPairing()`.
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
+    }
+
+    /// D3-03: `AppModel.performControl`'s catch-all (byte-guarded — not editable here) sets `lastError =
+    /// error.localizedDescription` on any pump-control failure. Every OTHER `lastError` assignment in
+    /// AppModel is already a curated, human sentence ("Bolus sent but outcome is unknown…", "Nothing to
+    /// revert…", …) — this maps ONLY the one recognizable raw shape Foundation emits for an `Error` that
+    /// doesn't conform to `LocalizedError` (the "couldn't be completed. (<Domain> error <code>.)"
+    /// boilerplate, or a bare NSError "domain#code" token) to one plain sentence. Any other string
+    /// (including every curated one above) passes through byte-identical.
+    private static func humanizedDashboardError(_ raw: String) -> String {
+        let looksRaw = raw.range(of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#, options: [.regularExpression, .caseInsensitive]) != nil
+            || raw.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
+            || raw.contains("Error Domain=")
+        return looksRaw ? "Something went wrong completing that action — try again." : raw
     }
 }
 
