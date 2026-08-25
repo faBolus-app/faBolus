@@ -117,4 +117,86 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(abs((backend.lastDeliver?.units ?? -1) - 2.0) < tol)
         }
     }
+
+    // MARK: - Task 2: CX-F-01 — confirmRemoteBolus supersession + accessDecision re-check
+    //
+    // `presentRemoteBolus` freezes a pending approval at `createdAt`; `confirmRemoteBolus` is the SECOND
+    // confirm (the phone user tapping "Yes"). Before this task, it re-checked only the approval's AGE —
+    // never a completed host delivery in the interim, nor whether access has since been revoked.
+
+    /// A pending approval composed BEFORE a host delivery that has since completed must be refused at
+    /// confirm time — even though it is well within `remoteApprovalMaxAge` (the existing age check alone
+    /// would have let it through).
+    @Test func confirmRefusesApprovalSupersededByAnInterveningHostDelivery() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
+            await model.presentRemoteBolus(requestId: "cxf01-a", units: 0, carbsGrams: 30,
+                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            #expect(model.pendingRemoteBolus != nil)
+
+            // An intervening HOST delivery completes (stamps lastHostDeliveryAt AFTER the pending
+            // approval's createdAt) while the phone user is still deciding.
+            let iobBeforeHostBolus = backend.snapshot.iobUnits
+            await model.deliverBolus(units: 1.0)
+            #expect(backend.snapshot.iobUnits > iobBeforeHostBolus + 0.9)
+            let iobAfterHostBolus = backend.snapshot.iobUnits
+
+            await model.confirmRemoteBolus()
+            #expect(model.pendingRemoteBolus == nil)
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.contains("delivered after this request was created") == true)
+            #expect(model.lastError?.contains("delivered after this request was created") == true)
+            // No second pump write from the confirm.
+            #expect(abs(backend.snapshot.iobUnits - iobAfterHostBolus) < tol)
+        }
+    }
+
+    /// `accessDecision` is re-evaluated at confirm time: settings that changed AFTER present (denying the
+    /// surface) must refuse the confirm, not just its age.
+    @Test func confirmRefusesWhenAccessHasBeenRevokedSincePresent() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
+            await model.presentRemoteBolus(requestId: "cxf01-b", units: 0, carbsGrams: 30,
+                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            #expect(model.pendingRemoteBolus != nil)
+
+            // Access is revoked for remote surfaces WHILE the approval is pending.
+            AppSettings.shared.remotesReadOnly = true
+
+            await model.confirmRemoteBolus()
+            #expect(model.pendingRemoteBolus == nil)
+            #expect(rec.last?.status == .failed)
+            #expect(rec.last?.message?.lowercased().contains("read-only") == true)
+            #expect(backend.lastDeliver == nil)   // never reached the backend
+        }
+    }
+
+    /// The positive-path counterpart: a pending REMOTE approval with no intervening host delivery and
+    /// valid access still confirms normally (the guard is additive, not a blanket block on remote confirms).
+    @Test func confirmProceedsNormallyForARemoteApprovalWithNoSupersessionOrAccessChange() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
+            await model.presentRemoteBolus(requestId: "cxf01-c", units: 0, carbsGrams: 30,
+                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            await model.confirmRemoteBolus()
+            #expect(model.pendingRemoteBolus == nil)
+            #expect(rec.last?.status == .delivered)
+            #expect(abs((backend.lastDeliver?.units ?? -1) - dose) < tol)
+        }
+    }
 }
