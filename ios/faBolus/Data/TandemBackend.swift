@@ -217,10 +217,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Apply the user's conditional auto-rules (time-of-day / kind / glucose → auto-snooze or
-    /// auto-dismiss). Both actions record a local ack (hide + stop notifying); `autoDismiss` also
-    /// fires a signed dismiss on pumps that honor it. SAFETY: alarms **and** malfunctions are never
-    /// auto-acted — the malfunction list is excluded here, and the engine additionally refuses the
-    /// `.alarm` kind.
+    /// auto-dismiss). `autoSnooze` (and `autoDismiss` on a pump that can't honor a remote dismiss)
+    /// records a local ack immediately (hide + stop notifying) — a PURE local snooze never claims the
+    /// alert is actually gone on the pump, so hiding it immediately is honest. `autoDismiss` on a pump
+    /// that DOES support remote dismissal instead defers to `dismissNotification(_:)`, which (CC-08)
+    /// hides the alert only after an authenticated status-zero proof the pump actually cleared it — this
+    /// function must NOT pre-ack that case, or it would reproduce the exact optimistic-hide CC-08 fixes.
+    /// SAFETY: alarms **and** malfunctions are never auto-acted — the malfunction list is excluded here,
+    /// and the engine additionally refuses the `.alarm` kind.
     private func applyAutoRules(_ raw: [PumpNotification], now: Date) {
         let rules = AppSettings.shared.alertRules
         guard !rules.isEmpty else { return }
@@ -236,9 +240,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             let klass = Self.safetyClass(kind: n.kind, id: n.id)
             guard let action = NotificationBroker.autoSuppression(for: alert, safetyClass: klass, rules: rules,
                                                                   now: now, glucose: snapshot.glucose) else { continue }
-            acknowledged[key] = now   // hide locally + stop re-notifying (both actions)
             if action == .autoDismiss, capabilities.supportsRemoteAlertDismiss {
+                // CC-08: don't pre-ack — `dismissNotification` itself gates the hide on the pump's
+                // authenticated response, never on this send attempt.
                 Task { [weak self] in await self?.dismissNotification(alert) }
+            } else {
+                acknowledged[key] = now   // pure local snooze (or a pump that can't remote-dismiss): hide now
             }
         }
     }
@@ -296,6 +303,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// issued (owner constraint: no battery drain). See `PumpBackgroundSession`. Wired with the real UIKit
     /// seams in the production `init()` only; the test-transport init leaves it inert (default seams).
     private let bgSession = PumpBackgroundSession()
+    /// CC-03 (app-side consumer only — see `CommsSuspensionGate`'s doc comment in `PumpBackgroundSession.swift`
+    /// for why this is INERT in production today, and `handleQualifyingEventBits` below for the exact
+    /// pin-bump seam that would wire it to a live signal). Gates ONLY `readScheduler.send`'s injected
+    /// closure below — never `cancelBolus`/`perform`/`awaitResponse`/`dismissNotification`, none of which
+    /// reference it.
+    private let commsSuspensionGate = CommsSuspensionGate()
 
     /// CX-F-06: forward a scene fg->bg transition into `bgSession` so a reconnect SCHEDULED while still
     /// foreground (no background window taken then — the RunLoop was already alive) is re-evaluated the
@@ -306,6 +319,56 @@ public final class TandemBackend: NSObject, PumpBackend {
     func appDidEnterBackground() {
         bgSession.enteredBackground()
     }
+
+    /// CC-03 (app-side consumer): the pump's qualifying-events 32-bit bitmap bit for a communications
+    /// suspension. Hand-transcribed here (NOT imported from TandemKit's `QualifyingEvent` OptionSet)
+    /// because faBolus's SPM pin (`Package.resolved`, `f72e872`) predates the kit-side decode commit
+    /// that type ships in (`dbd2d3a`, TandemKit `main`, landed via that repo's own Phase-15 15-03 plan —
+    /// confirmed NOT yet consumed by this app's pin via `git merge-base --is-ancestor`, not assumed).
+    /// Value transcribed byte-exact from `QualifyingEvent.pumpCommunicationsSuspended` (rawValue
+    /// `524288` == bit 19) — Don't-Hand-Roll: never invent a value here; re-derive from the kit source
+    /// if this ever needs to change. Once a future, deliberate pin-bump step both bumps the pin AND
+    /// conforms `TandemBackend` to the kit's new `PumpBLEClientDelegate.pumpClient(_:didReceiveQualifyingEvent:)`
+    /// method (calling `handleQualifyingEventBits(event.rawValue)` from it), this local constant is
+    /// deleted in favor of importing the real type — matching this file's own C1-02 "kit commit landed,
+    /// pin bump is a separate owner-scoped step" precedent (see 13-08-SUMMARY.md).
+    private static let pumpCommunicationsSuspendedBit: UInt32 = 524288
+
+    /// CC-03 app-side consumer entry point. INERT in production today (see `pumpCommunicationsSuspendedBit`'s
+    /// doc comment) — nothing calls this from a live BLE delegate yet. Fails CLOSED on any bit other
+    /// than the one known `pumpCommunicationsSuspendedBit`: an unrecognized/future qualifying-event bit
+    /// (including every OTHER real, named bit in the kit's `QualifyingEvent` enum — alert/alarm/reminder/
+    /// bg/basalChange/etc.) is ignored and logged, never dispatched to an unknown handler. Do NOT copy
+    /// pumpX2's fail-open-on-unknown-API handler selection (`QualifyingEvent.java:194`).
+    func handleQualifyingEventBits(_ bits: UInt32) {
+        guard bits & Self.pumpCommunicationsSuspendedBit != 0 else {
+            if bits != 0 {
+                Self.pairingLog.log("qualifying-event bits=\(bits, privacy: .public) ignored (fail-closed, CC-03 app-side consumer recognizes only the comms-suspension bit)")
+            }
+            return
+        }
+        commsSuspensionGate.pause()
+    }
+
+    /// Communications resumed: release the pause. INERT in production today for the same reason
+    /// `handleQualifyingEventBits` is (no live producer feeds either yet).
+    func handleCommsResumed() {
+        commsSuspensionGate.resume()
+    }
+
+    #if DEBUG
+    /// Test seam: drives the production `handleQualifyingEventBits(_:)` entry point directly (named
+    /// separately from it so a future wiring of the real kit delegate method is a one-line addition to
+    /// production code, never a rename of this test seam).
+    func injectQualifyingEventBitsForTesting(_ bits: UInt32) { handleQualifyingEventBits(bits) }
+    /// Test seam: drives the production `handleCommsResumed()` entry point directly.
+    func resumeCommsForTesting() { handleCommsResumed() }
+    var isCommsSuspendedForTesting: Bool { commsSuspensionGate.isPaused }
+    var pendingRefetchOpcodesForTesting: Set<UInt8> { commsSuspensionGate.pendingRefetchOpcodes }
+    /// Test seam: the single source of truth for the comms-suspension bit value, so a test can never
+    /// drift from `pumpCommunicationsSuspendedBit`'s own value.
+    static var pumpCommunicationsSuspendedBitForTesting: UInt32 { pumpCommunicationsSuspendedBit }
+    #endif
 
     // MARK: - Status read dispatch + post-pair bootstrap order (Phase 09 Wave 3, D-06)
     //
@@ -713,7 +776,20 @@ public final class TandemBackend: NSObject, PumpBackend {
         // pump-pairing-loop-api25). Under test `tx` is the injected `FakePumpTransport`, which yields an
         // observable txId and records the send.
         readScheduler.send = { [weak self] msg in
-            try self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false) ?? 0
+            guard let self else { return 0 }
+            // CC-03 (app-side consumer): hold NEW routine reads while a pump comms-suspension is
+            // active — this is the ONE choke point every `PumpReadScheduler`-issued read (the 15s/60s
+            // tiered poll included) funnels through, so gating it here pauses every routine read with
+            // zero change to `PumpReadScheduler` itself; the poll cadence/timer keep running unchanged
+            // (never removed — it is the watchdog), it is simply THIS closure that declines to forward
+            // to the wire on a tick that lands mid-pause. Delivery/cancel/auth/time-sync never reach
+            // this closure at all (they call `tx.send`/`tx.sendAwaitingResponse` directly), so they can
+            // never be held-then-released by it — see `commsSuspensionGate`'s doc comment.
+            if self.commsSuspensionGate.shouldHoldRoutineSend() {
+                self.commsSuspensionGate.noteHeldRoutineSend(opcode: msg.opCode)
+                throw BolusError.pumpRejected("routine read held — pump comms suspended (CC-03 app-side pause)")
+            }
+            return try self.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
         }
         readScheduler.isConnected = { [weak self] in self?.snapshot.connection == .connected }
         readScheduler.pumpTimeAnchor = { [weak self] in self?.pumpTimeAnchor }
@@ -1598,6 +1674,17 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
     /// message but does NOT modify insulin delivery, so it runs under `.allowNonDelivery`.
+    ///
+    /// CC-08: a remote-dismissable alert hides only AFTER an authenticated status-zero proof that the
+    /// pump actually cleared it — never on the send attempt alone. The prior implementation recorded the
+    /// local ack (hide) unconditionally right after firing the send, regardless of a later failure/NACK/
+    /// no-response, so a still-active alert could silently disappear from the phone for up to
+    /// `snoozeWindow` (30 min). Awaiting the signed `DismissNotificationResponse` (opcode 185, HMAC-
+    /// verified by `awaitResponse`'s `ResponseParser` — VA-04) and gating the ack on `status == 0` closes
+    /// that gap: a thrown error (pre-write failure, timeout, disconnect, or a failed HMAC verify on a
+    /// tampered reply) or a non-zero rejected status both leave the alert VISIBLE. "Snooze locally" (the
+    /// guard branch just below, for pumps that don't honor remote dismissal) is UNCHANGED and stays a
+    /// distinct, explicitly LOCAL action — it never claims the pump-side alert is gone.
     public func dismissNotification(_ alert: PumpAlert) async {
         guard isPaired else { return }
         let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert
@@ -1628,31 +1715,34 @@ public final class TandemBackend: NSObject, PumpBackend {
         // possibly-elevated value) when this scope ends.
         client.writePolicy = .allowBenignControl
         defer { client.writePolicy = .readOnly; releasePumpTx() }
-        lastDismissAck = ""   // cleared; the pump's DismissNotificationResponse (185) sets it below
-        alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
-        // Surface a send failure directly (the request otherwise fails silently) so a non-arriving
-        // ack can be told apart from a request that never went out.
+        lastDismissAck = ""
+        alertDebug = "clearing id \(alert.id) kind \(alert.kind.rawValue) — awaiting pump confirmation"
+        onChange?()
+        // CC-08: await the pump's own signed ack (via the transaction coordinator, correlated by opcode
+        // 185) instead of firing the signed write and ack'ing immediately. Its own `deadline: 5` timeout
+        // replaces the old separate 3.5s DispatchQueue fallback — a lost reply now throws here directly.
         do {
-            _ = try client.send(DismissNotificationRequest(kind: kind, notificationId: alert.id),
-                                authenticationKey: authenticationKey, pumpTimeSinceReset: signingTimestamp)
+            let ack = try await awaitResponse(DismissNotificationRequest(kind: kind, notificationId: alert.id),
+                                              as: DismissNotificationResponse.self, deadline: 5, signed: true)
+            if ack.status == 0 {
+                lastDismissAck = "ack 0 (accepted)"
+                // Record a local acknowledge, then re-poll. The signed dismiss clears any truly-
+                // dismissable alert on the pump; for a condition-based alert (e.g. CGM high while BG is
+                // genuinely high) the pump re-raises it, but the ack keeps it hidden (and un-notified)
+                // until the condition clears on the pump or the snooze elapses.
+                acknowledged[ackKey] = Date()
+                alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.readScheduler.alertRead() }
+            } else {
+                lastDismissAck = "ack \(ack.status) (rejected)"
+                alertDebug = "dismiss rejected id \(alert.id) kind \(alert.kind.rawValue) — still active on pump"
+            }
         } catch {
-            lastDismissAck = "send failed: \(error)"
+            lastDismissAck = "no ack (no pump response)"
+            alertDebug = "dismiss unconfirmed id \(alert.id) kind \(alert.kind.rawValue) — still active on pump"
         }
-        // Record a local acknowledge, then re-poll. The signed dismiss clears any truly-dismissable
-        // alert on the pump; for a condition-based alert (e.g. CGM high while BG is genuinely high)
-        // the pump re-raises it, but the ack keeps it hidden (and un-notified) until the condition
-        // clears on the pump or the snooze elapses.
-        acknowledged[ackKey] = Date()
         mergeNotifications()
         onChange?()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.readScheduler.alertRead() }
-        // If the pump never answers the dismiss, say so — distinguishes "rejected/no response" from
-        // "accepted but condition persists" on the next test.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
-            guard let self, self.lastDismissAck.isEmpty else { return }
-            self.lastDismissAck = "no ack (no pump response)"
-            self.renderDebug(); self.onChange?()
-        }
     }
 
     // MARK: - Advanced control (B3)
