@@ -82,6 +82,15 @@ final class PumpResponseApplier {
     /// (rather than exposing the three backfill buffer arrays individually), since it's tightly coupled
     /// to the rest of the (unmoved, D-07) gap-sync paging machinery.
     var appendHistoryStreamFrame: (HistoryLogStreamResponse) -> Void = { _ in }
+    /// CC-11 (Phase 14 14-04): notified for EVERY incoming `HistoryLogStreamResponse` frame,
+    /// unconditionally — unlike `appendHistoryStreamFrame` above, this is NOT gated on
+    /// `isBackfillActive()`. `TandemBackend.findBolusInHistory(bolusId:)`'s bounded exact-id search
+    /// issues its OWN `HistoryLogRequest` page(s) independently of the routine gap-sync/backfill state
+    /// machine (never mutating `backfillActive`/`currentGapWindow`/the coverage-crediting bookkeeping,
+    /// which stays exclusively owned by `beginGapSync`/`appendHistoryStreamFrame`/`finishBackfill`), so
+    /// it needs its own always-fires observation point to see a frame regardless of whether a routine
+    /// backfill happens to be active at the same moment. Default no-op so a bare applier is unchanged.
+    var historyStreamFrameObserved: (HistoryLogStreamResponse) -> Void = { _ in }
     /// Bound to `{ historySyncState }`.
     var historySyncState: () -> HistorySyncState = { .idle(lastSynced: nil) }
     /// Bound to `{ historySyncState = $0 }`.
@@ -358,6 +367,9 @@ final class PumpResponseApplier {
             }
             beginGapSync(m.firstSequenceNum, m.lastSequenceNum)
         case let m as HistoryLogStreamResponse:
+            // CC-11: observed unconditionally, independent of the routine backfill's active state —
+            // see `historyStreamFrameObserved`'s doc comment.
+            historyStreamFrameObserved(m)
             guard isBackfillActive() else { break }
             appendHistoryStreamFrame(m)
         case let m as AlertStatusResponse:

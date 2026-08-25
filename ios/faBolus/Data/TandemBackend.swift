@@ -531,6 +531,25 @@ public final class TandemBackend: NSObject, PumpBackend {
     private static let backfillPageSize = 255   // numberOfLogs is one byte
     private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
 
+    // CC-11 (Phase 14 14-04): `findBolusInHistory(bolusId:)`'s bounded exact-id search — a SEPARATE,
+    // dedicated page-walk from the routine gap-sync/backfill machinery above (never touches
+    // `backfillActive`/`currentGapWindow`/`backfillNextEnd`/the coverage map), so it can run correctly
+    // regardless of whether a routine backfill happens to be active at the same moment, and never
+    // corrupts that machinery's own bookkeeping. `historySearchTarget` is set only while a search is in
+    // flight; `PumpResponseApplier.historyStreamFrameObserved` (fired for EVERY incoming
+    // `HistoryLogStreamResponse`, unconditionally) scans for a match into `historySearchMatch`.
+    private var historySearchTarget: Int?
+    private var historySearchMatch: BolusHistoryRecord?
+    private var historySearchRecordsScanned = 0
+    private static let historySearchPageSize = 255
+    private static let historySearchMaxPages = 4        // ≤ 1020 records — a reconciliation probe, not a full sync
+    private static let historySearchMaxRecords = 1024
+    private static let historySearchPerPageTimeout: TimeInterval = 2.0
+    /// Test override for the per-page settle wait (production default `historySearchPerPageTimeout`),
+    /// mirroring `deliveryPollTimeoutOverride`'s existing pattern — keeps the NEGATIVE (exhausted, no
+    /// match) test path from needing several real seconds per page.
+    var historySearchPageTimeoutOverride: TimeInterval?
+
     // Bolus-in-progress tracking so the UI keeps a live cancel window + reports partial delivery.
     private var cancelRequested = false
     public private(set) var lastBolusCancelled = false
@@ -908,6 +927,15 @@ public final class TandemBackend: NSObject, PumpBackend {
                 for e in m.events where window.contains(e.sequenceNum) { self.receivedSeqsThisWindow.insert(e.sequenceNum) }
             }
             self.scheduleBackfillTick()   // debounce: page ends when frames stop arriving
+        }
+        // CC-11: fires for EVERY incoming HistoryLogStreamResponse, independent of `backfillActive` —
+        // see `findBolusInHistory(bolusId:)` and `historyStreamFrameObserved`'s doc comment.
+        responseApplier.historyStreamFrameObserved = { [weak self] m in
+            guard let self, let target = self.historySearchTarget else { return }
+            self.historySearchRecordsScanned += m.records.count
+            if self.historySearchMatch == nil, let match = m.bolusRecords.first(where: { $0.bolusId == target }) {
+                self.historySearchMatch = match
+            }
         }
         responseApplier.historySyncState = { [weak self] in self?.historySyncState ?? .idle(lastSynced: nil) }
         responseApplier.setHistorySyncState = { [weak self] state in self?.historySyncState = state }
@@ -1383,41 +1411,99 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// FB-02 reconciliation: resolve an unknown-outcome bolus against the pump's actual bolus history.
     /// Reads the pump's last bolus; if it matches the id we were waiting on, we now KNOW the outcome, so
-    /// clear the block and return the delivered amount. Returns nil if it can't be resolved yet (stay
-    /// blocked). Safe to call on reconnect and from a manual "verify" affordance.
+    /// clear the block and return the delivered amount. CC-11 (Phase 14 14-04): if the pump's LAST bolus
+    /// is a DIFFERENT (newer) id — a bolus intervened elsewhere between our unresolved attempt and this
+    /// check — this no longer gives up; it falls through to `findBolusInHistory`'s bounded exact-id
+    /// search, so a newer pump-side bolus can no longer lock the block forever. Returns nil if it truly
+    /// can't be resolved yet (stay blocked — fail-closed). Safe to call on reconnect and from a manual
+    /// "verify" affordance.
     @discardableResult
     public func reconcileIndeterminateDelivery() async -> Double? {
         guard deliveryOutcomeUnknown else { return nil }
-        guard snapshot.connection == .connected else { return nil }   // need the link to ask the pump
-        guard let last = try? await lastBolusStatus(), last.bolusId == unknownOutcomeBolusId else {
-            return nil   // pump hasn't caught up / different id — stay blocked, try again later
+        let target = unknownOutcomeBolusId
+        guard case .resolved(let delivered, _) = await findBolusInHistory(bolusId: target) else {
+            return nil   // pump hasn't caught up / no exact-id match yet — stay blocked, try again later
         }
-        // Outcome known now: unblock and report what actually went in.
-        deliveryOutcomeUnknown = false
-        let bolusId = unknownOutcomeBolusId
-        unknownOutcomeBolusId = 0
-        onChange?()
         NotificationCenter.default.post(name: .faBolusIndeterminateResolved, object: nil,
-                                        userInfo: ["bolusId": bolusId, "delivered": last.deliveredUnits])
-        return last.deliveredUnits
+                                        userInfo: ["bolusId": target, "delivered": delivered])
+        return delivered
     }
 
-    /// P0: reconcile a specific pump bolus id against the pump's authoritative last-bolus record. Returns
-    /// `.resolved` only when the pump's last bolus id matches (so we KNOW what actually went in — possibly
-    /// a partial amount after a cancel); otherwise `.unavailable` so the host keeps the delivery blocked.
-    /// Also clears the in-memory unknown-outcome flag when it was this id (the durable ledger is the
-    /// cross-restart source of truth; this keeps the same-session backend state consistent).
+    /// P0/CC-11: reconcile a specific pump bolus id against the pump's authoritative history. Tries the
+    /// fast path first (the pump's LAST bolus record matches exactly — unchanged from before); if that
+    /// misses (e.g. a NEWER bolus intervened pump-side since the unresolved attempt), falls through to a
+    /// bounded exact-id HISTORY search (`findBolusInHistory`) instead of giving up — so an intervening
+    /// bolus can no longer lock the block forever, while staying fail-closed: if the bounded search is
+    /// exhausted (page/record cap or timeout) with no exact-id match, this still returns `.unavailable`
+    /// and the delivery block persists (no blind retry, no assume-not-delivered).
     public func reconcile(bolusId: Int) async -> BolusReconciliation {
-        guard snapshot.connection == .connected else { return .unavailable }
-        guard let last = try? await lastBolusStatus(), last.bolusId == bolusId else { return .unavailable }
-        if deliveryOutcomeUnknown && unknownOutcomeBolusId == bolusId {
-            deliveryOutcomeUnknown = false
-            unknownOutcomeBolusId = 0
-            onChange?()
+        await findBolusInHistory(bolusId: bolusId)
+    }
+
+    /// CC-11 (Phase 14 14-04): the shared bounded exact-id history-query primitive both `reconcile(bolusId:)`
+    /// and `reconcileIndeterminateDelivery()` route through. (1) the existing `lastBolusStatus()` fast path
+    /// — unchanged; (2) on a miss, issues `HistoryLogStatusRequest` to learn the current log range —
+    /// INDEPENDENT of `AppSettings.historySyncEnabled` (a reconciliation safety read, not a user-facing
+    /// sync preference) — then walks BACKWARD from the pump's most recent sequence number in bounded
+    /// `HistoryLogRequest(startLog:numberOfLogs:)` pages (reusing the SAME request types the routine
+    /// gap-sync backfill uses — see `requestBackfillPage` — never a hand-rolled transport), searching the
+    /// typed `BolusCompletedHistoryLog`/`BolusHistoryRecord` records for `bolusId == target` (using the
+    /// restored `BolusHistoryRecord.bolusId`, Phase 14 14-04 TandemKit change) including a validated 0U/
+    /// partial completion; (3) bounded by page count (`historySearchMaxPages`), record count
+    /// (`historySearchMaxRecords`), and a per-page settle timeout (`historySearchPerPageTimeout`) — on
+    /// exhaustion with no match, fails CLOSED (`.unavailable`; never a blind retry, never assumes
+    /// not-delivered). Runs entirely alongside (never mutates) the routine gap-sync/backfill state
+    /// machine — see `historySearchTarget`'s doc comment.
+    private func findBolusInHistory(bolusId: Int) async -> BolusReconciliation {
+        guard snapshot.connection == .connected else { return .unavailable }   // need the link to ask the pump
+        func resolved(_ deliveredUnits: Double) -> BolusReconciliation {
+            // The pump's last-bolus/history record reports the delivered amount authoritatively. Neither
+            // exposes a distinct "cancelled" flag, so a partial amount simply reports fewer delivered units.
+            if deliveryOutcomeUnknown && unknownOutcomeBolusId == bolusId {
+                deliveryOutcomeUnknown = false
+                unknownOutcomeBolusId = 0
+                onChange?()
+            }
+            return .resolved(deliveredUnits: deliveredUnits, cancelled: false)
         }
-        // The pump's last-bolus record reports the delivered amount authoritatively. It doesn't expose a
-        // distinct "cancelled" flag, so a partial amount simply reports fewer delivered units.
-        return .resolved(deliveredUnits: last.deliveredUnits, cancelled: false)
+        // Fast path (unchanged): the pump's LAST bolus record matches exactly.
+        if let last = try? await lastBolusStatus(), last.bolusId == bolusId {
+            return resolved(last.deliveredUnits)
+        }
+        // CC-11: the fast path missed — possibly a newer bolus intervened. Query recent HISTORY by exact
+        // id instead of giving up. `awaitResponse` also reaches the SAME passive dispatch the routine
+        // on-connect check does (harmless/additive: at worst it opportunistically also catches up a
+        // behind chart/logbook sync; it never competes with THIS search, which observes every incoming
+        // frame via `historyStreamFrameObserved` regardless of which request produced it).
+        guard let range = try? await awaitResponse(HistoryLogStatusRequest(), as: HistoryLogStatusResponse.self, deadline: 5),
+              range.numEntries > 0, range.lastSequenceNum >= range.firstSequenceNum else {
+            return .unavailable   // can't even learn the range — fail closed
+        }
+        historySearchTarget = bolusId
+        historySearchMatch = nil
+        historySearchRecordsScanned = 0
+        defer { historySearchTarget = nil; historySearchMatch = nil; historySearchRecordsScanned = 0 }
+
+        let perPageTimeout = historySearchPageTimeoutOverride ?? Self.historySearchPerPageTimeout
+        var nextEnd = range.lastSequenceNum
+        var pages = 0
+        while pages < Self.historySearchMaxPages, historySearchRecordsScanned < Self.historySearchMaxRecords {
+            let available = nextEnd - range.firstSequenceNum + 1
+            let count = min(UInt32(Self.historySearchPageSize), available)
+            guard count > 0 else { break }
+            let startLog = nextEnd - (count - 1)
+            try? tx.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)),
+                         authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            pages += 1
+            let pageDeadline = Date().addingTimeInterval(perPageTimeout)
+            while historySearchMatch == nil, Date() < pageDeadline {
+                try? await Task.sleep(nanoseconds: 30_000_000)   // 30 ms poll — see historySearchTarget's doc comment
+            }
+            if let match = historySearchMatch { return resolved(match.deliveredUnits) }
+            if startLog <= range.firstSequenceNum { break }   // reached the bottom of the available range
+            nextEnd = startLog - 1
+        }
+        return .unavailable   // bounded search exhausted (pages/records/timeout) — no exact-id match: fail closed
     }
 
     /// The validated signed delivery flow, shared by standard + extended boluses. When `extendedMu > 0`
