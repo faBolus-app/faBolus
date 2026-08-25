@@ -30,6 +30,10 @@ struct AppThemeContrastAuditTests {
             (AppTheme.high,       (0.98, 0.76, 0.18)),
             (AppTheme.urgentHigh, (0.95, 0.55, 0.15)),
             (AppTheme.low,        (0.90, 0.25, 0.22)),
+            // Phase 17 (D2-03): the two NET-NEW severe-band tokens the AGP bar (StatsCardView.tirBar)
+            // routes through — distinct from `low`/`high`/`urgentHigh`, not a reuse.
+            (AppTheme.veryLow,    (0.62, 0.08, 0.10)),
+            (AppTheme.veryHigh,   (0.80, 0.35, 0.05)),
         ]
         for (color, want) in expected {
             let c = srgb(color)
@@ -44,6 +48,8 @@ struct AppThemeContrastAuditTests {
     @Test func liveBandContrastVsWhiteMatchesDoc() {
         let cases: [(SwiftUI.Color, Double)] = [
             (AppTheme.inRange, 2.18), (AppTheme.high, 1.64), (AppTheme.urgentHigh, 2.45), (AppTheme.low, 4.09),
+            // Phase 17 (D2-03): same measure-and-pin treatment for the two new severe-band tokens.
+            (AppTheme.veryLow, 8.16), (AppTheme.veryHigh, 4.19),
         ]
         for (color, want) in cases {
             let c = srgb(color)
@@ -54,6 +60,8 @@ struct AppThemeContrastAuditTests {
     @Test func liveBandContrastVsBlackMatchesDoc() {
         let cases: [(SwiftUI.Color, Double)] = [
             (AppTheme.inRange, 9.63), (AppTheme.high, 12.80), (AppTheme.urgentHigh, 8.58), (AppTheme.low, 5.13),
+            // Phase 17 (D2-03): same measure-and-pin treatment for the two new severe-band tokens.
+            (AppTheme.veryLow, 2.57), (AppTheme.veryHigh, 5.01),
         ]
         for (color, want) in cases {
             let c = srgb(color)

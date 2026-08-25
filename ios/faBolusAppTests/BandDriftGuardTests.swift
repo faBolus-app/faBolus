@@ -214,6 +214,31 @@ struct BandDriftGuardTests {
         }
     }
 
+    /// **Phase 17 (D2-03), NEW — not the exemption pin above.** The pin at
+    /// `agpBarAndChartScatterPointsContainNoDirectClassifyEntryPoint` only proves `tirBar` contains no
+    /// `bandClassificationEntryPoints` trigger (it classifies via `GlucoseStatistics` percentages, not
+    /// `GlucoseRange.classify`/`.rangeCategory`) — that pin still holds and is orthogonal to this
+    /// assertion. This test bans the same `forbiddenRawBandColors` directly inside `tirBar`'s own
+    /// balanced-brace body regardless of the classify-entry-point trigger, so the five raw
+    /// `.red`/.orange/.green/.yellow/`Color.yellow.opacity` band literals (D2-03) cannot resurface once
+    /// routed through `AppTheme.veryLow/.low/.inRange/.high/.veryHigh`.
+    @Test func noRawBandColorInStatsCardViewTirBar() throws {
+        let repoRoot = try #require(Self.repoRootURL(),
+                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let file = "ios/faBolus/Views/StatsCardView.swift"
+        let url = repoRoot.appendingPathComponent(file)
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        let stripped = Self.stripLineComments(raw)
+        let lines = stripped.components(separatedBy: "\n")
+        let slice = try Self.functionSlice(signaturePrefix: "func tirBar(", in: lines, file: file)
+
+        let violations = Self.forbiddenRawBandColors.filter { slice.contains($0) }
+        #expect(violations.isEmpty,
+                "tirBar still contains forbidden raw band-color literal(s): \(violations.joined(separator: ", "))")
+        #expect(!slice.isEmpty,
+                "expected to scan tirBar's body — resolution broke (would otherwise pass vacuously)")
+    }
+
     /// Locate a declaration by its signature-line substring and slice it via balanced braces — same
     /// idea as `NudgeDeliveryBoundaryTests.balancedFunctionBody(signaturePrefix:in:)`, adapted to take
     /// pre-split lines (this file already splits once per source file for the main scan).
