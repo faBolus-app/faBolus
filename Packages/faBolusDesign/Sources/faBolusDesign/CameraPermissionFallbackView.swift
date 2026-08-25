@@ -33,9 +33,12 @@ public struct CameraPermissionFallbackView: View {
         VStack(spacing: 12) {
             Spacer(minLength: 0)
 
+            // D2-08: decorative — the title/message text below already states the camera problem, so
+            // hide the glyph from VoiceOver rather than announcing its raw symbol name.
             Image(systemName: "video.slash.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             Text(title)
                 .font(.headline)

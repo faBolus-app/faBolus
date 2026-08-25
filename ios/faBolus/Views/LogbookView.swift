@@ -50,6 +50,11 @@ struct LogbookView: View {
                     } label: {
                         Image(systemName: filter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                     }
+                    // D2-06: the filled-vs-unfilled glyph is a color/shape-only cue for "a filter is
+                    // active" — VoiceOver otherwise announces only the raw symbol name. Speak the
+                    // control's purpose plus the current filter (or "All events") as its value.
+                    .accessibilityLabel("Filter events")
+                    .accessibilityValue(filter.map { $0.rawValue.capitalized } ?? "All events")
                 }
             }
         }

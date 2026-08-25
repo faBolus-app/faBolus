@@ -12,9 +12,13 @@ struct AlertsBannerView: View {
         VStack(spacing: 8) {
             ForEach(model.activeNotifications) { n in
                 HStack(alignment: .top, spacing: 10) {
+                    // D2-08: decorative — the kind (alarm/CGM alert/other) is already carried by the
+                    // title text below, so hide the glyph from VoiceOver rather than announcing its raw
+                    // symbol name. Mirrors StatusPillsView/StatusRingView's existing convention.
                     Image(systemName: icon(n.kind))
                         .foregroundStyle(color(n.kind))
                         .font(.headline)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(n.title).font(.subheadline).fontWeight(.semibold)
                         if !n.detail.isEmpty {
@@ -22,6 +26,9 @@ struct AlertsBannerView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    // D2-08: one VoiceOver element reading "<title>, <detail>" instead of two
+                    // fragmented swipe stops.
+                    .accessibilityElement(children: .combine)
                     Spacer(minLength: 8)
                     if n.isDismissable && model.capabilities.supportsAlertClear {
                         Button {
