@@ -134,8 +134,12 @@ struct HistoryLogTimezoneTests {
                 guard let placed = backend.glucoseHistory.first?.date else { return }
                 // The fix places it at the STANDARD-time instant (offset -8), i.e. exactly `target`.
                 #expect(approxEqual(placed, target), "record must land at the offset in effect at its own instant, not today's")
-                #expect(backend.snapshot.glucoseDate.map { approxEqual($0, target) } == true,
-                        "latest-glucose promotion must carry the DST-correct instant")
+                // CX-F-05 (review-sharpened): `finishBackfill` no longer promotes into the live dosing
+                // snapshot at all — see `backfillNeverPromotesIntoLiveDosingSnapshotPreExistingValuePreserved`
+                // below for the dedicated live-read-preservation contract. A backend with no pre-existing
+                // live reading stays `nil` here (fail-closed for dosing, never invents one from history).
+                #expect(backend.snapshot.glucoseDate == nil,
+                        "backfill must never write the live dosing snapshot — glucoseHistory (the chart) is the only sink")
 
                 // …and this genuinely differs from the OLD uniform-offset placement (`naive - todaysOffset`)
                 // whenever the record's offset and "now"'s offset differ (they do at a DST edge vs summer/winter).
@@ -210,12 +214,14 @@ struct HistoryLogTimezoneTests {
         }
     }
 
-    // MARK: - Case 3: latest-glucose promotion selects the DST-correct newest instant
+    // MARK: - Case 3: backfill NEVER promotes into the live dosing snapshot (CX-F-05, review-sharpened)
 
-    /// After a straddling sync, `snapshot.glucose`/`snapshot.glucoseDate` (promoted from the newest
-    /// deduped reading) must be the newest record placed at its DST-correct instant — the downstream
-    /// value a mis-placed record would corrupt.
-    @Test func latestGlucosePromotionUsesDSTCorrectNewestInstant() {
+    /// `finishBackfill` used to promote the newest deduped CGM reading into `snapshot.glucose`/
+    /// `glucoseDate` — a backfilled/mis-anchored historical record could therefore taint the live dosing
+    /// read. The fix REMOVES that promotion entirely: a PRE-EXISTING live snapshot value must survive a
+    /// backfill completely unchanged, while the backfilled points still land in `glucoseHistory` (the
+    /// chart) — backfill and the live dosing read are fully decoupled sinks.
+    @Test func backfillNeverPromotesIntoLiveDosingSnapshotPreExistingValuePreserved() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
                 let tz = TimeZone(identifier: "America/Los_Angeles")!   // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
@@ -233,23 +239,167 @@ struct HistoryLogTimezoneTests {
 
                 let (backend, _) = makeBackend()
                 backend.historyBackfillTimeZoneForTesting = tz   // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
-                // Inject newest-first to prove promotion is by placed instant, not arrival/stream order.
+                // A LIVE reading already on the snapshot BEFORE the sync runs — a real value the live CGM
+                // read path (never the backfill path) owns.
+                let liveDate = Date().addingTimeInterval(-120)
+                backend.setGlucoseSnapshotForTesting(mgdl: 200, date: liveDate)
+
+                // Inject newest-first (as Case 3 originally did) to prove there is no ordering-dependent
+                // promotion at all anymore — the newest deduped reading must NOT reach the snapshot.
                 runSync(backend, cgm: [(seq: 2, pumpTimeSec: secNewer, mgdl: 155),
                                        (seq: 1, pumpTimeSec: secOlder, mgdl: 88)])
 
-                #expect(backend.snapshot.glucose == 155, "the newest reading's value is promoted")
-                #expect(backend.snapshot.glucoseDate.map { approxEqual($0, tNewer) } == true,
-                        "promoted glucoseDate must be the newest record's DST-correct instant")
+                // The pre-existing live value/date are UNCHANGED — backfill never overwrites them.
+                #expect(backend.snapshot.glucose == 200, "backfill must never overwrite a pre-existing live dosing reading")
+                #expect(backend.snapshot.glucoseDate.map { approxEqual($0, liveDate) } == true,
+                        "backfill must never overwrite a pre-existing live dosing reading's date")
 
-                // The buggy uniform-offset placement would have promoted a DIFFERENT instant (off by the
-                // record's-vs-today's offset difference) whenever those offsets differ.
-                let nowOffset = tz.secondsFromGMT(for: Date())
-                let newerOffset = tz.secondsFromGMT(for: tNewer)
-                if newerOffset != nowOffset, let promoted = backend.snapshot.glucoseDate {
-                    let buggy = naiveInstant(secNewer).addingTimeInterval(-Double(nowOffset))
-                    #expect(!approxEqual(promoted, buggy), "promotion must not carry the uniform-offset (corrupted) instant")
+                // …while the backfilled CGM points still populate glucoseHistory (the chart) — backfill is
+                // fully functional for its own sink, only decoupled from the live dosing snapshot.
+                #expect(backend.glucoseHistory.count == 2, "both backfilled points still land in glucoseHistory")
+                let sortedByDate = backend.glucoseHistory.sorted { $0.date < $1.date }
+                #expect(sortedByDate.last?.mgdl == 155, "the newest backfilled reading is present in glucoseHistory")
+                if let newestDate = sortedByDate.last?.date {
+                    #expect(approxEqual(newestDate, tNewer), "the newest backfilled reading keeps its DST-correct instant")
+                } else {
+                    Issue.record("expected a newest glucoseHistory entry")
                 }
             }
+        }
+    }
+
+    // MARK: - CX-F-05 review-sharpening: failable pumpDate rejects (never clamps) a future-anchored record
+
+    /// A CGM record re-anchored more than `GlucoseFreshness.futureSkewTolerance` (5 min) beyond `now` must
+    /// be DROPPED, not clamped to `now` — proven by injecting one clearly-future record alongside one
+    /// valid past record and confirming only the past one survives (a clamp-to-now bug would instead
+    /// silently admit the future record at an instant near `now`).
+    @Test func futureAnchoredCGMRecordIsRejectedNotClampedToNow() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            // Pin the reinterpretation zone to UTC so the raw `pumpSec` below (computed directly as a
+            // UTC-anchored offset from the 2008 epoch, with no wall-clock re-anchoring) round-trips through
+            // `finishBackfill`'s naive-decode-then-reinterpret exactly as written — host-independent (never
+            // relies on `TimeZone.current`, which varies by dev box vs. CI runner).
+            backend.historyBackfillTimeZoneForTesting = TimeZone(identifier: "UTC")!
+            let past = Date().addingTimeInterval(-3600)
+            let pastSec = UInt32((past.timeIntervalSince1970 - HistoryLog.jan12008UnixEpoch).rounded())
+            let futureSec = UInt32((Date().addingTimeInterval(20 * 60).timeIntervalSince1970 - HistoryLog.jan12008UnixEpoch).rounded())
+
+            runSync(backend, cgm: [(seq: 1, pumpTimeSec: pastSec, mgdl: 110),
+                                   (seq: 2, pumpTimeSec: futureSec, mgdl: 999)])
+
+            #expect(backend.glucoseHistory.count == 1, "the future-anchored record must be dropped, the past one kept")
+            #expect(backend.glucoseHistory.first?.mgdl == 110, "only the valid past reading survives")
+            #expect(backend.glucoseHistory.allSatisfy { !approxEqual($0.date, Date()) },
+                    "the future record must never be silently clamped to an instant near now")
+        }
+    }
+
+    /// The bolus+IOB loop shares ONE guard on the same re-anchored `date` — a future-anchored bolus record
+    /// must drop BOTH the bolus marker and its IOB sample, never clamp either to `now`.
+    @Test func futureAnchoredBolusRecordIsRejectedNotClampedToNowBothMarkerAndIOB() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.historyBackfillTimeZoneForTesting = TimeZone(identifier: "UTC")!   // see CGM case's comment
+            let futureSec = UInt32((Date().addingTimeInterval(20 * 60).timeIntervalSince1970 - HistoryLog.jan12008UnixEpoch).rounded())
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 1, firstSequenceNum: 1, lastSequenceNum: 1))
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecords: [(seq: 1, pumpTimeSec: futureSec, delivered: 2.5, iob: 1.2)]))
+            backend.fireHistorySyncTickForTesting()
+
+            #expect(backend.bolusMarkers.isEmpty, "a future-anchored bolus marker must be dropped, never clamped to now")
+            #expect(backend.iobHistory.isEmpty, "its IOB sample (same guarded date) must ALSO be dropped, never clamped to now")
+        }
+    }
+
+    /// The logbook-events loop guards `pumpDate` BEFORE calling `neutralEvent` — a future-anchored event
+    /// (carb-entered) must be dropped, never surfaced in the Logbook at a clamped-to-now instant.
+    @Test func futureAnchoredLogbookEventIsRejectedNotClampedToNow() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.historyBackfillTimeZoneForTesting = TimeZone(identifier: "UTC")!   // see CGM case's comment
+            let futureSec = UInt32((Date().addingTimeInterval(20 * 60).timeIntervalSince1970 - HistoryLog.jan12008UnixEpoch).rounded())
+            let record = FakePumpTransport.carbEnteredHistoryRecord(sequenceNum: 1, pumpTimeSec: futureSec, carbs: 30)
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 1, firstSequenceNum: 1, lastSequenceNum: 1))
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(events: [record]))
+            backend.fireHistorySyncTickForTesting()
+
+            #expect(backend.historyEvents.isEmpty, "a future-anchored logbook event must be dropped, never clamped to now")
+        }
+    }
+
+    // MARK: - Cross-zone-travel (beyond VA-18's single-zone DST coverage)
+
+    /// West travel + an un-synced pump clock: the pump kept logging wall-clock numbers as if it were
+    /// still on the ORIGIN zone (e.g. America/New_York) after the user traveled west, but the app
+    /// re-anchors history using the NEW host zone (America/Los_Angeles, 3h behind NY) because there was
+    /// no successful re-sync read to catch the mismatch ("forced-read failure"). Reinterpreting an
+    /// NY-wall-clock record as an LA-wall-clock record shifts the resolved instant HOURS into the future —
+    /// well beyond `futureSkewTolerance` — so the fix must drop it (not clamp it to `now`), and any
+    /// PRE-EXISTING live dosing reading must survive completely untouched. This is a genuine cross-ZONE
+    /// scenario (two different named zones), beyond VA-18's single-zone (LA) DST-transition coverage.
+    @Test func crossZoneTravelWithUnsyncedPumpClockRejectsFutureAnchoredRecordAndPreservesLiveSnapshot() {
+        withCleanCoverage {
+            let originTZ = TimeZone(identifier: "America/New_York")!   // where the pump's clock was last set
+            let hostTZ = TimeZone(identifier: "America/Los_Angeles")!  // where the user (and app) are now
+            var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
+            var originCal = Calendar(identifier: .gregorian); originCal.timeZone = originTZ
+
+            let realNow = Date()
+            // The raw pumpSec the pump would emit for a record occurring at `realNow`, logged using the
+            // ORIGIN zone's wall-clock numbers (the un-synced clock never adopted the new host zone).
+            let sec = pumpSec(placingRecordAt: realNow, zoneCal: originCal, utcCal: utcCal)
+
+            let (backend, _) = makeBackend()
+            backend.historyBackfillTimeZoneForTesting = hostTZ   // app reinterprets in the NEW (wrong) zone
+            let liveDate = Date().addingTimeInterval(-60)
+            backend.setGlucoseSnapshotForTesting(mgdl: 140, date: liveDate)
+
+            runSync(backend, cgm: [(seq: 1, pumpTimeSec: sec, mgdl: 130)])
+
+            // NY is 3h ahead of LA, so reinterpreting NY-wall-clock numbers as LA-wall-clock resolves ~3h
+            // into the future relative to `realNow` — well beyond the 5-min skew tolerance. Must be
+            // DROPPED, not clamped to now.
+            #expect(backend.glucoseHistory.isEmpty, "the cross-zone-travel-corrupted future instant must be dropped, never clamped to now")
+            // The pre-existing live dosing reading is completely unaffected by the rejected record.
+            #expect(backend.snapshot.glucose == 140, "a pre-existing live reading survives a rejected cross-zone record")
+            #expect(backend.snapshot.glucoseDate.map { approxEqual($0, liveDate) } == true,
+                    "a pre-existing live reading's date survives a rejected cross-zone record")
+        }
+    }
+
+    // MARK: - App-side history-stream advertised-count guard (composes with 15-02's kit-side isValid)
+
+    /// `appendHistoryStreamFrame` must refuse to append/advance a page when the frame's actual record
+    /// count disagrees with its own advertised `numberOfHistoryLogs` header byte — app-side defense in
+    /// depth, independent of whether the pinned kit commit also validates this at parse time.
+    @Test func historyStreamFrameWithMismatchedAdvertisedCountIsRefused() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
+            backend.injectStatusFrameForTesting(
+                FakePumpTransport.historyLogStatus(numEntries: 1, firstSequenceNum: 1, lastSequenceNum: 1))
+            // Declares 2 records but only ships 1 — an advertised-count mismatch.
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStreamWithDeclaredCount(
+                    declaredCount: 2, cgmReadings: [(seq: 1, pumpTimeSec: 1000, mgdl: 120)]))
+            backend.fireHistorySyncTickForTesting()
+
+            #expect(backend.glucoseHistory.isEmpty, "a frame whose declared count disagrees with its actual records must be refused entirely")
+        }
+    }
+
+    /// A well-formed frame (declared count == actual records) is unaffected by the guard — still appends.
+    @Test func historyStreamFrameWithMatchingAdvertisedCountStillAppends() {
+        withCleanCoverage {
+            let (backend, _) = makeBackend()
+            runSync(backend, cgm: [(seq: 1, pumpTimeSec: 1000, mgdl: 120)])
+            #expect(backend.glucoseHistory.count == 1, "a well-formed frame (count matches) must still append")
         }
     }
 }

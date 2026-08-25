@@ -292,4 +292,46 @@ final class FakePumpTransport: PumpTransport {
         let cargo: [UInt8] = [UInt8(records.count), UInt8(streamId)] + records.flatMap { $0 }
         return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
     }
+
+    /// One 26-byte history-log carb-entered record (`CarbEnteredHistoryLog`, typeId 48), matching its
+    /// layout exactly: typeId = short@0, pumpTimeSec = uint32@2, sequenceNum = uint32@6, carbs = float@10.
+    /// (Phase 15 15-04, CX-F-05: a generic non-CGM/non-bolus event record for the logbook-events
+    /// future-reject test — `historyLogStream`'s `events:` param accepts pre-built raw records like this.)
+    static func carbEnteredHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32, carbs: Float) -> [UInt8] {
+        var r = [UInt8](repeating: 0, count: 26)
+        let t = le2(48); r[0] = t[0]; r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
+        let c = Bytes.toFloat(carbs); for i in 0..<4 { r[10 + i] = c[i] }
+        return r
+    }
+
+    /// op-129 `HistoryLogStreamResponse` with an EXPLICIT, possibly-WRONG `numberOfHistoryLogs` header
+    /// byte (records.count derived from `cgmReadings` — the pinned TandemKit commit's
+    /// `HistoryLogStreamResponse.init(cargo:)` parses `records` purely from however many 26-byte chunks
+    /// fit in the cargo, NOT gated by this header byte, so a mismatch here is a genuine app-observable
+    /// advertised-count-vs-actual disagreement). (Phase 15 15-04, CX-F-05 app-side guard test.)
+    static func historyLogStreamWithDeclaredCount(declaredCount: Int,
+                                                  cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)],
+                                                  streamId: Int = 0) -> [UInt8] {
+        let records: [[UInt8]] = cgmReadings.map { cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl) }
+        let cargo: [UInt8] = [UInt8(declaredCount), UInt8(streamId)] + records.flatMap { $0 }
+        return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
+    }
+
+    // MARK: - AAM read fan-in frames (CC-10, Phase 15 15-04)
+
+    /// op-121 `HighestAamResponse` (11 bytes: aamId = uint32@0, faultId = uint32@4).
+    static func highestAamResponse(aamId: UInt32, faultId: UInt32) -> [UInt8] {
+        frame(opCode: HighestAamResponse.props.opCode,
+              cargo: Bytes.toUint32(aamId) + Bytes.toUint32(faultId) + [UInt8](repeating: 0, count: 3),
+              signed: false)
+    }
+
+    /// op-147 `ActiveAamBitsResponse` (17 bytes: unacknowledgedBitmask = uint64@0, activeBitmask = uint64@8).
+    static func activeAamBitsResponse(unacknowledgedBitmask: UInt64, activeBitmask: UInt64) -> [UInt8] {
+        frame(opCode: ActiveAamBitsResponse.props.opCode,
+              cargo: Bytes.toUint64(unacknowledgedBitmask) + Bytes.toUint64(activeBitmask) + [0],
+              signed: false)
+    }
 }

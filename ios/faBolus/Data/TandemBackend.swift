@@ -998,6 +998,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// successful `onPaired`) — rather than only inferring "retried vs errored" from the connection
     /// state. Mirrors the existing `isPairedForTesting`/`pollCycleGenerationForTesting` accessors.
     var resumeRetryCountForTesting: Int { resumeRetryCount }
+
+    /// Test seam (Phase 15 15-04, CX-F-05): directly seed a pre-existing LIVE dosing-snapshot glucose
+    /// value + date, since `snapshot`'s setter is private outside this file. Used to prove
+    /// `finishBackfill` never overwrites a pre-existing live reading — backfill populates `glucoseHistory`
+    /// (the chart) only.
+    func setGlucoseSnapshotForTesting(mgdl: Int, date: Date) {
+        snapshot.glucose = mgdl
+        snapshot.glucoseDate = date
+    }
     #endif
 
     // MARK: - PumpDataSource
