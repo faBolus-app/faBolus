@@ -128,3 +128,83 @@ final class PumpBackgroundSession {
     /// Whether a background-execution window is currently held.
     var isTaskActiveForTesting: Bool { token != nil }
 }
+
+// MARK: - CC-03 (app-side consumer): pause-on-comms-suspension gate
+
+/// CC-03, app-side consumer HALF only. TandemKit's kit-side qualifying-event bitmap decode/dispatch/
+/// clear (the PRODUCER of the signal this gate consumes) already landed on TandemKit `main`
+/// (`dbd2d3a`, "CC-03 kit half", authorized in-repo by that project's own `15-03-PLAN.md`) — but
+/// faBolus's own SPM pin (`Package.resolved`, revision `f72e872`) is an ANCESTOR of that commit, not a
+/// descendant, so from THIS app's build the producer genuinely does not exist yet (confirmed via
+/// `git merge-base --is-ancestor`, not assumed). This type is therefore an INERT seam: nothing in
+/// production feeds it a live value today (see `TandemBackend.handleQualifyingEventBits`'s doc comment
+/// for the exact one-line wiring a future, deliberate pin-bump step would add — mirroring this file's
+/// own C1-02 precedent of "kit fix landed, pin bump is a separate owner-scoped step").
+///
+/// A pure, MainActor-isolated pause/resume gate for NEW ROUTINE reads ONLY. Delivery, cancel,
+/// authentication, and time-sync are EXEMPT by construction, not by a runtime bypass check: none of
+/// `TandemBackend.cancelBolus()`/`perform(...)`/`awaitResponse(...)`/`dismissNotification(...)` ever
+/// reference this type, so there is no code path through which a signed/delivery-affecting transaction
+/// could be held-then-released by it. Only `TandemBackend`'s `readScheduler.send` closure (the ONE
+/// choke point every `PumpReadScheduler`-issued read — the 15s/60s tiered poll included — funnels
+/// through) consults `shouldHoldRoutineSend()`.
+///
+/// Self-heals past `maxHoldDuration` so a missed/lost resume signal can never wedge routine reads shut
+/// forever: `TandemBackend`'s existing poll cadence is kept running unconditionally (never removed, per
+/// the plan's own directive) and is exactly the watchdog that recovers from that case — each tick
+/// re-checks `shouldHoldRoutineSend()` fresh, so the very next successful resume (explicit or
+/// self-healed) is picked up with no separate replay mechanism needed.
+@MainActor
+final class CommsSuspensionGate {
+    private static let log = Logger(subsystem: "com.fabolus.app", category: "ble")
+
+    /// Fail-safe upper bound on how long a pause can hold routine sends with no explicit `resume()` —
+    /// see the type's own doc comment. 5 minutes is comfortably longer than any transient pump-side
+    /// comms pause this plan is meant to smooth over, while still bounding the worst case.
+    static let maxHoldDuration: TimeInterval = 5 * 60
+
+    private(set) var isPaused = false
+    private var pausedAt: Date?
+    /// Deduped record of which read opcodes were HELD while paused. This gate never re-issues wire
+    /// traffic itself — the existing, unremoved poll cadence's own next tick is the actual re-fetch — so
+    /// this is a diagnostic/testable record, not a queue this type drains.
+    private(set) var pendingRefetchOpcodes: Set<UInt8> = []
+    /// Injectable clock seam for a deterministic self-heal test.
+    var now: () -> Date = Date.init
+
+    /// A pump-declared communications suspension began: hold new routine sends. Idempotent (a second
+    /// `pause()` while already paused does not reset `pausedAt`, so the self-heal bound is measured from
+    /// the FIRST suspension signal, not extended by a repeated/duplicate one).
+    func pause() {
+        guard !isPaused else { return }
+        isPaused = true
+        pausedAt = now()
+        Self.log.log("comms-suspension pause armed (CC-03 app-side consumer)")
+    }
+
+    /// Communications resumed: release the hold. Clears the deduped-opcode record (a fresh pause starts
+    /// a fresh record).
+    func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        pausedAt = nil
+        pendingRefetchOpcodes.removeAll()
+        Self.log.log("comms-suspension pause released")
+    }
+
+    /// Whether a NEW routine read should be held right now. Self-heals (see `maxHoldDuration`'s doc
+    /// comment) rather than holding indefinitely on a lost resume signal.
+    func shouldHoldRoutineSend() -> Bool {
+        guard isPaused else { return false }
+        if let pausedAt, now().timeIntervalSince(pausedAt) > Self.maxHoldDuration {
+            resume()   // fail-safe: never hold forever — the poll watchdog takes it from here
+            return false
+        }
+        return true
+    }
+
+    /// Record (deduped by `Set`) that opcode `opcode` was held this pause.
+    func noteHeldRoutineSend(opcode: UInt8) {
+        pendingRefetchOpcodes.insert(opcode)
+    }
+}
