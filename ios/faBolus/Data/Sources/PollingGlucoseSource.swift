@@ -1,6 +1,18 @@
 import Foundation
 import faBolusCore
 
+/// A below-measurable-range vendor reading (e.g. a Dexcom "LOW" result under 40 mg/dL) detected at the
+/// CGM ingest boundary (C2-05, T-13-07). Advisory/display-only — deliberately NOT a `GlucoseSample`: the
+/// D-05 gate (`GlucoseSample.init?`, `[GlucosePlausibility.minimum, .maximum]`) still rejects the raw
+/// value exactly as before, so it can never reach `latest`, `GlucoseArbiter.merge`,
+/// `PumpSnapshot.glucose`, or `AppModel.freshCorrectionBG` (T-13-07b, the frozen dose path). The
+/// user-facing alarm ON this sentinel is Plan 09 (C2-01, owner-gated) — this type only carries the fact
+/// that an urgent-low reading was seen, for a future display/alert layer to read.
+struct UrgentLowSentinel: Sendable, Equatable {
+    let date: Date
+    let sourceID: String
+}
+
 /// Base class for cloud follower sources (Nightscout, LibreLinkUp, Dexcom Share). Handles the poll
 /// loop, `latest`/`history`/`status`, and change notification; subclasses implement `poll()` to fetch
 /// readings and return them newest-last. Read-only — these never write to the sensor or the pump.
@@ -13,6 +25,9 @@ class PollingGlucoseSource: GlucoseSource {
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle
+    /// C2-05: the most recent below-measurable-range vendor reading seen at ingest, or nil. See
+    /// `UrgentLowSentinel` — this is a SEPARATE typed value, never a `GlucoseSample`.
+    private(set) var urgentLowSentinel: UrgentLowSentinel?
     var onChange: (@MainActor () -> Void)?
 
     /// Poll cadences (seconds). Battery-aware: while the pump feed is healthy we poll rarely
@@ -132,6 +147,23 @@ class PollingGlucoseSource: GlucoseSource {
         // Rule-1: status must describe the reading actually HELD as `latest`, not a just-rejected
         // stale/late poll result — the monotonic guard above can now make these differ.
         status = (latest?.isStale ?? true) ? .stale : .connected
+        onChange?()
+    }
+
+    /// C2-05 ingest boundary: feed ONE raw vendor reading (mg/dL, not yet a `GlucoseSample`) through the
+    /// D-05 plausibility gate. In-range → normal `ingest` path (unchanged). Below range (< 40, a
+    /// below-measurable-range / "LOW" vendor result) → the D-05 gate still rejects it exactly as before
+    /// (never becomes `latest`/a dose input), but it is ALSO surfaced via `urgentLowSentinel` so a future
+    /// display/alert layer can react to a silently-dropped hypo (T-13-07). Above range (> 400, decode
+    /// garbage) → no sentinel, unchanged silent-drop behavior — only a below-range reading is a genuine
+    /// safety signal worth surfacing.
+    func ingestRawReading(mgdl: Int, date: Date) {
+        if let sample = GlucoseSample(mgdl: mgdl, date: date, sourceID: id) {
+            ingest([sample])
+            return
+        }
+        guard mgdl < GlucosePlausibility.minimum else { return }
+        urgentLowSentinel = UrgentLowSentinel(date: date, sourceID: id)
         onChange?()
     }
 }

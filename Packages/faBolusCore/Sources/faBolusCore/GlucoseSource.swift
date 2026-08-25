@@ -94,7 +94,16 @@ public enum GlucoseFreshness {
 
     /// Compact relative age label for a reading taken at `date`, e.g. "now", "3 min ago",
     /// "1h 12m ago". Shown next to every reading so its age is always visible.
+    ///
+    /// C2-03: a reading dated more than `futureSkewTolerance` in the FUTURE returns an EXPLICIT
+    /// future/clock-mismatch label ("clock ahead") instead of falling through to the normal cases.
+    /// Without this, `age(of:)`'s `max(0, …)` clamp collapses a negative elapsed time to 0, so
+    /// `s < 30` reads true and the reading is mislabeled "now" — exactly the misleading state
+    /// `isStale`/`presentation` already guard against for this same case. A reading within ordinary
+    /// clock jitter (inside the tolerance) is unaffected and still labels normally.
     public static func ageLabel(for date: Date, now: Date = Date()) -> String {
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < -futureSkewTolerance { return "clock ahead" }
         let s = Int(age(of: date, now: now))
         if s < 30 { return "now" }
         if s < 3600 { return "\(max(1, s / 60)) min ago" }
