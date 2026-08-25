@@ -773,6 +773,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.isBackfillActive = { [weak self] in self?.backfillActive ?? false }
         responseApplier.appendHistoryStreamFrame = { [weak self] m in
             guard let self else { return }
+            // CX-F-05 (review-sharpened, MEDIUM "history-stream rejection has no observable API
+            // contract"): app-side defense-in-depth — refuse to append/advance a page when the frame's
+            // actual record count disagrees with its own advertised `numberOfHistoryLogs` header byte.
+            // Composes with 15-02's kit-side `HistoryLogStreamResponse.isValid` parser-level reject (which
+            // zeroes `records` on an exact-length mismatch against the pinned kit commit); this guard uses
+            // only the existing `records`/`numberOfHistoryLogs` fields, so it does not hard-depend on that
+            // kit change landing on the pinned commit. Returning here also skips `scheduleBackfillTick()`,
+            // so a malformed frame does not advance the page-done debounce either.
+            guard m.records.count == m.numberOfHistoryLogs else { return }
             for r in m.cgmReadings { self.backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
             for b in m.bolusRecords { self.backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
             self.backfillEventLogs.append(contentsOf: m.events)
@@ -2100,19 +2109,28 @@ public final class TandemBackend: NSObject, PumpBackend {
         #endif
         var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
         var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = pumpTZ
-        let pumpDate: (UInt32) -> Date = { sec in
+        // CX-F-05 (review-sharpened, HIGH x2): FAILABLE — an un-synced pump clock, west travel, or a
+        // forced-read failure can re-anchor a record's naive wall-clock components into an instant more
+        // than `GlucoseFreshness.futureSkewTolerance` (5 min, GlucoseSource.swift) beyond `now`. The prior
+        // `min(instant, now)` CLAMPED such a record to `now`, corrupting the medical timeline (and, via
+        // the live-snapshot promotion this fix also removes below, the dosing read). Reject instead: return
+        // nil so every consuming loop drops the record — never clamp-to-now on any of the four paths.
+        let pumpDate: (UInt32) -> Date? = { sec in
             let naive = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(sec))
             let c = utcCal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: naive)
             // `zoneCal.date(from:)` resolves DST gaps/repeats deterministically; fall back to the naive
             // instant only if component re-composition ever fails (it does not for valid history seconds).
             let instant = zoneCal.date(from: c) ?? naive
-            return min(instant, now)
+            return instant <= now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance) ? instant : nil
         }
 
         // --- CGM readings ---
         if !backfillBuffer.isEmpty {
             var merged = glucoseHistory
-            for b in backfillBuffer { merged.append(GlucoseReading(date: pumpDate(b.pumpSec), mgdl: b.mgdl)) }
+            for b in backfillBuffer {
+                guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
+                merged.append(GlucoseReading(date: date, mgdl: b.mgdl))
+            }
             merged.sort { $0.date < $1.date }
             // Collapse readings that fall in the same time bucket. The pump logs more than one CGM
             // record type per interval (typeIds 256 + 399 — filtered + raw), each with its own
@@ -2126,7 +2144,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             }
             if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
             glucoseHistory = deduped
-            if let last = deduped.last { snapshot.glucose = last.mgdl; snapshot.glucoseDate = last.date }
+            // CX-F-05 (review-sharpened, MEDIUM): backfill NEVER writes the live dosing snapshot — the
+            // `snapshot.glucose`/`glucoseDate` promotion that used to run here is REMOVED (not merely
+            // decoupled). A backfilled/mis-anchored historical record must never taint the latest-glucose
+            // dosing read; backfill only ever populates `glucoseHistory` (the chart). The live dosing
+            // glucose stays owned exclusively by the live CGM read path (`PumpResponseApplier.applyEgvReading`
+            // / `PollingGlucoseSource`) — a pre-existing live value is PRESERVED across a backfill.
         }
 
         // --- Boluses (bars) + IOB samples seeded from history ---
@@ -2136,7 +2159,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             let existingBolus = Set(bolusMarkers.map { $0.date.timeIntervalSince1970.rounded() })
             var existingIOB = Set(iobHistory.map { $0.date.timeIntervalSince1970.rounded() })
             for b in backfillBoluses {
-                let date = pumpDate(b.pumpSec)
+                guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
                 let key = date.timeIntervalSince1970.rounded()
                 if !existingBolus.contains(key) {
                     markers.append(BolusMarker(date: date, units: b.units))
@@ -2158,7 +2181,10 @@ public final class TandemBackend: NSObject, PumpBackend {
             var events = historyEvents
             var seen = Set(historyEvents.map { $0.id })
             for e in backfillEventLogs {
-                guard !seen.contains(e.sequenceNum), let ne = Self.neutralEvent(e, date: pumpDate(e.pumpTimeSec)) else { continue }
+                // CX-F-05: drop, never clamp — a future-anchored event is dropped BEFORE `neutralEvent`
+                // (which takes a concrete, non-optional `Date`), consistent with the other three loops.
+                guard !seen.contains(e.sequenceNum), let date = pumpDate(e.pumpTimeSec),
+                      let ne = Self.neutralEvent(e, date: date) else { continue }
                 seen.insert(e.sequenceNum); events.append(ne)
             }
             events.sort { $0.date > $1.date }          // newest first
