@@ -27,6 +27,20 @@ public enum HistorySyncState: Equatable {
     case error(String)
 }
 
+/// C1-01/C1-04: a typed, notification-agnostic reliability signal the backend emits so `AppModel` (which
+/// owns the private `postSafety`/`scheduleDisconnectEscalation`) can translate it into a user-facing
+/// alert — the backend itself never imports `NotificationCoordinator` or calls those private methods
+/// directly (codex MEDIUM, 13-REVIEWS.md). `TandemBackend`-concrete only, mirroring the
+/// `onCommandLatency`/`onWillRetryReconnect` sink pattern (the `PumpBackend` protocol stays clean).
+public enum ReliabilityEvent: Equatable, Sendable {
+    /// A quick-pair RESUME failed and the bounded retry branch re-established the link
+    /// (`connectKnownPeripheral`, not `disconnect()` — C1-01) rather than erroring outright. This edge
+    /// dies from `.connecting`, which `SafetyEdge.connection` never raises on (it fires only on a direct
+    /// `.connected/.bolusing → down` edge) — so a genuine background flap on this path would otherwise
+    /// never alarm the user (C1-04). Fired once per bounded retry attempt.
+    case resumeRetryFailed
+}
+
 /// Real pump data source over `TandemKit`'s Core Bluetooth transport: scan → connect → JPAKE
 /// pair → poll status; and a signed bolus flow (permission → initiate → status) matching the
 /// signed delivery path. Read-only by default; `deliverBolus` briefly
@@ -102,6 +116,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// diagnostic-sink shape as `onCommandLatency` above (the `PumpBackend` protocol stays clean); never
     /// influences control flow.
     public var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)?
+    /// C1-01/C1-04: typed reliability-event sink — same concrete-Tandem-only sink shape as
+    /// `onCommandLatency`/`onWillRetryReconnect` above. `AppModel` wires this to translate an event into
+    /// its private `postSafety`/`scheduleDisconnectEscalation` calls; the backend never references
+    /// `NotificationCoordinator` and never calls those private methods itself.
+    public var onReliabilityEvent: (@MainActor (ReliabilityEvent) -> Void)?
 
     /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`. D-02 (Phase 09.15-03): runs the
     /// decoded title/detail through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name
@@ -1023,6 +1042,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// successful `onPaired`) — rather than only inferring "retried vs errored" from the connection
     /// state. Mirrors the existing `isPairedForTesting`/`pollCycleGenerationForTesting` accessors.
     var resumeRetryCountForTesting: Int { resumeRetryCount }
+
+    /// C1-01 test seam: which reconnect action `handleResumeFailure()`'s retry branch invoked on the kit
+    /// `client` — `.reestablish` (`connectKnownPeripheral`, the fix) or `.disconnect` (the pre-fix bug
+    /// this plan removes). `client` is a real `PumpBLEClient` with no fake-double seam (unlike `tx`), and
+    /// its `intentionalDisconnect` flag has no public accessor even for testing — so this records INTENT
+    /// directly at the call site rather than depending on a real `CBCentralManager`'s power-state timing
+    /// (which the kit's own doc notes is nondeterministic/hardware-only in a test host). Reset to `nil` by
+    /// each `resumingBackend()` construction; set exactly once per `handleResumeFailure()` retry-branch call.
+    private(set) var resumeRetryActionForTesting: ResumeRetryAction?
+    enum ResumeRetryAction: Equatable { case reestablish, disconnect }
 
     /// Test seam (Phase 15 15-04, CX-F-05): directly seed a pre-existing LIVE dosing-snapshot glucose
     /// value + date, since `snapshot`'s setter is private outside this file. Used to prove
@@ -2500,13 +2529,43 @@ extension TandemBackend: PumpBLEClientDelegate {
     /// Retry the resume (bounded, on the live link); when the budget is exhausted, surface a RETRYABLE error
     /// that KEEPS the derived secret. Only an explicit `forgetPairing()` (R2-06) wipes it. Factored so both
     /// the `onError` resume branch and `firePairingWatchdog`'s resume branch share one policy (no divergence).
+    ///
+    /// C1-01 (owner-adopted 2026-08-25, `OWNER-DECISIONS.md`): the retry branch used to call
+    /// `client.disconnect()`, on the belief it "re-enters the kit's bounded reconnect ladder" — it does
+    /// NOT. `disconnect()` sets `intentionalDisconnect = true`, and every kit reconnect entry point
+    /// (`didDisconnectPeripheral`'s auto-reconnect, `didFailToConnect`'s retry, `scanTimedOut`'s recovery
+    /// ladder) is `!intentionalDisconnect`-guarded — so the ladder never re-enters and the link goes
+    /// silently dead in the background (confirmed by reading `PumpBLEClient.disconnect()`/
+    /// `connectKnownPeripheral(identifier:)` in the sibling TandemKit checkout). The fix instead calls
+    /// `client.connectKnownPeripheral(identifier:)` for the known peripheral (the SAME cold-launch-fast-path
+    /// entry point `connect()` above already uses): it resets `intentionalDisconnect = false` and restarts
+    /// the reconnect ladder at attempt 0, so the link genuinely re-establishes. C1-04: this edge dies from
+    /// `.connecting` (or the resulting `.disconnected`/`.discovering`, never a live `.connected/.bolusing`
+    /// state), which `SafetyEdge.connection` never raises an alarm on — so the retry ALSO fires the typed
+    /// `onReliabilityEvent(.resumeRetryFailed)` (consumed by `AppModel`, which owns the private
+    /// `postSafety`/`scheduleDisconnectEscalation`) so a background flap is announced regardless of
+    /// whether the kit-level state transition alone would have alarmed.
     private func handleResumeFailure() {
         coordinator = nil
         if resumeRetryCount < Self.maxResumeRetries {
             resumeRetryCount += 1
             Self.pairingLog.log("pairing resume retry \(self.resumeRetryCount, privacy: .public)/\(Self.maxResumeRetries, privacy: .public) — keeping stored secret")
             linkDroppedCleanup()   // drops the auth key (delivery gate fails closed), stops timers
-            client.disconnect()    // re-enter the kit's bounded reconnect ladder → next .ready re-attempts resume
+            #if DEBUG
+            resumeRetryActionForTesting = .reestablish
+            #endif
+            // C1-01: re-establish, NEVER disconnect() — see the doc comment above. Mirrors `connect()`'s
+            // cold-launch fast path: re-adopt the known peripheral id directly; fall back to a scan if the
+            // id isn't known yet (shouldn't normally happen mid-resume, but fails safe rather than crashing).
+            if let id = PumpPeripheralStore.id() {
+                client.connectKnownPeripheral(identifier: id)
+            } else {
+                client.startScan()
+            }
+            // C1-04: this path dies from `.connecting` — `SafetyEdge.connection` never raises here (it only
+            // fires on a direct `.connected/.bolusing → down` edge) — so alarm explicitly via the typed
+            // event AppModel translates into the never-suppressible `.pumpDisconnect` post + escalation.
+            onReliabilityEvent?(.resumeRetryFailed)
         } else {
             Self.pairingLog.log("pairing resume retries exhausted — retryable error, secret RETAINED")
             resumeRetryCount = 0

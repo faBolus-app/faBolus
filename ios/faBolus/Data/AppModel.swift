@@ -300,6 +300,26 @@ public final class AppModel {
     /// edge, alongside the immediate T0 post). No-op when no coordinator sink is installed.
     private func scheduleDisconnectEscalation() { notificationScheduleSink?(DisconnectEscalation.steps) }
 
+    /// C1-01/C1-04: consume the concrete `TandemBackend`'s typed reliability event and translate it into
+    /// the private `postSafety`/`scheduleDisconnectEscalation` calls above — `AppModel` is the only layer
+    /// that can reach them, so the backend stays notification-agnostic (never imports
+    /// `NotificationCoordinator`, never calls these methods itself). This path exists because
+    /// `SafetyEdge.connection` (the `refresh()` edge-detector below) never raises from a `.connecting`-only
+    /// transition — the shared root of C1-01/C1-04 — so a transient resume-failure retry that dies from
+    /// `.connecting` must alarm explicitly rather than wait for a live→down edge that never arrives.
+    /// Reuses `pumpDisconnectKey` (the SAME dedupe key `refresh()`'s `SafetyEdge.connection` `.raise` case
+    /// uses) so a later genuine reconnect's `.clear` edge withdraws this alert too — never a second,
+    /// differently-keyed banner that could linger unwithdrawn.
+    private func handleReliabilityEvent(_ event: ReliabilityEvent) {
+        switch event {
+        case .resumeRetryFailed:
+            postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
+                       body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
+                       dedupeKey: Self.pumpDisconnectKey)
+            scheduleDisconnectEscalation()
+        }
+    }
+
     // MARK: Child (locked) mode gate
     //
     // P8: the old per-call `childBlocked(_:)` / `readOnlyBlocked(_:)` helpers were removed — child mode
@@ -943,6 +963,12 @@ public final class AppModel {
         // above. `bleSessionLog.record` is itself a no-op unless the shared diagnostics opt-in is on.
         (source as? TandemBackend)?.onWillRetryReconnect = { [weak self] attempt, delay in
             self?.bleSessionLog.record(.reconnect, detail: "attempt \(attempt), retrying in \(Int(delay))s")
+        }
+        // C1-01/C1-04: route the concrete Tandem backend's typed reliability event into the private
+        // postSafety/scheduleDisconnectEscalation calls only AppModel can reach — same concrete-only sink
+        // shape as onCommandLatency/onWillRetryReconnect above.
+        (source as? TandemBackend)?.onReliabilityEvent = { [weak self] event in
+            self?.handleReliabilityEvent(event)
         }
         // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
         for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
