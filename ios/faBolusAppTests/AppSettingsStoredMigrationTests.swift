@@ -310,6 +310,190 @@ struct AppSettingsStoredMigrationTests {
         }
     }
 
+    // MARK: - 17-09 follow-up: remaining simple scalar properties converted to `@Stored`
+    //
+    // Same behavior-preservation contract as the 17-08 batch above (exact key string + default value
+    // preserved; structural `Stored<T>`-backing proof via `Mirror`). These are the properties 17-08's
+    // SUMMARY explicitly deferred as a "low-risk, mechanical continuation" — every JSON-encoded,
+    // Date-optional, array-typed, and getter-frozen property is deliberately still NOT converted (they
+    // are out of the "simple scalar" scope).
+
+    // MARK: Bool properties (no side effect)
+
+    @Test func historySyncEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "historySyncEnabled", backingLabel: "__historySyncEnabled", defaultValue: true, \.historySyncEnabled)
+    }
+    @Test func eatingNudgesEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "eatingNudgesEnabled", backingLabel: "__eatingNudgesEnabled", defaultValue: false, \.eatingNudgesEnabled)
+    }
+    @Test func heartRateContextEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "heartRateContextEnabled", backingLabel: "__heartRateContextEnabled", defaultValue: true, \.heartRateContextEnabled)
+    }
+    @Test func eatingLearnFromFeedbackStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "eatingLearnFromFeedback", backingLabel: "__eatingLearnFromFeedback", defaultValue: true, \.eatingLearnFromFeedback)
+    }
+    @Test func ciqStateReadoutsEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqStateReadoutsEnabled", backingLabel: "__ciqStateReadoutsEnabled", defaultValue: true, \.ciqStateReadoutsEnabled)
+    }
+    @Test func ciqLockoutCountdownEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqLockoutCountdownEnabled", backingLabel: "__ciqLockoutCountdownEnabled", defaultValue: true, \.ciqLockoutCountdownEnabled)
+    }
+    @Test func ciqMaxBasalReadoutEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqMaxBasalReadoutEnabled", backingLabel: "__ciqMaxBasalReadoutEnabled", defaultValue: false, \.ciqMaxBasalReadoutEnabled)
+    }
+    @Test func ciqSleepExerciseAwarenessEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqSleepExerciseAwarenessEnabled", backingLabel: "__ciqSleepExerciseAwarenessEnabled", defaultValue: false, \.ciqSleepExerciseAwarenessEnabled)
+    }
+    @Test func ciqPlusTempRateEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqPlusTempRateEnabled", backingLabel: "__ciqPlusTempRateEnabled", defaultValue: false, \.ciqPlusTempRateEnabled)
+    }
+    @Test func ciqCeilingFlagsEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "ciqCeilingFlagsEnabled", backingLabel: "__ciqCeilingFlagsEnabled", defaultValue: false, \.ciqCeilingFlagsEnabled)
+    }
+    @Test func nightscoutUploadEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "nightscoutUploadEnabled", backingLabel: "__nightscoutUploadEnabled", defaultValue: false, \.nightscoutUploadEnabled)
+    }
+    @Test func healthKitImportCarbsEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitImportCarbsEnabled", backingLabel: "__healthKitImportCarbsEnabled", defaultValue: false, \.healthKitImportCarbsEnabled)
+    }
+    @Test func healthKitImportInsulinEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitImportInsulinEnabled", backingLabel: "__healthKitImportInsulinEnabled", defaultValue: false, \.healthKitImportInsulinEnabled)
+    }
+    @Test func healthKitImportHeartRateEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitImportHeartRateEnabled", backingLabel: "__healthKitImportHeartRateEnabled", defaultValue: false, \.healthKitImportHeartRateEnabled)
+    }
+    @Test func healthKitImportGlucoseEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitImportGlucoseEnabled", backingLabel: "__healthKitImportGlucoseEnabled", defaultValue: false, \.healthKitImportGlucoseEnabled)
+    }
+    @Test func healthKitAutoImportEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitAutoImportEnabled", backingLabel: "__healthKitAutoImportEnabled", defaultValue: false, \.healthKitAutoImportEnabled)
+    }
+    @Test func healthKitExportCarbsEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitExportCarbsEnabled", backingLabel: "__healthKitExportCarbsEnabled", defaultValue: false, \.healthKitExportCarbsEnabled)
+    }
+    @Test func healthKitExportInsulinEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitExportInsulinEnabled", backingLabel: "__healthKitExportInsulinEnabled", defaultValue: false, \.healthKitExportInsulinEnabled)
+    }
+    @Test func healthKitExportGlucoseEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitExportGlucoseEnabled", backingLabel: "__healthKitExportGlucoseEnabled", defaultValue: false, \.healthKitExportGlucoseEnabled)
+    }
+    @Test func healthKitAutoExportEnabledStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "healthKitAutoExportEnabled", backingLabel: "__healthKitAutoExportEnabled", defaultValue: false, \.healthKitAutoExportEnabled)
+    }
+    @Test func autoExerciseModeStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "autoExerciseMode", backingLabel: "__autoExerciseMode", defaultValue: false, \.autoExerciseMode)
+    }
+    @Test func autoSleepModeStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "autoSleepMode", backingLabel: "__autoSleepMode", defaultValue: false, \.autoSleepMode)
+    }
+    @Test func modeRemindersStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "modeReminders", backingLabel: "__modeReminders", defaultValue: false, \.modeReminders)
+    }
+
+    // MARK: Bool property WITH a side effect (WidgetPublisher.republishShowUnitLabel())
+
+    @Test func showGlucoseUnitLabelsStoredRoundTrip() {
+        assertBoolStoredRoundTrip(key: "showGlucoseUnitLabels", backingLabel: "__showGlucoseUnitLabels", defaultValue: false, \.showGlucoseUnitLabels)
+    }
+
+    // MARK: Double properties (`watchBolusIncrement`/`watchCarbIncrement` are plain; `bolusIncrement`
+    // has a `syncWidgetConfig()` side effect). Alternates are chosen from the pump's real increment sets
+    // so init's `max(0.05, …)` clamp (unchanged) never re-snaps the round-tripped value.
+
+    @Test func bolusIncrementStoredRoundTrip() {
+        assertDoubleStoredRoundTrip(key: "bolusIncrement", backingLabel: "__bolusIncrement", defaultValue: 0.05, alternateValue: 1, \.bolusIncrement)
+    }
+    @Test func watchBolusIncrementStoredRoundTrip() {
+        assertDoubleStoredRoundTrip(key: "watchBolusIncrement", backingLabel: "__watchBolusIncrement", defaultValue: 0.05, alternateValue: 1, \.watchBolusIncrement)
+    }
+    @Test func watchCarbIncrementStoredRoundTrip() {
+        assertDoubleStoredRoundTrip(key: "watchCarbIncrement", backingLabel: "__watchCarbIncrement", defaultValue: 5, alternateValue: 10, \.watchCarbIncrement)
+    }
+
+    // MARK: String properties (validated set-membership at init, unchanged)
+
+    @Test func garminDefaultScreenStoredRoundTrip() {
+        // "glucose" is a valid `garminScreens` entry so init's `order.contains(def)` validation keeps it.
+        assertStringStoredRoundTrip(key: "garminDefaultScreen", backingLabel: "__garminDefaultScreen", defaultValue: "glance", alternateValue: "glucose", \.garminDefaultScreen)
+    }
+    @Test func garminTargetAppStoredRoundTrip() {
+        assertStringStoredRoundTrip(key: "garminTargetApp", backingLabel: "__garminTargetApp", defaultValue: "beta", alternateValue: "official", \.garminTargetApp)
+    }
+
+    // MARK: Enum property (RawRepresentable<String>) with a legacy phone-default fallback at init
+
+    @Test func watchDefaultBolusModeStoredRoundTrip() {
+        let d = freshSuite("watchDefaultBolusMode")
+        let settings = AppSettings(defaults: d)
+        expectStoredBacking(settings, label: "__watchDefaultBolusMode", valueType: BolusMode.self)
+        #expect(settings.watchDefaultBolusMode == .carbs)   // fresh: neither watch nor phone key present
+        settings.watchDefaultBolusMode = .units
+        #expect(d.string(forKey: "watchDefaultBolusMode") == "units")
+        let settings2 = AppSettings(defaults: d)
+        #expect(settings2.watchDefaultBolusMode == .units)
+    }
+
+    /// Legacy-value preservation: a user who only ever set the PHONE default (never a separate watch
+    /// default) must keep inheriting it — this fallback lives in `init` and must survive the conversion.
+    @Test func watchDefaultBolusModeFallsBackToPhoneDefaultWhenItsOwnKeyIsAbsent() {
+        let d = freshSuite("watchDefaultBolusMode.fallback")
+        d.set("units", forKey: "defaultBolusMode")   // phone default only; watch key absent
+        let settings = AppSettings(defaults: d)
+        #expect(settings.watchDefaultBolusMode == .units, "watch default must fall back to the phone default")
+    }
+
+    // MARK: Force-pinned properties (the init pin overrides ANY stored value at every init, but the
+    // setter itself still writes the exact key — same shape as the 17-08 `autoSyncPumpTime` test).
+
+    @Test func historyRetentionDaysIsForceSet1RegardlessOfAnyStoredValue() {
+        let d = freshSuite("historyRetentionDays")
+        d.set(30, forKey: "historyRetentionDays")   // simulate a legacy longer-retention window
+        let settings = AppSettings(defaults: d)
+        expectStoredBacking(settings, label: "__historyRetentionDays", valueType: Int.self)
+        #expect(settings.historyRetentionDays == 1)   // LOCK-03 force-set 1 (24h) wins over the stored value
+        settings.historyRetentionDays = 30            // the setter itself is unchanged (still writable)…
+        #expect(d.object(forKey: "historyRetentionDays") as? Int == 30)
+        let settings2 = AppSettings(defaults: d)
+        #expect(settings2.historyRetentionDays == 1)  // …but the NEXT init still force-sets 1
+    }
+
+    @Test func stackingGuardFrictionEnabledIsForceSetFalseRegardlessOfAnyStoredValue() {
+        let d = freshSuite("stackingGuardFrictionEnabled")
+        d.set(true, forKey: "stackingGuardFrictionEnabled")
+        let settings = AppSettings(defaults: d)
+        expectStoredBacking(settings, label: "__stackingGuardFrictionEnabled", valueType: Bool.self)
+        #expect(settings.stackingGuardFrictionEnabled == false)   // LOCK-06 force-set false wins
+        settings.stackingGuardFrictionEnabled = true
+        #expect(d.object(forKey: "stackingGuardFrictionEnabled") as? Bool == true)
+        let settings2 = AppSettings(defaults: d)
+        #expect(settings2.stackingGuardFrictionEnabled == false)
+    }
+
+    // MARK: One-time force-reset migration guard (`criticalAlertsEnabled`, MOBI-04/D-06)
+
+    @Test func criticalAlertsEnabledStoredRoundTripAndOneTimeForceReset() {
+        // 1. Fresh install (no keys): default OFF (D-06 safety default), and the one-time guard is recorded.
+        let d1 = freshSuite("criticalAlertsEnabled.fresh")
+        let s1 = AppSettings(defaults: d1)
+        expectStoredBacking(s1, label: "__criticalAlertsEnabled", valueType: Bool.self)
+        #expect(s1.criticalAlertsEnabled == false)
+        #expect(d1.object(forKey: "criticalAlertsForceResetV050") as? Bool == true)
+
+        // 2. Migration: a pre-Phase-9 stored `true` with NO guard is force-reset to false exactly once.
+        let d2 = freshSuite("criticalAlertsEnabled.migrate")
+        d2.set(true, forKey: "criticalAlertsEnabled")   // legacy Mobi-derived ON
+        let s2 = AppSettings(defaults: d2)
+        #expect(s2.criticalAlertsEnabled == false)
+        #expect(d2.object(forKey: "criticalAlertsForceResetV050") as? Bool == true)
+
+        // 3. Round-trip + re-enable respected: once the guard has fired, a later user re-enable persists
+        //    and is NOT re-clobbered by the next init.
+        s2.criticalAlertsEnabled = true
+        #expect(d2.object(forKey: "criticalAlertsEnabled") as? Bool == true)
+        let s3 = AppSettings(defaults: d2)
+        #expect(s3.criticalAlertsEnabled == true)
+    }
+
     // MARK: - SettingsCatalog counts unchanged (D4-05 must-have)
 
     @Test func settingsCatalogCountsUnchangedByStoredConversion() {
