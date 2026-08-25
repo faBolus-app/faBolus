@@ -108,4 +108,44 @@ struct DexcomShareSourceTests {
         #expect(DexcomShareSource.server(for: nil) == .US)
         #expect(DexcomShareSource.server(for: "garbage") == .US)
     }
+
+    // MARK: - C2-01 depth (13-03 wiring completion): `partition`'s pure gate over plain tuples —
+    // `ShareGlucose`'s memberwise init is internal to the vendored module (see the class doc comment
+    // above), so this is what actually exercises the gating decision `fetch()` makes per reading.
+
+    @Test func partitionRoutesInRangeReadingsToSamplesAndBelowRangeSeparately() {
+        let now = Date()
+        let readings: [(mgdl: Int, date: Date, trend: Int)] = [
+            (mgdl: 120, date: now, trend: 4),
+            (mgdl: 35, date: now.addingTimeInterval(60), trend: 4),    // below GlucosePlausibility.minimum (40)
+            (mgdl: 0, date: now.addingTimeInterval(120), trend: 4),    // glucose<=0 — unchanged silent drop
+            (mgdl: 500, date: now.addingTimeInterval(180), trend: 4),  // above .maximum (400) — decode garbage, unchanged silent drop
+        ]
+        let (samples, belowRange) = DexcomShareSource.partition(readings: readings, sourceID: "dexcom-share")
+        #expect(samples.count == 1)
+        #expect(samples.first?.mgdl == 120)
+        #expect(belowRange.count == 1)
+        #expect(belowRange.first?.mgdl == 35)
+    }
+
+    @Test func partitionNeverProducesASampleForABelowRangeReading() {
+        // D-05 invariant, re-confirmed at THIS boundary: a below-range raw reading must never become a
+        // `GlucoseSample` (a potential dose input) — only the separate `belowRange` bucket.
+        let (samples, belowRange) = DexcomShareSource.partition(
+            readings: [(mgdl: 10, date: Date(), trend: 0)], sourceID: "dexcom-share")
+        #expect(samples.isEmpty)
+        #expect(belowRange.count == 1)
+    }
+
+    /// The other half of the chain `fetch()` now runs: `partition`'s `belowRange` output, fed through
+    /// `ingestRawReading` exactly as `fetch()` does, surfaces the sentinel and never becomes `latest`.
+    @Test func belowRangeEntriesFromPartitionFeedIngestRawReadingAndSurfaceTheSentinel() {
+        let source = DexcomShareSource()
+        let date = Date()
+        let (_, belowRange) = DexcomShareSource.partition(
+            readings: [(mgdl: 30, date: date, trend: 0)], sourceID: source.id)
+        for r in belowRange { source.ingestRawReading(mgdl: r.mgdl, date: r.date) }
+        #expect(source.urgentLowSentinel?.date == date)
+        #expect(source.latest == nil, "a below-range raw reading must never become `latest` / a dose input")
+    }
 }
