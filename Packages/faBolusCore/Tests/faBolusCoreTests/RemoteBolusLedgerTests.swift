@@ -288,4 +288,99 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let l = RemoteBolusLedger()
         XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
     }
+
+    // MARK: - T-14-01 (CX-G-01 phone half): additive content+time duplicate-recency guard
+    //
+    // LoopKit's `syncIdentifier` content-identity philosophy layered ON TOP of the existing
+    // (peer,requestId) exactly-once key: a doseKey recently recorded as authoritatively
+    // delivered-or-maybe-delivered is flagged as a recent duplicate REGARDLESS of a fresh requestId.
+    // This is a SEPARATE query (`hasRecentlyDeliveredDuplicate`) — begin()'s own key/conflict/replay
+    // logic is untouched (asserted below and by every pre-existing test in this file).
+
+    func testRecentlyDeliveredDuplicateDetectedAcrossDifferentRequestIds() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        // A FRESH requestId, same content, 2s later: flagged as a recent duplicate.
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
+
+    func testRecentlyDeliveredDuplicateExpiresAfterWindow() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        let window = RemoteBolusLedger.recentDuplicateWindowSec
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(window + 1)))
+    }
+
+    func testDifferentDoseKeyWithinWindowIsNotFlagged() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(doseKey: key(5.0), now: t0.addingTimeInterval(2)))
+    }
+
+    /// Addresses codex HIGH: `settle()` sets `.terminal` for EVERY outcome, so a naive "scan terminal
+    /// entries" would wrongly block a legitimate retry after a clean pre-pump failure. The recency index
+    /// must only populate for an authoritatively-delivered-or-maybe-delivered outcome.
+    func testCleanPrePumpFailureDoesNotPopulateRecencyIndex() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        // sentToPump == false (never reached markDelivering/markSent), deliveredUnits nil ⇒ a clean
+        // pre-pump failure (e.g. rejected/errored before the pump write).
+        l.settle(peerId: "peerA", requestId: "req1", status: "failed", message: "not connected", now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
+
+    func testZeroUnitCancellationDoesNotPopulateRecencyIndex() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        // sentToPump == false, deliveredUnits == 0 ⇒ a genuine 0 U cancellation before the pump write.
+        l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
+
+    /// A 0 U outcome that DID reach the pump (`sentToPump == true`) is still ambiguous — the pump may have
+    /// delivered before the cancel landed — so it stays flagged. `sentToPump` alone gates this, independent
+    /// of `deliveredUnits`.
+    func testZeroUnitCancellationAfterPumpWriteStillFlagged() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 55)   // sentToPump ⇒ true
+        l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
+
+    /// Fail-closed: an ambiguous (may-have-delivered) outcome DOES block a recompose.
+    func testIndeterminateOutcomeIsFlaggedAsRecentDuplicate() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 77)
+        l.markIndeterminate(peerId: "peerA", requestId: "req1", now: t0)
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
+
+    /// begin()'s own (peer,requestId) key semantics are UNCHANGED by this additive guard — a same-requestId
+    /// terminal still replays, and a same-requestId/different-content call still conflicts, even though the
+    /// recency guard ALSO flags the doseKey.
+    func testBeginKeySemanticsUnchangedAlongsideRecencyGuard() {
+        var l = RemoteBolusLedger()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
+        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        // Same (peer,requestId) → replay, exactly as before.
+        XCTAssertEqual(l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0)),
+                       .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        // Same requestId, different content → conflict, exactly as before.
+        XCTAssertEqual(l.begin(peerId: "peerA", requestId: "req1", doseKey: key(9.0)), .conflict)
+        // The recency guard itself still separately flags the original doseKey.
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+    }
 }
