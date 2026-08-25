@@ -88,6 +88,12 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         // foreign/legacy persisted entry replayed through here — can never durably blacklist a dose-input
         // read and brick the bolus calculator with no re-probe.
         guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
+        // CX-F-04: defense-in-depth mirror of the R2-10 guard above — never PERSIST an alert-read burst
+        // opcode (op72-76, incl. op74 `CGMAlertStatusRequest`). `PumpReadScheduler.insertBadOpcode` already
+        // refuses these before calling `persistBadOpcode`; this second choke point guarantees a future
+        // direct caller — or a foreign/legacy persisted entry replayed through here — can never durably
+        // blacklist the CGM-alert mirror and silence it with no re-probe.
+        guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {

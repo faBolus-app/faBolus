@@ -124,6 +124,8 @@ struct PumpBadOpcodeReprobeTests {
         let therapy = BolusCalcDataSnapshotRequest.props.opCode    // op115
         #expect(PumpReadCatalog.doseInputReadOpcodes == [iob, therapy],
                 "R2-10's dose-input allowlist must be untouched by the CX-F-04 alert-read allowlist")
+        #expect(PumpReadCatalog.alertReadOpcodes.isDisjoint(with: PumpReadCatalog.doseInputReadOpcodes),
+                "the two never-durably-blacklist allowlists must not overlap — distinct mechanisms, distinct opcodes")
     }
 
     @Test func aDoseInputReadOp77dThisConnectionStillSelfHealsAfterTheAlertReadOpcodesAddition() {

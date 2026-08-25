@@ -180,6 +180,13 @@ final class PumpReadScheduler {
         // (The in-memory session skip already backs off to one probe per connection cycle, so no
         // explicit per-opcode rejection counter is needed.)
         guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
+        // CX-F-04: mirror the R2-10 guard above for the alert-read burst (op72-76, incl. op74
+        // `CGMAlertStatusRequest`) — `alertRead()` sends all five back-to-back with no per-message
+        // throttling, so a transient op77 can be mis-correlated to ANY of them. A durable skip here would
+        // PERMANENTLY silence the phone-side CGM-alert mirror with no re-probe; hold it out of the durable
+        // store exactly like the dose-input allowlist. `startPolling`'s hydration union drops these from
+        // the carried-over set each connect, so a one-off op77 self-heals next connection/relaunch.
+        guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
         persistBadOpcode(opcode)
     }
 
@@ -713,6 +720,10 @@ final class PumpReadScheduler {
         // If the pump genuinely rejects it again, `insertBadOpcode` re-adds it in-memory for the rest of
         // THIS session (one send per connect — negligible), while `safetyDegradedNotes` discloses it.
         badOpcodes.subtract(PumpReadCatalog.doseInputReadOpcodes)
+        // CX-F-04: mirror the R2-10 re-probe above for the alert-read burst (op72-76) — never carried over
+        // as a durable skip across a reconnect, so a transient op77 on this connection can't permanently
+        // silence the CGM-alert mirror on the next one.
+        badOpcodes.subtract(PumpReadCatalog.alertReadOpcodes)
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()

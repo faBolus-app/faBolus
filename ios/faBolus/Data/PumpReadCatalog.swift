@@ -106,7 +106,14 @@ enum PumpReadCatalog {
     /// `PumpSnapshot.cartridgeLoadState` → the 09.9 `cartridgeReadyForBolus` cartridge pre-check, which —
     /// once op-20 is excluded — can no longer be confirmed (Guardrail B keeps it fail-closed/unknown, and
     /// this note discloses the degraded state instead of silently presenting confirmed-ready).
-    static let safetyRelevantReadOpcodes: Set<UInt8> = [LoadStatusRequest.props.opCode]
+    ///
+    /// CX-F-04: also op-74 `CGMAlertStatusRequest` — a currently-skipped read means the phone-side CGM-alert
+    /// mirror is degraded (relying on the pump's own on-device alerting) and that must be disclosed rather
+    /// than silently going quiet (CONTEXT.md "Q. CX-F-04").
+    static let safetyRelevantReadOpcodes: Set<UInt8> = [
+        LoadStatusRequest.props.opCode,
+        CGMAlertStatusRequest.props.opCode,
+    ]
 
     /// R2-10: the dose-input READ opcodes that feed the bolus calculator — op108 `ControlIQIOBRequest`
     /// (active insulin / IOB, delivered via its sole op109 response) and op115 `BolusCalcDataSnapshotRequest`
@@ -117,6 +124,27 @@ enum PumpReadCatalog {
     static let doseInputReadOpcodes: Set<UInt8> = [
         ControlIQIOBRequest.props.opCode,
         BolusCalcDataSnapshotRequest.props.opCode,
+    ]
+
+    /// CX-F-04: the CGM/pump-alert READ opcodes `PumpReadScheduler.alertRead()` sends as ONE unthrottled
+    /// 5-message burst — `AlertStatusRequest`, `AlarmStatusRequest`, `CGMAlertStatusRequest` (op74),
+    /// `ReminderStatusRequest`, `MalfunctionStatusRequest`. All five share the SAME transient-error exposure:
+    /// sent back-to-back with no per-message throttling, so a single transient `ErrorResponse` (e.g.
+    /// MESSAGE_BUFFER_FULL / CRC_MISMATCH / TRANSACTION_ID_MISMATCH — never `BAD_OPCODE`, which would break
+    /// the documented API-2.5 `UNDEFINED_ERROR(0)` pairing-loop fix) can be mis-correlated by
+    /// `resolveErrorResponse`'s txId-echo/FIFO backstop to ANY opcode still outstanding in this burst. Unlike
+    /// op20 (a pre-guard confirmation read), a durably-persisted skip here PERMANENTLY silences the
+    /// phone-side CGM-alert mirror with no re-probe (CONTEXT.md "Q. CX-F-04"; op74 is the confirmed
+    /// mechanism finding, widened to its burst-mates since they share the identical exposure). Held out of
+    /// the durable store (`insertBadOpcode` / `PumpBadOpcodeStore.record`), re-probed each connect
+    /// (`startPolling`), mirroring the `doseInputReadOpcodes` precedent exactly. op74 alone is additionally
+    /// in `safetyRelevantReadOpcodes` above (Task 2) so a current-session skip is disclosed.
+    static let alertReadOpcodes: Set<UInt8> = [
+        AlertStatusRequest.props.opCode,
+        AlarmStatusRequest.props.opCode,
+        CGMAlertStatusRequest.props.opCode,
+        ReminderStatusRequest.props.opCode,
+        MalfunctionStatusRequest.props.opCode,
     ]
 
     /// One user-facing safety-degraded note per excluded safety-relevant read (transparency 4b). Empty when
