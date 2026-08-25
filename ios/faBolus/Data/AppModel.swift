@@ -711,6 +711,10 @@ public final class AppModel {
         public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
+        /// CX-F-01: the surface `presentRemoteBolus` froze this approval FROM, carried through so
+        /// `confirmRemoteBolus` can re-evaluate `accessDecision`/supersession with the SAME surface at
+        /// confirm time (settings/host state can change during the phone-user's decision window).
+        public var surface: AccessPolicy.Surface = .phoneUI
         /// Addendum B: frozen provenance carried through freeze→approve→deliver so the Mac host-approval
         /// path preserves whether the dose used the host's acknowledged stale reading. Gates nothing.
         public var usedIncludedStaleBG: Bool = false
@@ -2797,7 +2801,7 @@ public final class AppModel {
                                                 carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
                                                 bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
                                                 remoteEstimate: remoteEstimate, requestedUnits: units,
-                                                createdAt: Date(), peerId: peerId,
+                                                createdAt: Date(), peerId: peerId, surface: surface,
                                                 usedIncludedStaleBG: resolved.usedIncludedStaleBG)
     }
 
@@ -2816,6 +2820,26 @@ public final class AppModel {
         pendingRemoteBolus = nil
         if Date().timeIntervalSince(pending.createdAt) > Self.remoteApprovalMaxAge {
             let msg = "Approval expired — ask the remote to send it again."
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return
+        }
+        // CX-F-01: re-check BOTH access and supersession at confirm time — settings or host state can
+        // change during the phone-user's decision window between `presentRemoteBolus` (freeze) and this
+        // confirm. Mirrors `remoteDeliver`'s own checks (~2902) exactly, using the SAME surface/peerId the
+        // approval was frozen with. Placed BEFORE `executeResolved`, the read-side counterpart of C3-01's
+        // write-side `lastHostDeliveryAt` stamp.
+        let decision = accessDecision(.deliverBolus, from: pending.surface, peerId: pending.peerId)
+        guard decision.allowed else {
+            let msg = decision.reason?.userMessage ?? "Not allowed"
+            echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
+            lastError = msg; notifyRemoteBolusRejected(msg)
+            return
+        }
+        if pending.surface.isRemote,
+           RemoteCommandFreshness.composeSupersededByHostDelivery(
+               sentAt: Int(pending.createdAt.timeIntervalSince1970), lastHostDeliveryAt: lastHostDeliveryAt) {
+            let msg = "A bolus was delivered after this request was created — reopen the remote and try again."
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
             lastError = msg; notifyRemoteBolusRejected(msg)
             return
