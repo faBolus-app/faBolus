@@ -797,9 +797,34 @@ struct RemotesSettingsView: View {
                 set: { settings.glucosePlotCeilingSmall = $0 })
     }
 
+    /// D1-10: one plain-language line summarizing the NET effect of the toggles below, purely computed
+    /// from their current values — no new persisted state, no change to what any toggle means or does.
+    /// Exists only to reduce the "which of these several switches decides whether Garmin can bolus?"
+    /// mental-model load the audit flagged; every toggle below is still shown, explicit, and independently
+    /// changeable exactly as before.
+    private var garminBolusStatusSummary: String {
+        if settings.remotesReadOnly { return "Garmin now: view only — it can't deliver a bolus." }
+        if !settings.garminBolusEnabled { return "Garmin now: bolusing is off." }
+        if let ceiling = settings.remoteBolusCeiling {
+            return "Garmin now: can deliver a bolus, up to \(fmtU(ceiling)) per dose."
+        }
+        return "Garmin now: can deliver a bolus."
+    }
+
     var body: some View {
         Form {
+            // D1-10 consolidation: the three "is Garmin allowed to bolus?" controls (read-only override,
+            // the enable, the optional per-dose ceiling) plus the optional passcode were previously split
+            // across TWO sections with the override listed LAST — reading order didn't match the actual
+            // precedence. Folded into ONE section, override listed FIRST (it wins over everything below
+            // it), with a plain-language status line up top. Every persisted key below (`remotesReadOnly`,
+            // `garminBolusEnabled`, `remoteBolusCeiling`, the Keychain-backed passcode) keeps its exact
+            // existing meaning, default, and binding — this is presentation/grouping/labeling only; the
+            // evaluator (`AccessPolicy.swift`) is untouched. See 17-09-SUMMARY.md's control map.
             Section {
+                Text(garminBolusStatusSummary)
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Toggle("Read-only (view only)", isOn: $settings.remotesReadOnly)
                 Toggle("Allow bolusing from Garmin", isOn: garminBolusBinding)
                 if settings.garminBolusEnabled {
                     Toggle("Limit remote bolus size", isOn: remoteCeilingOn)
@@ -808,15 +833,10 @@ struct RemotesSettingsView: View {
                             ForEach(AppSettings.remoteBolusCeilingOptions, id: \.self) { Text(fmtU($0)).tag($0) }
                         }
                     }
-                }
-                Toggle("Read-only (view only)", isOn: $settings.remotesReadOnly)
-            } header: { Text("Garmin bolusing") } footer: {
-                Text("**Bolusing from Garmin is off by default.** Turn on the switch above to let it deliver a bolus — you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Garmin bolus can be, on top of your pump's max bolus; the iPhone is never affected. **Read-only** overrides everything: while on, Garmin shows pump + CGM data only and can't deliver, whatever the switch above says. The iPhone is always unaffected — this is separate from the phone's own read-only mode. (faBolus no longer includes an Apple Watch app — see the note below.)")
-            }
-            // C2 §2.3: the OPTIONAL Garmin bolus passcode. Gates GARMIN delivery only (Apple Watch is exempt
-            // — wrist detection). Shown when Garmin bolusing is enabled; the code is verified on the phone.
-            if settings.garminBolusEnabled {
-                Section {
+                    // C2 §2.3: the OPTIONAL Garmin bolus passcode, folded into this ONE section (D1-10)
+                    // instead of a second overlapping section — same visibility gate
+                    // (`garminBolusEnabled`), same bindings, same Keychain-backed store; only the section
+                    // grouping changed.
                     if passcodeSet {
                         Label("A passcode is required to bolus from Garmin", systemImage: "lock.fill")
                             .foregroundStyle(.indigo)
@@ -829,9 +849,9 @@ struct RemotesSettingsView: View {
                             Label("Require a passcode to bolus from Garmin", systemImage: "lock")
                         }
                     }
-                } header: { Text("Garmin bolus passcode") } footer: {
-                    Text("Optional. When set, delivering a bolus from your Garmin watch asks for this **4-digit passcode instead of** the tap-to-confirm — a stronger check for a watch with no wrist detection. The code is verified on this phone (stored only as a salted hash); the watch never stores it. Wrong entries slow down with a soft lockout that resets itself — never a permanent lock. You can change or remove it here anytime. The Apple Watch doesn't use a passcode: its wrist detection already confirms you're wearing it.")
                 }
+            } header: { Text("Garmin bolusing") } footer: {
+                Text("**Read-only overrides everything below**: while on, Garmin shows pump + CGM data only and can't deliver, whatever the other switches say. **Bolusing from Garmin is off by default** — turn it on to let Garmin deliver; you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Garmin bolus can be, on top of your pump's max bolus. The optional **passcode** asks for a 4-digit code instead of tap-to-confirm — a stronger check for a watch with no wrist detection. The iPhone is always unaffected by any switch here — its own read-only mode is separate, under Safety. (faBolus no longer includes an Apple Watch app — see the note below.)")
             }
             #if GARMIN
             Section {
