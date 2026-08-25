@@ -107,10 +107,31 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// decoded title/detail through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name
     /// table doesn't yet carry (e.g. Control-IQ High Alert #50) still surface with clean, neutral,
     /// Tandem-sourced copy in the existing mirror — never overriding a name TandemKit already supplies.
-    private static func toAlert(_ n: PumpNotification) -> PumpAlert {
+    private static func toAlert(_ n: PumpNotification, aamCode: Int? = nil) -> PumpAlert {
         let copy = PumpAlertCopyOverlay.resolve(id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
+        // CC-10 (UI half): render the concrete AAM code + support guidance instead of a generic numbered
+        // item WHEN a cross-validated AAM code is present. `aamCode` is always `nil` today — no call site
+        // populates it — so this is a no-op in production; see `malfunctionDisplay`'s doc for the Phase-15
+        // dependency that will eventually supply a real value.
+        let display = Self.malfunctionDisplay(genericTitle: copy.title, genericDetail: copy.detail, aamCode: aamCode)
         return PumpAlert(id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
-                          title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
+                          title: display.title, detail: display.detail, isDismissable: n.dismissable)
+    }
+
+    /// CC-10 (UI half only): the malfunction-display readiness helper. Today the pump's malfunction
+    /// bitmap (`MalfunctionBitmaskStatusResponse`, opcode 119) has NO name table at all
+    /// (`TandemMessages/Notifications.swift`'s `names: [:]`), so every active malfunction renders as a bare
+    /// "Malfunction N" numbered item — not actionable for a support call. A genuine, Tandem-support-
+    /// recognized "AAM" (Active Alarm/Malfunction) code is a DIFFERENT identifier from that bitmap bit
+    /// index; reading the real one requires `HighestAamRequest`/`ActiveAamBitsRequest` (opcodes not yet
+    /// polled by this app) plus cross-validation against the malfunction bitmap — that read fan-in is
+    /// **Phase 15 scope**, not this plan. `aamCode` is therefore `nil` everywhere this plan calls it: this
+    /// function is display READINESS only (pure, unit-testable), inert in production until Phase 15 wires
+    /// a real value through `toAlert`.
+    static func malfunctionDisplay(genericTitle: String, genericDetail: String, aamCode: Int?) -> (title: String, detail: String) {
+        guard let aamCode else { return (genericTitle, genericDetail) }
+        return ("Pump malfunction — code \(aamCode)",
+                "Contact Tandem Support and reference code \(aamCode) to help resolve this issue.")
     }
 
     /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity
@@ -125,7 +146,11 @@ public final class TandemBackend: NSObject, PumpBackend {
             return (id == 2 || id == 26) ? .occlusion : .other        // Occlusion (delivery stopped)
         case .alert:
             if id == 0 || id == 17 { return .lowInsulin }              // Low insulin in the cartridge
-            if id == 40 || id == 48 { return .cgmDataLoss }            // CGM error / CGM unavailable
+            // CC-09: the full upstream loss-of-coverage taxonomy (pumpX2 AlertStatusResponse.java:107) —
+            // 40 (CGM error) / 41 / 42 / 48 (CGM unavailable) all mean the app has lost CGM coverage. IDs
+            // 41/42 previously fell through to `.other` (auto-snooze/dismiss-eligible), delaying CGM-loss
+            // awareness; classifying them here protects them before any user auto-rule runs.
+            if id == 40 || id == 41 || id == 42 || id == 48 { return .cgmDataLoss }
             return .other
         case .cgmAlert:
             switch id {
@@ -160,7 +185,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // elapsed, so a genuinely new occurrence shows (and re-notifies) again.
         acknowledged = acknowledged.filter { present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow }
         applyAutoRules(raw, now: now)
-        activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map(Self.toAlert)
+        activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map { Self.toAlert($0) }
     }
 
     /// Apply the user's conditional auto-rules (time-of-day / kind / glucose → auto-snooze or

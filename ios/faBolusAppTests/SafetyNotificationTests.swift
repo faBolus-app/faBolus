@@ -76,6 +76,10 @@ import TandemMessages
         // CGM loss reported on the ALERT bitmap.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss) // CGM unavailable
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss) // CGM error
+        // CC-09: the previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
+        // — these fell through to `.other` (auto-snooze/dismiss-eligible) before this fix.
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 41) == .cgmDataLoss)
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 42) == .cgmDataLoss)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)        // Max basal rate
         // CGM loss on the CGM bitmap (sensor failed/expired, out of range, failed connection, transmitter expired).
         for id in [11, 13, 14, 27, 39] {
@@ -86,6 +90,22 @@ import TandemMessages
         #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)     // Low glucose
         #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)    // Sensor expiring (data still flows)
         #expect(TandemBackend.safetyClass(kind: K.reminder, id: 0) == .other)
+    }
+
+    // MARK: CC-10 (UI half) — AAM-malfunction display readiness
+
+    /// CC-10: today (no AAM fields available — Phase 15's `HighestAamRequest`/`ActiveAamBitsRequest` read
+    /// fan-in isn't wired), the malfunction display stays exactly the generic numbered item the pump's own
+    /// unnamed malfunction bitmap already produces — a no-op, proving this plan changes zero production
+    /// behavior. WHEN a concrete, cross-validated AAM code is present, the display renders the concrete
+    /// code + support guidance instead — proving the readiness is real and unit-testable ahead of Phase 15.
+    @Test func malfunctionDisplayIsANoOpTodayButRendersAConcreteCodeWhenPresent() {
+        let noCode = TandemBackend.malfunctionDisplay(genericTitle: "Malfunction 5", genericDetail: "", aamCode: nil)
+        #expect(noCode.title == "Malfunction 5" && noCode.detail == "",
+               "with no AAM code (today's reality) the display must be unchanged from the generic numbered item")
+        let withCode = TandemBackend.malfunctionDisplay(genericTitle: "Malfunction 5", genericDetail: "", aamCode: 5)
+        #expect(withCode.title == "Pump malfunction — code 5")
+        #expect(withCode.detail.contains("5"), "the support-guidance detail must reference the concrete code")
     }
 
     // MARK: S7 — pump-disconnect escalation ladder wiring (integration)
