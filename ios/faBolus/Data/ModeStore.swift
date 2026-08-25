@@ -2,19 +2,24 @@ import Foundation
 import faBolusCore
 import Observation
 
-/// P14 Slice 3 — originally the mode state machine: the **earned ceiling**, the guided **sequential
-/// unlock**, and the **expert opt-out**, with all clamping IN the store (never the UI) — modeled on
-/// `RemotePeerPolicyStore.setPolicy`, which clamps a requested grant down rather than trusting the caller.
+/// P14 Slice 3 — originally the mode state machine (an earned ceiling + a guided sequential unlock + an
+/// expert opt-out). Phase 8 (08-01, LOCK-01), tightened by the CR-01 gap-closure (08-REVIEW.md): narrow
+/// `main` is advanced-only — `init` unconditionally forces `AppSettings.appMode` to `.advanced` on EVERY
+/// launch, first-run or returning, regardless of any "modeEarned" value a pre-Phase-8 build may have
+/// persisted. `ModeViews.swift` (the only UI that could ever select/raise a mode) is deleted, so there is
+/// no live UI path that can move `appMode` away from `.advanced`.
 ///
-/// `AppSettings.appMode` is the ACTIVE mode the single access evaluator reads (S2). This store is the sole
-/// sanctioned writer of it. Phase 8 (08-01, LOCK-01), tightened by the CR-01 gap-closure (08-REVIEW.md):
-/// narrow `main` is advanced-only — `init` unconditionally forces BOTH the earned ceiling AND the active
-/// mode to `.advanced` on EVERY launch, first-run or returning, regardless of any "modeEarned" value a
-/// pre-Phase-8 build may have persisted. `ModeViews.swift` (the only UI that could ever raise the ceiling)
-/// is deleted this phase, so there is no live UI path that can lower `appMode` below `.advanced` either —
-/// the guided-unlock methods below (`completeNextObjective`/`expertOptOutToAdvanced`/`select`/`returnTo`)
-/// stay compiled per 08-OWNER-FLAGS.md Flag 1 but are unreachable dead code, exercised only by tests that
-/// seed the returning-user path directly.
+/// 17-07 (D1-02): the guided-unlock machinery (`completeNextObjective`/`expertOptOutToAdvanced`/`select`/
+/// `returnTo`/`earnedMode`/the `"modeEarned"` UserDefaults key) that stayed compiled-but-unreachable per
+/// 08-OWNER-FLAGS.md Flag 1 is removed outright — it can never fire (no selection UI exists) and its
+/// clamp-to-ceiling logic has no live caller. `AppSettings.appMode` — the field the single access
+/// evaluator (`AccessPolicy`) reads — is untouched: this store remains its sole sanctioned writer and
+/// still forces `.advanced` on every launch.
+///
+/// What remains is the first-run onboarding-completion tracker: `hasCompletedOnboarding` (forced `true`
+/// — the Simple-mode first-run overlay is deleted, so there is nothing left to gate on it) and
+/// `hasCompletedPumpOnboarding` (Phase 09.4, D-01 — the still-live "Connect your pump" first-run step,
+/// gated in `RootContainerView`).
 ///
 /// §13: the Objectives COPY is experimental-distribution surface and needs clinical review before an
 /// `experimental` build is distributed. The mechanism here is copy-agnostic; the shipped strings are draft.
@@ -27,8 +32,6 @@ final class ModeStore {
     /// exactly once. Tests construct their own via the injectable `init(defaults:settings:)`.
     static let shared = ModeStore()
 
-    /// The highest mode the user has unlocked. The active mode is always clamped to this.
-    private(set) var earnedMode: AppMode
     /// Whether the first-run mode onboarding has been shown (so it appears exactly once).
     private(set) var hasCompletedOnboarding: Bool
     /// Phase 09.4 (D-01): whether the first-run "Connect your pump" step has been shown (so it appears
@@ -38,7 +41,6 @@ final class ModeStore {
 
     private let d: UserDefaults
     private let settings: AppSettings
-    private static let earnedKey = "modeEarned"
     private static let onboardedKey = "modeOnboarded"
     private static let pumpOnboardedKey = "pumpConnectOnboarded"
 
@@ -55,44 +57,19 @@ final class ModeStore {
         // touching that file's logic at all (Pitfall 3, RESEARCH option (a)).
         hasCompletedOnboarding = true
         hasCompletedPumpOnboarding = d.object(forKey: Self.pumpOnboardedKey) as? Bool ?? false
-        // CR-01 gap-closure (08-REVIEW.md), tightening Phase 8 (08-01, LOCK-01): force BOTH the earned
-        // ceiling AND the active mode to `.advanced` on EVERY launch — first-run OR returning — never
-        // reading (and so never clamping down to) whatever "modeEarned" a pre-Phase-8 build may have
-        // persisted. The prior returning-user branch only clamped the ACTIVE mode DOWN to that stale
-        // ceiling and otherwise left it in place; since `ModeViews.swift` (the only UI that could ever
-        // raise the ceiling back to Advanced) is deleted this phase, a device carrying a stale
-        // sub-.advanced value was PERMANENTLY stranded below Advanced with zero recovery UI — silently
-        // losing `GatedPumpWrite`-gated pump-control functionality. Narrow `main` is a single-adult
-        // advanced t:slim X2 device (D-02); still does NOT read `advancedControlEnabled` (no silent
-        // migration) — same posture as before.
-        earnedMode = .advanced
+        // CR-01 gap-closure (08-REVIEW.md), tightening Phase 8 (08-01, LOCK-01): force the active mode
+        // to `.advanced` on EVERY launch — first-run OR returning — never reading (and so never clamping
+        // down to) whatever "modeEarned" a pre-Phase-8 build may have persisted. `ModeViews.swift` (the
+        // only UI that could ever raise the mode back to Advanced) is deleted, so a device carrying a
+        // stale sub-.advanced value would otherwise be PERMANENTLY stranded below Advanced with zero
+        // recovery UI — silently losing `GatedPumpWrite`-gated pump-control functionality. Narrow `main`
+        // is a single-adult advanced t:slim X2 device (D-02); still does NOT read
+        // `advancedControlEnabled` (no silent migration) — same posture as before. 17-07 (D1-02): the
+        // earned-ceiling concept this used to clamp against (`earnedMode`, the `"modeEarned"` key) is
+        // removed — there is no public way to move `appMode` away from `.advanced` anymore, so nothing
+        // is left to clamp.
         settings.appMode = .advanced
-        d.set(AppMode.advanced.rawValue, forKey: Self.earnedKey)
     }
-
-    /// Select an active mode. **Clamped to the earned ceiling in the store** — the UI may offer a higher
-    /// mode, but the store refuses to activate one the user hasn't unlocked.
-    func select(_ mode: AppMode) {
-        settings.appMode = min(mode, earnedMode)
-    }
-
-    /// Advance the guided Objectives sequence by one tier (simple → standard → advanced) and activate it.
-    /// A no-op at the ceiling. This and the expert opt-out are the ONLY ways the earned ceiling rises.
-    func completeNextObjective() {
-        switch earnedMode {
-        case .simple:   raise(to: .standard)
-        case .standard: raise(to: .advanced)
-        case .advanced: break
-        }
-    }
-
-    /// Expert opt-out: jump straight to Advanced (the UI gates this behind an explicit warning). Not a
-    /// fourth mode — a fast path to the same `.advanced` earned tier.
-    func expertOptOutToAdvanced() { raise(to: .advanced) }
-
-    /// Lower the active mode without changing what's earned (a user choosing to simplify their UI). Never
-    /// raises — `select`'s clamp guarantees that.
-    func returnTo(_ mode: AppMode) { select(mode) }
 
     /// Mark the first-run onboarding shown.
     func completeOnboarding() {
@@ -106,13 +83,5 @@ final class ModeStore {
     func completePumpOnboarding() {
         hasCompletedPumpOnboarding = true
         d.set(true, forKey: Self.pumpOnboardedKey)
-    }
-
-    private func raise(to mode: AppMode) {
-        if mode > earnedMode {
-            earnedMode = mode
-            d.set(mode.rawValue, forKey: Self.earnedKey)
-        }
-        settings.appMode = mode   // activate the newly-earned mode
     }
 }
