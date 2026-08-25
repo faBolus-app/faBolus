@@ -252,6 +252,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     private weak var model: AppModel?
     private let center = UNUserNotificationCenter.current()
     private let runtime: NotificationRuntime
+    /// Phase 13-01 Task 2 (CX-F-03 depth): the durable persist-then-replay log for issued safety alerts.
+    private let safetyAlertStore: SafetyAlertStore
     /// Identity keys of pump alerts currently posted, so we don't re-evaluate an already-active alert on
     /// every refresh and can withdraw the ones that clear.
     private var postedPumpAlerts: Set<String> = []
@@ -259,9 +261,11 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// How long a "Snooze" action suppresses a category. A fixed default (no per-category setting UI yet).
     static let snoozeSeconds: TimeInterval = 2 * 60 * 60
 
-    init(model: AppModel, runtime: NotificationRuntime = NotificationRuntime()) {
+    init(model: AppModel, runtime: NotificationRuntime = NotificationRuntime(),
+         safetyAlertStore: SafetyAlertStore = SafetyAlertStore()) {
         self.model = model
         self.runtime = runtime
+        self.safetyAlertStore = safetyAlertStore
         super.init()
         center.delegate = self
         registerCategories()
@@ -298,6 +302,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
+        // CX-F-03 depth (T3-01/02): replay any still-unresolved safety alert persisted from a prior
+        // launch, AFTER the sink is wired + the pending-safety buffer flushed above, so a restoration
+        // launch reconstructs and re-submits every not-yet-resolved entry.
+        replayPersistedSafetyAlerts()
     }
 
     /// D-03: query the OS grant state via the modern async API and cache it for the honest-status UI
@@ -334,6 +342,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         guard !dedupeKeys.isEmpty else { return }
         center.removeDeliveredNotifications(withIdentifiers: dedupeKeys)
         center.removePendingNotificationRequests(withIdentifiers: dedupeKeys)
+        // CX-F-03 depth (codex MEDIUM): also prune the durable replay log, so a resolved condition can
+        // never replay on the next launch.
+        safetyAlertStore.remove(dedupeKeys: dedupeKeys)
     }
 
     /// 09.25 WR-01: withdraw every OS-outstanding (pending OR already-delivered) notification for
@@ -348,6 +359,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// enumerate ahead of time. Best-effort / fire-and-forget: this is a UI-adjacent cleanup, not part of
     /// the governed decide()/post() path, so a caller never awaits it.
     func withdrawAll(for category: NotificationBroker.Category) {
+        // CX-F-03 depth (codex MEDIUM): prune the durable replay log SYNCHRONOUSLY — the category-wide
+        // OS-outstanding query below is best-effort/async, but the durable store must never be left
+        // holding an entry the caller believes was just fully withdrawn.
+        safetyAlertStore.removeAll(for: category)
         Task { @MainActor [center] in
             let pending = await center.pendingNotificationRequests()
             let pendingIds = Self.identifiers(for: category, in: pending)
@@ -378,7 +393,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     @discardableResult
     func post(_ message: NotificationBroker.Message,
               userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
-              trigger: UNNotificationTrigger? = nil) -> NotificationBroker.Decision {
+              trigger: UNNotificationTrigger? = nil, deadline: Date? = nil) -> NotificationBroker.Decision {
         // Default a governed category to its registered id (which carries the SNOOZE action) unless the
         // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
@@ -386,6 +401,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // never-suppressible safety categories, and iOS ignores it unless the app holds the entitlement
         // (graceful degradation at the OS level — see the note in `init`).
         let allowCritical = AppSettings.shared.criticalAlertsEnabled
+        // CX-F-03 depth: a never-suppressible safety category is persisted (atomic-persist-before-post)
+        // through SafetyAlertPoster so it can be replayed on the next launch; every other category keeps
+        // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
+        // step) is meaningful only on this branch — ignored otherwise.
+        if message.category.neverSuppressible {
+            return SafetyAlertPoster.post(message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
+                                          categoryId: cat, trigger: trigger, deadline: deadline,
+                                          allowCritical: allowCritical, add: { [center] in center.add($0) })
+        }
         return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
                                        categoryId: cat, trigger: trigger, allowCritical: allowCritical,
                                        add: { [center] in center.add($0) })
@@ -399,11 +423,48 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// the governed path; distinct ids mean the broker never coalesces steps onto each other or onto the
     /// immediate T0 banner. Cancelled by `withdraw(_:)` on reconnect (the `.clear` edge in `AppModel`).
     private func scheduleDisconnectEscalation(_ steps: [DisconnectEscalation.Step]) {
+        let now = Date()
         for step in steps {
             let msg = NotificationBroker.Message(
                 category: .pumpDisconnect, severity: .error,
                 title: step.title, body: step.body, dedupeKey: step.id)
-            post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false))
+            // CX-F-03 depth: the persisted `deadline` is the absolute fire time (`now + afterSeconds`),
+            // so a replay on a later launch re-derives a strictly-positive interval relative to a FRESH
+            // `now`, rather than ever reusing this step's original (now stale) `afterSeconds` directly.
+            post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
+                 deadline: now.addingTimeInterval(step.afterSeconds))
+        }
+    }
+
+    // MARK: CX-F-03 depth — persisted safety-alert replay on launch
+
+    /// Pure decision: given a persisted entry's optional `deadline` and the current time, the trigger to
+    /// use when replaying it — `nil` (immediate post) for an inherently-immediate entry (`deadline ==
+    /// nil`, e.g. `.cgmDataLoss`/`.bolusReconciliation`, which have no escalation step) OR an OVERDUE
+    /// delayed entry (`deadline <= now`); a strictly-positive `UNTimeIntervalNotificationTrigger`
+    /// re-derived from `deadline - now` for a not-yet-due delayed step. NEVER returns a computed 0s
+    /// interval — `UNTimeIntervalNotificationTrigger(timeInterval: 0, …)` is an invalid trigger.
+    static func replayTrigger(deadline: Date?, now: Date) -> UNNotificationTrigger? {
+        guard let deadline, deadline > now else { return nil }
+        return UNTimeIntervalNotificationTrigger(timeInterval: deadline.timeIntervalSince(now), repeats: false)
+    }
+
+    /// AlertStore-style persist-then-replay (CX-F-03 depth, T3-01/02): reconstruct + re-submit every
+    /// still-unresolved safety-alert entry from `safetyAlertStore` at launch, so an alert issued before a
+    /// cold-restoration relaunch is guaranteed to reach the user rather than silently vanish. Loop
+    /// `playbackAlertsFromPersistence` / Trio `replayUnacknowledgedAlerts` pattern (reproduced, not
+    /// copied). Does NOT re-persist (each entry is already durable) — only reconstructs + re-submits the
+    /// OS request through the plain (non-recording) poster, so `issuedDate` is never clobbered by a replay.
+    private func replayPersistedSafetyAlerts(now: Date = Date()) {
+        let allowCritical = AppSettings.shared.criticalAlertsEnabled
+        for entry in safetyAlertStore.unresolvedEntries() {
+            let msg = NotificationBroker.Message(category: entry.category, severity: entry.severity,
+                                                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
+            let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
+            NotificationPoster.post(msg, runtime: runtime,
+                                    userInfo: entry.userInfo.mapValues { $0 as Any },
+                                    categoryId: entry.categoryIdentifier, trigger: trigger,
+                                    allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
         }
     }
 
