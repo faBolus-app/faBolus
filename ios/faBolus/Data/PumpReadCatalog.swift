@@ -127,24 +127,28 @@ enum PumpReadCatalog {
     ]
 
     /// CX-F-04: the CGM/pump-alert READ opcodes `PumpReadScheduler.alertRead()` sends as ONE unthrottled
-    /// 5-message burst — `AlertStatusRequest`, `AlarmStatusRequest`, `CGMAlertStatusRequest` (op74),
-    /// `ReminderStatusRequest`, `MalfunctionStatusRequest`. All five share the SAME transient-error exposure:
-    /// sent back-to-back with no per-message throttling, so a single transient `ErrorResponse` (e.g.
-    /// MESSAGE_BUFFER_FULL / CRC_MISMATCH / TRANSACTION_ID_MISMATCH — never `BAD_OPCODE`, which would break
-    /// the documented API-2.5 `UNDEFINED_ERROR(0)` pairing-loop fix) can be mis-correlated by
+    /// burst — `AlertStatusRequest`, `AlarmStatusRequest`, `CGMAlertStatusRequest` (op74),
+    /// `ReminderStatusRequest`, `MalfunctionStatusRequest`, and (CC-10, Phase 15 15-04)
+    /// `HighestAamRequest`/`ActiveAamBitsRequest` — 7 total. All seven share the SAME transient-error
+    /// exposure: sent back-to-back with no per-message throttling, so a single transient `ErrorResponse`
+    /// (e.g. MESSAGE_BUFFER_FULL / CRC_MISMATCH / TRANSACTION_ID_MISMATCH — never `BAD_OPCODE`, which would
+    /// break the documented API-2.5 `UNDEFINED_ERROR(0)` pairing-loop fix) can be mis-correlated by
     /// `resolveErrorResponse`'s txId-echo/FIFO backstop to ANY opcode still outstanding in this burst. Unlike
     /// op20 (a pre-guard confirmation read), a durably-persisted skip here PERMANENTLY silences the
-    /// phone-side CGM-alert mirror with no re-probe (CONTEXT.md "Q. CX-F-04"; op74 is the confirmed
-    /// mechanism finding, widened to its burst-mates since they share the identical exposure). Held out of
-    /// the durable store (`insertBadOpcode` / `PumpBadOpcodeStore.record`), re-probed each connect
-    /// (`startPolling`), mirroring the `doseInputReadOpcodes` precedent exactly. op74 alone is additionally
-    /// in `safetyRelevantReadOpcodes` above (Task 2) so a current-session skip is disclosed.
+    /// phone-side CGM-alert mirror (or the AAM read fan-in) with no re-probe (CONTEXT.md "Q. CX-F-04"; op74
+    /// is the confirmed mechanism finding, widened to its burst-mates since they share the identical
+    /// exposure — the 2 AAM requests joined the SAME burst in CC-10, so they inherit the identical risk).
+    /// Held out of the durable store (`insertBadOpcode` / `PumpBadOpcodeStore.record`), re-probed each
+    /// connect (`startPolling`), mirroring the `doseInputReadOpcodes` precedent exactly. op74 alone is
+    /// additionally in `safetyRelevantReadOpcodes` above (Task 2) so a current-session skip is disclosed.
     static let alertReadOpcodes: Set<UInt8> = [
         AlertStatusRequest.props.opCode,
         AlarmStatusRequest.props.opCode,
         CGMAlertStatusRequest.props.opCode,
         ReminderStatusRequest.props.opCode,
         MalfunctionStatusRequest.props.opCode,
+        HighestAamRequest.props.opCode,
+        ActiveAamBitsRequest.props.opCode,
     ]
 
     /// One user-facing safety-degraded note per excluded safety-relevant read (transparency 4b). Empty when

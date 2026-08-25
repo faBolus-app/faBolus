@@ -125,6 +125,12 @@ final class PumpResponseApplier {
     var setCGMAlertList: ([PumpNotification]) -> Void = { _ in }
     var setReminderList: ([PumpNotification]) -> Void = { _ in }
     var setMalfunctionList: ([PumpNotification]) -> Void = { _ in }
+    /// CC-10 (Phase 15 15-04): AAM read-fan-in closures, mirroring `setMalfunctionList`'s shape exactly.
+    /// Bound to `{ highestAam = ($0, $1) }` / `{ activeAamBits = ($0, $1) }` — NAMED replace-on-read state
+    /// read elsewhere via test-only accessors; deliberately NOT read by `mergeNotifications` (display +
+    /// cross-validation is Phase 13, not this plan).
+    var setHighestAam: (Int, Int) -> Void = { _, _ in }
+    var setActiveAamBits: (UInt64, UInt64) -> Void = { _, _ in }
     /// Bound to `TandemBackend.noteAlert(_:_:)`.
     var noteAlert: (String, UInt64) -> Void = { _, _ in }
     /// Bound to `TandemBackend.mergeNotifications()`.
@@ -364,6 +370,11 @@ final class PumpResponseApplier {
             setReminderList(m.notifications); noteAlert("r", m.bitmap); mergeNotifications()
         case let m as MalfunctionBitmaskStatusResponse:
             setMalfunctionList(m.notifications); noteAlert("m", m.bitmap); mergeNotifications()
+        case let m as HighestAamResponse:
+            // CC-10: read-side consumption only — never merged into notifications/snapshot (Phase 13).
+            setHighestAam(m.aamId, m.faultId)
+        case let m as ActiveAamBitsResponse:
+            setActiveAamBits(m.unacknowledgedBitmask, m.activeBitmask)
         // PX-08: BolusPermission / InitiateBolus / CurrentBolusStatus responses are consumed by the
         // transaction coordinator (awaited in `perform`), so they no longer need a delegate case here.
         // Workstream B: pump model + basal + Control-IQ status.

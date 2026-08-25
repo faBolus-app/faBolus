@@ -168,6 +168,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var alertList: [PumpNotification] = []
     private var cgmAlertList: [PumpNotification] = []
     private var reminderList: [PumpNotification] = []
+    // CC-10 (Phase 15 15-04, review-sharpened HIGH "AAM storage behavior is unspecified"): the active-
+    // alert-malfunction (AAM) read fan-in — NAMED replace-on-read state, mirroring `malfunctionList`'s
+    // shape exactly. Deliberately NOT folded into `mergeNotifications`/`activeNotifications`/`snapshot` —
+    // AAM display + malfunction cross-validation (NotificationBundle.java:184 fan-in) is Phase 13; this
+    // plan only lands the read + response consumption. `alarmList`/`malfunctionList`/etc. above are never
+    // explicitly reset on disconnect (only replaced on the next successful read, per `linkDroppedCleanup`) —
+    // AAM state mirrors that exact (lack of) reset behavior for parity with the pattern it copies.
+    private var highestAam: (aamId: Int, faultId: Int)?
+    private var activeAamBits: (unacknowledged: UInt64, active: UInt64)?
     // Locally-acknowledged (snoozed) alerts: key -> the time the user tapped Clear. Some pump
     // alerts are *condition-based* (e.g. a CGM "high glucose" while glucose is genuinely still
     // high): the signed dismiss is accepted, but the pump re-raises it on the next poll. To match
@@ -817,6 +826,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setCGMAlertList = { [weak self] list in self?.cgmAlertList = list }
         responseApplier.setReminderList = { [weak self] list in self?.reminderList = list }
         responseApplier.setMalfunctionList = { [weak self] list in self?.malfunctionList = list }
+        // CC-10: replace-on-read AAM fan-in state, mirroring `setMalfunctionList`'s wiring exactly (read
+        // side only — see the `highestAam`/`activeAamBits` declaration for why this stays out of
+        // mergeNotifications/snapshot).
+        responseApplier.setHighestAam = { [weak self] aamId, faultId in self?.highestAam = (aamId, faultId) }
+        responseApplier.setActiveAamBits = { [weak self] unacknowledged, active in
+            self?.activeAamBits = (unacknowledged, active)
+        }
         responseApplier.noteAlert = { [weak self] key, bmp in self?.noteAlert(key, bmp) }
         responseApplier.mergeNotifications = { [weak self] in self?.mergeNotifications() }
         responseApplier.setLastDismissAck = { [weak self] ack in self?.lastDismissAck = ack }
@@ -1016,6 +1032,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.glucose = mgdl
         snapshot.glucoseDate = date
     }
+
+    /// Test accessor (Phase 15 15-04, CC-10): the NAMED AAM read-fan-in state populated by
+    /// `HighestAamResponse`/`ActiveAamBitsResponse`, since both are `private` outside this file. Read-side
+    /// only — never wired to `snapshot`/`mergeNotifications` (display + cross-validation is Phase 13).
+    var highestAamForTesting: (aamId: Int, faultId: Int)? { highestAam }
+    var activeAamBitsForTesting: (unacknowledged: UInt64, active: UInt64)? { activeAamBits }
     #endif
 
     // MARK: - PumpDataSource

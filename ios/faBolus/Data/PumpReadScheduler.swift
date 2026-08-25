@@ -181,9 +181,10 @@ final class PumpReadScheduler {
         // explicit per-opcode rejection counter is needed.)
         guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
         // CX-F-04: mirror the R2-10 guard above for the alert-read burst (op72-76, incl. op74
-        // `CGMAlertStatusRequest`) — `alertRead()` sends all five back-to-back with no per-message
-        // throttling, so a transient op77 can be mis-correlated to ANY of them. A durable skip here would
-        // PERMANENTLY silence the phone-side CGM-alert mirror with no re-probe; hold it out of the durable
+        // `CGMAlertStatusRequest`, plus — CC-10, Phase 15 15-04 — the 2 AAM requests appended to the SAME
+        // burst) — `alertRead()` sends all 7 back-to-back with no per-message throttling, so a transient
+        // op77 can be mis-correlated to ANY of them. A durable skip here would PERMANENTLY silence the
+        // phone-side CGM-alert mirror (or the AAM read fan-in) with no re-probe; hold it out of the durable
         // store exactly like the dose-input allowlist. `startPolling`'s hydration union drops these from
         // the carried-over set each connect, so a one-off op77 self-heals next connection/relaunch.
         guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
@@ -586,9 +587,15 @@ final class PumpReadScheduler {
     /// `fastRead()`/`staticRead()` by `scheduleAlertRead()` below. Not `private`: also called directly
     /// by `TandemBackend.dismissNotification` (a 1.5s re-poll after a signed dismiss, outside the
     /// recurring cadence — that call site predates this move and stays unchanged).
+    /// CC-10 (Phase 15 15-04): appends `HighestAamRequest`/`ActiveAamBitsRequest` — the active-alert-
+    /// malfunction (AAM) fan-in the periodic alert burst never asked for. Both request types + their
+    /// responses already exist in the pinned TandemKit commit and are registered in `ResponseParser`; no
+    /// kit change, no minApi gating added here (that is Plan 15-01's C4-02 scope). Appended AFTER the
+    /// existing 5 — never reordered — so this tier grows 5→7 without disturbing dispatch order.
     func alertRead() {
         for r: Message in [AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(),
-                           ReminderStatusRequest(), MalfunctionStatusRequest()] {
+                           ReminderStatusRequest(), MalfunctionStatusRequest(),
+                           HighestAamRequest(), ActiveAamBitsRequest()] {
             sendStatusRead(r)
         }
     }

@@ -131,9 +131,10 @@ struct PumpPairingStaleTimerGuardTests {
         try? await Task.sleep(nanoseconds: 200_000_000)
         // Exactly cycle 2's own 16 (bootstrap trio + fastRead's 6 non-gated [op20 identity-gated, api25
         // static-registry hardening — deferred out of the pre-version burst] + staticRead, all synchronous) +
-        // 5 (its own legitimate alertRead) = 21. A missing/broken guard would add cycle 1's stale extra 5 → 26.
-        #expect(dispatched.count == 21,
-                "cycle 2's own 21 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (26)")
+        // 7 (its own legitimate alertRead — CC-10 grew this tier 5->7 with the 2 AAM requests) = 23. A
+        // missing/broken guard would add cycle 1's stale extra 7 → 30.
+        #expect(dispatched.count == 23,
+                "cycle 2's own 23 reads only — a missing guard would let cycle 1's stale alertRead add 7 more (30)")
         #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
                 "cycle 2's bootstrap trio must still be dispatched FIRST — a stale cycle-1 alertRead landing before cycle 2's own startPolling() runs would corrupt this order, exactly matching the AlertStatusRequest-before-ApiVersionRequest corruption observed in on-device capture #4")
     }
