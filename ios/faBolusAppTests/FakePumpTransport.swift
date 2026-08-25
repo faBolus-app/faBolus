@@ -334,4 +334,21 @@ final class FakePumpTransport: PumpTransport {
               cargo: Bytes.toUint64(unacknowledgedBitmask) + Bytes.toUint64(activeBitmask) + [0],
               signed: false)
     }
+
+    // MARK: - CC-08 (Phase 13 13-10): remote-dismiss ack fixtures
+
+    /// op-69 `AlertStatusResponse` (8-byte little-endian uint64 bitmap; bit N set = notification id N
+    /// active). Used to put a real, dismissable alert into `activeNotifications` for a remote-dismiss
+    /// ack test, without depending on any other tier's response.
+    static func alertStatusBitmap(_ bitmap: UInt64) -> [UInt8] {
+        frame(opCode: AlertStatusResponse.props.opCode, cargo: Bytes.toUint64(bitmap), signed: false)
+    }
+
+    /// op-185 `DismissNotificationResponse` ack (1 byte: status@0 — 0 = accepted, non-zero = rejected).
+    /// Signed (the real response is a signed CONTROL ack — see that type's own doc comment), so this
+    /// builds a VALID HMAC trailer under `signedResponseTestKey`, matching `permissionGranted`/
+    /// `initiateAccepted`'s own signed-response convention.
+    static func dismissNotificationAck(status: Int) -> [UInt8] {
+        frame(opCode: DismissNotificationResponse.props.opCode, cargo: [UInt8(truncatingIfNeeded: status)], signed: true)
+    }
 }
