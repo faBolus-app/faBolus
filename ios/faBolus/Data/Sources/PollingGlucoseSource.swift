@@ -117,14 +117,21 @@ class PollingGlucoseSource: GlucoseSource {
         guard let newest = readings.max(by: { $0.date < $1.date }) else {
             status = .stale; onChange?(); return
         }
-        latest = newest
+        // C2-02: monotonic-by-timestamp — a late/stale poll must never step `latest` backward in time.
+        // Only a STRICTLY newer timestamp replaces the currently-held reading; an older-or-equal
+        // timestamp is ignored for `latest` (history below still merges the full poll either way).
+        if latest == nil || newest.date > latest!.date {
+            latest = newest
+        }
         var byBucket: [Int: GlucoseReading] = [:]
         for r in history + readings.map(\.reading) {
             byBucket[Int(r.date.timeIntervalSince1970 / 300)] = r
         }
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
-        status = newest.isStale ? .stale : .connected
+        // Rule-1: status must describe the reading actually HELD as `latest`, not a just-rejected
+        // stale/late poll result — the monotonic guard above can now make these differ.
+        status = (latest?.isStale ?? true) ? .stale : .connected
         onChange?()
     }
 }
