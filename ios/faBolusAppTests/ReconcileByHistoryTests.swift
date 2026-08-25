@@ -1,0 +1,195 @@
+import Testing
+import Foundation
+import faBolusCore
+import TandemMessages
+import TandemBLE
+@testable import faBolus
+
+/// Phase 14 Plan 04 (CC-11): `reconcile(bolusId:)` and `reconcileIndeterminateDelivery()` now route
+/// through a shared bounded exact-id `findBolusInHistory(bolusId:)` primitive instead of giving up when
+/// the pump's LAST bolus is a NEWER id — closing the indefinite-lockout gap (T-14-12) while staying
+/// fail-closed on genuine exhaustion. Every scenario here drives the history seam through the REAL parse
+/// path (`injectHistoryLogFrameForTesting` — a real `HistoryLogStreamResponse` frame), never
+/// `MockBackend.reconcileResultsById` (which would only prove mocked behavior, per codex HIGH).
+@Suite(.serialized) @MainActor
+struct ReconcileByHistoryTests {
+
+    private func makeBackend() -> (TandemBackend, FakePumpTransport) {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        // Keep the negative/bounded-search tests fast and deterministic — no real multi-second waits.
+        backend.historySearchPageTimeoutOverride = 0.08
+        return (backend, fake)
+    }
+
+    /// `findBolusInHistory`'s status probe reaches the SAME passive dispatch the routine on-connect
+    /// gap-sync check does (any `HistoryLogStatusResponse` can trigger `beginGapSync` when a real
+    /// backfill isn't already active). Pre-covering the whole probed range neutralizes that side effect
+    /// so it can't start a COMPETING backfill mid-test (which would pollute `fake.sent`'s page count and
+    /// `AppSettings.shared.historyCoverage`) — mirrors `HistoryLogSyncTests`' `withCleanCoverage` idiom.
+    private func withNoCompetingBackfill(_ body: () async throws -> Void) async rethrows {
+        let saved = AppSettings.shared.historyCoverage
+        defer { AppSettings.shared.historyCoverage = saved }
+        AppSettings.shared.historyCoverage = HistoryCoverageMap(ranges: [1...1_000_000])
+        try await body()
+    }
+
+    private func scriptLastBolus(_ fake: FakePumpTransport, bolusId: Int, deliveredMilliunits: UInt32 = 2000) {
+        fake.script(LastBolusStatusV2Response.props.opCode,
+                   .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
+    }
+    private func scriptHistoryStatus(_ fake: FakePumpTransport, numEntries: UInt32, first: UInt32, last: UInt32) {
+        fake.script(HistoryLogStatusResponse.props.opCode,
+                   .frame(FakePumpTransport.historyLogStatus(numEntries: numEntries, firstSequenceNum: first, lastSequenceNum: last)))
+    }
+
+    // MARK: - reconcile(bolusId:) — newer-intervening-bolus resolved by exact-id history search
+
+    /// Unresolved bolusId B; the pump's LAST bolus is a NEWER id C != B — the fast path misses. A
+    /// `HistoryLogStreamResponse` frame carrying a type-20 `BolusCompletedHistoryLog`-shaped record for B
+    /// (via the restored `BolusHistoryRecord.bolusId`, Phase 14 14-04 TandemKit change) is injected on the
+    /// REAL parse path → `reconcile(B)` must resolve by finding B in history by EXACT id, clearing the
+    /// hold — never `.unavailable`-forever just because a newer bolus intervened.
+    @Test func newerInterveningBolusResolvesByExactIdHistorySearch() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 500, newerId = 900
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
+                (seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5, completionStatusId: 3)
+            ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 1.5, cancelled: false))
+        }
+    }
+
+    /// A 0U/partial completed record for the target id must still resolve the hold (the restored
+    /// accept-0U decode, Phase 14 14-04 TandemKit change) — a cancelled-before-any-insulin bolus is a
+    /// real, known outcome, not an unresolvable one.
+    @Test func zeroUnitHistoryRecordStillResolves() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 501, newerId = 901
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
+                (seq: 994, pumpTimeSec: 900_100, bolusId: unresolvedId, delivered: 0, iob: 0.1, completionStatusId: 5)
+            ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 0, cancelled: false))
+        }
+    }
+
+    /// NEGATIVE PATH: no history record for B ever lands (bounded search exhausted) → `reconcile(B)`
+    /// must still return `.unavailable` — the block persists, fail-closed (no blind retry, no
+    /// assume-not-delivered).
+    @Test func exhaustedSearchWithNoMatchStaysUnavailable() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 502, newerId = 902
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 500, first: 1, last: 500)
+            // No injectHistoryLogFrameForTesting call — the bounded search finds nothing.
+            let result = await backend.reconcile(bolusId: unresolvedId)
+            #expect(result == .unavailable)
+        }
+    }
+
+    /// BOUNDED: the search must halt at the page cap, never walk the whole available range unbounded.
+    /// A 500 000-entry range at 255 records/page would need ~1961 pages to walk in full; the search must
+    /// stop at its own small page cap regardless.
+    @Test func searchHaltsAtThePageCapNeverWalksUnbounded() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 503, newerId = 903
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 500_000, first: 1, last: 500_000)
+            let result = await backend.reconcile(bolusId: unresolvedId)
+            #expect(result == .unavailable)
+            let pageCount = fake.sent.filter { $0.opCode == HistoryLogRequest.props.opCode }.count
+            #expect(pageCount <= 4, "the exact-id search must stop at its own small page cap (got \(pageCount) page requests)")
+            #expect(pageCount > 0, "the search must have actually tried at least one page before giving up")
+        }
+    }
+
+    /// The existing `lastBolusStatus` fast path (the pump's LAST bolus record matches exactly) still
+    /// resolves as before, with NO history request issued at all — unchanged fast path (Addresses codex
+    /// MEDIUM: the fast path must not regress when the history fallback is added).
+    @Test func matchingLastBolusStillResolvesViaFastPathNoHistoryRequest() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let bolusId = 504
+            scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 3250)
+            let result = await backend.reconcile(bolusId: bolusId)
+            #expect(result == .resolved(deliveredUnits: 3.25, cancelled: false))
+            #expect(!fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
+                    "the unchanged fast path must never fall through to a history request")
+            #expect(!fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                    "the unchanged fast path must never even probe the history range")
+        }
+    }
+
+    // MARK: - reconcileIndeterminateDelivery() — the SAME shared primitive, invoked on reconnect
+
+    /// A dropped initiate response leaves the delivery INDETERMINATE (the real `perform` flow — round-3
+    /// §4 shape, mirrors `TandemDeliveryOutcomeTests.droppedInitiateResponseIsIndeterminate`), pinning
+    /// the pump-assigned id as `unknownOutcomeBolusId`. A LATER `lastBolusStatus` reporting a NEWER id
+    /// (some other client's bolus intervened) must no longer lock `reconcileIndeterminateDelivery()` out
+    /// forever — it must resolve via the SAME shared exact-id history search `reconcile(bolusId:)` uses.
+    @Test func reconcileIndeterminateDeliveryResolvesTheSameNewerInterveningCaseViaSharedPrimitive() async {
+        await withNoCompetingBackfill {
+            let fake = FakePumpTransport()
+            let backend = TandemBackend(testTransport: fake)
+            backend.historySearchPageTimeoutOverride = 0.08
+            let assignedId = 1234
+            fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
+            fake.script(InitiateBolusResponse.props.opCode, .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
+            _ = try? await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            #expect(backend.deliveryOutcomeUnknown)   // precondition: genuinely indeterminate
+
+            let newerId = 9999
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 2000, first: 1, last: 2000)
+
+            let task = Task { await backend.reconcileIndeterminateDelivery() }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
+                (seq: 1990, pumpTimeSec: 900_500, bolusId: assignedId, delivered: 2.0, iob: 1.0, completionStatusId: 3)
+            ]))
+            let delivered = await task.value
+            #expect(delivered == 2.0)
+            #expect(!backend.deliveryOutcomeUnknown, "the hold must clear once the history search resolves the id")
+        }
+    }
+
+    /// NEGATIVE PATH mirror for `reconcileIndeterminateDelivery()`: an exhausted search with no match
+    /// must leave the block HELD (return nil), never clearing `deliveryOutcomeUnknown` on a guess.
+    @Test func reconcileIndeterminateDeliveryStaysBlockedWhenSearchExhausted() async {
+        await withNoCompetingBackfill {
+            let fake = FakePumpTransport()
+            let backend = TandemBackend(testTransport: fake)
+            backend.historySearchPageTimeoutOverride = 0.08
+            let assignedId = 1235
+            fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
+            fake.script(InitiateBolusResponse.props.opCode, .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
+            _ = try? await backend.deliverBolus(units: 1.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            #expect(backend.deliveryOutcomeUnknown)
+
+            scriptLastBolus(fake, bolusId: 9998)
+            scriptHistoryStatus(fake, numEntries: 500, first: 1, last: 500)
+            // No matching frame injected.
+            let delivered = await backend.reconcileIndeterminateDelivery()
+            #expect(delivered == nil)
+            #expect(backend.deliveryOutcomeUnknown, "an exhausted search must NEVER clear the hold on a guess")
+        }
+    }
+}
