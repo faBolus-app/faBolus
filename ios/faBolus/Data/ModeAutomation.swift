@@ -33,7 +33,7 @@ enum ModeAutomation {
 
     /// Entry point for the intents. Applies immediately when a Mobi is connected + mode-capable;
     /// otherwise queues the request and (if reminders are on) notifies the user. Returns a
-    /// human-readable result string for the intent's spoken/te​xt dialog.
+    /// human-readable result string for the intent's spoken/text dialog.
     ///
     /// Injectable seams (all default to production): `model` (the live `AppModel.shared`), `now` (the
     /// clock, for the S3 manual-precedence window), and `post` (the broker poster). Production callers
