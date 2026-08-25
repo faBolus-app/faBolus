@@ -93,6 +93,40 @@ struct PumpBackgroundDisconnectNotificationTests {
                 "the full escalation family is scheduled at exhaustion")
     }
 
+    /// C1-03/C1-04 (Phase 13, plan 08): a terminal `.error` reached DIRECTLY from `.connecting` — not only
+    /// via the `.reconnectExhausted` label — must still alarm exactly once with the full escalation family.
+    /// This is the SAME `SafetyEdge.connection` mechanism `exhaustionAfterDropRaisesExactlyOnceWithEscalation`
+    /// pins for the `.reconnectExhausted`-labeled path (C1-03, already wired pre-dating this plan); this case
+    /// generalizes it to any caller that sets `.error` directly from `.connecting` (e.g.
+    /// `handleResumeFailure()`'s exhausted branch), proving the mechanism is edge-value-driven
+    /// (`prev`/`now`), not tied to one specific state label or call site (C1-04).
+    @Test func terminalErrorReachedDirectlyFromConnectingStillAlarmsOnce() {
+        let b = backend()
+        let model = AppModel(source: b, ledgerStoreURL: tempLedgerURL())
+        var posted: [NotificationBroker.Message] = []
+        var scheduled: [DisconnectEscalation.Step] = []
+        model.notificationSink = { msg, _, _ in posted.append(msg) }
+        model.notificationScheduleSink = { scheduled = $0 }
+
+        b.setConnectionForTesting(.connected); b.onChange?()
+        b.applyClientError(DropErr()); b.onChange?()
+        b.applyClientState(.connecting); b.onChange?()
+        #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty, "silent through the reconnect window")
+
+        // Reached .error DIRECTLY from .connecting — no .reconnectExhausted label in between. Uses the
+        // same test seam (`setConnectionForTesting` + `onChange?()`) as the rest of this file, mirroring
+        // exactly what `handleResumeFailure()`'s exhausted branch does in production: it assigns
+        // `snapshot.connection = .error` directly (there is no `PumpBLEClient.State.error` — that kit-level
+        // enum has no such case; `.error` only ever exists at the app-level `PumpConnectionState`).
+        b.setConnectionForTesting(.error); b.onChange?()
+
+        #expect(b.snapshot.connection == .error)
+        #expect(posted.filter { $0.category == .pumpDisconnect }.count == 1,
+                "a terminal .error reached directly from .connecting must alarm exactly once (C1-04)")
+        #expect(scheduled.map(\.id) == DisconnectEscalation.stepIds,
+                "the full escalation family is scheduled on this edge too")
+    }
+
     /// CRITERION 2 (state churn): a bare read/notify error while the link is still `.ready` (the H2 read
     /// path — `didUpdateValueFor`/`didUpdateNotificationStateFor` fire `didError` with NO state change) must
     /// not cascade into a spurious disconnect banner. There is no keep-alive poll anymore, but ANY transient
