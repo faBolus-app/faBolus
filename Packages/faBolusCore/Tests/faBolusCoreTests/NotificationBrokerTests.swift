@@ -75,7 +75,12 @@ import Foundation
             let d = B.decide(msg(c), settings: settings, state: state,
                              budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
             #expect(d.deliver, "\(c.rawValue) must always deliver when the ack flag is unset")
-            #expect(d.nextState.deliveredToday == 1000, "\(c.rawValue) must still be recorded")
+            // C6-01 (T-13-14): a never-suppressible delivery is budget-EXEMPT — "still recorded" now means
+            // `lastDeliveredAt`/`notifiedEpisodes` advance, NOT the budget counter (which must stay
+            // untouched so a flapping safety category can never exhaust the budget that gates a genuine
+            // `bolusDeliveryFailed`).
+            #expect(d.nextState.deliveredToday == 999, "\(c.rawValue) is budget-exempt (C6-01) — the daily counter must not move")
+            #expect(d.nextState.lastDeliveredAt[c.rawValue] == at(3, 0), "\(c.rawValue) must still be recorded via lastDeliveredAt")
         }
         // A governed category in the SAME config is suppressed (proves the config really is hostile).
         let g = B.decide(msg(.pumpAlert), settings: settings, state: state,
@@ -294,6 +299,83 @@ import Foundation
         let decoded = try JSONDecoder().decode(B.CategorySettings.self, from: preFieldJSON)
         #expect(decoded.userAcknowledgedSafetyDisable == nil, "a pre-field blob must decode with the ack flag nil, not fail")
         #expect(decoded.enabled == true)
+    }
+
+    // MARK: - 13-06 Task 1 (C6-01 / CC-12 / CX-F-08): budget exemption + typed urgency (RED->GREEN)
+
+    /// Behavior Test 1 (exempt): recording a never-suppressible OR `.error`-severity delivery does NOT
+    /// increment `deliveredToday` — a flapping disconnect posting repeated `.error` escalation steps must
+    /// never be able to exhaust the budget that gates a genuine `bolusDeliveryFailed`.
+    @Test func neverSuppressibleOrErrorSeverityDeliveryIsBudgetExempt() {
+        let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        // A never-suppressible trio category, plain severity.
+        let trio = B.decide(msg(.pumpDisconnect), settings: [:], state: state, now: at(9, 0), calendar: cal)
+        #expect(trio.deliver && trio.nextState.deliveredToday == 0,
+               "a never-suppressible delivery must not increment deliveredToday")
+        // A GOVERNED category at `.error` severity (mirrors a disconnect-escalation-style message that
+        // happened to be governed) is ALSO exempt — the exemption keys on severity, not only category.
+        let errGoverned = B.Message(category: .pumpAlert, severity: .error, title: "t", body: "b", dedupeKey: "e1")
+        let errDecision = B.decide(errGoverned, settings: enabled(.pumpAlert), state: trio.nextState, now: at(9, 1), calendar: cal)
+        #expect(errDecision.deliver && errDecision.nextState.deliveredToday == 0,
+               "an `.error`-severity delivery must not increment deliveredToday even on a governed category")
+    }
+
+    /// Behavior Test 2 (no undercount, codex MEDIUM): interleaving several budget-exempt safety deliveries
+    /// with ONE genuinely-counted ordinary delivery never lets the exempt deliveries perturb the counter —
+    /// proving there is no generic per-dedupeKey "withdraw refund" that could undercount (no such refund
+    /// exists in `NotificationBroker` at all: since safety/`.error` deliveries never consumed a slot in the
+    /// first place, `withdraw`-ing one — an app-layer, OS-request-removal operation with no counterpart
+    /// here — has nothing to refund).
+    @Test func budgetExemptDeliveriesNeverUndercountGenuinelyCountedOrdinaryOnes() {
+        var state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        for i in 0..<5 {
+            let d = B.decide(B.Message(category: .pumpDisconnect, severity: .error, title: "t", body: "b",
+                                       dedupeKey: "esc-\(i)"),
+                             settings: [:], state: state, now: at(9, 0), calendar: cal)
+            #expect(d.deliver)
+            state = d.nextState
+        }
+        #expect(state.deliveredToday == 0, "five budget-exempt safety deliveries must not touch deliveredToday")
+        let ordinary = B.decide(msg(.pumpAlert), settings: enabled(.pumpAlert), state: state, now: at(9, 1), calendar: cal)
+        #expect(ordinary.deliver)
+        #expect(ordinary.nextState.deliveredToday == 1,
+               "exactly the one genuinely-counted ordinary delivery — the exempt deliveries neither consumed nor refunded a slot")
+    }
+
+    /// Behavior Test 3 (budget still applies to non-safety): an ordinary suppressible delivery still
+    /// increments the counter and can still be budget-limited — the exemption above must not have
+    /// accidentally widened to cover governed, non-`.error`, non-safety messages.
+    @Test func ordinarySuppressibleDeliveryStillIncrementsAndIsBudgetLimited() {
+        let budget = B.Budget(dailyTotal: 1)
+        let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        let first = B.decide(msg(.pumpAlert, key: "a"), settings: enabled(.pumpAlert), state: state,
+                             budget: budget, now: at(9, 0), calendar: cal)
+        #expect(first.deliver && first.nextState.deliveredToday == 1)
+        let second = B.decide(msg(.pumpAlert, key: "b"), settings: enabled(.pumpAlert), state: first.nextState,
+                              budget: budget, now: at(9, 1), calendar: cal)
+        #expect(!second.deliver && second.reason == .dailyBudgetReached)
+    }
+
+    /// Behavior Test 4 (severity→urgency, typed, codex MEDIUM): `requiresBreakthrough` reads a TYPED
+    /// `safetyClass` field on `Message` — never untyped `userInfo` (the Message doesn't carry one, so this
+    /// is asserted simply by constructing every `Message` below without any userInfo-shaped parameter). A
+    /// pump ALARM (`.critical` severity) and a protected alert ID (a force-protected `safetyClass`, even at
+    /// plain `.warning` severity — CX-F-08's "urgent fixed-low") both require breakthrough regardless of
+    /// `.pumpAlert.neverSuppressible == false`; an ordinary warning does not.
+    @Test func requiresBreakthroughReadsTypedSafetyFieldNotUserInfo() {
+        let alarm = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "a")
+        #expect(B.requiresBreakthrough(alarm), "a pump ALARM (.critical severity) must require breakthrough")
+
+        let protectedWarning = B.Message(category: .pumpAlert, severity: .warning, title: "Fixed low", body: "b",
+                                         dedupeKey: "b", safetyClass: .cgmDataLoss)
+        #expect(B.requiresBreakthrough(protectedWarning),
+               "a protected alert ID (typed safetyClass), even at plain .warning severity, must require breakthrough")
+
+        let ordinary = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "c")
+        #expect(!B.requiresBreakthrough(ordinary), "an ordinary warning with no safety marker must not require breakthrough")
+
+        let trio = B.Message(category: .pumpDisconnect, severity: .warning, title: "t", body: "b", dedupeKey: "d")
+        #expect(B.requiresBreakthrough(trio), "the never-suppressible trio always requires breakthrough")
     }
 
     /// 09.25-01 (D-03/D-07): focused decide() coverage — for every trio category, suppression requires
