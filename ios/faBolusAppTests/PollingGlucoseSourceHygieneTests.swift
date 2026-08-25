@@ -51,4 +51,43 @@ struct PollingGlucoseSourceHygieneTests {
         #expect(source.latest?.date == now)
         #expect(source.latest?.mgdl == 100)
     }
+
+    // MARK: - C2-05: sub-40 vendor reading -> SEPARATE urgent-low sentinel, never a GlucoseSample
+
+    /// A below-measurable-range (sub-40) vendor reading at the ingest boundary must be surfaced via a
+    /// SEPARATE typed sentinel — but the D-05 gate (`GlucoseSample.init?`) still rejects it exactly as
+    /// before, so it never becomes `latest`, and feeding it through the REAL `GlucoseArbiter.merge`
+    /// leaves `PumpSnapshot.glucose` untouched (T-13-07b: never a dose-input leak on the frozen path).
+    @Test func subFortyReadingProducesSentinelAndNeverBecomesLatestOrPumpSnapshotGlucose() {
+        let source = PollingGlucoseSource(id: "test", priority: 0)
+        let now = Date()
+        source.ingestRawReading(mgdl: 32, date: now)
+
+        // The D-05 gate itself is untouched — a sub-40 value still fails GlucoseSample.init?.
+        #expect(GlucoseSample(mgdl: 32, date: now, sourceID: "test") == nil)
+        // It never becomes `latest` — never a dose-eligible numeric sample.
+        #expect(source.latest == nil)
+        // It IS surfaced separately, for a future display/alert layer.
+        #expect(source.urgentLowSentinel?.date == now)
+        #expect(source.urgentLowSentinel?.sourceID == "test")
+
+        // Isolation proof through the REAL arbiter: with no numeric `latest`, merge must publish the
+        // pump's OWN unrelated snapshot unchanged — the sentinel can never become `PumpSnapshot.glucose`.
+        var pumpSnapshot = PumpSnapshot()
+        pumpSnapshot.glucose = 150
+        pumpSnapshot.glucoseDate = now
+        let (merged, _, provenance) = GlucoseArbiter.merge(pumpSnapshot: pumpSnapshot, pumpHistory: [], source: source)
+        #expect(merged.glucose == 150, "a sub-40 sentinel must never become PumpSnapshot.glucose")
+        #expect(provenance == .pump)
+    }
+
+    /// Above-400 handling is UNCHANGED by this fix — only a below-range reading is a genuine dropped-
+    /// hypo safety signal worth surfacing; an above-range (decode-garbage) reading still just silently
+    /// fails the gate with no sentinel.
+    @Test func aboveFourHundredReadingProducesNoSentinel() {
+        let source = PollingGlucoseSource(id: "test", priority: 0)
+        source.ingestRawReading(mgdl: 500, date: Date())
+        #expect(source.urgentLowSentinel == nil, "above-400 handling is unchanged — no urgent-low sentinel")
+        #expect(source.latest == nil)
+    }
 }
