@@ -188,6 +188,15 @@ struct BandDriftGuardTests {
     /// covering it automatically; until then, this test proves they aren't silently exempted by a
     /// scan bug rather than by design (each of these declarations genuinely contains zero sanctioned
     /// entry points today).
+    ///
+    /// **Phase 17 (D2-03) update:** this pin's scope is unchanged and still correct — `tirBar` still
+    /// contains zero `bandClassificationEntryPoints` triggers even after being routed through
+    /// `AppTheme.veryLow/.low/.inRange/.high/.veryHigh`. What changed is that the raw-literal ban now
+    /// ALSO applies to `tirBar` directly, via the new `noRawBandColorInStatsCardViewTirBar` test below
+    /// (a second, independent scan keyed off `tirBar`'s signature rather than a classify-entry-point
+    /// trigger) — so `tirBar` is simultaneously out of THIS pin's forward-scan trigger scope and inside
+    /// the raw-literal ban's coverage, closing the gap D2-03 found without touching this pin's own
+    /// boundary claim.
     @Test func agpBarAndChartScatterPointsContainNoDirectClassifyEntryPoint() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")

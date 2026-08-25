@@ -1,5 +1,6 @@
 import SwiftUI
 import faBolusCore
+import faBolusDesign
 
 /// Opt-in statistics card (Settings → Display → "Show statistics card"). Summarizes the in-memory
 /// ~24 h glucose history: Time-in-Range, the AGP band breakdown, GMI, average, and variability (CV).
@@ -57,19 +58,25 @@ struct StatsCardView: View {
     }
 
     /// Stacked AGP band bar: very-low / low / in-range / high / very-high.
+    ///
+    /// Phase 17 (D2-03): routed through `faBolusDesign.AppTheme`'s band tokens instead of raw `Color`
+    /// literals — `AppTheme.veryLow`/`.veryHigh` are the two NET-NEW severe-band tokens this phase added
+    /// specifically for this bar (WCAG-audited by `AppThemeContrastAuditTests`); `.low`/`.inRange`/`.high`
+    /// are the pre-existing §13-locked tokens. Pinned raw-literal-free by
+    /// `BandDriftGuardTests.noRawBandColorInStatsCardViewTirBar`.
     @ViewBuilder private func tirBar(_ s: GlucoseStatistics) -> some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                band(s.veryLowPct, .red, geo)
-                band(s.lowPct, .orange, geo)
-                band(s.inRangePct, .green, geo)
-                band(s.highPct, .yellow, geo)
-                band(s.veryHighPct, Color.yellow.opacity(0.6), geo)
+                band(s.veryLowPct, AppTheme.veryLow, geo)
+                band(s.lowPct, AppTheme.low, geo)
+                band(s.inRangePct, AppTheme.inRange, geo)
+                band(s.highPct, AppTheme.high, geo)
+                band(s.veryHighPct, AppTheme.veryHigh, geo)
             }
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .frame(height: 16)
-        .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), low \(pct(s.veryLowPct + s.lowPct)), high \(pct(s.highPct + s.veryHighPct))")
+        .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.veryLowPct + s.lowPct)), high \(pct(s.highPct + s.veryHighPct))")
     }
 
     private func band(_ pctVal: Double, _ color: Color, _ geo: GeometryProxy) -> some View {
