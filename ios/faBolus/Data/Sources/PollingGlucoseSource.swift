@@ -111,7 +111,9 @@ class PollingGlucoseSource: GlucoseSource {
     /// provider isn't configured.
     func poll() async throws -> [GlucoseSample] { [] }
 
-    private func ingest(_ readings: [GlucoseSample]) {
+    /// Not `private` (matches `poll()`/`recordPollOutcome`/`effectiveInterval`'s existing testability
+    /// pattern) so app-target hygiene tests can feed readings directly without a live poll loop.
+    func ingest(_ readings: [GlucoseSample]) {
         guard let newest = readings.max(by: { $0.date < $1.date }) else {
             status = .stale; onChange?(); return
         }
