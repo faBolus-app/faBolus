@@ -42,6 +42,16 @@ struct ConnectPumpOnboardingView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
 
+                    // D1-04: the owner-signed-off (2026-08-09) experimental/not-FDA-cleared framing,
+                    // reused verbatim from RegulatoryCopy — never redrafted here (17-PATTERNS.md
+                    // "Existing-signed-off copy reuse over new copy"). RegulatoryCopyTests already pins
+                    // its required-keyword content.
+                    Text(RegulatoryCopy.firstRun)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+
                     Button {
                         showPairing = true
                     } label: {
