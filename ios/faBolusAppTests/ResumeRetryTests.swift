@@ -148,7 +148,104 @@ struct ResumeRetryTests {
         #expect(b.snapshot.connectionDetail?.contains("Forget Pairing") != true, "the fresh path must not show the resume-recovery copy")
     }
 
-    /// 4 — `forgetPairing()` (R2-06) remains the ONLY thing that wipes `PairingStore`. Together with tests 1
+    /// C1-01 (owner-adopted 2026-08-25) — a unique durable-ledger URL so `AppModel` instances in these
+    /// tests don't share the App Group ledger with other serialized suites. Mirrors
+    /// `SafetyNotificationTests.tempLedgerURL()`.
+    private func tempLedgerURL() -> URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("resume-retry-ledger-\(UUID().uuidString).json")
+    }
+
+    /// 5 — C1-01 (Test 1 of the plan's 3): a transient resume-failure within the retry budget calls the
+    /// RE-ESTABLISH path (`connectKnownPeripheral`), never `disconnect()` — the fix for the bug where
+    /// `disconnect()` sets `intentionalDisconnect = true` and kills the kit's reconnect ladder, so the link
+    /// never comes back in the background. `client` is a real, unconnected `PumpBLEClient` with no fake
+    /// double for BLE calls (unlike `tx`), so this asserts via the dedicated `resumeRetryActionForTesting`
+    /// intent-recording seam rather than depending on the real `CBCentralManager`'s (nondeterministic in a
+    /// test host) power state.
+    @Test func resumeFailureRetryReestablishesRatherThanKillingTheLadder() {
+        PairingStore.useInMemoryBackingForTests = true
+        defer { PairingStore.useInMemoryBackingForTests = false }
+        PairingStore.clear()
+        defer { PairingStore.clear() }
+        PairingStore.save(Self.storedSecret)
+        // C1-01: the retry branch re-adopts the KNOWN peripheral id, exactly like `connect()`'s cold-launch
+        // fast path — seed it so the fix takes the `connectKnownPeripheral` branch, not the `startScan()`
+        // fallback (mirrors `PumpPeripheralStoreTests`' save/restore idiom).
+        let priorPeripheralId = PumpPeripheralStore.id()
+        defer { if let priorPeripheralId { PumpPeripheralStore.set(priorPeripheralId) } else { PumpPeripheralStore.clear() } }
+        PumpPeripheralStore.set(UUID())
+
+        let b = resumingBackend()
+        b.beginPairingForTesting(code: "")
+        #expect(b.resumeRetryActionForTesting == nil, "precondition: no reconnect action recorded yet")
+
+        b.firePairingWatchdogForTesting()   // transient resume failure, budget remaining
+
+        #expect(b.resumeRetryActionForTesting == .reestablish,
+                "the retry branch must re-establish (connectKnownPeripheral), never disconnect() (C1-01)")
+    }
+
+    /// 6 — C1-01/C1-04 (Test 2 of the plan's 3): the SAME transient resume-failure ALSO fires the typed
+    /// `onReliabilityEvent(.resumeRetryFailed)`, which `AppModel` translates into a never-suppressible
+    /// `.pumpDisconnect` post + the escalation ladder — even though this edge dies from `.connecting`, where
+    /// `SafetyEdge.connection` never raises (it only fires on a direct `.connected/.bolusing → down` edge).
+    /// Observed at the `AppModel` notification seam, exactly like `SafetyNotificationTests`/
+    /// `PumpBackgroundDisconnectNotificationTests` do — never by reaching into `NotificationCoordinator`
+    /// (the backend must not reference it at all).
+    @Test func transientResumeFailureAlarmsViaTypedEventDespiteDyingFromConnecting() {
+        PairingStore.useInMemoryBackingForTests = true
+        defer { PairingStore.useInMemoryBackingForTests = false }
+        PairingStore.clear()
+        defer { PairingStore.clear() }
+        PairingStore.save(Self.storedSecret)
+
+        let b = resumingBackend()
+        let model = AppModel(source: b, ledgerStoreURL: tempLedgerURL())
+        var posted: [NotificationBroker.Message] = []
+        var scheduled: [DisconnectEscalation.Step] = []
+        model.notificationSink = { msg, _, _ in posted.append(msg) }
+        model.notificationScheduleSink = { scheduled = $0 }
+
+        b.beginPairingForTesting(code: "")
+        b.firePairingWatchdogForTesting()   // transient resume failure, budget remaining
+
+        let disc = posted.filter { $0.category == .pumpDisconnect }
+        #expect(disc.count == 1,
+                "a transient resume-failure that dies from .connecting must still alarm, via the typed event")
+        #expect(disc.first?.dedupeKey == "safety.pumpDisconnect",
+                "reuses the SafetyEdge pump-disconnect dedupe key so a later reconnect withdraws it too")
+        #expect(!scheduled.isEmpty, "the escalation ladder must be scheduled alongside the immediate T0 post")
+        #expect(scheduled.map(\.id) == DisconnectEscalation.stepIds)
+    }
+
+    /// 7 — No regression: the EXHAUSTED branch (budget fully consumed) still alarms — it always has, via
+    /// the pre-existing `SafetyEdge.connection` `.raise` on a direct transition to `.error` — this plan must
+    /// not weaken or duplicate that path. Confirms the typed-event seam is additive, not a replacement.
+    @Test func exhaustedBranchStillAlarmsViaTheExistingSafetyEdgeNoRegression() {
+        PairingStore.useInMemoryBackingForTests = true
+        defer { PairingStore.useInMemoryBackingForTests = false }
+        PairingStore.clear()
+        defer { PairingStore.clear() }
+        PairingStore.save(Self.storedSecret)
+
+        let b = resumingBackend()
+        let model = AppModel(source: b, ledgerStoreURL: tempLedgerURL())
+        var posted: [NotificationBroker.Message] = []
+        model.notificationSink = { msg, _, _ in posted.append(msg) }
+        model.notificationScheduleSink = { _ in }
+
+        b.beginPairingForTesting(code: "")
+        b.firePairingWatchdogForTesting()   // retry 1/2
+        b.firePairingWatchdogForTesting()   // retry 2/2
+        b.firePairingWatchdogForTesting()   // budget exhausted → straight to .error
+
+        #expect(b.snapshot.connection == .error, "precondition: the budget is exhausted")
+        #expect(posted.filter { $0.category == .pumpDisconnect }.count >= 1,
+                "the exhausted branch must still alarm — no regression from the typed-event addition")
+    }
+
+    /// 8 — `forgetPairing()` (R2-06) remains the ONLY thing that wipes `PairingStore`. Together with tests 1
     /// and 2 (resume failures NEVER wipe), this pins the R2-07 boundary: the stored secret is durable across
     /// every automatic resume-failure path and is removed ONLY by an explicit user "Forget pairing".
     @Test func forgetPairingRemainsTheOnlyThingThatWipesTheStoredSecret() {
