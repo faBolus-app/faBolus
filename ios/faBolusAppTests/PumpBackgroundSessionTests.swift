@@ -91,4 +91,38 @@ struct PumpBackgroundSessionTests {
         #expect(h.endedTokens == [1], "the expiration handler must end the task so iOS does not kill the app")
         #expect(!s.isTaskActiveForTesting)
     }
+
+    // MARK: - CX-F-06: fg→bg must re-evaluate a reconnect scheduled while still foreground
+
+    @Test func enteredBackgroundArmsAWindowForAReconnectScheduledWhileStillForeground() {
+        let h = Harness(); let s = PumpBackgroundSession(); h.wire(s)
+        h.foreground = true
+        s.willAttemptReconnect(after: 5)   // scheduled while STILL foreground — no window needed yet
+        #expect(h.beginCount == 0, "no window is needed while the RunLoop is already alive")
+        #expect(!s.isTaskActiveForTesting)
+
+        h.foreground = false               // the scene backgrounds mid-delay, BEFORE the kit's Timer fires
+        s.enteredBackground()
+        #expect(h.beginCount == 1, "the fg->bg transition must re-evaluate the still-pending reconnect and open the window — not strand it")
+        #expect(s.isTaskActiveForTesting)
+    }
+
+    @Test func enteredBackgroundIsANoOpWhenNoReconnectIsPending() {
+        let h = Harness(); let s = PumpBackgroundSession(); h.wire(s)
+        h.foreground = true
+        s.enteredBackground()              // no willAttemptReconnect ever called
+        h.foreground = false
+        s.enteredBackground()
+        #expect(h.beginCount == 0, "backgrounding with nothing pending must never open a window")
+        #expect(!s.isTaskActiveForTesting)
+    }
+
+    @Test func enteredBackgroundDoesNotDoubleArmWhenAWindowIsAlreadyHeld() {
+        let h = Harness(); let s = PumpBackgroundSession(); h.wire(s)
+        h.foreground = false
+        s.willAttemptReconnect(after: 5)   // scheduled already backgrounded — arms immediately
+        #expect(h.beginCount == 1)
+        s.enteredBackground()              // a later fg->bg-equivalent re-check while still held
+        #expect(h.beginCount == 1, "an already-held window must not be re-armed/duplicated")
+    }
 }

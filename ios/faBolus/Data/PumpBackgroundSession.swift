@@ -81,6 +81,19 @@ final class PumpBackgroundSession {
         syncTask(reason: "terminated")
     }
 
+    /// CX-F-06: the scene just entered the background — re-run the SAME arm/disarm decision `syncTask`
+    /// already makes on every ladder event, now against the freshly-backgrounded `isForeground()`
+    /// value. A reconnect can be SCHEDULED (`willAttemptReconnect`) while the app is STILL foreground —
+    /// `syncTask` correctly takes no window then, since the RunLoop is already alive — but `wantReconnect`
+    /// stays `true` in memory. If the scene backgrounds before the kit's own Timer fires the attempt, that
+    /// `true` is never re-evaluated against the new background state, stranding the pending reconnect with
+    /// no background runtime to run on. Calling this on fg→bg closes that gap; it is a no-op whenever no
+    /// reconnect is pending (`wantReconnect == false`) or a window is already held (`token != nil`) —
+    /// `syncTask`'s own guards make it idempotent, never a second/duplicate window.
+    func enteredBackground() {
+        syncTask(reason: "scenePhaseBackground")
+    }
+
     // MARK: - Task lifecycle
 
     private func syncTask(reason: String) {

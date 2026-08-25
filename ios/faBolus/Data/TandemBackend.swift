@@ -297,6 +297,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// seams in the production `init()` only; the test-transport init leaves it inert (default seams).
     private let bgSession = PumpBackgroundSession()
 
+    /// CX-F-06: forward a scene fg->bg transition into `bgSession` so a reconnect SCHEDULED while still
+    /// foreground (no background window taken then — the RunLoop was already alive) is re-evaluated the
+    /// moment the scene backgrounds, instead of being stranded until the kit's own Timer happens to fire
+    /// first. Concrete-Tandem-only sink shape (mirrors `onCommandLatency`/`onWillRetryReconnect`/
+    /// `onReliabilityEvent` above) — called from `AppModel`'s own `UIApplication.
+    /// didEnterBackgroundNotification` observer via `(source as? TandemBackend)?.appDidEnterBackground()`.
+    func appDidEnterBackground() {
+        bgSession.enteredBackground()
+    }
+
     // MARK: - Status read dispatch + post-pair bootstrap order (Phase 09 Wave 3, D-06)
     //
     // Moved to `PumpReadScheduler` (`sendStatusRead`, the `badOpcodes` never-resend backstop, the
