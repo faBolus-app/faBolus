@@ -34,8 +34,14 @@ struct ConnectPumpOnboardingView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
+                    // D2-08 (WINDOWS ledger #24): decorative — the "Connect your pump" title and body
+                    // below already state this screen's purpose, so hide the hero glyph from VoiceOver
+                    // rather than letting it announce its raw SF Symbol name. Mirrors the decorative-icon
+                    // hiding applied in 17-09 to AlertsView/CameraPermissionFallbackView and the existing
+                    // StatusPillsView/StatusRingView convention.
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 56)).foregroundStyle(.tint)
+                        .accessibilityHidden(true)
                     Text("Connect your pump").font(.title.bold())
                     Text("faBolus needs a pump connection to show your glucose and let you give a bolus. Connect now, explore with a demo pump, or skip and connect later from the dashboard.")
                         .multilineTextAlignment(.center)

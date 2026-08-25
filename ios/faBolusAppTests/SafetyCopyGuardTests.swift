@@ -67,4 +67,29 @@ import Foundation
         #expect(source.contains("RegulatoryCopy.firstRun"),
                 "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen (D1-04)")
     }
+
+    /// D2-08 (WINDOWS ledger #24): the decorative hero antenna glyph at the top of the first-run
+    /// pump-connect screen must be `.accessibilityHidden(true)` so VoiceOver doesn't announce its raw
+    /// SF Symbol name — the title/body text already convey the screen's purpose. Same source-scan idiom
+    /// as the two assertions above; anchored to the hero-icon modifier chain (windowed slice after the
+    /// `antenna.radiowaves.left.and.right` symbol) so an unrelated `.accessibilityHidden` elsewhere in the
+    /// file can't satisfy it vacuously. Mirrors the 17-09 decorative-icon hiding in
+    /// AlertsView/CameraPermissionFallbackView.
+    @Test func connectPumpOnboardingViewHidesDecorativeHeroIcon() throws {
+        guard let root = Self.repoRootURL() else {
+            Issue.record("SafetyCopyGuardTests could not resolve repo root — scan would pass vacuously")
+            return
+        }
+        let source = try Self.sourceText(relativeTo: root, path: "ios/faBolus/Views/ConnectPumpOnboardingView.swift")
+        #expect(!source.isEmpty, "ConnectPumpOnboardingView.swift read as empty — scan would pass vacuously")
+        guard let symbolRange = source.range(of: "antenna.radiowaves.left.and.right") else {
+            Issue.record("ConnectPumpOnboardingView.swift no longer contains the hero antenna glyph — this guard's anchor is stale and would pass vacuously")
+            return
+        }
+        // Modifier chain follows the Image on the next few lines; a short window keeps the assertion
+        // bound to the hero icon rather than the whole file.
+        let window = source[symbolRange.upperBound...].prefix(200)
+        #expect(window.contains(".accessibilityHidden(true)"),
+                "ConnectPumpOnboardingView.swift's decorative hero antenna icon is not .accessibilityHidden(true) — VoiceOver would announce its raw SF Symbol name (D2-08, WINDOWS ledger #24)")
+    }
 }
