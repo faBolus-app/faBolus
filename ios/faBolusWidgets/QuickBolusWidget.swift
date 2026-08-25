@@ -52,6 +52,7 @@ struct QuickBolusView: View {
                                        text: String(format: "Cancelled · %.2f U", status.deliveredUnits))
             case .failed:     doneBody(icon: "exclamationmark.triangle.fill",
                                        text: status.message.isEmpty ? "Bolus failed" : status.message)
+            case .expired:    expiredBody   // CX-F-09: host never finalized — NOT a safe-looking retry
             case .idle:
                 // A-05: a locked gate replaces the interactive pad entirely (takes precedence over the
                 // not-connected notice — "locked" is the definitive reason bolusing is unavailable). The
@@ -129,6 +130,26 @@ struct QuickBolusView: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                 .background(Color.red.opacity(0.9), in: Capsule())
         }.buttonStyle(.plain)
+    }
+
+    // CX-F-09: the host was killed mid-delivery and never finalized this request. Deliberately distinct
+    // from `doneBody` (checkmark/x/warning) — this must NOT read as a confirmed, safe-to-move-on outcome,
+    // and offers no one-tap affordance of any kind (not even a "retry"): the ONLY thing to do is check the
+    // pump/history in the app before dosing again.
+    @ViewBuilder private var expiredBody: some View {
+        Spacer(minLength: 0)
+        Link(destination: FaBolusDeepLink.open) {
+            VStack(spacing: 3) {
+                Image(systemName: "questionmark.circle.fill").font(.title3)
+                Text("Outcome unknown").font(.caption.weight(.semibold))
+                Text("Check pump before dosing again").font(.caption2).opacity(0.85)
+                    .multilineTextAlignment(.center).minimumScaleFactor(0.7).lineLimit(2)
+            }
+            .foregroundStyle(.white.opacity(0.9))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+        }
+        Spacer(minLength: 0)
     }
 
     @ViewBuilder private func doneBody(icon: String, text: String) -> some View {

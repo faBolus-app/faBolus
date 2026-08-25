@@ -361,7 +361,15 @@ public struct WidgetBolusRequest: Codable, Sendable, Equatable {
 
 /// Live delivery status the app writes back so the widget can show progress + a cancel button in
 /// place (without opening the app).
-public enum WidgetBolusPhase: String, Codable, Sendable { case idle, delivering, delivered, cancelled, failed }
+///
+/// CX-F-09: `.expired` is an explicit "the host never finalized this" outcome, distinct from `.idle`. A
+/// `.delivering` status the host process never got to finalize (killed mid-delivery, before
+/// `WidgetBolusReceiver` writes `.delivered`/`.cancelled`/`.failed`) is stuck forever from the widget's
+/// point of view. Silently reverting that to `.idle` erases the request identity/units and re-presents the
+/// 1-2-3 pad as if nothing had happened — inviting a fresh, possibly-duplicate re-bolus while the
+/// ORIGINAL dose's outcome is genuinely unknown. `.expired` preserves identity/units and reads as "check
+/// the pump/history," never as an automatically-safe retry. See `WidgetBolusStore.status()`.
+public enum WidgetBolusPhase: String, Codable, Sendable { case idle, delivering, delivered, cancelled, failed, expired }
 public struct WidgetBolusStatus: Codable, Sendable, Equatable {
     public var phase: WidgetBolusPhase
     public var units: Double            // requested
@@ -503,13 +511,30 @@ public enum WidgetBolusStore {
         guard let data = try? JSONEncoder().encode(s) else { return }
         d?.set(data, forKey: "wbStatus")
     }
+    /// CX-F-09: how long a `.delivering` status can go unfinalized before `status()` surfaces it as
+    /// `.expired` instead of silently reverting to `.idle`. Kept at the same 90 s window this file already
+    /// used for the (previously silent) "delivering" freshness cutoff — a host mid-delivery legitimately
+    /// takes a few seconds, so this stays generous, but a host process killed outright never comes back to
+    /// finalize it, and the widget must not hide that indefinitely behind a blank, ready-to-bolus `.idle`.
+    public static let deliveringExpiryTTL: TimeInterval = 90
     public static func status() -> WidgetBolusStatus {
         guard let data = d?.data(forKey: "wbStatus"),
               let s = try? JSONDecoder().decode(WidgetBolusStatus.self, from: data) else { return .idle }
-        // A terminal status older than 15 s (or a stuck "delivering" > 90 s) reverts to idle so the
-        // widget returns to the 1-2-3 state on its own.
         let age = Date().timeIntervalSince(s.updatedAt)
-        if s.phase == .delivering { return age > 90 ? .idle : s }
+        if s.phase == .delivering {
+            // CX-F-09: past the expiry window, surface an EXPLICIT `.expired` status — same requestId/units
+            // as the stuck `.delivering` one — instead of collapsing to `.idle` (which erased identity and
+            // invited a fresh re-bolus while the original outcome was still unknown). Nothing is persisted
+            // here; this is computed fresh on every read, so a later app-side finalize (a relaunch that
+            // reconciles and calls `setStatus` with a terminal phase) still takes effect immediately.
+            guard age > deliveringExpiryTTL else { return s }
+            return WidgetBolusStatus(phase: .expired, units: s.units, deliveredUnits: s.deliveredUnits,
+                                      requestId: s.requestId, updatedAt: s.updatedAt,
+                                      message: "Outcome unknown — check your pump/history before dosing again")
+        }
+        // A terminal status (delivered/cancelled/failed) older than 15 s reverts to idle so the widget
+        // returns to the 1-2-3 state on its own. `.expired` is synthesized above on every read (never
+        // persisted), so it is not reachable here.
         return age > 15 ? .idle : s
     }
 }
