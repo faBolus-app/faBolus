@@ -98,11 +98,20 @@ public enum NotificationBroker {
         public var dedupeKey: String
         /// Groups related events into one episode (one-notification-per-episode, §6). Defaults to `dedupeKey`.
         public var episodeKey: String
+        /// CC-12/CX-F-08 (T-13-14b): an OPTIONAL typed safety marker — the pump's OWN alert identity
+        /// classified by `TandemBackend.safetyClass` (occlusion / cgmDataLoss / lowInsulin / other) — used
+        /// ONLY by `requiresBreakthrough(_:)` to decide OS interruption level, independent of `category`
+        /// source-identity. `nil` for every non-pump-alert message and for a pump alert with no protected
+        /// classification. This is the SOLE typed channel for that information: the broker never reads
+        /// untyped `userInfo` (the Message doesn't carry one), so a caller populating this field is the
+        /// only way a protected alert ID can influence urgency.
+        public var safetyClass: AlertSafetyClass?
         public init(category: Category, severity: Severity, title: String, body: String,
-                    dedupeKey: String, episodeKey: String? = nil) {
+                    dedupeKey: String, episodeKey: String? = nil, safetyClass: AlertSafetyClass? = nil) {
             self.category = category; self.severity = severity
             self.title = title; self.body = body
             self.dedupeKey = dedupeKey; self.episodeKey = episodeKey ?? dedupeKey
+            self.safetyClass = safetyClass
         }
     }
 
@@ -246,8 +255,20 @@ public enum NotificationBroker {
         func record() -> State {
             var out = s
             out.lastDeliveredAt[message.category.rawValue] = now
-            out.deliveredToday += 1
-            if message.category.usesMealSubBudget { out.mealDeliveredToday += 1 }
+            // C6-01 (T-13-14): a never-suppressible OR `.error`-severity delivery does NOT consume the
+            // daily/meal budget — a flapping disconnect (posting repeated `.error` escalation steps on the
+            // already-neverSuppressible `.pumpDisconnect` category) must never be able to exhaust the
+            // budget that gates a genuine `bolusDeliveryFailed`. Because these deliveries never consume a
+            // slot, a later withdrawal of one has nothing to "refund" — deliberately NOT adding a blind
+            // decrement-per-dedupeKey refund here (codex MEDIUM): `withdraw` only ever sees identifiers and
+            // cannot tell whether a given key consumed a budget slot or maps to multiple counted
+            // notifications, so a blind decrement would UNDERCOUNT ordinary notifications. `lastDeliveredAt`
+            // and `notifiedEpisodes` still advance below so dedupe/episode tracking stays coherent.
+            let budgetExempt = message.category.neverSuppressible || message.severity == .error
+            if !budgetExempt {
+                out.deliveredToday += 1
+                if message.category.usesMealSubBudget { out.mealDeliveredToday += 1 }
+            }
             out.notifiedEpisodes.insert(message.episodeKey)
             return out
         }
@@ -306,6 +327,21 @@ public enum NotificationBroker {
             }
         }
         return deliver()
+    }
+
+    /// CC-12/CX-F-08 (T-13-15): whether `message`'s DISPLAY must break through Focus/Do Not Disturb — the
+    /// never-suppressible trio (unchanged), a CRITICAL-severity governed message (e.g. a pump ALARM
+    /// surfaced as `.pumpAlert`), or any message carrying a force-protected `safetyClass` (an urgent
+    /// fixed-low / occlusion / low-insulin / CGM-loss alert reaching the app at plain `.warning` severity).
+    /// Decoupled from `category.neverSuppressible` on purpose — a governed `.pumpAlert` qualifies exactly
+    /// like a safety-trio category once its severity/safetyClass says so. Reads ONLY typed `Message`
+    /// fields (`category`, `severity`, `safetyClass`) — never `userInfo`, which `Message` doesn't carry.
+    /// Pattern C (13-PATTERNS.md): the single governed decision point for this axis — callers must not add
+    /// a parallel inline check.
+    public static func requiresBreakthrough(_ message: Message) -> Bool {
+        message.category.neverSuppressible
+            || message.severity == .critical
+            || (message.safetyClass?.isForceProtected ?? false)
     }
 
     /// The calendar-day key used for the daily budget rollover. Stable and calendar-explicit (no `Date()`).
