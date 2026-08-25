@@ -15,11 +15,35 @@ extension Notification.Name {
 @MainActor
 final class WidgetBolusReceiver {
     private weak var model: AppModel?
+    /// C6-02: the CFNotificationCenter Darwin observer identity (`Unmanaged.passUnretained(self)`).
+    /// The two `CFNotificationCenterAddObserver` calls below register C callbacks that capture NOTHING —
+    /// they run independently of this instance's ARC lifetime and, unless explicitly removed with the
+    /// SAME `center`/`observer` pair, keep firing (and re-posting a Foundation notification) even after
+    /// this instance is deallocated. A re-created instance after a scene teardown/re-appear would then
+    /// have TWO Darwin registrations live for the same notification name, so a single widget post
+    /// dispatches twice.
+    /// `nonisolated(unsafe)` on these four: `deinit` runs nonisolated (Swift can't guarantee it happens on
+    /// the main actor), so removing the observers there needs to read them outside actor isolation. This is
+    /// sound — nothing else can run concurrently with `deinit` (by the time it executes, refcount is
+    /// already zero / about to be, so no other reference exists to race on these values), and each is
+    /// otherwise only ever written once, from `init`, before any other reference to `self` escapes.
+    private nonisolated(unsafe) let darwinCenter = CFNotificationCenterGetDarwinNotifyCenter()
+    /// Set once in `init` (an implicitly-unwrapped Optional, not a `lazy var`: computing this from `self`
+    /// requires phase-1 init to already be "complete," and a `lazy var` — the usual workaround for a
+    /// self-referencing stored value — cannot be read from `deinit`'s nonisolated context on a
+    /// `@MainActor` class. A plain stored property CAN be read there.)
+    private nonisolated(unsafe) var darwinObserver: UnsafeMutableRawPointer!
+    /// The block-observer tokens `NotificationCenter.default.addObserver(forName:...)` returns — previously
+    /// discarded (codex MEDIUM), so they could never be removed and a re-created receiver would leak a
+    /// stale block still holding this instance's `[weak self]`.
+    private nonisolated(unsafe) var pendingToken: NSObjectProtocol?
+    private nonisolated(unsafe) var cancelToken: NSObjectProtocol?
 
     init(model: AppModel) {
         self.model = model
-        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let center = darwinCenter
         let observer = Unmanaged.passUnretained(self).toOpaque()
+        darwinObserver = observer
         // The C callbacks capture nothing; they re-post as Foundation notifications handled below.
         CFNotificationCenterAddObserver(center, observer, { _, _, _, _, _ in
             NotificationCenter.default.post(name: .widgetBolusPending, object: nil)
@@ -28,10 +52,10 @@ final class WidgetBolusReceiver {
             NotificationCenter.default.post(name: .widgetBolusCancel, object: nil)
         }, WidgetBolusStore.darwinCancel as CFString, nil, .deliverImmediately)
 
-        NotificationCenter.default.addObserver(forName: .widgetBolusPending, object: nil, queue: .main) { [weak self] _ in
+        pendingToken = NotificationCenter.default.addObserver(forName: .widgetBolusPending, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.handlePending() }
         }
-        NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
+        cancelToken = NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 // VA-28: only act on a cancel corroborated by the App-Group token the widget's own
                 // cancel intent wrote (single-use + TTL-bounded). A bare/replayed Darwin post from a
@@ -40,6 +64,17 @@ final class WidgetBolusReceiver {
                 Task { await model.cancelBolus(from: .quickBolusWidget, peerId: "widget") }
             }
         }
+    }
+
+    /// C6-02: tear down BOTH observer systems so a deallocated instance leaves nothing behind — no stale
+    /// Darwin registration re-posting into a dead receiver, and no leaked block observer.
+    deinit {
+        CFNotificationCenterRemoveObserver(darwinCenter, darwinObserver,
+                                           CFNotificationName(WidgetBolusStore.darwinPending as CFString), nil)
+        CFNotificationCenterRemoveObserver(darwinCenter, darwinObserver,
+                                           CFNotificationName(WidgetBolusStore.darwinCancel as CFString), nil)
+        if let pendingToken { NotificationCenter.default.removeObserver(pendingToken) }
+        if let cancelToken { NotificationCenter.default.removeObserver(cancelToken) }
     }
 
     private func reload() { WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus") }
