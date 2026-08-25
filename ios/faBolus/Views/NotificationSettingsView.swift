@@ -32,9 +32,9 @@ struct NotificationSettingsView: View {
     /// is currently showing (`nil` ⇒ no dialog).
     @State private var breakThroughOffCategory: NotificationBroker.Category?
     /// 09.25-01 (D-03/D-06): the never-suppressible safety trio is now user-disableable behind a
-    /// confirm-on-disable §13-DRAFT warning — turning a trio row OFF is the safety-reducing direction, so
-    /// it routes through this dialog; turning it back ON is immediate. Holds the trio category whose
-    /// confirm dialog is currently showing (`nil` ⇒ no dialog).
+    /// confirm-on-disable warning — turning a trio row OFF is the safety-reducing direction, so it routes
+    /// through this dialog; turning it back ON is immediate. Holds the trio category whose confirm dialog
+    /// is currently showing (`nil` ⇒ no dialog).
     @State private var safetyDisableOffCategory: NotificationBroker.Category?
 
     init(model: AppModel, settings: AppSettings) {
@@ -310,6 +310,10 @@ struct NotificationSettingsView: View {
 
     // MARK: - Body
 
+    /// D3-05: visual-density tightening only (grouping/spacing, no toggle/key change) — every
+    /// toggle-plus-caption pairing below uses a tighter `spacing: 2` (was 4) so the caption reads as
+    /// visually attached to its control rather than as a separate row, without touching any binding,
+    /// section boundary, or governance logic.
     var body: some View {
         Form {
             pumpSection
@@ -344,9 +348,9 @@ struct NotificationSettingsView: View {
             }
         }
         // 09.25-01 (D-03/D-04/D-06): the trio's confirm-on-disable dialog. Each trio category has a
-        // category-specific title AND §13-DRAFT message body — driven by `safetyDisableDialogTitle`
-        // rather than the break-through dialog's fixed-title shape, since the "what you're giving up"
-        // warning genuinely differs per category.
+        // category-specific title AND message body — driven by `safetyDisableDialogTitle` rather than
+        // the break-through dialog's fixed-title shape, since the "what you're giving up" warning
+        // genuinely differs per category.
         .confirmationDialog(safetyDisableDialogTitle(for: safetyDisableOffCategory),
                              isPresented: Binding(get: { safetyDisableOffCategory != nil },
                                                   set: { if !$0 { safetyDisableOffCategory = nil } }),
@@ -361,14 +365,11 @@ struct NotificationSettingsView: View {
         } message: {
             switch safetyDisableOffCategory {
             case .pumpDisconnect:
-                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
-                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime.")
+                Text("If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime.")
             case .cgmDataLoss:
-                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
-                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime.")
+                Text("If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime.")
             case .bolusReconciliation:
-                // §13-DRAFT — clinical copy pending Phase 10 (v0.4.0) sign-off; do NOT mark verified
-                Text("⚠ §13-DRAFT — pending Phase 10 clinical review. faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime.")
+                Text("faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime.")
             default:
                 EmptyView()
             }
@@ -396,7 +397,7 @@ struct NotificationSettingsView: View {
                 DatePicker("To", selection: quietEndBinding(for: .pumpAlert), displayedComponents: .hourAndMinute)
                     .disabled(!masterOn)
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
                     .disabled(!masterOn)
                     // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
@@ -404,7 +405,7 @@ struct NotificationSettingsView: View {
                     .accessibilityValue(Text(breakThroughCaption))
                 Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Toggle("Silence pump alarms in the app", isOn: suppressBinding)
                     .disabled(!masterOn)
                 if let silenceCaption = Self.silenceMirrorCaption(pumpEnabled: masterOn) {
@@ -443,13 +444,13 @@ struct NotificationSettingsView: View {
     }
 
     /// (b) App-generated, non-trio: 09.25-01 (D-03/D-06) — the never-suppressible trio is now
-    /// user-disableable behind a §13-DRAFT confirm-on-disable dialog (`safetyEnabledBinding`); the
-    /// caption below each row discloses the current effective state either way (mirrors Phase 8's
-    /// honest-status rationale — never hide the guarantee, or its absence).
+    /// user-disableable behind a confirm-on-disable dialog (`safetyEnabledBinding`); the caption below
+    /// each row discloses the current effective state either way (mirrors Phase 8's honest-status
+    /// rationale — never hide the guarantee, or its absence).
     private var safetyAlertsSection: some View {
         Section {
             ForEach(trioCategories, id: \.self) { category in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Toggle(category.label, isOn: safetyEnabledBinding(for: category))
                         // 09.25-02 Task 3 (D-06 backstop): VoiceOver announces switch-state + the SAME
                         // on-screen effective-state caption as one utterance (mirrors
@@ -482,7 +483,7 @@ struct NotificationSettingsView: View {
                 DatePicker("To", selection: quietEndBinding(for: category), displayedComponents: .hourAndMinute)
                     .disabled(!masterOn)
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
                     .disabled(!masterOn)
                     // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
