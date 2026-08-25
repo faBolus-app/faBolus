@@ -1,5 +1,6 @@
 import Foundation
 import faBolusCore
+import TandemMessages
 import UserNotifications
 import UIKit
 
@@ -218,19 +219,27 @@ enum NotificationPoster {
         // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
         // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
         // this can never over-escalate a routine or governed notification.
-        if allowCritical && message.category.neverSuppressible {
+        // CC-12/CX-F-08 (T-13-15): breakthrough is driven by `NotificationBroker.requiresBreakthrough` —
+        // the never-suppressible trio (unchanged), OR a `.critical`-severity message (a pump ALARM
+        // surfaced as the GOVERNED `.pumpAlert` category), OR a message carrying a force-protected typed
+        // `safetyClass` (an urgent fixed-low/occlusion/low-insulin/CGM-loss alert at plain `.warning`
+        // severity). Decoupled from `category.neverSuppressible` alone, so a governed pump alarm breaks
+        // through Focus/DND exactly like the safety trio — closing the gap where alarms couldn't break
+        // through DND and a fixed-low ALERT posted `.warning` (CC-12/CX-F-08).
+        let breakthrough = NotificationBroker.requiresBreakthrough(message)
+        if allowCritical && breakthrough {
             content.interruptionLevel = .critical
             content.sound = .defaultCritical
         } else {
             content.sound = .default
             // CR-01: graceful degradation while the Critical-Alerts entitlement is pending (or the user
-            // hasn't opted in) — the safety trio still must break through Focus/DND, or the "time-sensitive
-            // delivery" promise in AlertRulesView is false. `.timeSensitive` does that without requiring the
+            // hasn't opted in) — anything requiring breakthrough still must break through Focus/DND, or the
+            // "time-sensitive delivery" promise is false. `.timeSensitive` does that without requiring the
             // special-request Critical Alerts entitlement; it only needs the lightweight Time-Sensitive
-            // Notifications capability (see faBolus.entitlements). Scoped to `neverSuppressible` so a
-            // governed/suppressible category is never escalated. If the app ever lacked the Time-Sensitive
+            // Notifications capability (see faBolus.entitlements). Scoped to `breakthrough` so an ordinary
+            // governed/suppressible message is never escalated. If the app ever lacked the Time-Sensitive
             // capability, iOS silently downgrades this to `.active` — safe by default, never a crash.
-            if message.category.neverSuppressible {
+            if breakthrough {
                 content.interruptionLevel = .timeSensitive
             }
         }
@@ -501,12 +510,18 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) { continue }
             let k = key(n)
             postedPumpAlerts.insert(k)
+            // CC-12/CX-F-08: populate the TYPED safety marker from the pump's OWN alert identity
+            // (`TandemBackend.safetyClass`, the same classification `applyAutoRules` force-protects on) so
+            // `requiresBreakthrough` can decide interruption level from it — never from untyped userInfo.
+            // `.other` maps to `nil` (no marker) so an un-classified alert is unaffected.
+            let klass = TandemBackend.safetyClass(kind: NotificationKind(rawValue: n.kind.rawValue) ?? .alert, id: n.id)
             let msg = NotificationBroker.Message(
                 category: .pumpAlert,
                 severity: n.kind == .alarm ? .critical : .warning,
                 title: n.title,
                 body: n.detail.isEmpty ? "Active pump alert" : n.detail,
-                dedupeKey: k)
+                dedupeKey: k,
+                safetyClass: klass.isForceProtected ? klass : nil)
             post(msg, userInfo: ["id": n.id, "kind": n.kind.rawValue], categoryId: Self.pumpAlertCategory)
         }
         let gone = Array(postedPumpAlerts.subtracting(active))

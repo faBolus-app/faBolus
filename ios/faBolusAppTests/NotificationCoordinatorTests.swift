@@ -204,6 +204,30 @@ import UserNotifications
         #expect(reqs.first?.content.sound == .default)
     }
 
+    /// CC-12/CX-F-08 (T-13-15): a pump ALARM (`.critical` severity) surfaced as the GOVERNED `.pumpAlert`
+    /// category must break through Focus/DND exactly like the never-suppressible trio — decoupled from
+    /// `category.neverSuppressible`, via `NotificationBroker.requiresBreakthrough`. A protected-safetyClass
+    /// message (CX-F-08's "urgent fixed-low") gets the same treatment via the TYPED `safetyClass` field,
+    /// even at plain `.warning` severity — never via `userInfo`.
+    @Test func pumpAlarmAndProtectedSafetyClassBreakThroughLikeTheSafetyTrio() {
+        let rt = NotificationRuntime(store: isolatedStore(#function))
+        var reqs: [UNNotificationRequest] = []
+        let alarm = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "alarm1")
+        NotificationPoster.post(alarm, runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .critical,
+               "a pump ALARM must break through exactly like a safety-trio category")
+        reqs.removeAll()
+        let protectedWarning = B.Message(category: .pumpAlert, severity: .warning, title: "Fixed low",
+                                         body: "b", dedupeKey: "fixedlow1", safetyClass: .cgmDataLoss)
+        NotificationPoster.post(protectedWarning, runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .timeSensitive,
+               "CX-F-08: a protected alert ID must break through even at plain .warning severity")
+        // An ordinary pump alert (no safetyClass, non-critical severity) is unaffected — still `.active`.
+        reqs.removeAll()
+        NotificationPoster.post(msg(.pumpAlert, key: "ordinary1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        #expect(reqs.first?.content.interruptionLevel == .active)
+    }
+
     /// B6: the pump-alarm opt-out suppresses ONLY a pump ALARM the user opted out of — never a lower-
     /// priority pump ALERT, and never when the opt-out is off.
     @Test func mirroredAlarmOptOutSuppressesOnlyAlarmsAndOnlyWhenOptedOut() {

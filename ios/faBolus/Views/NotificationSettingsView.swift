@@ -412,7 +412,7 @@ struct NotificationSettingsView: View {
                 }
             }
         } header: { Text("Pump alerts") } footer: {
-            Text("Alerts and alarms relayed from your pump. Critical break-through covers pump alarms (occlusion, low insulin, etc. — always critical-severity). \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
+            Text("Alerts and alarms relayed from your pump. Pump alarms (occlusion, low insulin, etc.) are always critical-severity and — like faBolus's own safety alerts — break through Focus/Do Not Disturb, where your phone and this build support it; an urgent protected alert (e.g. a CGM-loss alert) gets the same treatment even before it rises to alarm-level. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
         }
     }
 
