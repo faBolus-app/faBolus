@@ -21,8 +21,9 @@ enum ModeAutomation {
     /// well underway shouldn't retro-apply a switch).
     private static let pendingTTL: TimeInterval = 15 * 60
     private static var store: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
-    private static func key(_ m: Mode) -> String { "pendingMode.\(m.rawValue)" }
-    private static func tsKey(_ m: Mode) -> String { "pendingMode.\(m.rawValue).ts" }
+    // D4-06: key strings moved to the central `AppGroupKeys` registry — values unchanged.
+    private static func key(_ m: Mode) -> String { AppGroupKeys.pendingMode(m.rawValue) }
+    private static func tsKey(_ m: Mode) -> String { AppGroupKeys.pendingModeTimestamp(m.rawValue) }
 
     private static func settingOn(_ m: Mode) -> Bool {
         m == .exercise ? AppSettings.shared.autoExerciseMode : AppSettings.shared.autoSleepMode

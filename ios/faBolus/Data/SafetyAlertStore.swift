@@ -22,7 +22,7 @@ import UserNotifications
 /// resolved).
 @MainActor
 final class SafetyAlertStore {
-    static let key = "notificationBroker.safetyAlerts.v1"
+    static let key = AppGroupKeys.safetyAlerts   // D4-06: moved to the central registry — value unchanged.
     private let store: UserDefaults
     private(set) var entries: [String: Entry]   // keyed by dedupeKey
 

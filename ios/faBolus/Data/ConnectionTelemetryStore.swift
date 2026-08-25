@@ -9,7 +9,7 @@ import faBolusCore
 @MainActor
 final class ConnectionTelemetryStore {
     private let store: UserDefaults
-    private let key = "connectionTelemetry.v1"
+    private let key = AppGroupKeys.connectionTelemetry   // D4-06: moved to the central registry — value unchanged.
     /// When the current link came up, for uptime accrual; nil while down. In-memory only — a process
     /// restart just forgets the in-progress session's uptime (acceptable for cumulative diagnostics).
     private var connectedAt: Date?

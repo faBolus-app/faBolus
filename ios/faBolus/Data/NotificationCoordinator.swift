@@ -28,18 +28,19 @@ import UIKit
 @MainActor
 final class NotificationRuntime {
     private let store: UserDefaults
-    static let stateKey = "notificationBroker.state.v1"
-    static let telemetryKey = "notificationBroker.telemetry.v1"
+    // D4-06: key strings moved to the central `AppGroupKeys` registry — values unchanged.
+    static let stateKey = AppGroupKeys.notificationBrokerState
+    static let telemetryKey = AppGroupKeys.notificationBrokerTelemetry
     /// Per-category `NotificationBroker.CategorySettings` (Phase 8.1) — previously in-memory-only (see
     /// RESEARCH.md Critical Correction); now App-Group-persisted like `state`/`telemetry` so a preference the
     /// user sets survives a relaunch and is honored by every out-of-process poster.
-    static let settingsKey = "notificationBroker.settings.v1"
+    static let settingsKey = AppGroupKeys.notificationBrokerSettings
     private let stateKey = NotificationRuntime.stateKey
     private let telemetryKey = NotificationRuntime.telemetryKey
     private let settingsKey = NotificationRuntime.settingsKey
     /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
     /// out-of-process mode-reminder intent honors the same choice the main app made.
-    static let telemetryEnabledKey = "notificationBroker.telemetryEnabled"
+    static let telemetryEnabledKey = AppGroupKeys.notificationTelemetryEnabled
     private(set) var state: NotificationBroker.State
     /// Per-category delivered/dismissed/acted-upon counts (§6 #7). A separate blob from `state` so it never
     /// affects the decision round-trip; cumulative + local-only; accrued only when opted in.
