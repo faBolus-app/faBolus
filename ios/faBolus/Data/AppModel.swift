@@ -257,13 +257,43 @@ public final class AppModel {
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
     @ObservationIgnored private var previousGlucoseFresh = false
 
+    /// CX-F-03: safety alerts issued BEFORE the notification sink attaches (a viewless CoreBluetooth
+    /// cold-restoration launch constructs `AppModel` before `NotificationCoordinator`'s init-time wiring
+    /// completes) are buffered here instead of silently dropped, and flushed in issue order the instant a
+    /// sink attaches (`flushPendingSafety`, called from `NotificationCoordinator.init`). Not `@Observation-
+    /// Ignored` state SwiftUI needs to track — this is plumbing, not display state — but excluded from
+    /// observation anyway since nothing renders off it directly.
+    @ObservationIgnored private var pendingSafety: [NotificationBroker.Message] = []
+
     /// Post a §6 safety notification through the broker-owned poster. These categories are
     /// `neverSuppressible`, so the broker always delivers them; routing through the sink keeps them in the
-    /// one governed path (dedupe / withdrawal / the single `UNNotificationRequest` builder).
-    private func postSafety(_ category: NotificationBroker.Category, severity: NotificationBroker.Severity,
-                            title: String, body: String, dedupeKey: String) {
-        notificationSink?(NotificationBroker.Message(category: category, severity: severity,
-                                                     title: title, body: body, dedupeKey: dedupeKey), [:], "")
+    /// one governed path (dedupe / withdrawal / the single `UNNotificationRequest` builder). CX-F-03: when
+    /// no sink is attached yet (a viewless restoration launch before `NotificationCoordinator` wires up),
+    /// the message is buffered in `pendingSafety` instead of being dropped — `flushPendingSafety` replays
+    /// it once a sink attaches. Not `private` so `NotificationCoordinatorTests`/`SafetyNotificationTests`
+    /// can drive it directly without needing a real `NotificationCoordinator` for every case.
+    func postSafety(_ category: NotificationBroker.Category, severity: NotificationBroker.Severity,
+                    title: String, body: String, dedupeKey: String) {
+        let msg = NotificationBroker.Message(category: category, severity: severity,
+                                             title: title, body: body, dedupeKey: dedupeKey)
+        guard let sink = notificationSink else {
+            pendingSafety.append(msg)
+            return
+        }
+        sink(msg, [:], "")
+    }
+
+    /// Drain any safety alerts buffered while no sink was attached (CX-F-03), delivering them to
+    /// `notificationSink` in issue order, then clear the buffer. Called once from
+    /// `NotificationCoordinator.init` immediately after it wires `model.notificationSink`, so it runs on
+    /// both the restoration-launch path (no `.onAppear` ever ran) and the ordinary foreground `.onAppear`
+    /// path alike — closing the foreground reconcile-vs-`.onAppear` race noted in CONTEXT.md as a side
+    /// effect. A no-op when there is nothing buffered or no sink is attached.
+    func flushPendingSafety() {
+        guard let sink = notificationSink, !pendingSafety.isEmpty else { return }
+        let queued = pendingSafety
+        pendingSafety.removeAll()
+        for msg in queued { sink(msg, [:], "") }
     }
     private func withdrawNotifications(_ dedupeKeys: [String]) { notificationWithdrawSink?(dedupeKeys) }
     /// S7: request the delayed pump-disconnect escalation steps be scheduled (fired once on the live→down

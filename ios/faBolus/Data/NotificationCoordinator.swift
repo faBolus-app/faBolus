@@ -286,6 +286,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
         }
+        // CX-F-03: flush any safety alert `AppModel.postSafety` buffered before this sink existed —
+        // covers both a viewless restoration launch (no `.onAppear` ever ran before now) and the ordinary
+        // foreground path alike, since this line runs unconditionally at construction either way.
+        model.flushPendingSafety()
         model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
         // 09.25 WR-01: withdraw every OS-outstanding request for a whole CATEGORY (used when the user
         // disables a safety-trio category via the confirm-on-disable dialog) — distinct from `withdraw(_:)`

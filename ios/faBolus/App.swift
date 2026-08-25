@@ -32,6 +32,16 @@ struct FaBolusApp: App {
         // message-ready. Called right after the bridge is built (WR-08 launch-time construction).
         bridge.seedTerminalEchoesFromLedger()
         #endif
+        // CX-F-03: construct + retain the safety-notification pipeline at process launch too — including a
+        // viewless CoreBluetooth cold-restoration relaunch, where no scene/view (and thus no `.onAppear`)
+        // ever runs — so a `postSafety` (pump disconnect / CGM data loss / bolus reconciliation) always has
+        // a live sink to reach instead of being silently dropped. Mirrors the `GarminRemoteBridge` pattern
+        // immediately above. Constructed AFTER `model` (the coordinator wires `model.notificationSink` +
+        // the other notification sinks against it, and flushes any safety alert buffered before this ran).
+        // The `.onAppear` `if notifier == nil { ... }` guard below stays in place as double-construct
+        // protection — it is a no-op on every launch this `init()` already ran on.
+        let notif = NotificationCoordinator(model: model)
+        _notifier = State(initialValue: notif)
     }
 
     var body: some Scene {
