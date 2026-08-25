@@ -452,4 +452,91 @@ import UserNotifications
         let bare = UNNotificationRequest(identifier: "bare", content: content, trigger: nil)
         #expect(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: [bare]) == [])
     }
+
+    // MARK: - Phase 13-01 Task 2 (CX-F-03 depth, T3-01/02): SafetyAlertStore persist-then-replay
+
+    /// Test 1 (full-content round-trip): a `SafetyAlertStore.Entry` persists the COMPLETE replay
+    /// contract — not just `{dedupeKey, issuedDate, escalationStep}` (codex HIGH) — and decodes back
+    /// identically from a FRESH store instance on the same App-Group-style `UserDefaults` suite.
+    @Test func safetyAlertStoreFullContentRoundTrips() {
+        let defaults = isolatedStore(#function)
+        let store1 = SafetyAlertStore(store: defaults)
+        let entry = SafetyAlertStore.Entry(
+            category: .pumpDisconnect, severity: .error, title: "Pump disconnected",
+            body: "faBolus lost the connection to your pump.", dedupeKey: "safety.pumpDisconnect",
+            userInfo: ["k": "v"], categoryIdentifier: "", issuedDate: at(9, 0),
+            deadline: at(9, 15), kind: .delayed, lifecycleState: .issued)
+        store1.record(entry)
+
+        let store2 = SafetyAlertStore(store: defaults)   // fresh instance, same store
+        #expect(store2.entries["safety.pumpDisconnect"] == entry,
+                "the full replay contract must round-trip byte-for-byte, not a reduced {dedupeKey,issuedDate,escalationStep} shape")
+    }
+
+    /// Test 2 (immediate vs delayed replay): the pure trigger-selection rule `replayTrigger` — an
+    /// inherently-immediate entry (`deadline == nil`, e.g. `.cgmDataLoss`/`.bolusReconciliation`, which
+    /// have no escalation step) or an OVERDUE delayed entry (`deadline <= now`) replays with `nil`
+    /// (immediate post) — NEVER a computed `UNTimeIntervalNotificationTrigger(timeInterval: 0)` (invalid).
+    /// A not-yet-due delayed entry replays with a strictly-positive interval re-derived from `deadline - now`.
+    @Test func replayTriggerIsImmediateForNilOrOverdueDeadlineAndPositiveIntervalForPending() {
+        let now = at(9, 0)
+        #expect(NotificationCoordinator.replayTrigger(deadline: nil, now: now) == nil)
+        #expect(NotificationCoordinator.replayTrigger(deadline: now.addingTimeInterval(-1), now: now) == nil)
+        // Exactly `now` must also read as overdue/immediate — never a literal 0s trigger.
+        #expect(NotificationCoordinator.replayTrigger(deadline: now, now: now) == nil)
+        let pending = NotificationCoordinator.replayTrigger(deadline: now.addingTimeInterval(300), now: now)
+        let trig = pending as? UNTimeIntervalNotificationTrigger
+        #expect(trig != nil, "a not-yet-due delayed entry must replay with a real scheduled trigger")
+        #expect(trig?.timeInterval == 300)
+        #expect(trig?.repeats == false)
+    }
+
+    /// Test 3 (atomic persist-before-post): `SafetyAlertPoster.post` must write the durable entry to
+    /// `store` BEFORE invoking the injectable `add` closure — asserted by checking, FROM INSIDE `add`,
+    /// that the entry is already present in the store (addresses codex MEDIUM).
+    @Test func safetyAlertPosterPersistsBeforeSubmittingTheOSRequest() {
+        let defaults = isolatedStore(#function)
+        let store = SafetyAlertStore(store: defaults)
+        let rt = NotificationRuntime(store: defaults)
+        var sawPersistedBeforeAdd = false
+        var addCallCount = 0
+
+        let decision = SafetyAlertPoster.post(msg(.pumpDisconnect, key: "ord1"), store: store, runtime: rt,
+                                              now: at(9, 0)) { _ in
+            addCallCount += 1
+            sawPersistedBeforeAdd = store.entries["ord1"] != nil
+        }
+
+        #expect(decision.deliver)
+        #expect(addCallCount == 1)
+        #expect(sawPersistedBeforeAdd, "the entry must already be durable by the time the OS add(_:) runs")
+    }
+
+    /// Test 4 (prune on resolve, BOTH paths): `NotificationCoordinator.withdraw(_:)` AND
+    /// `withdrawAll(for:)` must EACH prune their matching durable `SafetyAlertStore` entries — a
+    /// category-wide withdrawal that leaves a durable entry behind would replay it after the condition
+    /// resolved (addresses codex MEDIUM).
+    @Test func withdrawAndWithdrawAllBothPruneTheDurableSafetyStore() {
+        let defaults = isolatedStore(#function)
+        let store = SafetyAlertStore(store: defaults)
+        let rt = NotificationRuntime(store: defaults)
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("safety-store-\(UUID().uuidString).json")
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
+        let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
+
+        store.record(.init(category: .pumpDisconnect, severity: .error, title: "t", body: "b",
+                           dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
+                           issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(.init(category: .bolusReconciliation, severity: .error, title: "t2", body: "b2",
+                           dedupeKey: "reconcile-watch-r1", userInfo: [:], categoryIdentifier: "",
+                           issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
+
+        coordinator.withdraw(["safety.pumpDisconnect"])
+        #expect(store.entries["safety.pumpDisconnect"] == nil, "withdraw(_:) must prune the durable entry")
+        #expect(store.entries["reconcile-watch-r1"] != nil)
+
+        coordinator.withdrawAll(for: .bolusReconciliation)
+        #expect(store.entries["reconcile-watch-r1"] == nil, "withdrawAll(for:) must prune the durable entry")
+    }
 }
