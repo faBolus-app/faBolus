@@ -3177,6 +3177,7 @@ public final class AppModel {
             return (0, false, msg)
         case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
+            lastHostDeliveryAt = Date()   // C3-01: the widget path participates in VA-07 supersession too
             echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
             return (delivered, cancelled, nil)
