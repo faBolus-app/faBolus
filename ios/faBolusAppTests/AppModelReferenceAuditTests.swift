@@ -24,6 +24,16 @@ import Foundation
 /// TandemBackend-axis activeness is `HistoryLogSyncDeliveryBoundaryTests`'/GO-2's concern, not
 /// this one's) — see the 16-01 SUMMARY's "Deviations" section for the full note.
 ///
+/// **16-04 update (Phase 16 GO-1 Step 4):** the carve retargeted `NudgeDeliveryBoundaryTests`'
+/// balanced-function-body scan from `ios/faBolus/Data/AppModel.swift` to the new
+/// `ios/faBolus/Data/AppModel+EatingNudge.swift` (per this file's own retarget instruction below,
+/// discharged) — `eatingNudgeActedOn`/`updateEatingNudge`/`dismissEatingNudge` now live there. Its
+/// remaining `"AppModel.swift"` occurrences are prose (explaining why `AppModel.swift` itself is
+/// never whole-file-scanned, since `deliverBolus`/`remoteDeliver` are legitimately declared there),
+/// never a runtime read of `AppModel.swift` — so `NudgeDeliveryBoundaryTests` reclassifies from
+/// ACTIVE to COMMENT-ONLY on this file's specific axis, verified against its post-retarget source
+/// (mirroring the `SleepScheduleWriteBoundaryTests` deviation note above, not merely asserted).
+///
 /// `CgmFailoverUiRefactorGuardTests` (scans `SettingsView`/`StatusView` for `CgmTestOutcome`) and
 /// `CgmTestFlowStateTests` (drives the Test-flow state machine directly, never the view) were BOTH
 /// read as 16-01 `<read_first>` context for 16-03 — neither contains the literal `"AppModel.swift"`
@@ -71,15 +81,12 @@ struct AppModelReferenceAuditTests {
 
     // MARK: - The retarget map (verified against source — see the type doc comment)
 
-    /// ACTIVE-scan: reads `ios/faBolus/Data/AppModel.swift` at runtime. A 16-03/16-04 carve that
-    /// removes `updateEatingNudge`/`dismissEatingNudge`/`eatingNudgeActedOn` MUST retarget
-    /// `NudgeDeliveryBoundaryTests`' balanced-function-body scan to the new file/target (else it
-    /// throws `SliceError.signatureNotFound`, not vacuous-passes). A carve that MOVES the Live-
+    /// ACTIVE-scan: reads `ios/faBolus/Data/AppModel.swift` at runtime. A carve that MOVES the Live-
     /// Activity doc-comment prose currently tolerated by `AppModel.swift`'s presence in
     /// `LiveActivityAbsenceGuardTests`' `excludedFiles` allow-list MUST add the new file to that
-    /// allow-list (else the moved prose trips the "no `ActivityKit` outside test files" scan).
+    /// allow-list (else the moved prose trips the "no `ActivityKit` outside test files" scan). 16-04
+    /// verified no such prose moved in this carve, so `LiveActivityAbsenceGuardTests` stays as-is.
     static let activeScanFiles: Set<String> = [
-        "NudgeDeliveryBoundaryTests.swift",
         "LiveActivityAbsenceGuardTests.swift",
     ]
 
@@ -97,6 +104,11 @@ struct AppModelReferenceAuditTests {
         // Verified COMMENT-ONLY on the AppModel-reference axis — see the type doc comment's
         // deviation note; its own active scan targets TandemBackend.swift, a GO-2 concern.
         "SleepScheduleWriteBoundaryTests.swift",
+        // 16-04 (Phase 16 GO-1 Step 4): reclassified from ACTIVE — its balanced-function-body scan
+        // was retargeted to the new `AppModel+EatingNudge.swift` (the eating-nudge functions moved
+        // there); its remaining `"AppModel.swift"` mentions are prose only. See the type doc
+        // comment's "16-04 update" note.
+        "NudgeDeliveryBoundaryTests.swift",
     ]
 
     /// Substrings that, if present in a FILE's source, indicate it opens/reads

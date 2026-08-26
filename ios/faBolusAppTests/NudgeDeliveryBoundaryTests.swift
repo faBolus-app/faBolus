@@ -78,11 +78,15 @@ struct NudgeDeliveryBoundaryTests {
 
     /// Second, independent proof (source-level, D-02/D-05b): the eating-nudge source contains ZERO
     /// delivery-seam symbols. `EatingTrigger.swift` and `SmartAssist.swift` are scanned WHOLE-FILE (both
-    /// are delivery-symbol-free today); `AppModel.swift` is scanned by FUNCTION-BODY SLICE ONLY, for its
-    /// three eating-nudge functions located by signature — NEVER whole-file, because `deliverBolus` /
-    /// `remoteDeliver` are legitimately declared elsewhere in that same file (RESEARCH Pitfall 1). A
-    /// future line-shift in `AppModel.swift` cannot silently widen or narrow the scanned region because
-    /// the slice is found by signature, not by hardcoded line numbers.
+    /// are delivery-symbol-free today); `AppModel+EatingNudge.swift` is scanned by FUNCTION-BODY SLICE
+    /// ONLY, for its three eating-nudge functions located by signature — NEVER whole-file, because
+    /// `deliverBolus`/`remoteDeliver` are legitimately declared elsewhere in `AppModel.swift` (RESEARCH
+    /// Pitfall 1). 16-04 (Phase 16 GO-1 Step 4) retargeted this scan from `AppModel.swift` to
+    /// `AppModel+EatingNudge.swift` after `eatingNudgeActedOn`/`updateEatingNudge`/`dismissEatingNudge`
+    /// were carved into that separate-file extension — ONLY the file-path constant changed; the
+    /// forbidden-symbol list below is byte-identical to before the retarget. A future line-shift in
+    /// `AppModel+EatingNudge.swift` cannot silently widen or narrow the scanned region because the
+    /// slice is found by signature, not by hardcoded line numbers.
     @Test func nudgeSourceContainsNoDeliverySeamSymbols() throws {
         // The forbidden delivery-seam identifier set: the two `GatedPumpWrite` delivery verbs plus the
         // signed-write entry-point names. Held as plain string constants — this scan targets the SOURCE
@@ -107,20 +111,21 @@ struct NudgeDeliveryBoundaryTests {
             }
         }
 
-        // Scope (2): function-body-scoped scan of AppModel.swift's three eating-nudge functions only.
-        // MUST NOT whole-file-scan AppModel.swift — deliverBolus/remoteDeliver are legitimately declared
-        // elsewhere in that file, which would be a guaranteed false positive.
-        let appModelURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel.swift")
-        let appModelSource = try String(contentsOf: appModelURL, encoding: .utf8)
+        // Scope (2): function-body-scoped scan of AppModel+EatingNudge.swift's three eating-nudge
+        // functions only (16-04 retarget — was AppModel.swift before the carve). MUST NOT whole-file-scan
+        // AppModel.swift — deliverBolus/remoteDeliver are legitimately declared there, which would be a
+        // guaranteed false positive.
+        let eatingNudgeFileURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel+EatingNudge.swift")
+        let eatingNudgeSource = try String(contentsOf: eatingNudgeFileURL, encoding: .utf8)
         let eatingNudgeFunctionSignatures = [
             "func eatingNudgeActedOn(",
             "func updateEatingNudge(",
             "func dismissEatingNudge(",
         ]
         for signature in eatingNudgeFunctionSignatures {
-            let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: appModelSource)
+            let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: eatingNudgeSource)
             for symbol in forbidden {
-                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in AppModel.swift's \(signature) body")
+                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in AppModel+EatingNudge.swift's \(signature) body")
             }
         }
     }
