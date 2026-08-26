@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import HistoryStore
+import TandemBLE
 #if FABOLUS_NUDGE
 import GlucoseIntelligenceKit
 import AlertIntelligenceKit
@@ -1638,7 +1639,22 @@ public final class AppModel {
     /// Control actions (suspend/resume, temp basal, modes…) are time-sensitive, so we don't wait on the
     /// 15 s throttle. Shared tail for `runControl` / `runGatedTherapy` / the batch reconfigure.
     private func performControl(_ op: () async throws -> Void) async {
-        do { try await op(); lastError = nil } catch { lastError = error.localizedDescription }
+        do {
+            try await op()
+            lastError = nil
+        } catch PumpBLEClient.ClientError.identityNotEstablished {
+            // CC-06/C4 (REMED-15.5): a distinct, ACTIONABLE message for the trusted-identity send-gate
+            // refusal — NOT the generic `error.localizedDescription` fallback (which would read as an
+            // opaque/scary error for what is, once the Task 1 C8 fix lands, a genuinely transient
+            // condition: a real Mobi is no longer permanently over-gated across a silent reconnect — codex
+            // C11). Deliberately NOT a `ClientError: LocalizedError` conformance (that would change
+            // `.localizedDescription` for every OTHER case too, widening the blast radius for no benefit —
+            // this is a single surgical catch, ahead of the generic one below). No automatic retry: the
+            // caller's `op` already ran exactly once; this branch does not re-invoke it.
+            lastError = "Pump identity is still being confirmed — try again shortly."
+        } catch {
+            lastError = error.localizedDescription
+        }
         refresh()
         forceStatusPush()
     }
