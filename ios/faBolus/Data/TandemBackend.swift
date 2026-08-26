@@ -1045,6 +1045,21 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// hold stored properties.)
     var onPairingSendForTesting: ((_ typeName: String, _ opcode: UInt8, _ cargoBytes: Int) -> Void)?
 
+    #if DEBUG
+    /// Phase 16 16-09 (GO-2 Step 2, REMED-16, review concern #5) test seam: fires with a step name at
+    /// each point inside `linkDroppedCleanup()`, in call order — the ONLY way to pin the shared teardown's
+    /// exact sequence (not just its final state) from a unit test, since the whole method runs
+    /// synchronously in one call. `PumpConnectionLifecycleCharacterizationTests` uses this to prove the
+    /// GO-2 Step 2 extraction never reorders the credential/waiter mutations relative to the extracted
+    /// sinks. Additive, DEBUG-only, mirrors the file's own `onPairingSendForTesting`/
+    /// `onReadDispatchedForTesting` diagnostic-closure pattern.
+    var onLinkDroppedCleanupStepForTesting: ((String) -> Void)?
+    /// Phase 16 16-09 test seam: how many times `reconcileIndeterminateDelivery()` has actually run —
+    /// lets a re-pair test assert it fires exactly once from `onPaired`'s `Task { … }`, since the method
+    /// is `public` and idempotent-looking but has no other call-counting seam.
+    private(set) var reconcileIndeterminateDeliveryCallCountForTesting = 0
+    #endif
+
     /// Test seam: drives the REAL `pumpClientDidBecomeReady` pairing-selection path with `pairingCode`
     /// already set, exactly as the delegate would after a real BLE connect reaches `.ready` — so a
     /// test can assert the selected scheme / first outgoing message without a live `CBCentralManager`.
@@ -1411,6 +1426,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// "verify" affordance.
     @discardableResult
     public func reconcileIndeterminateDelivery() async -> Double? {
+        #if DEBUG
+        reconcileIndeterminateDeliveryCallCountForTesting += 1
+        #endif
         guard deliveryOutcomeUnknown else { return nil }
         let target = unknownOutcomeBolusId
         guard case .resolved(let delivered, _) = await findBolusInHistory(bolusId: target) else {
@@ -2264,9 +2282,18 @@ extension TandemBackend: PumpBLEClientDelegate {
         // path reads them as stale and fails closed. Unconditional (see the note where `readScheduler`
         // is declared) — both are no-ops when nothing is in flight.
         readScheduler.completeGlucoseRead()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("completeGlucoseRead")
+        #endif
         readScheduler.completeCalcInputRead()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("completeCalcInputRead")
+        #endif
         // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
         failPumpWaiters(BolusError.notConnected)
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("failPumpWaiters")
+        #endif
         // D-05 (UI-SPEC partial/interrupted state): a sync mid-flight when the link drops is a benign,
         // resumable pause — the persisted coverage map guarantees the next connect resumes correctly —
         // never a red error. GO-2 Step 0/1 (16-08): the history subset of this cleanup (the `.syncing`→
@@ -2275,12 +2302,24 @@ extension TandemBackend: PumpBLEClientDelegate {
         // map) is deliberately NOT cleared there either, so the next connect resumes from where this one
         // left off instead of re-walking from scratch (D-04).
         historySyncCoordinator.linkDropped()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("historyLinkDropped")
+        #endif
         // Re-check history status on the next connect (D-02: a fresh connect always re-syncs against the
         // persisted coverage map). `historyStatusRequestedThisConnection` stays TandemBackend's own field
         // (never touched by the coordinator).
         historyStatusRequestedThisConnection = false
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("historyStatusReset")
+        #endif
         detectedIsMobi = nil   // re-detect the model on the next connect
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("detectedIsMobiReset")
+        #endif
         pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("pumpFeatureBitsReset")
+        #endif
         // FIFTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #4 direct log
         // analysis, see `PumpReadScheduler.scheduleAlertRead()`'s doc comment for the full mechanism):
         // `pollTimer` was previously invalidated ONLY at the top of the next `startPolling()` call, so a
@@ -2297,21 +2336,36 @@ extension TandemBackend: PumpBLEClientDelegate {
         // survive a drop and fire reads into a dead link. `stopAllTimers()` replaces the old
         // `invalidatePollTimerOnDisconnect()` (pollTimer-only).
         readScheduler.stopAllTimers()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("stopAllTimers")
+        #endif
         // CR-01/CR-02 (R2-01/R2-05): advance the scheduler's poll-cycle generation so any already-armed
         // `scheduleAlertRead()` / queued read from the cycle that just ended recognizes it is stale and
         // no-ops immediately, rather than injecting a rogue read into the reconnect gap or the next cycle.
         readScheduler.notePollCycleEnded()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("notePollCycleEnded")
+        #endif
         // CR-01 (R2-01): a late/stale pairing coordinator must not survive a link-down — a late
         // AUTHORIZATION frame could otherwise advance a dead handshake. Rebuilt fresh in
         // `pumpClientDidBecomeReady` on the next connect.
         coordinator = nil
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("coordinatorCleared")
+        #endif
         // CR-01 (R2-01): drop the auth key so `isPaired` fails closed across the gap — a signed read must
         // never land in the pre-auth window before `onPaired` rebuilds the key. `validateDeliver` (which
         // gates on `.connected` AND `isPaired`) therefore also fails closed until the next real pair.
         authenticationKey = []
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("authKeyCleared")
+        #endif
         // CR-01 (R2-01): the pairing-handshake watchdog is per-connection — cancel it here so a drop that
         // happens mid-handshake doesn't leave a stale timer that later fires against a torn-down link.
         cancelPairingWatchdog()
+        #if DEBUG
+        onLinkDroppedCleanupStepForTesting?("cancelPairingWatchdog")
+        #endif
     }
 
     /// CR-01 (R2-01) shared spine: publish the application-usable `.connected` state and start polling at
