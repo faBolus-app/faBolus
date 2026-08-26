@@ -26,22 +26,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// started on the host's own phone. `bolusApprovalRequest` carries the units; the remote replies
         /// `bolusApprovalResponse` with `approved`. Off by default; BLE-only, not in the shared schema.
         case bolusApprovalRequest, bolusApprovalResponse
-        /// Advisory eating-detection (Phase 5). `eatingEvent` is sent watch→phone when the watch's
-        /// on-device detector flags likely eating (`eatingProb`); the phone fuses it into the nudge
-        /// engine. The phone signals whether the watch should be sensing via `eatingSensingOn` on the
-        /// routine status push (battery). Advisory only — never doses; not safety-critical.
-        case eatingEvent
-
-        /// Phase 09.6-07 (D-03.1, D-04): read-only request/reply for the watch's OWN diagnostics text,
-        /// requested by the phone and replied by the watch over the SAME `RemoteCommand`/`RemoteLink`
-        /// channel (WatchConnectivity). A bare command (no `diagnosticsText` set) is the phone's
-        /// REQUEST; a command with `diagnosticsText` set is the watch's REPLY — distinguished the same
-        /// way `statusRead` is request-vs-reply, just in the reverse direction (phone asks, watch
-        /// answers). Carries TEXT ONLY — never a dose/delivery input — and is Swift-only (like
-        /// `eatingEvent`): not part of the shared `command.schema.json` / Garmin Monkey C mirror, since
-        /// only the Apple Watch answers it.
-        case diagnosticsRead
-
         /// True for commands that cause — or authorize — a **write to the pump**.
         ///
         /// These must never be queued for later opportunistic delivery. A queued bolus that lands
@@ -57,7 +41,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
                  .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
                 return true
-            case .bolusStatus, .statusRead, .eatingEvent, .diagnosticsRead,
+            case .bolusStatus, .statusRead,
                  .authHello, .authChallenge, .authProof, .authResult:
                 return false
             }
@@ -222,10 +206,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var glucosePlotFloorSmall: Int? = nil
     public var glucosePlotCeilingSmall: Int? = nil
 
-    // Advisory eating-detection (Phase 5). Not part of the safety-critical schema.
-    public var eatingProb: Double? = nil       // eatingEvent: watch's on-device p(eating) ∈ [0,1]
-    public var eatingSensingOn: Bool? = nil    // status push: should the watch run wrist eating-sensing?
-
     // MARK: Mac↔phone pairing handshake (see MacPairing)
     // Swift-only fields with defaults, so the existing initializer, command.schema.json, and the
     // Garmin Monkey C mirror all stay untouched. Present only on `auth*` kinds; nil (omitted from
@@ -367,14 +347,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var iobEpochSec: Int? = nil
     public var therapyEpochSec: Int? = nil
 
-    /// Phase 09.6-07 (D-03.1, D-04) — the watch's OWN diagnostics text, present only on a
-    /// `.diagnosticsRead` REPLY (nil on the bare REQUEST). Redacted at the watch before it is ever
-    /// set (any device/peer name becomes a `watch-XXXX` token; no therapy/glucose value) — see
-    /// `WatchSelfDiagnostics.watchBody`. Read-only observability; never consulted by any dose/delivery
-    /// path. Swift-only additive field (set post-init), like `eatingProb`/`glucoseDisplayUnit` — not
-    /// part of the shared JSON schema or the Garmin Monkey C mirror.
-    public var diagnosticsText: String? = nil
-
     /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone as a FROZEN wire token
     /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
     /// `PumpSnapshot.ciqZone`. A remote decodes the token and renders Tandem's own zone word + icon
@@ -502,13 +474,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqMaxIobEventsExceeded: Bool? = nil
 
     /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle STATES
-    /// themselves, mirrored to remotes on the SAME `statusRead` channel already used for
-    /// `eatingSensingOn`/`remotesReadOnly` (SP-1). This is belt-and-suspenders parity (guardrail #13,
-    /// D-08): a remote must suppress a feature whose toggle is OFF even if the phone forgot to ALSO
-    /// gate that feature's own field emission — the remote is never allowed to depend solely on the
-    /// host's other gate. Emitted UNCONDITIONALLY every statusRead (mirrors `eatingSensingOn`), so
-    /// "absent" can only mean a legacy host that predates this plan. Additive; auto-Codable, so the
-    /// existing memberwise initializer stays untouched.
+    /// themselves, mirrored to remotes on the SAME `statusRead` channel already used for other
+    /// unconditionally-emitted phone-owned settings like `remotesReadOnly` (SP-1). This is
+    /// belt-and-suspenders parity (guardrail #13, D-08): a remote must suppress a feature whose toggle
+    /// is OFF even if the phone forgot to ALSO gate that feature's own field emission — the remote is
+    /// never allowed to depend solely on the host's other gate. Emitted UNCONDITIONALLY every
+    /// statusRead, so "absent" can only mean a legacy host that predates this plan. Additive;
+    /// auto-Codable, so the existing memberwise initializer stays untouched.
     ///
     /// Absent-on-legacy-host default asymmetry (matches each flag's own `AppSettings` D-07 default):
     /// the always-on-by-default features (state readouts, lockout countdown) resolve a missing key to
@@ -632,7 +604,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("extendedNowUnits", extendedNowUnits), ("carbRatio", carbRatio), ("isf", isf),
             ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
             ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
-            ("glucoseAgeSec", glucoseAgeSec), ("eatingProb", eatingProb),
+            ("glucoseAgeSec", glucoseAgeSec),
             ("maxBasalUnitsPerHour", maxBasalUnitsPerHour),
         ]
         for (name, v) in allDoubles where v != nil {
@@ -649,7 +621,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try range("deliveredUnits", deliveredUnits, 0, 100)
         try range("remoteEstimateUnits", remoteEstimateUnits, 0, 100)
         try range("extendedNowUnits", extendedNowUnits, 0, 100)
-        try range("eatingProb", eatingProb, 0, 1)
         // T1-8 (D-03/D-08): display-only, never a dose input — a generous sane bound (not a clinical
         // claim), matching the same 25 U/hr ceiling `Interlocks.clampMaxBolusLimit` enforces as its
         // absolute hard cap, so an out-of-this-world value fails closed here rather than reaching a
@@ -741,7 +712,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
             ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
             ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
-            ("diagnosticsText", diagnosticsText),
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }

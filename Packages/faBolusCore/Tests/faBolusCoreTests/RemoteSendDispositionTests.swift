@@ -19,7 +19,7 @@ final class RemoteSendDispositionTests: XCTestCase {
     ]
     /// Display/handshake traffic. Queuing these is desirable — a watch that was out of range catches up.
     private static let nonMutating: [RemoteCommand.Kind] = [
-        .bolusStatus, .statusRead, .eatingEvent,
+        .bolusStatus, .statusRead,
         .authHello, .authChallenge, .authProof, .authResult,
     ]
 
@@ -31,7 +31,7 @@ final class RemoteSendDispositionTests: XCTestCase {
         let all: [RemoteCommand.Kind] = [
             .bolusRequest, .bolusConfirm, .bolusStatus, .cancelBolus, .statusRead, .dismissAlert,
             .suspendPump, .resumePump, .authHello, .authChallenge, .authProof, .authResult,
-            .sealed, .bolusApprovalRequest, .bolusApprovalResponse, .eatingEvent,
+            .sealed, .bolusApprovalRequest, .bolusApprovalResponse,
         ]
         XCTAssertEqual(classified.count, all.count, "a RemoteCommand.Kind is unclassified")
         for k in all { XCTAssertTrue(classified.contains(k.rawValue), "\(k.rawValue) unclassified") }

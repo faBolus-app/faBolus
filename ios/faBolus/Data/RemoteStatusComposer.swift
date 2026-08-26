@@ -14,7 +14,7 @@ import faBolusCore
 ///
 /// **INV-C (no second source of pump truth).** Every read the original body performed — the ~27
 /// `AppSettings.shared` reads, the wall-clock `Date()` used for `glucoseAgeSec`, `BolusPasscodeStore
-/// .isRequired`, `capabilities.supportsRemoteAlertDismiss`, `lastWantAccel` — is snapshotted into
+/// .isRequired`, `capabilities.supportsRemoteAlertDismiss` — is snapshotted into
 /// `RemoteStatusInputs`/`RemoteStatusSettings` by the thin `AppModel.statusCommand` adapter BEFORE this
 /// type ever runs. `RemoteStatusComposer` holds no state and touches nothing but its parameter.
 ///
@@ -86,9 +86,6 @@ enum RemoteStatusComposer {
         cmd.glucosePlotCeiling = settings.glucosePlotCeiling
         cmd.glucosePlotFloorSmall = settings.glucosePlotFloorSmall
         cmd.glucosePlotCeilingSmall = settings.glucosePlotCeilingSmall
-        // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
-        // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
-        cmd.eatingSensingOn = settings.eatingNudgesEnabled && inputs.lastWantAccel
         // Group D: the host's authoritative bolus availability on the broadcast-safe axes (pump link,
         // in-flight, remotes-read-only), so a remote — especially Garmin, which can't parse the
         // connection string — gates its bolus affordance on a semantic flag instead of substring-matching
@@ -231,9 +228,6 @@ struct RemoteStatusInputs {
     let canBolus: Bool
     /// INV-A: `BolusGate.evaluate(...).reason?.wireToken` — computed by the adapter, never re-derived here.
     let bolusBlockReason: String?
-    /// `AppModel`'s private `lastWantAccel` flag (whether the phone currently wants the wrist accel
-    /// signal), snapshotted by the adapter since the composer has no access to `AppModel`'s privates.
-    let lastWantAccel: Bool
     /// `BolusPasscodeStore.isRequired` at compose time.
     let bolusPasscodeRequired: Bool
     /// `AppModel.capabilities.supportsRemoteAlertDismiss` at compose time.
@@ -264,7 +258,6 @@ struct RemoteStatusSettings {
     let glucosePlotCeiling: Int
     let glucosePlotFloorSmall: Int?
     let glucosePlotCeilingSmall: Int?
-    let eatingNudgesEnabled: Bool
     let garminBolusEnabled: Bool
     let activeModeRawValue: String           // AppSettings.appMode.rawValue
     let ciqStateReadoutsEnabled: Bool

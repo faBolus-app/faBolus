@@ -119,10 +119,12 @@ public final class AppModel {
         latestGarminHeartRate = (bpm, date)
     }
 
-    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`,
-    // `eatingNudgeActedOn`, and `ingestWatchEatingEvent` moved verbatim to
-    // `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE` gates preserved) — see that file.
-    // `setupEatingPersonalization()` is still called from `init` below (cross-file, `internal`).
+    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`, and
+    // `eatingNudgeActedOn` moved verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE`
+    // gates preserved) — see that file. `setupEatingPersonalization()` is still called from `init`
+    // below (cross-file, `internal`). Phase 17.5 Plan 03 (D1-01): the Apple-Watch-on-device
+    // eating-event-ingest method that also lived in that file — a zero-caller orphan once the
+    // WatchConnectivity host was deleted (Plan 02) — was deleted outright.
 
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
@@ -484,7 +486,6 @@ public final class AppModel {
             glucosePlotCeiling: AppSettings.shared.glucosePlotCeiling,
             glucosePlotFloorSmall: AppSettings.shared.glucosePlotFloorSmall,
             glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
-            eatingNudgesEnabled: AppSettings.shared.eatingNudgesEnabled,
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
             activeModeRawValue: AppSettings.shared.appMode.rawValue,
             ciqStateReadoutsEnabled: AppSettings.shared.ciqStateReadoutsEnabled,
@@ -503,7 +504,6 @@ public final class AppModel {
             remoteMax: remoteMax,
             canBolus: avail.canBolus,
             bolusBlockReason: avail.reason?.wireToken,
-            lastWantAccel: lastWantAccel,
             bolusPasscodeRequired: BolusPasscodeStore.isRequired,
             supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
             settings: settings)
