@@ -92,9 +92,13 @@ struct AppModelReferenceAuditTests {
     /// `ios/faBolus/Data/AppModel.swift` at runtime (a zero-runtime-reference proof that the deleted
     /// `maybeBackfillNightscout`/`lastNSBackfill` symbols are gone), so it now carries the same
     /// `appendingPathComponent("ios/faBolus/Data/AppModel.swift")` marker as the other ACTIVE files.
+    ///
+    /// **16-04 Task 3 addition:** `AppModelAccessWideningGuardTests` (new in Task 3) is ACTIVE for the
+    /// same reason — it opens `AppModel.swift` to source-scan the enumerated widened-property set.
     static let activeScanFiles: Set<String> = [
         "LiveActivityAbsenceGuardTests.swift",
         "NightscoutStubInertnessTests.swift",
+        "AppModelAccessWideningGuardTests.swift",
     ]
 
     /// COMMENT-ONLY: cites `"AppModel.swift"` in a doc comment / line-number pin; never opens the
