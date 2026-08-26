@@ -172,11 +172,16 @@ struct DeliverySurfaceOutcomeGuardTests {
             let r = await model.deliverWidgetBolus(requestId: "w-indet", units: 1.0)
             #expect(r.delivered == 0)
             #expect(r.cancelled == false)
-            // The widget's indeterminate string is its OWN shorter variant (:2621) — distinct from the
-            // local surfaces' "…before retrying." wording pinned above.
-            #expect(r.error == Self.indeterminateWidgetMessage)
+            // REMED-17 (Plan 17-13, D3-01 owner-authorized convergence): the widget's USER-FACING returned
+            // `error` now converges onto the shared locked copy (same wording every surface uses) — the
+            // PEER-WIRE `.unknown` echo `message` (`rec.last?.message`, checked in
+            // BolusIndeterminateNotificationTests' echo-payload-unchanged assertions) stays the ORIGINAL
+            // shorter `Self.indeterminateWidgetMessage` string, byte-identical.
+            #expect(r.error == Self.indeterminateLocalMessage)
             #expect(rec.last?.requestId == "w-indet")
             #expect(rec.last?.status == .unknown)
+            #expect(rec.last?.message == Self.indeterminateWidgetMessage,
+                    "the peer-wire echo message must remain byte-identical to its original shorter string")
         }
     }
 

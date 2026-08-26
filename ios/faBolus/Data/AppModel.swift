@@ -203,6 +203,11 @@ public final class AppModel {
     /// delivered; its AUTHORITATIVE resolution belongs to `.bolusReconciliation`, not this heads-up.
     static let indeterminateOutcomeLockedCopy =
         "Bolus sent but outcome is unknown — verify on the pump before retrying."
+    /// REMED-17 (codex CRITICAL #2): the widget's `.unknown` RemoteCommand echo `message` — its ORIGINAL,
+    /// shorter, peer-wire string — kept byte-identical and split apart from the USER-FACING copy above
+    /// (which now converges to `indeterminateOutcomeLockedCopy`). Never change this literal.
+    static let widgetIndeterminateEchoMessage =
+        "Bolus sent but outcome is unknown — verify on the pump."
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
     @ObservationIgnored private var previousGlucoseFresh = false
     /// CX-F-02: the fresh glucose datum's date the staleness watchdog is CURRENTLY armed against, or nil
@@ -1592,7 +1597,12 @@ public final class AppModel {
             lastHostDeliveryAt = Date()   // VA-07 host-side: stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
-            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+            lastError = Self.indeterminateOutcomeLockedCopy
+            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
+            postSafety(.bolusIndeterminate, severity: .warning,
+                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                       dedupeKey: "indeterminate-local-\(requestId)")
         case .blocked(let msg), .failed(let msg):
             lastError = msg
             notifyDeliveryFailed(msg)
@@ -2457,9 +2467,15 @@ public final class AppModel {
             echo(bolusOutcome(requestId: requestId, delivered: units))
             lastError = nil
         case .indeterminate:
-            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+            lastError = Self.indeterminateOutcomeLockedCopy
+            // Peer wire: this `.unknown` echo message is UNCHANGED — already the locked copy, byte-identical.
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
-                               message: "Bolus sent but outcome is unknown — verify on the pump before retrying."))
+                               message: Self.indeterminateOutcomeLockedCopy))
+            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
+            postSafety(.bolusIndeterminate, severity: .warning,
+                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                       dedupeKey: "indeterminate-\(peerId)-\(requestId)")
         case .failed(let msg):
             lastError = msg
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
@@ -2487,10 +2503,14 @@ public final class AppModel {
     /// additive notification/persistent-message role, exactly like `notifyRemoteBolusRejected`.
     ///
     /// Distinct from `.remoteBolusRejected` (a dose REFUSED before delivery by a policy/divergence/stale-
-    /// approval check — it never reached the pump) and, deliberately, NOT posted for an INDETERMINATE
-    /// outcome: "outcome unknown" may in fact have delivered, so it stays op-result only and its
-    /// authoritative resolution is owned by the never-suppressible `.bolusReconciliation` poster
-    /// (`reconcileUnresolvedDeliveries`). Posting "failed" for an indeterminate outcome would be a lie.
+    /// approval check — it never reached the pump) and, deliberately, NEVER posted for an INDETERMINATE
+    /// outcome: "outcome unknown" may in fact have delivered, so a "failed" banner would be a lie — this
+    /// invariant is preserved unconditionally. REMED-17 (Plan 17-13): an indeterminate outcome instead
+    /// posts an immediate GOVERNED `.bolusIndeterminate` (.warning) heads-up via `postSafety` at all four
+    /// delivery sites — additive, point-in-time, never persisted/replayed, does not break through DND
+    /// (owner's Gentle disposition). The AUTHORITATIVE resolution is still owned by the never-suppressible
+    /// `.bolusReconciliation` poster (`reconcileUnresolvedDeliveries`), which alone can post a durable,
+    /// DND-breaking result once the pump's true outcome is known.
     /// Best-effort — a no-op when no broker sink is installed (an out-of-process intent / a unit test).
     private func notifyDeliveryFailed(_ message: String) {
         deliveryFailedSeq += 1
@@ -2538,10 +2558,18 @@ public final class AppModel {
             lastError = nil
             return (delivered, cancelled, nil)
         case .indeterminate:
-            let msg = "Bolus sent but outcome is unknown — verify on the pump."
-            lastError = msg
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: msg))
-            return (0, false, msg)
+            // Peer wire: the `.unknown` echo message stays this EXACT ORIGINAL shorter string,
+            // byte-identical — split out from the USER-FACING copy below (REMED-17 codex CRITICAL #2).
+            let echoMsg = Self.widgetIndeterminateEchoMessage
+            let userMsg = Self.indeterminateOutcomeLockedCopy   // USER-FACING copy converges to the locked copy
+            lastError = userMsg
+            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: echoMsg))
+            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
+            postSafety(.bolusIndeterminate, severity: .warning,
+                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                       dedupeKey: "indeterminate-widget-\(requestId)")
+            return (0, false, userMsg)
         case .failed(let msg):
             lastError = msg
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
