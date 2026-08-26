@@ -12,21 +12,22 @@ without forking. Everything else is a plugin behind one of these.
 │   • PumpAlert + domain models (Models.swift)                        — backend-neutral
 │   • BackendDescriptor  (Sources/faBolusCore/BackendDescriptor.swift) — how a backend registers
 │   • RemoteCommand      (Sources/faBolusCore/RemoteCommand.swift + schema/command.schema.json) — the remote seam
-│   • RemoteLink         (Sources/faBolusCore/RemoteLink.swift)      — transport (WatchConnectivity)
 ├ BackendRegistry  (ios/faBolus/Data/BackendRegistry.swift)   — compile-time backend manifest (app-side)
 ├ Backends  (conform to PumpBackend)          ── swap the pump
 │   • TandemBackend (ios/faBolus/Data/TandemBackend.swift, wraps TandemKit)  ← reference
 │   • MockBackend   (ios/faBolus/Data/MockBackend.swift)                     ← copy this to start a new backend
 ├ Hosts  (answer the remote protocol)         ── who drives the pump for a remote
-│   • faBolus (AppModel + PhoneRemoteHost/GarminRemoteBridge)  ← reference host
+│   • faBolus (AppModel + GarminRemoteBridge)  ← reference host
 │   • Loop host (open contribution, sketch in hosts/loop/)    ← "Loop instead of faBolus"
 └ Remotes  (speak RemoteCommand)              ── host-agnostic
-    • Apple Watch app        • faBolusGarmin (separate repo)
+    • faBolusGarmin (separate repo)
 ```
 
 `faBolusCore` holds only the stable contracts and platform-neutral models — no UI, no pump library,
-no `import` of TandemKit. The app, the Apple Watch target, and every backend depend on it; that's
-what keeps the two seams below stable while implementations churn.
+no `import` of TandemKit. The app and every backend depend on it; that's what keeps the two seams
+below stable while implementations churn. (The Apple Watch app/target is removed — gone on-device
+since Phase 3/REMOTE-03, and the residual phone-side wire/transport/gate machinery retired in
+Phase 17.5.)
 
 ## Seam 1 — `PumpBackend` (support a different pump)
 The app talks only to `PumpBackend`, never to a pump library. A backend supplies a live
@@ -42,8 +43,8 @@ first in the list). See `CONTRIBUTING.md` → "Add a pump backend."
 ## Seam 2 — the Remote Protocol (support a different host, e.g. Loop)
 Phone↔remote messages are the small JSON contract in **`schema/command.schema.json`** (the source
 of truth), mirrored in Swift (`RemoteCommand`) and Monkey C (faBolusGarmin's `RemoteCommand.mc`).
-A **remote** (Apple Watch, Garmin) only speaks this contract; a **host** answers it. faBolus's
-`AppModel` + `PhoneRemoteHost`/`GarminRemoteBridge` are the reference host. Any other app — e.g.
+A **remote** (Garmin) only speaks this contract; a **host** answers it. faBolus's
+`AppModel` + `GarminRemoteBridge` are the reference host. Any other app — e.g.
 **Loop** — can host the same remotes by implementing the host side of the contract (map it to its
 own dosing/status APIs). See `CONTRIBUTING.md` → "Host the remotes from another app."
 
@@ -51,8 +52,8 @@ own dosing/status APIs). See `CONTRIBUTING.md` → "Host the remotes from anothe
 clamp. The remote's 1-2-3 / hold confirm is a *second* factor, not the only one.
 
 ## Repos
-- **faBolus** (this repo) — the app, Apple Watch remote, iPhone widgets, backends, `faBolusCore`,
-  and the contract.
+- **faBolus** (this repo) — the app, iPhone widgets, backends, `faBolusCore`, and the contract.
+  (The Apple Watch remote is removed — see the note above.)
 - **TandemKit** — the Tandem protocol/auth/BLE engine (a package `TandemBackend` wraps).
 - **faBolusGarmin** — the Garmin remote (host-agnostic; consumes the contract schema).
 
@@ -63,7 +64,8 @@ the step-by-step.
   `BackendDescriptor`. Start from `MockBackend`. The whole app adapts via `PumpCapabilities`; nothing
   else changes.
 - **Host the remotes from another app (e.g. Loop)** — answer the remote protocol from your own app so
-  its watch/Garmin remotes drive *your* dosing. `hosts/loop/` is a starting sketch, intentionally left
-  for a contributor to complete against LoopKit (it must keep Loop's own confirmation + a max clamp).
-- **Second-factor / transport work** — the contract is transport-agnostic; new `RemoteLink` transports
+  its Garmin remote (or any other remote you add) drives *your* dosing. `hosts/loop/` is a starting
+  sketch, intentionally left for a contributor to complete against LoopKit (it must keep Loop's own
+  confirmation + a max clamp).
+- **Second-factor / transport work** — the contract is transport-agnostic; new remote transports
   or hardened confirmations are welcome as long as the interlocks hold.

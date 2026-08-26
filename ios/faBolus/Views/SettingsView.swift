@@ -210,7 +210,7 @@ struct SettingsView: View {
                             Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
                         }
                     } header: { Text("Safety") } footer: {
-                        Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+                        Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (Garmin has its own switch under Remotes & devices — the Apple Watch remote is removed, so it has no separate switch anymore.)")
                     }
                     // Privacy & data moved UP into the category section above (between Remotes & devices
                     // and About & help); its former standalone section here is gone. (History: that
@@ -406,7 +406,7 @@ struct SafetySettingsView: View {
                     Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
                 }
             } header: { Text("Safety") } footer: {
-                Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+                Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (Garmin has its own switch under Remotes & devices — the Apple Watch remote is removed, so it has no separate switch anymore.)")
             }
         }
         .navigationTitle("Safety")
@@ -428,7 +428,7 @@ struct BolusSettingsView: View {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Apple Watch and Garmin bolus screens.") }
+            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Garmin bolus screen (the Apple Watch remote is removed).") }
             Section {
                 Picker("Unit increment", selection: $settings.bolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
@@ -902,7 +902,7 @@ struct RemotesSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("Watch/Garmin bolus") } footer: {
-                Text("Default entry mode and increments for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same settings as under Bolus & entry.")
+                Text("Default entry mode and increments for the Garmin bolus screen (independent of the iPhone; the Apple Watch remote is removed). Same settings as under Bolus & entry.")
             }
             Section {
                 NavigationLink {
