@@ -245,6 +245,33 @@ public protocol PumpHistoryProviding: AnyObject {
     func cancelHistorySync()
 }
 
+/// GO-2 Step 2 (16-09, REMED-16) — additive capability protocol naming the diagnostics/telemetry-only
+/// hooks `TandemBackend` exposes, pairing with `PumpConnectionLifecycle`'s extraction so `AppModel`'s
+/// diagnostics wiring can eventually depend on a capability slice instead of the concrete type.
+/// `PumpBackend` itself gains NOTHING (unchanged); a backend opts in by additionally conforming here.
+///
+/// **CAPABILITY-OWNERSHIP CONTRACT**: exactly the 3 members `TandemOnlyOps` (16-07, app-layer) already
+/// designates for this protocol in its own doc comment — `onCommandLatency`, `onWillRetryReconnect`,
+/// `badOpcodesForDiagnostics`. `alertDebug` is deliberately NOT here — it's already a plain `PumpBackend`
+/// member (line 24), reached without any cast.
+///
+/// **Not yet wired into `AppModel`'s casts**, mirroring `PumpHistoryProviding`'s (16-08) own precedent:
+/// `TandemOnlyOps`'s doc comment designates 16-10 as the step that re-narrows those 3 `AppModel` casts
+/// off `TandemOnlyOps` onto this protocol and removes the members from `TandemOnlyOps`. This plan adds
+/// the protocol + conformance only, to avoid contradicting that already-committed sequencing (see the
+/// 16-09-SUMMARY.md "Deviations"/decisions section).
+@MainActor
+public protocol PumpDiagnosticsProviding: AnyObject {
+    /// B3a (§5.2.8): observational command round-trip latency sink. Diagnostics-only; never influences
+    /// control flow.
+    var onCommandLatency: (@MainActor (Double?) -> Void)? { get set }
+    /// D-05: observational reconnect-ladder sink. Diagnostics-only; never influences control flow.
+    var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)? { get set }
+    /// Part B-a (09.6-01, D-02a): opcodes the connected pump has rejected this connection-lifetime, for
+    /// the `[Capability/opcode]` diagnostics section.
+    var badOpcodesForDiagnostics: Set<UInt8> { get }
+}
+
 public enum BolusReconciliation: Sendable, Equatable {
     /// The pump's record for this bolus id was found: `deliveredUnits` actually went in (possibly a partial
     /// amount). `cancelled` is true when the pump reports it ended by cancellation.

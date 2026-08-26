@@ -285,6 +285,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `iobHistory`/`bolusMarkers` stay PUBLISHED here on `TandemBackend` — the coordinator mutates them
     /// only through the injected sinks (see its own doc comment's STATE-OWNERSHIP CONTRACT).
     private let historySyncCoordinator = PumpHistorySyncCoordinator()
+    /// GO-2 Step 2 (16-09, REMED-16, CX-A-03): the connection/pairing-lifecycle subset (R19) — extracted
+    /// behind injected closures (wired in `wireConnectionLifecycle()` right below, same two-phase-init
+    /// reason as `readScheduler`/`responseApplier`/`historySyncCoordinator`). Gate-adjacent: it borders
+    /// the auth-key lifecycle, the delivery-lock teardown, and re-pair reconciliation, so it NEVER stores
+    /// `authenticationKey`/`coordinator`/`pairingCode`/`detectedIsMobi`/the delivery lock itself — every
+    /// one of those stays owned and published here on `TandemBackend`; the lifecycle type reaches them
+    /// only through the injected get/set closures (see its own doc comment). `linkDroppedCleanup()`
+    /// itself — the shared teardown spine — also stays here, unmoved (review concern #5); the lifecycle
+    /// only calls OUT to it.
+    private let lifecycle = PumpConnectionLifecycle()
     /// debug pump-background-disconnect (owner-authorized 2026-08-20, re-scoped): app-side belt-and-
     /// suspenders for the kit's background reconnect. When a reconnect attempt is scheduled while the app is
     /// backgrounded, it holds ONE `beginBackgroundTask` window open so the kit's main-RunLoop
@@ -492,14 +502,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         set { historySyncCoordinator.historyBackfillTimeZoneForTesting = newValue }
     }
     #endif
-    // CR-01 (R2-01): pairing-handshake watchdog (armed at `coord.start()`; see the extension for
-    // arm/fire/cancel). Stored here because Swift forbids stored properties in an extension.
-    private var pairingWatchdog: Timer?
-    private var pairingWatchdogClearStore = false
-    // R2-07: bounded quick-pair RESUME retry budget. A failed resume must RETRY (never auto-wipe the stored
-    // secret); only after this budget is exhausted do we surface a RETRYABLE error that KEEPS the secret.
-    private var resumeRetryCount = 0
-    private static let maxResumeRetries = 2
+    // CR-01 (R2-01) pairing-handshake watchdog + R2-07 resume-retry budget: GO-2 Step 2 (16-09,
+    // REMED-16) moved `pairingWatchdog`/`pairingWatchdogClearStore`/`resumeRetryCount`/
+    // `maxResumeRetries` verbatim into `PumpConnectionLifecycle` (the sole store there now — see its own
+    // doc comment). `authenticationKey`/`coordinator`/`pairingCode`/`detectedIsMobi` below stay here,
+    // reached by the lifecycle only through injected get/set closures (never stored there).
 
     // CC-11 (Phase 14 14-04): `findBolusInHistory(bolusId:)`'s bounded exact-id search — a SEPARATE,
     // dedicated page-walk from the routine gap-sync/backfill machinery above (never touches
@@ -735,6 +742,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         wireReadScheduler()
         wireResponseApplier()
         wireHistorySyncCoordinator()
+        wireConnectionLifecycle()
         wireBackgroundSession()
     }
 
@@ -968,6 +976,44 @@ public final class TandemBackend: NSObject, PumpBackend {
         historySyncCoordinator.onChange = { [weak self] in self?.onChange?() }
     }
 
+    /// Wires `lifecycle`'s injected closures (D-04 hook pattern) — called from BOTH initializers right
+    /// after `super.init()`, same two-phase-init reason as `wireReadScheduler()`/`wireResponseApplier()`/
+    /// `wireHistorySyncCoordinator()`. GO-2 Step 2 (16-09, REMED-16): `authenticationKey`/`coordinator`/
+    /// `pairingCode`/`detectedIsMobi`/`snapshot` all stay OWNED and PUBLISHED here on `TandemBackend` —
+    /// `lifecycle` reaches every one of them ONLY through the get/set closures below, never storing a
+    /// copy (STATE-OWNERSHIP, mirrors `wireHistorySyncCoordinator()`'s own contract). `linkDroppedCleanup`
+    /// is bound to the real method (unmoved, review concern #5) — `lifecycle` only calls OUT to it.
+    private func wireConnectionLifecycle() {
+        lifecycle.withSnapshot = { [weak self] body in
+            guard let self else { return }
+            body(&self.snapshot)
+        }
+        lifecycle.onChange = { [weak self] in self?.onChange?() }
+        lifecycle.readScheduler = readScheduler
+        lifecycle.bgSession = bgSession
+        lifecycle.client = client
+        lifecycle.linkDroppedCleanup = { [weak self] in self?.linkDroppedCleanup() }
+        lifecycle.getPairingCode = { [weak self] in self?.pairingCode ?? "" }
+        lifecycle.setPairingCode = { [weak self] code in self?.pairingCode = code }
+        lifecycle.getAuthenticationKey = { [weak self] in self?.authenticationKey ?? [] }
+        lifecycle.setAuthenticationKey = { [weak self] key in self?.authenticationKey = key }
+        lifecycle.getCoordinator = { [weak self] in self?.coordinator }
+        lifecycle.setCoordinator = { [weak self] coord in self?.coordinator = coord }
+        lifecycle.getDetectedIsMobi = { [weak self] in self?.detectedIsMobi }
+        lifecycle.setDetectedIsMobi = { [weak self] isMobi in self?.detectedIsMobi = isMobi }
+        lifecycle.reconcileIndeterminateDelivery = { [weak self] in await self?.reconcileIndeterminateDelivery() }
+        lifecycle.onReliabilityEvent = { [weak self] event in self?.onReliabilityEvent?(event) }
+        // Production watchdog seam: byte-identical dispatch to the pre-move inline `Timer.scheduledTimer`
+        // (same `MainActor.assumeIsolated` + fire callback) — only the token type is now opaque (`Any?`)
+        // so `PumpConnectionLifecycle` itself carries no wall-clock dependency.
+        lifecycle.scheduleWatchdog = { seconds, fire in
+            Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in
+                MainActor.assumeIsolated { fire() }
+            }
+        }
+        lifecycle.cancelWatchdog = { token in (token as? Timer)?.invalidate() }
+    }
+
     #if DEBUG
     /// Test-only (round-3 §6.1): drive the signed/delivery flow through a fake transport with a
     /// pre-established connected + paired state, so `perform` can be exercised without CoreBluetooth.
@@ -977,6 +1023,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         wireReadScheduler()
         wireResponseApplier()
         wireHistorySyncCoordinator()
+        wireConnectionLifecycle()
         self.authenticationKey = authKey
         self.snapshot.connection = .connected
         // Phase 2 (D-07/Pitfall 1): default this test-double to "op-115 already read" — mirrors the
@@ -1041,9 +1088,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a
     /// test can assert which message type/opcode a pairing flow sends without parsing unified-log
     /// output. Never carries cargo/payload bytes — only the type name, opcode, and cargo byte COUNT.
-    /// (Declared here, not in the `PumpBLEClientDelegate` extension below, because extensions can't
-    /// hold stored properties.)
-    var onPairingSendForTesting: ((_ typeName: String, _ opcode: UInt8, _ cargoBytes: Int) -> Void)?
+    /// GO-2 Step 2 (16-09, REMED-16): the closure itself now lives on `lifecycle` (its send site,
+    /// `pumpClientDidBecomeReady`, moved there) — this forwards get/set so `b.onPairingSendForTesting = …`
+    /// keeps working unchanged.
+    var onPairingSendForTesting: ((_ typeName: String, _ opcode: UInt8, _ cargoBytes: Int) -> Void)? {
+        get { lifecycle.onPairingSendForTesting }
+        set { lifecycle.onPairingSendForTesting = newValue }
+    }
 
     #if DEBUG
     /// Phase 16 16-09 (GO-2 Step 2, REMED-16, review concern #5) test seam: fires with a step name at
@@ -1126,8 +1177,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     var outstandingReadsForTesting: [(txId: UInt8, opcode: UInt8)] { readScheduler.outstandingReadsForTesting }
 
     /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
-    /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`.
-    var badOpcodesForDiagnostics: Set<UInt8> { readScheduler.badOpcodesForDiagnostics }
+    /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`. `public` (widened from
+    /// `internal` in 16-09, GO-2 Step 2): required to satisfy `PumpDiagnosticsProviding` — Swift requires
+    /// a public protocol's requirement witness to be at least as visible as the protocol itself, even
+    /// for a conformance declared entirely within this module. No behavior change.
+    public var badOpcodesForDiagnostics: Set<UInt8> { readScheduler.badOpcodesForDiagnostics }
     /// SEVENTH fix cycle test seam: run one predictive-burst kick.
     func simulatePredictiveBurstForTesting() { readScheduler.simulatePredictiveBurstForTesting() }
 
@@ -1138,12 +1192,16 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// CR-01 test seam: override the pairing-handshake watchdog deadline so a timeout test doesn't wait
     /// the real 30 s. `nil` (default) uses the production deadline — changes no production behavior.
-    var pairingTimeoutSecForTesting: Double?
+    /// GO-2 Step 2 (16-09, REMED-16): forwards to `lifecycle` (the sole store now).
+    var pairingTimeoutSecForTesting: Double? {
+        get { lifecycle.pairingTimeoutSecForTesting }
+        set { lifecycle.pairingTimeoutSecForTesting = newValue }
+    }
 
     /// CR-01 test seam: fire the armed pairing-handshake watchdog synchronously (mirrors
     /// `firePollTimerTickForTesting`), so a test can drive `beginPairingForTesting(code:)` then assert the
     /// fail-closed teardown without a live 30 s `Timer`.
-    func firePairingWatchdogForTesting() { firePairingWatchdog() }
+    func firePairingWatchdogForTesting() { lifecycle.firePairingWatchdogForTesting() }
 
     /// CR-02 test accessor: the scheduler's current poll-cycle generation, forwarded so a `.connecting`
     /// unintended-drop test can assert `linkDroppedCleanup()` advanced it.
@@ -1162,7 +1220,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// exactly — incremented on each bounded retry, reset to 0 once the budget is exhausted (and by a
     /// successful `onPaired`) — rather than only inferring "retried vs errored" from the connection
     /// state. Mirrors the existing `isPairedForTesting`/`pollCycleGenerationForTesting` accessors.
-    var resumeRetryCountForTesting: Int { resumeRetryCount }
+    /// GO-2 Step 2 (16-09, REMED-16): forwards to `lifecycle` (the sole store now — `resumeRetryCount`
+    /// moved verbatim off `TandemBackend`).
+    var resumeRetryCountForTesting: Int { lifecycle.resumeRetryCountForTesting }
 
     /// C1-01 test seam: which reconnect action `handleResumeFailure()`'s retry branch invoked on the kit
     /// `client` — `.reestablish` (`connectKnownPeripheral`, the fix) or `.disconnect` (the pre-fix bug
@@ -1171,8 +1231,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// directly at the call site rather than depending on a real `CBCentralManager`'s power-state timing
     /// (which the kit's own doc notes is nondeterministic/hardware-only in a test host). Reset to `nil` by
     /// each `resumingBackend()` construction; set exactly once per `handleResumeFailure()` retry-branch call.
-    private(set) var resumeRetryActionForTesting: ResumeRetryAction?
-    enum ResumeRetryAction: Equatable { case reestablish, disconnect }
+    /// GO-2 Step 2 (16-09, REMED-16): forwards to `lifecycle` — `ResumeRetryAction`/the field moved
+    /// verbatim off `TandemBackend`; type inference (`== .reestablish`) means no test needed updating.
+    var resumeRetryActionForTesting: PumpConnectionLifecycle.ResumeRetryAction? { lifecycle.resumeRetryActionForTesting }
 
     /// Test seam (Phase 15 15-04, CX-F-05): directly seed a pre-existing LIVE dosing-snapshot glucose
     /// value + date, since `snapshot`'s setter is private outside this file. Used to prove
@@ -2202,6 +2263,13 @@ public final class TandemBackend: NSObject, PumpBackend {
 // `PumpHistoryProviding`'s own doc comment — 16-10 re-narrows them).
 extension TandemBackend: PumpHistoryProviding {}
 
+// GO-2 Step 2 (16-09, REMED-16): additive conformance — `TandemBackend` already implements every
+// `PumpDiagnosticsProviding` member (`onCommandLatency`/`onWillRetryReconnect`/
+// `badOpcodesForDiagnostics`, the latter forwarded from `readScheduler`); this extension only declares
+// the protocol. `AppModel`'s casts stay on `TandemOnlyOps` for now, mirroring `PumpHistoryProviding`'s
+// own precedent (see this protocol's doc comment in PumpBackend.swift — 16-10 re-narrows them).
+extension TandemBackend: PumpDiagnosticsProviding {}
+
 // PumpBLEClientDelegate is @MainActor; PumpBLEClient delivers all callbacks on the main actor.
 extension TandemBackend: PumpBLEClientDelegate {
     public func pumpClient(_ c: PumpBLEClient, didChange state: PumpBLEClient.State) {
@@ -2209,67 +2277,13 @@ extension TandemBackend: PumpBLEClientDelegate {
         onChange?()
     }
 
-    /// Fold a kit BLE state into the snapshot. Factored out of the delegate (which takes a live
-    /// `PumpBLEClient` and is hard to unit-test) so the state→snapshot mapping is directly testable.
-    /// P12 (app-boundary state): the four radio-down states — Bluetooth off / permission denied /
-    /// unsupported / resetting — used to hit `default: break`, silently leaving a STALE `connection`
-    /// (e.g. still "Connected" after the radio powered off). They now fail closed to `.disconnected` —
-    /// running the SAME waiter-failing cleanup as a normal drop — and carry a user-facing reason in
-    /// `connectionDetail`. `didDisconnectPeripheral`/`didError` may not fire on a BT power-off (kit
-    /// comment at PumpBLEClient.centralManagerDidUpdateState), so this is the only place these surface.
+    /// GO-2 Step 2 (16-09, REMED-16): moved verbatim into `PumpConnectionLifecycle.applyClientState(_:)`
+    /// (see that type's own doc comment for the full CR-01/CR-02/P12 fix-cycle history this preserves,
+    /// including the reconnect-window/`wasLive` guard `TandemConnectionStateTests`/`LinkDropTeardownTests`
+    /// pin). Kept as a thin forwarder under the SAME name/signature so both the raw delegate method below
+    /// and every existing test seam (`b.applyClientState(...)`) keep working unchanged.
     func applyClientState(_ state: PumpBLEClient.State) {
-        switch state {
-        case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
-        case .connecting, .discovering:
-            // CR-02 (R2-05): an unintended BLE drop often surfaces HERE as `.connecting` (the kit skips the
-            // `.disconnected` flicker and goes straight to reconnecting), so `linkDroppedCleanup()` — which
-            // otherwise runs only from the `.disconnected…`/`.reconnectExhausted` cases — never fires across
-            // the reconnect gap. If the link was PREVIOUSLY live, run the shared teardown so the cycle-N
-            // `pollTimer`, an armed `scheduleAlertRead` (via `pollCycleGeneration`), and the prior
-            // `coordinator`/`authenticationKey` don't survive into the gap and inject stale reads / a signed
-            // read into the pre-auth window before `pumpClientDidBecomeReady` rebuilds them. Guard on the
-            // PRE-transition state so a normal first-connect `.scanning → .connecting` climb is untouched.
-            // Keep `.connecting` (not `.disconnected`) so the reconnect-window semantics pinned by
-            // `TandemConnectionStateTests` are preserved. All teardown lives in CR-01's `linkDroppedCleanup()`.
-            let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
-            snapshot.connection = .connecting; snapshot.connectionDetail = nil
-            if wasLive { linkDroppedCleanup() }
-        case .ready:
-            // CR-01 (R2-01): transport-ready ≠ application-usable. The kit's `.ready` only means the BLE
-            // link is up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
-            // not started. Publish `.connecting` (the not-usable intermediate the UI/gate already treat as
-            // unusable — `isLinked == .connected || .bolusing`), NOT `.connected`. The application-usable
-            // `.connected` state is published at the single "we are now polling" moment via
-            // `markUsableAndStartPolling()`. This closes the ghost-"Connected" window where a lost handshake
-            // frame or a thrown pairing write would otherwise pin a green HUD that never polls and never
-            // escalates staleness. Keep `linkDidBecomeReady()` (transport-level recovery signal).
-            snapshot.connection = .connecting; snapshot.connectionDetail = nil
-            bgSession.linkDidBecomeReady()   // debug pump-background-disconnect: reconnect recovered → release the H1 window
-        case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
-            snapshot.connection = .disconnected
-            snapshot.connectionDetail = Self.linkDetail(for: state)
-            linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: link down & NOT retrying → release the H1 window
-        case .reconnectExhausted:
-            // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that never
-            // held `.ready` long enough to count as recovered — see `PumpBLEClient.readyStabilityWindow`).
-            // This is specifically the "pairing keeps looping" case the debug session
-            // (`.planning/debug/pump-pairing-loop.md`) traced to a peer that accepts the connection and
-            // drops it again (real-pump-confirmed: `CBErrorDomain` code 7) — the #1 known cause is the
-            // official t:connect app still holding the pump (one-connection-at-a-time; same guidance
-            // already given during setup, see `MainHUDView`). `.error` (not `.disconnected`) so this
-            // doesn't read as a plain, retryable drop — automatic retry has actually stopped.
-            snapshot.connection = .error
-            snapshot.connectionDetail = "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
-            linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: ladder gave up → release the H1 window
-        default:
-            // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
-            // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
-            // `.unknown`, so no frozen-enum exhaustiveness warning on this external-module enum.
-            snapshot.connection = .disconnected
-            snapshot.connectionDetail = nil
-        }
+        lifecycle.applyClientState(state)
     }
 
     /// Shared cleanup for every "the link is genuinely down" state (`applyClientState`'s plain-disconnect
@@ -2362,259 +2376,34 @@ extension TandemBackend: PumpBLEClientDelegate {
         #endif
         // CR-01 (R2-01): the pairing-handshake watchdog is per-connection — cancel it here so a drop that
         // happens mid-handshake doesn't leave a stale timer that later fires against a torn-down link.
-        cancelPairingWatchdog()
+        // GO-2 Step 2 (16-09, REMED-16, review concern #5): the watchdog-cancel BODY moved into
+        // `PumpConnectionLifecycle.cancelPairingWatchdog()` — this call site is the ONLY thing that
+        // changed inside `linkDroppedCleanup()`; every credential/waiter mutation above it
+        // (`failPumpWaiters`/`coordinator = nil`/`authenticationKey = []`) stays literally inline, in the
+        // exact same order, unmoved.
+        lifecycle.cancelPairingWatchdog()
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("cancelPairingWatchdog")
         #endif
     }
 
-    /// CR-01 (R2-01) shared spine: publish the application-usable `.connected` state and start polling at
-    /// the SINGLE "we are now polling" moment. Every terminal site in `pumpClientDidBecomeReady` that used
-    /// to call `readScheduler.startPolling()` directly now routes through here, so `.connected` is published
-    /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
-    private func markUsableAndStartPolling() {
-        snapshot.connection = .connected
-        onChange?()
-        readScheduler.startPolling()
-    }
-
-    // MARK: - CR-01 (R2-01) pairing-handshake watchdog
-    //
-    // `PairingCoordinator`/`LegacyPairingCoordinator` (external kit) have NO deadline, and the
-    // `onSendRequest` catch-and-log means a lost reply / thrown write never calls `fail`/`onError`. Without
-    // a watchdog, `step` can stick in a `sentN` state forever with the link up: `onPaired`/`onError` never
-    // fire, polling never starts, and no staleness/disconnect escalation runs. This watchdog fails closed
-    // after `pairingTimeoutSec` if pairing hasn't completed. Armed at `coord.start()`; cancelled in
-    // `onPaired`, `onError`, and `linkDroppedCleanup()`.
-    // CR-01 (R2-01): `pairingWatchdog` / `pairingWatchdogClearStore` are STORED properties and therefore
-    // declared in the main class body (next to `backfillTimer`) — Swift forbids stored properties in an
-    // extension. The static default + computed timeout below are allowed here.
-    private static let defaultPairingTimeoutSec: Double = 30
-    private var pairingTimeoutSec: Double {
-        #if DEBUG
-        if let override = pairingTimeoutSecForTesting { return override }
-        #endif
-        return Self.defaultPairingTimeoutSec
-    }
-
-    private func armPairingWatchdog(clearStoreOnTimeout: Bool) {
-        pairingWatchdog?.invalidate()
-        pairingWatchdogClearStore = clearStoreOnTimeout
-        pairingWatchdog = Timer.scheduledTimer(withTimeInterval: pairingTimeoutSec, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.firePairingWatchdog() }
-        }
-    }
-
-    private func cancelPairingWatchdog() {
-        pairingWatchdog?.invalidate(); pairingWatchdog = nil
-    }
-
-    /// R2-07: a quick-pair RESUME failed (a handshake `onError` or a watchdog timeout on the resume path).
-    /// NEVER auto-wipe the stored secret — a transient link glitch must not force a full manual re-pair.
-    /// Retry the resume (bounded, on the live link); when the budget is exhausted, surface a RETRYABLE error
-    /// that KEEPS the derived secret. Only an explicit `forgetPairing()` (R2-06) wipes it. Factored so both
-    /// the `onError` resume branch and `firePairingWatchdog`'s resume branch share one policy (no divergence).
-    ///
-    /// C1-01 (owner-adopted 2026-08-25, `OWNER-DECISIONS.md`): the retry branch used to call
-    /// `client.disconnect()`, on the belief it "re-enters the kit's bounded reconnect ladder" — it does
-    /// NOT. `disconnect()` sets `intentionalDisconnect = true`, and every kit reconnect entry point
-    /// (`didDisconnectPeripheral`'s auto-reconnect, `didFailToConnect`'s retry, `scanTimedOut`'s recovery
-    /// ladder) is `!intentionalDisconnect`-guarded — so the ladder never re-enters and the link goes
-    /// silently dead in the background (confirmed by reading `PumpBLEClient.disconnect()`/
-    /// `connectKnownPeripheral(identifier:)` in the sibling TandemKit checkout). The fix instead calls
-    /// `client.connectKnownPeripheral(identifier:)` for the known peripheral (the SAME cold-launch-fast-path
-    /// entry point `connect()` above already uses): it resets `intentionalDisconnect = false` and restarts
-    /// the reconnect ladder at attempt 0, so the link genuinely re-establishes. C1-04: this edge dies from
-    /// `.connecting` (or the resulting `.disconnected`/`.discovering`, never a live `.connected/.bolusing`
-    /// state), which `SafetyEdge.connection` never raises an alarm on — so the retry ALSO fires the typed
-    /// `onReliabilityEvent(.resumeRetryFailed)` (consumed by `AppModel`, which owns the private
-    /// `postSafety`/`scheduleDisconnectEscalation`) so a background flap is announced regardless of
-    /// whether the kit-level state transition alone would have alarmed.
-    private func handleResumeFailure() {
-        coordinator = nil
-        if resumeRetryCount < Self.maxResumeRetries {
-            resumeRetryCount += 1
-            Self.pairingLog.log("pairing resume retry \(self.resumeRetryCount, privacy: .public)/\(Self.maxResumeRetries, privacy: .public) — keeping stored secret")
-            linkDroppedCleanup()   // drops the auth key (delivery gate fails closed), stops timers
-            #if DEBUG
-            resumeRetryActionForTesting = .reestablish
-            #endif
-            // C1-01: re-establish, NEVER disconnect() — see the doc comment above. Mirrors `connect()`'s
-            // cold-launch fast path: re-adopt the known peripheral id directly; fall back to a scan if the
-            // id isn't known yet (shouldn't normally happen mid-resume, but fails safe rather than crashing).
-            if let id = PumpPeripheralStore.id() {
-                client.connectKnownPeripheral(identifier: id)
-            } else {
-                client.startScan()
-            }
-            // C1-04: this path dies from `.connecting` — `SafetyEdge.connection` never raises here (it only
-            // fires on a direct `.connected/.bolusing → down` edge) — so alarm explicitly via the typed
-            // event AppModel translates into the never-suppressible `.pumpDisconnect` post + escalation.
-            onReliabilityEvent?(.resumeRetryFailed)
-        } else {
-            Self.pairingLog.log("pairing resume retries exhausted — retryable error, secret RETAINED")
-            resumeRetryCount = 0
-            linkDroppedCleanup()
-            snapshot.connection = .error
-            snapshot.connectionDetail = "Couldn’t reconnect securely. Tap to retry — or Forget Pairing in Settings to re-pair."
-            onChange?()
-        }
-    }
-
-    private func firePairingWatchdog() {
-        cancelPairingWatchdog()
-        // If pairing actually completed, do nothing (defensive — `onPaired` already cancels the watchdog).
-        guard !isPaired else { return }
-        Self.pairingLog.log("pairing outcome → watchdog timeout (fail-closed)")
-        // R2-07: a RESUME timeout (saved material, pairingWatchdogClearStore == true) must NEVER auto-wipe the
-        // stored secret — route to the SAME bounded-retry / retryable-keep-secret path as `onError`. A FRESH
-        // full-pair timeout keeps its existing fail-closed behavior (it never had a stored secret to protect).
-        if pairingWatchdogClearStore {
-            handleResumeFailure()
-        } else {
-            coordinator = nil
-            linkDroppedCleanup()
-            client.disconnect()   // re-enter the kit's bounded reconnect ladder
-            snapshot.connection = .error
-            snapshot.connectionDetail = "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
-            onChange?()
-        }
-    }
-
-    /// A short human explanation for a specific down state; nil for the benign/transitional ones where
-    /// the "Disconnected" label already says enough (plain disconnect, idle-but-powered-on).
-    private static func linkDetail(for state: PumpBLEClient.State) -> String? {
-        switch state {
-        case .poweredOff:   return "Bluetooth is off"
-        case .unauthorized: return "Bluetooth permission denied — enable it in Settings"
-        case .unsupported:  return "Bluetooth unavailable on this device"
-        case .resetting:    return "Bluetooth is resetting…"
-        default:            return nil
-        }
-    }
+    // GO-2 Step 2 (16-09, REMED-16, CX-A-03): `markUsableAndStartPolling`, the CR-01 pairing-handshake
+    // watchdog quartet (`armPairingWatchdog`/`cancelPairingWatchdog`/`handleResumeFailure`/
+    // `firePairingWatchdog`), and `linkDetail` moved verbatim into `PumpConnectionLifecycle` — see that
+    // type's own doc comments for the full fix-cycle history (CR-01/R2-01, R2-07, C1-01/C1-04) these
+    // preserve. `pairingTimeoutSecForTesting`/`firePairingWatchdogForTesting()`/
+    // `resumeRetryCountForTesting`/`resumeRetryActionForTesting` below now forward to `lifecycle`.
 
     public func pumpClient(_ c: PumpBLEClient, didDiscover peripheral: CBPeripheral, rssi: Int) {
-        // R2-11 companion (defense-in-depth): only act on a discovery while we are actually scanning. A
-        // late `didDiscover` that lands after the user cancelled (snapshot moved off `.scanning`) must not
-        // auto-connect. The kit already rejects late discoveries at the source (intentionalDisconnect +
-        // stopScan on cancel); this ensures the app never auto-connects a stray discovery either.
-        guard snapshot.connection == .scanning else { return }
-        // Authoritative model detection from the BLE advertised name: the Mobi advertises with
-        // "Mobi" in its name; anything else Tandem is a t:slim X2. This directly names the model,
-        // unlike the API version (a current t:slim X2 can report API >= 3.5, which would falsely
-        // read as Mobi). ApiVersionResponse is only a fallback when the name doesn't identify it.
-        if let name = peripheral.name, !name.isEmpty {
-            let isMobi = name.localizedCaseInsensitiveContains("mobi")
-            detectedIsMobi = isMobi
-            snapshot.isMobi = isMobi
-            snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
-            PumpModelStore.set(isMobi: isMobi)
-            // VA-06: wire the identified MODEL into the kit's device-support send gate (a live second layer that
-            // agrees with PumpCapabilities — t:slim never offers the [.mobi] control ops, so this only ever fires on
-            // an isMobi-misdetection). apiVersion DEFERRED (nil → API dimension stays fail-open); see the fix report.
-            c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)
-        }
-        // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
-        // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.
-        PumpPeripheralStore.set(peripheral.identifier)
-        c.connect(peripheral)
+        lifecycle.applyDidDiscover(c, peripheral: peripheral, rssi: rssi)
     }
 
+    /// GO-2 Step 2 (16-09, REMED-16): the pairing-scheme SELECTION body moved verbatim into
+    /// `PumpConnectionLifecycle.pumpClientDidBecomeReady(_:)`. Kept as a thin forwarder under the SAME
+    /// name/signature (it's a `PumpBLEClientDelegate` requirement, and `beginPairingForTesting` calls it
+    /// directly).
     public func pumpClientDidBecomeReady(_ c: PumpBLEClient) {
-        // Pick the pairing SCHEME automatically from the code the user entered (JPAKE 6-digit vs
-        // legacy V1 16-char), or resume/re-challenge from saved material. `onFirstPair` is non-nil
-        // ONLY for a fresh full pair — it persists the material for silent reconnects; when it is
-        // nil we used saved material, so an error there means "forget it and re-pair".
-        let coord: any PairingCoordinating
-        let onFirstPair: (() -> Void)?
-        // A fixed scheme-name token for `pairingLog`, never the code/secret itself. Logged once the
-        // scheme is settled, below.
-        let schemeName: String
-
-        if !pairingCode.isEmpty {
-            let code = pairingCode
-            switch PairingAuth.detectType(code) {
-            case .short6Char:                                   // modern EC-JPAKE, resumable
-                guard let full = try? PairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
-                coord = full
-                schemeName = "JPAKE (fresh)"
-                onFirstPair = { [weak self] in PairingStore.save(full.derivedSecret); self?.pairingCode = "" }
-            case .long16Char:                                   // legacy V1 — no resume, persist the code
-                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
-                coord = v1
-                schemeName = "V1/legacy (fresh)"
-                onFirstPair = { [weak self] in PairingStore.saveV1Code(code); self?.pairingCode = "" }
-            }
-        } else if let v1Code = PairingStore.loadV1Code() {      // legacy reconnect: silent full re-challenge
-            guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
-                PairingStore.clear(); markUsableAndStartPolling(); return
-            }
-            coord = v1; onFirstPair = nil; schemeName = "V1/legacy (resume re-challenge)"
-        } else if let stored = PairingStore.load() {            // modern reconnect: JPAKE quick-pair resume
-            coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
-            schemeName = "JPAKE (quick-pair resume)"
-        } else {
-            markUsableAndStartPolling(); return   // no code and no saved pairing — reads will be rejected
-        }
-        Self.pairingLog.log("pairing scheme selected → \(schemeName, privacy: .public)")
-
-        coord.onSendRequest = { [weak self] msg in   // AUTHORIZATION passes the interlock
-            // Logs type name + opcode + CARGO byte count (payload only, before framing/CRC/HMAC —
-            // recomputing the actual wire length would need a second, duplicate `Packetize` call with
-            // its own txId, out of step with the one `send()` actually uses) + send outcome. Never logs
-            // `msg.cargo` itself (that's where `centralChallenge` / `pumpChallengeHash` / JPAKE round
-            // payloads live).
-            let typeName = String(describing: type(of: msg))
-            let opcode = msg.opCode
-            let cargoBytes = msg.cargo.count
-            do {
-                try c.send(msg)
-                Self.pairingLog.log("""
-                    pairing send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) \
-                    cargoBytes=\(cargoBytes, privacy: .public) result=sent
-                    """)
-            } catch {
-                Self.pairingLog.log("""
-                    pairing send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) \
-                    cargoBytes=\(cargoBytes, privacy: .public) result=threw
-                    """)
-            }
-            #if DEBUG
-            self?.onPairingSendForTesting?(typeName, opcode, cargoBytes)
-            #endif
-        }
-        coord.onError = { [weak self] _ in
-            guard let self else { return }
-            Self.pairingLog.log("pairing outcome → error")
-            self.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
-            if onFirstPair == nil {
-                // R2-07: a quick-pair RESUME failed. NEVER auto-wipe the stored secret — a transient link
-                // glitch must not force a full manual re-pair. Retry the resume (bounded, on the live link);
-                // when exhausted, surface a RETRYABLE error that KEEPS the derived secret. Only an explicit
-                // forgetPairing() wipes it.
-                self.handleResumeFailure()
-            } else {
-                // A FRESH full pair failed — no stored secret to protect; keep the prior behavior.
-                self.snapshot.connection = .error
-                self.onChange?()
-            }
-        }
-        coord.onPaired = { [weak self] key, _ in
-            Self.pairingLog.log("pairing outcome → paired")
-            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (success) — disarm the watchdog
-            self?.resumeRetryCount = 0   // R2-07: a successful pair clears the resume-retry budget
-            self?.authenticationKey = key
-            onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
-            self?.markUsableAndStartPolling()   // CR-01: publish `.connected` + start polling at the single usable moment
-            // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
-            // drop), reconcile it against the pump now so new deliveries can unblock.
-            Task { [weak self] in await self?.reconcileIndeterminateDelivery() }
-        }
-        coordinator = coord
-        // CR-01 (R2-01): arm the pairing-handshake watchdog when the handshake starts, so a lost reply /
-        // thrown write can't pin a ghost link forever. `clearStoreOnTimeout` mirrors `onError`'s policy.
-        armPairingWatchdog(clearStoreOnTimeout: onFirstPair == nil)
-        coord.start()
+        lifecycle.pumpClientDidBecomeReady(c)
     }
 
     public var hasStoredPairing: Bool { PairingStore.hasAnyPairing }
