@@ -1094,6 +1094,56 @@
     },
     "Your LibreLinkUp follower account (share from the LibreLink app). Region is auto-detected on first login if left blank." : {
 
+    },
+    "Remote bolus request" : {
+
+    },
+    "Deliver %@" : {
+
+    },
+    "Reject" : {
+
+    },
+    "A remote requested %@." : {
+
+    },
+    "Carbs: %@." : {
+
+    },
+    "No fresh CGM — carbs only, no correction." : {
+
+    },
+    "BG: %@ (%@ min ago)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "BG: %1$@ (%2$@ min ago)."
+          }
+        }
+      }
+    },
+    "BG: %@." : {
+
+    },
+    "IOB: %@." : {
+
+    },
+    "Bolus delivered" : {
+
+    },
+    "%@ delivered" : {
+
+    },
+    "%@ now, %@ total over %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ now, %2$@ total over %3$@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

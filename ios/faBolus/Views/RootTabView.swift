@@ -71,33 +71,45 @@ struct RootTabView: View {
             // SC3 (D-03): never strand the user on a tab the toggle just hid.
             selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
         }
-        .alert("Remote bolus request", isPresented: .constant(active == .remoteBolus)) {
-            Button("Deliver \(String(format: "%.2f U", model.pendingRemoteBolus?.units ?? 0))", role: .destructive) {
+        // D2-04/D3-06: `presenting: model.pendingRemoteBolus` captures ONE snapshot of the pending
+        // request when the alert opens and hands that SAME value (`p`) to both closures below — the
+        // button label and every `confirmMessage` part now read from one frozen value instead of two
+        // independent live reads of `model.pendingRemoteBolus`, so the confirmed amount can never drift
+        // between the two even if the model updates while the alert is on screen.
+        .alert(String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
+               presenting: model.pendingRemoteBolus) { p in
+            Button(String(format: String(localized: "Deliver %@"), String(format: "%.2f U", p.units)),
+                   role: .destructive) {
                 Task { await model.confirmRemoteBolus() }
             }
-            Button("Reject", role: .cancel) { model.rejectRemoteBolus() }
-        } message: {
+            Button(String(localized: "Reject"), role: .cancel) { model.rejectRemoteBolus() }
+        } message: { p in
             // Show the FROZEN dose + the exact inputs it was computed from (audit C-02) — never "0.00 U".
-            if let p = model.pendingRemoteBolus {
-                var parts = [String(format: "A remote requested %.2f U.", p.units)]
-                if let c = p.carbsGrams, c > 0 { parts.append(String(format: "Carbs: %.0f g.", c)) }
-                if let bg = p.bgMgdl {
-                    // CR-01 gap closure (04-07): route through the display-unit funnel — this
-                    // dialog is the highest-stakes confirm flow in the app (approving a
-                    // remote-triggered insulin delivery); the audit BG figure must match every
-                    // other glucose number the user sees, not stay a bare mg/dL literal.
-                    let unit = settings.glucoseDisplayUnit
-                    let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
-                    let age = p.bgDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
-                    parts.append(age != nil ? "BG: \(bgStr) (\(age!) min ago)." : "BG: \(bgStr).")
-                } else if let c = p.carbsGrams, c > 0 {
-                    parts.append("No fresh CGM — carbs only, no correction.")
-                }
-                if let iob = p.iobUnits { parts.append(String(format: "IOB: %.2f U.", iob)) }
-                parts.append("Confirm to deliver.")
-                return Text(parts.joined(separator: " "))
+            var parts = [String(format: String(localized: "A remote requested %@."), String(format: "%.2f U", p.units))]
+            if let c = p.carbsGrams, c > 0 {
+                parts.append(String(format: String(localized: "Carbs: %@."), String(format: "%.0f g", c)))
             }
-            return Text("Confirm to deliver.")
+            if let bg = p.bgMgdl {
+                // CR-01 gap closure (04-07): route through the display-unit funnel — this
+                // dialog is the highest-stakes confirm flow in the app (approving a
+                // remote-triggered insulin delivery); the audit BG figure must match every
+                // other glucose number the user sees, not stay a bare mg/dL literal.
+                let unit = settings.glucoseDisplayUnit
+                let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+                if let bgDate = p.bgDate {
+                    let ageStr = "\(max(0, Int(Date().timeIntervalSince(bgDate) / 60)))"
+                    parts.append(String(format: String(localized: "BG: %@ (%@ min ago)."), bgStr, ageStr))
+                } else {
+                    parts.append(String(format: String(localized: "BG: %@."), bgStr))
+                }
+            } else if let c = p.carbsGrams, c > 0 {
+                parts.append(String(localized: "No fresh CGM — carbs only, no correction."))
+            }
+            if let iob = p.iobUnits {
+                parts.append(String(format: String(localized: "IOB: %@."), String(format: "%.2f U", iob)))
+            }
+            parts.append(String(localized: "Confirm to deliver."))
+            return Text(parts.joined(separator: " "))
         }
         .alert("Remote pump-control request", isPresented: .constant(active == .remoteControl)) {
             let action = model.pendingRemoteControl?.action

@@ -52,13 +52,19 @@ enum BolusConfirmation {
     /// convention (`MainHUDView.swift:70/136/142`).
     static func banner(for signal: Signal, units: Double, extended: ExtendedDetail? = nil) -> BolusSuccessBanner? {
         guard signal == .delivered else { return nil }
-        let primary = "Bolus delivered"
+        // D2-04: route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
+        // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
+        // `%@` — the same "%@ mg/dL"-style idiom `StatsCardView.glucoseLabel` already uses — so the
+        // catalog carries the surrounding phrase, not a raw numeric-format specifier.
+        let primary = String(localized: "Bolus delivered")
         let secondary: String
         if let extended {
-            secondary = String(format: "%.2f U now, %.2f U total over %d min",
-                                extended.nowUnits, extended.totalUnits, extended.durationMinutes)
+            secondary = String(format: String(localized: "%@ now, %@ total over %@"),
+                                String(format: "%.2f U", extended.nowUnits),
+                                String(format: "%.2f U", extended.totalUnits),
+                                String(format: "%d min", extended.durationMinutes))
         } else {
-            secondary = String(format: "%.2f U delivered", units)
+            secondary = String(format: String(localized: "%@ delivered"), String(format: "%.2f U", units))
         }
         return BolusSuccessBanner(primary: primary, secondary: secondary)
     }
