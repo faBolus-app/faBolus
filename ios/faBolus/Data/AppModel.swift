@@ -997,10 +997,11 @@ public final class AppModel {
     /// spinner. 0 before any run.
     public private(set) var cgmTestTimeoutSeconds = 0
     /// The current/most-recent Test outcome; nil before any Test has been run this launch.
-    // Not `public`: `CgmCredentialsView.CgmTestOutcome` is `internal` (the view itself is internal,
-    // same-module default) — Swift access control forbids a `public` property of a less-than-public
-    // type. `internal` is sufficient: this is read only by `CgmCredentialsView`, in the same module.
-    private(set) var cgmTestOutcome: CgmCredentialsView.CgmTestOutcome?
+    // Not `public`: `CgmTestOutcome` (relocated to `Data/CGM/CgmTestOutcome.swift`, CX-A-04) is
+    // `internal` (default access, same-module) — Swift access control forbids a `public` property of
+    // a less-than-public type. `internal` is sufficient: this is read only by `CgmCredentialsView`/
+    // `CgmStatusView`, in the same module.
+    private(set) var cgmTestOutcome: CgmTestOutcome?
     private var cgmTestPollTask: Task<Void, Never>?
 
     /// How long the Test flow waits before concluding TIMEOUT — keyed on the source's typed
@@ -1062,8 +1063,8 @@ public final class AppModel {
                 }
                 let elapsed = Date().timeIntervalSince(startedAt)
                 self.cgmTestElapsedSeconds = Int(elapsed)
-                let outcome = CgmCredentialsView.testOutcome(latest: probe.latest, status: probe.status,
-                                                              elapsed: elapsed, timeout: timeout)
+                let outcome = CgmTestOutcome.testOutcome(latest: probe.latest, status: probe.status,
+                                                          elapsed: elapsed, timeout: timeout)
                 self.cgmTestOutcome = outcome
                 if case .waiting = outcome {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)

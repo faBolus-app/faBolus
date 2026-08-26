@@ -53,29 +53,10 @@ struct CgmCredentialsView: View {
     }()
 
     // MARK: - Test flow (change 3, D-13 UX): determinate, observes the live production source
-
-    /// Outcome of observing the selected source's live production probe (`AppModel.
-    /// glucoseSourceProbe`) for the "Test" flow — DETERMINATE: the caller (`AppModel.startCgmTest`)
-    /// polls elapsed time on a timer and re-evaluates, rather than an indeterminate spinner.
-    /// `.success` when a reading is already buffered — an already-buffered reading always wins, even
-    /// past the timeout, so a late poll tick can never downgrade a real result to a timeout. `.timeout`
-    /// once the window has elapsed with nothing, OR immediately if the source reports a hard `.error`
-    /// (nothing to wait for — surfaced right away regardless of elapsed). `.waiting` otherwise.
-    enum CgmTestOutcome: Equatable {
-        case waiting
-        case success(GlucoseSample)
-        case timeout(detail: String?)
-    }
-
-    /// The pure Test-flow decision (change 3, D-13 UX) — kept pure and unit-testable like
-    /// `sourcesToTest` (`CgmTestFlowStateTests`). See `CgmTestOutcome` for the priority order.
-    static func testOutcome(latest: GlucoseSample?, status: GlucoseSourceStatus,
-                             elapsed: TimeInterval, timeout: TimeInterval) -> CgmTestOutcome {
-        if let latest { return .success(latest) }
-        if case let .error(msg) = status { return .timeout(detail: msg) }
-        if elapsed >= timeout { return .timeout(detail: nil) }
-        return .waiting
-    }
+    //
+    // Phase 16 GO-1 Step 3 (CX-A-04): `CgmTestOutcome` (the type) and `testOutcome(...)` (the pure
+    // mapper) were relocated out of this view into `Data/CGM/CgmTestOutcome.swift` so `AppModel` no
+    // longer depends on a View-layer type — see that file for the doc comment + logic (unchanged).
 
     /// The live production source's typed `connectionKind` (D-06), sourced from the running instance's
     /// probe — the Test-flow copy/window branch on THIS, never on `id`-string literals (D-09).

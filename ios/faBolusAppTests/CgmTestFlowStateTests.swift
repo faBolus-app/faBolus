@@ -38,7 +38,7 @@ struct CgmTestFlowStateTests {
 
     @Test func bufferedSampleReturnsSuccessImmediately() {
         let stub = StubGlucoseSource(latest: sample(), status: .connected)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 0, timeout: 300)
         #expect(outcome == .success(stub.latest!))
     }
@@ -47,14 +47,14 @@ struct CgmTestFlowStateTests {
 
     @Test func emptySourceWithinWindowReturnsWaiting() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 60, timeout: 300)
         #expect(outcome == .waiting)
     }
 
     @Test func emptySourceAtElapsedZeroReturnsWaiting() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 0, timeout: 300)
         #expect(outcome == .waiting)
     }
@@ -63,14 +63,14 @@ struct CgmTestFlowStateTests {
 
     @Test func emptySourcePastTimeoutReturnsTimeout() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 301, timeout: 300)
         #expect(outcome == .timeout(detail: nil))
     }
 
     @Test func emptySourceExactlyAtTimeoutReturnsTimeout() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 300, timeout: 300)
         #expect(outcome == .timeout(detail: nil))
     }
@@ -79,7 +79,7 @@ struct CgmTestFlowStateTests {
 
     @Test func hardErrorReturnsTimeoutWithErrorSurfacedRegardlessOfElapsed() {
         let stub = StubGlucoseSource(latest: nil, status: .error("connection refused"))
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 5, timeout: 300)
         #expect(outcome == .timeout(detail: "connection refused"))
     }
@@ -88,7 +88,7 @@ struct CgmTestFlowStateTests {
 
     @Test func bufferedSamplePastTimeoutStillReturnsSuccess() {
         let stub = StubGlucoseSource(latest: sample(140), status: .connected)
-        let outcome = CgmCredentialsView.testOutcome(latest: stub.latest, status: stub.status,
+        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
                                                       elapsed: 999, timeout: 300)
         #expect(outcome == .success(stub.latest!))
     }
