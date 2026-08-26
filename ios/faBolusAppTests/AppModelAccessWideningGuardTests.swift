@@ -36,6 +36,17 @@ struct AppModelAccessWideningGuardTests {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
+    /// Phase 16 GO-1 Step 5 (16-05, CX-A-08 retarget): `lastPersistedGlucoseKeys`/
+    /// `lastPersistedBolusKeys` moved OUT of `AppModel.swift` entirely, into their own dedicated
+    /// `HistoryPersistenceCoordinator` — not a same-type widening, so the ORIGINAL scan target
+    /// (`AppModel.swift`) can never find them again and would otherwise vacuous-pass. Retargeted here
+    /// per the source-text guard-retargeting rule (verify against actual source, not the plan's draft).
+    private static func historyPersistenceCoordinatorSource() throws -> String {
+        let root = try #require(Self.repoRootURL(), "could not resolve repo root from #filePath")
+        let url = root.appendingPathComponent("ios/faBolus/Data/HistoryPersistenceCoordinator.swift")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
     // MARK: - The enumerated widened set (verified against source — see 16-04 SUMMARY)
 
     /// The EXACT 17 stored-property declarations widened `private`->`internal` by this carve, held as
@@ -106,8 +117,9 @@ struct AppModelAccessWideningGuardTests {
     /// No dose/gate member was widened: `deliveryLedgerCoordinator` (the dose-adjacent ledger/
     /// global-block coordinator owning `runLedgeredDelivery`) stays `private` — the carve added a
     /// thin read-only seam NEXT TO it instead of widening the coordinator itself. The two
-    /// deliberately-NOT-widened history-diff keys (touched only by unmoved `persistNewHistory`) also
-    /// stay `private`, proving the widening was minimal, not "widen everything nearby".
+    /// history-diff keys (Phase 16 GO-1 Step 5 / 16-05: now owned by `HistoryPersistenceCoordinator`,
+    /// not `AppModel`) also stay `private` in their new home, proving the widening was minimal, not
+    /// "widen everything nearby".
     @Test func noDoseOrGateMemberWasWidened() throws {
         let source = try Self.appModelSource()
 
@@ -118,10 +130,20 @@ struct AppModelAccessWideningGuardTests {
         #expect(!source.contains("internal var deliveryLedgerCoordinator"),
                 "deliveryLedgerCoordinator must never appear as `internal`")
 
-        #expect(source.contains("private var lastPersistedGlucoseKeys: Set<TimeInterval>"),
-                "lastPersistedGlucoseKeys must stay `private` — no carved method touches it (verified against source, not the plan's draft)")
-        #expect(source.contains("private var lastPersistedBolusKeys: Set<TimeInterval>"),
-                "lastPersistedBolusKeys must stay `private` — no carved method touches it (verified against source, not the plan's draft)")
+        // 16-05 retarget (CX-A-08): these two keys moved OUT of AppModel.swift entirely (a dedicated
+        // coordinator extraction, not a same-type widening) — assert the negative here (never
+        // reappears in AppModel.swift) AND the positive against their actual new file, so this stays
+        // a loud, non-vacuous proof rather than an assertion the move made permanently unreachable.
+        #expect(!source.contains("lastPersistedGlucoseKeys"),
+                "lastPersistedGlucoseKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)")
+        #expect(!source.contains("lastPersistedBolusKeys"),
+                "lastPersistedBolusKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)")
+
+        let coordinatorSource = try Self.historyPersistenceCoordinatorSource()
+        #expect(coordinatorSource.contains("private var lastPersistedGlucoseKeys: Set<TimeInterval>"),
+                "lastPersistedGlucoseKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
+        #expect(coordinatorSource.contains("private var lastPersistedBolusKeys: Set<TimeInterval>"),
+                "lastPersistedBolusKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
     }
 
     /// Fault-injection proof for the line-scan helper itself (mirrors `AppModelReferenceAuditTests`'

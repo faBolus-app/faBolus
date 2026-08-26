@@ -23,30 +23,16 @@ public final class AppModel {
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
 
-    // Persistent history (SwiftData) — write-through target for long-term glucose/bolus history; powers
-    // time-in-range / future plotting and feeds the advisory tools. Optional so a store-init failure
-    // never breaks the app. See MIGRATION.md (Phase 2). `var` (not `let`) so `#if DEBUG`
-    // `setHistoryStoreForTesting` can substitute an in-memory store for test isolation; production never
-    // reassigns it after init.
-    // Phase 16 GO-1 Step 4 (16-04): widened `private`->`internal` — the eating-nudge/HealthKit/backup
-    // methods that read `history` moved to `AppModel+EatingNudge.swift`/`AppModel+HealthKit.swift`/
-    // `AppModel+Backup.swift`, separate-file extensions that cannot see a `private` member. Still only
-    // `internal` (module-private), never `public`.
-    internal var history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
-    // Phase 09.7-01 (Pitfall 3 fix): identity-diff bookkeeping (this cycle's readings vs. what the LAST
-    // `persistNewHistory` call already wrote), NOT a forward-only date watermark. A forward watermark
-    // (`$0.date > lastGlucoseIngest`) silently dropped any gap-sync record dated OLDER than the
-    // watermark — exactly the interior/forward-gap records D-02 exists to fetch. Diffing against the
-    // previous snapshot's identity set lets an older record through (it wasn't in the last snapshot, so
-    // it's "new") while still not re-inserting the same already-ingested readings on every `refresh()`
-    // tick (`refresh()`/`persistNewHistory` fire far more often than history actually changes — a plain
-    // "always ingest everything" would re-write the same rows into SwiftData on every poll).
-    // NOTE (16-04, verified against source, not the plan's draft): these two keys are read/written ONLY
-    // by `persistNewHistory`/`setHistoryStoreForTesting`, both of which stay in AppModel.swift proper —
-    // no carved method touches them, so they are deliberately NOT widened (kept `private`, minimal
-    // surface).
-    private var lastPersistedGlucoseKeys: Set<TimeInterval> = []
-    private var lastPersistedBolusKeys: Set<TimeInterval> = []
+    // Phase 16 GO-1 Step 5 (16-05, REMED-16, R24/R29): the persistent-history write-through +
+    // identity-diff bookkeeping (`lastPersisted*Keys`, `persistNewHistory`) moved verbatim into
+    // `HistoryPersistenceCoordinator` — a closure-free coordinator (D-04): every method takes plain
+    // values in, returns plain values out, zero back-pointer either direction. `history` below is now
+    // a COMPUTED property forwarding to the coordinator's store, so the eating-nudge/HealthKit/backup
+    // methods that read `history` (moved to `AppModel+EatingNudge.swift`/`AppModel+HealthKit.swift`/
+    // `AppModel+Backup.swift` in 16-04 — none of them R24/R29 members, none touched by this plan) keep
+    // compiling unchanged. Still only `internal` (module-private), never `public`.
+    @ObservationIgnored private let historyPersistence = HistoryPersistenceCoordinator()
+    internal var history: GlucoseHistoryStore? { historyPersistence.store }
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
     // Phase 16 GO-1 Step 4 (16-04, REMED-16, review concern #1): the fusion METHODS moved to
@@ -994,34 +980,6 @@ public final class AppModel {
     /// the bolus-entry sheet.
     public var openBolusRequested = false
 
-    /// Write only NEW readings/boluses into the persistent store (never re-insert the rolling buffer).
-    /// Phase 09.7-01 (Pitfall 3 fix): "new" is identity-diffed against the PREVIOUS call's snapshot, not
-    /// date-watermarked — a gap-sync record dated older than everything previously seen still reaches
-    /// `GlucoseHistoryStore` here (D-02), while an unchanged reading already written on the last call is
-    /// still skipped (no unbounded re-insert on every `refresh()` tick). See `lastPersistedGlucoseKeys`.
-    private func persistNewHistory(provenance: GlucoseProvenance) {
-        guard let history else { return }
-        let sourceID: String
-        let priority: Int
-        switch provenance {
-        case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
-        default:                    sourceID = "pump"; priority = 50    // pump-relayed
-        }
-        let glucoseKeys = Set(glucoseHistory.map(\.date.timeIntervalSince1970))
-        let newGlucose = glucoseHistory.filter { !lastPersistedGlucoseKeys.contains($0.date.timeIntervalSince1970) }
-        if !newGlucose.isEmpty {
-            history.ingestGlucose(newGlucose, sourceID: sourceID, priority: priority)
-        }
-        lastPersistedGlucoseKeys = glucoseKeys
-
-        let bolusKeys = Set(bolusMarkers.map(\.date.timeIntervalSince1970))
-        let newBoluses = bolusMarkers.filter { !lastPersistedBolusKeys.contains($0.date.timeIntervalSince1970) }
-        if !newBoluses.isEmpty {
-            history.ingestBoluses(newBoluses, sourceID: "pump")
-        }
-        lastPersistedBolusKeys = bolusKeys
-    }
-
     #if DEBUG
     /// Test seam (C2-01): substitute the failover `glucoseSource` so a test can drive `refresh()`'s
     /// urgent-low-alarm edge (arbitrated value OR the sentinel, during a real `GlucoseArbiter.merge`
@@ -1035,34 +993,33 @@ public final class AppModel {
 
     #if DEBUG
     /// Test seam: substitute the persistent history store (e.g. an in-memory `GlucoseHistoryStore`) so a
-    /// test can assert on `persistNewHistory`'s write-through without touching the real on-disk store or
-    /// leaking state across tests/suites. Production never calls this — `history` is set once at init.
+    /// test can assert on the persist write-through without touching the real on-disk store or leaking
+    /// state across tests/suites. Production never calls this — the store is set once at init.
+    /// Phase 16 GO-1 Step 5 (16-05): thin forward to `HistoryPersistenceCoordinator` (facade forwards).
     func setHistoryStoreForTesting(_ store: GlucoseHistoryStore?) {
-        history = store
-        lastPersistedGlucoseKeys = []
-        lastPersistedBolusKeys = []
+        historyPersistence.setHistoryStoreForTesting(store)
     }
     /// Test seam: read-through into the injected store, mirroring `storedStatistics`'s public read
     /// pattern — lets a test assert a fetched (incl. gap-sync) history record actually reached the
     /// persistent store (Pitfall 3 fix), not just the in-memory `glucoseHistory` buffer.
-    func storedGlucoseForTesting(in range: ClosedRange<Date>) -> [GlucoseReading] { history?.glucose(in: range) ?? [] }
+    func storedGlucoseForTesting(in range: ClosedRange<Date>) -> [GlucoseReading] {
+        historyPersistence.storedGlucoseForTesting(in: range)
+    }
     #endif
 
     /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
     public func storedStatistics(days: Int = 90) -> GlucoseStatistics? {
-        guard let history else { return nil }
-        let end = Date(); let start = end.addingTimeInterval(-Double(days) * 86400)
-        return history.statistics(in: start...end)
+        historyPersistence.storedStatistics(days: days)
     }
 
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
-    public func clearStoredHistory() { history?.clear() }
+    public func clearStoredHistory() { historyPersistence.clearStoredHistory() }
 
     /// WR-02: the app's single shared persistent store, exposed for the SiteAtlas UI so it reads/writes
     /// the SAME on-disk SwiftData store that backup/export read — never a second `ModelContainer` over
     /// the same file. `nil` only if the store failed to open at init, in which case the SiteAtlas UI
     /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
-    var sharedHistoryStore: GlucoseHistoryStore? { history }
+    var sharedHistoryStore: GlucoseHistoryStore? { historyPersistence.store }
 
     // Phase 16 GO-1 Step 4 (16-04, D4-07): the R25 (SiteAtlas + caffeine/alcohol tracker backup/restore)
     // and R26 (unified privacy export) `#if FABOLUS_BACKUP` methods — `siteAtlasBackup`,
@@ -1206,14 +1163,11 @@ public final class AppModel {
     func keepSettingsAfterPumpSwitch() { pendingPumpSwitch = false }
 
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
-    public func storedHistoryApproxBytes() -> Int { history?.approximateBytes() ?? 0 }
+    public func storedHistoryApproxBytes() -> Int { historyPersistence.storedHistoryApproxBytes() }
 
     /// Apply a retention window (days); 0 = keep everything. Safe to call any time (e.g. on launch and
     /// when the setting changes).
-    public func applyRetention(days: Int) {
-        guard days > 0, let history else { return }
-        history.deleteGlucose(olderThan: Date().addingTimeInterval(-Double(days) * 86400))
-    }
+    public func applyRetention(days: Int) { historyPersistence.applyRetention(days: days) }
 
     /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
     /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
@@ -1232,17 +1186,11 @@ public final class AppModel {
 
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
-    public func recordCarbs(grams: Double) {
-        guard grams > 0 else { return }
-        history?.ingestCarbs([(date: Date(), grams: grams)], sourceID: "fabolus")
-    }
+    public func recordCarbs(grams: Double) { historyPersistence.recordCarbs(grams: grams) }
 
     /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
     public func therapyInsights() -> [TherapyInsightItem] {
-        let range = Date().addingTimeInterval(-90 * 86400)...Date()
-        let cgm = history?.glucose(in: range) ?? glucoseHistory
-        return SmartAssist.insights(cgm: cgm, carbs: history?.carbs(in: range) ?? [], unit: AppSettings.shared.glucoseDisplayUnit)
-            .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
+        historyPersistence.therapyInsights(cgmFallback: glucoseHistory, unit: AppSettings.shared.glucoseDisplayUnit)
     }
 
     // D4-07 (16-04, DELETED — not carved): `maybeBackfillNightscout()` + its `lastNSBackfill` throttle
@@ -1420,7 +1368,10 @@ public final class AppModel {
         // this call site is left in place rather than deleted (it does not meet the same zero-reference
         // bar as the deleted backfill — it IS reached, it just does nothing).
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
-        persistNewHistory(provenance: provenance)
+        // Phase 16 GO-1 Step 5 (16-05): moved into `HistoryPersistenceCoordinator.persist` — the facade
+        // forwards the current published `glucoseHistory`/`bolusMarkers` values (D-04: values in, no
+        // back-pointer) instead of the coordinator reading `AppModel`'s stored properties directly.
+        historyPersistence.persist(glucose: glucoseHistory, boluses: bolusMarkers, provenance: provenance)
         #if FABOLUS_HEALTHKIT
         maybeAutoImportAppleHealth()   // D-11b: default-OFF, throttled hourly like the Nightscout backfill
         maybeAutoExportAppleHealth()   // D-12a: default-OFF, throttled ~60s like the Nightscout upload
