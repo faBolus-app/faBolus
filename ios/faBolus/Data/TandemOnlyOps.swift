@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore   // GO-2 Step 0/1 (16-08, REMED-16): HistorySyncState relocated here (see its own doc comment)
 
 /// GO-1 Step 7 (REMED-16, GO-1 §4.6 — CX-A-01 item 4) — an additive, app-layer capability protocol
 /// naming the handful of concrete `TandemBackend` hooks that `AppModel` reaches through 8

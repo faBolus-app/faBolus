@@ -223,6 +223,28 @@ public enum ControlError: Error, LocalizedError {
 }
 
 /// The outcome of reconciling a lost-outcome bolus against the pump's authoritative history (P0).
+/// GO-2 Step 1 (16-08, REMED-16) — additive capability protocol naming the read-only history-sync
+/// surface `TandemBackend` exposes (`HistorySyncState`, relocated to this module in this same plan —
+/// see `HistorySyncState.swift`'s doc comment). `PumpBackend` itself gains NOTHING (unchanged, ~50
+/// members); a backend opts in by additionally conforming to this protocol.
+///
+/// **Not yet wired into `AppModel`'s casts.** 16-07 (`TandemOnlyOps`, the app-layer transitional
+/// superset) already carries `historySyncState`/`triggerManualHistorySync`/`cancelHistorySync` and its
+/// own doc comment designates 16-10 as the step that re-narrows those `AppModel` casts from
+/// `TandemOnlyOps` onto this protocol and removes the 3 members from `TandemOnlyOps`. This plan adds
+/// the protocol + conformance only, to avoid contradicting that already-committed sequencing (see the
+/// 16-08-SUMMARY.md "Deviations" section).
+@MainActor
+public protocol PumpHistoryProviding: AnyObject {
+    /// D-01/D-05 (Phase 09.7-02): the gap-sync's current state for the "Pump history sync" UI section.
+    var historySyncState: HistorySyncState { get }
+    /// D-05 ("Sync now"): manually run the gap-aware history sync regardless of the automatic-sync
+    /// toggle.
+    func triggerManualHistorySync()
+    /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync.
+    func cancelHistorySync()
+}
+
 public enum BolusReconciliation: Sendable, Equatable {
     /// The pump's record for this bolus id was found: `deliveredUnits` actually went in (possibly a partial
     /// amount). `cancelled` is true when the pump reports it ended by cancellation.
