@@ -86,8 +86,15 @@ struct AppModelReferenceAuditTests {
     /// `LiveActivityAbsenceGuardTests`' `excludedFiles` allow-list MUST add the new file to that
     /// allow-list (else the moved prose trips the "no `ActivityKit` outside test files" scan). 16-04
     /// verified no such prose moved in this carve, so `LiveActivityAbsenceGuardTests` stays as-is.
+    ///
+    /// **16-04 D4-07 addition:** `NightscoutStubInertnessTests` reclassifies from COMMENT-ONLY to
+    /// ACTIVE — its new `maybeBackfillNightscoutIsAbsentFromAppModel` test genuinely opens/reads
+    /// `ios/faBolus/Data/AppModel.swift` at runtime (a zero-runtime-reference proof that the deleted
+    /// `maybeBackfillNightscout`/`lastNSBackfill` symbols are gone), so it now carries the same
+    /// `appendingPathComponent("ios/faBolus/Data/AppModel.swift")` marker as the other ACTIVE files.
     static let activeScanFiles: Set<String> = [
         "LiveActivityAbsenceGuardTests.swift",
+        "NightscoutStubInertnessTests.swift",
     ]
 
     /// COMMENT-ONLY: cites `"AppModel.swift"` in a doc comment / line-number pin; never opens the
@@ -99,7 +106,6 @@ struct AppModelReferenceAuditTests {
         "LedgerBlockPrecedenceGuardTests.swift",
         "LedgerFaultReleaseGuardTests.swift",
         "MobiRejectAtPairingBoundaryTests.swift",
-        "NightscoutStubInertnessTests.swift",
         "SettingsCatalogTests.swift",
         // Verified COMMENT-ONLY on the AppModel-reference axis — see the type doc comment's
         // deviation note; its own active scan targets TandemBackend.swift, a GO-2 concern.

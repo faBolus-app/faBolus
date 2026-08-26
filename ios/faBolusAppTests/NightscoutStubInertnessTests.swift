@@ -9,6 +9,14 @@ import faBolusCore
 /// that `git rm`-ing the 3 real Nightscout files (which DID touch UserDefaults high-water marks —
 /// `ns.lastEntryMs`/`ns.lastBolusEpoch`/`ns.lastStatus` — and performed real network I/O) left behind
 /// a genuine no-op, not a silently-broken half-implementation.
+///
+/// **D4-07 (16-04, Phase 16 GO-1 Step 4) addition:** `AppModel.maybeBackfillNightscout()` — the ONE
+/// caller of `NightscoutBackfill.fetch()` — was itself DELETED outright (not carved into a new file):
+/// its guard (`GlucoseSourceConfig.string("nightscout.url") != nil`) could never be true on `main`
+/// (no descriptor named `"nightscout"` remains in `GlucoseSourceRegistry.enabled`, and no UI writes
+/// the `nightscout.url` config key), so the whole method body was unreachable dead code, distinct
+/// from the merely-inert-but-reachable stub methods above. `maybeBackfillNightscoutIsAbsentFromAppModel`
+/// below is the source-level zero-reference proof.
 @MainActor
 @Suite(.serialized) struct NightscoutStubInertnessTests {
 
@@ -60,5 +68,40 @@ import faBolusCore
         for key in ["ns.lastEntryMs", "ns.lastBolusEpoch", "ns.lastStatus"] {
             #expect(d.object(forKey: key) == nil)
         }
+    }
+
+    // MARK: - D4-07 (16-04): zero-runtime-reference proof for the DELETED backfill
+
+    /// Source-level proof that `AppModel.maybeBackfillNightscout()` — the vestigial-on-main backfill
+    /// whose guard could never be true (no `"nightscout"` descriptor in `GlucoseSourceRegistry.enabled`,
+    /// no UI writing `nightscout.url`) — is genuinely GONE from `AppModel.swift`, not merely renamed or
+    /// re-gated. Mirrors `LiveActivityAbsenceGuardTests`'/`NudgeDeliveryBoundaryTests`' `#filePath`-rooted
+    /// whole-file source scan + non-vacuous `!source.isEmpty` guard, so a path-resolution break fails
+    /// loudly instead of passing vacuously.
+    @Test func maybeBackfillNightscoutIsAbsentFromAppModel() throws {
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testFileURL
+            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()   // → .../ios
+            .deletingLastPathComponent()   // → repo root
+        let appModelURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel.swift")
+        let source = try String(contentsOf: appModelURL, encoding: .utf8)
+        #expect(source.count > 200, "AppModel.swift resolved implausibly short — path resolution likely broke")
+
+        // Declaration-SHAPED patterns, not bare substrings — the deletion's own explanatory comment
+        // (a few lines above this test's target, in AppModel.swift) legitimately NAMES both deleted
+        // symbols in prose to document what was removed and why; a bare `source.contains("lastNSBackfill")`
+        // would false-positive on that comment. Matching the exact declaration shape sidesteps that.
+        let deletedDeclarations = ["func maybeBackfillNightscout(", "var lastNSBackfill"]
+        for declaration in deletedDeclarations {
+            #expect(!source.contains(declaration),
+                    "D4-07 violated — '\(declaration)' still present in AppModel.swift; the vestigial Nightscout backfill must be DELETED, not merely gated")
+        }
+
+        // The separate, unconditionally-reachable `NightscoutUploader.shared.sync(...)` call site is
+        // NOT deleted (it does not meet the same zero-reference bar) — confirm it is still present so
+        // this test does not silently start asserting something it was never meant to.
+        #expect(source.contains("NightscoutUploader.shared.sync("),
+                "NightscoutUploader.shared.sync(...) call site unexpectedly missing — see the D4-07 rationale for why it stays")
     }
 }
