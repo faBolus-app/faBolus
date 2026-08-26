@@ -100,6 +100,50 @@ struct SettingRevertTests {
         #expect(cur?.before == .double(1.4) && cur?.after == .double(0.8))                   // new change recorded
     }
 
+    // MARK: Provenance-parity characterization (16-06 Task 1)
+    //
+    // Pins the provenance rows a scripted edit sequence (change, no-op change, failed change)
+    // produces AGAINST CURRENT CODE, before `ClinicianEditProvenanceRecorder` is extracted out of
+    // `AppModel`. `recordClinicianEditIfChanged` currently guards on `lastError == nil` (read live
+    // off `AppModel`); the failed-change case below exercises exactly that branch via a REAL gate
+    // denial (skipping `acknowledgeUnverifiedTherapy()`), not a mock — so this characterizes the
+    // actual funnel behavior, not an assumption about it.
+    @Test func scriptedEditSequenceProvenanceRowsMatchCurrentBehavior() async {
+        let (model, backend, store) = await makeModel()
+        let key = SettingKey.global("maxBolus")
+
+        // 1) A real, value-changing edit -> a NEW `.selfSet` row with the correct before/after.
+        model.acknowledgeUnverifiedTherapy()
+        await model.setMaxBolus(units: 8)
+        #expect(model.lastError == nil)
+        #expect(model.snapshot.maxBolusUnits == 8)
+        let afterFirstEdit = store.load().current(key)
+        #expect(afterFirstEdit?.provenance == .selfSet)
+        #expect(afterFirstEdit?.after == .double(8))
+        let logCountAfterFirstEdit = store.load().log.count
+        #expect(logCountAfterFirstEdit >= 1)
+
+        // 2) A NO-OP change (write succeeds, but requested value == current value) -> before == after,
+        //    so nothing new is recorded — the latest row and the audit-trail length are unchanged.
+        model.acknowledgeUnverifiedTherapy()
+        await model.setMaxBolus(units: 8)
+        #expect(model.lastError == nil)
+        #expect(store.load().log.count == logCountAfterFirstEdit)
+        #expect(store.load().current(key)?.after == .double(8))
+
+        // 3) A FAILED change: skip `acknowledgeUnverifiedTherapy()` so the gated-therapy ack check
+        //    denies the write BEFORE it reaches the backend, setting `lastError`. Even though the
+        //    requested value (15) differs from the current one (8), `recordClinicianEditIfChanged`
+        //    must record NOTHING for a failed write.
+        let writesBefore = backend.controlWriteCount
+        await model.setMaxBolus(units: 15)
+        #expect(model.lastError != nil)
+        #expect(backend.controlWriteCount == writesBefore)          // no pump write attempted
+        #expect(model.snapshot.maxBolusUnits == 8)                  // unchanged
+        #expect(store.load().current(key)?.after == .double(8))     // provenance UNCHANGED
+        #expect(store.load().log.count == logCountAfterFirstEdit)   // no new row for the failed write
+    }
+
     @Test func revertRefusesWhenSegmentNoLongerOnPump() async {
         let (model, backend, _) = await makeModel()
         await model.refreshProfileSegments(idpId: 0)                     // seeds start 0 (index 0)
