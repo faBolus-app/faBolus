@@ -10,24 +10,8 @@ import Observation
 import UIKit
 #endif
 
-#if FABOLUS_HEALTHKIT
-/// Phase 09.23-03 (D-08/D-12/D-14): the seam `AppModel`'s export hook calls through — lets a test
-/// substitute a fake (never touching real `HKHealthStore`) to verify enabled-type routing, mirroring
-/// `HealthKitImportSource`'s role on the import side (`Shared/HealthKitHistoryImporter.swift`).
-/// `HealthKitExporter` conforms below; `AppModel`'s `#if FABOLUS_HEALTHKIT` property is typed as
-/// this protocol, swappable via `setHealthKitExportDestinationForTesting`.
-@MainActor
-protocol HealthKitExportDestination {
-    func exportNewCarbs(_ candidates: [(date: Date, grams: Double)]) async
-    func exportNewInsulin(_ candidates: [BolusMarker]) async
-    func exportNewGlucose(_ candidates: [GlucoseReading]) async
-    func exportHistoricalCarbs(_ entries: [(date: Date, grams: Double)]) async
-    func exportHistoricalInsulin(_ markers: [BolusMarker]) async
-    func exportHistoricalGlucose(_ readings: [GlucoseReading]) async
-}
-
-extension HealthKitExporter: HealthKitExportDestination {}
-#endif
+// Phase 16 GO-1 Step 4 (16-04): `HealthKitExportDestination` (+ its `HealthKitExporter` conformance)
+// moved verbatim to `AppModel+HealthKit.swift`, alongside the AppModel methods that reference it.
 
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
 @MainActor
@@ -44,7 +28,11 @@ public final class AppModel {
     // never breaks the app. See MIGRATION.md (Phase 2). `var` (not `let`) so `#if DEBUG`
     // `setHistoryStoreForTesting` can substitute an in-memory store for test isolation; production never
     // reassigns it after init.
-    private var history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    // Phase 16 GO-1 Step 4 (16-04): widened `private`->`internal` — the eating-nudge/HealthKit/backup
+    // methods that read `history` moved to `AppModel+EatingNudge.swift`/`AppModel+HealthKit.swift`/
+    // `AppModel+Backup.swift`, separate-file extensions that cannot see a `private` member. Still only
+    // `internal` (module-private), never `public`.
+    internal var history: GlucoseHistoryStore? = try? GlucoseHistoryStore()
     // Phase 09.7-01 (Pitfall 3 fix): identity-diff bookkeeping (this cycle's readings vs. what the LAST
     // `persistNewHistory` call already wrote), NOT a forward-only date watermark. A forward watermark
     // (`$0.date > lastGlucoseIngest`) silently dropped any gap-sync record dated OLDER than the
@@ -53,32 +41,44 @@ public final class AppModel {
     // it's "new") while still not re-inserting the same already-ingested readings on every `refresh()`
     // tick (`refresh()`/`persistNewHistory` fire far more often than history actually changes — a plain
     // "always ingest everything" would re-write the same rows into SwiftData on every poll).
+    // NOTE (16-04, verified against source, not the plan's draft): these two keys are read/written ONLY
+    // by `persistNewHistory`/`setHistoryStoreForTesting`, both of which stay in AppModel.swift proper —
+    // no carved method touches them, so they are deliberately NOT widened (kept `private`, minimal
+    // surface).
     private var lastPersistedGlucoseKeys: Set<TimeInterval> = []
     private var lastPersistedBolusKeys: Set<TimeInterval> = []
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
-    @ObservationIgnored private var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
-    @ObservationIgnored private var lastEatingConfig: Data?
+    // Phase 16 GO-1 Step 4 (16-04, REMED-16, review concern #1): the fusion METHODS moved to
+    // `AppModel+EatingNudge.swift` (a separate-file extension), but a Swift extension cannot declare
+    // stored properties and a separate-file extension cannot see a `private` member of this type — so
+    // every stored property the moved methods touch stays HERE, widened `private`->`internal` (never
+    // beyond `internal`; still invisible outside this module). `AppModelAccessWideningGuardTests`
+    // (16-04 Task 3) pins this enumerated set as EXACTLY the widened set, with no dose/gate member
+    // included. `eatingNudge`'s SETTER also widens (was `private(set)`) for the same reason — its
+    // getter was already `internal` by default.
+    @ObservationIgnored internal var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
+    @ObservationIgnored internal var lastEatingConfig: Data?
     #if FABOLUS_NUDGE
-    @ObservationIgnored private let mealDetector = MealDetector()
+    @ObservationIgnored internal let mealDetector = MealDetector()
     #endif
     /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
     @ObservationIgnored public var latestAccelProb: Double?
-    @ObservationIgnored private var lastAccelWindowAt = Date.distantPast
-    @ObservationIgnored private var lastAccelWindowRaw: [Float]?   // last window (to label from feedback)
+    @ObservationIgnored internal var lastAccelWindowAt = Date.distantPast
+    @ObservationIgnored internal var lastAccelWindowRaw: [Float]?   // last window (to label from feedback)
     #if FABOLUS_NUDGE
-    @ObservationIgnored private let accelPipeline = EatingAccelPipeline()
-    @ObservationIgnored private let eatingPersonalization = EatingPersonalization()
+    @ObservationIgnored internal let accelPipeline = EatingAccelPipeline()
+    @ObservationIgnored internal let eatingPersonalization = EatingPersonalization()
     #endif
     /// Optional location gate (advisory, on-device, off by default). Works without the nudge SDK.
-    @ObservationIgnored private let eatingLocation = EatingLocationGate()
+    @ObservationIgnored internal let eatingLocation = EatingLocationGate()
     /// Set by the Garmin/watch bridge — the phone calls this to start/stop wrist sensing on demand
     /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
     @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
-    @ObservationIgnored private var lastWantAccel = false
+    @ObservationIgnored internal var lastWantAccel = false
     /// De-dupes eating "positive" training examples to ~one per meal (nudge-acted OR silent pre-bolus).
-    @ObservationIgnored private var lastEatingPositiveAt = Date.distantPast
-    private(set) var eatingNudge: EatingAlert?
+    @ObservationIgnored internal var lastEatingPositiveAt = Date.distantPast
+    internal var eatingNudge: EatingAlert?
 
     /// Phase 09.18b (D-07/D-09): set by the Garmin bridge — the phone tells the watch when to
     /// read+append ambient HR to its out-of-band envelope (battery: only while the in-app HR-context
@@ -93,12 +93,6 @@ public final class AppModel {
     /// eating inference (`ingestGarminIMUWindow`/`accelPipeline`/`EatingTrigger`) or any dose/meal path.
     /// Observed (not `@ObservationIgnored`) so the readout refreshes when a new sample lands.
     public private(set) var latestGarminHeartRate: (bpm: Double, date: Date)?
-
-    private func setWantAccelSensing(_ on: Bool) {
-        guard on != lastWantAccel else { return }
-        lastWantAccel = on
-        onWantAccelSensing?(on)
-    }
 
     /// De-duped setter mirroring `setWantAccelSensing`: fire the watch HR control signal only on an
     /// actual change so `hr_ctl` isn't spammed. Public so the Smart Assist HR toggle drives it directly
@@ -125,52 +119,11 @@ public final class AppModel {
         latestGarminHeartRate = (bpm, date)
     }
 
-    /// Feed a raw IMU window from the Garmin watch (imu_window message) → phone-side p(eating).
-    public func ingestGarminIMUWindow(rawWindow raw: [Float]) {
-        #if FABOLUS_NUDGE
-        guard let p = accelPipeline.predict(rawWindow: raw) else { return }
-        latestAccelProb = p
-        lastAccelWindowAt = Date()
-        lastAccelWindowRaw = raw            // retained on-device to label if the user gives feedback
-        #endif
-    }
+    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`,
+    // `eatingNudgeActedOn`, and `ingestWatchEatingEvent` moved verbatim to
+    // `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE` gates preserved) — see that file.
+    // `setupEatingPersonalization()` is still called from `init` below (cross-file, `internal`).
 
-    /// Hook up on-device personalization: reload inference with the user's fine-tuned model when one is
-    /// produced, and prefer any personalized model from a previous run. Call once after init.
-    func setupEatingPersonalization() {
-        #if FABOLUS_NUDGE
-        eatingPersonalization.onModelUpdated = { [weak self] in
-            guard let self else { return }
-            if AppSettings.shared.eatingLearnFromFeedback {
-                self.accelPipeline.applyPersonalizedModel(self.eatingPersonalization.personalizedModelURL)
-            }
-        }
-        if AppSettings.shared.eatingLearnFromFeedback {
-            accelPipeline.applyPersonalizedModel(eatingPersonalization.personalizedModelURL)
-        }
-        #endif
-    }
-
-    /// The user acted on the eating nudge (opened the bolus screen) → treat as a confirmed meal: teach
-    /// the personalizer + learn this as a meal place. Advisory-only feedback.
-    public func eatingNudgeActedOn() {
-        #if FABOLUS_NUDGE
-        if AppSettings.shared.eatingLearnFromFeedback {
-            eatingPersonalization.recordFeedback(eating: true, window: lastAccelWindowRaw)
-        }
-        #endif
-        lastEatingPositiveAt = Date()   // de-dupe against the silent pre-bolus positive path
-        eatingLocation.recordMealHere()
-        eatingNudge = nil
-    }
-
-    /// Apple Watch on-device path: the watch already ran the model and relays a p(eating). Feed it
-    /// straight into the same accel signal the Garmin window path produces, then re-fuse the nudge.
-    public func ingestWatchEatingEvent(prob: Double, at: Date = Date()) {
-        latestAccelProb = prob
-        lastAccelWindowAt = at
-        updateEatingNudge()
-    }
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
     /// D-05 (Phase 09.7-02): mirrors `TandemBackend.historySyncState` for the "Pump history sync" UI
@@ -1400,275 +1353,39 @@ public final class AppModel {
         }
     }
 
-    // MARK: - Apple Health (HealthKit) import (09.23-02, D-05/D-11/D-14) — gated per D-13: the whole
-    // import hook compiles out of the free/CI build. Imported values reach ONLY GlucoseHistoryStore
-    // .ingest* — never GlucoseArbiter/BolusMath (D-05; enforced by HealthKitImportDosePathGuardTests).
+    // MARK: - Apple Health (HealthKit) import/export (09.23-02/03, D-05/D-08/D-11/D-12/D-14) — gated
+    // per D-13: the whole hook compiles out of the free/CI build. Phase 16 GO-1 Step 4 (16-04): the
+    // METHODS (import/export routines, throttled auto-import/export wrappers, test seams) moved
+    // verbatim to `AppModel+HealthKit.swift` (same `#if FABOLUS_HEALTHKIT` gate preserved there,
+    // including the top-of-file `HealthKitExportDestination` protocol). These 4 stored properties
+    // stay HERE (a separate-file extension can't declare stored properties / can't see `private`),
+    // widened `private`->`internal` — see the `history` note above for why. `maybeAutoImportAppleHealth`/
+    // `maybeAutoExportAppleHealth` are still called from `refresh()` below (cross-file, `internal`).
     #if FABOLUS_HEALTHKIT
-    @ObservationIgnored private lazy var healthKitImportSource: HealthKitImportSource = HealthKitHistoryImporter()
-    private var lastHealthKitAutoImport = Date.distantPast
-
-    #if DEBUG
-    /// Test seam: substitute the HealthKit import source (a fake) so a test can assert
-    /// `importFromAppleHealth()`'s routing without touching real HealthKit. Mirrors
-    /// `setHistoryStoreForTesting`. Production never calls this.
-    func setHealthKitImportSourceForTesting(_ source: HealthKitImportSource) {
-        healthKitImportSource = source
-    }
-    #endif
-
-    /// D-11a: manual on-demand "Import from Apple Health" — ALWAYS available regardless of the
-    /// D-11b automatic toggle below. Imports exactly the per-type-enabled subset (D-14) over a
-    /// 30-day lookback, routing results ONLY into `GlucoseHistoryStore.ingest*` — never
-    /// `GlucoseArbiter`/`BolusMath` (D-05). Awaitable (unlike the fire-and-forget automatic path)
-    /// so a caller — or a test — observes completion.
-    public func importFromAppleHealth() async {
-        await runHealthKitImport(since: Date().addingTimeInterval(-30 * 86400))
-    }
-
-    /// D-11b: throttled (hourly), best-effort automatic import — fire-and-forget from `refresh()`,
-    /// mirroring `maybeBackfillNightscout`'s shape. Runs ONLY when `healthKitAutoImportEnabled` is
-    /// true (default OFF); the manual path above always runs regardless of this gate.
-    private func maybeAutoImportAppleHealth() {
-        guard AppSettings.shared.healthKitAutoImportEnabled,
-              Date().timeIntervalSince(lastHealthKitAutoImport) > 3600 else { return }
-        lastHealthKitAutoImport = Date()
-        Task { [weak self] in await self?.runHealthKitImport(since: Date().addingTimeInterval(-30 * 86400)) }
-    }
-
-    /// Shared import routine (D-14): imports exactly the per-type-enabled subset over
-    /// `[since, Date()]` and routes results ONLY into `GlucoseHistoryStore.ingest*` (D-05). Never
-    /// registers `healthKitImportSource` with `GlucoseArbiter`/`GlucoseSourceRegistry`'s live set —
-    /// this is history ingest only. Glucose gap-fill's `existingSlots` comes from the store's own
-    /// merged `glucose(in:)` (already occupied by ANY existing source, live or imported) so an
-    /// imported Health reading never double-counts against faBolus's own CGM history (D-14).
-    private func runHealthKitImport(since: Date) async {
-        let settings = AppSettings.shared
-        var enabled: Set<HealthKitHistoryImporter.HealthKitImportType> = []
-        if settings.healthKitImportCarbsEnabled { enabled.insert(.carbs) }
-        if settings.healthKitImportInsulinEnabled { enabled.insert(.insulin) }
-        if settings.healthKitImportHeartRateEnabled { enabled.insert(.heartRate) }
-        if settings.healthKitImportGlucoseEnabled { enabled.insert(.glucose) }
-        guard !enabled.isEmpty else { return }
-        let source = healthKitImportSource
-        await source.requestAuthorizationIfNeeded(enabledTypes: enabled)
-        if enabled.contains(.carbs) {
-            let carbs = await source.importCarbHistory(since: since)
-            history?.ingestCarbs(carbs, sourceID: "healthkit-import")
-        }
-        if enabled.contains(.insulin) {
-            let insulin = await source.importInsulinHistory(since: since)
-            history?.ingestBoluses(insulin.map { BolusMarker(date: $0.date, units: $0.units) },
-                                   sourceID: "healthkit-import")
-        }
-        if enabled.contains(.heartRate) {
-            let hr = await source.importHeartRateHistory(since: since)
-            history?.ingestHeartRate(hr, sourceID: "healthkit")
-        }
-        if enabled.contains(.glucose) {
-            let existingSlots = Set((history?.glucose(in: since...Date()) ?? [])
-                .map { Int($0.date.timeIntervalSince1970 / 300) })
-            let glucose = await source.importGlucoseGapFill(since: since, existingSlots: existingSlots,
-                                                             sourceID: HealthKitHistoryImporter.glucoseImportSourceID)
-            history?.ingestGlucose(glucose, sourceID: HealthKitHistoryImporter.glucoseImportSourceID, priority: 10)
-        }
-    }
-
-    // MARK: - Apple Health (HealthKit) export (09.23-03, D-08/D-12/D-14) — gated per D-13: the whole
-    // export hook compiles out of the free/CI build. Export reads already-computed faBolus values
-    // (`glucoseHistory`/`bolusMarkers`/`history?.carbs(in:)`) and writes them OUT to Apple Health —
-    // never a dose-path/signed-message change (SC3). Every write HealthKitExporter makes is
-    // origin-tagged, so the importer's echo-guard never re-imports it (D-12, closes the loop).
-
-    @ObservationIgnored private lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
-    private var lastHealthKitAutoExport = Date.distantPast
-
-    /// CR-01: the `sourceID`s `runHealthKitImport` stamps on ingested rows (`"healthkit-import"` for
-    /// carbs/insulin/glucose-gap-fill — see `HealthKitHistoryImporter.glucoseImportSourceID` and the
-    /// literal ingest calls above; `"healthkit"` for the heart-rate importer, which is never exported
-    /// anyway per D-08). Passed as `excludingSourceIDs` to EVERY HealthKit *export* read path below —
-    /// `HealthKitOriginTag`/`filterOutOwnWrites` already stop faBolus from re-*importing* its own
-    /// exported writes; this is the missing other half of the echo-guard, stopping faBolus from
-    /// re-*exporting* an entry that was itself just imported FROM Apple Health (which would create a
-    /// second, duplicate Health sample rather than update the original — a clinical-confusion risk).
-    /// Deliberately NOT applied to `runHealthKitImport`'s `existingSlots` computation (line ~1487) —
-    /// that read is for import-side gap-fill dedup, not export, and must keep seeing every source.
-    static let healthKitImportSourceIDs: Set<String> = ["healthkit-import", "healthkit"]
-
-    #if DEBUG
-    /// Test seam: substitute the HealthKit export destination (a fake) so a test can assert the
-    /// go-forward hook's enabled-type routing without touching real HealthKit. Mirrors
-    /// `setHealthKitImportSourceForTesting`. Production never calls this.
-    func setHealthKitExportDestinationForTesting(_ destination: HealthKitExportDestination) {
-        healthKitExportDestination = destination
-    }
-    #endif
-
-    /// D-12b: manual on-demand "Export to Apple Health" backfill over an explicit historical
-    /// `[since, Date()]` range — ALWAYS available regardless of the D-12 automatic toggle below.
-    /// Exports exactly the per-type-enabled subset (D-14), reusing `HealthKitExporter`'s historical
-    /// write methods (independent of the go-forward high-water marks). Awaitable so a caller — or a
-    /// test — observes completion.
-    public func exportToAppleHealth(since: Date) async {
-        let settings = AppSettings.shared
-        let range = since...Date()
-        let destination = healthKitExportDestination
-        if settings.healthKitExportCarbsEnabled {
-            await destination.exportHistoricalCarbs(
-                history?.carbs(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
-        }
-        if settings.healthKitExportInsulinEnabled {
-            await destination.exportHistoricalInsulin(
-                history?.boluses(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
-        }
-        if settings.healthKitExportGlucoseEnabled {
-            await destination.exportHistoricalGlucose(
-                history?.glucose(in: range, excludingSourceIDs: Self.healthKitImportSourceIDs) ?? [])
-        }
-    }
-
-    /// D-12a: throttled (mirrors `NightscoutUploader`'s 60 s cadence — this is a near-real-time
-    /// "as logged" export, unlike the hourly import backfill), best-effort automatic go-forward
-    /// export — fire-and-forget from `refresh()`. Runs ONLY when `healthKitAutoExportEnabled` is
-    /// true (default OFF); the manual backfill above always runs regardless of this gate.
-    private func maybeAutoExportAppleHealth() {
-        guard AppSettings.shared.healthKitAutoExportEnabled,
-              Date().timeIntervalSince(lastHealthKitAutoExport) >= 60 else { return }
-        lastHealthKitAutoExport = Date()
-        Task { [weak self] in await self?.runHealthKitAutoExport() }
-    }
-
-    /// Shared go-forward export routine (D-12a): for each enabled export type, hands the CURRENTLY
-    /// KNOWN faBolus values (mirrors the `NightscoutUploader.shared.sync(...)` call site's shape —
-    /// passing the live in-memory `glucoseHistory`/`bolusMarkers`, plus a wide `history?.carbs(in:)`
-    /// window) to `HealthKitExporter`'s `exportNew*` methods, which internally filter to entries
-    /// newer than that type's persisted high-water mark and advance it on success — so a relaunch
-    /// never re-sends an already-written entry. The carbs window is deliberately WIDE (not a short
-    /// recent scrub) because — unlike `glucoseHistory`/`bolusMarkers`, which AppModel already keeps
-    /// live in memory — carbs have no equivalent in-memory list; `HealthKitExporter`'s own high-water
-    /// mark (not this window) is what does the actual dedup, so passing a superset here is safe and
-    /// correct (mirrors `NightscoutUploader.sync`'s own "pass everything, let the mark filter" shape).
-    /// Test-observable via `setHealthKitExportDestinationForTesting`; production only reaches this
-    /// through the throttled `maybeAutoExportAppleHealth()` fire-and-forget wrapper above.
-    func runHealthKitAutoExport() async {
-        let settings = AppSettings.shared
-        let destination = healthKitExportDestination
-        if settings.healthKitExportCarbsEnabled {
-            // CR-01: exclude HealthKit-imported carbs — this window is the app's ENTIRE carb
-            // history (unbounded), so without the exclusion a carb imported from Health on the
-            // last import cycle would look "never exported" and get written straight back out.
-            let carbs = history?.carbs(in: Date.distantPast...Date(),
-                                       excludingSourceIDs: Self.healthKitImportSourceIDs) ?? []
-            await destination.exportNewCarbs(carbs)
-        }
-        if settings.healthKitExportInsulinEnabled {
-            await destination.exportNewInsulin(bolusMarkers)
-        }
-        if settings.healthKitExportGlucoseEnabled {
-            await destination.exportNewGlucose(glucoseHistory)
-        }
-    }
+    @ObservationIgnored internal lazy var healthKitImportSource: HealthKitImportSource = HealthKitHistoryImporter()
+    internal var lastHealthKitAutoImport = Date.distantPast
+    @ObservationIgnored internal lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
+    internal var lastHealthKitAutoExport = Date.distantPast
     #endif
 
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
+    /// Phase 16 GO-1 Step 4 (16-04): `updateEatingNudge`/`dismissEatingNudge` (the only readers of
+    /// `alertIntel`) moved to `AppModel+EatingNudge.swift`, so this stored property widens
+    /// `private`->`internal` (same reasoning as the eating-nudge set above). `saveAlertIntel()` moved
+    /// with its only caller (`dismissEatingNudge`); `loadAlertIntel()` stays here — it is only ever
+    /// referenced from this property's own default-value expression, in this same file.
     #if FABOLUS_NUDGE
-    @ObservationIgnored private var alertIntel = AppModel.loadAlertIntel()
+    @ObservationIgnored internal var alertIntel = AppModel.loadAlertIntel()
     private static func loadAlertIntel() -> AlertIntelligence {
         if let d = UserDefaults.standard.data(forKey: "alertIntel"),
            let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d) { return a }
         return AlertIntelligence()
     }
-    private func saveAlertIntel() {
-        if let d = try? JSONEncoder().encode(alertIntel) { UserDefaults.standard.set(d, forKey: "alertIntel") }
-    }
     #endif
-    /// Multi-signal eating nudge: gather CGM-meal + accel + no-recent-bolus, run the trigger engine, and
-    /// (if it fires and the fatigue layer allows) surface an advisory nudge. Advisory only, never doses.
-    private func updateEatingNudge() {
-        #if !FABOLUS_NUDGE
-        eatingNudge = nil; return   // Smart Assist (eating detection) needs the faBolusNudge SDK
-        #else
-        guard AppSettings.shared.eatingNudgesEnabled else {
-            eatingNudge = nil; setWantAccelSensing(false); eatingLocation.setEnabled(false); return
-        }
-        var cfg = AppSettings.shared.eatingTriggerConfig
-        // On-device threshold adaptation: raise the wrist threshold by the learned bias (fewer false
-        // alerts for users who report them). Off = no change.
-        if AppSettings.shared.eatingLearnFromFeedback {
-            cfg.accelThreshold = min(0.98, cfg.accelThreshold + eatingPersonalization.thresholdBias)
-        }
-        eatingLocation.setEnabled(cfg.locationEnabled)
-        if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
-        guard let history else { return }
-
-        let range = Date().addingTimeInterval(-2 * 3600)...Date()
-        var meal: MealDetector.Result?
-        if cfg.mode.usesCGM, snapshot.isf > 0, snapshot.carbRatio > 0 {
-            meal = mealDetector.detect(
-                glucose: history.glucose(in: range).map { (date: $0.date, mgdl: Double($0.mgdl)) },
-                doses: history.boluses(in: range).map { (date: $0.date, units: $0.units) },
-                announcedCarbs: history.carbs(in: range),
-                carbRatio: snapshot.carbRatio, isf: Double(snapshot.isf))
-        }
-        // Battery: for cgmThenAccel, only spin up the wrist sensor once the CGM hints a possible meal;
-        // other accel modes keep it on while enabled.
-        let wantAccel = cfg.mode.usesAccel && (cfg.mode == .cgmThenAccel ? (meal?.score ?? 0) >= 0.3 : true)
-        setWantAccelSensing(wantAccel)
-
-        let minsSinceBolus = bolusMarkers.map(\.date).max()
-            .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
-        // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
-        let accelFresh = Date().timeIntervalSince(lastAccelWindowAt) < 120 ? latestAccelProb : nil
-        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
-                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
-                                    atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
-
-        // Silent positive training example: eating is *recognized* but the nudge is gated by a recent
-        // bolus → you pre-bolused. No prompt (you already dosed), but label it a true meal for the
-        // on-device personalizer/trainer. Debounced to ~one per meal; window passed only when fresh.
-        if AppSettings.shared.eatingLearnFromFeedback,
-           eatingEngine.signalsMet(signals),
-           minsSinceBolus < Double(cfg.minMinutesSinceBolus),
-           Date().timeIntervalSince(lastEatingPositiveAt) > 90 * 60 {
-            lastEatingPositiveAt = Date()
-            eatingPersonalization.recordFeedback(eating: true, window: accelFresh != nil ? lastAccelWindowRaw : nil)
-            eatingLocation.recordMealHere()
-        }
-
-        if case .fire = eatingEngine.evaluate(signals) {
-            if case .suppress = alertIntel.decide(AlertIntelligenceKit.Alert(kind: "eating", severity: 1)) { return }
-            eatingNudge = EatingAlert(estimatedCarbs: meal?.estimatedCarbs ?? 0, at: Date())
-        }
-        #endif
-    }
-
-    /// User dismissed the eating nudge → teach the eating fatigue layer + the on-device personalizer
-    /// (a false alert), then clear it.
-    public func dismissEatingNudge() {
-        #if FABOLUS_NUDGE
-        alertIntel.record("eating", .dismissed); saveAlertIntel()
-        if AppSettings.shared.eatingLearnFromFeedback {
-            eatingPersonalization.recordFeedback(eating: false, window: lastAccelWindowRaw)
-        }
-        #endif
-        eatingNudge = nil
-    }
-
-    /// Learned meal-place count + personalization stats (for the settings screen).
-    public var eatingLearnedPlaceCount: Int { eatingLocation.learnedPlaceCount }
-    public var eatingFeedbackStats: (confirmed: Int, falseAlerts: Int) {
-        #if FABOLUS_NUDGE
-        (eatingPersonalization.confirmedTrue, eatingPersonalization.confirmedFalse)
-        #else
-        (0, 0)
-        #endif
-    }
-    public func resetEatingPersonalization() {
-        #if FABOLUS_NUDGE
-        eatingPersonalization.reset()
-        accelPipeline.applyPersonalizedModel(nil)
-        #endif
-        eatingLocation.reset()
-    }
+    // Phase 16 GO-1 Step 4 (16-04): `saveAlertIntel`, `updateEatingNudge`, `dismissEatingNudge`,
+    // `eatingLearnedPlaceCount`, `eatingFeedbackStats`, and `resetEatingPersonalization` moved
+    // verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE` gates preserved). See that
+    // file. `updateEatingNudge()` is still called from `refresh()` below (cross-file, `internal`).
 
     /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate,
     /// read by `hasSnoozeEligibleAlert` below. Phase 16 GO-1 Step 2: relocated verbatim to
