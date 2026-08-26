@@ -763,7 +763,11 @@ struct BolusEntryView: View {
             guard let resolved = oldValue, newValue == nil else { return }
             let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
             // WR-02 (VA-22): prefer the ledger's ACTUAL committed units over the staged requested amount.
-            present(BolusConfirmation.banner(for: signal, units: model.lastDeliveredUnits ?? resolved.units))
+            // D3-01 (non-frozen half): pass model.lastError as the truthful non-success message — same
+            // treatment as the confirmationSignal() seam below, so a rejected/timed-out child-mode
+            // approval is no longer silent either.
+            present(BolusConfirmation.banner(for: signal, units: model.lastDeliveredUnits ?? resolved.units,
+                                             message: model.lastError))
         }
         // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
         // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
@@ -1257,7 +1261,13 @@ struct BolusEntryView: View {
         } else {
             extended = nil
         }
-        present(BolusConfirmation.banner(for: confirmationSignal(), units: bannerUnits, extended: extended))
+        // D3-01 (non-frozen half): pass model.lastError as the truthful non-success message. It is
+        // accurate for BOTH a failed AND an indeterminate outcome (AppModel.swift:1927-1936) — the
+        // banner surfaces whichever string AppModel already resolved without needing to tell them
+        // apart itself; when confirmationSignal() is .delivered, model.lastError is nil (by that same
+        // read's own definition) and the message is simply unused.
+        present(BolusConfirmation.banner(for: confirmationSignal(), units: bannerUnits, extended: extended,
+                                         message: model.lastError))
         finishDelivery()
     }
 

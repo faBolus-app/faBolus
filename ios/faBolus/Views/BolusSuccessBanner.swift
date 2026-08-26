@@ -15,16 +15,24 @@ import SwiftUI
 // to display text, exactly like the repo's other static-for-test seams (`RootTabView.resolveSelection`,
 // `BolusEntryView.reenterMatches`).
 
-/// A resolved bolus-success banner: two lines of already-formatted display text. `nil` from
-/// `BolusConfirmation.banner` means "show nothing" — there is no "banner but hidden" state.
+/// A resolved bolus outcome banner: two lines of already-formatted display text plus a `kind` the
+/// view uses to pick its icon/tint. `nil` from `BolusConfirmation.banner` means "show nothing" — there
+/// is no "banner but hidden" state.
 struct BolusSuccessBanner: Equatable {
+    /// D3-01 (non-frozen half): `.warning` is the truthful non-success banner (failed/indeterminate);
+    /// `.success` is the original delivered banner. Never inferred from the text — set explicitly by
+    /// `banner(for:)` alongside the `Signal` it resolved.
+    enum Kind: Equatable { case success, warning }
+    let kind: Kind
     let primary: String
     let secondary: String
 }
 
 /// Pure, dependency-free mapping from an ALREADY-RESOLVED bolus outcome to display text. NEVER
-/// synthesizes a "delivered" banner for a pending or failed outcome — the core safety property of
-/// D-04/D-05: a truthful confirmation, never a false one.
+/// synthesizes a "delivered" banner for a pending outcome, and NEVER synthesizes a banner at all
+/// unless the caller supplies real information to show — the core safety property of D-04/D-05: a
+/// truthful confirmation, never a false one, and (D3-01) never a SILENT one either once the caller
+/// knows what happened.
 enum BolusConfirmation {
     /// The three outcomes a bolus attempt can resolve to, from the caller's ALREADY-KNOWN
     /// `model.lastError` / `model.pendingApproval` state (see `BolusEntryView.deliverFrozen` and its
@@ -32,10 +40,14 @@ enum BolusConfirmation {
     enum Signal {
         /// Awaiting remote (child-mode) approval — `pendingApproval != nil`. NEVER a banner (D-05).
         case staged
-        /// Blocked / indeterminate / failed / rejected / timed out. NEVER a banner (D-04/D-05).
+        /// Blocked / indeterminate / failed / rejected / timed out. D3-01 (non-frozen half): when the
+        /// caller supplies a `message` (AppModel's already-accurate `lastError`, which covers BOTH the
+        /// failed and the indeterminate case — see `AppModel.swift:1927-1936`), this now produces a
+        /// truthful WARNING banner carrying that message, closing the visible silent-outcome asymmetry
+        /// without a new `.indeterminate` case (that distinction lives in frozen `AppModel` only).
         case failed
         /// The bolus actually completed with `lastError == nil` and no pending approval. The ONLY
-        /// signal that produces a banner.
+        /// signal that produces a `.success` banner.
         case delivered
     }
 
@@ -49,39 +61,55 @@ enum BolusConfirmation {
 
     /// `units` is the frozen total units the pump was actually sent (standard bolus amount, or the
     /// extended bolus's total). Formatting uses the repo's existing `String(format: "%.2f U", ...)`
-    /// convention (`MainHUDView.swift:70/136/142`).
-    static func banner(for signal: Signal, units: Double, extended: ExtendedDetail? = nil) -> BolusSuccessBanner? {
-        guard signal == .delivered else { return nil }
-        // D2-04: route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
-        // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
-        // `%@` — the same "%@ mg/dL"-style idiom `StatsCardView.glucoseLabel` already uses — so the
-        // catalog carries the surrounding phrase, not a raw numeric-format specifier.
-        let primary = String(localized: "Bolus delivered")
-        let secondary: String
-        if let extended {
-            secondary = String(format: String(localized: "%@ now, %@ total over %@"),
-                                String(format: "%.2f U", extended.nowUnits),
-                                String(format: "%.2f U", extended.totalUnits),
-                                String(format: "%d min", extended.durationMinutes))
-        } else {
-            secondary = String(format: String(localized: "%@ delivered"), String(format: "%.2f U", units))
+    /// convention (`MainHUDView.swift:70/136/142`). `message` (D3-01) is the caller's already-resolved
+    /// non-success copy (`model.lastError`) — only consulted for `.failed`; omitting it (the default)
+    /// preserves the original silent behavior for callers that haven't been updated yet.
+    static func banner(for signal: Signal, units: Double, extended: ExtendedDetail? = nil,
+                        message: String? = nil) -> BolusSuccessBanner? {
+        switch signal {
+        case .staged:
+            return nil
+        case .failed:
+            // Fail-closed: no message means the caller has nothing truthful to show yet — stay silent
+            // rather than show an empty/generic warning (mirrors the original "never a false banner"
+            // property, applied to "never an empty one" too).
+            guard let message else { return nil }
+            return BolusSuccessBanner(kind: .warning, primary: String(localized: "Bolus not delivered"),
+                                       secondary: message)
+        case .delivered:
+            // D2-04: route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
+            // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
+            // `%@` — the same "%@ mg/dL"-style idiom `StatsCardView.glucoseLabel` already uses — so the
+            // catalog carries the surrounding phrase, not a raw numeric-format specifier.
+            let primary = String(localized: "Bolus delivered")
+            let secondary: String
+            if let extended {
+                secondary = String(format: String(localized: "%@ now, %@ total over %@"),
+                                    String(format: "%.2f U", extended.nowUnits),
+                                    String(format: "%.2f U", extended.totalUnits),
+                                    String(format: "%d min", extended.durationMinutes))
+            } else {
+                secondary = String(format: String(localized: "%@ delivered"), String(format: "%.2f U", units))
+            }
+            return BolusSuccessBanner(kind: .success, primary: primary, secondary: secondary)
         }
-        return BolusSuccessBanner(primary: primary, secondary: secondary)
     }
 }
 
-/// The transient toast itself — a `checkmark.circle.fill` in plain `Color.green` (NOT
-/// `AppTheme.inRange`, see the file-level note above) plus a `.headline` primary line and a
-/// `.subheadline` secondary line, wrapped in the `thinMaterial` rounded-card idiom copied verbatim
-/// from `MainHUDView.swift:40-63`. This view owns no delivery state — it only renders the strings it's
-/// given (D-08).
+/// The transient toast itself — `.success` shows a `checkmark.circle.fill` in plain `Color.green` (NOT
+/// `AppTheme.inRange`, see the file-level note above); `.warning` (D3-01) shows an
+/// `exclamationmark.triangle.fill` in plain `Color.orange` — same reasoning: a plain system color, not
+/// a semantic design-system token, so this bolus-outcome affordance never collides with a clinical
+/// glucose-band color. Both share the same `.headline`/`.subheadline` text and `thinMaterial`
+/// rounded-card chrome, copied verbatim from `MainHUDView.swift:40-63`. This view owns no delivery
+/// state — it only renders the strings (and kind) it's given (D-08).
 struct BolusSuccessBannerView: View {
     let banner: BolusSuccessBanner
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.green)
+            Image(systemName: banner.kind == .warning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(banner.kind == .warning ? Color.orange : Color.green)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(banner.primary).font(.headline)
