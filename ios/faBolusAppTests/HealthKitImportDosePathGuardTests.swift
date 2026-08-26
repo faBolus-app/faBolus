@@ -30,7 +30,7 @@ struct HealthKitImportDosePathGuardTests {
         "Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift",
         "Packages/faBolusCore/Sources/faBolusCore/GlucoseArbiter.swift",
         "ios/faBolus/Data/TandemBackend.swift",
-        "ios/faBolus/Data/PumpTransport.swift",
+        "ios/faBolus/Data/Tandem/PumpTransport.swift",
     ]
 
     /// The forbidden HealthKit-import/export symbols. Held as plain string constants — this scan

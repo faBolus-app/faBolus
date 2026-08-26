@@ -34,7 +34,13 @@ The app talks only to `PumpBackend`, never to a pump library. A backend supplies
 `PumpSnapshot` + histories, delivers/cancels boluses, computes recommendations, and reports
 `activeNotifications` as neutral `PumpAlert`s. It also declares `PumpCapabilities` so the one UI
 adapts (hide carbs mode / cancel / alerts / pairing when unsupported). TandemKit is just the engine
-behind `TandemBackend`; the app has **no** `import TandemMessages`.
+behind `TandemBackend` — the only app file that `import TandemMessages`; nothing else in the app
+does. `TandemBackend`'s Tandem-only satellite files (BLE transport, read scheduling/catalog,
+opcode/unsupported-read stores, response application) live under
+`ios/faBolus/Data/Tandem/` for directory legibility — a folder/group move, not a compiler-enforced
+import boundary: `project.yml` has one application target sourcing all of `ios/faBolus`, and
+`TandemBackend.swift` itself stays at `Data/` root (a byte-identity-guarded dose path) and still
+imports `TandemMessages` directly.
 
 Backends are registered in `BackendRegistry.enabled` — a **compile-time manifest** (iOS has no
 dynamic plugins, so every backend is compiled in and selected at runtime; the default per build is
