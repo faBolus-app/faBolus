@@ -836,6 +836,18 @@ public final class AppModel {
         }
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
         deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason }
+        // Phase 16 GO-1 Step 3 (REMED-16): the CGM Test-flow coordinator depends ONLY on closures
+        // bound to `self` — never a whole-AppModel back-pointer (D-04). `probe` reads
+        // `glucoseSourceProbe` (itself already the private-`glucoseSource`-guarded read), so the
+        // coordinator never touches `glucoseSource` directly (INV-A).
+        cgmTestCoordinator.probe = { [weak self] in self?.glucoseSourceProbe }
+        cgmTestCoordinator.failoverAutoDisabled = { [weak self] in self?.failoverAutoDisabled != nil }
+        cgmTestCoordinator.onStateChanged = { [weak self] state in
+            self?.cgmTestInProgress = state.inProgress
+            self?.cgmTestElapsedSeconds = state.elapsedSeconds
+            self?.cgmTestTimeoutSeconds = state.timeoutSeconds
+            self?.cgmTestOutcome = state.outcome
+        }
         source.onChange = { [weak self] in self?.refresh() }
         // Round-3 §5: acknowledged bolus-id handshake — durably record the pump id (+ its "sent" phase)
         // BEFORE the backend writes metadata/initiate. Returns false if the save failed, so the backend
@@ -987,14 +999,15 @@ public final class AppModel {
     }
 
     /// True while a Test run is polling for an outcome; drives the "Testing…" button label / disabled
-    /// state.
+    /// state. Mirrored from `cgmTestCoordinator.state.inProgress` (D-04 mirror pattern, like
+    /// `deliveryBlockedReason`).
     public private(set) var cgmTestInProgress = false
     /// Seconds elapsed since the current/most-recent Test run started; holds at its last value once
     /// the run reaches a terminal outcome. Drives the elapsed indicator + the determinate progress bar.
     public private(set) var cgmTestElapsedSeconds = 0
-    /// The active/most-recent run's timeout in seconds (see `cgmTestTimeout(forSourceId:)`), so the UI
-    /// can render a determinate `ProgressView(value:)` (elapsed / timeout) instead of an indeterminate
-    /// spinner. 0 before any run.
+    /// The active/most-recent run's timeout in seconds (see `CgmTestCoordinator.cgmTestTimeout(for:)`),
+    /// so the UI can render a determinate `ProgressView(value:)` (elapsed / timeout) instead of an
+    /// indeterminate spinner. 0 before any run.
     public private(set) var cgmTestTimeoutSeconds = 0
     /// The current/most-recent Test outcome; nil before any Test has been run this launch.
     // Not `public`: `CgmTestOutcome` (relocated to `Data/CGM/CgmTestOutcome.swift`, CX-A-04) is
@@ -1002,78 +1015,18 @@ public final class AppModel {
     // a less-than-public type. `internal` is sufficient: this is read only by `CgmCredentialsView`/
     // `CgmStatusView`, in the same module.
     private(set) var cgmTestOutcome: CgmTestOutcome?
-    private var cgmTestPollTask: Task<Void, Never>?
 
-    /// How long the Test flow waits before concluding TIMEOUT — keyed on the source's typed
-    /// `connectionKind` (D-06/D-09), NOT on `id`-string literals. `.localBLE` (Dexcom G6/G7) gets one
-    /// full wake/connect cycle (~5 min, RESEARCH "Already-paired-sensor first-run behavior") plus
-    /// margin — the already-correct BLE window, PRESERVED. `.cloudPoll` waits only for an auth + one
-    /// network round-trip (it doesn't wait on a transmitter's radio cycle); `.localOnDevice` reads a
-    /// shared on-device store, so it's near-instant. A new source can't be silently mis-timed: it must
-    /// classify its `connectionKind`, and this switch is exhaustive.
-    public static func cgmTestTimeout(for kind: GlucoseConnectionKind) -> TimeInterval {
-        switch kind {
-        case .localBLE:      return 6 * 60   // one full Dexcom wake/connect cycle (~5 min) + margin
-        case .cloudPoll:     return 20        // auth handshake + one network round-trip (~15–20s)
-        case .localOnDevice: return 10        // near-instant read of the shared on-device store
-        }
-    }
+    /// Phase 16 GO-1 Step 3 (REMED-16): the CGM Test-flow poll-loop state machine, extracted into its
+    /// own closure-bound coordinator (D-04 idiom). Wired in `init` right below the coordinator's own
+    /// construction statement (mirrors `deliveryLedgerCoordinator`'s wiring). Never a whole-`AppModel`
+    /// back-pointer — only the `probe`/`failoverAutoDisabled`/`onStateChanged` closures below.
+    @ObservationIgnored private let cgmTestCoordinator = CgmTestCoordinator()
 
-    /// W-03: the Test poll loop must ABORT (clearing BOTH the in-progress flag AND the outcome) when
-    /// the live probe no longer matches the source the Test STARTED against — the user switched or
-    /// cleared the failover source mid-Test. Pure so the abort condition is unit-testable without
-    /// driving the async loop; a `nil` current id (source deselected) also aborts.
-    static func cgmTestShouldAbort(startedSourceId: String, currentProbeId: String?) -> Bool {
-        currentProbeId != startedSourceId
-    }
-
-    /// Start (or restart) the Test flow. OBSERVES `glucoseSourceProbe` on a 1s poll instead of
-    /// building a second central, so an already-buffered reading resolves `.success` on the very
-    /// first tick. Reports an immediate `.timeout` (not a spin) when no production instance exists —
-    /// no fallback selected, or the CX-F-07 bounded-recovery policy currently has it disabled.
+    /// Start (or restart) the Test flow. Delegates to `cgmTestCoordinator`, which OBSERVES the
+    /// `probe` closure (bound to `glucoseSourceProbe`) on a poll instead of building a second
+    /// central, so an already-buffered reading resolves `.success` on the very first tick.
     public func startCgmTest() {
-        cgmTestPollTask?.cancel()
-        guard let probe = glucoseSourceProbe else {
-            cgmTestOutcome = .timeout(detail: failoverAutoDisabled != nil
-                ? "The fallback source was temporarily disabled after repeated unclean starts — it will automatically retry, or re-select it in Settings now."
-                : "No fallback source is selected.")
-            cgmTestInProgress = false
-            cgmTestElapsedSeconds = 0
-            cgmTestTimeoutSeconds = 0
-            return
-        }
-        let sourceId = probe.id
-        let timeout = Self.cgmTestTimeout(for: probe.connectionKind)
-        cgmTestInProgress = true
-        cgmTestOutcome = nil
-        cgmTestElapsedSeconds = 0
-        cgmTestTimeoutSeconds = Int(timeout)
-        let startedAt = Date()
-        cgmTestPollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                guard let probe = self.glucoseSourceProbe,
-                      !Self.cgmTestShouldAbort(startedSourceId: sourceId, currentProbeId: probe.id) else {
-                    // W-03: source changed/cleared mid-Test — clear BOTH the in-progress flag AND the
-                    // outcome so no frozen stale `.waiting` screen is left behind (was: only cleared
-                    // in-progress, leaving the last `.waiting` outcome rendered forever).
-                    self.cgmTestInProgress = false
-                    self.cgmTestOutcome = nil
-                    return
-                }
-                let elapsed = Date().timeIntervalSince(startedAt)
-                self.cgmTestElapsedSeconds = Int(elapsed)
-                let outcome = CgmTestOutcome.testOutcome(latest: probe.latest, status: probe.status,
-                                                          elapsed: elapsed, timeout: timeout)
-                self.cgmTestOutcome = outcome
-                if case .waiting = outcome {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    continue
-                }
-                self.cgmTestInProgress = false
-                return
-            }
-        }
+        cgmTestCoordinator.start()
     }
 
     /// Set when a widget's tap-to-bolus deep link opens the app; the HUD observes it to present

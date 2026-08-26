@@ -97,13 +97,13 @@ struct CgmTestFlowStateTests {
 
     @Test func timeoutWindowIsKeyedOnConnectionKind() {
         // .localBLE keeps the already-correct ~6-min Dexcom wake-cycle window (PRESERVED — G6 + G7).
-        #expect(AppModel.cgmTestTimeout(for: .localBLE) == 6 * 60)
+        #expect(CgmTestCoordinator.cgmTestTimeout(for: .localBLE) == 6 * 60)
         // .cloudPoll waits only for an auth + one network round-trip (~15–20s), never a radio cycle.
-        #expect(AppModel.cgmTestTimeout(for: .cloudPoll) <= 30)
-        #expect(AppModel.cgmTestTimeout(for: .cloudPoll) > 0)
+        #expect(CgmTestCoordinator.cgmTestTimeout(for: .cloudPoll) <= 30)
+        #expect(CgmTestCoordinator.cgmTestTimeout(for: .cloudPoll) > 0)
         // .localOnDevice reads a shared on-device store — near-instant, and shorter than the BLE window.
-        #expect(AppModel.cgmTestTimeout(for: .localOnDevice) < AppModel.cgmTestTimeout(for: .localBLE))
-        #expect(AppModel.cgmTestTimeout(for: .localOnDevice) > 0)
+        #expect(CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) < CgmTestCoordinator.cgmTestTimeout(for: .localBLE))
+        #expect(CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) > 0)
     }
 
     // MARK: - D-09: waiting/timeout COPY is source-appropriate per category, never reusing BLE copy
@@ -142,15 +142,99 @@ struct CgmTestFlowStateTests {
 
     @Test func testAbortsWhenSourceChangesMidTest() {
         // Started against "dexcom-g7-ble"; the live probe now reports a DIFFERENT source → abort.
-        #expect(AppModel.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "nightscout"))
+        #expect(CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "nightscout"))
     }
 
     @Test func testAbortsWhenSourceClearedMidTest() {
         // Failover deselected mid-Test → the probe is nil → abort (no frozen stale .waiting screen).
-        #expect(AppModel.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: nil))
+        #expect(CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: nil))
     }
 
     @Test func testDoesNotAbortWhileSourceUnchanged() {
-        #expect(!AppModel.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "dexcom-g7-ble"))
+        #expect(!CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "dexcom-g7-ble"))
+    }
+
+    // MARK: - Phase 16 GO-1 Step 3 (REMED-16): drive CgmTestCoordinator directly (not the view),
+    // proving the extracted state machine reproduces AppModel's pre-move transitions exactly, under
+    // an injected clock (CX-A-08 — no wall-clock Date()/Task.sleep needed to make these deterministic).
+
+    private func makeCoordinator(probeId: String = "dexcom-g7-ble",
+                                  connectionKind: GlucoseConnectionKind = .cloudPoll,
+                                  latest: GlucoseSample?,
+                                  status: GlucoseSourceStatus) -> CgmTestCoordinator {
+        let coordinator = CgmTestCoordinator()
+        coordinator.probe = { (id: probeId, connectionKind: connectionKind, latest: latest, status: status) }
+        return coordinator
+    }
+
+    /// `startCgmTest -> .waiting -> .success`: `performTick` (the pure per-tick decision, extracted
+    /// so this is testable without racing the async `Task` loop) transitions from `.waiting` (nothing
+    /// buffered yet) to `.success` (a reading now buffered) across two ticks against the SAME started
+    /// source/timeout, exactly mirroring pre-move `AppModel.startCgmTest`'s poll body.
+    @Test func performTickTransitionsFromWaitingToSuccessOnScriptedProbe() {
+        let coordinator = makeCoordinator(latest: nil, status: .searching)
+        let startedAt = Date()
+        coordinator.now = { startedAt }   // no elapsed time passes between ticks
+        let firstDone = coordinator.performTick(startedSourceId: "dexcom-g7-ble", startedAt: startedAt, timeout: 300)
+        #expect(!firstDone)
+        #expect(coordinator.state.outcome == .waiting)
+        #expect(coordinator.state.inProgress == false)   // performTick alone never flips inProgress on .waiting
+
+        let sample = sample(150)
+        coordinator.probe = { (id: "dexcom-g7-ble", connectionKind: .cloudPoll, latest: sample, status: .connected) }
+        let secondDone = coordinator.performTick(startedSourceId: "dexcom-g7-ble", startedAt: startedAt, timeout: 300)
+        #expect(secondDone)
+        #expect(coordinator.state.outcome == .success(sample))
+        #expect(coordinator.state.inProgress == false)
+    }
+
+    /// Force timeout via the injected clock (CX-A-08): `now()` reports past the timeout window with
+    /// nothing buffered -> `.timeout`, and `performTick` reports the run as terminal (`done == true`).
+    @Test func performTickReturnsTimeoutOnceTheInjectedClockPassesTheWindow() {
+        let coordinator = makeCoordinator(latest: nil, status: .searching)
+        let startedAt = Date()
+        coordinator.now = { startedAt.addingTimeInterval(301) }
+        let done = coordinator.performTick(startedSourceId: "dexcom-g7-ble", startedAt: startedAt, timeout: 300)
+        #expect(done)
+        #expect(coordinator.state.outcome == .timeout(detail: nil))
+        #expect(coordinator.state.inProgress == false)
+    }
+
+    /// W-03 abort path returns to idle: a `performTick` whose live probe id no longer matches the
+    /// started source clears BOTH `inProgress` and `outcome` and reports terminal — the same "no
+    /// frozen stale .waiting screen" contract `AppModel.startCgmTest`'s poll body enforced inline.
+    @Test func performTickAbortsToIdleWhenProbeSourceChangesMidRun() {
+        let coordinator = makeCoordinator(probeId: "nightscout", latest: nil, status: .searching)
+        let startedAt = Date()
+        coordinator.now = { startedAt }
+        // Seed a non-idle state first, so the abort is a genuine transition back to idle.
+        _ = coordinator.performTick(startedSourceId: "nightscout", startedAt: startedAt, timeout: 300)
+        let done = coordinator.performTick(startedSourceId: "dexcom-g7-ble", startedAt: startedAt, timeout: 300)
+        #expect(done)
+        #expect(coordinator.state.inProgress == false)
+        #expect(coordinator.state.outcome == nil)
+    }
+
+    /// End-to-end wiring characterization: `start()` observing an ALREADY-buffered reading resolves
+    /// `.success` on the very first real (async) poll tick — the exact "an already-buffered reading
+    /// resolves instantly" contract `AppModel.startCgmTest`'s doc comment describes — proving the
+    /// `Task` loop built on `performTick` behaves identically to driving `performTick` directly.
+    @Test func startResolvesSuccessImmediatelyWhenAReadingIsAlreadyBuffered() async {
+        let bufferedSample = sample(140)
+        let coordinator = makeCoordinator(latest: bufferedSample, status: .connected)
+        coordinator.start()
+        await coordinator.waitForPollTaskToFinish()
+        #expect(coordinator.state.outcome == .success(bufferedSample))
+        #expect(coordinator.state.inProgress == false)
+    }
+
+    /// `start()` with no probe (no fallback source selected) reports `.timeout` synchronously, before
+    /// any `Task` is even spawned — mirrors the pre-move guard clause in `AppModel.startCgmTest`.
+    @Test func startWithNoProbeReportsTimeoutImmediately() {
+        let coordinator = CgmTestCoordinator()   // default probe closure returns nil
+        coordinator.start()
+        #expect(coordinator.state.outcome == .timeout(detail: "No fallback source is selected."))
+        #expect(coordinator.state.inProgress == false)
+        #expect(coordinator.state.timeoutSeconds == 0)
     }
 }
