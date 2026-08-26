@@ -154,8 +154,8 @@ enum WidgetPublisher {
 
     /// Owner-requested toggle: re-stamp `showUnitLabel` on the most recently published snapshot and
     /// reload the widget timelines immediately — same idiom as `republishDisplayUnit()` above, called
-    /// from `AppSettings.showGlucoseUnitLabels`'s `didSet`. A no-op if nothing has been published yet
-    /// (the next real publish carries the flag).
+    /// from `AppSettings.showGlucoseUnitLabels`'s setter (via the `@Stored` `onChange` hook). A no-op if
+    /// nothing has been published yet (the next real publish carries the flag).
     @MainActor
     static func republishShowUnitLabel() {
         guard var snap = WidgetStore.load() else { return }

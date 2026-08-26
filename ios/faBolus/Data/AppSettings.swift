@@ -24,9 +24,23 @@ public final class AppSettings {
         }
     }
     // Watch / Garmin default entry mode (sent to the remotes) — independent of the phone.
-    public var watchDefaultBolusMode: BolusMode { didSet { d.set(watchDefaultBolusMode.rawValue, forKey: "watchDefaultBolusMode") } }
+    // D4-05: `@Stored`-backed. The legacy phone-default fallback lives in `init` (unchanged).
+    private var _watchDefaultBolusMode = Stored<BolusMode>(wrappedValue: .carbs, "watchDefaultBolusMode")
+    public var watchDefaultBolusMode: BolusMode {
+        get { _watchDefaultBolusMode.wrappedValue }
+        set { _watchDefaultBolusMode.wrappedValue = newValue }
+    }
     // Phone increments (iPhone bolus entry + the Home-Screen widget).
-    public var bolusIncrement: Double { didSet { d.set(bolusIncrement, forKey: "bolusIncrement"); syncWidgetConfig() } }
+    // D4-05: `@Stored`-backed; `syncWidgetConfig()` preserved via the post-init `onChange` hook. The
+    // init `max(0.05, …)` legacy clamp is unchanged (still computed in `init`).
+    private var _bolusIncrement = Stored<Double>(wrappedValue: 0.05, "bolusIncrement")
+    public var bolusIncrement: Double {
+        get { _bolusIncrement.wrappedValue }
+        set {
+            _bolusIncrement.wrappedValue = newValue
+            _bolusIncrement.onChange?(newValue)   // two statements — see Stored.swift's onChange doc comment (exclusivity)
+        }
+    }
     // D4-05: `@Stored`-backed; `syncWidgetConfig()` preserved via the post-init `onChange` hook.
     private var _carbIncrement = Stored<Double>(wrappedValue: 5, "carbIncrement")
     public var carbIncrement: Double {
@@ -37,8 +51,17 @@ public final class AppSettings {
         }
     }
     // Watch / Garmin increments (sent to the remotes in the status payload) — independent of the phone.
-    public var watchBolusIncrement: Double { didSet { d.set(watchBolusIncrement, forKey: "watchBolusIncrement") } }
-    public var watchCarbIncrement: Double { didSet { d.set(watchCarbIncrement, forKey: "watchCarbIncrement") } }
+    // D4-05: `@Stored`-backed (the phone-increment fallbacks live in `init`, unchanged).
+    private var _watchBolusIncrement = Stored<Double>(wrappedValue: 0.05, "watchBolusIncrement")
+    public var watchBolusIncrement: Double {
+        get { _watchBolusIncrement.wrappedValue }
+        set { _watchBolusIncrement.wrappedValue = newValue }
+    }
+    private var _watchCarbIncrement = Stored<Double>(wrappedValue: 5, "watchCarbIncrement")
+    public var watchCarbIncrement: Double {
+        get { _watchCarbIncrement.wrappedValue }
+        set { _watchCarbIncrement.wrappedValue = newValue }
+    }
     /// Chart series toggles. Glucose (left axis), the IOB line, and the bolus bars each toggle
     /// independently; IOB + bolus bars share the right (units) axis.
     // D4-05: `@Stored`-backed.
@@ -70,12 +93,17 @@ public final class AppSettings {
     /// unit picker itself — those are safety/clarity/setup contexts, not ambient display, and always
     /// keep the unit regardless of this flag. A display-format preference like `glucoseDisplayUnit`
     /// (NOT a per-device feature toggle), so it iCloud-syncs the same way — see `SettingsCatalog`.
+    // D4-05: `@Stored`-backed; `WidgetPublisher.republishShowUnitLabel()` is preserved via the post-init
+    // `onChange` hook (fired as a SEPARATE statement — see Stored.swift's onChange doc comment — so the
+    // widgets/complication/Live Activity reflect the toggle without waiting for the next pump reading,
+    // exactly as the old `didSet` did; `republishShowUnitLabel()` reads `AppSettings.shared`, so it must
+    // run after this write's exclusive access has ended).
+    private var _showGlucoseUnitLabels = Stored<Bool>(wrappedValue: false, "showGlucoseUnitLabels")
     public var showGlucoseUnitLabels: Bool {
-        didSet {
-            d.set(showGlucoseUnitLabels, forKey: "showGlucoseUnitLabels")
-            // Re-publish immediately (like `glucoseDisplayUnit`'s didSet) so the widgets/complication/
-            // Live Activity reflect the toggle without waiting for the next pump reading.
-            WidgetPublisher.republishShowUnitLabel()
+        get { _showGlucoseUnitLabels.wrappedValue }
+        set {
+            _showGlucoseUnitLabels.wrappedValue = newValue
+            _showGlucoseUnitLabels.onChange?(newValue)   // two statements — see Stored.swift's onChange doc comment (exclusivity)
         }
     }
     // D4-05/CX-A-09: `@Stored`-backed (see Stored.swift for why AppSettings uses the private-field +
@@ -147,7 +175,13 @@ public final class AppSettings {
 
     /// Persistent-history retention in days; **0 = keep everything** (default). Storage is ~1 MB/month,
     /// so the default is unlimited; this only exists for users who prefer data-minimization.
-    public var historyRetentionDays: Int { didSet { d.set(historyRetentionDays, forKey: "historyRetentionDays") } }
+    // D4-05: `@Stored`-backed. Phase 8 (08-01, LOCK-03)'s force-set-1 (24h) pin is unchanged — it lives
+    // in `init` below as an explicit assignment through this setter, same as before conversion.
+    private var _historyRetentionDays = Stored<Int>(wrappedValue: 1, "historyRetentionDays")
+    public var historyRetentionDays: Int {
+        get { _historyRetentionDays.wrappedValue }
+        set { _historyRetentionDays.wrappedValue = newValue }
+    }
 
     /// Auto-sync pump history on connect (D-01, Phase 09.7-02). **Default ON** — the gap-aware sync
     /// (`TandemBackend`, Plan 01) runs automatically on every connect unless disabled here. Turning this
@@ -155,7 +189,12 @@ public final class AppSettings {
     /// `DataHistoryView` always runs the same gap-sync entry point regardless of this setting (UI-SPEC
     /// resolved assumption 2). Reachable in Data & History; a `SettingsCatalog` row, `backsUp: false`
     /// like `historyRetentionDays` (a device-local sync preference, not backup/iCloud-relevant).
-    public var historySyncEnabled: Bool { didSet { d.set(historySyncEnabled, forKey: "historySyncEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _historySyncEnabled = Stored<Bool>(wrappedValue: true, "historySyncEnabled")
+    public var historySyncEnabled: Bool {
+        get { _historySyncEnabled.wrappedValue }
+        set { _historySyncEnabled.wrappedValue = newValue }
+    }
 
     /// Last time a pump-history gap-sync completed (D-05, Phase 09.7-02) — feeds the "Last synced" row
     /// in `DataHistoryView`. Durable per-install marker, NOT a `SettingsCatalog` row (pure sync
@@ -177,7 +216,12 @@ public final class AppSettings {
     }
 
     /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
-    public var eatingNudgesEnabled: Bool { didSet { d.set(eatingNudgesEnabled, forKey: "eatingNudgesEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _eatingNudgesEnabled = Stored<Bool>(wrappedValue: false, "eatingNudgesEnabled")
+    public var eatingNudgesEnabled: Bool {
+        get { _eatingNudgesEnabled.wrappedValue }
+        set { _eatingNudgesEnabled.wrappedValue = newValue }
+    }
 
     /// Phase 09.18b (D-07/D-09/D-17): background heart-rate-as-chart-context gate. **Default ON**,
     /// independently off-able. When OFF (D-09): the phone stops the on-demand HealthKit HR query, the
@@ -185,14 +229,24 @@ public final class AppSettings {
     /// ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input. Device-local display
     /// toggle (same device-local persisted-Bool idiom as `eatingNudgesEnabled`): deliberately NOT a
     /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
-    public var heartRateContextEnabled: Bool { didSet { d.set(heartRateContextEnabled, forKey: "heartRateContextEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _heartRateContextEnabled = Stored<Bool>(wrappedValue: true, "heartRateContextEnabled")
+    public var heartRateContextEnabled: Bool {
+        get { _heartRateContextEnabled.wrappedValue }
+        set { _heartRateContextEnabled.wrappedValue = newValue }
+    }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
     }
     /// On-device personalization for the nudge: adapt the wrist threshold (and, when the model is
     /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
-    public var eatingLearnFromFeedback: Bool { didSet { d.set(eatingLearnFromFeedback, forKey: "eatingLearnFromFeedback") } }
+    // D4-05: `@Stored`-backed.
+    private var _eatingLearnFromFeedback = Stored<Bool>(wrappedValue: true, "eatingLearnFromFeedback")
+    public var eatingLearnFromFeedback: Bool {
+        get { _eatingLearnFromFeedback.wrappedValue }
+        set { _eatingLearnFromFeedback.wrappedValue = newValue }
+    }
 
     // Phase 09.15 (D-07) — Control-IQ-awareness Smart-Assist toggle scaffold. Every later 09.15 plan
     // reads these flags rather than inventing its own; defaults are the owner-locked D-07 table
@@ -201,17 +255,47 @@ public final class AppSettings {
     // remote suppresses an off feature belt-and-suspenders. T1-6 (extended disable-CIQ warning) has NO
     // flag here — it always fires, per D-07.
     /// T1-1/2/3/4 — CIQ state/status readouts (pure facts, no action). Default **ON**.
-    public var ciqStateReadoutsEnabled: Bool { didSet { d.set(ciqStateReadoutsEnabled, forKey: "ciqStateReadoutsEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqStateReadoutsEnabled = Stored<Bool>(wrappedValue: true, "ciqStateReadoutsEnabled")
+    public var ciqStateReadoutsEnabled: Bool {
+        get { _ciqStateReadoutsEnabled.wrappedValue }
+        set { _ciqStateReadoutsEnabled.wrappedValue = newValue }
+    }
     /// T1-5 — 60-min auto-correction lockout countdown (safety-increasing disclosure). Default **ON**.
-    public var ciqLockoutCountdownEnabled: Bool { didSet { d.set(ciqLockoutCountdownEnabled, forKey: "ciqLockoutCountdownEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqLockoutCountdownEnabled = Stored<Bool>(wrappedValue: true, "ciqLockoutCountdownEnabled")
+    public var ciqLockoutCountdownEnabled: Bool {
+        get { _ciqLockoutCountdownEnabled.wrappedValue }
+        set { _ciqLockoutCountdownEnabled.wrappedValue = newValue }
+    }
     /// T1-8 — "% of configured max basal" readout (introduces a "limit" concept). Default **OFF**.
-    public var ciqMaxBasalReadoutEnabled: Bool { didSet { d.set(ciqMaxBasalReadoutEnabled, forKey: "ciqMaxBasalReadoutEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqMaxBasalReadoutEnabled = Stored<Bool>(wrappedValue: false, "ciqMaxBasalReadoutEnabled")
+    public var ciqMaxBasalReadoutEnabled: Bool {
+        get { _ciqMaxBasalReadoutEnabled.wrappedValue }
+        set { _ciqMaxBasalReadoutEnabled.wrappedValue = newValue }
+    }
     /// T1-9 — Sleep/Exercise awareness (least directly pump-sourced). Default **OFF**.
-    public var ciqSleepExerciseAwarenessEnabled: Bool { didSet { d.set(ciqSleepExerciseAwarenessEnabled, forKey: "ciqSleepExerciseAwarenessEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqSleepExerciseAwarenessEnabled = Stored<Bool>(wrappedValue: false, "ciqSleepExerciseAwarenessEnabled")
+    public var ciqSleepExerciseAwarenessEnabled: Bool {
+        get { _ciqSleepExerciseAwarenessEnabled.wrappedValue }
+        set { _ciqSleepExerciseAwarenessEnabled.wrappedValue = newValue }
+    }
     /// T2-3 — CIQ+-only temp-rate placeholder (bench-gated, `benchVerifiedDefault = false`). Default **OFF**.
-    public var ciqPlusTempRateEnabled: Bool { didSet { d.set(ciqPlusTempRateEnabled, forKey: "ciqPlusTempRateEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqPlusTempRateEnabled = Stored<Bool>(wrappedValue: false, "ciqPlusTempRateEnabled")
+    public var ciqPlusTempRateEnabled: Bool {
+        get { _ciqPlusTempRateEnabled.wrappedValue }
+        set { _ciqPlusTempRateEnabled.wrappedValue = newValue }
+    }
     /// T2-1 — direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
-    public var ciqCeilingFlagsEnabled: Bool { didSet { d.set(ciqCeilingFlagsEnabled, forKey: "ciqCeilingFlagsEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _ciqCeilingFlagsEnabled = Stored<Bool>(wrappedValue: false, "ciqCeilingFlagsEnabled")
+    public var ciqCeilingFlagsEnabled: Bool {
+        get { _ciqCeilingFlagsEnabled.wrappedValue }
+        set { _ciqCeilingFlagsEnabled.wrappedValue = newValue }
+    }
     // Generic "About Smart Features" one-time explainer (09.18a, D-16) — a durable per-install marker,
     // same idiom as `stackingGuardNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up / iCloud-
     // synced (a synced ack must not pre-suppress the notice on another device). Fired on first ENABLE of
@@ -380,16 +464,31 @@ public final class AppSettings {
     /// Phase 7 (07-03, FEAT-05, D-08): FROZEN — hidden (no Settings UI) and unregistered (no
     /// `SettingsCatalog` descriptor, no backup/restore participation, `historyCoverage` idiom); the kept
     /// `ModeAutomation.swift` still reads it (`AppModel.swift:1821,2115`, `DOSE_PATHS`).
-    public var autoExerciseMode: Bool { didSet { d.set(autoExerciseMode, forKey: "autoExerciseMode") } }
+    // D4-05: `@Stored`-backed.
+    private var _autoExerciseMode = Stored<Bool>(wrappedValue: false, "autoExerciseMode")
+    public var autoExerciseMode: Bool {
+        get { _autoExerciseMode.wrappedValue }
+        set { _autoExerciseMode.wrappedValue = newValue }
+    }
     /// **Auto Sleep mode** — switches the pump into Sleep mode when the iPhone enters Sleep Focus, and
     /// back when it ends. **Default OFF.** Mobi-only auto-switch. Phase 7 (07-03, FEAT-05, D-08):
     /// FROZEN — same hidden/unregistered posture as `autoExerciseMode` above.
-    public var autoSleepMode: Bool { didSet { d.set(autoSleepMode, forKey: "autoSleepMode") } }
+    // D4-05: `@Stored`-backed.
+    private var _autoSleepMode = Stored<Bool>(wrappedValue: false, "autoSleepMode")
+    public var autoSleepMode: Bool {
+        get { _autoSleepMode.wrappedValue }
+        set { _autoSleepMode.wrappedValue = newValue }
+    }
     /// **Mode reminders** — when an auto mode-switch can't be applied automatically (a t:slim, or the
     /// pump isn't connected), post a notification reminding the user to switch modes on the pump
     /// themselves. **Default OFF.** Phase 7 (07-03, FEAT-05, D-08): FROZEN — same hidden/unregistered
     /// posture as `autoExerciseMode` above.
-    public var modeReminders: Bool { didSet { d.set(modeReminders, forKey: "modeReminders") } }
+    // D4-05: `@Stored`-backed.
+    private var _modeReminders = Stored<Bool>(wrappedValue: false, "modeReminders")
+    public var modeReminders: Bool {
+        get { _modeReminders.wrappedValue }
+        set { _modeReminders.wrappedValue = newValue }
+    }
     // Phase 7 (07-03, FEAT-05, D-08): autoTempRate/autoProfileActivation are DELETED — their only
     // readers were the removed TempRateAutomation/ProfileAutomation engines (Task 2), so no reader
     // remains anywhere in the app; a genuine delete, not a freeze. Preserved on dev/siri-shortcuts.
@@ -416,7 +515,14 @@ public final class AppSettings {
     /// is KEPT, unchanged. A pre-Phase-9 persisted `true` is force-reset to `false` exactly once on upgrade
     /// (see the `criticalAlertsForceResetV050` guard below `init`) — owner chose uniform state over leaving
     /// stale persisted values. Local device pref: not backed up / iCloud-synced.
-    public var criticalAlertsEnabled: Bool { didSet { d.set(criticalAlertsEnabled, forKey: "criticalAlertsEnabled") } }
+    // D4-05: `@Stored`-backed. The one-time MOBI-04/D-06 force-reset migration guard is unchanged — it
+    // lives in `init` below (see `criticalAlertsForceResetV050`) and still runs after this setter's
+    // init-time assignment.
+    private var _criticalAlertsEnabled = Stored<Bool>(wrappedValue: false, "criticalAlertsEnabled")
+    public var criticalAlertsEnabled: Bool {
+        get { _criticalAlertsEnabled.wrappedValue }
+        set { _criticalAlertsEnabled.wrappedValue = newValue }
+    }
     /// D-03/D-04: an OS-DERIVED CACHE, not a user pref — whether `UNUserNotificationCenter`'s async
     /// `notificationSettings().criticalAlertSetting` last reported `.enabled` (the entitlement is granted
     /// AND the user authorized it). `NotificationCoordinator.refreshGrantState()` is the sole writer.
@@ -474,7 +580,12 @@ public final class AppSettings {
     /// device-local flag, no migration) but its `SettingsCatalog` row, `backupSnapshot`/
     /// `applyBackup` participation, and `SettingsView` UI are removed (same hidden-flag pattern as
     /// `watchBolusEnabled`/`requireRemoteBolusApproval`). See dev/nightscout's REINTEGRATION.md.
-    public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _nightscoutUploadEnabled = Stored<Bool>(wrappedValue: false, "nightscoutUploadEnabled")
+    public var nightscoutUploadEnabled: Bool {
+        get { _nightscoutUploadEnabled.wrappedValue }
+        set { _nightscoutUploadEnabled.wrappedValue = newValue }
+    }
 
     /// Phase 09.23-02 (D-14): per-type Apple Health IMPORT toggles — each import type (carbs,
     /// insulin/bolus, heart rate, glucose gap-fill) is individually user-selectable. All **default
@@ -490,14 +601,36 @@ public final class AppSettings {
     /// requires every catalog row to have a literal UI reference; adding the catalog row before the
     /// UI exists would make that guard fail for the right reason. Revisit (add the catalog row +
     /// backup participation) once the UI lands.
-    public var healthKitImportCarbsEnabled: Bool { didSet { d.set(healthKitImportCarbsEnabled, forKey: "healthKitImportCarbsEnabled") } }
-    public var healthKitImportInsulinEnabled: Bool { didSet { d.set(healthKitImportInsulinEnabled, forKey: "healthKitImportInsulinEnabled") } }
-    public var healthKitImportHeartRateEnabled: Bool { didSet { d.set(healthKitImportHeartRateEnabled, forKey: "healthKitImportHeartRateEnabled") } }
-    public var healthKitImportGlucoseEnabled: Bool { didSet { d.set(healthKitImportGlucoseEnabled, forKey: "healthKitImportGlucoseEnabled") } }
+    // D4-05: `@Stored`-backed (per-type Apple Health import toggles).
+    private var _healthKitImportCarbsEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportCarbsEnabled")
+    public var healthKitImportCarbsEnabled: Bool {
+        get { _healthKitImportCarbsEnabled.wrappedValue }
+        set { _healthKitImportCarbsEnabled.wrappedValue = newValue }
+    }
+    private var _healthKitImportInsulinEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportInsulinEnabled")
+    public var healthKitImportInsulinEnabled: Bool {
+        get { _healthKitImportInsulinEnabled.wrappedValue }
+        set { _healthKitImportInsulinEnabled.wrappedValue = newValue }
+    }
+    private var _healthKitImportHeartRateEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportHeartRateEnabled")
+    public var healthKitImportHeartRateEnabled: Bool {
+        get { _healthKitImportHeartRateEnabled.wrappedValue }
+        set { _healthKitImportHeartRateEnabled.wrappedValue = newValue }
+    }
+    private var _healthKitImportGlucoseEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportGlucoseEnabled")
+    public var healthKitImportGlucoseEnabled: Bool {
+        get { _healthKitImportGlucoseEnabled.wrappedValue }
+        set { _healthKitImportGlucoseEnabled.wrappedValue = newValue }
+    }
     /// D-11b: automatic background Apple Health import (anchored observer, like the live-glucose
     /// reader). **Default OFF** — the manual on-demand "Import from Apple Health" action is always
     /// available regardless of this toggle (D-11: manual = baseline, auto = opt-in).
-    public var healthKitAutoImportEnabled: Bool { didSet { d.set(healthKitAutoImportEnabled, forKey: "healthKitAutoImportEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _healthKitAutoImportEnabled = Stored<Bool>(wrappedValue: false, "healthKitAutoImportEnabled")
+    public var healthKitAutoImportEnabled: Bool {
+        get { _healthKitAutoImportEnabled.wrappedValue }
+        set { _healthKitAutoImportEnabled.wrappedValue = newValue }
+    }
 
     /// Phase 09.23-03 (D-12/D-14): per-type Apple Health EXPORT toggles — each export type (carbs,
     /// insulin/bolus, glucose) is individually user-selectable. All **default OFF**. Deliberately NO
@@ -510,14 +643,32 @@ public final class AppSettings {
     /// requires a backed-up key to be a catalog row AND vice-versa is not required, so a UI reference
     /// alone doesn't force catalog participation, and adding it is a separate, deliberate decision
     /// (iCloud-sync/backup semantics) left to a future wave rather than bundled into this one.
-    public var healthKitExportCarbsEnabled: Bool { didSet { d.set(healthKitExportCarbsEnabled, forKey: "healthKitExportCarbsEnabled") } }
-    public var healthKitExportInsulinEnabled: Bool { didSet { d.set(healthKitExportInsulinEnabled, forKey: "healthKitExportInsulinEnabled") } }
-    public var healthKitExportGlucoseEnabled: Bool { didSet { d.set(healthKitExportGlucoseEnabled, forKey: "healthKitExportGlucoseEnabled") } }
+    // D4-05: `@Stored`-backed (per-type Apple Health export toggles).
+    private var _healthKitExportCarbsEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportCarbsEnabled")
+    public var healthKitExportCarbsEnabled: Bool {
+        get { _healthKitExportCarbsEnabled.wrappedValue }
+        set { _healthKitExportCarbsEnabled.wrappedValue = newValue }
+    }
+    private var _healthKitExportInsulinEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportInsulinEnabled")
+    public var healthKitExportInsulinEnabled: Bool {
+        get { _healthKitExportInsulinEnabled.wrappedValue }
+        set { _healthKitExportInsulinEnabled.wrappedValue = newValue }
+    }
+    private var _healthKitExportGlucoseEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportGlucoseEnabled")
+    public var healthKitExportGlucoseEnabled: Bool {
+        get { _healthKitExportGlucoseEnabled.wrappedValue }
+        set { _healthKitExportGlucoseEnabled.wrappedValue = newValue }
+    }
     /// D-12: automatic go-forward Apple Health export (each newly-logged carb/insulin/bolus/glucose
     /// written out as logged). **Default OFF** — the manual "Export to Apple Health" backfill action
     /// is always available regardless of this toggle (mirrors D-11's manual=baseline, auto=opt-in
     /// split already established for import).
-    public var healthKitAutoExportEnabled: Bool { didSet { d.set(healthKitAutoExportEnabled, forKey: "healthKitAutoExportEnabled") } }
+    // D4-05: `@Stored`-backed.
+    private var _healthKitAutoExportEnabled = Stored<Bool>(wrappedValue: false, "healthKitAutoExportEnabled")
+    public var healthKitAutoExportEnabled: Bool {
+        get { _healthKitAutoExportEnabled.wrappedValue }
+        set { _healthKitAutoExportEnabled.wrappedValue = newValue }
+    }
 
     /// Opt-in (default OFF, N21) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
@@ -551,7 +702,13 @@ public final class AppSettings {
     /// applied on the bolus screen — SG1/SG2's plain disclosures and SG3a's own `.disclose` line still
     /// render when this is OFF; turning it off never disables the underlying `StackingGuard.escalation`
     /// computation, only the UI wiring that reads this flag (landing in plan 04).
-    public var stackingGuardFrictionEnabled: Bool { didSet { d.set(stackingGuardFrictionEnabled, forKey: "stackingGuardFrictionEnabled") } }
+    // D4-05: `@Stored`-backed. Phase 8 (08-01, LOCK-06 friction half)'s force-set-false pin is unchanged
+    // — it lives in `init` below as an explicit assignment through this setter, same as before conversion.
+    private var _stackingGuardFrictionEnabled = Stored<Bool>(wrappedValue: false, "stackingGuardFrictionEnabled")
+    public var stackingGuardFrictionEnabled: Bool {
+        get { _stackingGuardFrictionEnabled.wrappedValue }
+        set { _stackingGuardFrictionEnabled.wrappedValue = newValue }
+    }
 
     /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
     /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
@@ -597,7 +754,13 @@ public final class AppSettings {
     /// Garmin remote layout: the swipe order of its screens and which one opens first. Pushed to
     /// the watch in the status payload; the Garmin app persists it locally so it survives restarts.
     public var garminScreenOrder: [String] { didSet { d.set(garminScreenOrder, forKey: "garminScreenOrder") } }
-    public var garminDefaultScreen: String { didSet { d.set(garminDefaultScreen, forKey: "garminDefaultScreen") } }
+    // D4-05: `@Stored`-backed. `init`'s screen-order validation (below) is unchanged — it computes the
+    // value then assigns it through this setter, same as before conversion.
+    private var _garminDefaultScreen = Stored<String>(wrappedValue: "glance", "garminDefaultScreen")
+    public var garminDefaultScreen: String {
+        get { _garminDefaultScreen.wrappedValue }
+        set { _garminDefaultScreen.wrappedValue = newValue }
+    }
     /// How the Garmin BG complication presents: "numericColor" (numeric value with range-coloring +
     /// a Latin trend in the unit slot) or "stringTrend" (a plain "124 ^" string, no color). Mirrored.
     // D4-05: `@Stored`-backed. `init`'s option-set validation (below) is unchanged — it computes the
@@ -617,7 +780,13 @@ public final class AppSettings {
     }
     /// Which Garmin store app the phone pairs with: "beta" (id a1b2c3d4…) or "official" (id ded131…).
     /// Developer setting; applied when the Garmin remote (re)registers — reopen the app after changing.
-    public var garminTargetApp: String { didSet { d.set(garminTargetApp, forKey: "garminTargetApp") } }
+    // D4-05: `@Stored`-backed. `init`'s official/beta validation (below) is unchanged — it computes the
+    // value then assigns it through this setter, same as before conversion.
+    private var _garminTargetApp = Stored<String>(wrappedValue: "beta", "garminTargetApp")
+    public var garminTargetApp: String {
+        get { _garminTargetApp.wrappedValue }
+        set { _garminTargetApp.wrappedValue = newValue }
+    }
     public static let complicationDisplayOptions = ["numericColor", "stringTrend"]
     public static func complicationDisplayLabel(_ id: String) -> String {
         id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
@@ -792,29 +961,17 @@ public final class AppSettings {
     /// still funnels everything through `.shared`.
     init(defaults: UserDefaults = .standard) {
         self.d = defaults
-        // Watch default: fall back to the phone default for existing users who never set it separately.
-        // (Reads the RAW `defaultBolusMode` UserDefaults key directly, not `self.defaultBolusMode` —
-        // independent of whether that property has been assigned yet.)
-        watchDefaultBolusMode = BolusMode(rawValue: d.string(forKey: "watchDefaultBolusMode")
-            ?? d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
+        // Raw increment reads consumed by the relocated `@Stored` assignment block at the end of `init`
+        // (the `watchDefaultBolusMode`/`bolusIncrement`/`watchBolusIncrement`/`watchCarbIncrement`
+        // assignments now live there per Swift's two-phase-init rule — see that block; the legacy
+        // `max(0.05, …)` clamps + the watch→phone-default fallbacks are unchanged, only relocated).
         let bi = d.object(forKey: "bolusIncrement") as? Double
-        // Clamp to the 0.05 minimum: a user who previously chose the (now-removed) 0.01 option would
-        // otherwise land on a value absent from `bolusIncrements`, showing an empty Picker.
-        bolusIncrement = max(0.05, bi ?? 0.05)
         let ci = d.object(forKey: "carbIncrement") as? Double
-        watchBolusIncrement = max(0.05, (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05))
-        watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
         // Phase 8 (08-01, LOCK-02): force-set `.mgdl` unconditionally — the unit Picker is removed this
         // phase, so no UI can select mmol/L; a restored/legacy UserDefaults value carrying "mmol" must
         // not silently change the display unit (Pitfall 1). The dose path is mg/dL-canonical regardless
         // (`BolusMath`) — this pin only removes the display-conversion surface, never touches it.
         glucoseDisplayUnit = .mgdl
-        // Owner request: default OFF (labels hidden on ambient surfaces) for a fresh install / absent
-        // key. Not a LOCK-02 force-set pin — the "Show unit labels" toggle is removed with the unit
-        // Picker (both lived in the same now-deleted Section), but this is a cosmetic caption
-        // preference, not a safety-adjacent lock, so the accessor stays a normal read/writable flag
-        // (hidden-flag pattern, same posture as other UI-only removals this milestone).
-        showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
         // D-01/D-02/D-10: an absent/out-of-set stored bound (or a legacy/corrupt value) snaps to a
         // safe in-set pair via the single shared faBolusCore math — never assigned raw.
         let plotBounds = GlucosePlotScale.resolve(
@@ -833,14 +990,6 @@ public final class AppSettings {
             glucosePlotFloorSmall = nil
             glucosePlotCeilingSmall = nil
         }
-        // Phase 8 (08-01, LOCK-03): force-set 1 (24h — this field's unit is days, 0 = keep everything)
-        // unconditionally — the retention Picker + the whole Data/History view are removed this phase;
-        // a restored/legacy UserDefaults value carrying `0`/a longer window must not silently keep more
-        // than 24h of glucose (Pitfall 1). Actually ENFORCED at launch via the new `App.swift`
-        // `model.applyRetention(days:)` call site (Pitfall 2) — this pin alone is not self-applying.
-        historyRetentionDays = 1
-        // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
-        historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
         let hsAck = d.double(forKey: "historyLastSyncedAt")   // 0 (absent) ⇒ never synced
         historyLastSyncedAt = hsAck > 0 ? Date(timeIntervalSince1970: hsAck) : nil
         if let data = d.data(forKey: "historyCoverage"),
@@ -849,17 +998,6 @@ public final class AppSettings {
         } else {
             historyCoverage = HistoryCoverageMap()
         }
-        eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
-        // Phase 09.18b (D-09/D-17): HR chart context defaults ON, off-able.
-        heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
-        eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
-        // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
-        ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
-        ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
-        ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
-        ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
-        ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
-        ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")   // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         if let data = d.data(forKey: "eatingTriggerConfig"),
@@ -882,55 +1020,12 @@ public final class AppSettings {
         // §2.3: nil (absent, or a stored non-positive) ⇒ the ceiling is OFF; only a positive value arms it.
         let rbc = d.object(forKey: "remoteBolusCeiling") as? Double
         remoteBolusCeiling = (rbc.map { $0.isFinite && $0 > 0 } ?? false) ? rbc : nil
-        autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
-        autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
-        modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
-        // Phase 9 (09-04, MOBI-04, D-06): default explicit OFF for t:slim, DECOUPLED from
-        // `PumpModelStore.isMobi()` (the old "ON for a Mobi" default now couples to a permanently-stale
-        // flag — Mobi backends are removed this phase). The user can still opt in explicitly.
-        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
-        // MOBI-04/D-06: one-time force-reset — a persisted `criticalAlertsEnabled == true` from a
-        // pre-Phase-9 install (the old Mobi-derived default) is force-reset to the new uniform OFF
-        // default EXACTLY ONCE, via this NEW dedicated idempotent-once guard key
-        // (`criticalAlertsForceResetV050`), DISTINCT from the ordinary default-computation line above.
-        // Guarded so a user's LATER re-enable (any launch after this migration has already fired once)
-        // is never re-clobbered — the guard key, once set, is checked and never cleared. Does NOT
-        // re-derive from `PumpModelStore.isMobi()` (stale) and is NOT reused for `advancedControlEnabled`
-        // (that default needs no migration — RESEARCH Anti-Patterns). Both the property (for in-memory
-        // consumers reading `criticalAlertsEnabled` immediately after `init`) and the raw UserDefaults key
-        // (explicit write-through, independent of `didSet`'s init-timing subtlety) are set together.
-        if d.object(forKey: "criticalAlertsForceResetV050") == nil {
-            criticalAlertsEnabled = false
-            d.set(false, forKey: "criticalAlertsEnabled")
-            d.set(true, forKey: "criticalAlertsForceResetV050")
-        }
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): requireRemoteBolusApproval is now a frozen-false
         // computed constant (get { false } set { } ) — no init-restore line needed; the old
         // UserDefaults value, if any, is simply never read again.
         // Phase 7 (07-05, FEAT-08, D-07, SAFETY): alertRules is now a frozen-empty computed constant
         // (get { [] } set { } ) — no init-restore line needed either; the old UserDefaults value, if
         // any, is simply never read again.
-        nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
-        // 09.23-02 (D-14/D-11b): every Apple Health import toggle — per-type + automatic — defaults
-        // OFF, so a fresh install (and any device with no stored value) never silently imports.
-        healthKitImportCarbsEnabled = (d.object(forKey: "healthKitImportCarbsEnabled") as? Bool) ?? false
-        healthKitImportInsulinEnabled = (d.object(forKey: "healthKitImportInsulinEnabled") as? Bool) ?? false
-        healthKitImportHeartRateEnabled = (d.object(forKey: "healthKitImportHeartRateEnabled") as? Bool) ?? false
-        healthKitImportGlucoseEnabled = (d.object(forKey: "healthKitImportGlucoseEnabled") as? Bool) ?? false
-        healthKitAutoImportEnabled = (d.object(forKey: "healthKitAutoImportEnabled") as? Bool) ?? false
-        // 09.23-03 (D-08/D-12/D-14): every Apple Health EXPORT toggle — per-type + automatic —
-        // defaults OFF, so a fresh install (and any device with no stored value) never silently
-        // exports. No heart-rate export toggle exists (D-08).
-        healthKitExportCarbsEnabled = (d.object(forKey: "healthKitExportCarbsEnabled") as? Bool) ?? false
-        healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
-        healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
-        healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-06 friction half): force-set OFF unconditionally — the "Extra
-        // confirmation on unusually large overrides" toggle is removed this phase; a restored/legacy
-        // UserDefaults value carrying `true` must not silently re-arm it (Pitfall 1). This never
-        // disables `StackingGuard.escalation`'s own disclosure computation (byte-identical,
-        // `Packages/faBolusCore`) — only the UI wiring for the EXTRA confirmation/re-type step.
-        stackingGuardFrictionEnabled = false
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): childModeEnabled is now a frozen-false computed
         // constant (get { false } set { } ) — no init-restore line needed; the old UserDefaults value,
         // if any, is simply never read again. `childAllowed` itself stays a real, settable property
@@ -946,10 +1041,8 @@ public final class AppSettings {
         if order.isEmpty { order = Self.garminScreens }
         garminScreenOrder = order
         let def = d.string(forKey: "garminDefaultScreen") ?? "glance"
-        garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
         let cd = d.string(forKey: "garminComplicationDisplay") ?? "numericColor"
         let gt = d.string(forKey: "garminTargetApp") ?? "beta"   // default to beta (official listing is dormant)
-        garminTargetApp = (gt == "official") ? "official" : "beta"
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.
@@ -995,6 +1088,40 @@ public final class AppSettings {
         _garminComplicationDisplay.store = defaults
         _garminClockAnalog.store = defaults
         _glucoseBadgeEnabled.store = defaults
+        // 17-09 follow-up — repoint the remaining scalar conversions' backing fields at `defaults` too.
+        _watchDefaultBolusMode.store = defaults
+        _bolusIncrement.store = defaults
+        _watchBolusIncrement.store = defaults
+        _watchCarbIncrement.store = defaults
+        _showGlucoseUnitLabels.store = defaults
+        _historyRetentionDays.store = defaults
+        _historySyncEnabled.store = defaults
+        _eatingNudgesEnabled.store = defaults
+        _heartRateContextEnabled.store = defaults
+        _eatingLearnFromFeedback.store = defaults
+        _ciqStateReadoutsEnabled.store = defaults
+        _ciqLockoutCountdownEnabled.store = defaults
+        _ciqMaxBasalReadoutEnabled.store = defaults
+        _ciqSleepExerciseAwarenessEnabled.store = defaults
+        _ciqPlusTempRateEnabled.store = defaults
+        _ciqCeilingFlagsEnabled.store = defaults
+        _criticalAlertsEnabled.store = defaults
+        _nightscoutUploadEnabled.store = defaults
+        _healthKitImportCarbsEnabled.store = defaults
+        _healthKitImportInsulinEnabled.store = defaults
+        _healthKitImportHeartRateEnabled.store = defaults
+        _healthKitImportGlucoseEnabled.store = defaults
+        _healthKitAutoImportEnabled.store = defaults
+        _healthKitExportCarbsEnabled.store = defaults
+        _healthKitExportInsulinEnabled.store = defaults
+        _healthKitExportGlucoseEnabled.store = defaults
+        _healthKitAutoExportEnabled.store = defaults
+        _stackingGuardFrictionEnabled.store = defaults
+        _autoExerciseMode.store = defaults
+        _autoSleepMode.store = defaults
+        _modeReminders.store = defaults
+        _garminDefaultScreen.store = defaults
+        _garminTargetApp.store = defaults
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
         carbIncrement = ci ?? 5
         showGlucoseAxis = (d.object(forKey: "showGlucoseAxis") as? Bool) ?? true
@@ -1032,15 +1159,86 @@ public final class AppSettings {
         // SC-4 (fresh-install exit criterion, D-14): OFF by default — the app-icon badge is opt-in.
         glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
 
-        applyFreshness()   // didSet doesn't fire during init; push thresholds into faBolusCore now
+        // 17-09 follow-up — the remaining scalar final assignments. Each expression is copy-identical
+        // to its pre-conversion position; only the SOURCE POSITION moved (Swift's two-phase-init rule,
+        // same rationale as the 23-property block above). The locals they consume (`bi`, `ci`, `order`,
+        // `def`, `gt`) were computed earlier, in their original positions, and remain in scope here.
+        // Watch default: fall back to the phone default for existing users who never set it separately
+        // (reads the RAW `defaultBolusMode` key directly, independent of `self.defaultBolusMode`).
+        watchDefaultBolusMode = BolusMode(rawValue: d.string(forKey: "watchDefaultBolusMode")
+            ?? d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
+        // Clamp to the 0.05 minimum: a user who previously chose the (now-removed) 0.01 option would
+        // otherwise land on a value absent from `bolusIncrements`, showing an empty Picker.
+        bolusIncrement = max(0.05, bi ?? 0.05)
+        watchBolusIncrement = max(0.05, (d.object(forKey: "watchBolusIncrement") as? Double) ?? (bi ?? 0.05))
+        watchCarbIncrement = (d.object(forKey: "watchCarbIncrement") as? Double) ?? (ci ?? 5)
+        // Owner request: default OFF (labels hidden on ambient surfaces). Hidden-flag pattern, not a
+        // LOCK-02 force-set pin (a cosmetic caption preference, not a safety-adjacent lock).
+        showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
+        // Phase 8 (08-01, LOCK-03): force-set 1 (24h; unit = days, 0 = keep everything) unconditionally
+        // — a restored/legacy value carrying `0`/a longer window must not silently keep more than 24h of
+        // glucose (Pitfall 1). Actually ENFORCED at launch via App.swift's `model.applyRetention(days:)`.
+        historyRetentionDays = 1
+        // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
+        historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
+        eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
+        // Phase 09.18b (D-09/D-17): HR chart context defaults ON, off-able.
+        heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
+        eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
+        // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
+        ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
+        ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
+        ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
+        ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
+        ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
+        ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
+        // Phase 9 (09-04, MOBI-04, D-06): default explicit OFF for t:slim, DECOUPLED from isMobi() (the
+        // old "ON for a Mobi" default now couples to a permanently-stale flag — Mobi backends removed).
+        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
+        // MOBI-04/D-06: one-time force-reset — a persisted `criticalAlertsEnabled == true` from a
+        // pre-Phase-9 install is force-reset to the uniform OFF default EXACTLY ONCE via the dedicated
+        // idempotent-once `criticalAlertsForceResetV050` guard key (checked, set once, never cleared, so
+        // a user's LATER re-enable is never re-clobbered). The `@Stored` setter now writes the property
+        // through to the store immediately, so the separate raw `d.set("criticalAlertsEnabled", …)`
+        // write-through the pre-conversion code needed (to work around `didSet`'s init-timing skip) is no
+        // longer required — the setter above already persists the `false`.
+        if d.object(forKey: "criticalAlertsForceResetV050") == nil {
+            criticalAlertsEnabled = false
+            d.set(true, forKey: "criticalAlertsForceResetV050")
+        }
+        nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
+        // 09.23-02 (D-14/D-11b): every Apple Health import toggle — per-type + automatic — defaults OFF.
+        healthKitImportCarbsEnabled = (d.object(forKey: "healthKitImportCarbsEnabled") as? Bool) ?? false
+        healthKitImportInsulinEnabled = (d.object(forKey: "healthKitImportInsulinEnabled") as? Bool) ?? false
+        healthKitImportHeartRateEnabled = (d.object(forKey: "healthKitImportHeartRateEnabled") as? Bool) ?? false
+        healthKitImportGlucoseEnabled = (d.object(forKey: "healthKitImportGlucoseEnabled") as? Bool) ?? false
+        healthKitAutoImportEnabled = (d.object(forKey: "healthKitAutoImportEnabled") as? Bool) ?? false
+        // 09.23-03 (D-08/D-12/D-14): every Apple Health EXPORT toggle defaults OFF (no HR export, D-08).
+        healthKitExportCarbsEnabled = (d.object(forKey: "healthKitExportCarbsEnabled") as? Bool) ?? false
+        healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
+        healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
+        healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
+        // Phase 8 (08-01, LOCK-06 friction half): force-set OFF unconditionally — a restored/legacy
+        // `true` must not silently re-arm the removed extra-confirmation step (Pitfall 1). Never disables
+        // `StackingGuard.escalation`'s own disclosure computation (byte-identical faBolusCore).
+        stackingGuardFrictionEnabled = false
+        autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
+        autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
+        modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
+        garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
+        garminTargetApp = (gt == "official") ? "official" : "beta"
+
+        applyFreshness()   // side effects don't fire during init; push thresholds into faBolusCore now
         // D4-05/CX-A-09: wire the `@Stored` `onChange` hooks LAST, after every property above has
         // already received its init-time value — every assignment before this line saw `onChange ==
         // nil`, so none of these side effects fired during construction (Task 1's "does not fire
         // during init" requirement; pinned by `AppSettingsStoredMigrationTests`).
         _defaultBolusMode.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _carbIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
+        _bolusIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _glucoseStaleMinutes.onChange = { [weak self] _ in self?.applyFreshness() }
         _glucoseBadgeEnabled.onChange = { value in if !value { GlucoseBadge.clear() } }
+        _showGlucoseUnitLabels.onChange = { _ in WidgetPublisher.republishShowUnitLabel() }
     }
 
     // MARK: - Backup / restore (see SettingsBackup + BackupModels)
