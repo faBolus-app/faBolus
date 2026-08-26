@@ -144,11 +144,12 @@ public final class AppModel {
     public var capabilities: PumpCapabilities { source.capabilities }
 
     /// Part B-a (Phase 09.6-01, D-02a): opcodes the connected pump has rejected this connection-
-    /// lifetime, for the `[Capability/opcode]` diagnostics section. `TandemBackend`-concrete only
-    /// (mirrors the `source as? TandemBackend` pattern already used for `onCommandLatency`/
-    /// `historySyncState` above) — a non-Tandem backend (mocks, tests) simply reports no rejected
-    /// opcodes rather than crashing the diagnostics read-out.
-    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? TandemBackend)?.badOpcodesForDiagnostics ?? [] }
+    /// lifetime, for the `[Capability/opcode]` diagnostics section. Concrete-Tandem-only via the
+    /// `TandemOnlyOps` capability protocol (GO-1 Step 7, REMED-16 — mirrors the `source as?
+    /// TandemOnlyOps` pattern already used for `onCommandLatency`/`historySyncState` above) — a
+    /// non-Tandem backend (mocks, tests) simply reports no rejected opcodes rather than crashing the
+    /// diagnostics read-out.
+    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? TandemOnlyOps)?.badOpcodesForDiagnostics ?? [] }
 
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
@@ -802,16 +803,18 @@ public final class AppModel {
         // straight to the coordinator (D-04) — AppModel no longer owns this state.
         source.commitBolusId = { [weak self] bolusId in await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false }
         // B3a (§5.2.8): route the concrete Tandem backend's command round-trip latency into the opt-in
-        // telemetry store (the 4th dimension). Concrete-only (the `PumpBackend` protocol stays clean — see
-        // the Phase-B addendum default); the sink is @MainActor and a no-op unless the diagnostics opt-in is
-        // on, so it can never touch a decision path.
-        (source as? TandemBackend)?.onCommandLatency = { [weak self] seconds in
+        // telemetry store (the 4th dimension). Concrete-Tandem-only via `TandemOnlyOps` (GO-1 Step 7,
+        // REMED-16 — the `PumpBackend` protocol stays clean — see the Phase-B addendum default); the sink
+        // is @MainActor and a no-op unless the diagnostics opt-in is on, so it can never touch a decision
+        // path.
+        (source as? TandemOnlyOps)?.onCommandLatency = { [weak self] seconds in
             self?.connectionTelemetry.recordCommandLatency(seconds)
         }
         // D-05: route the concrete Tandem backend's reconnect-ladder attempt#/backoff-delay into the
-        // in-memory BLE session log — the same concrete-only, opt-in-gated sink shape as `onCommandLatency`
-        // above. `bleSessionLog.record` is itself a no-op unless the shared diagnostics opt-in is on.
-        (source as? TandemBackend)?.onWillRetryReconnect = { [weak self] attempt, delay in
+        // in-memory BLE session log — the same concrete-Tandem-only, opt-in-gated sink shape as
+        // `onCommandLatency` above. `bleSessionLog.record` is itself a no-op unless the shared diagnostics
+        // opt-in is on.
+        (source as? TandemOnlyOps)?.onWillRetryReconnect = { [weak self] attempt, delay in
             self?.bleSessionLog.record(.reconnect, detail: "attempt \(attempt), retrying in \(Int(delay))s")
         }
         // C1-01/C1-04: route the concrete Tandem backend's typed reliability event into the private
@@ -1119,10 +1122,13 @@ public final class AppModel {
     /// (its CoreBluetooth peripheral UUID). Enough to tell "a different pump than last time" with no new
     /// pump-protocol read.
     private func currentPumpIdentity() -> String {
-        let real = source is TandemBackend
-        let detail = real ? (PumpPeripheralStore.id()?.uuidString ?? "unpaired")
-                          : (source.snapshot.isMobi ? "mobi" : "tslim")
-        return "\(real ? "real" : "sim")|\(detail)"
+        // GO-1 Step 7 (REMED-16): narrowed from `source is TandemBackend` to `source as? TandemOnlyOps`.
+        // No behavior change — a non-Tandem backend still takes the "sim" branch, now via a nil cast
+        // instead of a failed `is` check.
+        if let ops = source as? TandemOnlyOps {
+            return "real|\(ops.pumpIdentityDetail)"
+        }
+        return "sim|\(source.snapshot.isMobi ? "mobi" : "tslim")"
     }
 
     /// B4 — on a fresh `.connected` edge, detect a switch to a DIFFERENT pump and, if so, clear the old
@@ -1171,17 +1177,17 @@ public final class AppModel {
 
     /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
     /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
-    /// assumption 2). Concrete-Tandem-only (`source as? TandemBackend`, the `onCommandLatency` pattern);
-    /// a no-op on `MockBackend`.
+    /// assumption 2). Concrete-Tandem-only via `TandemOnlyOps` (GO-1 Step 7, REMED-16; the
+    /// `onCommandLatency` pattern); a no-op on `MockBackend`.
     public func syncHistoryNow() {
-        (source as? TandemBackend)?.triggerManualHistorySync()
+        (source as? TandemOnlyOps)?.triggerManualHistorySync()
     }
 
     /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync. Non-destructive — only
     /// what was actually fetched is credited to the persisted coverage map, so the rest stays a real,
     /// resumable gap for the next connect or a later "Sync now".
     public func stopHistorySync() {
-        (source as? TandemBackend)?.cancelHistorySync()
+        (source as? TandemOnlyOps)?.cancelHistorySync()
     }
 
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
@@ -1345,7 +1351,8 @@ public final class AppModel {
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
-        if let backend = source as? TandemBackend { historySyncState = backend.historySyncState }
+        // GO-1 Step 7 (REMED-16): narrowed from `source as? TandemBackend` to `source as? TandemOnlyOps`.
+        if let ops = source as? TandemOnlyOps { historySyncState = ops.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
@@ -1910,14 +1917,15 @@ public final class AppModel {
     ///
     /// `sendControl` is fire-and-forget (doesn't itself inspect the ack status — see `TandemBackend`'s
     /// `ChangeTimeDateRequest` note), so after the write completes this consumes the concrete-Tandem-only
-    /// `sleepScheduleWriteError` one-shot sink (mirrors `onCommandLatency`/`historySyncState`) to surface
-    /// a pump-rejected write (`SetSleepScheduleResponse.status != 0`) via `lastError`.
+    /// `sleepScheduleWriteError` one-shot sink, via `TandemOnlyOps` (GO-1 Step 7, REMED-16 — mirrors
+    /// `onCommandLatency`/`historySyncState`), to surface a pump-rejected write
+    /// (`SetSleepScheduleResponse.status != 0`) via `lastError`.
     public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
         await runGatedTherapy(.setSleepSchedule) {
             try await self.source.setSleepSchedule(slot: slot, enabled: enabled, activeDays: activeDays,
                                                     startMinute: startMinute, endMinute: endMinute)
         }
-        if let backend = source as? TandemBackend, let err = backend.consumeSleepScheduleWriteError() {
+        if let ops = source as? TandemOnlyOps, let err = ops.consumeSleepScheduleWriteError() {
             lastError = err
         }
     }

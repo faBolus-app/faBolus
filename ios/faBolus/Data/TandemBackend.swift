@@ -3082,3 +3082,17 @@ extension Notification.Name {
     /// `bolusId` (Int) and `delivered` (Double, units actually delivered).
     static let faBolusIndeterminateResolved = Notification.Name("faBolusIndeterminateResolved")
 }
+
+// MARK: - GO-1 Step 7 (REMED-16): TandemOnlyOps conformance
+
+/// `onCommandLatency`/`onWillRetryReconnect`/`badOpcodesForDiagnostics`/`historySyncState`/
+/// `triggerManualHistorySync`/`cancelHistorySync`/`consumeSleepScheduleWriteError` above already
+/// satisfy `TandemOnlyOps`; `pumpIdentityDetail` is the one new member this conformance adds.
+extension TandemBackend: TandemOnlyOps {
+    /// The concrete-Tandem-only identity detail feeding `AppModel.currentPumpIdentity()`'s "real"
+    /// branch (R28), reached via `source as? TandemOnlyOps`. Behavior-identical to the inline
+    /// `PumpPeripheralStore.id()?.uuidString ?? "unpaired"` expression it replaces — deliberately NOT
+    /// the test-injection-aware `currentPumpKey()` above, which returns `nil` under test injection and
+    /// would change `currentPumpIdentity()`'s observable string.
+    var pumpIdentityDetail: String { PumpPeripheralStore.id()?.uuidString ?? "unpaired" }
+}
