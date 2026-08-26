@@ -176,9 +176,6 @@ struct AppSettingsStoredMigrationTests {
     @Test func garminBolusEnabledStoredRoundTrip() {
         assertBoolStoredRoundTrip(key: "garminBolusEnabled", backingLabel: "__garminBolusEnabled", defaultValue: false, \.garminBolusEnabled)
     }
-    @Test func watchBolusEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(key: "watchBolusEnabled", backingLabel: "__watchBolusEnabled", defaultValue: false, \.watchBolusEnabled)
-    }
     @Test func suppressMirroredPumpAlarmsStoredRoundTrip() {
         assertBoolStoredRoundTrip(key: "suppressMirroredPumpAlarms", backingLabel: "__suppressMirroredPumpAlarms", defaultValue: false, \.suppressMirroredPumpAlarms)
     }

@@ -320,7 +320,7 @@ struct AppModelBehaviorTests {
             // `remotesReadOnly`, so the "remotesReadOnly-blocked" / "cancel survives remotesReadOnly"
             // assertions below no longer hold true FOR THAT REASON on a peer surface (they're denied
             // for a more fundamental one). Proven directly right after this loop instead.
-            let remotes: [S] = [.appleWatch, .garmin]
+            let remotes: [S] = [.garmin]
 
             // Owner decision 2026-08-05 — `remotesReadOnly` governs ALL remotes INCLUDING the Mac/
             // caregiver peer path (the hole this closes: the peer path never consulted it before). A
@@ -408,7 +408,7 @@ struct AppModelBehaviorTests {
     // likely to regress silently later).
 
     /// Behavior change (3): the phone-local `readOnlyAllowAlertClear` sub-option governs the phone's OWN
-    /// alert-dismiss under read-only, but must NOT gate a remote (watch/Garmin) dismiss — dismiss is
+    /// alert-dismiss under read-only, but must NOT gate a remote (Garmin) dismiss — dismiss is
     /// `.childOnly`, so on a remote it is child-gated only, not subject to this local-phone setting.
     @Test func readOnlyAllowAlertClearGovernsLocalDismissOnly() async {
         let block = "Clearing alerts is disabled in read-only mode."
@@ -427,11 +427,11 @@ struct AppModelBehaviorTests {
             await m.dismissAlert(id: 1, kind: 1, from: .phoneUI)
             #expect(m.lastError != block)
         }
-        // (c) remote (watch), read-only, opt-in OFF → the local-only setting does NOT apply.
+        // (c) remote (Garmin), read-only, opt-in OFF → the local-only setting does NOT apply.
         try? await withCleanSettings {
             let (m, _, _) = await makeModel(connected: true)
             AppSettings.shared.phoneReadOnly = true
-            await m.dismissAlert(id: 1, kind: 1, from: .appleWatch, peerId: "watch")
+            await m.dismissAlert(id: 1, kind: 1, from: .garmin, peerId: "garmin")
             #expect(m.lastError != block)
         }
     }

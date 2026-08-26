@@ -2317,9 +2317,8 @@ public final class AppModel {
                               from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
         // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
-        // GARMIN ONLY — Apple Watch is exempt (wrist detection). An ABSENT code is NOT run through
-        // `verify()` (so a legacy watch that never prompts isn't charged a lockout attempt); it simply
-        // fails the gate as `required && !satisfied`.
+        // GARMIN ONLY. An ABSENT code is NOT run through `verify()` (so a caller that never prompts
+        // isn't charged a lockout attempt); it simply fails the gate as `required && !satisfied`.
         var passcodeRequired = false
         var passcodeSatisfied = false
         if surface == .garmin && BolusPasscodeStore.isRequired {
@@ -2328,7 +2327,7 @@ public final class AppModel {
                 passcodeSatisfied = BolusPasscodeStore.verify(entered)
             }
         }
-        // P8: gate through the single evaluator (child mode for local/watch/Garmin; the `.bolus` peer
+        // P8: gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
         // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId,
                                       bolusPasscodeRequired: passcodeRequired,

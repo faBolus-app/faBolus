@@ -37,9 +37,10 @@ struct CrossClientMutexTests {
         }
     }
 
-    /// Two DIFFERENT clients fire the SAME dose while the first is in flight: exactly one dose reaches the
-    /// pump, and the loser is told a bolus is in progress — NOT the alarming "check the pump" (which is
-    /// reserved for a genuinely unconfirmed outcome, e.g. a crash mid-delivery).
+    /// Two DIFFERENT clients (the local phone and Garmin) fire the SAME dose while the first is in
+    /// flight: exactly one dose reaches the pump, and the loser is told a bolus is in progress — NOT
+    /// the alarming "check the pump" (which is reserved for a genuinely unconfirmed outcome, e.g. a
+    /// crash mid-delivery).
     @Test func concurrentSameDoseFromTwoClientsDeliversOnlyOnce() async {
         await AppSettingsGate.withCleanRemoteBolusAllowed {
             let (model, backend, rec) = await makeModel()
@@ -47,12 +48,12 @@ struct CrossClientMutexTests {
             backend.onDeliverInFlight = { [weak model] in
                 await model?.remoteDeliver(requestId: "garmin-1", units: 2.0, from: .garmin, peerId: "garmin")
             }
-            await model.remoteDeliver(requestId: "watch-1", units: 2.0, from: .appleWatch, peerId: "watch")
+            await model.remoteDeliver(requestId: "local-1", units: 2.0, from: .phoneUI, peerId: "local")
 
             // Safety invariant: exactly ONE dose reached the pump — no cross-client double-dose.
             #expect(backend.snapshot.iobUnits == startIob + 2.0)
             // A delivered; B was rejected while A was in flight (no delivered echo).
-            #expect(rec.delivered("watch-1"))
+            #expect(rec.delivered("local-1"))
             #expect(!rec.delivered("garmin-1"))
             // B's rejection message is the transient "in progress" one, not the "check the pump" one.
             let bMsg = rec.message("garmin-1") ?? ""
@@ -63,7 +64,7 @@ struct CrossClientMutexTests {
 
     /// The IN-FLIGHT mutex itself is not a permanent dedup — `begin()`'s `(peer,requestId)` key alone
     /// would let a settled entry's id be reused only as a `.replay`, never a fresh second delivery, so
-    /// this test used a DIFFERENT id ("watch-2") to prove the mutex releases once "watch-1" settles.
+    /// this test used a DIFFERENT id ("garmin-2") to prove the mutex releases once "garmin-1" settles.
     ///
     /// Phase 14 Plan 01 (T-14-01 / CX-G-01 phone half) INTENTIONALLY changed what happens next: the new
     /// content+time recency guard now ALSO catches a same-peer, same-content recompose under a fresh id
@@ -76,12 +77,12 @@ struct CrossClientMutexTests {
         await AppSettingsGate.withCleanRemoteBolusAllowed {
             let (model, backend, rec) = await makeModel()
             let startIob = backend.snapshot.iobUnits
-            await model.remoteDeliver(requestId: "watch-1", units: 2.0, from: .appleWatch, peerId: "watch")
-            await model.remoteDeliver(requestId: "watch-2", units: 2.0, from: .appleWatch, peerId: "watch")
+            await model.remoteDeliver(requestId: "garmin-1", units: 2.0, from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(requestId: "garmin-2", units: 2.0, from: .garmin, peerId: "garmin")
             #expect(backend.snapshot.iobUnits == startIob + 2.0)   // only the FIRST dose delivered
-            #expect(rec.delivered("watch-1"))
-            #expect(!rec.delivered("watch-2"))                      // recency guard refused the recompose
-            #expect(rec.message("watch-2")?.contains("matching bolus was just delivered") == true)
+            #expect(rec.delivered("garmin-1"))
+            #expect(!rec.delivered("garmin-2"))                     // recency guard refused the recompose
+            #expect(rec.message("garmin-2")?.contains("matching bolus was just delivered") == true)
         }
     }
 
@@ -92,30 +93,30 @@ struct CrossClientMutexTests {
         await AppSettingsGate.withCleanRemoteBolusAllowed {
             let (model, backend, rec) = await makeModel()
             let startIob = backend.snapshot.iobUnits
-            await model.remoteDeliver(requestId: "watch-3", units: 2.0, from: .appleWatch, peerId: "watch")
-            await model.remoteDeliver(requestId: "watch-4", units: 1.5, from: .appleWatch, peerId: "watch")
+            await model.remoteDeliver(requestId: "garmin-3", units: 2.0, from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(requestId: "garmin-4", units: 1.5, from: .garmin, peerId: "garmin")
             #expect(backend.snapshot.iobUnits == startIob + 3.5)   // both distinct doses delivered
-            #expect(rec.delivered("watch-3"))
-            #expect(rec.delivered("watch-4"))
+            #expect(rec.delivered("garmin-3"))
+            #expect(rec.delivered("garmin-4"))
         }
     }
 }
 
 /// Minimal helper to run a body with the `AppSettings` gates in a state that allows an authenticated
 /// remote bolus (child off, read-only off, advanced control on so the funnel's capability gate passes on
-/// the Mobi `MockBackend`, and — P15 §2.3 — the per-surface Garmin/Watch bolus enables ON so the
-/// evaluator doesn't fail-closed on the now-default-OFF flags), restoring them after so the serialized
-/// suite can't leak gate state.
+/// the Mobi `MockBackend`, and — P15 §2.3 — the per-surface Garmin bolus enable ON so the evaluator
+/// doesn't fail-closed on the now-default-OFF flag), restoring them after so the serialized suite can't
+/// leak gate state.
 @MainActor
 private enum AppSettingsGate {
     static func withCleanRemoteBolusAllowed(_ body: () async -> Void) async {
         let s = AppSettings.shared
         let child = s.childModeEnabled, ro = s.remotesReadOnly, adv = s.advancedControlEnabled
-        let gb = s.garminBolusEnabled, wb = s.watchBolusEnabled
+        let gb = s.garminBolusEnabled
         s.childModeEnabled = false; s.remotesReadOnly = false; s.advancedControlEnabled = true
-        s.garminBolusEnabled = true; s.watchBolusEnabled = true
+        s.garminBolusEnabled = true
         await body()
         s.childModeEnabled = child; s.remotesReadOnly = ro; s.advancedControlEnabled = adv
-        s.garminBolusEnabled = gb; s.watchBolusEnabled = wb
+        s.garminBolusEnabled = gb
     }
 }

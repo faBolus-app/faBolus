@@ -12,13 +12,10 @@ import faBolusCore
 /// pinned baseline that does NOT contain `.diagnosticsRead` — any future widening of the
 /// `mutatesPumpState` true-branch turns this guard RED.
 ///
-/// (b) Handler-body scope: `PhoneRemoteHost.swift`'s `.diagnosticsRead` case region is resolved by a
-/// `#filePath`-rooted repo-root walk and scanned for the text-store accessor (must be present) and
-/// every dose/control/dismiss entry point + an async `Task` launch + a status re-push (must be
-/// absent).
-///
-/// (c) Integration: `DebugMenuView.swift` actually wires the `[Watch self]` section into the ordered
-/// `sections` array (source scan) — proves the ninth surface isn't merely built but reachable.
+/// Phase 17.5 (D1-01): parts (b) and (c) — which source-scanned the now-deleted WatchConnectivity
+/// transport host and the now-removed watch-diagnostics-request call site — are retired along with
+/// that machinery. `.diagnosticsRead`'s own type-level inertness (part a) is untouched here; the enum
+/// case itself and `WatchSelfDiagnostics` remain Plan 03's scope to retire.
 struct RemoteDiagnosticsScopeGuardTests {
 
     // MARK: - (a) Type-level inertness
@@ -40,80 +37,5 @@ struct RemoteDiagnosticsScopeGuardTests {
                 "the exhaustive mutating-kind set drifted from the pinned baseline")
         #expect(!actualMutating.contains(.diagnosticsRead),
                 ".diagnosticsRead must never be classified as pump-mutating")
-    }
-
-    // MARK: - Source resolution (mirrors WatchDirectBleScopeGuardTests.repoRootURL)
-
-    /// Resolve `<root>` by walking up from `#filePath`
-    /// (`<root>/ios/faBolusAppTests/RemoteDiagnosticsScopeGuardTests.swift`) until `ios/faBolus/Data`
-    /// exists.
-    private static func repoRootURL() -> URL? {
-        let fm = FileManager.default
-        var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        for _ in 0..<8 {
-            let candidate = probe.appendingPathComponent("ios/faBolus/Data")
-            if fm.fileExists(atPath: candidate.path) { return probe }
-            probe = probe.deletingLastPathComponent()
-        }
-        return nil
-    }
-
-    private static func readSource(_ relativePath: String) -> String? {
-        guard let root = repoRootURL() else { return nil }
-        return try? String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
-    }
-
-    // MARK: - (b) Handler-body scope
-
-    /// Extracts the source between a `case <label>:` line and the NEXT `case `/`default:` at the same
-    /// (8-space) indentation — i.e. everything that case body actually executes, no more.
-    private static func caseRegion(in source: String, caseLabel: String) -> String? {
-        guard let labelRange = source.range(of: "case \(caseLabel):") else { return nil }
-        let after = source[labelRange.upperBound...]
-        var endIndex = after.endIndex
-        for terminator in ["\n        case ", "\n        default:"] {
-            if let r = after.range(of: terminator), r.lowerBound < endIndex { endIndex = r.lowerBound }
-        }
-        return String(after[..<endIndex])
-    }
-
-    @Test func diagnosticsReadHandlerCaseRegionIsDoseFree() throws {
-        guard let source = Self.readSource("ios/faBolus/Data/PhoneRemoteHost.swift") else {
-            Issue.record("could not resolve ios/faBolus/Data/PhoneRemoteHost.swift from #filePath=\(#filePath)")
-            return
-        }
-        guard let region = Self.caseRegion(in: source, caseLabel: ".diagnosticsRead") else {
-            Issue.record("could not find a `.diagnosticsRead` case region in PhoneRemoteHost.swift")
-            return
-        }
-        #expect(region.contains("lastWatchDiagnosticsText"),
-                "the .diagnosticsRead case must store the received text")
-        let forbidden = [
-            "model.remoteDeliver", "model.cancelBolus", "model.dismissAlert",
-            "model.requestRemoteControl", "Task {", "Task{", "sendTracked", "statusCommand",
-        ]
-        for token in forbidden {
-            #expect(!region.contains(token),
-                    "the .diagnosticsRead case must not reference \(token) — dose/delivery/control-free (D-04)")
-        }
-    }
-
-    // MARK: - (c) Integration: reachable from the aggregated bundle
-
-    @Test func debugMenuViewWiresWatchSelfSectionIntoOrderedSectionsArray() throws {
-        guard let source = Self.readSource("ios/faBolus/Views/DebugMenuView.swift") else {
-            Issue.record("could not resolve ios/faBolus/Views/DebugMenuView.swift from #filePath=\(#filePath)")
-            return
-        }
-        #expect(source.contains("WatchSelfDiagnostics.phoneSection"),
-                "DebugMenuView's ordered sections array must include the [Watch self] section")
-        #expect(source.contains("requestWatchDiagnostics"),
-                "DebugMenuView must request the watch's diagnostics (gated on the shared opt-in)")
-        // D-02: no second export mechanism introduced alongside the new section. `fileExporter(` (an
-        // actual API call, not just the word) avoids a false positive on the pre-existing "No
-        // .fileExporter/BackupDocument save" negation comment a few lines above the ShareLink.
-        for forbidden in ["fileExporter(", "Compression", "Archive", ".zip"] {
-            #expect(!source.contains(forbidden), "no new export mechanism may be introduced (D-02): \(forbidden)")
-        }
     }
 }

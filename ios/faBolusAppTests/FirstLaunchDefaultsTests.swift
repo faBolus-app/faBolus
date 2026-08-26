@@ -32,7 +32,6 @@ struct FirstLaunchDefaultsTests {
         let settings = AppSettings(defaults: defaults)
 
         #expect(settings.garminBolusEnabled == false)
-        #expect(settings.watchBolusEnabled == false)
         #expect(settings.autoSyncPumpTime == false)     // E2: no silent pump-clock write without opt-in
         // Phase 5 (05-03, D-13/D-14, SC-4): the app-icon glucose badge is opt-in — OFF on a fresh install.
         #expect(settings.glucoseBadgeEnabled == false)
