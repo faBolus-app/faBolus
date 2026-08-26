@@ -43,6 +43,11 @@ import faBolusCore
     /// hand-built `RemoteCommand` — so this proves the real function's wire output, not a stand-in. FAILS
     /// today because `AppModel.statusCommand()` still emits `watchBolusEnabled` unconditionally; goes GREEN
     /// once Task 2 deletes the field end-to-end.
+    ///
+    /// Phase 17.5 Plan 03 (D1-01/REMED-17) extends this SAME proof to the eating-advisory wire fields:
+    /// `RemoteStatusComposer.compose(...)` (the real function `AppModel.statusCommand()` now delegates
+    /// to, post-16-01) emits `eatingSensingOn` unconditionally — RED today because it is still present;
+    /// goes GREEN once Task 2 deletes `eatingSensingOn`/`eatingProb` end-to-end.
     @Test func statusPushDropsWatchBolusEnabledButKeepsSiblings() async throws {
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
@@ -52,6 +57,11 @@ import faBolusCore
 
         #expect(!json.contains("watchBolusEnabled"),
                 "the real status push must no longer emit watchBolusEnabled (D1-01) — this is the RED assertion Task 2 turns GREEN")
+
+        #expect(!json.contains("eatingSensingOn"),
+                "the real status push must no longer emit eatingSensingOn (D1-01) — this is the RED assertion Task 2 turns GREEN")
+        #expect(!json.contains("eatingProb"),
+                "the real status push must no longer emit eatingProb (D1-01) — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn")
 
         for keepKey in ["garminBolusEnabled", "activeMode", "watchChartRanges"] {
             #expect(json.contains(keepKey),
