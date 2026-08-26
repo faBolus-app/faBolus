@@ -30,6 +30,24 @@ else
   echo "Using auto-detected simulator: $SIM_NAME (override with FABOLUS_TEST_DEST)"
 fi
 
+# Force SERIAL test execution. Swift Testing runs a suite's `@Test`s in parallel by DEFAULT, using
+# task groups within one process. These are @MainActor async behavioral suites that all drive the real
+# AppModel, which reads process-global `AppSettings.shared` (a UserDefaults.standard-backed singleton —
+# AppModel.swift reads it in ~59 places, incl. the delivery gates childModeEnabled/phoneReadOnly/
+# remotesReadOnly/advancedControlEnabled). Many suites also MUTATE those same globals (appMode,
+# phoneReadOnly, requireRemoteBolusApproval, garminBolusEnabled, …) with a save→set→`await body()`→defer-
+# restore pattern. That pattern is safe WITHIN a `@Suite(.serialized)` suite, but the `.serialized` trait
+# only orders tests relative to each other WITHIN their own suite — Apple's docs: it "does not influence
+# the execution of a test relative to other unrelated tests." So at every `await` a test in suite A yields
+# the main actor to an interleaved test in suite B, which clobbers/observes A's shared-global setup. That
+# is exactly the observed symptom: a NON-DETERMINISTIC set of failures clustered in the delivery/ledger/
+# CIQ gate families, plus occasional test-host crashes ("Restarting after unexpected exit…") from racing
+# the shared state. Per-suite `.serialized` cannot fix a cross-suite race; the only robust cure is to
+# disable parallelization globally (the docs' "global parallelization … disabled via command-line
+# arguments"). `-parallel-testing-enabled NO` does this for Swift Testing under xcodebuild — verified: it
+# yields strictly sequential start→finish ordering (no interleave) and a stable green. Correctness of a
+# bolus-dosing app's gate/ledger guards outranks the modest wall-clock cost of serial execution. Do NOT
+# re-enable parallelism here without first removing the shared-global coupling from these suites.
 set -o pipefail
 xcodebuild \
   -project faBolus.xcodeproj \
@@ -37,4 +55,5 @@ xcodebuild \
   -destination "$DEST" \
   -configuration Debug \
   CODE_SIGNING_ALLOWED=NO \
+  -parallel-testing-enabled NO \
   test "$@"
