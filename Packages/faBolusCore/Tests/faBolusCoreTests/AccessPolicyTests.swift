@@ -23,46 +23,43 @@ import Testing
                         phoneReadOnly: false, remotesReadOnly: false,
                         advancedControlOptIn: true, capabilities: .mobiAdvanced,
                         hasRecentUnverifiedAck: true, peerPolicy: peer,
-                        // "Fully permissive" must set these explicitly now that the init defaults are
-                        // fail-closed (false); openCtx asserts a Garmin/Watch deliver is ALLOWED.
-                        garminBolusEnabled: true, watchBolusEnabled: true)
+                        // "Fully permissive" must set this explicitly now that the init default is
+                        // fail-closed (false); openCtx asserts a Garmin deliver is ALLOWED.
+                        garminBolusEnabled: true)
     }
 
-    /// P15 §2.3: an otherwise-permissive host still refuses a Garmin/Watch `deliverBolus` when that
-    /// surface's bolus enable is OFF (the app default) — and ONLY that surface + that action. The phone and
-    /// authenticated peers bolus regardless of the per-surface remote flags, and a non-deliver action from
+    /// P15 §2.3: an otherwise-permissive host still refuses a Garmin `deliverBolus` when that surface's
+    /// bolus enable is OFF (the app default) — and ONLY that surface + that action. The phone and
+    /// authenticated peers bolus regardless of the per-surface remote flag, and a non-deliver action from
     /// the same remote is never denied by this gate.
-    @Test func perSurfaceBolusEnableGatesGarminAndWatchDeliverOnly() {
+    @Test func perSurfaceBolusEnableGatesGarminDeliverOnly() {
         let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                                   phoneReadOnly: false, remotesReadOnly: false,
                                   advancedControlOptIn: true, capabilities: .mobiAdvanced,
                                   hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
-                                  garminBolusEnabled: false, watchBolusEnabled: false)
+                                  garminBolusEnabled: false)
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
-        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: off).reason == .remoteBolusDisabled)
-        // Not this surface — the phone and authenticated peers are unaffected by the per-surface remote flags.
+        // Not this surface — the phone and authenticated peers are unaffected by the per-surface remote flag.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: off).allowed)
         #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: off).allowed)
         // Not this action — a safety STOP (cancel) from the same remote is never blocked by this gate.
         #expect(P.evaluate(.cancelBolus, surface: .garmin, context: off).reason != .remoteBolusDisabled)
-        // Enabled ⇒ the deliver is allowed on both remotes (openCtx defaults the two flags to true).
+        // Enabled ⇒ the deliver is allowed (openCtx defaults the flag to true).
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: openCtx()).allowed)
-        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: openCtx()).allowed)
     }
 
     /// VA-30: the per-surface remote-bolus enable gate AND the Garmin passcode gate must cover
     /// `.deliverExtendedBolus`, not only `.deliverBolus` — otherwise an extended bolus from a paired remote
-    /// would bypass both. Latent today (extended bolus isn't Garmin/Watch-reachable), but the single
-    /// evaluator must not drift.
+    /// would bypass both. Latent today (extended bolus isn't Garmin-reachable), but the single evaluator
+    /// must not drift.
     @Test func extendedBolusIsGatedLikeNormalBolusOnRemotes() {
         let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                                   phoneReadOnly: false, remotesReadOnly: false,
                                   advancedControlOptIn: true, capabilities: .mobiAdvanced,
                                   hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
-                                  garminBolusEnabled: false, watchBolusEnabled: false)
-        // Enable OFF ⇒ extended deliver denied on both remotes, exactly like a normal bolus.
+                                  garminBolusEnabled: false)
+        // Enable OFF ⇒ extended deliver denied on Garmin, exactly like a normal bolus.
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
-        #expect(P.evaluate(.deliverExtendedBolus, surface: .appleWatch, context: off).reason == .remoteBolusDisabled)
         // Garmin passcode required-but-unsatisfied ⇒ extended deliver denied by the passcode gate too.
         var needsCode = openCtx(); needsCode.bolusPasscodeRequired = true; needsCode.bolusPasscodeSatisfied = false
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: needsCode).reason == .remoteBolusPasscodeRequired)
@@ -70,22 +67,21 @@ import Testing
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: openCtx()).allowed)
     }
 
-    /// Q1.2: a context built WITHOUT the per-surface remote-bolus flags must default them fail-CLOSED, so a
-    /// future call site that forgets to thread them cannot silently arm Garmin/Watch bolusing.
+    /// Q1.2: a context built WITHOUT the per-surface remote-bolus flag must default it fail-CLOSED, so a
+    /// future call site that forgets to thread it cannot silently arm Garmin bolusing.
     @Test func accessContextDefaultsFailClosedForRemoteBolus() {
         let c = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                                 phoneReadOnly: false, remotesReadOnly: false,
                                 advancedControlOptIn: true, capabilities: .mobiAdvanced,
-                                hasRecentUnverifiedAck: true, peerPolicy: .fullControl)   // flags OMITTED
+                                hasRecentUnverifiedAck: true, peerPolicy: .fullControl)   // flag OMITTED
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
-        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: c).reason == .remoteBolusDisabled)
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)   // phone unaffected
     }
 
     /// C2 §2.3 — the OPTIONAL Garmin bolus passcode gate. When a passcode is required, a Garmin deliver is
     /// allowed ONLY with a host-verified (satisfied) code; absent/wrong (satisfied=false) denies with the
-    /// passcode reason. Apple Watch is EXEMPT (wrist detection), the phone/peers are unaffected, a
-    /// non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
+    /// passcode reason. The phone/peers are unaffected, a non-deliver action is never gated, and "bolusing
+    /// off" still outranks "needs a passcode".
     @Test func garminBolusPasscodeGateRequiresASatisfiedCode() {
         // Required + verified ⇒ the Garmin deliver is allowed.
         var ok = openCtx(); ok.bolusPasscodeRequired = true; ok.bolusPasscodeSatisfied = true
@@ -96,8 +92,6 @@ import Testing
         // Not required ⇒ no passcode gate at all (today's behavior), even with satisfied=false.
         var noReq = openCtx(); noReq.bolusPasscodeRequired = false; noReq.bolusPasscodeSatisfied = false
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: noReq).allowed)
-        // APPLE WATCH EXEMPT: a required-but-unsatisfied passcode never blocks the watch.
-        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: bad).allowed)
         // The phone is unaffected by the Garmin passcode.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: bad).allowed)
         // A non-deliver Garmin action (cancel) is never passcode-gated.
@@ -134,7 +128,7 @@ import Testing
         }
         // …but a real delivery IS blocked by the same read-only, per surface.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: ctx).reason == .phoneReadOnly)
-        #expect(P.evaluate(.deliverBolus, surface: .appleWatch, context: ctx).reason == .remotesReadOnly)
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: ctx).reason == .remotesReadOnly)
         #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: ctx).reason == .remotesReadOnly)   // owner decision: peers too
     }
 
