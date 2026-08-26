@@ -2259,15 +2259,15 @@ public final class TandemBackend: NSObject, PumpBackend {
 
 // GO-2 Step 1 (16-08, REMED-16): additive conformance — `TandemBackend` already implements every
 // `PumpHistoryProviding` member (`historySyncState`/`triggerManualHistorySync`/`cancelHistorySync`);
-// this extension only declares the protocol. `AppModel`'s casts stay on `TandemOnlyOps` for now (see
-// `PumpHistoryProviding`'s own doc comment — 16-10 re-narrows them).
+// this extension only declares the protocol. `AppModel`'s casts were re-narrowed onto
+// `PumpHistoryProviding` in 16-10 (GO-2 Step 3) — see `TandemOnlyOps`'s doc comment.
 extension TandemBackend: PumpHistoryProviding {}
 
 // GO-2 Step 2 (16-09, REMED-16): additive conformance — `TandemBackend` already implements every
 // `PumpDiagnosticsProviding` member (`onCommandLatency`/`onWillRetryReconnect`/
 // `badOpcodesForDiagnostics`, the latter forwarded from `readScheduler`); this extension only declares
-// the protocol. `AppModel`'s casts stay on `TandemOnlyOps` for now, mirroring `PumpHistoryProviding`'s
-// own precedent (see this protocol's doc comment in PumpBackend.swift — 16-10 re-narrows them).
+// the protocol. `AppModel`'s casts were re-narrowed onto `PumpDiagnosticsProviding` in 16-10 (GO-2
+// Step 3), mirroring `PumpHistoryProviding`'s own precedent.
 extension TandemBackend: PumpDiagnosticsProviding {}
 
 // PumpBLEClientDelegate is @MainActor; PumpBLEClient delivers all callbacks on the main actor.
@@ -2561,9 +2561,12 @@ extension Notification.Name {
 
 // MARK: - GO-1 Step 7 (REMED-16): TandemOnlyOps conformance
 
+/// `consumeSleepScheduleWriteError` above already satisfies `TandemOnlyOps`; `pumpIdentityDetail` is
+/// the one new member this conformance adds. (The other 6 original `TandemOnlyOps` members —
 /// `onCommandLatency`/`onWillRetryReconnect`/`badOpcodesForDiagnostics`/`historySyncState`/
-/// `triggerManualHistorySync`/`cancelHistorySync`/`consumeSleepScheduleWriteError` above already
-/// satisfy `TandemOnlyOps`; `pumpIdentityDetail` is the one new member this conformance adds.
+/// `triggerManualHistorySync`/`cancelHistorySync` — moved to `PumpDiagnosticsProviding`/
+/// `PumpHistoryProviding` in 16-10, GO-2 Step 3; `TandemBackend` still implements them, just under
+/// those protocols' conformances above.)
 extension TandemBackend: TandemOnlyOps {
     /// The concrete-Tandem-only identity detail feeding `AppModel.currentPumpIdentity()`'s "real"
     /// branch (R28), reached via `source as? TandemOnlyOps`. Behavior-identical to the inline

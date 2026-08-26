@@ -145,11 +145,10 @@ public final class AppModel {
 
     /// Part B-a (Phase 09.6-01, D-02a): opcodes the connected pump has rejected this connection-
     /// lifetime, for the `[Capability/opcode]` diagnostics section. Concrete-Tandem-only via the
-    /// `TandemOnlyOps` capability protocol (GO-1 Step 7, REMED-16 — mirrors the `source as?
-    /// TandemOnlyOps` pattern already used for `onCommandLatency`/`historySyncState` above) — a
-    /// non-Tandem backend (mocks, tests) simply reports no rejected opcodes rather than crashing the
-    /// diagnostics read-out.
-    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? TandemOnlyOps)?.badOpcodesForDiagnostics ?? [] }
+    /// `PumpDiagnosticsProviding` capability protocol (GO-2 Step 3, 16-10, REMED-16 — re-narrowed off
+    /// `TandemOnlyOps` per its own capability-ownership contract) — a non-Tandem backend (mocks, tests)
+    /// simply reports no rejected opcodes rather than crashing the diagnostics read-out.
+    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? PumpDiagnosticsProviding)?.badOpcodesForDiagnostics ?? [] }
 
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
@@ -803,18 +802,18 @@ public final class AppModel {
         // straight to the coordinator (D-04) — AppModel no longer owns this state.
         source.commitBolusId = { [weak self] bolusId in await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false }
         // B3a (§5.2.8): route the concrete Tandem backend's command round-trip latency into the opt-in
-        // telemetry store (the 4th dimension). Concrete-Tandem-only via `TandemOnlyOps` (GO-1 Step 7,
-        // REMED-16 — the `PumpBackend` protocol stays clean — see the Phase-B addendum default); the sink
-        // is @MainActor and a no-op unless the diagnostics opt-in is on, so it can never touch a decision
-        // path.
-        (source as? TandemOnlyOps)?.onCommandLatency = { [weak self] seconds in
+        // telemetry store (the 4th dimension). Concrete-Tandem-only via `PumpDiagnosticsProviding`
+        // (GO-2 Step 3, 16-10, REMED-16 — re-narrowed off `TandemOnlyOps`; the `PumpBackend` protocol
+        // stays clean — see the Phase-B addendum default); the sink is @MainActor and a no-op unless the
+        // diagnostics opt-in is on, so it can never touch a decision path.
+        (source as? PumpDiagnosticsProviding)?.onCommandLatency = { [weak self] seconds in
             self?.connectionTelemetry.recordCommandLatency(seconds)
         }
         // D-05: route the concrete Tandem backend's reconnect-ladder attempt#/backoff-delay into the
         // in-memory BLE session log — the same concrete-Tandem-only, opt-in-gated sink shape as
-        // `onCommandLatency` above. `bleSessionLog.record` is itself a no-op unless the shared diagnostics
-        // opt-in is on.
-        (source as? TandemOnlyOps)?.onWillRetryReconnect = { [weak self] attempt, delay in
+        // `onCommandLatency` above, via `PumpDiagnosticsProviding` (GO-2 Step 3, 16-10). `bleSessionLog.record`
+        // is itself a no-op unless the shared diagnostics opt-in is on.
+        (source as? PumpDiagnosticsProviding)?.onWillRetryReconnect = { [weak self] attempt, delay in
             self?.bleSessionLog.record(.reconnect, detail: "attempt \(attempt), retrying in \(Int(delay))s")
         }
         // C1-01/C1-04: route the concrete Tandem backend's typed reliability event into the private
@@ -1177,17 +1176,17 @@ public final class AppModel {
 
     /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
     /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
-    /// assumption 2). Concrete-Tandem-only via `TandemOnlyOps` (GO-1 Step 7, REMED-16; the
-    /// `onCommandLatency` pattern); a no-op on `MockBackend`.
+    /// assumption 2). Concrete-Tandem-only via `PumpHistoryProviding` (GO-2 Step 3, 16-10, REMED-16 —
+    /// re-narrowed off `TandemOnlyOps`); a no-op on `MockBackend`.
     public func syncHistoryNow() {
-        (source as? TandemOnlyOps)?.triggerManualHistorySync()
+        (source as? PumpHistoryProviding)?.triggerManualHistorySync()
     }
 
     /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync. Non-destructive — only
     /// what was actually fetched is credited to the persisted coverage map, so the rest stays a real,
     /// resumable gap for the next connect or a later "Sync now".
     public func stopHistorySync() {
-        (source as? TandemOnlyOps)?.cancelHistorySync()
+        (source as? PumpHistoryProviding)?.cancelHistorySync()
     }
 
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
@@ -1351,8 +1350,9 @@ public final class AppModel {
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
-        // GO-1 Step 7 (REMED-16): narrowed from `source as? TandemBackend` to `source as? TandemOnlyOps`.
-        if let ops = source as? TandemOnlyOps { historySyncState = ops.historySyncState }
+        // GO-2 Step 3 (16-10, REMED-16): re-narrowed from `source as? TandemOnlyOps` to
+        // `source as? PumpHistoryProviding` per TandemOnlyOps's capability-ownership contract.
+        if let ops = source as? PumpHistoryProviding { historySyncState = ops.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
         alertDebug = source.alertDebug
