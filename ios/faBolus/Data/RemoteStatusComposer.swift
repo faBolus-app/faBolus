@@ -122,7 +122,6 @@ enum RemoteStatusComposer {
         // mirror defaults to disabled). Emitted unconditionally so "absent" can only mean a legacy host.
         // The host stays the enforcement point (AccessPolicy refuses a deliver from a disabled surface).
         cmd.garminBolusEnabled = settings.garminBolusEnabled
-        cmd.watchBolusEnabled = settings.watchBolusEnabled
         cmd.bolusPasscodeRequired = inputs.bolusPasscodeRequired
         // P14 S4: publish the phone's active mode so a remote HIDES (rather than shows-then-fails) an
         // affordance this mode would deny. The host still enforces the mode on every surface via
@@ -267,7 +266,6 @@ struct RemoteStatusSettings {
     let glucosePlotCeilingSmall: Int?
     let eatingNudgesEnabled: Bool
     let garminBolusEnabled: Bool
-    let watchBolusEnabled: Bool
     let activeModeRawValue: String           // AppSettings.appMode.rawValue
     let ciqStateReadoutsEnabled: Bool
     let ciqLockoutCountdownEnabled: Bool

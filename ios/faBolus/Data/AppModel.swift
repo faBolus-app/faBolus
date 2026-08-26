@@ -487,7 +487,6 @@ public final class AppModel {
             glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
             eatingNudgesEnabled: AppSettings.shared.eatingNudgesEnabled,
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
             activeModeRawValue: AppSettings.shared.appMode.rawValue,
             ciqStateReadoutsEnabled: AppSettings.shared.ciqStateReadoutsEnabled,
             ciqLockoutCountdownEnabled: AppSettings.shared.ciqLockoutCountdownEnabled,

@@ -41,7 +41,7 @@ VALID = [
         "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
         "glucoseDisplayUnit": "mmol",
         "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
-        "garminBolusEnabled": False, "watchBolusEnabled": False, "bolusPasscodeRequired": False,
+        "garminBolusEnabled": False, "bolusPasscodeRequired": False,
         "controllerVariant": "controlIQPro", "controlIQEnabled": True,
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},

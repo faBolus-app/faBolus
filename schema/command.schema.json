@@ -275,10 +275,6 @@
       "type": "boolean",
       "description": "statusRead reply (P15 §2.3) — whether bolusing from the GARMIN watch is enabled on the phone. Default OFF; a Garmin remote hides its bolus affordance unless this is true, and a cold launch with no push yet stays disabled (fail-closed). The host also refuses a Garmin deliver when false (AccessPolicy). Absent ⇒ a legacy host predating §2.3; the remote keeps its safe default (disabled)."
     },
-    "watchBolusEnabled": {
-      "type": "boolean",
-      "description": "statusRead reply (P15 §2.3) — whether bolusing from the APPLE WATCH is enabled on the phone. Default OFF; the watch hides its bolus affordance unless this is true, fail-closed on a cold launch. The host also refuses a watch deliver when false (AccessPolicy). Absent ⇒ legacy host; safe default disabled."
-    },
     "bolusPasscodeRequired": {
       "type": "boolean",
       "description": "statusRead reply (P15 §2.3 / C2) — signals whether a 4-digit passcode is required to confirm a remote bolus (the phone holds the salted hash; BolusPasscodeStore.isRequired). When true a Garmin remote's confirm step is the passcode entry, REPLACING the tap-sequence / two-button-hold; the entered code rides back on bolusRequest.bolusPasscode and the host verifies it (C2 wired this end-to-end: phone set-UI → this flag → bolusPasscode field → host verify). Apple Watch is exempt (wrist detection). This flag only shapes the remote UI; the host stays the enforcement point (AccessPolicy refuses a Garmin deliver with a wrong/absent code even if the remote UI skipped the prompt). Absent/false ⇒ the surface's normal confirm."

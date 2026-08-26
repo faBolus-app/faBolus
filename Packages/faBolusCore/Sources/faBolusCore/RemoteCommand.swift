@@ -329,7 +329,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// predates §2.3; the remote keeps its safe default (disabled). Additive; mirrored in the JSON schema
     /// + Monkey C.
     public var garminBolusEnabled: Bool? = nil
-    public var watchBolusEnabled: Bool? = nil
     /// P15 G3 (§2.3) — whether a 4-digit passcode is required to confirm a remote bolus (the phone holds
     /// the hash; `BolusPasscodeStore.isRequired`). When true, the remote's confirm step is the passcode
     /// entry (which REPLACES the tap-sequence / two-button-hold), and the host validates the entered code.
