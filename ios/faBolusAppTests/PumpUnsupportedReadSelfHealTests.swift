@@ -155,3 +155,61 @@ struct PumpUnsupportedReadSelfHealTests {
                 "op20 (NOT a dose-input read) must STAY skipped across the reconnect — the contrast that scopes the allowlist")
     }
 }
+
+/// GO-1 Step 7 (16-07, REMED-16) — proves the narrowed `source as? TandemOnlyOps` casts introduced in
+/// `AppModel` behave IDENTICALLY to the `source as? TandemBackend` / `source is TandemBackend` casts
+/// they replaced, for every non-Tandem backend. Colocated with `PumpUnsupportedReadSelfHealTests`
+/// per the 16-07 plan's file list (both suites concern the concrete-Tandem-only diagnostics/history
+/// surface `AppModel` reaches through a cast).
+///
+/// `MockBackend` is the reference non-Tandem backend — it intentionally does NOT conform to
+/// `TandemOnlyOps` (see `ios/faBolus/Data/MockBackend.swift`, no `TandemOnlyOps` conformance anywhere
+/// in the file), so `source as? TandemOnlyOps` is `nil` for it, and every cast-guarded branch must take
+/// the identical fallback it took under the old concrete `TandemBackend` cast.
+@MainActor
+@Suite(.serialized) struct TandemOnlyOpsMockFallbackParityTests {
+
+    /// A unique durable-ledger URL so instances don't share the App Group ledger between serialized tests.
+    private func tempLedgerURL() -> URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tandem-only-ops-\(UUID().uuidString).json")
+    }
+
+    /// Direct, type-level proof of non-conformance — the most literal statement of the must-have truth
+    /// ("MockBackend does NOT conform to TandemOnlyOps"), independent of any `AppModel` plumbing.
+    @Test func mockBackendDoesNotConformToTandemOnlyOps() {
+        let backend = MockBackend()
+        #expect((backend as? TandemOnlyOps) == nil,
+                "MockBackend must not conform to TandemOnlyOps — every narrowed cast site must fall back exactly as it did under `source as? TandemBackend`")
+    }
+
+    /// `AppModel.badOpcodesForDiagnostics` is a computed property re-evaluating the cast on every read
+    /// (R5) — proves the `?? []` fallback fires under a MockBackend source, identical to the pre-16-07
+    /// `(source as? TandemBackend)?.badOpcodesForDiagnostics ?? []`.
+    @Test func badOpcodesForDiagnosticsIsEmptyUnderMockBackend() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        #expect(model.badOpcodesForDiagnostics.isEmpty,
+                "a non-Tandem backend must report no rejected opcodes rather than crashing the diagnostics read-out")
+    }
+
+    /// `AppModel.historySyncState` (D-01/D-05) is only ever advanced away from its `.idle(lastSynced:
+    /// nil)` default by the narrowed cast inside `refresh()` (R29/R34) — under MockBackend that cast is
+    /// always nil, so the observable state never leaves its initial idle value.
+    @Test func historySyncStateStaysIdleUnderMockBackend() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        #expect(model.historySyncState == .idle(lastSynced: nil),
+                "history-sync state must stay idle under a non-Tandem backend — the narrowed cast never fires for it")
+    }
+
+    /// `syncHistoryNow()`/`stopHistorySync()` (D-05 "Sync now"/"Stop syncing", R29) are no-ops under a
+    /// non-Tandem backend both before AND after the 16-07 narrowing — calling them must not crash and
+    /// must not perturb `historySyncState`, exactly mirroring the old `(source as? TandemBackend)?...`
+    /// no-op.
+    @Test func syncHistoryNowAndStopHistorySyncAreNoOpsUnderMockBackend() {
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        model.syncHistoryNow()
+        model.stopHistorySync()
+        #expect(model.historySyncState == .idle(lastSynced: nil),
+                "'Sync now'/'Stop syncing' must remain silent no-ops under a non-Tandem backend, never triggering a real history sync")
+    }
+}
