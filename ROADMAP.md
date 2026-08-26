@@ -40,17 +40,18 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   stalls, recover from transient GATT errors, and verify state-restoration wake paths.
 - Reduce spurious "Disconnected" flicker; keep the pending-connect alive across app states.
 
-## 5. Siri (App Intents) — CarPlay dropped (read-only done)
+## 5. Siri (App Intents) — CarPlay dropped, Siri removed from narrow main
 - **CarPlay is not feasible**: it requires an Apple-granted entitlement limited to specific app
   categories (audio, nav, EV, food, …); a bolus/medical app can't get it, so a CarPlay app
   can't be built or installed. Dropped.
-- **Siri (read-only)** ✅ — App Intents + `AppShortcutsProvider` for **glucose**, **insulin on
-  board**, **pump status**, and **last bolus**. Each reads the App Group snapshot (same data as
-  the widgets), runs without opening the app, and speaks a dialog. See
-  `ios/faBolus/Intents/StatusIntents.swift`.
-- **Voice bolus is intentionally out of scope**: per the safety rule, dosing is CarPlay-only, and
-  CarPlay can't be built — so there is no Siri bolus intent. Revisit only if CarPlay becomes
-  possible (with its touchscreen 1-2-3 confirm gate).
+- **Siri (read-only)** was built (App Intents + `AppShortcutsProvider` for **glucose**, **insulin
+  on board**, **pump status**, and **last bolus**) but is **not on narrow `main`**: the whole
+  `ios/faBolus/Intents/` directory was `git rm`'d as part of the narrow-main removal pass
+  (FEAT-05, Phase 7) and is preserved on `dev/siri-shortcuts` if wanted again. Its absence is
+  pinned by `ShortcutsAbsenceGuardTests`.
+- **Voice bolus was never in scope**: per the safety rule, dosing is CarPlay-only, and CarPlay
+  can't be built — so there was no Siri bolus intent even before the removal. Revisit only if
+  CarPlay becomes possible (with its touchscreen 1-2-3 confirm gate).
 
 ## 5b. Bolus from an iPhone widget (1-2-3 confirm) ✅
 - Interactive Home-Screen **Quick Bolus** widget (App Intents) delivering a preset dose, gated by
@@ -67,7 +68,8 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   (`screenOrder` + `defaultScreen`); the Garmin app persists it (Storage) so it survives restarts
   and offline launches.
 - Garmin nav refactored from a fixed push/pop stack to a **carousel** (`switchToView`) driven by
-  `AppState.screenOrder`; `getInitialView` opens `AppState.defaultScreen`. See `garmin/source/Nav.mc`.
+  `AppState.screenOrder`; `getInitialView` opens `AppState.defaultScreen`. See faBolusGarmin's
+  `source/app/Nav.mc`.
 
 ## 7. Docs + build instructions (LoopDocs-style site)
 - Refresh the mkdocs site for all of the above (tabs/settings, IOB overlay, Siri, Garmin config).

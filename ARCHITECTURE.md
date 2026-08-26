@@ -42,20 +42,31 @@ import boundary: `project.yml` has one application target sourcing all of `ios/f
 `TandemBackend.swift` itself stays at `Data/` root (a byte-identity-guarded dose path) and still
 imports `TandemMessages` directly.
 
+`ios/faBolus/Data/` itself is organized by concern (Phase 17-10): `App/` (AppModel extensions,
+backend registration, pump-connection/session infra), `Remote/` (remote-host machinery —
+`GarminRemoteBridge`, `AppRouter`, remote auth/policy), `CGM/` (glucose-source arbitration +
+followers), `Diagnostics/` (BLE/session/connection logs), `Settings/` (persisted settings +
+catalogs), and `Tandem/` (Tandem-only BLE/read/opcode satellites, moved in Phase 16). Only
+`AppModel.swift` and `TandemBackend.swift` stay at the `Data/` root — the two byte-guarded
+dose-path files that reorg deliberately left untouched.
+
 Backends are registered in `BackendRegistry.enabled` — a **compile-time manifest** (iOS has no
 dynamic plugins, so every backend is compiled in and selected at runtime; the default per build is
 first in the list). See `CONTRIBUTING.md` → "Add a pump backend."
 
 ## Seam 2 — the Remote Protocol (support a different host, e.g. Loop)
 Phone↔remote messages are the small JSON contract in **`schema/command.schema.json`** (the source
-of truth), mirrored in Swift (`RemoteCommand`) and Monkey C (faBolusGarmin's `RemoteCommand.mc`).
+of truth), mirrored in Swift (`RemoteCommand`) and Monkey C (faBolusGarmin's `RemoteComm.mc`).
 A **remote** (Garmin) only speaks this contract; a **host** answers it. faBolus's
 `AppModel` + `GarminRemoteBridge` are the reference host. Any other app — e.g.
 **Loop** — can host the same remotes by implementing the host side of the contract (map it to its
 own dosing/status APIs). See `CONTRIBUTING.md` → "Host the remotes from another app."
 
 **Safety is part of the contract:** any host MUST enforce a confirmation interlock and a max-bolus
-clamp. The remote's 1-2-3 / hold confirm is a *second* factor, not the only one.
+clamp. The remote's 1-2-3 / hold confirm does not add a second human confirmation — the host
+independently recomputes the dose from the carbs, rejects it if it diverges from the estimate the
+remote showed, and clamps to the max-bolus limit (defense in depth, not a second human
+confirmation).
 
 ## Repos
 - **faBolus** (this repo) — the app, iPhone widgets, backends, `faBolusCore`, and the contract.
