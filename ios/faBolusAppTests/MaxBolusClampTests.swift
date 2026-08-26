@@ -37,7 +37,7 @@ struct MaxBolusClampTests {
     /// The pump-facing proof: the actual `SetMaxBolusLimitRequest` bytes TandemBackend writes are capped to
     /// 25 U (25000 mU) even when 30 U is requested. The fake records the write before the (unscripted)
     /// courtesy response await, so `try?` is safe — we assert on the recorded cargo.
-    @Test func tandemBackendClampsTheWrittenLimit() async {
+    @Test func tandemBackendClampsTheWrittenLimit() async throws {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
@@ -45,8 +45,22 @@ struct MaxBolusClampTests {
         try? await backend.setMaxBolus(units: 30)
         let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
         #expect(sent != nil, "a max-bolus-limit write must have gone out")
-        #expect(sent?.cargo == SetMaxBolusLimitRequest(maxBolusMilliunits: 25000).cargo,
+        #expect(sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 25000)).cargo,
                 "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
+    }
+
+    /// CX-T-07 owner decision (ALIGN UP, 2026-08-25): a max-bolus limit request below the app's OLD 0.05 U
+    /// floor is now floored to the kit's 1.0 U throwing floor — never throws at the kit boundary.
+    @Test func tandemBackendFloorsTheWrittenLimitToTheNewKitFloor() async throws {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.setConnectionForTesting(.connected)
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        try? await backend.setMaxBolus(units: 0.1)   // below the old 0.05 U floor's neighbor, well below 1.0 U
+        let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
+        #expect(sent != nil, "a max-bolus-limit write must have gone out")
+        #expect(sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 1000)).cargo,
+                "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
     }
 
     // MARK: - Phase 2 (D-01/D-02/D-03): fail-closed unread-op-115 freshness gate

@@ -1866,7 +1866,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
     public func resumeDelivery() async throws { try await sendControl(ResumePumpingRequest(), delivery: true) }
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
-        try await sendControl(SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
+        // CX-T-07: the kit init now throws out-of-range args (15..4320 min, 0..250%) BEFORE any truncating
+        // byte-encode — a synchronous, pre-send rejection rather than a silently-converted command.
+        try await sendControl(try SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
     }
     public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
     // Neutral `ModeCommand.bitmap` is 1:1 with the wire (and the kit's own `SetModesRequest.ModeCommand`),
@@ -1910,8 +1912,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func enterFillTubingMode() async throws { try await sendControl(EnterFillTubingModeRequest(), delivery: true) }
     public func exitFillTubingMode() async throws { try await sendControl(ExitFillTubingModeRequest(), delivery: false) }
     public func fillCannula(milliunits: Int) async throws {
-        let clamped = max(0, min(milliunits, FillLimits.maxCannulaMilliunits))   // defense-in-depth bound
-        try await sendControl(FillCannulaRequest(primeSize: clamped), delivery: true)
+        // CX-T-07 / Pitfall 4: shared clamp floors at 1 (0 is upstream-invalid — pumpX2's FillCannulaRequest
+        // rejects it) and caps at the deliberate 1.0U maxCannulaMilliunits (unchanged, NOT raised alongside
+        // the kit's 3000 mU ceiling). Two-layer defense: the kit init (below) is the primary boundary.
+        let clamped = FillLimits.clampPrimeSize(milliunits)
+        try await sendControl(try FillCannulaRequest(primeSize: clamped), delivery: true)
     }
     public func refreshLoadStatus() async {
         guard snapshot.connection == .connected else { return }
@@ -1926,11 +1931,15 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Settings — non-insulin config.
     public func setMaxBolus(units: Double) async throws {
         let clamped = Interlocks.clampMaxBolusLimit(units)   // shared hard-cap clamp (defense-in-depth; funnel clamps too)
-        try await sendControl(SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
+        // CX-T-07 owner decision (ALIGN UP): clampMaxBolusLimit's floor is now 1.0 U, matching the kit's
+        // SetMaxBolusLimitRequest throwing floor — no supported value should throw here.
+        try await sendControl(try SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
     }
     public func setMaxBasal(unitsPerHour: Double) async throws {
-        let clamped = max(0, unitsPerHour)
-        try await sendControl(SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: UInt32((clamped * 1000).rounded())), delivery: false)
+        // CX-T-07 owner decision (ALIGN UP, 2026-08-25): floored at the kit's SetMaxBasalLimitRequest
+        // throwing floor (1.0 U/hr), not just >0 — so no app-originated value falls below the kit's bound.
+        let clamped = max(Interlocks.minMaxBasalLimitUnitsPerHour, unitsPerHour)
+        try await sendControl(try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: UInt32((clamped * 1000).rounded())), delivery: false)
     }
     public func syncTimeToNow() async throws {
         let tandemEpoch = UInt32(max(0, Date().timeIntervalSince1970 - 1_199_145_600))   // Jan 1 2008 base

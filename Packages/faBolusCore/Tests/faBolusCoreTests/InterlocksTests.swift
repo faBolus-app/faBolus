@@ -11,12 +11,16 @@ struct InterlocksTests {
         #expect(Interlocks.clampMaxBolusLimit(1000) == 25.0)   // absurd → still capped, never a confirmation
         #expect(Interlocks.clampMaxBolusLimit(25) == 25.0)     // at the ceiling → unchanged
         #expect(Interlocks.clampMaxBolusLimit(10) == 10.0)     // mid-range → passes through
-        #expect(Interlocks.clampMaxBolusLimit(0.01) == 0.05)   // below the 0.05 floor → floored
-        #expect(Interlocks.clampMaxBolusLimit(-5) == 0.05)     // negative → floored, never ≤ 0
+        // CX-T-07 owner decision (2026-08-25, ALIGN UP): floor raised from 0.05 U to 1.0 U to match
+        // TandemKit's SetMaxBolusLimitRequest throwing floor.
+        #expect(Interlocks.clampMaxBolusLimit(0.5) == 1.0)     // below the new 1.0 U floor → floored
+        #expect(Interlocks.clampMaxBolusLimit(-5) == 1.0)      // negative → floored, never ≤ 0
+        #expect(Interlocks.clampMaxBolusLimit(1.0) == 1.0)     // at the floor → unchanged
     }
 
     @Test func theHardCapItselfIsUnchanged() {
         #expect(Interlocks.absoluteMaxUnits == 25.0)           // owner-locked; S10's TDD-relative confirms never touch this
-        #expect(Interlocks.minMaxBolusLimitUnits == 0.05)
+        #expect(Interlocks.minMaxBolusLimitUnits == 1.0)       // CX-T-07 ALIGN UP (2026-08-25)
+        #expect(Interlocks.minMaxBasalLimitUnitsPerHour == 1.0)
     }
 }

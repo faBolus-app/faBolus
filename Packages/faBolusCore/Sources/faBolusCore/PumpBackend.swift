@@ -199,9 +199,22 @@ public protocol PumpBackend: AnyObject {
     func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws
 }
 
-/// The largest prime-cannula amount the UI allows (defense-in-depth on an insulin-dispensing step).
+/// The prime-cannula bounds the UI allows (defense-in-depth on an insulin-dispensing step).
 public enum FillLimits {
-    public static let maxCannulaMilliunits = 1000   // 1.0 U — Tandem cannula prime is ~0.3 U
+    public static let maxCannulaMilliunits = 1000   // 1.0 U — Tandem cannula prime is ~0.3 U. Deliberate cap
+                                                     // (CX-T-07/Pitfall 4): NOT raised alongside the kit's
+                                                     // FillCannulaRequest 3000 mU ceiling.
+    /// CX-T-07 (Pitfall 4, upstream-invalid): 0 is never a valid fill — pumpX2's `FillCannulaRequest`
+    /// throws on `primeSizeMilliUnits <= 0`. The app-side clamp must not leave 0 reachable (two-layer
+    /// defense: the kit init is the primary boundary, this clamp is the secondary one).
+    public static let minCannulaMilliunits = 1
+
+    /// Shared clamp used by every backend that constructs a `FillCannulaRequest`-equivalent write, so 0
+    /// (upstream-invalid) can never reach the wire and the deliberate `maxCannulaMilliunits` cap is never
+    /// exceeded. Mirrors `Interlocks.clampMaxBolusLimit`'s "one definition, every backend" pattern.
+    public static func clampPrimeSize(_ milliunits: Int) -> Int {
+        max(minCannulaMilliunits, min(milliunits, maxCannulaMilliunits))
+    }
 }
 
 public enum ControlError: Error, LocalizedError {
@@ -351,9 +364,18 @@ public enum BolusError: Error, LocalizedError {
 /// absurd amount (the pump also rejects anything over its own limit).
 public enum Interlocks {
     public static let absoluteMaxUnits: Double = 25.0
-    /// The smallest programmable max-bolus limit (the pump's 0.05 U minimum increment); a limit below this
-    /// is meaningless.
-    public static let minMaxBolusLimitUnits: Double = 0.05
+    /// CX-T-07 owner decision (2026-08-25, option-a ALIGN UP — see faBolus .planning/phases/
+    /// 15-tandemkit-portfidelity-upstream-adopt/OWNER-DECISIONS.md, 15-05 Task 1): raised from the prior
+    /// 0.05 U (the pump's minimum programming increment) to 1.0 U to match TandemKit's
+    /// `SetMaxBolusLimitRequest` throwing floor (pumpX2's own `MIN_BOLUS_LIMIT_MILLIUNITS`), so a
+    /// legitimate app-originated limit can never throw at the kit boundary after UI confirmation.
+    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1) — not independently bench-confirmed by the app team.
+    public static let minMaxBolusLimitUnits: Double = 1.0
+    /// CX-T-07 owner decision companion: the max-basal **limit** floor, matching TandemKit's
+    /// `SetMaxBasalLimitRequest` throwing floor (pumpX2's `MIN_BASAL_LIMIT_MILLIUNITS`). Before this the
+    /// app clamped max-basal only to `max(0, …)` (`TandemBackend.setMaxBasal`), below the kit's floor.
+    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1).
+    public static let minMaxBasalLimitUnitsPerHour: Double = 1.0
     /// Clamp a requested max-bolus **limit** into the app's absolute range. The 25 U ceiling is a HARD cap
     /// (owner-locked, P14 §2.1(5): never a confirmation) — a limit can never be set above it, on ANY
     /// backend. This is the single definition the funnel (`AppModel.setMaxBolus`) and every backend share,
