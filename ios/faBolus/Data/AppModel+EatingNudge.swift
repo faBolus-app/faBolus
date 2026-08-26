@@ -74,14 +74,6 @@ extension AppModel {
         eatingNudge = nil
     }
 
-    /// Apple Watch on-device path: the watch already ran the model and relays a p(eating). Feed it
-    /// straight into the same accel signal the Garmin window path produces, then re-fuse the nudge.
-    public func ingestWatchEatingEvent(prob: Double, at: Date = Date()) {
-        latestAccelProb = prob
-        lastAccelWindowAt = at
-        updateEatingNudge()
-    }
-
     /// Persist the learned alarm-fatigue decision for advisory alerts to `UserDefaults`. Moved with
     /// its only caller, `dismissEatingNudge()`; `loadAlertIntel()` (the paired loader) stays in
     /// `AppModel.swift` — it is only ever referenced from `alertIntel`'s own default-value expression,

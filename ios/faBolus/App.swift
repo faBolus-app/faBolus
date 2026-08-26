@@ -6,7 +6,6 @@ struct FaBolusApp: App {
     // The pump backend is chosen from the compile-time BackendRegistry (Tandem on device, mock in
     // the Simulator by default; user-selectable when more than one backend is compiled in).
     @State private var model = AppModel(source: BackendRegistry.makeSelected())
-    @State private var remoteHost: PhoneRemoteHost?
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: NotificationCoordinator?
     @State private var widgetBolus: WidgetBolusReceiver?
@@ -57,8 +56,6 @@ struct FaBolusApp: App {
                     Text("This looks like a Tandem Mobi — its PIN doesn't change. faBolus can save it so you don't re-type it next time you connect. You can change or clear it later on the Connect screen.")
                 }
                 .onAppear {
-                    // Start listening for remote commands (double-confirm host).
-                    if remoteHost == nil { remoteHost = PhoneRemoteHost(model: model) }       // Apple Watch
                     // WR-08 (R2-14): the Garmin bridge is now constructed at launch in `init()` (above),
                     // not lazily here, so a background BLE relaunch has a live bridge before any view appears.
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)

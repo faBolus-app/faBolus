@@ -24,8 +24,9 @@ while BG is genuinely still high) are re-raised by the pump every poll.
   - **Unit increment**: 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U.
   - **Carb increment**: 1 / 5 / 10 / 15 g.
   - (Y-axis toggles from step 3 live here too, or on the chart.)
-- Apply the default mode + increments in the iOS bolus entry; propagate to Garmin + Apple Watch
-  (default mode on open, +/- step = the chosen increment). Apple Watch gains a Carbs mode.
+- Apply the default mode + increments in the iOS bolus entry; propagate to Garmin
+  (default mode on open, +/- step = the chosen increment). (The matching Apple Watch propagation
+  is gone along with the removed Apple Watch machinery — Phase 3/REMOTE-03 + Phase 17.5.)
 
 ## 3. Phone chart: IOB overlay + bolus bars
 - Second **y-axis = Insulin on Board** over time, drawn as an overlay line.
@@ -88,8 +89,9 @@ for now):
    current 25 U default, so a dose is never sized against a missing/assumed max. Route every reader
    (bolus entry, delivery validation, status push to watches, widgets, displays) through one
    `effectiveMaxBolusUnits` helper.
-2. **User-set custom max (app + watches).** A Settings field to set a max bolus **below** the pump max for
-   the phone, Apple Watch, Garmin, Mac, and widget surfaces (never above the pump max). Persist in
+2. **User-set custom max (app + remotes).** A Settings field to set a max bolus **below** the pump max for
+   the phone, Garmin, Mac, and widget surfaces (never above the pump max; Apple Watch is no longer a
+   surface — removed). Persist in
    `AppSettings`, include in the settings backup, and push it in the remote status payload so remotes cap
    at the same value; enforce it in the AppModel delivery paths (defense-in-depth on top of the backend's
    pump-max clamp).
@@ -97,20 +99,18 @@ for now):
   backend keeps enforcing the pump max + absolute ceiling; add deterministic tests (fallback engages when
   unavailable; custom cap only lowers; remotes receive the effective value).
 
-### Chained remotes (parent's own Watch/Mac → parent phone → child host) — designed, NOT enabled
-The iPhone-to-iPhone remote ships; driving the child host from the parent's *own* Apple Watch or Mac
-(relayed through the parent phone) is deferred because it can't be done safely without on-device
-testing across 3 devices, and the naïve wiring risks the shipped watch↔host path. Concrete blockers:
-- **Single `WCSession`:** a second WatchConnectivity host on the parent phone would steal the delegate
-  from the app's `PhoneRemoteHost`, and `addRemoteEcho`/`addStatusListener` aren't removable (they'd
-  leak/duplicate). Needs removable listeners + a single host whose target switches.
+### Chained remotes (parent's own Mac → parent phone → child host) — designed, NOT enabled
+The iPhone-to-iPhone remote ships; driving the child host from the parent's *own* Mac (relayed
+through the parent phone) is deferred because it can't be done safely without on-device testing
+across 3 devices. (This idea originally also considered the parent's own Apple Watch as a relay
+source, but that angle is removed — Phase 17.5 retired the `WCSession`/`PhoneRemoteHost` transport
+it would have needed — not merely deferred; only the Mac angle below remains open.) Concrete
+blockers:
 - **CoreBluetooth one-restore-id-per-central:** relaying to the child means a *second* restorable
   central alongside the pump central → the documented SIGABRT risk (`DexcomG6BLESource` note).
 - **Safe path:** a `RelayBackend: PumpBackend` that forwards to the child over the existing
   `SealedTransport`/`BLELink` and maps relayed status into `PumpSnapshot`. Then the parent phone's
-  existing `AppModel` + all its leaves (watch/Garmin/Mac/widgets) work unchanged, sourcing the child.
-- Already free today: the parent watch's glucose **complication** reflects the child while the parent
-  phone is on the remote screen (`RemoteClientModel.publishSnapshot` → App Group).
+  existing `AppModel` + all its leaves (Garmin/Mac/widgets) work unchanged, sourcing the child.
 
 ### Apple Watch host / phone-as-remote swap (tracked, not started)
 Make the **watch the pump host** and the **phone a remote**. The pump allows only one paired

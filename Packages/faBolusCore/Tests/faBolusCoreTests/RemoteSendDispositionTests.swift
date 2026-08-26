@@ -3,13 +3,13 @@ import XCTest
 
 /// v3 handoff §5.3: `transferUserInfo` is a guaranteed, FIFO, opportunistic-latency queue and must
 /// **never** carry a bolus — *"A stale queued bolus could deliver minutes later."* Before this fix
-/// `RemoteLink.send` fell back to it for every command, including `.bolusRequest`, both when the peer
-/// was unreachable and when the live send errored.
+/// the (now-retired) WatchConnectivity transport's `send` fell back to it for every command, including
+/// `.bolusRequest`, both when the peer was unreachable and when the live send errored.
 ///
-/// `RemoteLink` owns a non-injectable `WCSession.default` and only compiles where WatchConnectivity
-/// exists, so the *rule* lives in `RemoteSendDisposition` and is pinned here. What these tests do NOT
-/// cover: that `RemoteLink`/`BLELink` actually call it — that is a one-line read of each `send`, and
-/// the WatchConnectivity path has no automated coverage on this platform.
+/// The former WatchConnectivity transport owned a non-injectable `WCSession.default` and only compiled
+/// where WatchConnectivity exists, so the *rule* lives in `RemoteSendDisposition` and is pinned here.
+/// What these tests do NOT cover: that `BLELink` actually calls it — that is a one-line read of its
+/// `send`.
 final class RemoteSendDispositionTests: XCTestCase {
 
     /// Every command that reaches the pump, or authorizes something that does.
@@ -19,7 +19,7 @@ final class RemoteSendDispositionTests: XCTestCase {
     ]
     /// Display/handshake traffic. Queuing these is desirable — a watch that was out of range catches up.
     private static let nonMutating: [RemoteCommand.Kind] = [
-        .bolusStatus, .statusRead, .eatingEvent,
+        .bolusStatus, .statusRead,
         .authHello, .authChallenge, .authProof, .authResult,
     ]
 
@@ -31,7 +31,7 @@ final class RemoteSendDispositionTests: XCTestCase {
         let all: [RemoteCommand.Kind] = [
             .bolusRequest, .bolusConfirm, .bolusStatus, .cancelBolus, .statusRead, .dismissAlert,
             .suspendPump, .resumePump, .authHello, .authChallenge, .authProof, .authResult,
-            .sealed, .bolusApprovalRequest, .bolusApprovalResponse, .eatingEvent,
+            .sealed, .bolusApprovalRequest, .bolusApprovalResponse,
         ]
         XCTAssertEqual(classified.count, all.count, "a RemoteCommand.Kind is unclassified")
         for k in all { XCTAssertTrue(classified.contains(k.rawValue), "\(k.rawValue) unclassified") }

@@ -122,11 +122,6 @@ struct DebugMenuView: View {
         .navigationTitle("Debug")
         .onAppear {
             shareDiagnostics = settings.notificationTelemetryEnabled
-            // Phase 09.6-07 (D-03.1, Pitfall 3): issue the watch-diagnostics REQUEST only when the
-            // shared opt-in is on — no new opt-in, no collection while it's off. The reply (if any)
-            // lands via PhoneRemoteHost before the next diagnosticsText rebuild; this view doesn't
-            // wait for it (the placeholder covers "no reply yet" gracefully).
-            if shareDiagnostics { PhoneRemoteHost.shared?.requestWatchDiagnostics() }
             // D-01a/Pitfall 4: write the export file as soon as the console is opened, so the fixed-name
             // Documents file exists before anyone runs `devicectl device copy from` — not gated behind a
             // button tap that may never happen on this install.
@@ -337,12 +332,9 @@ struct DebugMenuView: View {
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
 
-        // Task 1 (Part C-3a, D-03.3): [Watch WC] — reads PhoneRemoteHost's already-tracked
-        // WatchConnectivity state via its `.shared` app-wide reference; never issues a new WC
-        // round-trip. Falls back to `false`/`0` if the host hasn't been constructed yet (e.g. before
-        // App.swift's `.task` runs) — the section then renders "Reachable: no" like any genuinely
-        // unreachable watch, never a crash or an omitted header.
-        let wcHost = PhoneRemoteHost.shared
+        // Phase 17.5 Plan 03 (D1-01): the two watch-transport diagnostics sections (and the pure
+        // builder types they called into) are retired outright — the WatchConnectivity transport
+        // host they described is gone (Plan 02), and there is no watch surface left to diagnose.
 
         let sections: [String] = [
             // Extracted verbatim from the prior inline blocks (D-01/P12 §5.2.8/P9) — always present,
@@ -377,19 +369,6 @@ struct DebugMenuView: View {
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,
                 enabled: shareDiagnostics),
             GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
-            WCDiagnostics.section(
-                reachable: wcHost?.reachableForDiagnostics ?? false,
-                sent: wcHost?.sentCountForDiagnostics ?? 0,
-                undeliverable: wcHost?.undeliverableCountForDiagnostics ?? 0,
-                enabled: shareDiagnostics),
-            // Phase 09.6-07 (D-03.1, D-04): [Watch self] — the ninth (final) surface, closing the
-            // 09.6-VERIFICATION.md gap. Reads PhoneRemoteHost's already-tracked
-            // `lastWatchDiagnosticsText` (set only by the `.diagnosticsRead` reply handler); never
-            // re-derives it or issues a new request from here (the request goes out from `.onAppear`
-            // below, gated on the SAME opt-in).
-            WatchSelfDiagnostics.phoneSection(
-                body: wcHost?.lastWatchDiagnosticsText,
-                enabled: shareDiagnostics),
         ]
 
         let preamble = "faBolus diagnostics (local-only, never uploaded)\n"

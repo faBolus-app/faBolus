@@ -5,7 +5,9 @@ import faBolusCore
 
 /// P15 G3 (§2.3): the per-surface bolus-auth wire round-trip on the shared `RemoteCommandWireFixture`. Pins the
 /// **fail-closed** default (a cold launch / glance with no push, and a legacy host that omits the fields,
-/// both keep bolusing hidden) and that a push arms it, with read-only still winning.
+/// both keep bolusing hidden) and that a push arms it, with read-only still winning. Re-expressed on the
+/// Garmin surface — the Apple-Watch sibling (`watchBolusEnabled`/`watchBolusAllowed`) was retired
+/// end-to-end in Phase 17.5 Plan 01 (D1-01/REMED-17); this behavior is otherwise surface-symmetric.
 @MainActor
 @Suite(.serialized) struct RemoteBolusAuthWireTests {
 
@@ -19,10 +21,9 @@ import faBolusCore
 
     @Test func freshModelFailsClosed() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        #expect(!m.watchBolusEnabled)
         #expect(!m.garminBolusEnabled)
         #expect(!m.bolusPasscodeRequired)
-        #expect(!m.watchBolusAllowed)               // no push yet ⇒ bolus hidden
+        #expect(!m.garminBolusAllowed)              // no push yet ⇒ bolus hidden
     }
 
     @Test func legacyHostWithoutTheFieldsStaysDisabled() {
@@ -30,21 +31,21 @@ import faBolusCore
         let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.remotesReadOnly = false
         m.handle(cmd)
-        #expect(!m.watchBolusAllowed)
+        #expect(!m.garminBolusAllowed)
     }
 
-    @Test func pushArmsWatchBolusButReadOnlyStillWins() {
+    @Test func pushArmsGarminBolusButReadOnlyStillWins() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         var on = RemoteCommand(kind: .statusRead)
         on.message = "Connected"; on.remotesReadOnly = false
-        on.watchBolusEnabled = true; on.garminBolusEnabled = true; on.bolusPasscodeRequired = true
+        on.garminBolusEnabled = true; on.bolusPasscodeRequired = true
         m.handle(on)
-        #expect(m.watchBolusEnabled && m.garminBolusEnabled && m.bolusPasscodeRequired)
-        #expect(m.watchBolusAllowed)                // enabled + not read-only ⇒ allowed
+        #expect(m.garminBolusEnabled && m.bolusPasscodeRequired)
+        #expect(m.garminBolusAllowed)               // enabled + not read-only ⇒ allowed
 
         var ro = RemoteCommand(kind: .statusRead)
-        ro.message = "Connected"; ro.remotesReadOnly = true; ro.watchBolusEnabled = true
+        ro.message = "Connected"; ro.remotesReadOnly = true; ro.garminBolusEnabled = true
         m.handle(ro)
-        #expect(!m.watchBolusAllowed)               // read-only wins over the enable
+        #expect(!m.garminBolusAllowed)              // read-only wins over the enable
     }
 }

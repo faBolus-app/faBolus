@@ -6,11 +6,16 @@ import Foundation
 /// `scripts/check-schema-drift.sh` already guards ONE direction (every `schema/command.schema.json`
 /// property has a matching `RemoteCommand` field) but nothing previously pinned the `kind.enum`
 /// vocabulary, and nothing asserted that a specific field present on BOTH sides today (`activeMode`,
-/// `watchChartRanges`, `watchBolusEnabled`) can't silently disappear from just one side — the exact
-/// drift class Codex HIGH finding #3 flagged (a schema-only or Swift-only deletion of one of those three
-/// creates drift invisible to a kinds-only test). This test does NOT audit the full ~100-field
+/// `watchChartRanges`) can't silently disappear from just one side — the exact
+/// drift class Codex HIGH finding #3 flagged (a schema-only or Swift-only deletion of one of those two
+/// creates drift invisible to a kinds-only test). `watchBolusEnabled` was retired end-to-end (Swift +
+/// schema) in Phase 17.5 Plan 01 (D1-01/REMED-17) — it is no longer a member of this at-risk set because
+/// it no longer exists on either side. `eatingProb`/`eatingSensingOn`/`diagnosticsText` and the
+/// `.eatingEvent`/`.diagnosticsRead` kinds were similarly retired end-to-end (Swift-only, never
+/// schema-mirrored) in Phase 17.5 Plan 03 (D1-01/REMED-17) — also no longer members of the sets below.
+/// This test does NOT audit the full ~100-field
 /// `RemoteCommand` surface against the schema: many additive Swift-only/BLE-only fields (the `auth*`
-/// handshake, `sealed`/`sealedPayload`, `eatingProb`/`eatingSensingOn`, `diagnosticsText`, the Control-IQ
+/// handshake, `sealed`/`sealedPayload`, the Control-IQ
 /// telemetry fields, etc.) are DELIBERATELY not part of the shared `command.schema.json` contract per
 /// their own doc comments in `RemoteCommand.swift` — auditing those would manufacture false "drift"
 /// findings outside this plan's D1-02/D1-03 scope. "Shared top-level properties" here means exactly the
@@ -44,22 +49,21 @@ struct RemoteCommandSchemaConformanceTests {
     }
 
     /// The documented BLE-only / Mac-pairing / advisory `RemoteCommand.Kind` cases, per their own doc
-    /// comments (RemoteCommand.swift:16-43): the Mac pairing handshake (`auth*`), the sealed BLE envelope
-    /// (`sealed`), reverse-approval (`bolusApproval*`), advisory eating-detection (`eatingEvent`), and the
-    /// watch-only diagnostics round-trip (`diagnosticsRead`). None of these are part of the shared
-    /// watch/Garmin `command.schema.json` — each doc comment says so explicitly.
+    /// comments (RemoteCommand.swift:16-): the Mac pairing handshake (`auth*`), the sealed BLE envelope
+    /// (`sealed`), and reverse-approval (`bolusApproval*`). None of these are part of the shared
+    /// watch/Garmin `command.schema.json` — each doc comment says so explicitly. (Phase 17.5 Plan 03,
+    /// D1-01/REMED-17: `.eatingEvent`/`.diagnosticsRead` — the other two Swift-only kinds this set used
+    /// to carry — were retired outright, not merely excluded, so they are no longer listed here.)
     private static let bleOrSwiftOnlyKinds: Set<RemoteCommand.Kind> = [
         .authHello, .authChallenge, .authProof, .authResult,
         .sealed,
         .bolusApprovalRequest, .bolusApprovalResponse,
-        .eatingEvent,
-        .diagnosticsRead,
     ]
 
     /// The specific fields Codex HIGH finding #3 flagged: LIVE Swift fields (frozen `AppModel.swift`
     /// still populates them) that must stay present on BOTH sides — a schema-only deletion would create
     /// drift, and a Swift-side deletion would cross the frozen boundary.
-    private static let atRiskSharedFields = ["activeMode", "watchChartRanges", "watchBolusEnabled"]
+    private static let atRiskSharedFields = ["activeMode", "watchChartRanges"]
 
     // MARK: - Path resolution can't pass vacuously
 

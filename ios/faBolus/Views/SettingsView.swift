@@ -210,7 +210,7 @@ struct SettingsView: View {
                             Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
                         }
                     } header: { Text("Safety") } footer: {
-                        Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+                        Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (Garmin has its own switch under Remotes & devices — the Apple Watch remote is removed, so it has no separate switch anymore.)")
                     }
                     // Privacy & data moved UP into the category section above (between Remotes & devices
                     // and About & help); its former standalone section here is gone. (History: that
@@ -406,7 +406,7 @@ struct SafetySettingsView: View {
                     Toggle("Still allow clearing alerts", isOn: $settings.readOnlyAllowAlertClear)
                 }
             } header: { Text("Safety") } footer: {
-                Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (The Apple Watch / Garmin have their own switch under Remotes & devices.)")
+                Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (Garmin has its own switch under Remotes & devices — the Apple Watch remote is removed, so it has no separate switch anymore.)")
             }
         }
         .navigationTitle("Safety")
@@ -428,7 +428,7 @@ struct BolusSettingsView: View {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Apple Watch and Garmin bolus screens.") }
+            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Garmin bolus screen (the Apple Watch remote is removed).") }
             Section {
                 Picker("Unit increment", selection: $settings.bolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
@@ -725,8 +725,8 @@ struct RemotesSettingsView: View {
     @Bindable var model: AppModel
     @Bindable var settings: AppSettings
     // §2.3 (G5): the one-time warning shown the FIRST time Garmin bolusing is enabled. (The
-    // matching Apple Watch warning state was removed in 03-03, REMOTE-03, along with the
-    // now-hidden watchBolusEnabled toggle — see watchBolusBinding's removal note below.)
+    // matching Apple-Watch warning state was removed in 03-03, REMOTE-03, and the Apple-Watch
+    // bolus-enable accessor itself is retired entirely in Phase 17.5, D1-01 — see the note below.)
     @State private var showGarminBolusWarning = false
     // C2 §2.3: the OPTIONAL Garmin bolus passcode set-UI. `passcodeSet` mirrors the Keychain-backed
     // `BolusPasscodeStore.isRequired` (refreshed on appear + after every set/clear) so the section shows
@@ -745,11 +745,11 @@ struct RemotesSettingsView: View {
     /// directly. Turning OFF is always immediate. Routed through the shared `guardedToggle` factory
     /// (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings toggle uses.
     ///
-    /// Phase 3 (03-03, REMOTE-03): the matching `watchBolusBinding` (Apple Watch's equivalent) is
-    /// removed — the Watch app it enabled is delete-on-main, and `watchBolusEnabled`'s
-    /// `SettingsCatalog` row + backup/restore participation + this UI are all removed (hidden-flag
-    /// pattern, same posture as `requireRemoteBolusApproval`, 03-02/F-1). The `AppSettings` accessor
-    /// itself stays (frozen `AppModel.swift:360,533` + `AccessPolicy.swift:199` still read it).
+    /// Phase 3 (03-03, REMOTE-03) removed the matching Apple-Watch equivalent binding and its
+    /// `SettingsCatalog` row + backup/restore participation + UI (hidden-flag pattern, same posture as
+    /// `requireRemoteBolusApproval`, 03-02/F-1). Phase 17.5 (D1-01) then retired the underlying
+    /// AppSettings accessor and the gate that read it entirely — there is no Apple-Watch equivalent
+    /// left to bind at all now.
     private var garminBolusBinding: Binding<Bool> {
         guardedToggle(
             get: { settings.garminBolusEnabled },
@@ -902,7 +902,7 @@ struct RemotesSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("Watch/Garmin bolus") } footer: {
-                Text("Default entry mode and increments for the Apple Watch and Garmin bolus screens (independent of the iPhone). Same settings as under Bolus & entry.")
+                Text("Default entry mode and increments for the Garmin bolus screen (independent of the iPhone; the Apple Watch remote is removed). Same settings as under Bolus & entry.")
             }
             Section {
                 NavigationLink {

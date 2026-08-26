@@ -119,10 +119,12 @@ public final class AppModel {
         latestGarminHeartRate = (bpm, date)
     }
 
-    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`,
-    // `eatingNudgeActedOn`, and `ingestWatchEatingEvent` moved verbatim to
-    // `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE` gates preserved) — see that file.
-    // `setupEatingPersonalization()` is still called from `init` below (cross-file, `internal`).
+    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`, and
+    // `eatingNudgeActedOn` moved verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE`
+    // gates preserved) — see that file. `setupEatingPersonalization()` is still called from `init`
+    // below (cross-file, `internal`). Phase 17.5 Plan 03 (D1-01): the Apple-Watch-on-device
+    // eating-event-ingest method that also lived in that file — a zero-caller orphan once the
+    // WatchConnectivity host was deleted (Plan 02) — was deleted outright.
 
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
@@ -366,10 +368,9 @@ public final class AppModel {
             // the ONE context-builder so modes gate every surface identically, never a sixth mechanism.
             // Per-feature toggles (`disabledFeatures`) land with the S3 store; empty here.
             modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode),
-            // P15 §2.3: per-surface remote bolus enables (default OFF on the phone) so the evaluator
-            // refuses a Garmin/Watch deliver the user hasn't opted into — not a seventh mechanism.
+            // P15 §2.3: per-surface remote bolus enable (default OFF on the phone) so the evaluator
+            // refuses a Garmin deliver the user hasn't opted into — not a seventh mechanism.
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
             // C2 §2.3: the host-verified passcode result (pure bits — the Keychain read + verify happened
             // in the caller so the evaluator stays pure and the exp-backoff is armed exactly once).
             bolusPasscodeRequired: bolusPasscodeRequired,
@@ -485,9 +486,7 @@ public final class AppModel {
             glucosePlotCeiling: AppSettings.shared.glucosePlotCeiling,
             glucosePlotFloorSmall: AppSettings.shared.glucosePlotFloorSmall,
             glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
-            eatingNudgesEnabled: AppSettings.shared.eatingNudgesEnabled,
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
             activeModeRawValue: AppSettings.shared.appMode.rawValue,
             ciqStateReadoutsEnabled: AppSettings.shared.ciqStateReadoutsEnabled,
             ciqLockoutCountdownEnabled: AppSettings.shared.ciqLockoutCountdownEnabled,
@@ -505,7 +504,6 @@ public final class AppModel {
             remoteMax: remoteMax,
             canBolus: avail.canBolus,
             bolusBlockReason: avail.reason?.wireToken,
-            lastWantAccel: lastWantAccel,
             bolusPasscodeRequired: BolusPasscodeStore.isRequired,
             supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
             settings: settings)
@@ -2319,9 +2317,8 @@ public final class AppModel {
                               from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
         // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
-        // GARMIN ONLY — Apple Watch is exempt (wrist detection). An ABSENT code is NOT run through
-        // `verify()` (so a legacy watch that never prompts isn't charged a lockout attempt); it simply
-        // fails the gate as `required && !satisfied`.
+        // GARMIN ONLY. An ABSENT code is NOT run through `verify()` (so a caller that never prompts
+        // isn't charged a lockout attempt); it simply fails the gate as `required && !satisfied`.
         var passcodeRequired = false
         var passcodeSatisfied = false
         if surface == .garmin && BolusPasscodeStore.isRequired {
@@ -2330,7 +2327,7 @@ public final class AppModel {
                 passcodeSatisfied = BolusPasscodeStore.verify(entered)
             }
         }
-        // P8: gate through the single evaluator (child mode for local/watch/Garmin; the `.bolus` peer
+        // P8: gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
         // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId,
                                       bolusPasscodeRequired: passcodeRequired,

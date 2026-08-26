@@ -16,7 +16,7 @@ import faBolusCore
 /// (re)discovered while backgrounded.
 ///
 /// **The backstop.** `MobiRejectBackstop` is ALWAYS ON: owned OUTSIDE the SwiftUI view tree (started
-/// from `FaBolusApp`, alongside `PhoneRemoteHost`/`GarminRemoteBridge`/`NotificationCoordinator` — the
+/// from `FaBolusApp`, alongside `GarminRemoteBridge`/`NotificationCoordinator` — the
 /// app's EXISTING pattern for AppModel-observers that must run regardless of which screen is visible),
 /// observing `AppModel.snapshot` via the Observation framework's `withObservationTracking` — NOT a
 /// SwiftUI `.onChange` on a view — so it keeps running whether or not any reject-observing view is

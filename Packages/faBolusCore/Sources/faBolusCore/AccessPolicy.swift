@@ -20,7 +20,7 @@ public enum AccessPolicy {
     /// bypass (an authenticated peer that passed its per-peer policy) is available.
     public enum Surface: String, CaseIterable, Sendable {
         case phoneUI, quickBolusWidget, siriShortcuts      // local (this phone)
-        case appleWatch, garmin                            // paired remotes governed by remotesReadOnly + child
+        case garmin                                        // paired remote governed by remotesReadOnly + child
         case macPeer, caregiverPhonePeer                   // authenticated peers (per-peer policy)
 
         /// Local surfaces are subject to `phoneReadOnly`.
@@ -79,14 +79,12 @@ public enum AccessPolicy {
         public var modeContext: ModeGateContext
         // P15 §2.3 — per-surface remote bolus authorization (default true so no OTHER surface/action is
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
-        // from `.garmin` / `.appleWatch`.
+        // from `.garmin`.
         public var garminBolusEnabled: Bool
-        public var watchBolusEnabled: Bool
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone
         // (`BolusPasscodeStore.isRequired`), a Garmin `.deliverBolus` must carry the correct entered code.
         // The host does the single stateful `verify()` (which arms the exp-backoff) and hands the evaluator
-        // a pure `required`/`satisfied` pair — faBolusCore never touches the Keychain. Apple Watch is EXEMPT
-        // (wrist detection is a materially stronger presence signal — see the gate). `satisfied` defaults
+        // a pure `required`/`satisfied` pair — faBolusCore never touches the Keychain. `satisfied` defaults
         // FALSE (fail-closed: required-but-unthreaded denies); `required` defaults false so no other
         // surface/action is affected. Only consulted for `.deliverBolus` from `.garmin`.
         public var bolusPasscodeRequired: Bool
@@ -97,11 +95,11 @@ public enum AccessPolicy {
                     advancedControlOptIn: Bool, capabilities: PumpCapabilities,
                     hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
                     modeContext: ModeGateContext = .init(),
-                    // Fail-closed defaults (§2.3): a caller that forgets to thread the per-surface remote
-                    // bolus enables must NOT silently arm Garmin/Watch bolusing. The one production call
-                    // site (AppModel) always passes the real persisted values; these defaults only guard a
-                    // future second call site.
-                    garminBolusEnabled: Bool = false, watchBolusEnabled: Bool = false,
+                    // Fail-closed default (§2.3): a caller that forgets to thread the per-surface remote
+                    // bolus enable must NOT silently arm Garmin bolusing. The one production call site
+                    // (AppModel) always passes the real persisted value; this default only guards a future
+                    // second call site.
+                    garminBolusEnabled: Bool = false,
                     // C2 §2.3 fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
                     // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
                     bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false) {
@@ -115,7 +113,6 @@ public enum AccessPolicy {
             self.peerPolicy = peerPolicy
             self.modeContext = modeContext
             self.garminBolusEnabled = garminBolusEnabled
-            self.watchBolusEnabled = watchBolusEnabled
             self.bolusPasscodeRequired = bolusPasscodeRequired
             self.bolusPasscodeSatisfied = bolusPasscodeSatisfied
         }
@@ -189,28 +186,25 @@ public enum AccessPolicy {
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
         }
 
-        // P15 §2.3 — per-surface remote bolus authorization. Bolusing from Garmin / Apple Watch is an
-        // explicit, default-OFF opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied
-        // above if set). Only the actual deliver from those two paired remotes is gated — every other
-        // surface/action, and the authenticated-peer paths, are unaffected. Fail-closed: a phone that never
-        // enabled the surface denies here regardless of what the remote UI showed.
+        // P15 §2.3 — per-surface remote bolus authorization. Bolusing from Garmin is an explicit,
+        // default-OFF opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied above if
+        // set). Only the actual deliver from that paired remote is gated — every other surface/action, and
+        // the authenticated-peer paths, are unaffected. Fail-closed: a phone that never enabled the surface
+        // denies here regardless of what the remote UI showed.
         // VA-30: gate BOTH ledgered deliveries (normal AND extended bolus). Keying on `.deliverBolus`
         // alone left `.deliverExtendedBolus` from a paired remote ungated by the per-surface enable —
-        // latent today (extended bolus isn't Garmin/Watch-reachable) but exactly the drift this single
+        // latent today (extended bolus isn't Garmin-reachable) but exactly the drift this single
         // evaluator exists to prevent.
         if action == .deliverBolus || action == .deliverExtendedBolus {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
-            if surface == .appleWatch && !context.watchBolusEnabled { return .deny(.remoteBolusDisabled) }
         }
 
         // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone, a Garmin
         // `.deliverBolus` must carry the correct entered code (the host verifies it against the salted hash
         // and passes the result as `bolusPasscodeSatisfied`; the evaluator stays pure). Fail-closed:
-        // required-but-unsatisfied (absent OR wrong OR backing off) denies. APPLE WATCH IS EXEMPT — its
-        // wrist detection is a materially stronger presence signal than a Garmin button press, so §2.3 does
-        // not require a passcode there; gating only `.garmin` keeps the watch's existing confirm. Every
-        // other surface/action is unaffected (`required` defaults false). Ordered after the enable gate so
-        // "bolusing off" still takes precedence over "needs a passcode".
+        // required-but-unsatisfied (absent OR wrong OR backing off) denies. Every other surface/action is
+        // unaffected (`required` defaults false). Ordered after the enable gate so "bolusing off" still
+        // takes precedence over "needs a passcode".
         if (action == .deliverBolus || action == .deliverExtendedBolus) && surface == .garmin
             && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied {
             return .deny(.remoteBolusPasscodeRequired)

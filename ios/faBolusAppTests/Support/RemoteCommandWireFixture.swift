@@ -18,12 +18,13 @@ import WidgetKit
 /// preserved on `dev/watch-remote`. This fixture is never used by the shipped app.
 ///
 /// Original doc (verbatim, describes the PRODUCTION type this fixture mirrors — the second paragraph's
-/// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code):
+/// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code;
+/// the Apple-Watch/`RemoteLink` transport it once described is itself retired — Phase 17.5, D1-01):
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
-/// (Apple Watch over `RemoteLink`, Mac/iPhone over `BLELink`). It is a *dumb remote*: it never touches the
-/// pump (TandemKit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
-/// status the phone echoes back, and publishes the latest glucose/pump state to the App Group for
-/// this device's widgets/complication.
+/// (formerly Apple Watch over a WatchConnectivity transport, still Mac/iPhone over `BLELink`). It is a
+/// *dumb remote*: it never touches the pump (TandemKit runs on the phone). It sends
+/// bolus/cancel/dismiss/status commands and reflects the status the phone echoes back, and publishes
+/// the latest glucose/pump state to the App Group for this device's widgets/complication.
 @MainActor
 @Observable
 final class RemoteCommandWireFixture {
@@ -91,11 +92,10 @@ final class RemoteCommandWireFixture {
     /// `.advanced` (most-permissive): an absent field means a LEGACY host that never mode-gates, so the
     /// remote must not over-hide. The host remains the enforcement point on every actual write.
     var activeMode: AppMode = .advanced
-    /// P15 §2.3: whether the phone has enabled bolusing from the Apple Watch (`watchBolusEnabled`) — the
-    /// watch consumes this. `garminBolusEnabled` is carried for completeness (the Garmin app parses its own
-    /// copy). **Default false ⇒ fail-closed**: a cold launch / glance with no push yet keeps bolus hidden
-    /// until a push arms it. The host also refuses a deliver from a disabled surface (AccessPolicy).
-    var watchBolusEnabled: Bool = false
+    /// P15 §2.3: whether the phone has enabled bolusing from the Garmin watch. **Default false ⇒
+    /// fail-closed**: a cold launch / glance with no push yet keeps bolus hidden until a push arms it.
+    /// The host also refuses a deliver from a disabled surface (AccessPolicy). (The Apple-Watch sibling
+    /// `watchBolusEnabled` was retired end-to-end in Phase 17.5 Plan 01, D1-01/REMED-17.)
     var garminBolusEnabled: Bool = false
     /// P15 §2.3: whether the phone requires a 4-digit passcode to confirm a remote bolus.
     var bolusPasscodeRequired: Bool = false
@@ -246,10 +246,12 @@ final class RemoteCommandWireFixture {
         guard let max = maxBasalUnitsPerHour else { return nil }
         return MaxBasalFraction.label(currentUnitsPerHour: basalRate, maxUnitsPerHour: max)
     }
-    /// P15 §2.3 (watch): the watch may show/permit its bolus affordance only when remotes aren't read-only
-    /// AND the phone has enabled watch bolusing. Fail-closed by default (`watchBolusEnabled` starts false).
-    /// The Mac has its own gating and does not use this.
-    var watchBolusAllowed: Bool { !readOnly && watchBolusEnabled }
+    /// P15 §2.3 (Garmin): the watch may show/permit its bolus affordance only when remotes aren't
+    /// read-only AND the phone has enabled Garmin bolusing. Fail-closed by default (`garminBolusEnabled`
+    /// starts false). The Mac has its own gating and does not use this. (The Apple-Watch sibling
+    /// `watchBolusAllowed`/`watchBolusEnabled` was retired end-to-end in Phase 17.5 Plan 01,
+    /// D1-01/REMED-17.)
+    var garminBolusAllowed: Bool { !readOnly && garminBolusEnabled }
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     /// Identities (kind+id) of the previous alert set, to detect a newly-arrived alert. `nil` until the
@@ -493,7 +495,6 @@ final class RemoteCommandWireFixture {
             if let m = cmd.activeMode { activeMode = AppMode(rawValue: m) ?? .advanced }
             // P15 §2.3: adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
             // stays the safe default (false = bolus hidden), so an old host can never leave a remote armed.
-            if let w = cmd.watchBolusEnabled { watchBolusEnabled = w }
             if let g = cmd.garminBolusEnabled { garminBolusEnabled = g }
             if let p = cmd.bolusPasscodeRequired { bolusPasscodeRequired = p }
             // B2 (S1+O3): adopt the pump's controller identity + runtime on/off. Absent ⇒ legacy host ⇒
