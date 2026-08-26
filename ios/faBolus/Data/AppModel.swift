@@ -1733,12 +1733,14 @@ public final class AppModel {
         let clamped = Interlocks.clampMaxBolusLimit(units)
         let before = snapshot.maxBolusUnits
         await runGatedTherapy(.setMaxBolus) { try await self.source.setMaxBolus(units: clamped) }
-        recordClinicianEditIfChanged(.global("maxBolus"), before: .double(before), afterOnSuccess: .double(clamped))
+        provenanceRecorder.recordClinicianEditIfChanged(.global("maxBolus"), before: .double(before),
+                                                         afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
     public func setMaxBasal(unitsPerHour: Double) async {
         let before = snapshot.maxBasalUnitsPerHour
         await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: unitsPerHour) }
-        recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before), afterOnSuccess: .double(unitsPerHour))
+        provenanceRecorder.recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before),
+                                                         afterOnSuccess: .double(unitsPerHour), succeeded: lastError == nil)
     }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 
@@ -1766,82 +1768,28 @@ public final class AppModel {
     public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }
 
     // MARK: - §2.1(2)(3)(4) provenance recording (S7 store, S8 wiring)
+    //
+    // Phase 16 GO-1 Step 6 (16-06, REMED-16): the disclosure sidecar itself lives in
+    // `ClinicianEditProvenanceRecorder` (closure-free — every method takes plain values, incl. the
+    // write's success bit, and returns plain values; zero back-pointer either direction, D-04). The
+    // therapy WRITES (`setMaxBolus`/`modifyProfileSegment`/…) and `revertSetting`/`revertSegmentField`
+    // (R47, just below) stay HERE in the gated funnel — only the bookkeeping moved.
+    @ObservationIgnored private let provenanceRecorder = ClinicianEditProvenanceRecorder()
 
-    /// The provenance / change-log sidecar (S7). A user editing a clinician-tier setting IS taking
-    /// ownership of it → the change is recorded as `SettingProvenance.selfSet`. Test-injectable (a test
-    /// swaps in a unique/failing store); production uses the App-Group-backed store. Best-effort +
-    /// fail-open by construction (`StoredSettingChangeStore.record` never throws/blocks) — provenance is
-    /// disclosure, never a gate on the therapy write it annotates.
-    public var settingChangeStore = StoredSettingChangeStore(
-        url: StoredSettingChangeStore.defaultURL(appGroupID: WidgetStore.appGroup)
-            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("setting-change-log.json"))
-
-    /// Record a user-made clinician-tier edit as `.selfSet` — but ONLY when the write actually SUCCEEDED
-    /// (`lastError == nil`; `performControl` clears it on success and sets it on any denial/failure) AND
-    /// the value changed. So a blocked, failed, or no-op edit records nothing.
-    func recordClinicianEditIfChanged(_ key: SettingKey, before: BackupValue?, afterOnSuccess after: BackupValue) {
-        guard lastError == nil, before != after else { return }
-        settingChangeStore.record(StoredSettingChange(
-            key: key, before: before, after: after, provenance: .selfSet,
-            atSeconds: Int(Date().timeIntervalSince1970)))
-    }
-
-    /// §2.1(2): record `.selfSet` provenance for each CHANGED therapy field of a profile segment. Keyed on
-    /// the segment's START TIME — its stable identity across the pump's index-renumbering (S7 / `SettingKey`
-    /// doc). Fail-open and only on a successful, value-changing edit (both guarded by
-    /// `recordClinicianEditIfChanged`). This closes the §2.1(2) gap where only the 3 global settings
-    /// (maxBolus / maxBasal / controlIQ) recorded provenance while the Personal-Profile basal / carb-ratio /
-    /// ISF / target — the values the pump actually doses from — recorded nothing.
-    func recordSegmentEditIfChanged(idpId: Int, startMinutes: Int,
-                                    beforeBasal: Double?, afterBasal: Double,
-                                    beforeCR: Double?, afterCR: Double,
-                                    beforeISF: Int?, afterISF: Int,
-                                    beforeTarget: Int?, afterTarget: Int) {
-        func key(_ f: String) -> SettingKey { .segment(idpId: idpId, startMinutes: startMinutes, field: f) }
-        recordClinicianEditIfChanged(key("basalRate"), before: beforeBasal.map(BackupValue.double), afterOnSuccess: .double(afterBasal))
-        recordClinicianEditIfChanged(key("carbRatio"), before: beforeCR.map(BackupValue.double), afterOnSuccess: .double(afterCR))
-        recordClinicianEditIfChanged(key("isf"), before: beforeISF.map(BackupValue.int), afterOnSuccess: .int(afterISF))
-        recordClinicianEditIfChanged(key("targetBg"), before: beforeTarget.map(BackupValue.int), afterOnSuccess: .int(afterTarget))
+    /// The provenance / change-log sidecar (S7), forwarded to `ClinicianEditProvenanceRecorder` so every
+    /// existing call site — including test fixtures that swap in a unique/failing store
+    /// (`model.settingChangeStore = StoredSettingChangeStore(url: ...)`) — keeps compiling and behaving
+    /// unchanged post-extraction.
+    public var settingChangeStore: StoredSettingChangeStore {
+        get { provenanceRecorder.settingChangeStore }
+        set { provenanceRecorder.settingChangeStore = newValue }
     }
 
     /// §2.1(2) B1(a): the per-field provenance for one profile segment, for the editor's origin badges.
-    /// Keyed by the SAME field names `recordSegmentEditIfChanged` writes (`basalRate`/`carbRatio`/`isf`/
-    /// `targetBg`). A field with no record is `.consensusDefault` (absence == consensus default, per
-    /// `StoredSettingChange`). Returns `nil` when the store failed closed (corrupt) — the UI then shows NO
-    /// badge rather than mislabeling every value as a consensus default. Pure read; never gates anything.
+    /// Forwarded to `ClinicianEditProvenanceRecorder.segmentFieldProvenance` — pure read; never gates
+    /// anything.
     func segmentFieldProvenance(idpId: Int, startMinutes: Int) -> [String: SettingProvenance]? {
-        let outcome = settingChangeStore.loadOutcome()
-        if outcome.failedClosed { return nil }
-        func p(_ f: String) -> SettingProvenance {
-            outcome.log.provenance(.segment(idpId: idpId, startMinutes: startMinutes, field: f)) ?? .consensusDefault
-        }
-        return ["basalRate": p("basalRate"), "carbRatio": p("carbRatio"), "isf": p("isf"), "targetBg": p("targetBg")]
-    }
-
-    // MARK: - §2.1(4) B1(c) auto-snapshot baseline + one-tap revert
-
-    /// B1(c): record an explicit `.consensusDefault` baseline (`before == nil`) for each therapy field of a
-    /// segment that has NO record yet — so every value carries an explicit origin and a one-tap-revert
-    /// anchor even if the user never edited it. **Idempotent:** a field that already has any record (a prior
-    /// baseline OR a real `.selfSet` edit) is skipped, so a re-read never re-baselines and never overwrites
-    /// `.selfSet` provenance. Baselines go to `latest` only (`recordBaseline`), never the visible audit
-    /// trail. Fail-open: skipped entirely when the store failed closed (don't scribble on an unreadable
-    /// store), and `recordBaseline` never throws. Keyed on the segment START TIME (its stable identity).
-    func recordConsensusBaselineIfAbsent(idpId: Int, startMinutes: Int,
-                                         basalRate: Double, carbRatio: Double, isf: Int, targetBg: Int) {
-        let outcome = settingChangeStore.loadOutcome()
-        if outcome.failedClosed { return }
-        let now = Int(Date().timeIntervalSince1970)
-        func baseline(_ field: String, _ value: BackupValue) {
-            let key = SettingKey.segment(idpId: idpId, startMinutes: startMinutes, field: field)
-            guard outcome.log.current(key) == nil else { return }
-            settingChangeStore.recordBaseline(StoredSettingChange(
-                key: key, before: nil, after: value, provenance: .consensusDefault, atSeconds: now))
-        }
-        baseline("basalRate", .double(basalRate))
-        baseline("carbRatio", .double(carbRatio))
-        baseline("isf", .int(isf))
-        baseline("targetBg", .int(targetBg))
+        provenanceRecorder.segmentFieldProvenance(idpId: idpId, startMinutes: startMinutes)
     }
 
     /// §2.1(4) B1(c) — one-tap revert of the MOST RECENT change to a setting: re-apply its `before` value
@@ -1899,32 +1847,25 @@ public final class AppModel {
 
     // MARK: - P16 S3 (manual precedence for scheduled mode automation)
 
-    /// When the user last changed the pump's activity/sleep mode BY HAND (from the Pump Control UI).
-    /// Stamped ONLY on the manual path (`noteManualModeChange`, called from the mode buttons) — never on
-    /// `ModeAutomation`'s automated apply — so scheduled automation can tell "the user just did this
-    /// themselves" from "we did it". Not observed by the UI; purely feeds `lastManualTherapyActionAt`.
-    @ObservationIgnored private var lastManualModeChangeAt: Date?
-
-    /// Record a manual (user-initiated) activity/sleep mode change for S3 manual-precedence. The `at`
-    /// clock is injectable (matching the codebase's `now:`/`add:` convention); production stamps now.
-    func noteManualModeChange(at: Date = Date()) { lastManualModeChangeAt = at }
+    /// Record a manual (user-initiated) activity/sleep mode change for S3 manual-precedence. Forwarded
+    /// to `ClinicianEditProvenanceRecorder.noteManualModeChange`. The `at` clock is injectable (matching
+    /// the codebase's `now:`/`add:` convention); production stamps now.
+    func noteManualModeChange(at: Date = Date()) { provenanceRecorder.noteManualModeChange(at: at) }
 
     /// P16 S3 — the most recent time the user took a manual therapy action, read by `ModeAutomation` to
     /// DEFER (prompt) a scheduled Sleep/Exercise switch rather than silently override a hands-on change.
-    /// The max of: the last manual bolus (`snapshot.lastBolusDate`), the most recent recorded
-    /// clinician-tier setting edit (`settingChangeStore`), and the last manual mode change
-    /// (`lastManualModeChangeAt`). nil ⇒ no known manual action. Disclosure only — never gates delivery.
+    /// The max of: the last manual bolus (`snapshot.lastBolusDate`, pump-derived — lives here, not in the
+    /// recorder) and `provenanceRecorder.latestManualEditOrModeChange()` (the most recent recorded
+    /// clinician-tier setting edit + the last manual mode change, both owned by the recorder). nil ⇒ no
+    /// known manual action. Disclosure only — never gates delivery.
     var lastManualTherapyActionAt: Date? {
         var candidates: [Date] = []
         if let bolus = snapshot.lastBolusDate { candidates.append(bolus) }
         // B1(c): exclude consensus-default BASELINES — they are stamped at profile-READ time, not at a user
         // edit, so counting one would spuriously look like a recent manual therapy action and defer a
-        // scheduled mode switch. Only real edits (`.selfSet`/`.clinicianSet`) count.
-        if let latestEditSeconds = settingChangeStore.load().latest
-            .filter({ $0.provenance != .consensusDefault }).map(\.atSeconds).max() {
-            candidates.append(Date(timeIntervalSince1970: Double(latestEditSeconds)))
-        }
-        if let mode = lastManualModeChangeAt { candidates.append(mode) }
+        // scheduled mode switch. Only real edits (`.selfSet`/`.clinicianSet`) count — enforced inside
+        // `latestManualEditOrModeChange()`.
+        if let recorderLatest = provenanceRecorder.latestManualEditOrModeChange() { candidates.append(recorderLatest) }
         return candidates.max()
     }
 
@@ -1954,7 +1895,8 @@ public final class AppModel {
         // `.selfSet` provenance on a successful, value-changing edit.
         let before = snapshot.controlIQEnabled
         await runGatedTherapy(.setControlIQ) { try await self.source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
-        recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before), afterOnSuccess: .bool(enabled))
+        provenanceRecorder.recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before),
+                                                         afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
     // Sleep schedule — universal/unsigned read (Phase 09.10 D-04): ungated passthrough, no
@@ -2014,10 +1956,10 @@ public final class AppModel {
         // profile's segments, so every therapy value has an explicit origin + a revert anchor. Idempotent
         // (skips fields with any existing record) and fail-open, so it never affects the read it rides on.
         for seg in snapshot.viewedProfileSegments where seg.idpId == idpId {
-            recordConsensusBaselineIfAbsent(idpId: idpId, startMinutes: seg.startTimeMinutes,
-                                            basalRate: seg.basalRateUnitsPerHour,
-                                            carbRatio: seg.carbRatioGramsPerUnit,
-                                            isf: seg.isf, targetBg: seg.targetBg)
+            provenanceRecorder.recordConsensusBaselineIfAbsent(idpId: idpId, startMinutes: seg.startTimeMinutes,
+                                                                basalRate: seg.basalRateUnitsPerHour,
+                                                                carbRatio: seg.carbRatioGramsPerUnit,
+                                                                isf: seg.isf, targetBg: seg.targetBg)
         }
     }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
@@ -2025,11 +1967,12 @@ public final class AppModel {
             try await self.source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
         // §2.1(2): a new segment sets all four therapy fields (before = nil), recorded as .selfSet on success.
-        recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
-                                   beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
-                                   beforeCR: nil, afterCR: carbRatioGramsPerUnit,
-                                   beforeISF: nil, afterISF: isf,
-                                   beforeTarget: nil, afterTarget: targetBg)
+        provenanceRecorder.recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
+                                                       beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
+                                                       beforeCR: nil, afterCR: carbRatioGramsPerUnit,
+                                                       beforeISF: nil, afterISF: isf,
+                                                       beforeTarget: nil, afterTarget: targetBg,
+                                                       succeeded: lastError == nil)
     }
 #if FABOLUS_BACKUP
     /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
@@ -2043,11 +1986,12 @@ public final class AppModel {
         await runGatedTherapy(.modifyProfileSegment) {
             try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
-        recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
-                                   beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
-                                   beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
-                                   beforeISF: before?.isf, afterISF: isf,
-                                   beforeTarget: before?.targetBg, afterTarget: targetBg)
+        provenanceRecorder.recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
+                                                       beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
+                                                       beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
+                                                       beforeISF: before?.isf, afterISF: isf,
+                                                       beforeTarget: before?.targetBg, afterTarget: targetBg,
+                                                       succeeded: lastError == nil)
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
         await runGatedTherapy(.deleteProfileSegment) {
