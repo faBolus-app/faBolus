@@ -499,183 +499,73 @@ public final class AppModel {
 
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
-    public func statusCommand(includeHistory: Bool, replyingTo requestId: String? = nil) -> RemoteCommand {
+    ///
+    /// Phase 16 GO-1 Step 1 (the tracer, REMED-16): this is now a THIN ADAPTER. Every live
+    /// singleton/clock read that the body used to perform happens HERE — `AppSettings.shared`,
+    /// `BolusPasscodeStore.isRequired`, `capabilities`, `Date()`, `remoteBolusMaximum`, and the
+    /// `BolusGate.evaluate` gate call (INV-A: the gate funnel stays computed in `AppModel` and is
+    /// passed IN as a value, never re-derived downstream) — and are snapshotted into
+    /// `RemoteStatusInputs`/`RemoteStatusSettings` before handing off to the pure
+    /// `RemoteStatusComposer.compose`, which does the actual field mapping. `now` is a parameter
+    /// (default `Date()`, evaluated fresh at each call site) so a test can inject a fixed clock
+    /// without changing any production call site.
+    public func statusCommand(includeHistory: Bool, replyingTo requestId: String? = nil,
+                              now: Date = Date()) -> RemoteCommand {
         let s = snapshot
-        let age = s.glucoseDate.map { max(0, Date().timeIntervalSince($0)) }
-        let alertList = activeNotifications.map {
-            RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
-        }
-        let recent = includeHistory ? Array(glucoseHistory.suffix(288)) : []
-        let history = includeHistory ? recent.map { $0.mgdl } : nil
-        let historyEpochs = includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
-        var cmd = RemoteCommand(kind: .statusRead, units: s.iobUnits,
-                             bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
-                             trend: GlucoseTrend.token(from: s.trend),
-                             carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
-                             isf: s.isf > 0 ? Double(s.isf) : nil,
-                             targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                             // §2.3: the max the remotes gate on (their entry cap + their own `BolusGate`)
-                             // is the pump max clamped to the optional remote-only ceiling. Off ⇒ pump max.
-                             maxBolusUnits: remoteBolusMaximum(pumpMax: s.maxBolusUnits),
-                             reservoirUnits: s.reservoirUnits,
-                             batteryPercent: Double(s.batteryPercent),
-                             lastBolusUnits: s.lastBolusUnits,
-                             basalRate: s.basalRateUnitsPerHour,
-                             glucoseAgeSec: age,
-                             // Group A: send the pump's own reading time, not just an age computed
-                             // here — an age is already wrong by however long this message is in
-                             // flight, and a receiver cannot tell it apart from "absent".
-                             glucoseEpochSec: s.glucoseDate.map { Int($0.timeIntervalSince1970) },
-                             history: (history?.isEmpty ?? true) ? nil : history,
-                             historyEpochs: (historyEpochs?.isEmpty ?? true) ? nil : historyEpochs,
-                             alerts: alertList,
-                             bolusMode: AppSettings.shared.watchDefaultBolusMode.rawValue,
-                             bolusIncrement: AppSettings.shared.watchBolusIncrement,
-                             carbIncrement: AppSettings.shared.watchCarbIncrement,
-                             screenOrder: AppSettings.shared.garminScreenOrder,
-                             defaultScreen: AppSettings.shared.garminDefaultScreen,
-                             glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
-                             glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes,
-                             detailsOrder: AppSettings.shared.watchDetailsOrder,   // remotes use the watch-specific order
-                             watchChartRanges: AppSettings.shared.watchChartRanges,
-                             garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
-                             remotesReadOnly: AppSettings.shared.remotesReadOnly)
-        // Mirror the phone's Garmin clock-face preference to the remotes (analog vs digital), replacing
-        // the old on-watch tap toggle. Unconditional like garminComplicationDisplay ⇒ "absent" means a
-        // legacy host; the Garmin app keeps its digital default until it parses this.
-        cmd.clockAnalog = AppSettings.shared.garminClockAnalog
-        // Phase 4: mirror the phone's glucose display-unit setting to remotes as the frozen wire
-        // token (never the raw enum — Pitfall 6), so Watch/Garmin render mg/dL/mmol like the phone.
-        // Absent on a legacy remote ⇒ it defaults to mgdl (display-only; dose/wire glucose stays mg/dL).
-        cmd.glucoseDisplayUnit = AppSettings.shared.glucoseDisplayUnit.wireToken
-        // Phase 09.13 (D-06/D-07): the SHARED/phone-scoped glucose-plot Y-axis bounds — emitted
-        // UNCONDITIONALLY on every statusRead (the phone group, iPhone + Mac, reads these; "absent" can
-        // only mean a legacy host). The optional small-screen (Watch + Garmin) OVERRIDE is emitted only
-        // when the AppSettings pair is non-nil, leaving the wire field absent otherwise (D-05) — the
-        // shared client's `smallScreenFloor`/`smallScreenCeiling` getters fall back to these shared
-        // values when the override is absent.
-        cmd.glucosePlotFloor = AppSettings.shared.glucosePlotFloor
-        cmd.glucosePlotCeiling = AppSettings.shared.glucosePlotCeiling
-        cmd.glucosePlotFloorSmall = AppSettings.shared.glucosePlotFloorSmall
-        cmd.glucosePlotCeilingSmall = AppSettings.shared.glucosePlotCeilingSmall
-        // Tell the watch whether to run on-device wrist eating-sensing (battery: only when the phone
-        // wants the accel signal — see setWantAccelSensing / updateEatingNudge).
-        cmd.eatingSensingOn = AppSettings.shared.eatingNudgesEnabled && lastWantAccel
+        let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         // Group D: the host's authoritative bolus availability on the broadcast-safe axes (pump link,
         // in-flight, remotes-read-only), so a remote — especially Garmin, which can't parse the
         // connection string — gates its bolus affordance on a semantic flag instead of substring-matching
         // `message`. Reachability + amount bounds stay judged by each remote; per-peer/capability/child
         // gates stay host-enforced on the actual deliver. A remote with no `canBolus` field falls back to
         // the string, so this is additive.
-        let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
                                        cartridgeReady: s.cartridgeReadyForBolus,
                                        amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
                                        access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
-        cmd.canBolus = avail.canBolus
-        cmd.bolusBlockReason = avail.reason?.wireToken
-        // Phase 09.9-04 (D-05): the pump's cartridge-ready DISPLAY status, distinct from canBolus (which
-        // only reflects the block at bolus-attempt time) — lets a remote show cartridge state even when
-        // not attempting a bolus.
-        // WR-04 (debug pump-pairing-loop-api25, deep review): use the tri-state `cartridgeReadyRemoteWire`
-        // (`.unknown` ⇒ nil = NO SIGNAL) instead of the fail-open `cartridgeReadyForBolus` bool — so an
-        // op-20-excluded pump never relays a fail-open "ready" to Garmin/Watch/Mac. The dose gate above
-        // (`cmd.canBolus` via `BolusGate.evaluate(cartridgeReady: s.cartridgeReadyForBolus)`) is unchanged.
-        cmd.cartridgeReady = s.cartridgeReadyRemoteWire
-        // Phase 09.27-03 (D-04/D-05): mirror the pump's charging state to remotes on the same
-        // additive-optional wire shape as cartridgeReady. Absent on a legacy remote ⇒ NOT charging
-        // (fail-closed, never a fabricated charging state) — the on-wire chargingStatus==1 semantics
-        // remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md), display-only, no dose-path input.
-        cmd.batteryCharging = s.batteryCharging
-        // P13 capability channel: tell remotes whether the pump honors a REMOTE alert dismissal, so they
-        // label their alert action "Clear" (Mobi) vs "Snooze" (t:slim — dismiss only snoozes locally),
-        // matching the phone. Emitted UNCONDITIONALLY on every statusRead so "absent" can only mean a
-        // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
-        // stays the enforcement point on the actual dismiss.
-        cmd.supportsRemoteAlertDismiss = capabilities.supportsRemoteAlertDismiss
-        // P15 §2.3: publish the per-surface bolus enables + whether a passcode is required, so each remote
-        // hides its bolus affordance until the phone opts it in (fail-closed on a cold launch — the remote
-        // mirror defaults to disabled). Emitted unconditionally so "absent" can only mean a legacy host.
-        // The host stays the enforcement point (AccessPolicy refuses a deliver from a disabled surface).
-        cmd.garminBolusEnabled = AppSettings.shared.garminBolusEnabled
-        cmd.watchBolusEnabled = AppSettings.shared.watchBolusEnabled
-        cmd.bolusPasscodeRequired = BolusPasscodeStore.isRequired
-        // P14 S4: publish the phone's active mode so a remote HIDES (rather than shows-then-fails) an
-        // affordance this mode would deny. The host still enforces the mode on every surface via
-        // `AccessPolicy`; this only drives the remote UI. Unconditional ⇒ "absent" means a legacy host.
-        cmd.activeMode = AppSettings.shared.appMode.rawValue
-        // B2 (S1+O3): publish the pump's controller identity + runtime on/off so a remote can render the
-        // auto-correction disclosure locally (it reconstructs the ControllerDescriptor from the variant and
-        // gates the copy on controlIQEnabled). Display-only, never a dose input (C3). Unconditional ⇒
-        // "absent" can only mean a legacy host (which renders nothing controller-specific).
-        cmd.controllerVariant = snapshot.controllerVariant.rawValue
-        cmd.controlIQEnabled = snapshot.controlIQEnabled
-        // Phase 09.15 T1-1 (D-01/D-08): the pump's live Control-IQ action zone as a frozen wire token — a
-        // remote renders Tandem's own zone word + icon locally from this. Emitted UNCONDITIONALLY (nil
-        // when unread/unmapped is a legitimate, fail-closed value, not "absent = legacy host" here) so a
-        // remote always sees the host's current knowledge. Display-only, never a dose input (C3).
-        cmd.ciqZone = snapshot.ciqZone
-        // Phase 09.15 T1-2 (D-08, D-09.1): mirrors ciqZone exactly — unconditional (nil only pre-read;
-        // `false` is a fully-known "not CIQ-attributed" fact, not "absent"), so a remote always sees
-        // the host's current knowledge. Display-only, never a dose input (C3).
-        cmd.ciqSuspendedForLow = snapshot.ciqSuspendedForLow
-        cmd.ciqSuspendStartEpochSec = snapshot.ciqSuspendStartDate.map { Int($0.timeIntervalSince1970) }
-        // DIF-ux: relay the pump's own read times of the calc inputs (IOB op-109, therapy op-115) as
-        // immutable source epochs — exactly like `glucoseEpochSec` above — so a remote can grey/age its IOB
-        // + therapy rows and PRE-WARN off the same freshness the host judges. Absent (nil date) ⇒ the remote
-        // treats the input's age as unknown ⇒ stale (never fresh). The host stays the authoritative dose
-        // gate; remotes never dose off these.
-        cmd.iobEpochSec = s.iobDate.map { Int($0.timeIntervalSince1970) }
-        cmd.therapyEpochSec = s.therapyParamsDate.map { Int($0.timeIntervalSince1970) }
-        // Phase 09.15 T1-3/T1-4 (D-08): relay the single latest instant of each as an immutable
-        // source epoch — exactly like `iobEpochSec` above. Absent (nil date) ⇒ the remote renders the
-        // chip/row/marker ABSENT, never a synthesized age. Display-only, never a dose input (C3).
-        cmd.lastAutoCorrectionEpochSec = snapshot.lastAutoCorrectionDate.map { Int($0.timeIntervalSince1970) }
-        cmd.ciqLastCouldNotDeliverEpochSec = snapshot.ciqLastCouldNotDeliverDate.map { Int($0.timeIntervalSince1970) }
-        // Phase 09.15 T1-5 (D-08): the lockout-until END epoch, relayed exactly like `lastAutoCorrectionEpochSec`
-        // above — `PumpSnapshot.lockoutUntilDate` is a computed instant (lastAutoCorrectionDate + the
-        // descriptor's own window, no literal 60), so this is emitted UNCONDITIONALLY every statusRead (never
-        // a compose-time constant). Absent ⇒ a remote renders the bar/ring ABSENT. Display-only, never a dose
-        // input (C3).
-        cmd.lockoutUntilEpochSec = snapshot.lockoutUntilDate.map { Int($0.timeIntervalSince1970) }
-        // Phase 09.15 T1-8 (D-03, D-08): the configured max-basal delivery limit, alongside `basalRate`
-        // (init param above), so each remote computes the "% of your configured max basal rate" readout
-        // LOCALLY via `MaxBasalFraction` — never a pre-rendered percentage string. Emitted UNCONDITIONALLY
-        // when known; `0` means "unread" so it is relayed as `nil` (not a fabricated 0%), matching
-        // `MaxBasalFraction.fraction`'s own `<= 0` fail-closed guard. Display-only, never a dose input (C3).
-        cmd.maxBasalUnitsPerHour = snapshot.maxBasalUnitsPerHour > 0 ? snapshot.maxBasalUnitsPerHour : nil
-        // Phase 09.15 T1-9 (D-01, D-08): the pump's live Sleep/Exercise activity mode, now ALSO on
-        // RemoteCommand (previously only WidgetSnapshot/ContentState carried it) so Watch/Garmin can
-        // gate the T1-9 card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact,
-        // not "absent") — mirrors ciqZone's unconditional-knowledge convention. Display-only, never
-        // a dose input (C3).
-        cmd.controlIQMode = snapshot.controlIQMode
-        // The already-decoded-but-previously-dropped exercise countdown, raw remaining-seconds — NOT
-        // an epoch (D-08 T1-9 note): a receiver counts down locally against its OWN receipt time for
-        // animation only, never trusting it as absolute past the next statusRead. `nil` unless the
-        // pump's OWN live mode is genuinely Exercise right now (PumpResponseApplier only populates it
-        // then) — SP-5 fail-closed, never a stale timer surviving into another mode.
-        cmd.exerciseTimeRemainingSec = snapshot.exerciseTimeRemainingSec
-        // The pump's OWN configured sleep-schedule window fact (pure window math, (b)) — iPhone/Mac
-        // render the verbose "Current window: {start}–{end}" text from this; Watch/Garmin never
-        // receive/render it (D-09.5 explicit scope).
-        cmd.inSleepWindow = snapshot.inSleepWindow
-        cmd.sleepWindowStartMinute = snapshot.sleepWindowStartMinute
-        cmd.sleepWindowEndMinute = snapshot.sleepWindowEndMinute
-        // Phase 09.15 D-07 (plan 12): mirror the phone-owned Control-IQ-awareness Smart-Assist toggle
-        // states to remotes on the SAME statusRead channel already used for
-        // eatingSensingOn/remotesReadOnly (line ~430 above), so a remote SUPPRESSES a CIQ-awareness
-        // feature whose toggle is OFF even if the phone forgot to also gate that feature's own field
-        // emission (belt-and-suspenders, D-08 parity, guardrail #13). Emitted UNCONDITIONALLY so
-        // "absent" can only mean a legacy host that predates this plan.
-        cmd.ciqStateReadoutsEnabled = AppSettings.shared.ciqStateReadoutsEnabled
-        cmd.ciqLockoutCountdownEnabled = AppSettings.shared.ciqLockoutCountdownEnabled
-        cmd.ciqMaxBasalReadoutEnabled = AppSettings.shared.ciqMaxBasalReadoutEnabled
-        cmd.ciqSleepExerciseAwarenessEnabled = AppSettings.shared.ciqSleepExerciseAwarenessEnabled
-        cmd.ciqPlusTempRateEnabled = AppSettings.shared.ciqPlusTempRateEnabled
-        cmd.ciqCeilingFlagsEnabled = AppSettings.shared.ciqCeilingFlagsEnabled
-        if let requestId { cmd.requestId = requestId }   // R2-15: echo the incoming statusRead's id for true correlation
-        return cmd
+        let settings = RemoteStatusSettings(
+            bolusMode: AppSettings.shared.watchDefaultBolusMode.rawValue,
+            bolusIncrement: AppSettings.shared.watchBolusIncrement,
+            carbIncrement: AppSettings.shared.watchCarbIncrement,
+            garminScreenOrder: AppSettings.shared.garminScreenOrder,
+            garminDefaultScreen: AppSettings.shared.garminDefaultScreen,
+            glucoseStaleMinutes: AppSettings.shared.glucoseStaleMinutes,
+            glucoseHideDelayMinutes: AppSettings.shared.glucoseHideDelayMinutes,
+            watchDetailsOrder: AppSettings.shared.watchDetailsOrder,
+            watchChartRanges: AppSettings.shared.watchChartRanges,
+            garminComplicationDisplay: AppSettings.shared.garminComplicationDisplay,
+            remotesReadOnly: AppSettings.shared.remotesReadOnly,
+            garminClockAnalog: AppSettings.shared.garminClockAnalog,
+            glucoseDisplayUnitWireToken: AppSettings.shared.glucoseDisplayUnit.wireToken,
+            glucosePlotFloor: AppSettings.shared.glucosePlotFloor,
+            glucosePlotCeiling: AppSettings.shared.glucosePlotCeiling,
+            glucosePlotFloorSmall: AppSettings.shared.glucosePlotFloorSmall,
+            glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
+            eatingNudgesEnabled: AppSettings.shared.eatingNudgesEnabled,
+            garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
+            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
+            activeModeRawValue: AppSettings.shared.appMode.rawValue,
+            ciqStateReadoutsEnabled: AppSettings.shared.ciqStateReadoutsEnabled,
+            ciqLockoutCountdownEnabled: AppSettings.shared.ciqLockoutCountdownEnabled,
+            ciqMaxBasalReadoutEnabled: AppSettings.shared.ciqMaxBasalReadoutEnabled,
+            ciqSleepExerciseAwarenessEnabled: AppSettings.shared.ciqSleepExerciseAwarenessEnabled,
+            ciqPlusTempRateEnabled: AppSettings.shared.ciqPlusTempRateEnabled,
+            ciqCeilingFlagsEnabled: AppSettings.shared.ciqCeilingFlagsEnabled)
+        let inputs = RemoteStatusInputs(
+            includeHistory: includeHistory,
+            requestId: requestId,
+            snapshot: s,
+            activeNotifications: activeNotifications,
+            glucoseHistory: glucoseHistory,
+            now: now,
+            remoteMax: remoteMax,
+            canBolus: avail.canBolus,
+            bolusBlockReason: avail.reason?.wireToken,
+            lastWantAccel: lastWantAccel,
+            bolusPasscodeRequired: BolusPasscodeStore.isRequired,
+            supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
+            settings: settings)
+        return RemoteStatusComposer.compose(inputs)
     }
 
     /// Clear a pump alert by id + kind (used by the phone UI and remotes' dismiss commands).
