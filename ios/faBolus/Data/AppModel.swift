@@ -568,6 +568,16 @@ public final class AppModel {
     /// `deliveryLedgerCoordinator.runLedgeredDelivery`.
     @ObservationIgnored private let deliveryLedgerCoordinator: DeliveryLedgerCoordinator
 
+    /// Phase 16 GO-1 Step 4 (16-04): a thin, read-only, `internal` seam so `AppModel+Backup.swift`'s
+    /// carved `buildPrivacyExport` can read the ledger snapshot for the unified privacy export WITHOUT
+    /// widening `deliveryLedgerCoordinator` itself. Deliberately narrower than the widen-the-stored-
+    /// property pattern used for the advisory eating-nudge/HealthKit state above: `deliveryLedgerCoordinator`
+    /// is dose-adjacent (it owns `runLedgeredDelivery`/the global delivery-block gate), so it stays
+    /// `private` — only this one read-only snapshot value crosses the file boundary, never the
+    /// coordinator instance. `AppModelAccessWideningGuardTests` (16-04 Task 3) asserts
+    /// `deliveryLedgerCoordinator` itself is never in the widened-access set.
+    internal var privacyExportLedgerSnapshot: RemoteBolusLedger { deliveryLedgerCoordinator.currentLedgerSnapshot }
+
     /// P0 — the single global delivery-block gate every delivery surface consults. Non-nil ⇒ NO new
     /// insulin delivery may start (local standard/extended, widget, Watch, Garmin, Mac, peer). Derived
     /// from the DURABLE ledger, so it survives a process restart: any `delivering`/`indeterminate` record
@@ -1056,111 +1066,16 @@ public final class AppModel {
     /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
     var sharedHistoryStore: GlucoseHistoryStore? { history }
 
-    // MARK: WR-01 — SiteAtlas ⇄ unified backup
-#if FABOLUS_BACKUP
-
-    /// Snapshot every logged SiteAtlas placement for the unified backup (schema 2+). Reads the SAME
-    /// shared store the UI writes and the export reads, so a `.faBolus` backup reflects exactly the
-    /// placements on screen. Called by `BackupRestoreView.createBackup()`.
-    func siteAtlasBackup() -> SiteAtlasBackup {
-        let sites = history?.allSites() ?? []
-        return SiteAtlasBackup(entries: sites.map {
-            SiteAtlasEntryBackup(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
-                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
-                                 note: $0.note, date: $0.date)
-        })
-    }
-
-    /// Rehydrate SiteAtlas placements from a restored backup into the shared store, preserving each
-    /// original stable `siteID`/`date` so a restored placement is identical to the backed-up one.
-    /// Additive (existing rows untouched), mirroring the other restore sections. Called by `RestoreSheet`.
-    func restoreSiteAtlas(_ backup: SiteAtlasBackup) {
-        guard let history else { return }
-        for e in backup.entries {
-            history.ingestSite(siteID: e.siteID, kind: e.kind, bodySide: e.bodySide,
-                               normalizedX: e.normalizedX, normalizedY: e.normalizedY,
-                               note: e.note, date: e.date, sourceID: SiteAtlasStore.sourceID)
-        }
-    }
-#endif
-
-    // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
-#if FABOLUS_BACKUP
-
-    /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
-    /// `SiteAtlasStore.sourceID`). Benign log data only. IN-02: aliases the single shared constant on
-    /// `GlucoseHistoryStore` so the literal lives in exactly one place.
-    static let trackerSourceID = GlucoseHistoryStore.loopInsightsTrackerSourceID
-
-    /// Snapshot every logged caffeine + alcohol entry for the unified backup (schema 3+). Reads the
-    /// SAME shared store the tracker log views write and the export reads. Benign fields only — no
-    /// risk inference (D-14). Called by `BackupRestoreView.createBackup()`.
-    func trackersBackup() -> TrackerBackup {
-        let wide = Date(timeIntervalSince1970: 0)...Date().addingTimeInterval(86400)
-        let caffeine = history?.caffeine(in: wide) ?? []
-        let alcohol = history?.alcohol(in: wide) ?? []
-        return TrackerBackup(
-            caffeine: caffeine.map { CaffeineEntryBackup(entryID: $0.entryID, milligrams: $0.milligrams,
-                                                         source: $0.source, date: $0.date) },
-            alcohol: alcohol.map { AlcoholEntryBackup(entryID: $0.entryID, standardDrinks: $0.standardDrinks,
-                                                      source: $0.source, date: $0.date) })
-    }
-
-    /// Rehydrate caffeine + alcohol tracker entries from a restored backup into the shared store,
-    /// preserving each original stable `entryID`/`date`. L-02: upsert (delete-by-`entryID` then insert)
-    /// rather than blind-append — SwiftData does not enforce `entryID` uniqueness, so a double restore of
-    /// the same backup would otherwise create duplicate rows sharing an id (visible in the log list until
-    /// a predicate-delete removes both). Keying on the stable `entryID` makes restore idempotent.
-    func restoreTrackers(_ backup: TrackerBackup) {
-        guard let history else { return }
-        for e in backup.caffeine {
-            history.deleteCaffeine(id: e.entryID)
-            history.ingestCaffeine(entryID: e.entryID, milligrams: e.milligrams, source: e.source,
-                                   date: e.date, sourceID: Self.trackerSourceID)
-        }
-        for e in backup.alcohol {
-            history.deleteAlcohol(id: e.entryID)
-            history.ingestAlcohol(entryID: e.entryID, standardDrinks: e.standardDrinks, source: e.source,
-                                  date: e.date, sourceID: Self.trackerSourceID)
-        }
-    }
-#endif
-
-    // MARK: F1 (§13) — unified export of on-device health data
-#if FABOLUS_BACKUP
-
-    /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change
-    /// provenance log + the remote-bolus ledger audit trail. Pure read; safe to call any time.
-    /// (`internal`, not `public`: `PrivacyDataExport` is an app-module type.)
-    func buildPrivacyExport(now: Date = Date()) -> PrivacyDataExport {
-        // A window wide enough to capture the entire persisted history.
-        let all = Date(timeIntervalSince1970: 0)...now.addingTimeInterval(86400)
-        let g = history?.glucose(in: all) ?? []
-        let b = history?.boluses(in: all) ?? []
-        let c = history?.carbs(in: all) ?? []
-        let s = history?.sites(in: all) ?? []
-        let caf = history?.caffeine(in: all) ?? []
-        let alc = history?.alcohol(in: all) ?? []
-        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
-        return PrivacyDataExport(
-            meta: .init(createdAt: now, appVersion: version, schemaVersion: PrivacyDataExport.currentSchema),
-            glucose: g.map { .init(date: $0.date, mgdl: $0.mgdl) },
-            boluses: b.map { .init(date: $0.date, units: $0.units) },
-            carbs: c.map { .init(date: $0.date, grams: $0.grams) },
-            sites: s.map { .init(siteID: $0.siteID, kind: $0.kind, bodySide: $0.bodySide,
-                                 normalizedX: $0.normalizedX, normalizedY: $0.normalizedY,
-                                 note: $0.note, date: $0.date) },
-            caffeine: caf.map { .init(date: $0.date, milligrams: $0.milligrams, source: $0.source) },
-            alcohol: alc.map { .init(date: $0.date, standardDrinks: $0.standardDrinks, source: $0.source) },
-            settingChangeLog: settingChangeStore.load(),
-            remoteBolusLedger: deliveryLedgerCoordinator.currentLedgerSnapshot)
-    }
-
-    /// Encode the unified export as one shareable JSON payload (for the Privacy & data → Export action).
-    func exportPrivacyDataJSON(now: Date = Date()) throws -> Data {
-        try buildPrivacyExport(now: now).encoded()
-    }
-#endif
+    // Phase 16 GO-1 Step 4 (16-04, D4-07): the R25 (SiteAtlas + caffeine/alcohol tracker backup/restore)
+    // and R26 (unified privacy export) `#if FABOLUS_BACKUP` methods — `siteAtlasBackup`,
+    // `restoreSiteAtlas`, `trackersBackup`/`restoreTrackers`, `buildPrivacyExport`/
+    // `exportPrivacyDataJSON` — moved verbatim to `AppModel+Backup.swift` (same `#if FABOLUS_BACKUP`
+    // gate preserved). None of these 6 methods has any caller elsewhere in AppModel.swift (their only
+    // callers — `BackupRestoreView.createBackup()`/`RestoreSheet` — were git-rm'd in 06-02;
+    // `BackupRemovalBoundaryTests` documents this), so no cross-file access change was needed for the
+    // methods themselves. `buildPrivacyExport` reads `deliveryLedgerCoordinator.currentLedgerSnapshot`
+    // via the new `privacyExportLedgerSnapshot` seam above, NOT by widening the coordinator itself.
+    // The erase/full-reset MARK section immediately below stays UNGATED (D-08) and untouched.
 
     // MARK: F1 (§13) — complete erase of on-device health data (GATED)
     // D-08 (06-01): the whole erase MARK section below (EraseOutcome, eraseAllOnDeviceHealthData,
@@ -1332,26 +1247,19 @@ public final class AppModel {
             .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
     }
 
-    private var lastNSBackfill = Date.distantPast
-    /// Pull Nightscout treatments (carbs/insulin, when NS is the primary source) into faBolus.
-    /// Throttled hourly. Best-effort/background.
-    private func maybeBackfillNightscout() {
-        guard GlucoseSourceConfig.string("nightscout.url") != nil,
-              Date().timeIntervalSince(lastNSBackfill) > 3600 else { return }
-        lastNSBackfill = Date()
-        let nsPrimary = GlucoseSourceRegistry.selectedId() == "nightscout"
-        Task { [weak self] in
-            guard let r = await NightscoutBackfill.fetch() else { return }
-            await MainActor.run {
-                guard let self else { return }
-                if nsPrimary {   // else the pump already provides boluses/carbs — avoid double-counting
-                    self.history?.ingestCarbs(r.carbs, sourceID: "nightscout")
-                    self.history?.ingestBoluses(r.insulin.map { BolusMarker(date: $0.date, units: $0.units) },
-                                                sourceID: "nightscout")
-                }
-            }
-        }
-    }
+    // D4-07 (16-04, DELETED — not carved): `maybeBackfillNightscout()` + its `lastNSBackfill` throttle
+    // field + its `refresh()` call site are DELETED, not moved to a new `AppModel+Nightscout.swift`.
+    // Zero-runtime-reference proof: its guard (`GlucoseSourceConfig.string("nightscout.url") != nil`)
+    // can NEVER be true on `main` — `GlucoseSourceRegistry.enabled` (Phase 5, HEALTH-02) no longer
+    // lists a "nightscout" descriptor, no UI on `main` ever writes the `nightscout.url` config key
+    // (verified: `grep -rn "nightscout.url"` finds only this now-deleted guard and a stale test-file
+    // comment), and even the guard's own `nsPrimary`/`NightscoutBackfill.fetch()` were already
+    // provably inert no-ops (see `NightscoutStub.swift`/`NightscoutStubInertnessTests.swift`, D-04).
+    // The whole method body was therefore unreachable dead code, not merely gated-and-toggleable like
+    // the FABOLUS_BACKUP/NUDGE/HEALTHKIT carves above. `NightscoutUploader.shared.sync(...)` below
+    // (a SEPARATE, unconditionally-called path — see its own note at the `refresh()` call site) is
+    // NOT deleted: it is reachable every `refresh()` tick (not gated behind an unreachable guard), so
+    // it does not meet the same zero-reference bar; left untouched with its rationale recorded there.
 
     // MARK: - Apple Health (HealthKit) import/export (09.23-02/03, D-05/D-08/D-11/D-12/D-14) — gated
     // per D-13: the whole hook compiles out of the free/CI build. Phase 16 GO-1 Step 4 (16-04): the
@@ -1507,9 +1415,14 @@ public final class AppModel {
                                 // SAME predicate the action gate in `App.swift` uses — so the button's
                                 // visibility can never promise an action the bridge will actually refuse.
                                 hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(activeNotifications))
+        // D4-07 (16-04): unconditionally-reachable every tick (unlike the deleted `maybeBackfillNightscout`,
+        // whose guard could never be true on `main` — see the deletion note above) — `NightscoutUploader`
+        // is the `main`-only D-04 stub (`NightscoutStub.swift`): `sync(...)` is a proven-inert no-op
+        // (`NightscoutStubInertnessTests`), never a network call or a write to history/dose state, so
+        // this call site is left in place rather than deleted (it does not meet the same zero-reference
+        // bar as the deleted backfill — it IS reached, it just does nothing).
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
-        maybeBackfillNightscout()
         #if FABOLUS_HEALTHKIT
         maybeAutoImportAppleHealth()   // D-11b: default-OFF, throttled hourly like the Nightscout backfill
         maybeAutoExportAppleHealth()   // D-12a: default-OFF, throttled ~60s like the Nightscout upload
