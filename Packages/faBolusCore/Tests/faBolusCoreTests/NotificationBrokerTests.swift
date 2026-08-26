@@ -60,6 +60,20 @@ import Foundation
         #expect(!d.deliver && d.reason == .snoozed)
     }
 
+    /// REMED-17: `bolusIndeterminate` is the owner's Gentle disposition — GOVERNED (suppressible), NOT
+    /// in the never-suppressible trio, and ON by default. The trio-set assertion above (still exactly
+    /// THREE members) is unaffected — this is a positive companion proving the new case is governed.
+    @Test func bolusIndeterminateIsGovernedNotNeverSuppressibleAndDefaultEnabled() {
+        #expect(!C.bolusIndeterminate.neverSuppressible)
+        #expect(C.bolusIndeterminate.defaultEnabled)
+        #expect(!C.bolusIndeterminate.isPumpSourced)
+        // Disabled → suppressed (proving it honors normal governance, unlike the trio).
+        let off = B.decide(msg(.bolusIndeterminate),
+                           settings: [.bolusIndeterminate: B.CategorySettings(enabled: false)],
+                           state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(!off.deliver && off.reason == .categoryDisabled)
+    }
+
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
         // 09.25-01 (D-07): re-specified — "a trio delivers UNLESS the user acknowledged the
         // safety-disable warning." Maximally hostile config for EVERY category: disabled, all-day

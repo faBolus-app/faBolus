@@ -30,6 +30,11 @@ public enum NotificationBroker {
         case pumpAlert               // a pump-raised alert/alarm/reminder surfaced as a notification
         case remoteBolusRejected     // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
         case bolusDeliveryFailed     // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the never-suppressible `bolusReconciliation` owns
+        /// REMED-17: an outcome we do not YET know — a point-in-time heads-up, immediate + GOVERNED
+        /// (user-silenceable, honors quiet-hours/budget, does NOT break through DND — the owner's Gentle
+        /// disposition). The AUTHORITATIVE resolution is `bolusReconciliation` (never-suppressible,
+        /// durable, DND-breaking) — this category is never persisted and never replayed on relaunch.
+        case bolusIndeterminate
         case modeReminder            // an activity/sleep mode reminder
         case mealReminder            // meal-timing reminders — the tightest defaults + their own sub-budget
 
@@ -72,6 +77,7 @@ public enum NotificationBroker {
             case .pumpAlert:          return "Pump alerts"
             case .remoteBolusRejected: return "Remote bolus rejected"
             case .bolusDeliveryFailed: return "Bolus delivery failed"
+            case .bolusIndeterminate: return "Bolus outcome unknown"
             case .modeReminder:       return "Activity / sleep reminders"
             case .mealReminder:       return "Meal reminders"
             }

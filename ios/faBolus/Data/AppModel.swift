@@ -196,6 +196,13 @@ public final class AppModel {
     /// re-raise replaces rather than stacks and recovery can withdraw the exact banner.
     private static let pumpDisconnectKey = "safety.pumpDisconnect"
     private static let cgmDataLossKey = "safety.cgmDataLoss"
+    /// REMED-17 LOCKED COPY: the title AND body of the immediate governed `.bolusIndeterminate`
+    /// notification, and the widget's USER-FACING `lastError` + returned tuple `error`. Reused at every
+    /// one of the four `.indeterminate` switch sites so the wording can never drift between them. NEVER
+    /// contains the word that means a dose did not happen — an indeterminate outcome may in fact have
+    /// delivered; its AUTHORITATIVE resolution belongs to `.bolusReconciliation`, not this heads-up.
+    static let indeterminateOutcomeLockedCopy =
+        "Bolus sent but outcome is unknown — verify on the pump before retrying."
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
     @ObservationIgnored private var previousGlucoseFresh = false
     /// CX-F-02: the fresh glucose datum's date the staleness watchdog is CURRENTLY armed against, or nil
@@ -1494,7 +1501,13 @@ public final class AppModel {
             lastHostDeliveryAt = Date()   // VA-07 host-side: stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
-            lastError = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+            lastError = Self.indeterminateOutcomeLockedCopy
+            // REMED-17: an immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
+            // AUTHORITATIVE `.bolusReconciliation` post `reconcileUnresolvedDeliveries` issues later for
+            // this same durable ledger entry. Distinct dedupe namespace so neither coalesces the other.
+            postSafety(.bolusIndeterminate, severity: .warning,
+                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                       dedupeKey: "indeterminate-local-\(requestId)")
         case .blocked(let msg), .failed(let msg):
             lastError = msg
             notifyDeliveryFailed(msg)
