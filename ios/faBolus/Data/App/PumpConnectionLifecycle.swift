@@ -180,6 +180,14 @@ final class PumpConnectionLifecycle {
             let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
             snapshot.connection = .connecting; snapshot.connectionDetail = nil
             if wasLive { linkDroppedCleanup() }
+            // CC-06/C1 (REMED-15.5): this is the SINGLE hook that covers all THREE `didDiscover`-bypass
+            // reconnect shapes (silent retrieve, CoreBluetooth state restoration, watchdog-rescan-direct-
+            // connect — 15.5-RESEARCH.md §A2) — `state` transitions to `.connecting`/`.discovering`
+            // synchronously on every one of them (`PumpBLEClient.connect(_:)`/`willRestoreState`), so a
+            // trusted identity persisted at a PRIOR discovery can be reapplied here before the earliest
+            // possible send, without the kit needing any new delegate method. Unconditional (not gated on
+            // `wasLive`): a restoration silent reconnect can arrive with `wasLive == false`.
+            reapplyTrustedIdentityIfKnown()
         case .ready:
             // CR-01 (R2-01): transport-ready ≠ application-usable. The kit's `.ready` only means the BLE
             // link is up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
@@ -216,6 +224,43 @@ final class PumpConnectionLifecycle {
             snapshot.connection = .disconnected
             snapshot.connectionDetail = nil
         }
+    }
+
+    /// CC-06/C1 (REMED-15.5), extended by the self-audit BLOCKER (C8) + the peripheral cross-check
+    /// (C10): reapply a peripheral's persisted TRUSTED identity into the kit on every reconnect shape
+    /// that bypasses `didDiscover`.
+    ///
+    /// Reads `TrustedPumpIdentityStore` (NOT `PumpModelStore`, NOT the op33 heuristic) — the only writer
+    /// of that store is a genuine BLE-name detection (`applyDidDiscover` below).
+    ///
+    /// Guard chain, in order: (1) `PumpPeripheralStore.id()` must be present; (2) the kit's own
+    /// `client.reconnectTargetId` must be present AND equal to it (codex C10) — else the kit is actually
+    /// driving a DIFFERENT peripheral (pump-swap-mid-reconnect, or a restoration that adopted a
+    /// different peripheral) and a stale trusted record for the wrong peripheral must never be applied;
+    /// (3) a persisted trusted record must exist for that peripheral — else there is nothing to reapply
+    /// (a genuinely never-discovered-by-name pump, e.g. this is the very first connection this launch).
+    ///
+    /// For the matching peripheral only:
+    ///   (a) restore `detectedIsMobi` from the persisted (name-derived) value — codex C8, the BLOCKER
+    ///       fix: without this, op33 arriving LATER the same reconnect cycle recomputes
+    ///       `nameTrusted = (detectedIsMobi() != nil) == false` (PumpResponseApplier's op33 case) and
+    ///       CLOBBERS the trust this method just stamped back to `false`, permanently over-gating a
+    ///       legitimate Mobi's Suspend/Resume/SetTempRate/Modes/IDP/Fill after every silent reconnect.
+    ///       Restoring `detectedIsMobi` here means op33 later this cycle sees a non-nil name-authority
+    ///       value, computes `nameTrusted == true`, and forwards `trusted: true` — no clobber, AND op33's
+    ///       own `if detectedIsMobi() == nil` heuristic-overwrite block is skipped (the model is not
+    ///       re-derived from the ambiguous API-version threshold on a session that already knows better).
+    ///   (b) call `client.setDeviceContext(model:, apiVersion: nil, trusted: true)` — apiVersion stays
+    ///       nil (CX-T-04 deferred; MODEL dimension only).
+    private func reapplyTrustedIdentityIfKnown() {
+        guard let storeId = PumpPeripheralStore.id() else { return }
+        // Codex C10: the kit must actually be (re)connecting THIS peripheral — a stale trusted record
+        // for a different one (pump-swap-mid-reconnect, or a restoration adopting a different
+        // peripheral) must never be inherited by the current session.
+        guard let target = client?.reconnectTargetId, target == storeId else { return }
+        guard let isMobi = TrustedPumpIdentityStore.isMobi(for: storeId) else { return }
+        detectedIsMobi = isMobi   // codex C8: restore the app-side name-authority signal
+        client?.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
     }
 
     /// A short human explanation for a specific down state; nil for the benign/transitional ones where
@@ -346,10 +391,15 @@ final class PumpConnectionLifecycle {
             snapshot.isMobi = isMobi
             snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
             PumpModelStore.set(isMobi: isMobi)
+            // CC-06/C1 (REMED-15.5): persist this as the peripheral's TRUSTED identity — the ONLY writer
+            // of TrustedPumpIdentityStore — so `reapplyTrustedIdentityIfKnown()` can re-establish it on a
+            // future silent reconnect/restoration that bypasses this delegate callback.
+            TrustedPumpIdentityStore.set(isMobi: isMobi, for: peripheral.identifier)
             // VA-06: wire the identified MODEL into the kit's device-support send gate (a live second layer that
             // agrees with PumpCapabilities — t:slim never offers the [.mobi] control ops, so this only ever fires on
             // an isMobi-misdetection). apiVersion DEFERRED (nil → API dimension stays fail-open); see the fix report.
-            c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)
+            // trusted: true — BLE-name detection is the authoritative, TRUSTED source (codex C1).
+            c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
         }
         // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
         // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.

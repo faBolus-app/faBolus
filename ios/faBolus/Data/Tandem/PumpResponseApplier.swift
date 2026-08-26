@@ -118,9 +118,14 @@ final class PumpResponseApplier {
     /// VA-06: re-wire the kit's device-support MODEL gate (`client.setDeviceContext(model:)`) every connection
     /// cycle once op33 has identified the pump. `setDeviceContext` resets to nil on every link change and
     /// `didDiscover` does NOT re-fire on a silent reconnect, so op33 is the robust per-cycle re-wire point.
-    /// Bound to `{ isMobi in client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil) }`;
-    /// default no-op so a bare applier is unchanged.
-    var applyDeviceContext: (Bool) -> Void = { _ in }
+    ///
+    /// CC-06/C1 (REMED-15.5): now `(isMobi, trusted) -> Void` — `trusted` is computed at the op33 call
+    /// site from `detectedIsMobi() != nil` (name available this cycle, whether from a fresh `didDiscover`
+    /// OR from `PumpConnectionLifecycle.reapplyTrustedIdentityIfKnown()`'s C8 restore) BEFORE this
+    /// closure is called, so the op33 API-version heuristic itself is NEVER forwarded as trusted — the
+    /// codex C1 crux. Bound to `{ isMobi, trusted in client.setDeviceContext(model: isMobi ? .mobi :
+    /// .tslim, apiVersion: nil, trusted: trusted) }`; default no-op so a bare applier is unchanged.
+    var applyDeviceContext: (Bool, Bool) -> Void = { _, _ in }
     /// Bound to `{ pumpFeatureBits = $0 }`.
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
     /// Bound to `{ calcSnapshot = $0 }` — read elsewhere (the dose-calculator path).
@@ -402,7 +407,13 @@ final class PumpResponseApplier {
                 }
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
             }
-            applyDeviceContext(detectedIsMobi() ?? m.isMobi)   // VA-06: re-wire the MODEL gate every connection cycle (survives a silent reconnect where didDiscover doesn't re-fire)
+            // CC-06/C1 (REMED-15.5): the trust bit is computed HERE, before the fallback substitution
+            // below, from whether the name is available THIS cycle (a fresh `didDiscover` OR a C8-restore
+            // from `reapplyTrustedIdentityIfKnown()`). This is the codex C1 crux: the op33 API-version
+            // heuristic (`m.isMobi`, used only when the name is unavailable) is ALWAYS forwarded
+            // UNTRUSTED, so it can never satisfy the kit's trusted-identity send gate.
+            let nameAvailableThisCycle = detectedIsMobi() != nil
+            applyDeviceContext(detectedIsMobi() ?? m.isMobi, nameAvailableThisCycle)   // VA-06: re-wire the MODEL gate every connection cycle (survives a silent reconnect where didDiscover doesn't re-fire)
             // debug pump-pairing-loop-api25 (static-registry hardening): the pump is now IDENTIFIED (model
             // class + firmware just written above), so the scheduler can consult the STATIC known-unsupported
             // registry and dispatch the deferred identity-gated read(s) (op20) — suppressing op20 before the

@@ -578,6 +578,24 @@ public final class TandemBackend: NSObject, PumpBackend {
     func injectHistoryLogFrameForTesting(_ frame: [UInt8]) {
         pumpClient(client, didReceiveFrame: frame, on: .historyLog)
     }
+    /// Test seam (CC-06/C1, REMED-15.5): read-only observation of the kit's private trusted-identity
+    /// state, so an app-side test can assert the reapplication/op33-clobber-fix proofs without a live
+    /// CoreBluetooth central.
+    var identityTrustedForTesting: Bool { client.identityTrusted }
+    /// Test seam (CC-06/C1): read-only observation of the kit's private connected-model state.
+    var connectedPumpModelForTesting: TandemMessages.PumpModel? { client.connectedPumpModel }
+    /// Test seam (CC-06/C1): the kit's pure `identityGateError(for:)` send-gate decision — no transport
+    /// needed, so a test can assert the [.mobi]-restricted 0xCE tracer send is (or isn't) gated.
+    func identityGateErrorForTesting(_ message: Message) -> PumpBLEClient.ClientError? {
+        client.identityGateError(for: message)
+    }
+    /// Test seam (CC-06/C10): arms the kit's `reconnectTargetId` (via `connectKnownPeripheral`, which
+    /// sets it before its powered-on guard) so a test can establish the C10 cross-check precondition —
+    /// `reapplyTrustedIdentityIfKnown()` only stamps trust when `client.reconnectTargetId` matches
+    /// `PumpPeripheralStore.id()` — with no live BLE central.
+    func armReconnectTargetForTesting(_ id: UUID) {
+        client.connectKnownPeripheral(identifier: id)
+    }
     #endif
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     // `profileActiveIdpId` moved to `PumpResponseApplier` (Phase 09 Wave 4, D-07) — used only by the
@@ -907,8 +925,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setPumpTimeAnchor = { [weak self] anchor in self?.pumpTimeAnchor = anchor }
         responseApplier.viewedProfileId = { [weak self] in self?.viewedProfileId ?? -1 }
         responseApplier.detectedIsMobi = { [weak self] in self?.detectedIsMobi }
-        responseApplier.applyDeviceContext = { [weak self] isMobi in
-            self?.client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)   // VA-06: apiVersion deferred
+        responseApplier.applyDeviceContext = { [weak self] isMobi, trusted in
+            // CC-06/C1 (REMED-15.5): forward the trust bit `PumpResponseApplier` computed at the op33
+            // call site — the op33 heuristic itself is never trusted; apiVersion stays nil (CX-T-04 deferred).
+            self?.client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: trusted)
         }
         // debug pump-pairing-loop-api25 (static-registry hardening): once op33 identifies the pump, let the
         // scheduler consult the static registry and dispatch the deferred identity-gated read(s).

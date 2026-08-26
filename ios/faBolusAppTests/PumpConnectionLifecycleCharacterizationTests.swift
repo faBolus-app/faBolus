@@ -212,12 +212,17 @@ struct PumpConnectionLifecycleCharacterizationTests {
     /// `PumpConnectionLifecycle.swift` post-move — GO-2 Step 2 moves `didDiscover`'s model detection) —
     /// asserts the exact literal call form appears in at least one of the two, so this single test file
     /// needs no edit across Task 1 → Task 2.
+    ///
+    /// CC-06/C1 (REMED-15.5, 15.5-02): the needle was updated to include the now-REQUIRED `trusted:`
+    /// parameter (`PumpBLEClient.setDeviceContext` gained it in 15.5-01) — `apiVersion: nil` itself is
+    /// still the byte-for-byte-preserved fact this test pins (CX-T-04 stays deferred); `trusted: true` is
+    /// correct here because `didDiscover`'s BLE-name detection is the authoritative, TRUSTED source.
     @Test func setDeviceContextApiVersionStaysNilByteForByte() throws {
-        let needle = "c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)"
+        let needle = "c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"
         let backendSource = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
         let lifecycleSource = try? Self.readSource(relativeTo: "ios/faBolus/Data/App/PumpConnectionLifecycle.swift")
         let found = backendSource.contains(needle) || (lifecycleSource?.contains(needle) ?? false)
-        #expect(found, "setDeviceContext(model:apiVersion: nil) must be preserved byte-for-byte — VA-06 stays deferred")
+        #expect(found, "setDeviceContext(model:apiVersion: nil, trusted:) must keep apiVersion nil — VA-06/CX-T-04 stays deferred")
     }
 
     // MARK: - Source-scan helpers (mirrors HistoryLogSyncDeliveryBoundaryTests' established pattern)

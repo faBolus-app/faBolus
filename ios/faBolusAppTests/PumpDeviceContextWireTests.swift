@@ -36,23 +36,27 @@ struct PumpDeviceContextWireTests {
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0 }
+            applier.applyDeviceContext = { captured = $0; trusted = $1 }
             let mobi = apiVersion(major: 3, minor: 5)
             #expect(mobi.isMobi, "3.5 is the Mobi threshold")
             applier.apply(mobi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name unknown ⇒ device context uses the op33 heuristic (Mobi)")
+            #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
         // t:slim X2 API version (2.5) with no name detection ⇒ heuristic says NOT Mobi.
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0 }
+            applier.applyDeviceContext = { captured = $0; trusted = $1 }
             let tslim = apiVersion(major: 2, minor: 5)
             #expect(!tslim.isMobi, "2.5 is t:slim X2, not Mobi")
             applier.apply(tslim, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name unknown ⇒ device context uses the op33 heuristic (t:slim)")
+            #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
     }
 
@@ -64,23 +68,27 @@ struct PumpDeviceContextWireTests {
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var trusted: Bool?
             applier.detectedIsMobi = { true }
-            applier.applyDeviceContext = { captured = $0 }
+            applier.applyDeviceContext = { captured = $0; trusted = $1 }
             let tslimByApi = apiVersion(major: 2, minor: 5)
             #expect(!tslimByApi.isMobi, "the heuristic alone would say NOT Mobi")
             applier.apply(tslimByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name-detected Mobi must win over the op33 API heuristic")
+            #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
         // Name says t:slim, but the op33 frame's heuristic says Mobi (3.5) — the name must win.
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var trusted: Bool?
             applier.detectedIsMobi = { false }
-            applier.applyDeviceContext = { captured = $0 }
+            applier.applyDeviceContext = { captured = $0; trusted = $1 }
             let mobiByApi = apiVersion(major: 3, minor: 5)
             #expect(mobiByApi.isMobi, "the heuristic alone would say Mobi")
             applier.apply(mobiByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name-detected t:slim must win over the op33 API heuristic")
+            #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
     }
 }
