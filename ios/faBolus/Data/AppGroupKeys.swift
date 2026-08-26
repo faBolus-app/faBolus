@@ -7,7 +7,7 @@ import Foundation
 ///
 /// **Scope note (found live during this plan, not assumed up front):** a grep of every
 /// `UserDefaults(suiteName: WidgetStore.appGroup)` call site under `ios/faBolus` + `Shared` surfaced
-/// eight files. Two are deliberately EXCLUDED here:
+/// seven files. Two are deliberately EXCLUDED here:
 /// - `AppModel.swift`/`TandemBackend.swift` — byte-guarded dose-path units (D-01 constraint). Neither
 ///   hardcodes an App-Group KEY string of its own; `AppModel.swift` only references the App-Group ID
 ///   itself (`WidgetStore.appGroup`) via `StoredSettingChangeStore.defaultURL(appGroupID:)`, so there is
@@ -17,14 +17,6 @@ import Foundation
 ///   compiles ONLY into the app target. Repointing `WidgetShared.swift`'s own `widgetSnapshot` key at
 ///   this registry would break the widget extension's build (undefined symbol). Its key stays
 ///   hand-rolled in place — a real cross-target boundary, not an oversight.
-/// - `Shared/DisplaySettings.swift` — ALSO excluded, for a different reason: a grep for any caller of
-///   `DisplaySettings.<anything>` across `ios/` + `Shared/` returns zero hits outside the file's own
-///   declaration. It is dead code (a remnant of the Mac menu-bar remote removed in Phase 3, 03-02,
-///   REMOTE-02) with no live reader/writer anywhere — consolidating its ~16 keys would serve no drift-
-///   prevention purpose (nothing can drift when nothing calls it) and risks scope creep beyond D4-06's
-///   stated goal. Flagged in this plan's SUMMARY for a future cleanup pass to delete the orphaned file
-///   outright (consistent with the project's narrow-main "remove dead code" direction), rather than
-///   keeping it alive by wiring it into a registry it doesn't need.
 ///
 /// The four files this registry DOES consolidate are all main-app-target-only, confirmed by
 /// `project.yml`'s `faBolus` target source list (the unconditional `ios/faBolus` include).

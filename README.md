@@ -69,7 +69,7 @@ ios/faBolus/                 # iOS host app, owns the pump connection; tabbed UI
 ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
 ios/faBolus/Data/Sources/    # the Dexcom Share glucose follower + its keychain credential store
 ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
-Shared/                      # WidgetShared (App Group snapshot) + DisplaySettings
+Shared/                      # WidgetShared (App Group snapshot) + widget bolus intents
 schema/                      # THE phone↔remote message contract, single source of truth
 hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
 docs/                        # the documentation site (MkDocs Material)
