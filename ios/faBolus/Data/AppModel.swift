@@ -187,25 +187,16 @@ public final class AppModel {
 
     /// A short source name + human reason when the live glucose is coming from a **failover** source
     /// instead of the pump; `nil` when the pump feed is live. The UI only shows a badge when non-nil.
+    /// Phase 16 GO-1 Step 2: delegates to `FailoverBadgePresenter`, a pure value-in/value-out mapper —
+    /// this stays the only place `glucoseProvenance` is read to build the badge.
     public var failoverBadge: (name: String, reason: String)? {
-        guard case let .failover(sourceID, reason) = glucoseProvenance else { return nil }
-        let full = GlucoseSourceRegistry.descriptor(id: sourceID)?.name ?? sourceID
-        let name = Self.shortSourceName(full)
-        switch reason {
-        case .pumpMissing: return (name, "Showing \(full) — the pump has no CGM reading.")
-        case .pumpStale:   return (name, "Showing \(full) — the pump's CGM reading went stale.")
-        }
+        FailoverBadgePresenter.failoverBadge(provenance: glucoseProvenance)
     }
 
-    /// A compact source name for the small "via …" failover badge — drops the parenthetical/qualifier
-    /// so no source name overruns the ring (e.g. "Dexcom Share (cloud)" → "Dexcom Share",
-    /// "Dexcom G7 / ONE+ (direct BLE)" → "Dexcom G7").
+    /// A compact source name for the small "via …" failover badge. Phase 16 GO-1 Step 2: delegates to
+    /// `FailoverBadgePresenter`.
     static func shortSourceName(_ full: String) -> String {
-        var s = full
-        for sep in [" (", " — ", " / "] {
-            if let r = s.range(of: sep) { s = String(s[..<r.lowerBound]) }
-        }
-        return s.trimmingCharacters(in: .whitespaces)
+        FailoverBadgePresenter.shortSourceName(full)
     }
 
     /// The active backend's capabilities, so the UI can hide unsupported features.
@@ -707,25 +698,13 @@ public final class AppModel {
         for h in statusListeners { h(snapshot) }
     }
 
-    /// Whether a status push is due (§5.4). Pushes immediately (bypassing the 15 s throttle) on a NEW
-    /// glucose SAMPLE — identified by its source timestamp, so a fresh reading at an unchanged mg/dL still
-    /// pushes (the old code compared the value only, so a repeated number silently didn't reach the
-    /// remotes) — on any connection-state change (the watch sees the bolus start + the settle instantly),
-    /// and continuously while a bolus is in progress; otherwise at most once per throttle window to spare
-    /// phone + watch battery. Pure + `nonisolated` so the cadence rule is unit-testable.
-    nonisolated static func shouldPushStatus(newGlucose: Int?, newGlucoseDate: Date?,
-                                             lastGlucose: Int?, lastGlucoseDate: Date?,
-                                             newConnection: PumpConnectionState, lastConnection: PumpConnectionState?,
-                                             secondsSinceLastPush: TimeInterval, throttle: TimeInterval = 15) -> Bool {
-        let newSample = newGlucose != lastGlucose || newGlucoseDate != lastGlucoseDate
-        let connChanged = newConnection != lastConnection
-        let bolusing = newConnection == .bolusing
-        return newSample || connChanged || bolusing || secondsSinceLastPush > throttle
-    }
-
+    /// Whether a status push is due (§5.4). Phase 16 GO-1 Step 2: relocated verbatim to
+    /// `FailoverBadgePresenter.shouldPushStatus` (was already `nonisolated static` — pure, so the
+    /// move is behavior-preserving); see that type for the full cadence-rule doc comment.
     private func pushStatusIfNeeded() {
         guard !statusListeners.isEmpty else { return }
-        guard Self.shouldPushStatus(newGlucose: snapshot.glucose, newGlucoseDate: snapshot.glucoseDate,
+        guard FailoverBadgePresenter.shouldPushStatus(
+                                    newGlucose: snapshot.glucose, newGlucoseDate: snapshot.glucoseDate,
                                     lastGlucose: lastPushedGlucose, lastGlucoseDate: lastPushedGlucoseDate,
                                     newConnection: snapshot.connection, lastConnection: lastPushedConnection,
                                     secondsSinceLastPush: Date().timeIntervalSince(lastStatusPush)) else { return }
@@ -1737,21 +1716,10 @@ public final class AppModel {
         eatingLocation.reset()
     }
 
-    /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate.
-    /// Both the Live Activity's Snooze button VISIBILITY (baked into `hasSnoozeEligibleAlert` below,
-    /// which feeds `ContentState.hasSnoozeEligibleAlert`) and the button's ACTION gate
-    /// (`LiveActivityIntentBridge.snoozeAlertIfSafe`, installed in `App.swift`) must read exactly this
-    /// predicate — previously the visibility gate was "at least one non-`.alarm` alert is active"
-    /// while the action gate was "none of the active alerts is `.alarm`", which silently diverge the
-    /// moment an `.alarm` AND a snoozeable alert are active at the same time: the button would render
-    /// (visibility passed) but tapping it would no-op (action refused) — a dead tap with no error, no
-    /// toast (ActivityKit has no in-place toast mechanism here). True only when there's at least one
-    /// active alert AND none of them is `.alarm` (an `.alarm` blocks snoozing entirely — mirrors
-    /// `AlertRuleEngine`'s own "never match alarms" rule). Pure — no `AppModel` state read beyond the
-    /// alerts array handed in, so it's independently unit-testable off any `[PumpAlert]` fixture.
-    nonisolated static func snoozeGateAllows(_ alerts: [PumpAlert]) -> Bool {
-        !alerts.isEmpty && !alerts.contains(where: { !$0.kind.isAutoRuleEligible })
-    }
+    /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate,
+    /// read by `hasSnoozeEligibleAlert` below. Phase 16 GO-1 Step 2: relocated verbatim to
+    /// `FailoverBadgePresenter.snoozeGateAllows` (was already `nonisolated static` — pure, so the
+    /// move is behavior-preserving); see that type for the full predicate doc comment.
 
     private func refresh() {
         // B4: on a fresh connect to a DIFFERENT pump, clear the previous pump's derived config off the
@@ -1863,10 +1831,11 @@ public final class AppModel {
                                 // computed HERE (the only place `PumpAlertKind` is available alongside
                                 // the wire snapshot) so neither the extension nor the LA intent ever
                                 // re-derives "is this an alarm" from a titles-only alert list.
-                                // WR-02 (05-06): routes through `Self.snoozeGateAllows` — the SAME
-                                // predicate the action gate in `App.swift` uses — so the button's
+                                // WR-02 (05-06): routes through `FailoverBadgePresenter.snoozeGateAllows`
+                                // (Phase 16 GO-1 Step 2: relocated from `Self.snoozeGateAllows`) — the
+                                // SAME predicate the action gate in `App.swift` uses — so the button's
                                 // visibility can never promise an action the bridge will actually refuse.
-                                hasSnoozeEligibleAlert: Self.snoozeGateAllows(activeNotifications))
+                                hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(activeNotifications))
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
         persistNewHistory(provenance: provenance)
         maybeBackfillNightscout()
