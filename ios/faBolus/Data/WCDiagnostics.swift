@@ -1,13 +1,15 @@
 import Foundation
 
 /// Phase 09.6-05 (Task 1, Part C-3a, D-03.3): pure `[Watch WC]` diagnostics-text section builder.
-/// Surfaces the phone-side `PhoneRemoteHost`'s already-tracked WatchConnectivity state — live
-/// reachability (`RemoteTransport.isReachable`) and outbound send-outcome counters (attempted sends,
-/// undeliverable outcomes from `onUndeliverable`) — read directly at the `DebugMenuView` call site,
-/// never re-derived or re-probed here (no new WatchConnectivity round-trip is ever issued from this
+/// Originally surfaced the phone-side WatchConnectivity host's already-tracked state — live
+/// reachability and outbound send-outcome counters — read directly at the `DebugMenuView` call site,
+/// never re-derived or re-probed here (no new WatchConnectivity round-trip was ever issued from this
 /// file). Mirrors `GarminDiagnostics`/`RemoteRoleDiagnostics`'s shape: takes plain, already-projected
-/// values rather than the live `PhoneRemoteHost`/`RemoteLink` instance, so it's fully unit-testable
-/// with fabricated state (no live WCSession or paired watch needed).
+/// values rather than a live transport instance, so it's fully unit-testable with fabricated state (no
+/// live WCSession or paired watch needed).
+///
+/// Phase 17.5 (D1-01): the WatchConnectivity host is retired; `DebugMenuView` now always calls this
+/// with the no-host fallback values. This section builder itself is Plan 03's scope to remove.
 ///
 /// PHI/identity constraint (T-09.6-01): only reachability + counts are ever rendered — no device
 /// name, no therapy value.

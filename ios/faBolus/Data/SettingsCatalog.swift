@@ -89,10 +89,8 @@ enum SettingsCatalog {
         // §2.3 per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another
         // device.
         "garminBolusEnabled",
-        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled removed from this set — its SettingsCatalog
-        // row is gone (hidden-flag pattern), so it can no longer sync via iCloud by construction; the
-        // AppSettings accessor itself stays (frozen AppModel.swift:360,533 + AccessPolicy.swift:199
-        // still read it). Same reasoning as requireRemoteBolusApproval's removal above (03-02, F-1).
+        // Phase 17.5 (D1-01): the watch bolus-enable accessor this set once excluded is retired
+        // entirely — same reasoning as requireRemoteBolusApproval's removal above (03-02, F-1).
         // §2.3 remote-only dose ceiling — a synced value must never silently RELAX the cap on another device
         // (the same C5 hazard as the enables; not a boolean, but the same never-iCloud-sync rule applies).
         "remoteBolusCeiling",
@@ -181,7 +179,7 @@ enum SettingsCatalog {
         // pin is needed; same posture as `showGlucoseUnitLabels` above, not `autoSyncPumpTime`'s pin).
         // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime`'s row is removed here — the pump-clock
         // Settings/PumpControlView UI it fed is deleted; the accessor stays as a force-set-false init
-        // pin (hidden-flag pattern, same posture as `watchBolusEnabled` above).
+        // pin (hidden-flag pattern, same posture as other retired flags above).
         // Phase 7 (07-03, FEAT-05, D-08): the 5 mode-automation descriptors that used to live here
         // (the 3 Standard-tier ones + the 2 Advanced-only ones) are removed — their Settings UI rows
         // are gone. The 3 corresponding `AppSettings` accessors stay (frozen, hidden-flag pattern, the
@@ -192,10 +190,8 @@ enum SettingsCatalog {
         // MARK: Remotes & devices
         .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled's row is removed here (hidden-flag pattern,
-        // same posture as requireRemoteBolusApproval above) — the AppSettings accessor stays, read by
-        // frozen AppModel.swift:360,533 + AccessPolicy.swift:199's apple-watch gate. Garmin has its
-        // own independent garminBolusEnabled above, unaffected.
+        // Phase 17.5 (D1-01): the Apple-Watch bolus-enable row this table once excluded is retired
+        // entirely, along with the gate that read it — Garmin's independent enable above is unaffected.
         // §2.3 optional remote-only per-bolus ceiling. Command-adjacent (never iCloud-synced); backs up.
         .init("remoteBolusCeiling", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
         // Phase 3 (03-02, REMOTE-02, Pitfall B/F-1): the Mac/peer "Remote access" rows are removed here.
@@ -209,7 +205,7 @@ enum SettingsCatalog {
         // `AppSettings.swift`). Both accessors stay (still read by the frozen `AppModel.swift`
         // `AccessContext` builder + `BolusEntryView`'s `childAllows(.bolus)` UI hint) — only their
         // catalog/backup participation is removed, same hidden-flag posture as
-        // `requireRemoteBolusApproval`/`watchBolusEnabled` above.
+        // `requireRemoteBolusApproval` above.
         .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),
         .init("garminDefaultScreen", .remotes, from: .standard, backsUp: true),
         .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),

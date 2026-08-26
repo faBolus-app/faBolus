@@ -327,22 +327,6 @@ public final class AppSettings {
         get { _garminBolusEnabled.wrappedValue }
         set { _garminBolusEnabled.wrappedValue = newValue }
     }
-    /// **Apple Watch bolusing allowed (§2.3).** As `garminBolusEnabled`, for the Apple Watch. **Default OFF.**
-    ///
-    /// Phase 3 (03-03, REMOTE-03): the Apple Watch app this enabled is delete-on-main, so this can
-    /// never take effect again. Same hidden-flag posture as `requireRemoteBolusApproval` (03-02, F-1):
-    /// this accessor STAYS — the frozen `AppModel.swift:360,533` + `AccessPolicy.swift:199` still read
-    /// it — but its `SettingsCatalog` row, `backupSnapshot`/`applyBackup` participation, and
-    /// `RemotesSettingsView` UI (toggle + one-time-warning dialog) are all removed. A legacy backup
-    /// carrying this key is now silently ignored (same tolerance as the existing
-    /// `basalScheduleByHour`/`basalScheduleSource` precedent).
-    // D4-05: `@Stored`-backed.
-    private var _watchBolusEnabled = Stored<Bool>(wrappedValue: false, "watchBolusEnabled")
-    public var watchBolusEnabled: Bool {
-        get { _watchBolusEnabled.wrappedValue }
-        set { _watchBolusEnabled.wrappedValue = newValue }
-    }
-
     /// **Optional remote-only per-bolus ceiling (§2.3).** When set (a positive units value), a bolus started
     /// from a REMOTE surface (Apple Watch / Garmin) is capped at this many units *in addition to* the pump's
     /// own max bolus. `nil` = **off (default)** — the pump's max alone governs. The iPhone's own bolus never
@@ -439,8 +423,8 @@ public final class AppSettings {
     /// approver (Mac remote, iPhone-peer remote) are removed from narrow `main`, so this already could
     /// never take effect again (`hasPairedRemote` in the frozen `AppModel.swift` is now permanently
     /// false). Its `SettingsCatalog` row + backup/restore participation + `ChildModeView` UI were
-    /// already removed then (hidden, unregistered flag; same pattern as `watchBolusEnabled`'s eventual
-    /// removal). See 03-OWNER-FLAGS.md F-1.
+    /// already removed then (hidden, unregistered flag; same pattern as other retired remote-bolus
+    /// flags). See 03-OWNER-FLAGS.md F-1.
     ///
     /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): FROZEN to `false` — belt-and-suspenders, layer 2. Phase 3
     /// already closed the local-backup round trip (no `backupSnapshot`/`applyBackup` participation
@@ -473,7 +457,7 @@ public final class AppSettings {
     /// narrow `main` in Phase 5 (HEALTH-02) — this accessor STAYS (a hidden, unregistered
     /// device-local flag, no migration) but its `SettingsCatalog` row, `backupSnapshot`/
     /// `applyBackup` participation, and `SettingsView` UI are removed (same hidden-flag pattern as
-    /// `watchBolusEnabled`/`requireRemoteBolusApproval`). See dev/nightscout's REINTEGRATION.md.
+    /// `requireRemoteBolusApproval`). See dev/nightscout's REINTEGRATION.md.
     public var nightscoutUploadEnabled: Bool { didSet { d.set(nightscoutUploadEnabled, forKey: "nightscoutUploadEnabled") } }
 
     /// Phase 09.23-02 (D-14): per-type Apple Health IMPORT toggles — each import type (carbs,
@@ -765,15 +749,6 @@ public final class AppSettings {
     // shown the FIRST time each surface's enable is switched on. Same idiom as `clinicianTierAckAt`:
     // durable per-install markers, NOT catalog rows — never backed up, never iCloud-synced (a synced ack
     // must not silently pre-suppress the warning on another device). nil ⇒ never acknowledged.
-    // Phase 3 (03-03, REMOTE-03): the RemotesSettingsView call sites that read/write these three
-    // (the watch bolus-enable toggle + its one-time-warning confirmationDialog) are removed along
-    // with the Watch app they warned about — these accessors are now unreachable, harmless dead
-    // storage (never written again, so `hasAcknowledgedWatchBolusWarning` stays permanently false).
-    // Left in place rather than deleted: no correctness/security implication either way, and this
-    // file is outside the plan's declared scope for anything beyond the accessor demotion above.
-    public var watchBolusWarningAckAt: Date? { didSet { d.set(watchBolusWarningAckAt?.timeIntervalSince1970 ?? 0, forKey: "watchBolusWarningAckAt") } }
-    public var hasAcknowledgedWatchBolusWarning: Bool { watchBolusWarningAckAt != nil }
-    public func acknowledgeWatchBolusWarning() { if watchBolusWarningAckAt == nil { watchBolusWarningAckAt = Date() } }
     public var garminBolusWarningAckAt: Date? { didSet { d.set(garminBolusWarningAckAt?.timeIntervalSince1970 ?? 0, forKey: "garminBolusWarningAckAt") } }
     public var hasAcknowledgedGarminBolusWarning: Bool { garminBolusWarningAckAt != nil }
     public func acknowledgeGarminBolusWarning() { if garminBolusWarningAckAt == nil { garminBolusWarningAckAt = Date() } }
@@ -873,8 +848,6 @@ public final class AppSettings {
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
         let teAck = d.double(forKey: "therapyEditAckAt")     // B1(e): 0 (absent) ⇒ never acknowledged
         therapyEditAckAt = teAck > 0 ? Date(timeIntervalSince1970: teAck) : nil
-        let wAck = d.double(forKey: "watchBolusWarningAckAt")   // §2.3: 0 (absent) ⇒ never acknowledged
-        watchBolusWarningAckAt = wAck > 0 ? Date(timeIntervalSince1970: wAck) : nil
         let gAck = d.double(forKey: "garminBolusWarningAckAt")
         garminBolusWarningAckAt = gAck > 0 ? Date(timeIntervalSince1970: gAck) : nil
         let sgAck = d.double(forKey: "stackingGuardNoticeAckAt")   // FLAG-4: 0 (absent) ⇒ never acknowledged
@@ -987,7 +960,6 @@ public final class AppSettings {
         _readOnlyAllowAlertClear.store = defaults
         _remotesReadOnly.store = defaults
         _garminBolusEnabled.store = defaults
-        _watchBolusEnabled.store = defaults
         _autoSyncPumpTime.store = defaults
         _suppressMirroredPumpAlarms.store = defaults
         _extendedBolusEnabled.store = defaults
@@ -1013,10 +985,9 @@ public final class AppSettings {
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false
-        // §2.3: both default OFF so a fresh install (and any device with no stored value) cannot bolus from a
+        // §2.3: defaults OFF so a fresh install (and any device with no stored value) cannot bolus from a
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
-        watchBolusEnabled = (d.object(forKey: "watchBolusEnabled") as? Bool) ?? false
         // Phase 8 (08-01, LOCK-05): force-set OFF unconditionally — the pump-clock Settings/
         // PumpControlView UI is removed this phase, so no path exists to turn this back on; a
         // restored/legacy UserDefaults value carrying `true` must not silently re-arm it (Pitfall 1).
@@ -1084,7 +1055,7 @@ public final class AppSettings {
             // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer emitted into the backup snapshot
             // either — its `SettingsCatalog` descriptor is gone (pump-clock UI deleted, the property is
             // now a force-set-false init pin), so `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot`
-            // requires this key drop too — same hidden-flag posture as `watchBolusEnabled` above.
+            // requires this key drop too — same hidden-flag posture as other retired flags above.
             // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
             // emitted here (frozen, hidden/unregistered); autoTempRate/autoProfileActivation deleted
             // outright (see applyBackup below for the matching restore-side removal).
@@ -1092,9 +1063,8 @@ public final class AppSettings {
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
             "garminBolusEnabled": .bool(garminBolusEnabled),
-            // Phase 3 (03-03, REMOTE-03): watchBolusEnabled is no longer emitted into the backup
-            // snapshot (catalog row + backup participation removed, hidden-flag pattern) — same
-            // posture as requireRemoteBolusApproval (see applyBackup below).
+            // Phase 17.5 (D1-01): the watch bolus-enable accessor is retired entirely (not merely
+            // hidden-flag demoted) — same posture as requireRemoteBolusApproval (see applyBackup below).
             "garminScreenOrder": .stringArray(garminScreenOrder),
             "garminDefaultScreen": .string(garminDefaultScreen),
             "garminComplicationDisplay": .string(garminComplicationDisplay),
@@ -1102,7 +1072,7 @@ public final class AppSettings {
             "garminTargetApp": .string(garminTargetApp),
             // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled is no longer emitted into the
             // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
-            // same posture as watchBolusEnabled/requireRemoteBolusApproval (see applyBackup below).
+            // same posture as requireRemoteBolusApproval (see applyBackup below).
             // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` is no longer emitted here
             // either — its `SettingsCatalog` descriptor was removed (Child Mode UI deleted, the
             // property itself is now a getter-level frozen constant), so
@@ -1211,7 +1181,7 @@ public final class AppSettings {
         // always-false via its other operand regardless).
         // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
         // restore from a backup either (frozen, hidden/unregistered); autoTempRate/autoProfileActivation
-        // deleted outright — same posture as watchBolusEnabled/requireRemoteBolusApproval above.
+        // deleted outright — same posture as requireRemoteBolusApproval above.
         // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer restores from a backup either — same
         // hidden-flag pattern. A legacy backup carrying `true` is silently ignored (same tolerance as
         // the precedents above); the force-set-false init pin would reject it on next launch regardless,
@@ -1226,8 +1196,8 @@ public final class AppSettings {
         // backup participation are removed, hidden-flag pattern) — a legacy backup carrying either key
         // is silently ignored here, same tolerance as the basalScheduleByHour/basalScheduleSource
         // precedent (restoreToleratesLegacyBasalScheduleKeys).
-        // Phase 3 (03-03, REMOTE-03): watchBolusEnabled no longer restores from a backup either — same
-        // hidden-flag pattern, same legacy-key tolerance.
+        // Phase 17.5 (D1-01): the watch bolus-enable accessor is retired entirely, so it has no
+        // restore-side line here at all (not merely a hidden-flag skip).
         // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled no longer restores from a backup
         // either — same hidden-flag pattern, same legacy-key tolerance.
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
@@ -1237,15 +1207,15 @@ public final class AppSettings {
         if let v = s("garminTargetApp") { garminTargetApp = v }
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` no longer restores from a backup
         // either — belt-and-suspenders option (a). A legacy backup carrying this key (or `true`) is
-        // now silently ignored, same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled`
-        // precedents below; the getter-level freeze (option b, above) would reject the value anyway
+        // now silently ignored, same tolerance as the `remoteBluetoothEnabled` precedent below; the
+        // getter-level freeze (option b, above) would reject the value anyway
         // even if this line still called the setter.
         // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer restores from a backup either —
         // same hidden-flag pattern, same legacy-key tolerance (a restored `true` would have no effect
         // regardless, since `GlucoseBadge` is now a main-only no-op stub).
         // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer restores from a backup — same
         // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
-        // (same tolerance as the `remoteBluetoothEnabled`/`watchBolusEnabled` precedents above).
+        // (same tolerance as the `remoteBluetoothEnabled` precedent above).
         // Phase 7 (07-05, FEAT-08, D-07, SAFETY): `alertRules` no longer restores from a backup
         // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy
         // backup carrying a non-empty rule-set is silently ignored (the getter-level freeze would
@@ -1253,8 +1223,8 @@ public final class AppSettings {
         // the round trip per D-07's belt-and-suspenders shape).
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` no longer restores from a backup
         // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy backup
-        // carrying this key is silently ignored (same tolerance as the `remoteBluetoothEnabled`/
-        // `watchBolusEnabled` precedents above); the value is already access-irrelevant regardless
+        // carrying this key is silently ignored (same tolerance as the `remoteBluetoothEnabled`
+        // precedent above); the value is already access-irrelevant regardless
         // since `childModeEnabled` is force-false.
         applyFreshness(); syncWidgetConfig()
     }

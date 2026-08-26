@@ -122,11 +122,6 @@ struct DebugMenuView: View {
         .navigationTitle("Debug")
         .onAppear {
             shareDiagnostics = settings.notificationTelemetryEnabled
-            // Phase 09.6-07 (D-03.1, Pitfall 3): issue the watch-diagnostics REQUEST only when the
-            // shared opt-in is on — no new opt-in, no collection while it's off. The reply (if any)
-            // lands via PhoneRemoteHost before the next diagnosticsText rebuild; this view doesn't
-            // wait for it (the placeholder covers "no reply yet" gracefully).
-            if shareDiagnostics { PhoneRemoteHost.shared?.requestWatchDiagnostics() }
             // D-01a/Pitfall 4: write the export file as soon as the console is opened, so the fixed-name
             // Documents file exists before anyone runs `devicectl device copy from` — not gated behind a
             // button tap that may never happen on this install.
@@ -337,12 +332,11 @@ struct DebugMenuView: View {
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
 
-        // Task 1 (Part C-3a, D-03.3): [Watch WC] — reads PhoneRemoteHost's already-tracked
-        // WatchConnectivity state via its `.shared` app-wide reference; never issues a new WC
-        // round-trip. Falls back to `false`/`0` if the host hasn't been constructed yet (e.g. before
-        // App.swift's `.task` runs) — the section then renders "Reachable: no" like any genuinely
-        // unreachable watch, never a crash or an omitted header.
-        let wcHost = PhoneRemoteHost.shared
+        // Phase 17.5 (D1-01): the WatchConnectivity transport host is retired — this section now
+        // always renders its no-host fallback ("Reachable: no" / empty counts / nil body), exactly the
+        // same rendering the pre-retirement code already produced whenever that host hadn't been
+        // constructed yet. The `WCDiagnostics`/`WatchSelfDiagnostics` UI sections themselves are Plan
+        // 03's scope to remove; this plan only removes the now-nonexistent host they read from.
 
         let sections: [String] = [
             // Extracted verbatim from the prior inline blocks (D-01/P12 §5.2.8/P9) — always present,
@@ -377,18 +371,16 @@ struct DebugMenuView: View {
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,
                 enabled: shareDiagnostics),
             GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
+            // Phase 17.5 (D1-01): the WatchConnectivity host is gone; this section now always renders
+            // its no-host fallback (see comment above `sections`).
             WCDiagnostics.section(
-                reachable: wcHost?.reachableForDiagnostics ?? false,
-                sent: wcHost?.sentCountForDiagnostics ?? 0,
-                undeliverable: wcHost?.undeliverableCountForDiagnostics ?? 0,
+                reachable: false,
+                sent: 0,
+                undeliverable: 0,
                 enabled: shareDiagnostics),
-            // Phase 09.6-07 (D-03.1, D-04): [Watch self] — the ninth (final) surface, closing the
-            // 09.6-VERIFICATION.md gap. Reads PhoneRemoteHost's already-tracked
-            // `lastWatchDiagnosticsText` (set only by the `.diagnosticsRead` reply handler); never
-            // re-derives it or issues a new request from here (the request goes out from `.onAppear`
-            // below, gated on the SAME opt-in).
+            // Phase 17.5 (D1-01): ditto — no watch host, so no self-diagnostics text is ever available.
             WatchSelfDiagnostics.phoneSection(
-                body: wcHost?.lastWatchDiagnosticsText,
+                body: nil,
                 enabled: shareDiagnostics),
         ]
 

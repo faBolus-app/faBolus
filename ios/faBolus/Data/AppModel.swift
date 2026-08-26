@@ -366,10 +366,9 @@ public final class AppModel {
             // the ONE context-builder so modes gate every surface identically, never a sixth mechanism.
             // Per-feature toggles (`disabledFeatures`) land with the S3 store; empty here.
             modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode),
-            // P15 §2.3: per-surface remote bolus enables (default OFF on the phone) so the evaluator
-            // refuses a Garmin/Watch deliver the user hasn't opted into — not a seventh mechanism.
+            // P15 §2.3: per-surface remote bolus enable (default OFF on the phone) so the evaluator
+            // refuses a Garmin deliver the user hasn't opted into — not a seventh mechanism.
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            watchBolusEnabled: AppSettings.shared.watchBolusEnabled,
             // C2 §2.3: the host-verified passcode result (pure bits — the Keychain read + verify happened
             // in the caller so the evaluator stays pure and the exp-backoff is armed exactly once).
             bolusPasscodeRequired: bolusPasscodeRequired,

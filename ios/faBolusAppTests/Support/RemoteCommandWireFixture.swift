@@ -18,12 +18,13 @@ import WidgetKit
 /// preserved on `dev/watch-remote`. This fixture is never used by the shipped app.
 ///
 /// Original doc (verbatim, describes the PRODUCTION type this fixture mirrors — the second paragraph's
-/// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code):
+/// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code;
+/// the Apple-Watch/`RemoteLink` transport it once described is itself retired — Phase 17.5, D1-01):
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
-/// (Apple Watch over `RemoteLink`, Mac/iPhone over `BLELink`). It is a *dumb remote*: it never touches the
-/// pump (TandemKit runs on the phone). It sends bolus/cancel/dismiss/status commands and reflects the
-/// status the phone echoes back, and publishes the latest glucose/pump state to the App Group for
-/// this device's widgets/complication.
+/// (formerly Apple Watch over a WatchConnectivity transport, still Mac/iPhone over `BLELink`). It is a
+/// *dumb remote*: it never touches the pump (TandemKit runs on the phone). It sends
+/// bolus/cancel/dismiss/status commands and reflects the status the phone echoes back, and publishes
+/// the latest glucose/pump state to the App Group for this device's widgets/complication.
 @MainActor
 @Observable
 final class RemoteCommandWireFixture {
