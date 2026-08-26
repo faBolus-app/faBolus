@@ -67,10 +67,17 @@ struct HistoryLogSyncDeliveryBoundaryTests {
     // MARK: - Static source scan (belt-and-suspenders)
 
     /// Signature-scoped scan (never whole-file — `deliverBolus`/`InitiateBolusRequest` are legitimately
-    /// declared elsewhere in `TandemBackend.swift`) of every gap-sync function this phase added, asserting
-    /// none of their bodies reference a delivery-seam identifier. Fault-injection-verified during
-    /// development: temporarily referencing `InitiateBolusRequest` inside `requestBackfillPage` made this
-    /// test fail as expected; reverted before commit (recorded in the plan SUMMARY).
+    /// declared elsewhere in `TandemBackend.swift`) of every gap-sync function, asserting none of their
+    /// bodies reference a delivery-seam identifier. Fault-injection-verified during development:
+    /// temporarily referencing `InitiateBolusRequest` inside `requestBackfillPage` made this test fail
+    /// as expected; reverted before commit (recorded in the plan SUMMARY).
+    ///
+    /// **Retargeted (Phase 16 16-08, GO-2 Step 1, REMED-16):** the gap-sync functions moved verbatim
+    /// from `TandemBackend.swift` into `PumpHistorySyncCoordinator.swift` — this scan now reads THAT
+    /// file. `beginGapSync`/`backfillPageDone` dropped their `private` modifier (they're now called
+    /// from `TandemBackend.swift`'s wiring closures, a different file — Swift's `private` is file-
+    /// scoped) so their two signature strings below match `func` not `private func`; the other 5 are
+    /// byte-identical to the pre-move list. The 6 forbidden SYMBOLS are untouched.
     @Test func historySyncSourceHasNoDeliverySeamSymbols() throws {
         let forbidden = ["deliverBolus(", "deliverExtendedBolus(", "InitiateBolusRequest(",
                          "BolusPermissionRequest(", ".allowDelivery", "allowInsulinDelivery: true"]
@@ -80,22 +87,22 @@ struct HistoryLogSyncDeliveryBoundaryTests {
             .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
             .deletingLastPathComponent()   // → .../ios
             .deletingLastPathComponent()   // → repo root
-        let backendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/TandemBackend.swift")
+        let backendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/PumpHistorySyncCoordinator.swift")
         let source = try String(contentsOf: backendURL, encoding: .utf8)
 
         let gapSyncFunctionSignatures = [
             "static func missingRanges(",
             "static func retentionFloorSequence(",
-            "private func beginGapSync(",
+            "func beginGapSync(",
             "private func advanceToNextGapWindow(",
             "private func requestBackfillPage(",
-            "private func backfillPageDone(",
+            "func backfillPageDone(",
             "private func creditCurrentWindowAndAdvance(",
         ]
         for signature in gapSyncFunctionSignatures {
             let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: source)
             for symbol in forbidden {
-                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in TandemBackend.swift's \(signature) body")
+                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in PumpHistorySyncCoordinator.swift's \(signature) body")
             }
         }
     }
