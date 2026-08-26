@@ -2,6 +2,7 @@ import Testing
 import Foundation
 import faBolusCore
 import TandemMessages
+import TandemBLE
 @testable import faBolus
 
 /// **VA-06 (op33 device-context re-wire).** Pins that `PumpResponseApplier` re-wires the kit's
@@ -90,5 +91,108 @@ struct PumpDeviceContextWireTests {
             #expect(captured == false, "name-detected t:slim must win over the op33 API heuristic")
             #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
+    }
+
+    // MARK: - Directional proofs (codex C1/C8/C9/C10) — drive the REAL TandemBackend/PumpConnectionLifecycle
+    //
+    // These exercise `TandemBackend.applyClientState(_:)` directly (no live CoreBluetooth central needed —
+    // `applyClientState` is reachable on a plain `TandemBackend(testTransport:)`), plus the DEBUG test
+    // seams Task 1 added (`armReconnectTargetForTesting`/`identityTrustedForTesting`/
+    // `connectedPumpModelForTesting`/`identityGateErrorForTesting`), to prove the app-side trust design
+    // end-to-end: a real Mobi is never over-gated (before OR after op33), a misidentified t:slim stays
+    // fail-closed, and a stale trusted record never trusts a mismatched peripheral.
+
+    /// A [.mobi]-restricted, 0xCE-opcode message — the ONE message the 15.5-01 tracer gate currently
+    /// covers — used to probe `identityGateErrorForTesting`.
+    private func tracerMessage() -> SetSleepScheduleRequest {
+        SetSleepScheduleRequest(slot: 0, schedule: [0, 0, 0, 0, 0, 0], flag: 0)
+    }
+
+    /// Hermetic isolation (RESEARCH §A4 / codex C9): `TrustedPumpIdentityStore`/`PumpPeripheralStore` are
+    /// UserDefaults-backed and process-global, so seed/target state from one case must never leak into the
+    /// next. Each test also constructs its OWN fresh `TandemBackend` (and therefore its own fresh
+    /// `PumpBLEClient`, whose `reconnectTargetId` starts nil), so `armReconnectTargetForTesting` state
+    /// never crosses cases either.
+    private func resetIdentityStores() {
+        TrustedPumpIdentityStore.clear()
+        PumpPeripheralStore.clear()
+    }
+
+    /// codex C1 (necessary, per C9 NOT sufficient by itself — see the next test): a persisted trusted
+    /// Mobi is reapplied on `.discovering`, before op33 — asserts state IMMEDIATELY after `.discovering`.
+    @Test func trustedModelIsReappliedOnDiscoveringForKnownPeripheral() {
+        resetIdentityStores()
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.armReconnectTargetForTesting(uuid)
+
+        b.applyClientState(.discovering)
+
+        #expect(b.connectedPumpModelForTesting == .mobi, "the persisted trusted Mobi is reapplied on .discovering")
+        #expect(b.identityTrustedForTesting == true, "reapply stamps TRUSTED, not merely a non-nil model")
+    }
+
+    /// codex C8/C9 (the BLOCKER fix + its directional proof): the reapplied trust must SURVIVE a REAL
+    /// op33 arriving later the SAME silent-reconnect cycle. This is the test that actually exercises the
+    /// C8 clobber path — `trustedModelIsReappliedOnDiscoveringForKnownPeripheral` above asserts state
+    /// BEFORE op33 and so cannot, by itself, catch a design where op33 later clobbers the trust back to
+    /// false. Injects a REAL op33 frame (API 3.5, `m.isMobi == true`) through `injectStatusFrameForTesting`
+    /// so the production op33 path runs against the REAL `detectedIsMobi` closure (not stubbed) — its
+    /// value must come from reapply's C8 restore. MUST FAIL against the pre-C8-fix design (op33 would
+    /// recompute `nameTrusted == false` because `detectedIsMobi` stayed nil, clobbering trust); passes only
+    /// because reapply restores `detectedIsMobi` before op33 runs.
+    @Test func realMobiStaysTrustedWhenOp33ArrivesAfterReapply() {
+        resetIdentityStores()
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.armReconnectTargetForTesting(uuid)
+
+        b.applyClientState(.discovering)
+        #expect(b.identityTrustedForTesting == true, "precondition: reapply stamped trust before op33")
+
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // REAL op33, arrives later this cycle
+
+        #expect(b.identityTrustedForTesting == true, "codex C8: op33 must NOT clobber the reapplied trust back to false")
+        #expect(b.identityGateErrorForTesting(tracerMessage()) == nil,
+                "a real, trusted Mobi's [.mobi]-restricted 0xCE send must NOT be gated")
+    }
+
+    /// codex C1 (the fail-closed direction): with NO persisted trusted record, a t:slim misidentified as
+    /// Mobi by the op33 API-version heuristic (API ≥3.5) stays UNTRUSTED — `connectedPumpModel` may still
+    /// become `.mobi` (VA-06's own device-support gate is unaffected by trust), but the identity gate
+    /// refuses the [.mobi]-restricted send.
+    @Test func misidentifiedTslimStaysUntrustedThroughSilentReconnect() {
+        resetIdentityStores()
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        b.applyClientState(.discovering)   // no persisted record ⇒ reapply is a no-op
+
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // the exact t:slim-reporting-API-3.5 fixture
+
+        #expect(b.connectedPumpModelForTesting == .mobi, "VA-06 unaffected: the heuristic still identifies a model")
+        #expect(b.identityTrustedForTesting == false, "the op33 heuristic can never satisfy the trust bit")
+        #expect(b.identityGateErrorForTesting(tracerMessage()) == .identityNotEstablished(opcode: SetSleepScheduleRequest.props.opCode),
+                "a misidentified t:slim's Mobi-only send must fail closed")
+    }
+
+    /// codex C10: reapply must confirm the peripheral the kit is ACTUALLY (re)connecting before stamping
+    /// trust — a persisted trusted record for UUID-A must NOT be applied to a session whose kit
+    /// `reconnectTargetId` is a DIFFERENT UUID-B (pump-swap-mid-reconnect / a restoration adopting a
+    /// different peripheral).
+    @Test func reapplyDoesNotTrustAMismatchedPeripheral() {
+        resetIdentityStores()
+        let uuidA = UUID(), uuidB = UUID()
+        PumpPeripheralStore.set(uuidA)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuidA)
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.armReconnectTargetForTesting(uuidB)   // the kit is reconnecting a DIFFERENT peripheral
+
+        b.applyClientState(.discovering)
+
+        #expect(b.identityTrustedForTesting == false, "a stale trusted record for UUID-A must not trust a UUID-B session")
     }
 }
