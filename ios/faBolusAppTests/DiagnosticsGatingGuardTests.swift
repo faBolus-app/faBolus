@@ -60,8 +60,8 @@ struct DiagnosticsGatingGuardTests {
     // MARK: - D-01: the record path is never debug-only gated
 
     @Test func bleSessionLogRecordPathIsNotDebugOnlyGated() throws {
-        guard let url = Self.resolve("ios/faBolus/Data/BLESessionLog.swift") else {
-            Issue.record("could not resolve ios/faBolus/Data/BLESessionLog.swift from #filePath=\(#filePath)")
+        guard let url = Self.resolve("ios/faBolus/Data/Diagnostics/BLESessionLog.swift") else {
+            Issue.record("could not resolve ios/faBolus/Data/Diagnostics/BLESessionLog.swift from #filePath=\(#filePath)")
             return
         }
         let source = try String(contentsOf: url, encoding: .utf8)
@@ -96,7 +96,7 @@ struct DiagnosticsGatingGuardTests {
     // MARK: - A path-resolution bug must fail loudly, not pass vacuously
 
     @Test func fileResolutionActuallyFoundBothFiles() {
-        #expect(Self.resolve("ios/faBolus/Data/BLESessionLog.swift") != nil)
+        #expect(Self.resolve("ios/faBolus/Data/Diagnostics/BLESessionLog.swift") != nil)
         #expect(Self.resolve("ios/faBolus/Views/DebugMenuView.swift") != nil)
     }
 }

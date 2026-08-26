@@ -102,7 +102,7 @@ struct NudgeDeliveryBoundaryTests {
         // Scope (1): whole-file negative scan — both files are delivery-symbol-free today.
         let wholeFileTargets = [
             repoRoot.appendingPathComponent("Packages/faBolusCore/Sources/faBolusCore/EatingTrigger.swift"),
-            repoRoot.appendingPathComponent("ios/faBolus/Data/SmartAssist.swift"),
+            repoRoot.appendingPathComponent("ios/faBolus/Data/App/SmartAssist.swift"),
         ]
         for url in wholeFileTargets {
             let contents = try String(contentsOf: url, encoding: .utf8)
@@ -115,7 +115,7 @@ struct NudgeDeliveryBoundaryTests {
         // functions only (16-04 retarget — was AppModel.swift before the carve). MUST NOT whole-file-scan
         // AppModel.swift — deliverBolus/remoteDeliver are legitimately declared there, which would be a
         // guaranteed false positive.
-        let eatingNudgeFileURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel+EatingNudge.swift")
+        let eatingNudgeFileURL = repoRoot.appendingPathComponent("ios/faBolus/Data/App/AppModel+EatingNudge.swift")
         let eatingNudgeSource = try String(contentsOf: eatingNudgeFileURL, encoding: .utf8)
         let eatingNudgeFunctionSignatures = [
             "func eatingNudgeActedOn(",

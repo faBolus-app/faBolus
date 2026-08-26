@@ -193,7 +193,7 @@ struct RemoteStatusComposerEquivalenceTests {
 
     private static func readComposerSource() throws -> String {
         let root = try #require(Self.repoRootURL())
-        return try String(contentsOf: root.appendingPathComponent("ios/faBolus/Data/RemoteStatusComposer.swift"),
+        return try String(contentsOf: root.appendingPathComponent("ios/faBolus/Data/Remote/RemoteStatusComposer.swift"),
                           encoding: .utf8)
     }
 

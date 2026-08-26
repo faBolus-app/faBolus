@@ -52,7 +52,7 @@ struct FeatureSurfaceAbsenceGuardTests {
     // MARK: - FEAT-03: the badge stub is provably inert
 
     @Test func glucoseBadgeStubHasNoNotificationCenterOrBadgeCountSink() throws {
-        let url = Self.repoRoot.appendingPathComponent("ios/faBolus/Data/GlucoseBadge.swift")
+        let url = Self.repoRoot.appendingPathComponent("ios/faBolus/Data/CGM/GlucoseBadge.swift")
         let source = try String(contentsOf: url, encoding: .utf8)
         for forbidden in ["UNUserNotificationCenter", "setBadgeCount", "import UserNotifications"] {
             #expect(!source.contains(forbidden),
@@ -61,7 +61,7 @@ struct FeatureSurfaceAbsenceGuardTests {
     }
 
     @Test func settingsCatalogAndSettingsViewHaveNoGlucoseBadgeSurface() throws {
-        let catalogURL = Self.repoRoot.appendingPathComponent("ios/faBolus/Data/SettingsCatalog.swift")
+        let catalogURL = Self.repoRoot.appendingPathComponent("ios/faBolus/Data/Settings/SettingsCatalog.swift")
         let catalogSource = try String(contentsOf: catalogURL, encoding: .utf8)
         #expect(!catalogSource.contains("glucoseBadgeEnabled"),
                 "SettingsCatalog.swift must not register a glucoseBadgeEnabled descriptor (FEAT-03)")

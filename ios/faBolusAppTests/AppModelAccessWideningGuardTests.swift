@@ -43,7 +43,7 @@ struct AppModelAccessWideningGuardTests {
     /// per the source-text guard-retargeting rule (verify against actual source, not the plan's draft).
     private static func historyPersistenceCoordinatorSource() throws -> String {
         let root = try #require(Self.repoRootURL(), "could not resolve repo root from #filePath")
-        let url = root.appendingPathComponent("ios/faBolus/Data/HistoryPersistenceCoordinator.swift")
+        let url = root.appendingPathComponent("ios/faBolus/Data/App/HistoryPersistenceCoordinator.swift")
         return try String(contentsOf: url, encoding: .utf8)
     }
 

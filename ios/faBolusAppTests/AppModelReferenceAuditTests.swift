@@ -119,6 +119,11 @@ struct AppModelReferenceAuditTests {
         // there); its remaining `"AppModel.swift"` mentions are prose only. See the type doc
         // comment's "16-04 update" note.
         "NudgeDeliveryBoundaryTests.swift",
+        // 17-04 (D3-01): its doc comment cites `AppModel.swift:1927-...` as a line-number pin
+        // explaining where the truthful `lastError` string is already resolved — never opens the
+        // file at runtime, so it is COMMENT-ONLY on this file's specific axis (17-10 classification
+        // gap closure — this suite exists precisely to catch drift like this).
+        "BolusOutcomeBannerTests.swift",
     ]
 
     /// Substrings that, if present in a FILE's source, indicate it opens/reads

@@ -137,8 +137,9 @@ struct CiqAwarenessScopeGuardTests {
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
         // Phase 9 (09-02, MOBI-02): moved verbatim from the deleted `Views/PumpWizardViews.swift`
         // to its own file — the type survives as orphaned-but-tested pure logic (see the file's own
-        // header comment); only the path here needs to follow it.
-        ("ios/faBolus/Data/ControlIQDisableWarning.swift", "enum ControlIQDisableWarning"),
+        // header comment); only the path here needs to follow it. Retargeted 17-10 (D4-02 folder
+        // reorg): file relocated Data/ -> Data/Settings/, no content change.
+        ("ios/faBolus/Data/Settings/ControlIQDisableWarning.swift", "enum ControlIQDisableWarning"),
         // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
         // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`

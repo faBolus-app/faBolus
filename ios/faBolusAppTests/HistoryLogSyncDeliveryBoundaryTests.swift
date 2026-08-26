@@ -87,7 +87,7 @@ struct HistoryLogSyncDeliveryBoundaryTests {
             .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
             .deletingLastPathComponent()   // → .../ios
             .deletingLastPathComponent()   // → repo root
-        let backendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/PumpHistorySyncCoordinator.swift")
+        let backendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/App/PumpHistorySyncCoordinator.swift")
         let source = try String(contentsOf: backendURL, encoding: .utf8)
 
         let gapSyncFunctionSignatures = [

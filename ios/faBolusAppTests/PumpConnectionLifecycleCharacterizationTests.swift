@@ -215,7 +215,7 @@ struct PumpConnectionLifecycleCharacterizationTests {
     @Test func setDeviceContextApiVersionStaysNilByteForByte() throws {
         let needle = "c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil)"
         let backendSource = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
-        let lifecycleSource = try? Self.readSource(relativeTo: "ios/faBolus/Data/PumpConnectionLifecycle.swift")
+        let lifecycleSource = try? Self.readSource(relativeTo: "ios/faBolus/Data/App/PumpConnectionLifecycle.swift")
         let found = backendSource.contains(needle) || (lifecycleSource?.contains(needle) ?? false)
         #expect(found, "setDeviceContext(model:apiVersion: nil) must be preserved byte-for-byte — VA-06 stays deferred")
     }
