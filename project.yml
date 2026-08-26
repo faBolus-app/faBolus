@@ -94,7 +94,18 @@ packages:
     # the wire, byte-identical, oracle-parity neutral) + VA-20 hardening (length-guard the 14 fixed-size
     # pure-read response inits — defense-in-depth, unreachable via ResponseParser). TandemKit swift test +
     # oracle parity green (326/39, JDK21). No signed-request/response encode change vs 09c3d0e.
-    revision: f72e8721fee7ffa0c8242a02d629dfa30cd29425
+    # Pin BUMP 2026-08-26 (v0.4.0 Phases 13/14/15 kit integration, owner-approved): f72e872 -> 4f6b5bf.
+    # Integrates the landed TandemKit work: 13-08 cold-connect establishment watchdog; 14-02 signed-response
+    # decode hardening (granted/accepted gate + 5 control-stream opcodes signed+stream); 14-03 BLE fail-closed
+    # + structural delivery-class serialization; 14-04 restored BolusHistoryRecord.bolusId + accept-0U;
+    # 15-01 CONSERVATIVE minApi floors; 15-02 signed-ack/HistoryLog fail-closed decode; 15-03 pairing CRC/length
+    # guard + QualifyingEvent bitmap decoder (activates the previously-inert app-side CC-03 consumer from 13-10);
+    # 15-05 throwing request-arg bounds (temp-rate/cannula/max-limit; app floor aligned UP to 1.0U); LoopKit
+    # adapter removed to experimental/dev/loopkit; unit-test SIGABRT (CoreBluetooth TCC) test-infra fix.
+    # NOT byte-identical vs f72e872 — carries dose-ADJACENT decode/transport/history changes (in-range signed
+    # ENCODE bytes unchanged; JDK21 oracle-parity green). STILL bench-pending: NO-GO for real insulin until the
+    # Phase-12 saline bench validates the dose path this SHA now carries. apiVersion stays nil (CX-T-04 deferred).
+    revision: 4f6b5bf775089a90d3125290b2f644c19ce65167
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
