@@ -332,11 +332,9 @@ struct DebugMenuView: View {
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
 
-        // Phase 17.5 (D1-01): the WatchConnectivity transport host is retired — this section now
-        // always renders its no-host fallback ("Reachable: no" / empty counts / nil body), exactly the
-        // same rendering the pre-retirement code already produced whenever that host hadn't been
-        // constructed yet. The `WCDiagnostics`/`WatchSelfDiagnostics` UI sections themselves are Plan
-        // 03's scope to remove; this plan only removes the now-nonexistent host they read from.
+        // Phase 17.5 Plan 03 (D1-01): the two watch-transport diagnostics sections (and the pure
+        // builder types they called into) are retired outright — the WatchConnectivity transport
+        // host they described is gone (Plan 02), and there is no watch surface left to diagnose.
 
         let sections: [String] = [
             // Extracted verbatim from the prior inline blocks (D-01/P12 §5.2.8/P9) — always present,
@@ -371,17 +369,6 @@ struct DebugMenuView: View {
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,
                 enabled: shareDiagnostics),
             GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
-            // Phase 17.5 (D1-01): the WatchConnectivity host is gone; this section now always renders
-            // its no-host fallback (see comment above `sections`).
-            WCDiagnostics.section(
-                reachable: false,
-                sent: 0,
-                undeliverable: 0,
-                enabled: shareDiagnostics),
-            // Phase 17.5 (D1-01): ditto — no watch host, so no self-diagnostics text is ever available.
-            WatchSelfDiagnostics.phoneSection(
-                body: nil,
-                enabled: shareDiagnostics),
         ]
 
         let preamble = "faBolus diagnostics (local-only, never uploaded)\n"

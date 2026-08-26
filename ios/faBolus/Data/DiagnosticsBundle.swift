@@ -4,7 +4,7 @@ import Foundation
 /// `diagnosticsText` string-building into a standalone, testable type. Mirrors PATTERNS.md's
 /// documented shape exactly: `DiagnosticsBundle` only concatenates each surface's own already-
 /// formatted `[Bracket]` section string (`CapabilityDiagnostics`, `CgmArbiterDiagnostics`,
-/// `RemoteRoleDiagnostics`, `GarminDiagnostics`, `WCDiagnostics`, the BLE-session-log line-builder,
+/// `RemoteRoleDiagnostics`, `GarminDiagnostics`, the BLE-session-log line-builder,
 /// and this type's own `pumpIdentitySection`/`connectionTelemetrySection`/`notificationTelemetrySection`
 /// helpers) — it never re-derives or reformats any surface's own state, and performs no I/O of its
 /// own (no `FileManager`/`WCSession`/`GarminRemoteBridge`/`GlucoseArbiter` reference anywhere in this
@@ -23,7 +23,7 @@ enum DiagnosticsBundle {
 
     /// Header + explicit "not currently reachable" placeholder for a surface whose section string is
     /// absent (`nil`) or empty — Pitfall 4: the header must never simply vanish. Most Part C section
-    /// builders (`CapabilityDiagnostics`, `GarminDiagnostics`, `WCDiagnostics`, `RemoteRoleDiagnostics`,
+    /// builders (`CapabilityDiagnostics`, `GarminDiagnostics`, `RemoteRoleDiagnostics`,
     /// `CgmArbiterDiagnostics`) already render their OWN `[Bracket]` header + empty-state line and
     /// don't need this helper — it exists for a surface whose section producer only returns a string
     /// when data genuinely exists (e.g. a future surface ingested over a request/response channel).
