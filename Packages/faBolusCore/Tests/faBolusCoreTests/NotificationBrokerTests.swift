@@ -34,11 +34,15 @@ import Foundation
         // tslim-reconnect-loop Phase B (item 5) added `pumpConnectionUnstable` as a fourth never-suppressible
         // category (the non-muteable flap alert). The original trio stays user-configurable; the flap one is
         // NOT (see `nonConfigurableSafetyCategoryIsTrulyNonMuteable`).
+        // MD-01 (Phase 13 review fix): `urgentLowGlucose` is a fifth never-suppressible category — the
+        // app-owned urgent-low backstop, decoupled from `.cgmDataLoss` so disabling the "CGM data lost"
+        // banner can never silence it. It IS user-configurable (its own acknowledged-disable row), like
+        // the original trio; the flap alert (`pumpConnectionUnstable`) remains the sole non-configurable one.
         let safety = Set(C.allCases.filter { $0.neverSuppressible }.map(\.rawValue))
-        #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable"])
+        #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
         let configurableTrio = Set(C.allCases.filter { $0.neverSuppressible && $0.isUserConfigurable }.map(\.rawValue))
-        #expect(configurableTrio == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"],
-               "only the original trio is user-configurable; the flap alert has no disable path")
+        #expect(configurableTrio == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "urgentLowGlucose"],
+               "the original trio plus the app-owned urgent-low alarm are user-configurable; only the flap alert has no disable path")
     }
 
     @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
@@ -78,6 +82,27 @@ import Foundation
                            settings: [.bolusIndeterminate: B.CategorySettings(enabled: false)],
                            state: B.State(), now: at(9, 0), calendar: cal)
         #expect(!off.deliver && off.reason == .categoryDisabled)
+    }
+
+    /// MD-01 (Phase 13 review fix): the app-owned urgent-low alarm has its OWN never-suppressible
+    /// category, decoupled from `.cgmDataLoss`. Disabling + ACKNOWLEDGING `.cgmDataLoss` (the only way a
+    /// trio category is suppressible) must NOT silence an `.urgentLowGlucose` message — the exact coupling
+    /// the review flagged. Also pins the new category's classification axes.
+    @Test func urgentLowGlucoseIsAnIndependentNeverSuppressibleCategoryDecoupledFromCgmDataLoss() {
+        #expect(C.urgentLowGlucose.neverSuppressible)
+        #expect(C.urgentLowGlucose.isUserConfigurable, "it has its own acknowledged-disable row, like the trio")
+        #expect(!C.urgentLowGlucose.isPumpSourced, "app-generated, not relayed from the pump")
+        #expect(C.urgentLowGlucose.defaultEnabled)
+        // The user has explicitly disabled + acknowledged ONLY `.cgmDataLoss`.
+        let settings: [C: B.CategorySettings] = [
+            .cgmDataLoss: B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
+        ]
+        // `.cgmDataLoss` itself correctly suppresses (the acknowledged-disable escape).
+        let cgm = B.decide(msg(.cgmDataLoss), settings: settings, state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(!cgm.deliver && cgm.reason == .categoryDisabled)
+        // `.urgentLowGlucose` is UNAFFECTED — its own category still delivers.
+        let low = B.decide(msg(.urgentLowGlucose), settings: settings, state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(low.deliver, "disabling `.cgmDataLoss` must NOT silence the urgent-low backstop (MD-01 decoupling)")
     }
 
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {

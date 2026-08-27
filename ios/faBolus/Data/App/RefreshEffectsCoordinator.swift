@@ -139,7 +139,11 @@ final class RefreshEffectsCoordinator {
         recordStep("urgentLowEdge:\(Self.tag(urgentLowEdge))")
         switch urgentLowEdge {
         case .raise:
-            postSafety(.cgmDataLoss, .critical, UrgentLowAlarm.title, UrgentLowAlarm.body, UrgentLowAlarm.dedupeKey)
+            // MD-01 (Phase 13 review fix): post under the app-owned `.urgentLowGlucose` category, NOT
+            // `.cgmDataLoss` — so disabling the plain "CGM data lost" banner can never silently silence
+            // this urgent-low backstop. The banner (line ~116) and the CX-F-02 staleness watchdog keep
+            // using `.cgmDataLoss`, unchanged.
+            postSafety(.urgentLowGlucose, .critical, UrgentLowAlarm.title, UrgentLowAlarm.body, UrgentLowAlarm.dedupeKey)
         case .clear:
             withdrawNotifications([UrgentLowAlarm.dedupeKey])
         case .none: break

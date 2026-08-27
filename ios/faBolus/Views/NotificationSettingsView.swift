@@ -260,6 +260,7 @@ struct NotificationSettingsView: View {
         case .pumpDisconnect:      return Text("Turn off pump-disconnect alerts?")
         case .cgmDataLoss:         return Text("Turn off CGM-data-loss alerts?")
         case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
+        case .urgentLowGlucose:    return Text("Turn off urgent-low backup alarm?")
         default:                  return Text("")
         }
     }
@@ -372,6 +373,8 @@ struct NotificationSettingsView: View {
                 Text("If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime.")
             case .bolusReconciliation:
                 Text("faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime.")
+            case .urgentLowGlucose:
+                Text("faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during quiet hours or Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime.")
             default:
                 EmptyView()
             }

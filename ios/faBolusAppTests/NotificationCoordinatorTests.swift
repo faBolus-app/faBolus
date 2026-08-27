@@ -50,7 +50,9 @@ import UserNotifications
         }
         // tslim-reconnect-loop Phase B (item 5): `pumpConnectionUnstable` is a fourth never-suppressible
         // category (the non-muteable flap alert) — it posts under the hostile config too.
-        #expect(Set(posted) == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable"])
+        // MD-01 (Phase 13 review fix): `urgentLowGlucose` is a fifth never-suppressible category — the
+        // app-owned urgent-low backstop, decoupled from `.cgmDataLoss` — so it posts under the hostile config too.
+        #expect(Set(posted) == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
         // A governed category under the SAME hostile config does not post (proves the config is hostile).
         let g = NotificationPoster.post(msg(.pumpAlert), runtime: rt, now: at(3, 0)) { posted.append($0.identifier) }
         #expect(!g.deliver && g.reason == .categoryDisabled)

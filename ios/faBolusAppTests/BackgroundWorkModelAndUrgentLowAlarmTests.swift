@@ -103,7 +103,10 @@ import faBolusCore
         model.publicRefresh()
         #expect(model.glucoseProvenance.isFailover, "the pump's own reading is stale — the fresh fake source must take over")
         #expect(posted.map(\.dedupeKey).contains(UrgentLowAlarm.dedupeKey))
-        #expect(posted.last(where: { $0.dedupeKey == UrgentLowAlarm.dedupeKey })?.category == .cgmDataLoss)
+        // MD-01 (Phase 13 review fix): the urgent-low alarm now posts under its OWN never-suppressible
+        // category, `.urgentLowGlucose`, decoupled from `.cgmDataLoss` (disabling the "CGM data lost"
+        // banner must not silence this backstop).
+        #expect(posted.last(where: { $0.dedupeKey == UrgentLowAlarm.dedupeKey })?.category == .urgentLowGlucose)
 
         // A second refresh with the SAME still-active condition must not re-raise.
         posted.removeAll()

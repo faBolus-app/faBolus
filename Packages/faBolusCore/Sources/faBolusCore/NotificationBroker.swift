@@ -33,6 +33,14 @@ public enum NotificationBroker {
         /// `pumpDisconnect`; and it is deliberately NOT user-configurable (`isUserConfigurable == false`),
         /// so there is no acknowledged-disable path — it is truly non-muteable.
         case pumpConnectionUnstable
+        /// MD-01 (Phase 13 review fix): the app-owned "urgent low glucose during CGM failover" alarm
+        /// (C2-01). Given its OWN never-suppressible category — decoupled from `.cgmDataLoss` — so a user
+        /// who disables the plain "CGM data lost" banner does NOT also silence this urgent-low backstop
+        /// (that coupling was the whole defect). It is user-configurable like the original trio (its own
+        /// enable/disable + confirm-on-disable row, `isUserConfigurable == true` via the default), but can
+        /// only be silenced through the explicit acknowledged-disable flow `decide()` reads — never by a
+        /// snooze, quiet-hours, rate-limit, budget, or the `.cgmDataLoss` toggle.
+        case urgentLowGlucose
         // Governed (suppressible) categories.
         case pumpAlert               // a pump-raised alert/alarm/reminder surfaced as a notification
         case remoteBolusRejected     // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
@@ -48,7 +56,8 @@ public enum NotificationBroker {
         /// A safety category the user cannot turn off and that bypasses quiet-hours / rate-limit / budget.
         public var neverSuppressible: Bool {
             switch self {
-            case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable: return true
+            case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable,
+                 .urgentLowGlucose: return true
             default: return false
             }
         }
@@ -94,6 +103,7 @@ public enum NotificationBroker {
             case .bolusReconciliation: return "Bolus result"
             case .cgmDataLoss:        return "CGM data loss"
             case .pumpConnectionUnstable: return "Pump connection unstable"
+            case .urgentLowGlucose:   return "Urgent low glucose (backup CGM)"
             case .pumpAlert:          return "Pump alerts"
             case .remoteBolusRejected: return "Remote bolus rejected"
             case .bolusDeliveryFailed: return "Bolus delivery failed"
