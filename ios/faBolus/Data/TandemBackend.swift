@@ -1862,20 +1862,32 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// tampered reply) or a non-zero rejected status both leave the alert VISIBLE. "Snooze locally" (the
     /// guard branch just below, for pumps that don't honor remote dismissal) is UNCHANGED and stays a
     /// distinct, explicitly LOCAL action — it never claims the pump-side alert is gone.
+    /// LEGACY void entry point (MEDIUM-D): calls the typed method ONCE and discards the outcome. Keeps
+    /// existing callers (auto-rules `applyAutoRules`, `PumpBackend.dismissNotification(_:)` call sites)
+    /// unchanged. The single op-184 body lives EXCLUSIVELY in `dismissNotificationTyped` below.
     public func dismissNotification(_ alert: PumpAlert) async {
-        guard isPaired else { return }
+        _ = await dismissNotificationTyped(alert)
+    }
+
+    /// CX-G-08 (14-09, checkpoint #4) — TYPED CC-08 outcome. OWNS the single op-184
+    /// `DismissNotificationRequest` + `awaitResponse(..., signed: true)` call site (moved intact from the
+    /// old void method — byte-identical signed wire, INVARIANT T-14-29) and returns `.authenticatedCleared`
+    /// from, and ONLY from, the exact `status == 0` branch — never inferred from the shared `acknowledged`
+    /// dict/`lastDismissAck` string (T-14-28). Frozen delivery region :1246-1479 untouched; no dose-math.
+    public func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome {
+        guard isPaired else { return .noResponse }
         let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert
         let ackKey = "\(alert.kind.rawValue):\(alert.id)"
         // On pumps that don't honor remote dismissal (t:slim X2), skip the futile signed send and just
         // snooze locally in faBolus so it stops nagging here. The pump keeps its own alert until the
-        // condition clears or it's dismissed on the pump itself.
+        // condition clears or it's dismissed on the pump itself. NEVER authenticated — no op-184 is sent.
         guard capabilities.supportsRemoteAlertDismiss else {
             acknowledged[ackKey] = Date()
             lastDismissAck = "local snooze (this pump model can't be dismissed remotely)"
             alertDebug = "local-snoozed id \(alert.id) kind \(alert.kind.rawValue) — t:slim X2 rejects remote dismiss"
             mergeNotifications()
             onChange?()
-            return
+            return .localSnoozeOnly
         }
         // Fresh signing timestamp for the HMAC. Serialized behind any other signed transaction and
         // timed-out so a lost time-sync reply can't hang / clobber another transaction (audit A-03).
@@ -1883,7 +1895,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         let time: TimeSinceResetResponse
         do {
             time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
-        } catch { releasePumpTx(); return }
+        } catch { releasePumpTx(); return .noResponse }
         applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
@@ -1910,16 +1922,23 @@ public final class TandemBackend: NSObject, PumpBackend {
                 acknowledged[ackKey] = Date()
                 alertDebug = "cleared id \(alert.id) kind \(alert.kind.rawValue) — snoozed if condition persists"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.readScheduler.alertRead() }
+                mergeNotifications()
+                onChange?()
+                return .authenticatedCleared
             } else {
                 lastDismissAck = "ack \(ack.status) (rejected)"
                 alertDebug = "dismiss rejected id \(alert.id) kind \(alert.kind.rawValue) — still active on pump"
+                mergeNotifications()
+                onChange?()
+                return .rejected
             }
         } catch {
             lastDismissAck = "no ack (no pump response)"
             alertDebug = "dismiss unconfirmed id \(alert.id) kind \(alert.kind.rawValue) — still active on pump"
+            mergeNotifications()
+            onChange?()
+            return .noResponse
         }
-        mergeNotifications()
-        onChange?()
     }
 
     // MARK: - Advanced control (B3)

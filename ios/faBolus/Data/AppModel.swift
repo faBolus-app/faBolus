@@ -424,10 +424,18 @@ public final class AppModel {
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump). P8: gated through the single
     /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
     /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
+    ///
+    /// CX-G-08 (14-09, checkpoint #4) — RETURNS the backend's TYPED outcome so a caller (the Garmin
+    /// bridge) can gate a durable ack on `.authenticatedCleared` and ONLY that case (T-14-28: never
+    /// infer authentication from any other observable). An access-denied guard returns
+    /// `.notAuthenticated` — a non-success outcome, but distinct from a real pump interaction.
+    @discardableResult
     public func dismissNotification(_ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
-                                    peerId: String = "local") async {
-        guard allow(.dismissNotification, from: surface, peerId: peerId) else { return }
-        await source.dismissNotification(n); refresh()
+                                    peerId: String = "local") async -> DismissOutcome {
+        guard allow(.dismissNotification, from: surface, peerId: peerId) else { return .notAuthenticated }
+        let outcome = await source.dismissNotificationTyped(n)
+        refresh()
+        return outcome
     }
 
     /// §2.3 — the effective per-bolus maximum for REMOTE surfaces (Apple Watch / Garmin): the pump's own
@@ -510,8 +518,18 @@ public final class AppModel {
     }
 
     /// Clear a pump alert by id + kind (used by the phone UI and remotes' dismiss commands).
+    ///
+    /// CX-G-08 (14-09) — RETURNS the typed dismiss outcome (see `dismissNotification(_:from:peerId:)`).
+    /// Both guards below return `.notAuthenticated` (never a false `.authenticatedCleared`) — the
+    /// read-only-block guard and the "no matching active alert" guard. The latter is exactly the case
+    /// the Garmin bridge's durable RECEIPT REPLAY (see `GarminDismissReceiptStore`) is designed to avoid
+    /// hitting on a retry: once CC-08 clears an alert it drops out of `activeNotifications`, so a
+    /// same-requestId retry that reaches this guard has already lost its chance to re-derive the
+    /// outcome from the pump — the bridge must replay the stored receipt BEFORE calling this method
+    /// again for the same requestId.
+    @discardableResult
     public func dismissAlert(id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
-                             peerId: String = "local") async {
+                             peerId: String = "local") async -> DismissOutcome {
         // P8 deliberate deviation: dismiss is a `.childOnly` action, so the evaluator never read-only-
         // blocks it (clearing an alert is low-risk and a viewer may need to). But the phone keeps its
         // shipped `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off
@@ -519,10 +537,23 @@ public final class AppModel {
         // here for local surfaces only (remote dismisses were never subject to it). See [[p8-routing]].
         if surface.isLocal, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
             lastError = "Clearing alerts is disabled in read-only mode."
-            return
+            return .notAuthenticated
         }
-        guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else { return }
-        await dismissNotification(n, from: surface, peerId: peerId)
+        guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else {
+            return .notAuthenticated
+        }
+        return await dismissNotification(n, from: surface, peerId: peerId)
+    }
+
+    /// CX-G-08 (14-09, checkpoint #1) — build the correlated `dismissAck` `RemoteCommand`, mirroring
+    /// `statusCommand`'s builder shape. Callers (the Garmin bridge) send this ONLY after
+    /// `dismissAlert`/`dismissNotification` returned `.authenticatedCleared` (or a stored receipt is
+    /// being replayed) — never speculatively.
+    public func dismissAckCommand(requestId: String, alertId: Int, alertKind: Int) -> RemoteCommand {
+        var cmd = RemoteCommand(kind: .dismissAck, requestId: requestId)
+        cmd.alertId = alertId
+        cmd.alertKind = alertKind
+        return cmd
     }
 
     /// A bolus requested by a remote (watch/Garmin) awaiting the phone's confirmation.

@@ -63,6 +63,19 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertTrue(b.activeNotifications.isEmpty)
     }
 
+    /// CX-G-08 (14-09, MEDIUM-D) — a backend with NO typed override (StubBackend, mirroring a
+    /// community backend) gets `dismissNotificationTyped` for free from the default extension: it calls
+    /// the legacy void `dismissNotification(_:)` exactly ONCE (the alert is removed, proving the void
+    /// path really ran) and returns `.notAuthenticated` — never `.authenticatedCleared` — so a
+    /// community backend can never accidentally trigger a Garmin dismissAck.
+    func testDefaultTypedDismissCallsVoidOnceAndReturnsNotAuthenticated() async {
+        let b = StubBackend()
+        let alert = b.activeNotifications[0]
+        let outcome = await b.dismissNotificationTyped(alert)
+        XCTAssertEqual(outcome, .notAuthenticated)
+        XCTAssertTrue(b.activeNotifications.isEmpty, "the default impl must still call the void method once")
+    }
+
     /// A backend can be wrapped in a BackendDescriptor + built via its factory.
     func testBackendDescriptorFactory() {
         let d = BackendDescriptor(id: "stub", name: "Stub") { StubBackend() }

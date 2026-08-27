@@ -22,8 +22,19 @@ public protocol PumpBackend: AnyObject {
     var activeNotifications: [PumpAlert] { get }
     /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.
     var alertDebug: String { get }
-    /// Dismiss (clear) one alert on the pump — a signed control command.
+    /// Dismiss (clear) one alert on the pump — a signed control command. LEGACY void entry point; kept
+    /// for existing callers (auto-rules). Every backend now gets `dismissNotificationTyped(_:)` for free
+    /// (below); `TandemBackend` makes THIS method a thin wrapper that calls the typed one once and
+    /// discards the outcome (MEDIUM-D: exactly one op-184 body, owned by the typed method).
     func dismissNotification(_ alert: PumpAlert) async
+    /// CX-G-08 (14-09, checkpoint #4) — the TYPED, authenticated outcome of a dismiss. The ONLY
+    /// authenticated success signal is `.authenticatedCleared`, derived EXCLUSIVELY from a signed
+    /// `status == 0` pump response — never inferred from a shared before/after transition on a mutable
+    /// dict (T-14-28: a concurrent auto-snooze/local-snooze mutates the exact same key during the same
+    /// async awaits a dismiss is awaiting on). Every backend gets a safe default for free (below, calls
+    /// the void method once → `.notAuthenticated`); `TandemBackend` overrides it to OWN the single
+    /// op-184 body and return the real outcome from the exact `status == 0` branch.
+    func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
     var pairingCode: String { get set }
     /// True when a prior pairing was saved (Keychain) — connect can resume without a code.
@@ -272,6 +283,29 @@ public protocol PumpDiagnosticsProviding: AnyObject {
     var badOpcodesForDiagnostics: Set<UInt8> { get }
 }
 
+/// CX-G-08 (14-09, checkpoint #4/T-14-28) — the phone's TYPED, authenticated outcome of a signed pump
+/// dismiss (`PumpBackend.dismissNotificationTyped(_:)`). `.authenticatedCleared` is the ONLY case that
+/// authorizes a durable Garmin `dismissAck` (checkpoint #2, absence-only) — it is derived exclusively
+/// from a `status == 0` signed pump response, never from a shared before/after transition on a mutable
+/// dict (a concurrent auto-snooze/local-snooze mutates that exact key during the same async awaits a
+/// dismiss is awaiting on — `acknowledged`/`lastDismissAck` in `TandemBackend`). Every other case fails
+/// closed: no ack, the alert stays visible.
+public enum DismissOutcome: Sendable, Equatable {
+    /// The pump signed-confirmed the clear (`status == 0`). The SOLE authenticated success signal.
+    case authenticatedCleared
+    /// The pump signed-responded with a non-zero (rejected) status.
+    case rejected
+    /// No signed response arrived in time (timeout / disconnect / a pre-write send failure).
+    case noResponse
+    /// This pump model doesn't honor a remote dismiss (t:slim X2) — a PURE LOCAL snooze; no op-184 was
+    /// ever sent. Never authenticated, never acked.
+    case localSnoozeOnly
+    /// The backend doesn't implement the typed path at all (the community-default extension impl) — the
+    /// LEGACY void method was called once and its real outcome is opaque to this caller. Never treated
+    /// as authenticated.
+    case notAuthenticated
+}
+
 public enum BolusReconciliation: Sendable, Equatable {
     /// The pump's record for this bolus id was found: `deliveredUnits` actually went in (possibly a partial
     /// amount). `cancelled` is true when the pump reports it ended by cancellation.
@@ -283,6 +317,15 @@ public enum BolusReconciliation: Sendable, Equatable {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    /// CX-G-08 (14-09, MEDIUM-D) — the community-default typed dismiss: calls the LEGACY void
+    /// `dismissNotification(_:)` exactly ONCE and returns `.notAuthenticated` — never authenticated,
+    /// so a community backend that hasn't implemented the typed path can never trigger a Garmin
+    /// `dismissAck` by accident. `TandemBackend` overrides this to own the single op-184 body and
+    /// return the real, authenticated outcome.
+    func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome {
+        await dismissNotification(alert)
+        return .notAuthenticated
+    }
     /// DIF-ux default: a backend that doesn't implement the override IGNORES it and falls back to the plain
     /// (no-override) recommendation — i.e. it stays fail-closed. This is the fail-SAFE direction (an
     /// unhonored "use last-known" simply keeps the surface blocked, never dosing off unconfirmed inputs), so

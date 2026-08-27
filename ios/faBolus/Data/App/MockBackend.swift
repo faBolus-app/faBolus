@@ -25,6 +25,12 @@ public final class MockBackend: PumpBackend {
         activeNotifications.removeAll { $0.id == alert.id && $0.kind == alert.kind }
         onChange?()
     }
+    // CX-G-08 (14-09, MEDIUM-D): deliberately does NOT override `dismissNotificationTyped` — as the
+    // "reference backend / starting point for a new backend" (see this file's own doc comment), it gets
+    // the same community-default outcome (`.notAuthenticated`, calls the void method above once) any
+    // third-party backend gets for free from `PumpBackend`'s extension. The mock can never fabricate an
+    // `.authenticatedCleared`, so it can never trigger a Garmin dismissAck — only `TandemBackend` owns
+    // the real authenticated (op-184 signed) path.
     public var pairingCode: String = ""   // unused by the mock
     public var hasStoredPairing: Bool { false }
     public func forgetPairing() {}

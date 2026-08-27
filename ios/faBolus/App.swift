@@ -30,6 +30,10 @@ struct FaBolusApp: App {
         // recorded but never echoed to the watch across an app kill/relaunch is replayed once the watch is
         // message-ready. Called right after the bridge is built (WR-08 launch-time construction).
         bridge.seedTerminalEchoesFromLedger()
+        // CX-G-08 (14-09, T-14-30): re-seed any authenticated dismiss receipt whose ack was never
+        // transport-confirmed across an app kill/relaunch — the launch-time analogue of the terminal-echo
+        // re-seed immediately above, on its own separate durable lane (T-14-32).
+        bridge.seedUnsentDismissAcksFromReceiptStore()
         #endif
         // CX-F-03: construct + retain the safety-notification pipeline at process launch too — including a
         // viewless CoreBluetooth cold-restoration relaunch, where no scene/view (and thus no `.onAppear`)

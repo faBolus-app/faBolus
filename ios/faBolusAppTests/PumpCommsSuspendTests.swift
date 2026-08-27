@@ -215,4 +215,89 @@ struct PumpCommsSuspendTests {
         #expect(b.alertDebug.contains("local-snoozed"))
         #expect(fake.sent.isEmpty, "a non-remote-dismissable pump must never attempt a signed dismiss send")
     }
+
+    // MARK: - CX-G-08 (14-09): TYPED CC-08 outcome + op-184 wire-proof (checkpoint #4, T-14-28/T-14-29)
+
+    /// INVARIANT: the op-184 dismiss WIRE is byte-identical. Asserts, via `FakePumpTransport.sent`
+    /// (NOT the bolus `*DeliverInvariant` fixtures — CC-08 protects dismiss, not bolus initiation):
+    /// exactly ONE `DismissNotificationRequest` (op-184) write, with the EXACT cargo the typed method
+    /// composes for (kind, id), `signed == true`, `allowDelivery == false`, and the `DismissNotification
+    /// Response` (op-185) opcode awaited. This is the dismiss-specific proof the move into
+    /// `dismissNotificationTyped` did not alter the signed send call site.
+    @Test func op184WireIsExactlyOneSignedNonDeliveryWriteWithExactCargo() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, fake, alert) = setup
+        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        await b.dismissNotification(alert)
+
+        let dismissWrites = fake.sent.filter { $0.opCode == DismissNotificationRequest.props.opCode }
+        #expect(dismissWrites.count == 1, "exactly one op-184 write per dismiss")
+        let expectedCargo = DismissNotificationRequest(kind: NotificationKind(rawValue: alert.kind.rawValue) ?? .alert,
+                                                        notificationId: alert.id).cargo
+        #expect(dismissWrites.first?.cargo == expectedCargo, "op-184 cargo must be byte-identical to the typed method's own encode")
+        #expect(dismissWrites.first?.signed == true, "op-184 must be signed")
+        #expect(dismissWrites.first?.allowDelivery == false, "a dismiss is never a delivery-authorizing write")
+        #expect(fake.awaited.contains(DismissNotificationResponse.props.opCode), "op-185 must be awaited")
+    }
+
+    /// The TYPED outcome is `.authenticatedCleared` ONLY from the exact `status == 0` signed-response
+    /// branch — mirrors `authenticatedStatusZeroHidesTheAlert` but asserts the typed return value
+    /// directly instead of inferring it from `activeNotifications`/`alertDebug` (T-14-28).
+    @Test func typedOutcomeIsAuthenticatedClearedOnlyOnStatusZero() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, fake, alert) = setup
+        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        let outcome = await b.dismissNotificationTyped(alert)
+        #expect(outcome == .authenticatedCleared)
+    }
+
+    @Test func typedOutcomeIsRejectedOnNonZeroStatus() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, fake, alert) = setup
+        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 7)))
+        let outcome = await b.dismissNotificationTyped(alert)
+        #expect(outcome == .rejected)
+    }
+
+    @Test func typedOutcomeIsNoResponseOnLostAck() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, _, alert) = setup
+        // No DismissNotificationResponse scripted → dropped/timed-out, matching a genuinely lost ack.
+        let outcome = await b.dismissNotificationTyped(alert)
+        #expect(outcome == .noResponse)
+    }
+
+    @Test func typedOutcomeIsNoResponseOnPreWriteFailure() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, fake, alert) = setup
+        fake.preWriteError[DismissNotificationRequest.props.opCode] = BolusError.pumpRejected("simulated pre-write failure")
+        let outcome = await b.dismissNotificationTyped(alert)
+        #expect(outcome == .noResponse)
+    }
+
+    /// A t:slim X2-like pump (no remote-dismiss capability) returns `.localSnoozeOnly` — never
+    /// authenticated, and never sends the signed op-184 at all.
+    @Test func typedOutcomeIsLocalSnoozeOnlyOnNonRemoteDismissablePump() async {
+        let fake = FakePumpTransport()
+        let b = TandemBackend(testTransport: fake)
+        b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
+        guard let alert = b.activeNotifications.first(where: { $0.id == 5 }) else {
+            Issue.record("setup: the alert must be active before dismissing it"); return
+        }
+        let outcome = await b.dismissNotificationTyped(alert)
+        #expect(outcome == .localSnoozeOnly)
+        #expect(fake.sent.isEmpty)
+    }
+
+    /// MEDIUM-D: the single op-184 call graph holds through BOTH entry points — the LEGACY void
+    /// `dismissNotification(_:)` (auto-rules' entry point, TandemBackend.swift `applyAutoRules`) calls
+    /// the typed method exactly once and discards its outcome; no double-send, no recursion.
+    @Test func legacyVoidDismissCallsTypedMethodExactlyOnceNoDoubleSend() async throws {
+        let setup = try #require(makeMobiBackendWithActiveAlert())
+        let (b, fake, alert) = setup
+        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        await b.dismissNotification(alert)   // the legacy void entry point
+        let dismissWrites = fake.sent.filter { $0.opCode == DismissNotificationRequest.props.opCode }
+        #expect(dismissWrites.count == 1, "the legacy void wrapper must call the typed method exactly once — no double-send")
+    }
 }
