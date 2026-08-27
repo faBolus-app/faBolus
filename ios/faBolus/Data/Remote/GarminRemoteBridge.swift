@@ -86,6 +86,123 @@ func garminSendDisposition(result: GarminSendResult, isEcho: Bool) -> GarminSend
     }
 }
 
+/// I-L1: pure, ConnectIQ-free cap of the outbound Garmin status history array to the watch-plot point
+/// budget, applied bridge-side (below, via `garminCapStatusHistory`) BEFORE send — a transport-level
+/// transform that does NOT touch `AppModel`/`RemoteStatusComposer`'s shared `statusCommand` shape
+/// (other remotes — Mac, iPhone — still see the full up-to-288-point history `RemoteStatusComposer`
+/// already caps to; that buffer serves EVERY remote, not just Garmin's plot). Lives OUTSIDE `#if
+/// GARMIN` (mirrors `garminSendDisposition`) so it compiles and is unit-testable in the default
+/// target. Uncapped, an oversize history payload risks the SAME `InsufficientMemory`/`UnsupportedType`
+/// failure I-M3 now classifies as PERMANENT (dropped, no retry) — so a status push that never needed
+/// the extra points could silently stall the watch chart forever (T-19-20).
+enum GarminHistoryCap {
+    /// The venu3s watch-face chart's point budget — matches the widest `watchChartRanges` bucket
+    /// plotted on a small, low-res watch screen with generous headroom over what's visually
+    /// distinguishable at that resolution. NOT tied to `RemoteStatusComposer`'s 288-point (24h)
+    /// buffer, which serves every remote, not just Garmin's plot.
+    static let pointBudget = 144
+
+    /// Newest-tail, order-preserving cap: an array longer than `pointBudget` keeps the LAST
+    /// `pointBudget` elements (the most-recent points the plot actually shows, in their original
+    /// oldest→newest order); a short array is returned unchanged. Generic so it caps both the
+    /// `history` (Int mg/dL) and paired `historyEpochs` (Int timestamp) arrays identically.
+    static func cap<T>(_ points: [T]) -> [T] {
+        guard points.count > pointBudget else { return points }
+        return Array(points.suffix(pointBudget))
+    }
+}
+
+/// Applies `GarminHistoryCap` to a status-command dictionary's `history`/`historyEpochs` arrays (the
+/// exact JSON keys `RemoteCommand.asDictionary()` produces — no `CodingKeys` override in
+/// `RemoteCommand`, so the wire key equals the Swift property name). Caps BOTH to the SAME budget so
+/// they stay aligned point-for-point to their timestamps; a dict with neither key (any non-status
+/// command — bolus echoes, dismissAcks, …) passes through unchanged. Pure/ConnectIQ-free.
+func garminCapStatusHistory(_ dict: [String: Any]) -> [String: Any] {
+    var out = dict
+    if let h = dict["history"] as? [Int] { out["history"] = GarminHistoryCap.cap(h) }
+    if let e = dict["historyEpochs"] as? [Int] { out["historyEpochs"] = GarminHistoryCap.cap(e) }
+    return out
+}
+
+/// G-M3 (phone half) — pure, ConnectIQ-free decode of the out-of-band `imu_window` envelope. Lives
+/// OUTSIDE `#if GARMIN` (Foundation-only — `Data`/`NSNumber`, no ConnectIQ import) so BOTH wire
+/// versions get unit coverage in the default (non-GARMIN) target, mirroring `GarminMessageReadiness`/
+/// `garminSendDisposition` above.
+///
+/// - v1 (legacy, unversioned or `v:1`): `data` is a flat `[Number]` of Float samples, SAMPLE-MAJOR
+///   (each sample's `ch` channel values contiguous), oldest→newest — unchanged from today's behavior.
+/// - v2 (compact, 19-04's watch encoder — THIS is the wire contract 19-05 defines and 19-04, which
+///   `depends_on: [19-05]`, mirrors EXACTLY):
+///     - `ch` (Int) channel count (e.g. 6: accelX/Y/Z, gyroX/Y/Z), `n` (Int) samples per channel.
+///     - `scale` (`[Number]`, length == `ch`) — ONE dequantization scale PER CHANNEL INDEX, chosen/
+///       owned by the watch-side encoder and carried IN the envelope — `float = int16 * scale[ch]`.
+///       Never a hardcoded duplicate constant on either side, so the two sides can never silently
+///       drift apart if the scale is ever retuned.
+///     - `data` — the packed int16 "ByteArray": `n * ch * 2` raw bytes (0...255), little-endian pairs,
+///       sample-major. Accepted as EITHER a `[Number]` of raw bytes OR a Foundation `Data` (the
+///       vendored ConnectIQ SDK's documented `sendMessage` message types are String/Number/Null/
+///       Array/Dictionary only — no ByteArray/Data entry — so the REAL bridged Swift type for a
+///       Monkey C `ByteArray` arriving watch→phone is genuinely unverified pre-device; this decoder
+///       covers both plausible shapes so a real-device mismatch needs only a data-shape fix here, not
+///       an envelope redesign — DEFERRED OWNER, flagged in the 19-05 SUMMARY).
+///
+/// FAIL-SAFE (T-19-21): ANY malformed/mismatched-length/oversized envelope decodes to an EMPTY array —
+/// never a garbled or partially-decoded window. `imu_window` is advisory-only (never a dose input);
+/// `AppModel.ingestGarminIMUWindow`'s `accelPipeline.predict` already no-ops on an empty window, so
+/// failing safe here costs nothing but one skipped inference tick.
+enum GarminImuWindowDecode {
+    /// Defensive upper bound on total samples (`n * ch`) — the largest real window is
+    /// `WINDOW(150) * ch(6) = 900`; this leaves generous headroom while still rejecting a spoofed
+    /// huge `n`/`ch` before it can drive an unbounded allocation.
+    static let maxTotalSamples = 4096
+
+    static func decode(_ dict: [String: Any]) -> [Float] {
+        let version = (dict["v"] as? NSNumber)?.intValue ?? 1
+        return version >= 2 ? decodeV2(dict) : decodeV1(dict)
+    }
+
+    private static func decodeV1(_ dict: [String: Any]) -> [Float] {
+        (dict["data"] as? [Any])?.compactMap { ($0 as? NSNumber)?.floatValue } ?? []
+    }
+
+    private static func decodeV2(_ dict: [String: Any]) -> [Float] {
+        guard let ch = (dict["ch"] as? NSNumber)?.intValue, ch > 0,
+              let n = (dict["n"] as? NSNumber)?.intValue, n > 0 else { return [] }
+        let total = n * ch
+        guard total > 0, total <= maxTotalSamples else { return [] }
+        guard let scaleRaw = dict["scale"] as? [Any], scaleRaw.count == ch else { return [] }
+        let scale = scaleRaw.compactMap { ($0 as? NSNumber)?.doubleValue }
+        guard scale.count == ch else { return [] }
+        guard let bytes = rawBytes(from: dict["data"]), bytes.count == total * 2 else { return [] }
+        var out: [Float] = []
+        out.reserveCapacity(total)
+        for i in 0..<total {
+            let lo = UInt16(bytes[2 * i])
+            let hi = UInt16(bytes[2 * i + 1])
+            let bits = lo | (hi << 8)
+            let int16Value = Int16(bitPattern: bits)
+            out.append(Float(Double(int16Value) * scale[i % ch]))
+        }
+        return out
+    }
+
+    /// Accepts either a Foundation `Data` or an `[NSNumber]` of raw byte values 0...255 — see the enum
+    /// doc comment above for why both shapes are defensively supported.
+    private static func rawBytes(from value: Any?) -> [UInt8]? {
+        if let data = value as? Data { return [UInt8](data) }
+        if let arr = value as? [Any] {
+            var out: [UInt8] = []
+            out.reserveCapacity(arr.count)
+            for element in arr {
+                guard let n = (element as? NSNumber)?.intValue, n >= 0, n <= 255 else { return nil }
+                out.append(UInt8(n))
+            }
+            return out
+        }
+        return nil
+    }
+}
+
 /// I-M2: ConnectIQ-free classification of a `getAppStatus` result onto `GarminDiagnostics.AppInstallState`
 /// — lives OUTSIDE `#if GARMIN` (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so it compiles
 /// and is unit-testable in the default (non-GARMIN) target; no `IQAppStatus` type crosses this boundary,
@@ -433,7 +550,13 @@ final class GarminRemoteBridge: NSObject {
     /// (bolus echoes, etc.) is queued in order and sent first, so a stale backlog can't delay a
     /// bolus's "delivered"/"cancelled" outcome or make the CGM lag behind the phone.
     private func send(_ cmd: RemoteCommand) {
-        guard let dict = try? cmd.asDictionary() else { return }
+        guard let rawDict = try? cmd.asDictionary() else { return }
+        // I-L1: cap the outbound history/historyEpochs arrays (if present — a no-op for the many
+        // non-status dicts, e.g. bolus/dismiss echoes, that never carry them) to the watch-plot point
+        // budget BEFORE enqueueing. Single choke point — every `includeHistory:true` send site (the
+        // statusRead reply, the proactive `sendStatus` push, and dismissAlert's statusRead backstop)
+        // funnels through this one `send()`.
+        let dict = garminCapStatusHistory(rawDict)
         if cmd.kind == .statusRead {
             pendingStatus = dict
         } else {
@@ -724,7 +847,10 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
         // Eating-detection IMU windows ride an out-of-band envelope (not the safety-critical
         // RemoteCommand schema) — route them to phone-side inference before RemoteCommand parsing.
         if dict["type"] as? String == "imu_window" {
-            let raw = (dict["data"] as? [Any])?.compactMap { ($0 as? NSNumber)?.floatValue } ?? []
+            // G-M3 (phone half): accepts BOTH the legacy v1 flat-Float envelope and 19-04's v2 compact
+            // int16 envelope (dequantized here) — see `GarminImuWindowDecode`'s doc comment for the
+            // wire contract. Fail-safe to empty on any malformed/oversized input (T-19-21).
+            let raw = GarminImuWindowDecode.decode(dict)
             Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
             return
         }
