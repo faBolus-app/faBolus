@@ -1,5 +1,6 @@
 import Foundation
-// watchOS has no CBPeripheralManager; the watch uses RemoteLink, so BLELink is iOS/macOS only.
+// BLELink is iOS/macOS only (watchOS has no CBPeripheralManager). The former watchOS transport,
+// RemoteLink (WatchConnectivity), was retired in Phase 17.5.
 #if canImport(CoreBluetooth) && !os(watchOS)
 import CoreBluetooth
 

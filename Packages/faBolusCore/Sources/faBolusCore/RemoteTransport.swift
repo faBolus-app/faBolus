@@ -1,8 +1,9 @@
 import Foundation
 
-/// The transport-agnostic surface a remote client (Apple Watch, Mac, or another iPhone) drives to
-/// talk to the host. `RemoteLink` (WatchConnectivity) and `BLELink` (Bluetooth LE) both conform, so a
-/// single `RemoteClientModel` works over either link without knowing which one it holds.
+/// The transport-agnostic surface a remote client (Mac or another iPhone) drives to talk to the
+/// host. `BLELink` (Bluetooth LE) conforms; the former `RemoteLink` (WatchConnectivity) transport
+/// was retired in Phase 17.5. A single `RemoteClientModel` works over any conforming link without
+/// knowing which one it holds.
 ///
 /// **To add a transport:** conform a new type to this protocol (send/receive encoded `RemoteCommand`s);
 /// wrap it in `SealedTransport` if the medium isn't already encrypted, and it drops into
@@ -28,9 +29,10 @@ public protocol RemoteTransport: AnyObject {
 
 /// What a transport should do with one outbound command.
 ///
-/// Extracted from `RemoteLink` so the rule is unit-testable on any platform: `RemoteLink` itself is
-/// compiled only where `WatchConnectivity` exists and owns a non-injectable `WCSession.default`, so
-/// the *decision* is tested here and the file is left with nothing but the plumbing.
+/// Originally extracted from the (now-retired, Phase 17.5) `RemoteLink` so the rule is unit-testable
+/// on any platform: `RemoteLink` was compiled only where `WatchConnectivity` existed and owned a
+/// non-injectable `WCSession.default`, so the *decision* is tested here and lives on independently of
+/// any single transport.
 public enum RemoteSendDisposition: Equatable, Sendable {
     /// Hand to the peer now (WatchConnectivity `sendMessageData`, or a live BLE write).
     case sendLive
