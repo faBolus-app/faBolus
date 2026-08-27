@@ -1301,11 +1301,25 @@ public final class AppModel {
     /// `FailoverBadgePresenter.snoozeGateAllows` (was already `nonisolated static` — pure, so the
     /// move is behavior-preserving); see that type for the full predicate doc comment.
 
+    /// Phase 18 (GO-1 Step 8) additive test seam — mirrors `TandemBackend.onLinkDroppedCleanupStepForTesting`
+    /// EXACTLY: a plain optional closure, nil in production (so zero cost), fired at each top-level phase
+    /// boundary and each dispatched effect inside `refresh()` so `RefreshOrderingCharacterizationTests` can
+    /// pin the current `maybeHandlePumpSwitch → merge → façade-assign → effects` order — the ordering wall
+    /// this phase's extraction must preserve. Never a back-pointer; carries only a flat string tag (safety-
+    /// edge decisions are encoded into the tag, e.g. `"connectionEdge:raise"`). Task 2 relocates the effect
+    /// tags into `RefreshEffectsCoordinator` (top-level tags stay here) so the SAME suite stays green.
+    var refreshEffectOrderRecorderForTesting: ((String) -> Void)?
+    /// Flat-tag encoding of a `SafetyEdge` decision for `refreshEffectOrderRecorderForTesting` (Phase 18).
+    private func refreshEdgeTag(_ e: SafetyEdge) -> String {
+        switch e { case .none: return "none"; case .raise: return "raise"; case .clear: return "clear" }
+    }
+
     private func refresh() {
         // B4: on a fresh connect to a DIFFERENT pump, clear the previous pump's derived config off the
         // backend snapshot BEFORE the merge below reads it, so a stale max-bolus / therapy param / profile
         // can't be shown or dosed against in the window before the new pump's reads land.
         maybeHandlePumpSwitch()
+        refreshEffectOrderRecorderForTesting?("maybeHandlePumpSwitch")
         // Primary = pump-relayed glucose; fail over to the independent source when the pump feed is
         // stale. A stale reading is never published as current (see GlucoseArbiter).
         // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
@@ -1314,14 +1328,21 @@ public final class AppModel {
         let (snap, hist, provenance) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
                                                             pumpHistory: source.glucoseHistory,
                                                             source: glucoseSource)
+        refreshEffectOrderRecorderForTesting?("merge")
         snapshot = snap
+        // REVIEW L-2: fire the SINGLE `facadeAssign` tag HERE, at the first façade write (`snapshot = snap`),
+        // immediately after merge and before the safety edges — NOT at the later façade mirrors below, which
+        // would put `facadeAssign` after the safety-edge tags and break the recorded top-level order.
+        refreshEffectOrderRecorderForTesting?("facadeAssign")
         // P0: on a fresh connect, reconcile any unresolved delivery against the pump so the global block
         // can release once the outcome is authoritatively known.
         if previousConnection != .connected, snap.connection == .connected, deliveryBlockedReason != nil {
             Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
         }
         // §6 safety (never-suppressible): pump-link drop, fired once on the edge; withdrawn on reconnect.
-        switch SafetyEdge.connection(prev: previousConnection, now: snap.connection) {
+        let connectionEdge = SafetyEdge.connection(prev: previousConnection, now: snap.connection)
+        refreshEffectOrderRecorderForTesting?("connectionEdge:\(refreshEdgeTag(connectionEdge))")
+        switch connectionEdge {
         case .raise:
             postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
                        body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
@@ -1343,7 +1364,9 @@ public final class AppModel {
         previousConnection = snap.connection
         // §6 safety: CGM data loss — raised when a previously-fresh feed goes stale/absent; cleared on resume.
         let cgmFresh = snapshot.glucose != nil && !snapshot.isGlucoseStale
-        switch SafetyEdge.freshness(wasFresh: previousGlucoseFresh, isFresh: cgmFresh) {
+        let freshnessEdge = SafetyEdge.freshness(wasFresh: previousGlucoseFresh, isFresh: cgmFresh)
+        refreshEffectOrderRecorderForTesting?("freshnessEdge:\(refreshEdgeTag(freshnessEdge))")
+        switch freshnessEdge {
         case .raise:
             postSafety(.cgmDataLoss, severity: .warning, title: "CGM data lost",
                        body: "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
@@ -1360,15 +1383,19 @@ public final class AppModel {
         // driven by each `refresh()` call (a BLE event/heartbeat), NOT the suspended 20s arbiterTimer
         // alone, since the watchdog itself is what catches the case where `refresh()` never runs again
         // before the app is fully suspended (see `StalenessWatchdogEdge`/`StalenessWatchdog`).
-        switch StalenessWatchdogEdge.decide(cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
-                                            lastArmedDate: lastArmedGlucoseDate) {
+        let stalenessEdge = StalenessWatchdogEdge.decide(cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
+                                                         lastArmedDate: lastArmedGlucoseDate)
+        switch stalenessEdge {
         case .arm(let date):
+            refreshEffectOrderRecorderForTesting?("stalenessWatchdog:arm")
             lastArmedGlucoseDate = date
             notificationStalenessSink?(date)
         case .cancel:
+            refreshEffectOrderRecorderForTesting?("stalenessWatchdog:cancel")
             lastArmedGlucoseDate = nil
             notificationStalenessCancelSink?()
-        case .none: break
+        case .none:
+            refreshEffectOrderRecorderForTesting?("stalenessWatchdog:none")
         }
         // C2-01: the app-owned urgent-low alarm — fires ONLY while the pump's own feed is unavailable
         // (its own cgmAlerts are unavailable then too), on EITHER the arbitrated live value crossing
@@ -1385,7 +1412,9 @@ public final class AppModel {
             && ((glucoseSource as? PollingGlucoseSource)?.urgentLowSentinel)
                 .map { !GlucoseFreshness.isStale($0.date) } == true
         let urgentLowNow = UrgentLowAlarm.isActive(mgdl: snapshot.glucose, provenance: provenance) || sentinelFresh
-        switch SafetyEdge.edge(wasActive: urgentLowActive, isActive: urgentLowNow) {
+        let urgentLowEdge = SafetyEdge.edge(wasActive: urgentLowActive, isActive: urgentLowNow)
+        refreshEffectOrderRecorderForTesting?("urgentLowEdge:\(refreshEdgeTag(urgentLowEdge))")
+        switch urgentLowEdge {
         case .raise:
             urgentLowActive = true
             postSafety(.cgmDataLoss, severity: .critical, title: UrgentLowAlarm.title, body: UrgentLowAlarm.body,
@@ -1421,6 +1450,7 @@ public final class AppModel {
                                 // SAME predicate the action gate in `App.swift` uses — so the button's
                                 // visibility can never promise an action the bridge will actually refuse.
                                 hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(activeNotifications))
+        refreshEffectOrderRecorderForTesting?("widgetPublish")
         // D4-07 (16-04): unconditionally-reachable every tick (unlike the deleted `maybeBackfillNightscout`,
         // whose guard could never be true on `main` — see the deletion note above) — `NightscoutUploader`
         // is the `main`-only D-04 stub (`NightscoutStub.swift`): `sync(...)` is a proven-inert no-op
@@ -1428,23 +1458,36 @@ public final class AppModel {
         // this call site is left in place rather than deleted (it does not meet the same zero-reference
         // bar as the deleted backfill — it IS reached, it just does nothing).
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucoseHistory, boluses: bolusMarkers)
+        refreshEffectOrderRecorderForTesting?("nightscoutSync")
         // Phase 16 GO-1 Step 5 (16-05): moved into `HistoryPersistenceCoordinator.persist` — the facade
         // forwards the current published `glucoseHistory`/`bolusMarkers` values (D-04: values in, no
         // back-pointer) instead of the coordinator reading `AppModel`'s stored properties directly.
         historyPersistence.persist(glucose: glucoseHistory, boluses: bolusMarkers, provenance: provenance)
+        refreshEffectOrderRecorderForTesting?("historyPersist")
         #if FABOLUS_HEALTHKIT
         maybeAutoImportAppleHealth()   // D-11b: default-OFF, throttled hourly like the Nightscout backfill
+        refreshEffectOrderRecorderForTesting?("healthkitImport")
         maybeAutoExportAppleHealth()   // D-12a: default-OFF, throttled ~60s like the Nightscout upload
+        refreshEffectOrderRecorderForTesting?("healthkitExport")
         #endif
         updateEatingNudge()
+        refreshEffectOrderRecorderForTesting?("updateEatingNudge")
         reconcileHeartRateWanted()   // 09.18b (D-09): keep the watch HR-send in sync with the in-app toggle
+        refreshEffectOrderRecorderForTesting?("reconcileHeartRateWanted")
         evaluateSavePinOffer()
+        refreshEffectOrderRecorderForTesting?("evaluateSavePinOffer")
         maybeAutoSyncPumpTime()
-        if canControlModes { ModeAutomation.applyPendingIfDue(using: self) }   // catch a queued mode switch
+        refreshEffectOrderRecorderForTesting?("maybeAutoSyncPumpTime")
+        if canControlModes {
+            ModeAutomation.applyPendingIfDue(using: self)   // catch a queued mode switch
+            refreshEffectOrderRecorderForTesting?("modeAutomation")
+        }
         pushStatusIfNeeded()
+        refreshEffectOrderRecorderForTesting?("statusPush")
         if alertsChanged {
             for cb in notificationsSubscribers { cb(activeNotifications) }
             forceStatusPush()   // get alert changes to the watch immediately (bypass throttle)
+            refreshEffectOrderRecorderForTesting?("subscriberFanout")
         }
     }
 

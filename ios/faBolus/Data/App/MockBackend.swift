@@ -189,6 +189,34 @@ public final class MockBackend: PumpBackend {
         snapshot.pumpModelName = isMobi ? "Mobi (simulated)" : "t:slim X2 (simulated)"
         onChange?()
     }
+
+    /// Additive fidelity fix (Phase 18, GO-1 Step 8): give the reference backend a REAL
+    /// `resetSnapshotForPumpSwitch()` instead of silently inheriting `PumpBackend`'s no-op default. On a
+    /// switch to a DIFFERENT pump, `AppModel.maybeHandlePumpSwitch()` calls this BEFORE `refresh()`'s merge
+    /// reads `source.snapshot`, so the previous pump's therapy/config params can't be shown or dosed
+    /// against in the window before the new pump's reads land — mirroring `TandemBackend`'s real
+    /// implementation (config/therapy fields → `PumpSnapshot()` defaults; every LIVE field preserved). NOT
+    /// test-only: `MockBackend` also ships in the Simulator build. Without this the ordering-trap
+    /// characterization scenario is vacuous (nothing changes on switch), so `carbRatio`/`isf`/`targetBg`
+    /// (seeded 10/40/110, default 0/0/0) are the fields that make the reset observable — `maxBolusUnits`'s
+    /// seed (25) equals its default (25), so it is deliberately NOT the assertion target.
+    public func resetSnapshotForPumpSwitch() {
+        let d = PumpSnapshot()
+        snapshot.maxBolusUnits = d.maxBolusUnits
+        snapshot.maxBasalUnitsPerHour = d.maxBasalUnitsPerHour
+        snapshot.carbRatio = d.carbRatio
+        snapshot.isf = d.isf
+        snapshot.targetBg = d.targetBg
+        snapshot.therapyParamsDate = d.therapyParamsDate
+        snapshot.activeProfileName = d.activeProfileName
+        snapshot.controlIQMode = d.controlIQMode
+        snapshot.controlIQEnabled = d.controlIQEnabled
+        snapshot.controlIQWeightLbs = d.controlIQWeightLbs
+        snapshot.controlIQTotalDailyInsulin = d.controlIQTotalDailyInsulin
+        snapshot.controllerVariant = d.controllerVariant
+        snapshot.profiles = d.profiles
+        snapshot.viewedProfileSegments = d.viewedProfileSegments
+    }
     /// Test knob (Phase 09.17-01, D-06b): `seedHistory()`'s glucose trace uses `Double.random` so the
     /// Simulator/SwiftUI-preview experience never looks robotic — but that same randomness makes the
     /// default `MockBackend()` fixture unusable as a `SnapshotTesting` reference (a golden image must
