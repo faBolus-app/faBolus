@@ -645,11 +645,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             // `triggerManualHistorySync` (the "Sync now" affordance) bypasses this gate entirely and
             // stays available regardless (UI-SPEC assumption 2).
             guard AppSettings.shared.historySyncEnabled else { return }
-            // `tx` (not `client`) — routes through `injectedTransport` under test (round-3 §6.1 seam),
-            // matching every other testable send site in this file (e.g. the remote-carb/BG entries
-            // above). `HistoryLogStatusRequest` is unsigned/unelevated: `.read`-risk, permitted under
-            // the connection's default `.readOnly` policy (D-06).
-            try? tx.send(HistoryLogStatusRequest(), authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            // tslim-reconnect-loop (Phase B, item 4): the auto-on-connect history-status read (op58) now
+            // routes through the GUARDED read path (`sendOnDemandRead`) instead of raw `tx.send`, so it
+            // picks up the `badOpcodes` never-resend backstop + op-77 correlation. `HistoryLogStatusRequest`
+            // is unsigned/unelevated (`.read`-risk, permitted under the default `.readOnly` policy, D-06);
+            // the scheduler's `send` closure preserves the same `injectedTransport` seam + wire bytes.
+            _ = readScheduler.sendOnDemandRead(HistoryLogStatusRequest())
         }
     }
 
@@ -875,7 +876,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             body(&self.iobHistory)
         }
         responseApplier.send = { [weak self] msg in
-            try? self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            // tslim-reconnect-loop (Phase B, item 4): the chained IDP/history reads this closure emits
+            // (IDPSettings op64, IDPSegment op66, HistoryLogStatus op58) now route through the GUARDED
+            // read path (`sendOnDemandRead` → `sendStatusRead`) instead of raw `tx.send`, so they pick up
+            // the `badOpcodes` never-resend backstop + op-77 correlation they used to bypass. Byte-identical
+            // wire (the scheduler's `send` closure forwards the same `tx.send(authKey:[],…)` defaults).
+            // Durable self-heal (learn-and-stop) — graceful, never hard-disabled.
+            _ = self?.readScheduler.sendOnDemandRead(msg)
         }
         responseApplier.noteCalcInputArrived = { [weak self] iob in self?.readScheduler.noteCalcInputArrived(iob: iob) }
         responseApplier.completeGlucoseRead = { [weak self] in self?.readScheduler.completeGlucoseRead() }
@@ -953,7 +960,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// comment).
     private func wireHistorySyncCoordinator() {
         historySyncCoordinator.send = { [weak self] msg in
-            try? self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            // tslim-reconnect-loop (Phase B, item 4): the HistoryLog (op60) backfill pages now route through
+            // the GUARDED read path (`sendOnDemandRead` → `sendStatusRead`) instead of raw `tx.send`, so a
+            // pump that rejects op60 with op-77 self-heals (learn-and-stop) rather than re-triggering a
+            // teardown every page. GRACEFUL: on a pump that supports history (e.g. the owner's) op60 is
+            // never rejected → never skipped → history keeps working. Byte-identical wire.
+            _ = self?.readScheduler.sendOnDemandRead(msg)
         }
         historySyncCoordinator.isConnected = { [weak self] in self?.snapshot.connection == .connected }
         historySyncCoordinator.historySyncState = { [weak self] in self?.historySyncState ?? .idle(lastSynced: nil) }
@@ -1088,6 +1100,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// and burns a real 1.4s `Task.sleep` — lets a test arm "viewing profile X" before injecting an
     /// `IDPSettingsResponse`/`IDPSegmentResponse` frame, to pin the segment-read cascade deterministically.
     func setViewedProfileIdForTesting(_ id: Int) { viewedProfileId = id }
+    /// Test seam (tslim-reconnect-loop Phase B, item 4): seed an opcode into the scheduler's in-memory
+    /// never-resend `badOpcodes` set, so a test can prove the newly-guarded raw-send reads (HistoryLog
+    /// op60, IDP op64/op66, ProfileStatus) are now SKIPPED by that backstop — behavior impossible before
+    /// they were routed through `sendOnDemandRead`.
+    func insertBadOpcodeForTesting(_ opcode: UInt8) { readScheduler.insertBadOpcode(opcode) }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a
@@ -1563,8 +1580,12 @@ public final class TandemBackend: NSObject, PumpBackend {
             let count = min(UInt32(Self.historySearchPageSize), available)
             guard count > 0 else { break }
             let startLog = nextEnd - (count - 1)
-            try? tx.send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)),
-                         authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
+            // tslim-reconnect-loop (Phase B, item 4): the reconciliation-search HistoryLog (op60) pages now
+            // route through the GUARDED read path. On a pump that rejects op60 this fails closed to
+            // `.unavailable` (page times out with no match) exactly as a raw op-77'd send would — but
+            // without re-triggering a teardown mid-reconciliation. op60 is an unsigned read: the signed
+            // dose/delivery wire is untouched. On the owner's pump op60 is supported → unchanged.
+            _ = readScheduler.sendOnDemandRead(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)))
             pages += 1
             let pageDeadline = Date().addingTimeInterval(perPageTimeout)
             while historySearchMatch == nil, Date() < pageDeadline {
@@ -2109,7 +2130,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
         viewedProfileId = -1                           // list refresh must not trigger segment reads
-        try? client.send(ProfileStatusRequest())      // → IDPSettings cascade in didReceiveFrame
+        // tslim-reconnect-loop (Phase B, item 4): route the profile (IDP) list read through the GUARDED
+        // read path (was raw `client.send`) so it gets the `badOpcodes` backstop + op-77 correlation.
+        _ = readScheduler.sendOnDemandRead(ProfileStatusRequest())   // → IDPSettings cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
     }
     public func setActiveProfile(idpId: Int) async throws {
@@ -2145,7 +2168,9 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard snapshot.connection == .connected else { return }
         viewedProfileId = idpId
         snapshot.viewedProfileSegments = []
-        try? client.send(IDPSettingsRequest(idpId: idpId))   // → segment reads cascade in didReceiveFrame
+        // tslim-reconnect-loop (Phase B, item 4): route the IDP-settings read (op64) through the GUARDED
+        // read path (was raw `client.send`) so it gets the `badOpcodes` backstop + op-77 correlation.
+        _ = readScheduler.sendOnDemandRead(IDPSettingsRequest(idpId: idpId))   // → segment reads cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
     }
     public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
