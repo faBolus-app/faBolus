@@ -47,7 +47,7 @@ import Foundation
 
     @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
         // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; every other category
-        // (incl. all four never-suppressible safety categories) is app-generated.
+        // (incl. all five never-suppressible safety categories) is app-generated.
         #expect(Set(C.allCases.filter { $0.isPumpSourced }.map(\.rawValue)) == ["pumpAlert"])
     }
 
