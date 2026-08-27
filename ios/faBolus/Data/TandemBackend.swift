@@ -13,6 +13,24 @@ import UIKit
 // (GO-2 Step 0/1, 16-08, REMED-16 — owner decision: move-to-core; see that file's doc comment). This
 // file's `import faBolusCore` above makes it visible unqualified at every existing call site, unchanged.
 
+/// LW-02 (Phase 13 review fix): the read/poll-domain error type for `readScheduler.send`'s CC-03
+/// comms-suspension hold. A routine STATUS READ that is declined while a pump comms-suspension is active
+/// is NOT a bolus/delivery outcome, so it must not borrow `BolusError.pumpRejected` (a case named and
+/// typed for the delivery domain) — a future caller pattern-matching on `BolusError` could otherwise
+/// assume every case originates from the signed-delivery path. `sendStatusRead`'s generic `catch`
+/// handles this identically to any other thrown error today (log "result=threw", return `false`), so
+/// this is a naming/typing correction with no behavior change (and the gate is never paused in
+/// production yet — the kit-side producer hasn't been pin-bumped in).
+enum PumpReadError: Error, LocalizedError {
+    /// A routine read was held because a pump comms-suspension (CC-03, app-side pause) is active.
+    case heldDuringCommsSuspension(String)
+    var errorDescription: String? {
+        switch self {
+        case .heldDuringCommsSuspension(let r): return "Routine read held — pump comms suspended: \(r)."
+        }
+    }
+}
+
 /// C1-01/C1-04: a typed, notification-agnostic reliability signal the backend emits so `AppModel` (which
 /// owns the private `postSafety`/`scheduleDisconnectEscalation`) can translate it into a user-facing
 /// alert — the backend itself never imports `NotificationCoordinator` or calls those private methods
@@ -801,7 +819,10 @@ public final class TandemBackend: NSObject, PumpBackend {
             // never be held-then-released by it — see `commsSuspensionGate`'s doc comment.
             if self.commsSuspensionGate.shouldHoldRoutineSend() {
                 self.commsSuspensionGate.noteHeldRoutineSend(opcode: msg.opCode)
-                throw BolusError.pumpRejected("routine read held — pump comms suspended (CC-03 app-side pause)")
+                // LW-02: read-domain error, NOT `BolusError` — this is a held routine READ, never a bolus
+                // rejection. `sendStatusRead`'s generic catch handles it identically (inert-today: the gate
+                // is never paused in production).
+                throw PumpReadError.heldDuringCommsSuspension("CC-03 app-side pause")
             }
             return try self.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
         }
