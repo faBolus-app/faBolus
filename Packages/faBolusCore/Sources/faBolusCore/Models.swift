@@ -934,6 +934,23 @@ extension PumpCapabilities {
     ///
     /// `supportsRemoteAlertDismiss` stays model-derived (t:slim X2 firmware silently rejects a *remote*
     /// dismissal — a hardware quirk not expressed by the feature bitmask).
+    ///
+    /// tslim-reconnect-loop Phase B, item 2 — READ-CAPABILITY GATING IS DELIBERATELY NOT DONE HERE
+    /// (owner ruling 2026-08-27, Option A). `derive` is NOT extended to hard-gate the history-backfill or
+    /// profile READS on `apiVersion` / Control-IQ state, and `apiVersion`/CIQ are NOT threaded into this
+    /// signature, for three reasons:
+    ///   1. There is no `PumpFeaturesV1` bit that expresses "history readable" or "profiles readable"
+    ///      (`PumpFeatureBits` decodes only controlIQ / basalLimit / blePumpControl / controlIQPro), so any
+    ///      such derivation would be an unverified guess — and `faBolusCore` is deliberately kit-neutral, so
+    ///      it cannot take an `ApiVersion` input without a new cross-module dependency.
+    ///   2. History backfill MUST stay graceful — a hard `supportsHistoryBackfill = false` on the API-2.5
+    ///      t:slim would BREAK history on pumps that actually support it (the owner's streams op129 fine).
+    ///      So `supportsHistoryBackfill` stays universally `true` and `supportsProfiles` stays the WRITE gate.
+    ///   3. Read-side protection for unsupported reads is ALREADY delivered by two other layers landed this
+    ///      phase: VA-06 (item 1) makes the kit's `minApi` send-gate floors bite once op33 supplies the real
+    ///      negotiated apiVersion, and the guarded op-77 routing (item 4) gives HistoryLog/IDP/ProfileStatus
+    ///      the dynamic never-resend self-heal. A hard capability gate here would be redundant with those and
+    ///      would only risk over-gating a working pump.
     public static func derive(isMobi: Bool, features: PumpFeatureBits?) -> PumpCapabilities {
         var caps = isMobi ? mobiAdvanced : full
         caps.supportsRemoteAlertDismiss = isMobi
