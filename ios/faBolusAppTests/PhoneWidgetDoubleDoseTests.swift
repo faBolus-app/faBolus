@@ -356,4 +356,17 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt (IN-02)")
         }
     }
+
+    /// deliverExtendedBolus `.indeterminate` stamps `lastHostDeliveryAt` too (the 4th delivery site — added
+    /// for VA-07 consistency after the extended path was found to also have an `.indeterminate` branch).
+    @Test func extendedBolusIndeterminateStampsLastHostDeliveryAt() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            backend.forceIndeterminateNextDelivery = true
+            await model.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 30)
+            #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
+            #expect(model.lastHostDeliveryAt != nil, "an indeterminate extended bolus must stamp lastHostDeliveryAt (IN-02)")
+        }
+    }
 }

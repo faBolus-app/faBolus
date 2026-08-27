@@ -1690,6 +1690,7 @@ public final class AppModel {
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
+            lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
             // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
             postSafety(.bolusIndeterminate, severity: .warning,
