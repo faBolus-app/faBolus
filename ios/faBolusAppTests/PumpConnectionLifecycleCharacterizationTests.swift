@@ -206,23 +206,36 @@ struct PumpConnectionLifecycleCharacterizationTests {
         #expect(body.contains("ResponseParser.parse"), "ResponseParser.parse must still live in TandemBackend.swift's didReceiveFrame")
     }
 
-    // MARK: - setDeviceContext(model:apiVersion: nil) preserved byte-for-byte (VA-06 stays deferred)
+    // MARK: - VA-06: op33 now forwards the REAL negotiated apiVersion (reverses the CX-T-04 deferral)
 
-    /// Tolerant of the model detection body's location (`TandemBackend.swift` pre-move,
-    /// `PumpConnectionLifecycle.swift` post-move — GO-2 Step 2 moves `didDiscover`'s model detection) —
-    /// asserts the exact literal call form appears in at least one of the two, so this single test file
-    /// needs no edit across Task 1 → Task 2.
-    ///
-    /// CC-06/C1 (REMED-15.5, 15.5-02): the needle was updated to include the now-REQUIRED `trusted:`
-    /// parameter (`PumpBLEClient.setDeviceContext` gained it in 15.5-01) — `apiVersion: nil` itself is
-    /// still the byte-for-byte-preserved fact this test pins (CX-T-04 stays deferred); `trusted: true` is
-    /// correct here because `didDiscover`'s BLE-name detection is the authoritative, TRUSTED source.
-    @Test func setDeviceContextApiVersionStaysNilByteForByte() throws {
-        let needle = "c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"
+    /// tslim-reconnect-loop Phase B (2026-08-27) — DELIBERATE REVERSAL of the prior
+    /// `setDeviceContextApiVersionStaysNilByteForByte` characterization. The op33-driven device-context
+    /// re-wire used to pass `apiVersion: nil` (fail-open → every kit `minApi` floor inert). It now
+    /// forwards the REAL negotiated `ApiVersion` op33 reported, so the floors bite (kit-layer
+    /// defense-in-depth for reads AND writes). This pins the new correct wiring at BOTH ends:
+    ///  (a) `PumpResponseApplier`'s op33 case constructs the real version from the frame, and
+    ///  (b) the `TandemBackend` binding forwards it into `client.setDeviceContext(apiVersion:)`.
+    @Test func op33ForwardsRealNegotiatedApiVersionIntoTheSendGate_VA06() throws {
+        let applierSource = try Self.readSource(relativeTo: "ios/faBolus/Data/Tandem/PumpResponseApplier.swift")
+        #expect(applierSource.contains("ApiVersion(major: m.majorVersion, minor: m.minorVersion)"),
+                "VA-06: the op33 case must build the REAL negotiated ApiVersion from the frame's major.minor")
+
         let backendSource = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
-        let lifecycleSource = try? Self.readSource(relativeTo: "ios/faBolus/Data/App/PumpConnectionLifecycle.swift")
-        let found = backendSource.contains(needle) || (lifecycleSource?.contains(needle) ?? false)
-        #expect(found, "setDeviceContext(model:apiVersion: nil, trusted:) must keep apiVersion nil — VA-06/CX-T-04 stays deferred")
+        #expect(backendSource.contains("client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted)"),
+                "VA-06: the op33 device-context binding must forward the real apiVersion (NOT nil) into the send gate")
+        #expect(!backendSource.contains("apiVersion: nil"),
+                "VA-06: the op33 device-context binding must no longer pass apiVersion: nil")
+    }
+
+    /// The pre-op33 identity BRIDGES in `PumpConnectionLifecycle` (a fresh `didDiscover`, and the C8
+    /// silent-reconnect `reapplyTrustedIdentityIfKnown()` restore) legitimately still pass `apiVersion:
+    /// nil` — op33 has not arrived yet at those points, and it re-wires with the real version later the
+    /// SAME cycle (the authoritative per-cycle re-wire point). This pins that the MODEL-only bridge is
+    /// intentional, so a future edit can't silently regress it into guessing an apiVersion pre-op33.
+    @Test func preOp33IdentityBridgesStayModelOnly() throws {
+        let lifecycleSource = try Self.readSource(relativeTo: "ios/faBolus/Data/App/PumpConnectionLifecycle.swift")
+        #expect(lifecycleSource.contains("setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"),
+                "the pre-op33 bridges (didDiscover + C8 reapply) stay MODEL-only (apiVersion nil) — op33 supplies the real version this cycle")
     }
 
     // MARK: - Source-scan helpers (mirrors HistoryLogSyncDeliveryBoundaryTests' established pattern)

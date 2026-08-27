@@ -37,26 +37,30 @@ struct PumpDeviceContextWireTests {
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0; trusted = $1 }
+            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
             let mobi = apiVersion(major: 3, minor: 5)
             #expect(mobi.isMobi, "3.5 is the Mobi threshold")
             applier.apply(mobi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name unknown ⇒ device context uses the op33 heuristic (Mobi)")
+            #expect(apiVer == ApiVersion(major: 3, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (3.5)")
             #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
         // t:slim X2 API version (2.5) with no name detection ⇒ heuristic says NOT Mobi.
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0; trusted = $1 }
+            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
             let tslim = apiVersion(major: 2, minor: 5)
             #expect(!tslim.isMobi, "2.5 is t:slim X2, not Mobi")
             applier.apply(tslim, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name unknown ⇒ device context uses the op33 heuristic (t:slim)")
+            #expect(apiVer == ApiVersion(major: 2, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (2.5)")
             #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
     }
@@ -65,30 +69,35 @@ struct PumpDeviceContextWireTests {
     /// non-nil value, `applyDeviceContext` is called with THAT value even when the message's own `isMobi`
     /// disagrees.
     @Test func bleNameDetectionWinsOverApiHeuristic() {
-        // Name says Mobi, but the op33 frame's heuristic says t:slim (2.5) — the name must win.
+        // Name says Mobi, but the op33 frame's heuristic says t:slim (2.5) — the name must win. VA-06: the
+        // apiVersion forwarded is the frame's own (2.5), independent of the name-derived MODEL.
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { true }
-            applier.applyDeviceContext = { captured = $0; trusted = $1 }
+            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
             let tslimByApi = apiVersion(major: 2, minor: 5)
             #expect(!tslimByApi.isMobi, "the heuristic alone would say NOT Mobi")
             applier.apply(tslimByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name-detected Mobi must win over the op33 API heuristic")
+            #expect(apiVer == ApiVersion(major: 2, minor: 5), "VA-06: apiVersion is the frame's own (2.5), independent of the name-derived model")
             #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
         // Name says t:slim, but the op33 frame's heuristic says Mobi (3.5) — the name must win.
         do {
             let applier = PumpResponseApplier()
             var captured: Bool?
+            var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { false }
-            applier.applyDeviceContext = { captured = $0; trusted = $1 }
+            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
             let mobiByApi = apiVersion(major: 3, minor: 5)
             #expect(mobiByApi.isMobi, "the heuristic alone would say Mobi")
             applier.apply(mobiByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name-detected t:slim must win over the op33 API heuristic")
+            #expect(apiVer == ApiVersion(major: 3, minor: 5), "VA-06: apiVersion is the frame's own (3.5), independent of the name-derived model")
             #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
     }
@@ -177,6 +186,56 @@ struct PumpDeviceContextWireTests {
         #expect(b.identityTrustedForTesting == false, "the op33 heuristic can never satisfy the trust bit")
         #expect(b.identityGateErrorForTesting(tracerMessage()) == .identityNotEstablished(opcode: SetSleepScheduleRequest.props.opCode),
                 "a misidentified t:slim's Mobi-only send must fail closed")
+    }
+
+    // MARK: - VA-06 (tslim-reconnect-loop Phase B): op33 supplies the REAL apiVersion → the kit floors bite
+    //
+    // Reverses the CX-T-04/VA-06 deferral. Before this change `setDeviceContext` was called with
+    // `apiVersion: nil`, so every `minApi` floor was inert (fail-open). These drive the REAL op33 path
+    // (`injectStatusFrameForTesting`) through a real `TandemBackend` and assert (a) the negotiated
+    // apiVersion is now the exact value op33 reported, (b) a below-floor read is now FILTERED on the
+    // API-2.5 t:slim (the gate bites), and (c) a Mobi (API ≥ floor) is NOT regressed — its reads still
+    // pass. `LoadStatusRequest` (op20) carries the conservative `.benchConservativeUnverifiedFloor`
+    // (v3.4) floor; `CgmStatusV2Request` is `[.mobi]` + `mobi_v3_5`.
+
+    /// The API-2.5 t:slim: op33 makes the negotiated apiVersion (2,5) live, so a below-3.4-floor read
+    /// (op20) is now refused by the device/API send gate — pre-op33 it fails OPEN (nil apiVersion).
+    @Test func va06_op33SuppliesRealApiVersion_soBelowFloorReadIsFilteredOnApi25Tslim() {
+        resetIdentityStores()
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        // Pre-op33: apiVersion is nil ⇒ the floor fails OPEN (today's send-then-NACK behavior).
+        #expect(b.negotiatedApiVersionForTesting == nil, "no apiVersion negotiated before op33")
+        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
+                "pre-op33 the minApi floor fails open (nil apiVersion) — behavior-preserving")
+
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // REAL op33
+
+        #expect(b.negotiatedApiVersionForTesting == ApiVersion(major: 2, minor: 5),
+                "VA-06: op33 supplies the REAL negotiated apiVersion (2.5), not nil")
+        #expect(b.connectedPumpModelForTesting == .tslim, "op33 (2.5) identifies a t:slim")
+        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest())
+                    == .unsupportedOnDevice(opcode: LoadStatusRequest.props.opCode),
+                "VA-06 now BITES: op20 (minApi 3.4) is filtered on the API-2.5 t:slim — no send, no op-77, no teardown")
+    }
+
+    /// A Mobi (API 3.5) must NOT be regressed by VA-06: its own reads still pass the gate. Proves the
+    /// floor is evaluated per-dimension and a supported target is never over-gated.
+    @Test func va06_mobiIsNotRegressed_itsReadsStillPassTheGate() {
+        resetIdentityStores()
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // REAL op33 (Mobi)
+
+        #expect(b.negotiatedApiVersionForTesting == ApiVersion(major: 3, minor: 5),
+                "VA-06: op33 supplies the REAL negotiated apiVersion (3.5)")
+        #expect(b.connectedPumpModelForTesting == .mobi, "op33 (3.5) identifies a Mobi")
+        // A Mobi-restricted read ([.mobi], minApi 3.5) is SUPPORTED on a Mobi at 3.5 — not filtered.
+        #expect(b.deviceSupportErrorForTesting(CgmStatusV2Request()) == nil,
+                "VA-06 must NOT regress Mobi: a [.mobi] / minApi-3.5 read still passes on a Mobi at 3.5")
+        // And the below-floor-on-t:slim read op20 is FINE on the Mobi (3.5 ≥ 3.4) — the floor is per-API.
+        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
+                "op20 (minApi 3.4) is supported on a Mobi at API 3.5 — the gate is API-floored, not blanket")
     }
 
     /// codex C10: reapply must confirm the peripheral the kit is ACTUALLY (re)connecting before stamping
