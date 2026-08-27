@@ -31,9 +31,13 @@ import TandemBLE
 @Suite(.serialized) @MainActor
 struct PumpStaticUnsupportedReadRegistryTests {
 
-    /// op20 — the read the evidenced API-2.5 t:slim X2 (sw 2.5) rejects, and the one seeded entry of the
+    /// op20 — the read the evidenced API-2.5 t:slim X2 (sw 2.5) rejects, and the first seeded entry of the
     /// static registry.
     private var loadStatusOpcode: UInt8 { LoadStatusRequest.props.opCode }
+    /// op120 HighestAam + op146 ActiveAamBits — the two Control-IQ-era AAM reads `alertRead()` auto-polls,
+    /// added to the static registry by debug session `tslim-reconnect-loop` (see suite section (d)).
+    private var highestAamOpcode: UInt8 { HighestAamRequest.props.opCode }
+    private var activeAamBitsOpcode: UInt8 { ActiveAamBitsRequest.props.opCode }
 
     // MARK: - (a) Known-bad combo: op20 NEVER sent, even once, on a first-ever connect
 
@@ -156,5 +160,67 @@ struct PumpStaticUnsupportedReadRegistryTests {
                 "static exclusion suppresses op20 with no send, even against an empty persisted store (first-ever connect)")
         #expect(store.learnedOpcodes(for: key).isEmpty,
                 "the STATIC exclusion must NOT be persisted into the per-pump LEARNED store — it is additive, re-derived each connect")
+    }
+
+    // MARK: - (d) tslim-reconnect-loop: the two Control-IQ-era AAM reads join the static exclusion on API-2.5
+    //
+    // Debug session `tslim-reconnect-loop` (2026-08-27, pumpX2-oracle differential): `PumpReadScheduler
+    // .alertRead()` (Phase 15 / CC-10) auto-polls two Control-IQ-era AAM reads — `HighestAamRequest` (op120)
+    // and `ActiveAamBitsRequest` (op146/0x92) — every burst. On the Control-IQ-off / no-CGM API-2.5 t:slim X2
+    // the pump rejects them (op-77) and DELIBERATELY tears the BLE link down ~90 ms later (HCI 0x13) — a
+    // connect/disconnect flap that only LOOKED like a fixed ~2 s watchdog because the deterministic read
+    // schedule reached the offending tail at a fixed offset. The fix extends the SAME static-registry
+    // mechanism that already zeroes op20's first-connect drop: name op120/op146 as KNOWN-unsupported for this
+    // exact (model, firmware) so `runIdentityGatedReadsOnce()` seeds them into `badOpcodes` the instant op33
+    // identifies the pump, BEFORE the deferred `alertRead()` burst sends them. Bench (`bench-t1-coverage-
+    // resilience.md`) proved the SAME TandemKit stack holds THIS pump zero-disconnect once every unsupported
+    // opcode is pre-filtered — so suppressing these reproduces that zero-disconnect.
+
+    /// The evidenced bad combo's static set is now {op20, op120, op146}. Keyed PRECISELY — a newer firmware,
+    /// a Mobi, or an unidentified pump suppresses nothing (fail-open; the dynamic op77 self-heal is the net).
+    @Test func api25TslimStaticSetIncludesTheTwoAamReads() {
+        let bad = PumpKnownUnsupportedReads.unsupportedReadOpcodes(isMobi: false, softwareVersion: "2.5")
+        #expect(bad.contains(loadStatusOpcode))
+        #expect(bad.contains(highestAamOpcode),
+                "op120 HighestAam must be statically suppressed on the API-2.5 t:slim (tslim-reconnect-loop)")
+        #expect(bad.contains(activeAamBitsOpcode),
+                "op146 ActiveAamBits must be statically suppressed on the API-2.5 t:slim (tslim-reconnect-loop)")
+        // Boundary neighbors — precisely keyed, never broadened.
+        #expect(PumpKnownUnsupportedReads.unsupportedReadOpcodes(isMobi: false, softwareVersion: "3.4").isEmpty,
+                "a newer t:slim firmware (3.4) suppresses nothing — the dynamic self-heal remains the net")
+        #expect(PumpKnownUnsupportedReads.unsupportedReadOpcodes(isMobi: true, softwareVersion: "2.5").isEmpty,
+                "a Mobi at 2.5 suppresses nothing — the entry is keyed to the t:slim X2 combo")
+        #expect(PumpKnownUnsupportedReads.unsupportedReadOpcodes(isMobi: nil, softwareVersion: "2.5").isEmpty,
+                "an unidentified pump (isMobi nil) suppresses nothing — never suppress on unknown identity")
+    }
+
+    /// End-to-end: the AAM reads are seeded into the never-resend set the instant op33 identifies the bad
+    /// combo, so the DEFERRED `alertRead()` burst SKIPS them — never sent, exactly like op20. This is the
+    /// reproduction of the bench zero-disconnect: the offending post-pair reads no longer reach the pump.
+    @Test func knownBadCombo_seedsAamReads_soDeferredAlertReadSkipsThemNeverSends() async {
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.alertReadDelaySecForTesting = 0.05
+        var dispatched: [UInt8] = []; var skipped: [UInt8] = []
+        b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
+        b.onReadSkippedForTesting = { _, op in skipped.append(op) }
+        b.startPollingForTesting()
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // identify bad combo → seed
+        #expect(b.badOpcodesForTesting.contains(highestAamOpcode) && b.badOpcodesForTesting.contains(activeAamBitsOpcode),
+                "op120/op146 must be seeded into badOpcodes the instant op33 identifies the API-2.5 t:slim")
+        try? await Task.sleep(nanoseconds: 200_000_000)   // let the deferred alertRead() burst land
+        #expect(skipped.contains(highestAamOpcode) && skipped.contains(activeAamBitsOpcode),
+                "the deferred alertRead() must SKIP op120/op146 on the bad combo — the change that holds the BLE link")
+        #expect(!dispatched.contains(highestAamOpcode) && !dispatched.contains(activeAamBitsOpcode),
+                "op120/op146 must never be SENT on the API-2.5 t:slim — reproducing the bench zero-disconnect")
+    }
+
+    /// Guardrail parity: adding the AAM reads keeps the static set READ-ONLY (Guardrail A) — {op20, op120,
+    /// op146} is still disjoint from every delivery/control-WRITE opcode.
+    @Test func aamStaticExclusionStaysReadOnly_guardrailA() {
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.startPollingForTesting()
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))
+        #expect(b.badOpcodesForTesting.isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
+                "Guardrail A: the AAM static exclusions must never put a delivery/control-write opcode in badOpcodes")
     }
 }

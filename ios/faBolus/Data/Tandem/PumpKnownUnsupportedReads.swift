@@ -44,10 +44,27 @@ enum PumpKnownUnsupportedReads {
     ///     Mobi, `nil` = not yet known — returns empty, so a read is never suppressed on an unknown identity).
     ///   - softwareVersion: `PumpSnapshot.softwareVersion` ("major.minor" from op33), or "" when not yet read.
     static func unsupportedReadOpcodes(isMobi: Bool?, softwareVersion: String) -> Set<UInt8> {
-        // Evidenced entry — t:slim X2 (non-Mobi), software/API 2.5:
-        //   op20 LoadStatusRequest → op77 ErrorResponse cargo [0,0] → BLE teardown (~90 ms). See type doc.
+        // Evidenced entries — t:slim X2 (non-Mobi), software/API 2.5:
+        //   • op20  LoadStatusRequest  → op77 ErrorResponse cargo [0,0] → BLE teardown (~90 ms). See type doc.
+        //   • op120 HighestAamRequest  ┐ Control-IQ-era auto-adjustment-mode (AAM) reads that Phase 15 / CC-10
+        //   • op146 ActiveAamBitsRequest┘ appended to `PumpReadScheduler.alertRead()`. Debug session
+        //     `tslim-reconnect-loop` (2026-08-27, pumpX2-oracle differential): on this Control-IQ-off /
+        //     no-CGM API-2.5 t:slim X2 the pump rejects these Control-IQ-era reads (op-77) and DELIBERATELY
+        //     tears the BLE link down ~90 ms later (HCI 0x13 remote-user-terminated) → a connect/disconnect
+        //     flap that only LOOKED like a fixed ~2 s watchdog because the deterministic read schedule reached
+        //     the offending tail at a fixed offset. Suppressing them here (seeded into `badOpcodes` the instant
+        //     op33 identifies the pump, before the DEFERRED `alertRead()` burst sends them — see
+        //     `PumpReadScheduler.runIdentityGatedReadsOnce`) reproduces the bench zero-disconnect
+        //     (`bench-t1-coverage-resilience.md`: the SAME TandemKit stack held THIS pump zero-disconnect once
+        //     every unsupported opcode was pre-filtered). Kept a READ-only, precisely-keyed static seed exactly
+        //     like op20 — the dynamic op77 self-heal + per-pump persistence remain the net for any OTHER combo.
+        //     (op118 MalfunctionStatus was ALSO 0/18-answered in the capture but is a safety/malfunction read
+        //     that PREDATES the CC-10 AAM additions and is only "re-verify"/MEDIUM-confidence, so it is
+        //     deliberately NOT suppressed here — see the debug session; on-device bisection decides it.)
         if isMobi == false, softwareVersion == "2.5" {
-            return [LoadStatusRequest.props.opCode]
+            return [LoadStatusRequest.props.opCode,
+                    HighestAamRequest.props.opCode,
+                    ActiveAamBitsRequest.props.opCode]
         }
         return []
     }
