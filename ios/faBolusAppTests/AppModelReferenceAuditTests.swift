@@ -99,6 +99,11 @@ struct AppModelReferenceAuditTests {
         "LiveActivityAbsenceGuardTests.swift",
         "NightscoutStubInertnessTests.swift",
         "AppModelAccessWideningGuardTests.swift",
+        // 17-IN-02 (Phase 17 review): the humanized-error anti-drift guard genuinely opens/reads
+        // `ios/faBolus/Data/AppModel.swift` at runtime (its `source(_:)` helper reads each file in a
+        // `["ios/faBolus/Data/AppModel.swift", …]` list and extracts curated `lastError`/
+        // `connectionDetail` literals) — ACTIVE, matched by the quoted-full-path runtime-read marker.
+        "HumanizedErrorDriftGuardTests.swift",
     ]
 
     /// COMMENT-ONLY: cites `"AppModel.swift"` in a doc comment / line-number pin; never opens the
@@ -144,6 +149,11 @@ struct AppModelReferenceAuditTests {
         // repo-wide scan (an allow-list keyed to it, not a scan OF it, but equally "active": a carve
         // that relocates the tolerated prose needs this list extended).
         "excludedFiles: Set<String> = [\"AppModel.swift\"]",
+        // 17-IN-02: the quoted repo-relative path passed to a file reader (HumanizedErrorDriftGuardTests'
+        // `for file in ["ios/faBolus/Data/AppModel.swift", …]` read loop). No COMMENT-ONLY file contains
+        // this exact quoted full path (verified) — prose cites `AppModel.swift`/`AppModel.swift:NNNN`, not
+        // the quoted repo-relative path — so it's a reliable active-read signal.
+        "\"ios/faBolus/Data/AppModel.swift\"",
     ]
 
     // MARK: - Tests
