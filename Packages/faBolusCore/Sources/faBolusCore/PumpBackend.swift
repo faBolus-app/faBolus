@@ -489,6 +489,12 @@ public enum Interlocks {
     /// app clamped max-basal only to `max(0, …)` (`TandemBackend.setMaxBasal`), below the kit's floor.
     /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1).
     public static let minMaxBasalLimitUnitsPerHour: Double = 1.0
+    /// The max-basal **limit** ceiling, matching TandemKit's `SetMaxBasalLimitRequest` throwing ceiling
+    /// (pumpX2's `MAX_BASAL_LIMIT_MILLIUNITS` = 15000 mU/hr = 15.0 U/hr, byte-verified against
+    /// `SetMaxBasalLimitRequest.java`). A faBolusCore-side literal because `Interlocks` doesn't import
+    /// `TandemMessages`; without it a request above 15 U/hr throws at the kit boundary instead of clamping.
+    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1).
+    public static let maxMaxBasalLimitUnitsPerHour: Double = 15.0
     /// Clamp a requested max-bolus **limit** into the app's absolute range. The 25 U ceiling is a HARD cap
     /// (owner-locked, P14 §2.1(5): never a confirmation) — a limit can never be set above it, on ANY
     /// backend. This is the single definition the funnel (`AppModel.setMaxBolus`) and every backend share,
@@ -497,5 +503,14 @@ public enum Interlocks {
     /// replace that.
     public static func clampMaxBolusLimit(_ units: Double) -> Double {
         max(minMaxBolusLimitUnits, min(units, absoluteMaxUnits))
+    }
+    /// Clamp a requested max-basal **limit** (U/hr) into the app's supported range. Mirrors
+    /// `clampMaxBolusLimit`: floors at `minMaxBasalLimitUnitsPerHour` and caps at
+    /// `maxMaxBasalLimitUnitsPerHour` (the kit's byte-verified 15.0 U/hr throwing ceiling), so an
+    /// app-originated limit can never throw at the kit boundary — a value above 15 U/hr clamps to 15.0
+    /// and dispatches rather than surfacing a raw, unlocalized `ValidationError`. Single shared definition
+    /// the funnel (`AppModel.setMaxBasal`) and every backend route a max-basal-LIMIT write through.
+    public static func clampMaxBasalLimit(_ unitsPerHour: Double) -> Double {
+        max(minMaxBasalLimitUnitsPerHour, min(unitsPerHour, maxMaxBasalLimitUnitsPerHour))
     }
 }

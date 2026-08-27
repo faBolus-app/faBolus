@@ -22,5 +22,19 @@ struct InterlocksTests {
         #expect(Interlocks.absoluteMaxUnits == 25.0)           // owner-locked; S10's TDD-relative confirms never touch this
         #expect(Interlocks.minMaxBolusLimitUnits == 1.0)       // CX-T-07 ALIGN UP (2026-08-25)
         #expect(Interlocks.minMaxBasalLimitUnitsPerHour == 1.0)
+        #expect(Interlocks.maxMaxBasalLimitUnitsPerHour == 15.0)   // WR-02: kit's byte-verified ceiling
+    }
+
+    /// WR-02 (closes 15-GAP-01): `setMaxBasal` now clamps symmetrically with `setMaxBolus`. A value above
+    /// the kit's byte-verified 15.0 U/hr throwing ceiling must CLAMP to 15.0 (and dispatch) rather than
+    /// throw a raw, unlocalized `ValidationError`; a sub-floor value clamps up to the 1.0 U/hr floor.
+    @Test func maxBasalLimitAcceptsAndClampsAboveCeiling() {
+        #expect(Interlocks.clampMaxBasalLimit(20) == 15.0)     // above the ceiling → capped, not thrown
+        #expect(Interlocks.clampMaxBasalLimit(1000) == 15.0)   // absurd → still capped
+        #expect(Interlocks.clampMaxBasalLimit(15) == 15.0)     // at the ceiling → unchanged
+        #expect(Interlocks.clampMaxBasalLimit(5) == 5.0)       // mid-range → passes through
+        #expect(Interlocks.clampMaxBasalLimit(0.5) == 1.0)     // below the 1.0 U/hr floor → floored
+        #expect(Interlocks.clampMaxBasalLimit(-5) == 1.0)      // negative → floored, never ≤ 0
+        #expect(Interlocks.clampMaxBasalLimit(1.0) == 1.0)     // at the floor → unchanged
     }
 }

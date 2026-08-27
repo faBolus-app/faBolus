@@ -2079,9 +2079,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await sendControl(try SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
     }
     public func setMaxBasal(unitsPerHour: Double) async throws {
-        // CX-T-07 owner decision (ALIGN UP, 2026-08-25): floored at the kit's SetMaxBasalLimitRequest
-        // throwing floor (1.0 U/hr), not just >0 — so no app-originated value falls below the kit's bound.
-        let clamped = max(Interlocks.minMaxBasalLimitUnitsPerHour, unitsPerHour)
+        // WR-02: shared clamp floors at the kit's SetMaxBasalLimitRequest throwing floor (1.0 U/hr) AND
+        // caps at its throwing ceiling (15.0 U/hr), mirroring setMaxBolus/clampMaxBolusLimit. A value above
+        // 15 U/hr now clamps to 15.0 and dispatches rather than throwing a raw ValidationError (defense-in-
+        // depth; the funnel clamps too).
+        let clamped = Interlocks.clampMaxBasalLimit(unitsPerHour)
         try await sendControl(try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: UInt32((clamped * 1000).rounded())), delivery: false)
     }
     public func syncTimeToNow() async throws {

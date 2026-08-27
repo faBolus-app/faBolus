@@ -1875,10 +1875,14 @@ public final class AppModel {
                                                          afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
     public func setMaxBasal(unitsPerHour: Double) async {
+        // WR-02: clamp at the funnel (floor 1.0 / ceiling 15.0 U/hr, the kit's byte-verified bounds) so the
+        // invariant holds regardless of backend, mirroring setMaxBolus. Record the value ACTUALLY applied
+        // (clamped), not the raw request — a value above 15 U/hr clamps and dispatches, never throws.
+        let clamped = Interlocks.clampMaxBasalLimit(unitsPerHour)
         let before = snapshot.maxBasalUnitsPerHour
-        await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: unitsPerHour) }
+        await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: clamped) }
         provenanceRecorder.recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before),
-                                                         afterOnSuccess: .double(unitsPerHour), succeeded: lastError == nil)
+                                                         afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 

@@ -63,6 +63,36 @@ struct MaxBolusClampTests {
                 "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
     }
 
+    // MARK: - WR-02 (15-GAP-01): setMaxBasal ceiling clamp, symmetric with setMaxBolus
+
+    /// WR-02: a max-basal limit above the kit's byte-verified 15.0 U/hr throwing ceiling must be CLAMPED to
+    /// 15.0 (15000 mU/hr) at the backend and dispatched — not thrown as a raw `ValidationError`. Before this
+    /// `TandemBackend.setMaxBasal` clamped only the floor, so a 20 U/hr request threw at the kit boundary.
+    @Test func tandemBackendClampsTheWrittenMaxBasalLimit() async throws {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.setConnectionForTesting(.connected)
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        try await backend.setMaxBasal(unitsPerHour: 20)   // above the 15 U/hr ceiling → must clamp, not throw
+        let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
+        #expect(sent != nil, "a max-basal-limit write must have gone out (clamped, not thrown)")
+        #expect(sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 15000)).cargo,
+                "the WRITTEN limit must be capped to 15.0 U/hr (15000 mU) even when 20 U/hr is requested")
+    }
+
+    /// WR-02 companion: a sub-floor max-basal request is floored to the kit's 1.0 U/hr throwing floor.
+    @Test func tandemBackendFloorsTheWrittenMaxBasalLimit() async throws {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        backend.setConnectionForTesting(.connected)
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        try await backend.setMaxBasal(unitsPerHour: 0.1)   // below the 1.0 U/hr floor
+        let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
+        #expect(sent != nil, "a max-basal-limit write must have gone out")
+        #expect(sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 1000)).cargo,
+                "the WRITTEN limit must be floored to 1.0 U/hr (1000 mU) even when 0.1 U/hr is requested")
+    }
+
     // MARK: - Phase 2 (D-01/D-02/D-03): fail-closed unread-op-115 freshness gate
 
     /// The core Phase-2 fix (SC1): a manual units bolus attempted while `therapyParamsDate == nil`
