@@ -124,15 +124,20 @@ enum BolusPasscodeStore {
             if parts.count == 4,
                let salt = bytes(String(parts[1])),
                let iterations = Int(parts[2]),
-               let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations) {
-                matched = (hex(derived) == String(parts[3]))
+               let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations),
+               let storedHash = bytes(String(parts[3])) {
+                // WR-03: constant-time compare over raw hash bytes (not `hex(...) == String`),
+                // so verification time doesn't leak how many leading hash bytes matched.
+                matched = constantTimeEquals(derived, storedHash)
             }
             // A malformed v2 blob falls through as a failure (never traps).
         } else {
             // Legacy "saltHex:hashHex" SHA-256 blob — verify with the old scheme, then migrate on success.
             let parts = stored.split(separator: ":")
             if parts.count == 2, let salt = bytes(String(parts[0])),
-               legacyHash(pin: pin, salt: salt) == String(parts[1]) {
+               let storedHash = bytes(String(parts[1])),
+               // WR-03: constant-time compare over raw hash bytes, matching the v2 path.
+               constantTimeEquals(legacyHashBytes(pin: pin, salt: salt), storedHash) {
                 matched = true
                 // VA-29 migration: silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
                 // CX-F-10: the SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
@@ -311,8 +316,24 @@ enum BolusPasscodeStore {
     }
 
     /// The legacy single-SHA-256 derivation, kept ONLY to verify (and then migrate) an old `"salt:hash"` blob.
+    private static func legacyHashBytes(pin: String, salt: [UInt8]) -> [UInt8] {
+        Array(SHA256.hash(data: Data(salt) + Data(pin.utf8)))
+    }
     private static func legacyHash(pin: String, salt: [UInt8]) -> String {
-        hex(Array(SHA256.hash(data: Data(salt) + Data(pin.utf8))))
+        hex(legacyHashBytes(pin: pin, salt: salt))
+    }
+
+    /// WR-03: constant-time equality over raw hash bytes. XOR-accumulates every byte and only
+    /// checks the accumulator at the end, so the comparison time does not depend on WHERE (or
+    /// whether) the first mismatching byte occurs — a wrong PIN whose hash shares a long prefix
+    /// with the stored hash takes the same time as one that differs in byte 0. A length mismatch
+    /// fails fast, which is safe here: both operands are fixed-width derived hashes (PBKDF2 → 32
+    /// bytes, SHA-256 → 32 bytes), so the length itself is not a secret.
+    private static func constantTimeEquals(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        guard a.count == b.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff |= a[i] ^ b[i] }
+        return diff == 0
     }
 
     private static func hex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }

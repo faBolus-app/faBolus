@@ -145,6 +145,31 @@ struct BolusPasscodeTransactionalTests {
         #expect(!BolusPasscodeStore.verify("1230"))
     }
 
+    // MARK: - WR-03: constant-time hash comparison still verifies/rejects correctly (v2 + legacy)
+
+    /// WR-03 replaced the `hex(derived) == String(...)` string comparison in `verify()` with a
+    /// constant-time compare over the raw hash BYTES on both the PBKDF2 (`v2:`) and the legacy
+    /// SHA-256 paths. This pins that the swap preserved behavior: the correct PIN still verifies and
+    /// a wrong PIN still rejects on each path. (The timing property itself — that a near-miss hash
+    /// takes the same time as an early mismatch — isn't asserted here; a unit test can't measure it
+    /// reliably. This is the correctness half: constant-time must not mean always-true.)
+    @Test func constantTimeCompareVerifiesAndRejectsOnV2Path() {
+        reset(); defer { reset() }
+        #expect(BolusPasscodeStore.setPasscode("2718"))   // writes a v2: PBKDF2 blob
+        #expect(BolusPasscodeStore.verify("2718"))         // correct PIN → equal hashes → matched
+        #expect(!BolusPasscodeStore.verify("2719"))        // wrong PIN → unequal hashes → rejected
+        #expect(!BolusPasscodeStore.verify("8172"))        // different wrong PIN → rejected
+        #expect(BolusPasscodeStore.verify("2718"))         // still verifies after the wrong attempts
+    }
+
+    @Test func constantTimeCompareVerifiesAndRejectsOnLegacyPath() {
+        reset(); defer { reset() }
+        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "3141")   // legacy "saltHex:hashHex" SHA-256 blob
+        // First verify goes through the legacy constant-time compare (and then migrates to v2).
+        #expect(!BolusPasscodeStore.verify("3142"))                 // wrong PIN on the legacy path → rejected
+        #expect(BolusPasscodeStore.verify("3141"))                  // correct PIN on the legacy path → matched
+    }
+
     // MARK: - Call site: SettingsView honors setPasscode's false return (source-scan guard)
 
     /// `BolusPasscodeEntryView`'s `onSet` closure must be typed to return whether the store actually
