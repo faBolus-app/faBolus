@@ -76,7 +76,11 @@ struct StatsCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .frame(height: 16)
-        .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.veryLowPct + s.lowPct)), high \(pct(s.highPct + s.veryHighPct))")
+        // WR-01 (Phase 17 review): report all FIVE bands as their own NON-OVERLAPPING percentages, so a
+        // VoiceOver user hears the same five distinct segments a sighted user sees. The prior label spoke
+        // "low" as a cumulative (veryLow+low) figure and folded "very high" silently into "high", so the
+        // spoken breakdown didn't match the 5-segment bar (`tirBar`). Now each band speaks its own `pct`.
+        .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.lowPct)), high \(pct(s.highPct)), very high \(pct(s.veryHighPct))")
     }
 
     private func band(_ pctVal: Double, _ color: Color, _ geo: GeometryProxy) -> some View {
