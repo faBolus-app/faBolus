@@ -164,4 +164,47 @@ struct AppModelAccessWideningGuardTests {
         #expect(Self.allExplicitInternalDeclarationLines(in: declarationLike).count == 1)
         #expect(Self.allExplicitInternalDeclarationLines(in: proseLike).isEmpty)
     }
+
+    // MARK: - WR-02 hardening: enforce the backtick-quoting convention this scan silently relies on
+
+    /// Returns the comment portion of each line (everything from the first `//` onward, covering `//`
+    /// and `///` line/doc comments). The count-based guard above scans the WHOLE line for the literal
+    /// substrings `internal var `/`internal let `/`internal lazy var ` (each with a TRAILING space), so a
+    /// future doc comment in `AppModel.swift` that writes one of those keywords in bare prose (rather
+    /// than backtick-quoted, e.g. `` `internal var` ``, which has no trailing space) would silently
+    /// inflate the count and fail the widened-set assertion for a reason unrelated to any real widening.
+    private static func commentPortions(in source: String) -> [String] {
+        source.components(separatedBy: "\n").compactMap { line -> String? in
+            guard let range = line.range(of: "//") else { return nil }
+            return String(line[range.lowerBound...])
+        }
+    }
+
+    /// The convention this suite depends on, made loud: NO comment/prose line in `AppModel.swift` may
+    /// contain a bare (non-backtick-quoted) `internal var `/`internal let `/`internal lazy var `
+    /// substring. Backtick-quoting a keyword (`` `internal var` ``) elides the trailing space the
+    /// count scanner keys on, so the convention keeps prose from being miscounted as a declaration.
+    /// If this ever fails, the fix is to backtick-quote the keyword in the offending comment — NOT to
+    /// relax the count guard.
+    @Test func appModelProseBacktickQuotesInternalKeywords() throws {
+        let comments = Self.commentPortions(in: try Self.appModelSource())
+        let bareForms = ["internal var ", "internal let ", "internal lazy var "]
+        for comment in comments {
+            for form in bareForms {
+                #expect(!comment.contains(form),
+                        "AppModel.swift comment prose contains a bare `\(form.trimmingCharacters(in: .whitespaces))` — backtick-quote it (e.g. `` `\(form.trimmingCharacters(in: .whitespaces))` ``) so it cannot inflate the widened-declaration count. Offending comment: '\(comment)'")
+            }
+        }
+    }
+
+    /// Fault-injection proof the convention checker is not vacuous: a synthetic comment with a bare
+    /// `internal var ` is caught; a backtick-quoted one is not.
+    @Test func proseConventionCheckerDiscriminatesBareFromBacktickQuoted() {
+        let bareComment = "    /// this widens internal var foo to internal"
+        let quotedComment = "    /// this widens `internal var` foo to internal"
+        let bare = Self.commentPortions(in: bareComment)
+        let quoted = Self.commentPortions(in: quotedComment)
+        #expect(bare.contains { $0.contains("internal var ") })
+        #expect(!quoted.contains { $0.contains("internal var ") })
+    }
 }

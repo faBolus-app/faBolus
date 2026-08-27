@@ -120,6 +120,11 @@ struct HistoryLogSyncDeliveryBoundaryTests {
         var collected: [String] = []
         for line in lines[startIdx...] {
             collected.append(line)
+            // WR-02 hardening: the char-by-char counter below trusts (unenforced) that no `{`/`}` sits
+            // inside a string literal or a `//` comment in a scanned body. Make that trust loud — a
+            // violation fails HERE (mis-scoped slice) instead of silently truncating/over-extending the
+            // forbidden-symbol scan.
+            try Self.assertBracesAreRealCode(in: line, signaturePrefix: signaturePrefix)
             for ch in line {
                 if ch == "{" { depth += 1; opened = true }
                 else if ch == "}" { depth -= 1 }
@@ -130,14 +135,60 @@ struct HistoryLogSyncDeliveryBoundaryTests {
         return collected.joined(separator: "\n")
     }
 
+    /// Throws if `line` carries a `{`/`}` inside a string literal or a `//` comment — the exact case the
+    /// naive brace counter above cannot see. Per-line quote-state scan (the scanned file has no multiline
+    /// `"""` string, so per-line state is exact).
+    private static func assertBracesAreRealCode(in line: String, signaturePrefix: String) throws {
+        let chars = Array(line)
+        var inString = false
+        var escaped = false
+        var i = 0
+        while i < chars.count {
+            let ch = chars[i]
+            if inString {
+                if escaped { escaped = false }
+                else if ch == "\\" { escaped = true }
+                else if ch == "\"" { inString = false }
+                else if ch == "{" || ch == "}" { throw SliceError.braceInStringOrComment(signaturePrefix) }
+            } else {
+                if ch == "\"" { inString = true }
+                else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
+                    let comment = String(chars[i...])
+                    if comment.contains("{") || comment.contains("}") {
+                        throw SliceError.braceInStringOrComment(signaturePrefix)
+                    }
+                    return
+                }
+            }
+            i += 1
+        }
+    }
+
     private enum SliceError: Error, CustomStringConvertible {
         case signatureNotFound(String)
         case unbalancedBraces(String)
+        case braceInStringOrComment(String)
         var description: String {
             switch self {
             case .signatureNotFound(let sig): return "Function signature not found while scanning: \(sig)"
             case .unbalancedBraces(let sig): return "Could not find a balanced closing brace for: \(sig)"
+            case .braceInStringOrComment(let sig): return "A `{`/`}` inside a string literal or `//` comment was found while scanning \(sig) — the naive brace counter can no longer be trusted for this body; rework the literal/comment or make the scanner a real parser"
             }
+        }
+    }
+
+    /// Fault-injection: the brace-context guard must reject a brace hidden in a string literal AND one
+    /// hidden in a trailing `//` comment — proving `assertBracesAreRealCode` is not vacuous.
+    @Test func braceCounterRejectsBraceInsideStringOrComment() {
+        #expect(throws: SliceError.self) {
+            _ = try Self.balancedFunctionBody(
+                signaturePrefix: "func synthetic(",
+                in: "func synthetic() {\n    let s = \"a { b\"\n}")
+        }
+        #expect(throws: SliceError.self) {
+            _ = try Self.balancedFunctionBody(
+                signaturePrefix: "func synthetic2(",
+                in: "func synthetic2() {\n    doThing() // trailing { brace\n}")
         }
     }
 }

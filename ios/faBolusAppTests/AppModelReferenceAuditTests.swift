@@ -129,6 +129,14 @@ struct AppModelReferenceAuditTests {
     /// Substrings that, if present in a FILE's source, indicate it opens/reads
     /// `ios/faBolus/Data/AppModel.swift` at runtime (a genuine active dependency on that file's
     /// on-disk shape) rather than merely naming it in prose.
+    ///
+    /// WR-02 approximation flag: this is a raw whole-source substring scan, NOT a comment-aware parse —
+    /// a marker string appearing inside a doc comment (e.g. an example) would count as a runtime read.
+    /// That residual is BOUNDED, not ignored: `markerCheckerDiscriminatesActiveFromCommentOnly` proves
+    /// the checker isn't vacuous, and `commentOnlyFilesNeverOpenAppModelSwiftAtRuntime` fails loudly if
+    /// any comment-only file contains a marker substring anywhere (prose included). Convention for future
+    /// prose that must MENTION one of these idioms without being reclassified: break the literal (e.g.
+    /// interleave backticks) so it cannot match verbatim.
     private static let activeRuntimeReadMarkers: [String] = [
         // A balanced-brace/function-body scan that builds the URL and reads the file (Nudge's idiom).
         "appendingPathComponent(\"ios/faBolus/Data/AppModel.swift\")",

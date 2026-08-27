@@ -229,4 +229,49 @@ struct RemoteStatusComposerEquivalenceTests {
                     "the purity scan failed to catch an injected live-read reference to '\(poison)'")
         }
     }
+
+    // MARK: - WR-02 hardening: enforce the assumption `codeOnly` silently relies on
+
+    /// `codeOnly` strips from the FIRST `//` on each line. That is exact ONLY while no string literal on
+    /// a line contains `//` before real code — the file's own doc comment concedes this as an UNENFORCED
+    /// assumption. A future edit introducing e.g. `"http://…"` before real code on a line would make
+    /// `codeOnly` over-strip that code and silently shrink what the purity scan sees. Returns true iff a
+    /// `//` occurs INSIDE a string literal (a per-line quote-state scan; there is no multiline `"""`
+    /// string in this file, so per-line state is exact).
+    private static func hasSlashSlashInsideStringLiteral(_ source: String) -> Bool {
+        for line in source.components(separatedBy: "\n") {
+            var inString = false
+            var escaped = false
+            let chars = Array(line)
+            var i = 0
+            while i < chars.count {
+                let ch = chars[i]
+                if inString {
+                    if escaped { escaped = false }
+                    else if ch == "\\" { escaped = true }
+                    else if ch == "\"" { inString = false }
+                    else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" { return true }
+                } else {
+                    if ch == "\"" { inString = true }
+                    else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" { break } // real code comment
+                }
+                i += 1
+            }
+        }
+        return false
+    }
+
+    /// The assumption, made loud: if this ever fails, `codeOnly` is no longer exact — rework the string
+    /// literal or make `codeOnly` a real comment-aware parser. Do NOT relax the purity scan.
+    @Test func codeOnlyStripperAssumptionHolds() throws {
+        #expect(!Self.hasSlashSlashInsideStringLiteral(try Self.readComposerSource()),
+                "RemoteStatusComposer.swift now has a `//` inside a string literal — codeOnly's strip-from-first-`//` will over-strip real code and silently weaken the INV-C purity scan.")
+    }
+
+    /// Fault-injection: the assumption checker must FLAG a `//` inside a string literal and PASS a `//`
+    /// that is a genuine trailing comment.
+    @Test func slashSlashInStringCheckerIsNotVacuous() {
+        #expect(Self.hasSlashSlashInsideStringLiteral("let s = \"http://x\""))
+        #expect(!Self.hasSlashSlashInsideStringLiteral("let s = \"plain\" // trailing comment"))
+    }
 }
