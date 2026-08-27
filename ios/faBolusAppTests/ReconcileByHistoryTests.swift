@@ -136,6 +136,34 @@ struct ReconcileByHistoryTests {
         }
     }
 
+    /// WR-04: a 16-bit `bolusId` wraps after 65536 boluses, so a single page CAN contain two records that
+    /// share the same id (an old id-reused record and the current one). `bolusRecords` preserves ascending
+    /// wire/sequence order within a page, so the intra-page match must be `last(where:)` — the NEWEST
+    /// (highest-sequence) record — never `first(where:)` (the oldest). Reconciliation is always for the
+    /// most-recently-sent bolus id. This injects one frame with two same-id records (older first, newer
+    /// last) and asserts the NEWER record's delivered amount is the one returned.
+    @Test func sameIdWithinPageResolvesToTheNewerLaterInPageRecord() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let reusedId = 505, newerId = 905
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: reusedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            // Ascending wire order within the page: the OLDER id-reused record (seq 100, delivered 1.0)
+            // comes first, the NEWER current record (seq 990, delivered 2.5) comes last. `last(where:)`
+            // must pick the newer one — `first(where:)` (the pre-WR-04 bug) would have picked 1.0.
+            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
+                (seq: 100, pumpTimeSec: 100_000, bolusId: reusedId, delivered: 1.0, iob: 0.3, completionStatusId: 3),
+                (seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9, completionStatusId: 3),
+            ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 2.5, cancelled: false),
+                    "the NEWEST (later-in-page) same-id record must win — got \(result)")
+        }
+    }
+
     // MARK: - reconcileIndeterminateDelivery() — the SAME shared primitive, invoked on reconnect
 
     /// A dropped initiate response leaves the delivery INDETERMINATE (the real `perform` flow — round-3

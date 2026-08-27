@@ -938,7 +938,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.historyStreamFrameObserved = { [weak self] m in
             guard let self, let target = self.historySearchTarget else { return }
             self.historySearchRecordsScanned += m.records.count
-            if self.historySearchMatch == nil, let match = m.bolusRecords.first(where: { $0.bolusId == target }) {
+            // WR-04: `bolusRecords` preserves ascending wire/sequence order within a page, and bolusId is a
+            // 16-bit value that wraps after 65536 boluses. Use `last(where:)` (not `first(where:)`) so the
+            // NEWEST (highest-sequence) match in the page wins on an id reuse — reconciliation is always for
+            // the most-recently-sent bolus id, never an old id-reused record.
+            if self.historySearchMatch == nil, let match = m.bolusRecords.last(where: { $0.bolusId == target }) {
                 self.historySearchMatch = match
             }
         }
