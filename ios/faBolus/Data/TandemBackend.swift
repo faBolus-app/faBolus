@@ -2550,7 +2550,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         // peripheral identity, so reset it BEFORE `PumpPeripheralStore.clear()` (debug pump-pairing-loop-api25).
         // A fresh pair then re-tests every read rather than inheriting a prior pairing's skips.
         if let key = currentPumpKey() { badOpcodeStore.reset(for: key) }
-        PairingStore.clear(); PumpPeripheralStore.clear(); authenticationKey = []
+        // WR-02 (REMED-15.5): clear the trusted-identity record too, alongside the sibling durable
+        // stores — a forgotten pump must leave NO stale trusted record. Composes with CR-01: after
+        // forget + re-pair the empty trust store forces a fresh authoritative scan (a genuine
+        // didDiscover re-establishes the name-derived trusted identity).
+        PairingStore.clear(); PumpPeripheralStore.clear(); TrustedPumpIdentityStore.clear(); authenticationKey = []
     }
 
     public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {

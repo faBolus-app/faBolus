@@ -78,4 +78,23 @@ struct ForgetPairingTeardownTests {
         #expect(sends.isEmpty,
                 "a dead coordinator must not emit a further pairing send — the stale handshake cannot advance")
     }
+
+    /// WR-02 (REMED-15.5): `forgetPairing()` must clear `TrustedPumpIdentityStore` alongside the sibling
+    /// durable stores — a forgotten pump must leave NO stale trusted record. Composes with CR-01: the empty
+    /// trust store forces a fresh authoritative scan on the next re-pair.
+    @Test func forgetPairingClearsTheTrustedIdentityStore() {
+        // Hermetic isolation: these stores are process-global UserDefaults.
+        TrustedPumpIdentityStore.clear(); PumpPeripheralStore.clear()
+        defer { TrustedPumpIdentityStore.clear(); PumpPeripheralStore.clear() }
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)
+        #expect(TrustedPumpIdentityStore.isMobi(for: uuid) == true, "precondition: a trusted record exists")
+        let b = backend()
+
+        b.forgetPairing()
+
+        #expect(TrustedPumpIdentityStore.isMobi(for: uuid) == nil,
+                "WR-02: forgetPairing() must clear the trusted-identity record, leaving no stale trust behind")
+    }
 }
