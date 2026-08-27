@@ -25,6 +25,13 @@ public enum ReliabilityEvent: Equatable, Sendable {
     /// `.connected/.bolusing → down` edge) — so a genuine background flap on this path would otherwise
     /// never alarm the user (C1-04). Fired once per bounded retry attempt.
     case resumeRetryFailed
+    /// tslim-reconnect-loop (Phase B, item 5): the pump link is FLAPPING — a run of live→`.connecting`
+    /// re-pair/re-drop cycles crossed the flap-rate threshold within the rolling window (see
+    /// `ConnectionFlapDetector`). The loop's drops fold to `.connecting`, so `SafetyEdge.connection` never
+    /// raises on them; this typed edge lets `AppModel` translate a flap STORM into the never-suppressible,
+    /// NON-MUTEABLE `pumpConnectionUnstable` alert instead of ~11.5 min of silence. Fired ONCE per storm
+    /// (the detector latches until a genuine recovery/terminal state resets it).
+    case connectionUnstable
 }
 
 /// Real pump data source over `TandemKit`'s Core Bluetooth transport: scan → connect → JPAKE

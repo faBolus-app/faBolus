@@ -674,6 +674,51 @@ enum SafetyEdge: Equatable {
     }
 }
 
+/// tslim-reconnect-loop (Phase B, item 5): flap-rate escalation. The reconnect loop's drops fold to
+/// `.connecting` (never `.disconnected`/`.error`), so `SafetyEdge.connection` deliberately returns `.none`
+/// through them — by design, so a single silent background reconnect doesn't alarm. The cost is that a
+/// STORM of them (the on-device evidence: 18 pair→drop cycles over ~11.5 min) is also silent. This pure
+/// detector counts the live-link → `.connecting` re-pair/re-drop cycles in a rolling window and escalates
+/// ONCE (latched) when they cross a threshold, so the app can raise a user-visible, NON-MUTEABLE
+/// "can't hold a connection to this pump" state instead of flapping in silence.
+///
+/// Pure + value-typed (mirrors `SafetyEdge`/`StalenessWatchdogEdge`): the owner (`PumpConnectionLifecycle`,
+/// which observes every kit state transition — not the sampled `refresh()` tick, so it never misses a fast
+/// ~2 s cycle) feeds each flap and acts on the returned decision. Unit-testable without any BLE/transport.
+struct ConnectionFlapDetector: Equatable {
+    /// The rolling window over which flap cycles are counted.
+    static let window: TimeInterval = 120   // 2 minutes
+    /// The number of flap cycles within `window` that escalates to the non-muteable state.
+    static let threshold = 5
+
+    private(set) var flapTimes: [Date] = []
+    private(set) var escalated = false
+
+    /// Record one live-link (`.connected`/`.bolusing`) → `.connecting` re-pair/re-drop flap cycle observed
+    /// at `at`. Prunes the window to `[at - window, at]` and returns `true` EXACTLY ONCE (latched via
+    /// `escalated`) when the count reaches `threshold` within the window — so a sustained storm raises the
+    /// alarm a single time, not on every subsequent cycle.
+    mutating func recordFlap(at: Date) -> Bool {
+        flapTimes.append(at)
+        let cutoff = at.addingTimeInterval(-Self.window)
+        flapTimes.removeAll { $0 < cutoff }
+        guard flapTimes.count >= Self.threshold, !escalated else { return false }
+        escalated = true
+        return true
+    }
+
+    /// The link genuinely recovered (reached a stable `.connected`) or reached a terminal state — clear the
+    /// window AND the latch so a FRESH storm can escalate again. Returns whether it had been escalated, so
+    /// the caller can withdraw the alarm only when there was one to withdraw.
+    @discardableResult
+    mutating func reset() -> Bool {
+        let was = escalated
+        flapTimes.removeAll()
+        escalated = false
+        return was
+    }
+}
+
 /// CX-F-02: pure decision for the pre-armed background staleness watchdog (`StalenessWatchdog`,
 /// faBolusCore) — arm/re-arm on an ADVANCED fresh glucose datum, cancel once the feed is no longer
 /// fresh (the real `SafetyEdge.freshness` → `.cgmDataLoss` edge has already alarmed for real by then).

@@ -201,6 +201,9 @@ public final class AppModel {
     /// re-raise replaces rather than stacks and recovery can withdraw the exact banner.
     private static let pumpDisconnectKey = "safety.pumpDisconnect"
     private static let cgmDataLossKey = "safety.cgmDataLoss"
+    /// tslim-reconnect-loop (Phase B, item 5): the non-muteable "can't hold a connection" flap alert's
+    /// stable id — withdrawn on the SAME `.clear` connection edge that withdraws `pumpDisconnectKey`.
+    private static let pumpConnectionUnstableKey = "safety.pumpConnectionUnstable"
     /// REMED-17 LOCKED COPY: the title AND body of the immediate governed `.bolusIndeterminate`
     /// notification, and the widget's USER-FACING `lastError` + returned tuple `error`. Reused at every
     /// one of the four `.indeterminate` switch sites so the wording can never drift between them. NEVER
@@ -284,6 +287,17 @@ public final class AppModel {
                        body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
                        dedupeKey: Self.pumpDisconnectKey)
             scheduleDisconnectEscalation()
+        case .connectionUnstable:
+            // tslim-reconnect-loop (Phase B, item 5): a flap STORM (≥5 live→.connecting re-pair/re-drop
+            // cycles within 2 min) that `SafetyEdge.connection` folds to silence. Raise the NON-MUTEABLE
+            // `pumpConnectionUnstable` category — a SEPARATE never-suppressible category from
+            // `pumpDisconnect`, so it fires even when the user has muted pump-disconnect alerts, and it has
+            // no acknowledged-disable path (it is never shown in settings). Withdrawn on the same `.clear`
+            // reconnect edge as `pumpDisconnect` (RefreshEffectsCoordinator). One post per storm (the
+            // detector latches; the dedupeKey coalesces any repeat).
+            postSafety(.pumpConnectionUnstable, severity: .error, title: "Can’t hold a connection to this pump",
+                       body: "faBolus keeps losing and re-establishing the link to your pump and can’t hold a stable connection. \(DisconnectEscalation.pumpButtonsInstruction)",
+                       dedupeKey: Self.pumpConnectionUnstableKey)
         }
     }
 
@@ -1457,6 +1471,7 @@ public final class AppModel {
             alertsChanged: alertsChanged,
             canControlModes: canControlModes,
             pumpDisconnectKey: Self.pumpDisconnectKey,
+            pumpConnectionUnstableKey: Self.pumpConnectionUnstableKey,
             cgmDataLossKey: Self.cgmDataLossKey,
             prevConnection: prevConnection,
             prevGlucoseFresh: prevGlucoseFresh,

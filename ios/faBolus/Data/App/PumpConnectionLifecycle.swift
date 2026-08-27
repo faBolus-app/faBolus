@@ -180,6 +180,14 @@ final class PumpConnectionLifecycle {
             let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
             snapshot.connection = .connecting; snapshot.connectionDetail = nil
             if wasLive { linkDroppedCleanup() }
+            // tslim-reconnect-loop (Phase B, item 5): a live-link → `.connecting` transition IS one
+            // re-pair/re-drop flap cycle — exactly the edge `SafetyEdge.connection` folds to `.none`. Count
+            // them; when a storm crosses the threshold within the window, emit the typed `.connectionUnstable`
+            // edge so `AppModel` raises the non-muteable "can't hold a connection" alert. Observed HERE (every
+            // kit transition), not in the sampled `refresh()` tick, so a fast ~2 s cycle is never missed.
+            if wasLive, flapDetector.recordFlap(at: Date()) {
+                onReliabilityEvent?(.connectionUnstable)
+            }
             // CC-06/C1 (REMED-15.5): this is the SINGLE hook that covers all THREE `didDiscover`-bypass
             // reconnect shapes (silent retrieve, CoreBluetooth state restoration, watchdog-rescan-direct-
             // connect — 15.5-RESEARCH.md §A2) — `state` transitions to `.connecting`/`.discovering`
@@ -281,9 +289,19 @@ final class PumpConnectionLifecycle {
     /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
     private func markUsableAndStartPolling() {
         snapshot.connection = .connected
+        // tslim-reconnect-loop (Phase B, item 5): a genuine, application-usable reconnect resolves any flap
+        // storm — clear the flap window + latch so a FRESH storm can escalate again. The non-muteable
+        // "can't hold a connection" alert is WITHDRAWN on the SAME `.clear` connection edge that withdraws
+        // `pumpDisconnect` (RefreshEffectsCoordinator), so no separate withdraw event is needed here.
+        flapDetector.reset()
         onChange?()
         readScheduler.startPolling()
     }
+
+    /// tslim-reconnect-loop (Phase B, item 5): counts live→`.connecting` re-pair/re-drop flap cycles (fed
+    /// from `applyClientState`) and escalates ONCE per storm past the threshold within the window. Reset on
+    /// a genuine reconnect (`markUsableAndStartPolling`).
+    private var flapDetector = ConnectionFlapDetector()
 
     // MARK: - CR-01 (R2-01) pairing-handshake watchdog
     //

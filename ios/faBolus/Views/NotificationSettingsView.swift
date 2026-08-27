@@ -48,10 +48,12 @@ struct NotificationSettingsView: View {
     // MARK: - Category groupings (D-02)
 
     private var trioCategories: [NotificationBroker.Category] {
-        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && $0.neverSuppressible }
+        // `isUserConfigurable` excludes `pumpConnectionUnstable` (tslim-reconnect-loop Phase B, item 5):
+        // it is never-suppressible AND has no user toggle / acknowledged-disable path → non-muteable.
+        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable }
     }
     private var tunableAppCategories: [NotificationBroker.Category] {
-        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && !$0.neverSuppressible }
+        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && !$0.neverSuppressible && $0.isUserConfigurable }
     }
 
     // MARK: - Relocated bindings (D-07, verbatim from AlertRulesView)

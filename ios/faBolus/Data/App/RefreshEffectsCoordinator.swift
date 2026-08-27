@@ -85,6 +85,7 @@ final class RefreshEffectsCoordinator {
                         alertsChanged: Bool,
                         canControlModes: Bool,
                         pumpDisconnectKey: String,
+                        pumpConnectionUnstableKey: String,
                         cgmDataLossKey: String,
                         prevConnection: PumpConnectionState?,
                         prevGlucoseFresh: Bool,
@@ -101,7 +102,9 @@ final class RefreshEffectsCoordinator {
             scheduleDisconnectEscalation()   // S7: delayed re-notification ladder
             onConnectionDropped(snapshot.connectionDetail)   // §5.2.8 telemetry + F7 BLE session-log
         case .clear:
-            withdrawNotifications([pumpDisconnectKey] + DisconnectEscalation.stepIds)
+            // tslim-reconnect-loop (Phase B, item 5): a genuine reconnect withdraws the non-muteable
+            // `pumpConnectionUnstable` flap alert on the SAME edge as `pumpDisconnect` + its escalation steps.
+            withdrawNotifications([pumpDisconnectKey, pumpConnectionUnstableKey] + DisconnectEscalation.stepIds)
             onConnectionRestored()
         case .none: break
         }

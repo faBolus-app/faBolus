@@ -30,14 +30,20 @@ import Foundation
         B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "occ", episodeKey: episode)
     }
 
-    @Test func exactlyTheThreeSafetyCategoriesAreNeverSuppressible() {
+    @Test func exactlyTheNeverSuppressibleSafetyCategories() {
+        // tslim-reconnect-loop Phase B (item 5) added `pumpConnectionUnstable` as a fourth never-suppressible
+        // category (the non-muteable flap alert). The original trio stays user-configurable; the flap one is
+        // NOT (see `nonConfigurableSafetyCategoryIsTrulyNonMuteable`).
         let safety = Set(C.allCases.filter { $0.neverSuppressible }.map(\.rawValue))
-        #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"])
+        #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable"])
+        let configurableTrio = Set(C.allCases.filter { $0.neverSuppressible && $0.isUserConfigurable }.map(\.rawValue))
+        #expect(configurableTrio == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss"],
+               "only the original trio is user-configurable; the flap alert has no disable path")
     }
 
     @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
-        // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; the other 7
-        // (incl. all three trio categories) are app-generated.
+        // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; every other category
+        // (incl. all four never-suppressible safety categories) is app-generated.
         #expect(Set(C.allCases.filter { $0.isPumpSourced }.map(\.rawValue)) == ["pumpAlert"])
     }
 
@@ -107,11 +113,19 @@ import Foundation
                                     minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
                                     userAcknowledgedSafetyDisable: true))
         })
-        for c in C.allCases where c.neverSuppressible {
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
             let d = B.decide(msg(c), settings: acknowledged, state: state,
                              budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
             #expect(!d.deliver && d.reason == .categoryDisabled,
                     "\(c.rawValue) must suppress once the user acknowledged disabling it")
+        }
+        // tslim-reconnect-loop Phase B (item 5): the NON-configurable never-suppressible category
+        // (`pumpConnectionUnstable`) has no acknowledged-disable path — even the paired ack cannot suppress
+        // it (see `nonConfigurableSafetyCategoryIsTrulyNonMuteable`).
+        for c in C.allCases where c.neverSuppressible && !c.isUserConfigurable {
+            let d = B.decide(msg(c), settings: acknowledged, state: state,
+                             budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+            #expect(d.deliver, "\(c.rawValue) is non-configurable — a forged acknowledged-disable must NOT suppress it")
         }
     }
 
@@ -226,7 +240,7 @@ import Foundation
         let ackedWhileForged = Dictionary(uniqueKeysWithValues: C.allCases.map {
             ($0, B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true))
         })
-        for c in C.allCases where c.neverSuppressible {
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
             let d = B.decide(msg(c), settings: ackedWhileForged, state: forged, now: at(9, 0), calendar: cal)
             #expect(!d.deliver && d.reason == .categoryDisabled,
                    "\(c.rawValue): the acknowledged disable — not the forged snooze — is what suppresses")
@@ -395,7 +409,7 @@ import Foundation
     /// 09.25-01 (D-03/D-07): focused decide() coverage — for every trio category, suppression requires
     /// BOTH `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
     @Test func trioSuppressedOnlyByAcknowledgedDisable() {
-        for c in C.allCases where c.neverSuppressible {
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
             // enabled:false, ack:nil → delivers (the mandatory gate is unmet).
             let notAcked = B.decide(msg(c), settings: [c: B.CategorySettings(enabled: false)],
                                     state: B.State(), now: at(9, 0), calendar: cal)
@@ -412,5 +426,36 @@ import Foundation
             #expect(!suppressed.deliver && suppressed.reason == .categoryDisabled,
                    "\(c.rawValue): enabled==false AND ack==true must suppress")
         }
+    }
+
+    /// tslim-reconnect-loop Phase B (item 5): the flap alert (`pumpConnectionUnstable`) is TRULY
+    /// non-muteable. (1) It survives the user having muted `pumpDisconnect` — it is a SEPARATE category, so
+    /// disabling pump-disconnect alerts does not touch it. (2) It has no acknowledged-disable path, so even
+    /// a forged/corrupt settings blob that sets `enabled:false, ack:true` for it can NOT suppress it —
+    /// `decide()` delivers it unconditionally because `isUserConfigurable == false`.
+    @Test func nonConfigurableSafetyCategoryIsTrulyNonMuteable() {
+        #expect(C.pumpConnectionUnstable.neverSuppressible)
+        #expect(!C.pumpConnectionUnstable.isUserConfigurable, "the flap alert must never be user-configurable")
+
+        // (1) The user muted pump-disconnect (acknowledged-disable). The flap alert still delivers.
+        let mutedPumpDisconnect: [C: B.CategorySettings] = [
+            .pumpDisconnect: B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
+        ]
+        let survives = B.decide(msg(.pumpConnectionUnstable), settings: mutedPumpDisconnect,
+                                state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(survives.deliver, "the flap alert must fire even when the user has muted pumpDisconnect")
+
+        // (2) Even a forged disable of the flap category itself cannot suppress it.
+        let forgedDisable: [C: B.CategorySettings] = [
+            .pumpConnectionUnstable: B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
+        ]
+        let stillDelivers = B.decide(msg(.pumpConnectionUnstable), settings: forgedDisable,
+                                     state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(stillDelivers.deliver, "a forged disable of the non-configurable flap category must NOT suppress it")
+
+        // Contrast: the ORIGINAL trio IS suppressible via the same acknowledged-disable blob.
+        let trioSuppressed = B.decide(msg(.pumpDisconnect), settings: mutedPumpDisconnect,
+                                      state: B.State(), now: at(9, 0), calendar: cal)
+        #expect(!trioSuppressed.deliver, "the user-configurable pumpDisconnect IS suppressed by its acknowledged-disable")
     }
 }

@@ -22,10 +22,17 @@ public enum NotificationBroker {
     /// The notification categories the broker governs. `neverSuppressible` marks the three §6 safety
     /// categories that must reach the user regardless of settings/quiet-hours/rate-limit/budget.
     public enum Category: String, CaseIterable, Sendable, Codable {
-        // The three §6 never-disableable safety categories.
+        // The §6 never-disableable safety categories.
         case pumpDisconnect          // the pump link dropped while it was connected/bolusing
         case bolusReconciliation     // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
         case cgmDataLoss             // the app stopped receiving CGM data (distinct from a pump-raised CGM alert)
+        /// tslim-reconnect-loop (Phase B, item 5): the pump link keeps FLAPPING — a bounded run of
+        /// live→reconnecting re-pair/re-drop cycles the reconnect ladder folds to `.connecting`, so
+        /// `SafetyEdge.connection` (and the muteable `pumpDisconnect` alert) stay silent through it. This
+        /// is a SEPARATE never-suppressible category on purpose, so it fires even when the user has muted
+        /// `pumpDisconnect`; and it is deliberately NOT user-configurable (`isUserConfigurable == false`),
+        /// so there is no acknowledged-disable path — it is truly non-muteable.
+        case pumpConnectionUnstable
         // Governed (suppressible) categories.
         case pumpAlert               // a pump-raised alert/alarm/reminder surfaced as a notification
         case remoteBolusRejected     // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
@@ -41,8 +48,20 @@ public enum NotificationBroker {
         /// A safety category the user cannot turn off and that bypasses quiet-hours / rate-limit / budget.
         public var neverSuppressible: Bool {
             switch self {
-            case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss: return true
+            case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable: return true
             default: return false
+            }
+        }
+
+        /// Whether the category is surfaced as a user-facing on/off setting. All governed categories and the
+        /// three original safety-trio categories are configurable (the trio via the explicit
+        /// acknowledged-disable flow). `pumpConnectionUnstable` is the sole exception: it is never shown in
+        /// settings and has NO acknowledged-disable path, so `decide()` can never suppress it — it is truly
+        /// NON-MUTEABLE (tslim-reconnect-loop Phase B, item 5). The settings UI filters on this.
+        public var isUserConfigurable: Bool {
+            switch self {
+            case .pumpConnectionUnstable: return false
+            default: return true
             }
         }
 
@@ -74,6 +93,7 @@ public enum NotificationBroker {
             case .pumpDisconnect:     return "Pump disconnected"
             case .bolusReconciliation: return "Bolus result"
             case .cgmDataLoss:        return "CGM data loss"
+            case .pumpConnectionUnstable: return "Pump connection unstable"
             case .pumpAlert:          return "Pump alerts"
             case .remoteBolusRejected: return "Remote bolus rejected"
             case .bolusDeliveryFailed: return "Bolus delivery failed"
@@ -290,7 +310,12 @@ public enum NotificationBroker {
         // pre-this-field blob, where the ack field decodes to `nil`) can never silently drop a safety
         // alert. This is the ONLY place a trio category is suppressible.
         if message.category.neverSuppressible {
-            if !cfg.enabled && cfg.userAcknowledgedSafetyDisable == true {
+            // The acknowledged-disable escape applies ONLY to user-configurable safety categories (the
+            // original trio). A never-suppressible category that is NOT user-configurable
+            // (`pumpConnectionUnstable`, tslim-reconnect-loop Phase B item 5) has no UI toggle and no
+            // acknowledged-disable path, so it is delivered UNCONDITIONALLY here — truly non-muteable by
+            // construction, robust even against a forged/corrupt settings blob that sets the ack flag.
+            if message.category.isUserConfigurable, !cfg.enabled, cfg.userAcknowledgedSafetyDisable == true {
                 return suppress(.categoryDisabled)
             }
             return deliver()
