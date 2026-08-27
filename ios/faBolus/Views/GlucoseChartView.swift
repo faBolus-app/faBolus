@@ -9,8 +9,8 @@ import Accessibility
 /// colorblind user couldn't tell hypo from hyper. These pure, UI-independent helpers back both
 /// fixes and are unit-tested directly (`GlucoseChartAccessibilityTests`) without a running host:
 ///   - `dataPoints(for:unit:)` builds the `AXChartDescriptor` content (D2-01) — one `AXDataPoint`
-///     per visible reading, its label speaking the formatted value + band word. Reuses
-///     `GlucoseRange.classify(...).shortLabel`, the SAME "speak the band word" source
+///     per visible reading, its label speaking the reading's time + formatted value + band word
+///     (WR-02). Reuses `GlucoseRange.classify(...).shortLabel`, the SAME "speak the band word" source
 ///     `StatusRingView.a11yLabel(now:)` already uses, so the spoken and visual bands never drift.
 ///   - `symbolKind(for:)` / `symbolShape(for:)` supply the non-color range cue (D2-02): a
 ///     per-point symbol SHAPE distinct across all four `GlucoseRange` bands. Split into a pure
@@ -44,14 +44,20 @@ enum GlucoseChartAccessibility {
         }
     }
 
-    /// D2-01: one `AXDataPoint` per visible reading, labeled `"<value> <unit>, <band word>"` (e.g.
-    /// "124 mg/dL, In range") — the spoken parallel of the on-screen value + color band, so
-    /// VoiceOver can swipe through glucose data points and hear value + band.
+    /// D2-01: one `AXDataPoint` per visible reading, labeled
+    /// `"<time>, <value> <unit>, <band word>"` (e.g. "2:14 PM, 124 mg/dL, In range") — the spoken
+    /// parallel of the on-screen value + color band. WR-02 (Phase 17 review): the reading's TIME is
+    /// now folded into each point's own label so a VoiceOver user swiping through the chart can tell
+    /// WHEN each reading occurred (trend/timing is exactly what a glucose chart exists to convey, and
+    /// the x-axis `valueDescriptionProvider` returns "" for lack of a per-axis descriptor). Time uses
+    /// the locale-aware short style (`.formatted(date:.omitted, time:.shortened)`), so it honors the
+    /// user's 12/24-hour setting without a stored `DateFormatter`.
     static func dataPoints(for readings: [GlucoseReading], unit: GlucoseUnit) -> [AXDataPoint] {
         let unitLabel = unit == .mmol ? "mmol/L" : "mg/dL"
         return readings.map { r in
             let band = GlucoseRange.classify(r.mgdl)
-            let label = "\(unit.format(mgdl: r.mgdl)) \(unitLabel), \(band.shortLabel)"
+            let time = r.date.formatted(date: .omitted, time: .shortened)
+            let label = "\(time), \(unit.format(mgdl: r.mgdl)) \(unitLabel), \(band.shortLabel)"
             return AXDataPoint(x: r.date.timeIntervalSinceReferenceDate, y: Double(r.mgdl), label: label)
         }
     }

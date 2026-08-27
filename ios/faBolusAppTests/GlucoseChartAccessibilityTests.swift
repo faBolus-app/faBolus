@@ -26,19 +26,40 @@ import faBolusCore
         GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 600), mgdl: 300), // very high (> 250)
     ]
 
-    @Test func dataPointLabelsSpeakValueAndBandWord() {
+    /// The locale-aware short time string the production label prepends (WR-02). Computed with the
+    /// SAME `.formatted(date:.omitted, time:.shortened)` call the helper uses, so the assertions stay
+    /// deterministic regardless of the host's time zone / 12-24h setting.
+    private static func expectedTime(_ r: GlucoseReading) -> String {
+        r.date.formatted(date: .omitted, time: .shortened)
+    }
+
+    @Test func dataPointLabelsSpeakTimeValueAndBandWord() {
         let points = GlucoseChartAccessibility.dataPoints(for: Self.sample, unit: .mgdl)
         #expect(points.count == Self.sample.count)
-        // Same "speak the band word" source StatusRingView.a11yLabel(now:) uses
+        // WR-02: each label now leads with the reading's time so a VoiceOver user can tell WHEN each
+        // point occurred. Same "speak the band word" source StatusRingView.a11yLabel(now:) uses
         // (GlucoseRange.classify(...).shortLabel) — spoken and visual bands never drift apart.
-        #expect(points[0].label == "60 mg/dL, Low")
-        #expect(points[1].label == "100 mg/dL, In range")
-        #expect(points[2].label == "300 mg/dL, Very high")
+        #expect(points[0].label == "\(Self.expectedTime(Self.sample[0])), 60 mg/dL, Low")
+        #expect(points[1].label == "\(Self.expectedTime(Self.sample[1])), 100 mg/dL, In range")
+        #expect(points[2].label == "\(Self.expectedTime(Self.sample[2])), 300 mg/dL, Very high")
+    }
+
+    /// WR-02 anti-regression: assert a TIME component is present in every label (not just the value +
+    /// band), independent of the exact locale formatting — the label must contain the reading's
+    /// short-time string and must not begin with the numeric value.
+    @Test func dataPointLabelsIncludeReadingTime() {
+        let points = GlucoseChartAccessibility.dataPoints(for: Self.sample, unit: .mgdl)
+        for (i, r) in Self.sample.enumerated() {
+            let time = Self.expectedTime(r)
+            #expect(!time.isEmpty)
+            #expect(points[i].label.hasPrefix("\(time), "),
+                    "each data-point label must lead with the reading's time so trend/timing is spoken")
+        }
     }
 
     @Test func dataPointLabelsRespectDisplayUnit() {
         let points = GlucoseChartAccessibility.dataPoints(for: Self.sample, unit: .mmol)
-        #expect(points[1].label == "5.5 mmol/L, In range")
+        #expect(points[1].label == "\(Self.expectedTime(Self.sample[1])), 5.5 mmol/L, In range")
     }
 
     @Test func perPointSymbolKindDistinctAcrossBands() {
