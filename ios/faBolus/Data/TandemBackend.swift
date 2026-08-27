@@ -611,6 +611,22 @@ public final class TandemBackend: NSObject, PumpBackend {
     func armReconnectTargetForTesting(_ id: UUID) {
         client.connectKnownPeripheral(identifier: id)
     }
+    /// Test seam (CR-01, REMED-15.5, owner ruling 2026-08-27): records which route `connect()` took on
+    /// its last call — `.scan` (`startScan`: first-ever pairing OR the forced day-zero-upgrade
+    /// authoritative re-scan) vs `.known` (`connectKnownPeripheral` fast path). The kit's
+    /// `reconnectTargetId` has no app-side reader, so this seam is how the day-zero test asserts
+    /// `connect()` forces a genuine `didDiscover` (SCAN) instead of the fast path — with no live
+    /// CoreBluetooth central. Set exactly once per `connect()` call.
+    enum ConnectRoute: Equatable { case scan, known }
+    private(set) var lastConnectRouteForTesting: ConnectRoute?
+    /// Test seam (WR-01, REMED-15.5): read/write the private app-side name-authority signal
+    /// `detectedIsMobi`, so a test can seed a stale value and assert `reapplyTrustedIdentityIfKnown()`
+    /// DEFENSIVELY clears it on a genuine peripheral mismatch (`reconnectTargetId != PumpPeripheralStore
+    /// .id()`) yet leaves it INTACT on the nil/"unknown" target case — with no live CoreBluetooth central.
+    var detectedIsMobiForTesting: Bool? {
+        get { detectedIsMobi }
+        set { detectedIsMobi = newValue }
+    }
     #endif
     private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     // `profileActiveIdpId` moved to `PumpResponseApplier` (Phase 09 Wave 4, D-07) — used only by the
@@ -1308,8 +1324,35 @@ public final class TandemBackend: NSObject, PumpBackend {
         // (retrieve-before-scan) instead of a slow scan; the kit falls back to a scan if it can't be
         // resolved yet. First-ever pairing has no stored id, so it scans.
         if let id = PumpPeripheralStore.id() {
-            client.connectKnownPeripheral(identifier: id)
+            // CR-01 (REMED-15.5, owner ruling 2026-08-27): fail-CLOSED until authoritative BLE-name
+            // re-identification — no heuristic seed. A pairing that predates the trusted-identity work
+            // has a PumpPeripheralStore.id() but NO TrustedPumpIdentityStore entry (the day-zero-upgrade
+            // state). The fast `connectKnownPeripheral` path never fires `didDiscover`, so
+            // `reapplyTrustedIdentityIfKnown()` would stay a permanent no-op, `identityTrusted` would
+            // never become true, and all 14 [.mobi]-restricted control ops would be refused FOREVER after
+            // an ordinary app update. So for that state ONLY, force one genuine full scan → a real
+            // `didDiscover` → `applyDidDiscover` writes the AUTHORITATIVE name-derived
+            // TrustedPumpIdentityStore record + trusted device context BEFORE any Mobi-op send. We do NOT
+            // seed from PumpModelStore: it can be op33-heuristic-polluted, and a mis-seed would fail OPEN
+            // via the state-restoration/watchdog reconnect paths that bypass connect(). Once the trusted
+            // record exists, the fast path resumes automatically on subsequent connects. Cost: a slower
+            // first reconnect after upgrade — and if the pump is out of range, Mobi ops stay refused until
+            // one successful authoritative discovery, which is the correct conservative behavior.
+            if TrustedPumpIdentityStore.isMobi(for: id) == nil {
+                #if DEBUG
+                lastConnectRouteForTesting = .scan
+                #endif
+                client.startScan()
+            } else {
+                #if DEBUG
+                lastConnectRouteForTesting = .known
+                #endif
+                client.connectKnownPeripheral(identifier: id)
+            }
         } else {
+            #if DEBUG
+            lastConnectRouteForTesting = .scan
+            #endif
             client.startScan()
         }
     }

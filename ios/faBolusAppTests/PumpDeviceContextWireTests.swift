@@ -254,4 +254,55 @@ struct PumpDeviceContextWireTests {
 
         #expect(b.identityTrustedForTesting == false, "a stale trusted record for UUID-A must not trust a UUID-B session")
     }
+
+    // MARK: - CR-01 (REMED-15.5, owner ruling 2026-08-27): forced one-time authoritative re-scan on the
+    // day-zero upgrade state — a pairing that predates this build has a `PumpPeripheralStore.id()` but NO
+    // `TrustedPumpIdentityStore` entry, so `connect()` must take the SCAN path (a genuine `didDiscover`
+    // re-identification) instead of the fast `connectKnownPeripheral` path (which would leave the trust
+    // store permanently empty → every [.mobi]-restricted control op refused forever). NO heuristic seed.
+    // Observed via `lastConnectRouteForTesting` because the kit's `reconnectTargetId` has no app-side
+    // reader.
+
+    /// The upgrade day-zero state: `PumpPeripheralStore` has an id, `TrustedPumpIdentityStore` is empty.
+    /// `connect()` must FORCE a full scan (not the fast path) so a genuine `didDiscover` writes the
+    /// authoritative name-derived trusted record before any Mobi-op send.
+    @Test func connectForcesAuthoritativeScanWhenPeripheralKnownButTrustStoreEmpty() async {
+        resetIdentityStores()
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)   // pre-existing pairing…
+        // …but NO TrustedPumpIdentityStore entry (the day-zero-upgrade state).
+        #expect(TrustedPumpIdentityStore.isMobi(for: uuid) == nil, "precondition: empty trust store")
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        await b.connect()
+
+        #expect(b.lastConnectRouteForTesting == .scan,
+                "CR-01: with a known peripheral but empty trust store, connect() must SCAN (force a genuine didDiscover), NOT take the fast connectKnownPeripheral path")
+    }
+
+    /// The complementary steady state: once a trusted record exists for the known peripheral, `connect()`
+    /// resumes the fast `connectKnownPeripheral` path automatically.
+    @Test func connectTakesFastPathOnceTrustedRecordExists() async {
+        resetIdentityStores()
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)   // a genuine prior didDiscover ran
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        await b.connect()
+
+        #expect(b.lastConnectRouteForTesting == .known,
+                "CR-01: with a trusted record present, connect() resumes the fast connectKnownPeripheral path")
+    }
+
+    /// First-ever pairing (no stored peripheral id at all) still scans — unchanged behavior.
+    @Test func connectScansWhenNoPeripheralIdAtAll() async {
+        resetIdentityStores()   // no PumpPeripheralStore.id()
+        let b = TandemBackend(testTransport: FakePumpTransport())
+
+        await b.connect()
+
+        #expect(b.lastConnectRouteForTesting == .scan,
+                "first-ever pairing (no stored peripheral id) scans, as before")
+    }
 }
