@@ -434,8 +434,8 @@ final class GarminRemoteBridge: NSObject {
     // that construct a fresh instance) would leave its delegate registered against the SDK's singleton
     // forever, a stale listener that never gets cleaned up.
     deinit {
-        ConnectIQ.sharedInstance().unregisterForAllDeviceEvents(self)
-        ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
+        ConnectIQ.sharedInstance().unregister(forAllDeviceEvents: self)
+        ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
     }
 
     var hasDevice: Bool { device != nil }
@@ -496,8 +496,8 @@ final class GarminRemoteBridge: NSObject {
         // `handle(cmd)` (status flip-flop, duplicate cancel/dismiss) and a stale registration against
         // the PREVIOUS device on a device switch. `unregisterForAll…` is safe even on the very first
         // call — a no-op when nothing was registered yet.
-        ConnectIQ.sharedInstance().unregisterForAllDeviceEvents(self)
-        ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
+        ConnectIQ.sharedInstance().unregister(forAllDeviceEvents: self)
+        ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
         // Sideloaded app: store UUID == app UUID.
         let app = IQApp(uuid: Self.watchAppUUID, store: Self.watchAppUUID, device: device)
         self.app = app
@@ -543,7 +543,7 @@ final class GarminRemoteBridge: NSObject {
     /// action (out of this plan's file scope); a no-op if no app has been resolved yet.
     func openConnectIQAppStore() {
         guard let app else { return }
-        ConnectIQ.sharedInstance().showConnectIQStoreForApp(app)
+        ConnectIQ.sharedInstance().showStore(for: app)
     }
 
     /// Enqueue a command for the watch. Status pushes are coalesced (latest wins); everything else
@@ -655,7 +655,7 @@ final class GarminRemoteBridge: NSObject {
                 let sendResult: GarminSendResult
                 switch result {
                 case .success: sendResult = .success
-                case .failureAppNotFound, .failureUnsupportedType, .failureInsufficientMemory:
+                case .failure_AppNotFound, .failure_UnsupportedType, .failure_InsufficientMemory:
                     sendResult = .permanentFailure
                 default: sendResult = .transientFailure
                 }
