@@ -52,7 +52,7 @@ import faBolusCore
         for (i, r) in Self.sample.enumerated() {
             let time = Self.expectedTime(r)
             #expect(!time.isEmpty)
-            #expect(points[i].label.hasPrefix("\(time), "),
+            #expect(points[i].label?.hasPrefix("\(time), ") == true,
                     "each data-point label must lead with the reading's time so trend/timing is spoken")
         }
     }
