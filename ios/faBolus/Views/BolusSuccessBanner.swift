@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 // Phase 09.4 D-04/D-05/D-06/D-07 — a truthful, transient advisory confirmation for the embedded
 // BolusEntryView.
@@ -26,6 +27,20 @@ struct BolusSuccessBanner: Equatable {
     let kind: Kind
     let primary: String
     let secondary: String
+    /// WR-04 (Phase 17 review): a per-presentation identity assigned at construction. The
+    /// auto-dismiss guard in `BolusEntryView.present(_:)` must compare THIS token, not full-value
+    /// equality — two back-to-back deliveries of the same amount produce byte-identical
+    /// `kind`/`primary`/`secondary`, so a content-`==` check would let the FIRST banner's timer
+    /// dismiss the SECOND (distinct) presentation early. Defaulted so the memberwise initializer used
+    /// by `BolusConfirmation.banner(...)` is unchanged.
+    let token = UUID()
+
+    /// Content equality (kind/primary/secondary) only — `token` is deliberately EXCLUDED so any
+    /// consumer comparing banners by displayed content keeps working. `present(_:)` compares `token`
+    /// explicitly for its identity check; nothing relies on two constructions being `==` by token.
+    static func == (lhs: BolusSuccessBanner, rhs: BolusSuccessBanner) -> Bool {
+        lhs.kind == rhs.kind && lhs.primary == rhs.primary && lhs.secondary == rhs.secondary
+    }
 }
 
 /// Pure, dependency-free mapping from an ALREADY-RESOLVED bolus outcome to display text. NEVER

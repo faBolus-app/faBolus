@@ -1284,12 +1284,17 @@ struct BolusEntryView: View {
     /// toast — 09.4-UI-SPEC "accessibility (transient content)").
     private func present(_ banner: BolusSuccessBanner?) {
         guard let banner else { return }
+        // WR-04: capture THIS presentation's identity token. `BolusSuccessBanner ==` compares content
+        // only (kind/primary/secondary), so a content-equality dismissal guard would let this timer
+        // dismiss a LATER, byte-identical banner from a back-to-back re-delivery. Comparing the token
+        // guarantees we only clear the banner still on screen from THIS presentation.
+        let token = banner.token
         withAnimation(.easeInOut) { successBanner = banner }
         AccessibilityNotification.Announcement("\(banner.primary), \(banner.secondary)").post()
         let dwellSeconds: UInt64 = UIAccessibility.isVoiceOverRunning ? 6 : 4
         Task {
             try? await Task.sleep(nanoseconds: dwellSeconds * 1_000_000_000)
-            if successBanner == banner {
+            if successBanner?.token == token {
                 withAnimation(.easeInOut) { successBanner = nil }
             }
         }

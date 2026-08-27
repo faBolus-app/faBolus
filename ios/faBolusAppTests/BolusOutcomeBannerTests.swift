@@ -54,4 +54,20 @@ struct BolusOutcomeBannerTests {
         let banner = BolusConfirmation.banner(for: .staged, units: 2.50, message: "irrelevant")
         #expect(banner == nil, "an awaiting-approval bolus must never show a banner (D-05)")
     }
+
+    // MARK: - WR-04 per-presentation identity token
+
+    /// Two back-to-back deliveries of the SAME amount produce byte-identical content. They must still
+    /// carry DISTINCT identity tokens so `present(_:)`'s auto-dismiss timer can't clear a later
+    /// presentation early — while `==` continues to report them equal by displayed content.
+    @Test func identicalBannersShareContentEqualityButHaveDistinctTokens() {
+        let first = BolusConfirmation.banner(for: .delivered, units: 2.50)
+        let second = BolusConfirmation.banner(for: .delivered, units: 2.50)
+        #expect(first != nil && second != nil)
+        // Content equality is preserved (kind/primary/secondary) for any consumer relying on it.
+        #expect(first == second)
+        // …but each construction gets its own presentation token.
+        #expect(first?.token != second?.token,
+                "each banner construction must have a unique per-presentation token (WR-04)")
+    }
 }
