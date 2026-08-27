@@ -269,9 +269,12 @@ struct RemoteStatusInputs {
     /// CX-G-08 (14-10, D1) — `AppModel.rawActiveNotifications` (the SAME-POLL mirror of
     /// `source.rawActiveNotifications`) at compose time. `nil` ⇒ not yet polled this connection (or the
     /// backend has no raw exposure); a non-nil (possibly empty) value is the pump's known raw set.
-    /// DEFAULTED (not just optional) so `RemoteStatusComposerDismissAckTests`' construction site — which
-    /// predates this field and does not pass it — keeps compiling unchanged.
-    var rawActiveNotifications: [PumpAlert]? = nil
+    /// IN-03: `let` (not `var`) — a true immutable snapshot field like every other field of this struct,
+    /// matching the type's own "Immutable snapshot" doc contract. Previously `var … = nil` solely so the
+    /// pre-existing `RemoteStatusComposerDismissAckTests` construction site could omit it; that site now
+    /// passes it explicitly (`rawActiveNotifications: nil`), closing the one crack in the immutability
+    /// invariant so no future edit can mutate it mid-compose.
+    let rawActiveNotifications: [PumpAlert]?
     /// Every `AppSettings.shared` read the original body performed, snapshotted as immutable values.
     let settings: RemoteStatusSettings
 }

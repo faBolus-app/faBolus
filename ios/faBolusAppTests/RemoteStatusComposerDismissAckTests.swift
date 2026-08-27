@@ -31,7 +31,8 @@ struct RemoteStatusComposerDismissAckTests {
             includeHistory: false, requestId: nil, snapshot: PumpSnapshot(),
             activeNotifications: [], glucoseHistory: [], now: Date(timeIntervalSince1970: 1_700_000_000),
             remoteMax: 25, canBolus: true, bolusBlockReason: nil, bolusPasscodeRequired: false,
-            supportsRemoteAlertDismiss: supportsRemoteAlertDismiss, settings: settings())
+            supportsRemoteAlertDismiss: supportsRemoteAlertDismiss,
+            rawActiveNotifications: nil, settings: settings())
     }
 
     /// A Mobi-like pump (supportsRemoteAlertDismiss == true) ⇒ this build's `supportsDismissAck` is
