@@ -255,6 +255,53 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
+    // MARK: - WR-01: present→confirm derives the idempotency doseKey from the RAW WIRE params
+    //
+    // Owner ruling: BOTH remote-delivery entry points must key the ledger doseKey off the ORIGINAL wire
+    // request (matching `remoteDeliver`'s own `doseKey(units:carbsGrams:bgMgdl:)`), never the resolved/frozen
+    // correction basis. Before the fix, `confirmRemoteBolus` used `pending.carbsGrams`/`pending.bgMgdl` —
+    // the RESOLVED values — so when the host substituted a fresh reading that differed from the wire bg, the
+    // two flows produced DIFFERENT doseKeys for one logical dose, narrowing the recency/conflict guard.
+
+    /// After a present→confirm carb delivery where the host's fresh correction basis (120) differs from the
+    /// wire `bgMgdl` (185), the ledger's recency index must be keyed on the WIRE bg — proven by querying
+    /// `hasRecentlyDeliveredDuplicate` with the wire-derived doseKey (present) and the resolved-basis
+    /// doseKey (absent). Before WR-01 these assertions were reversed.
+    @Test func presentConfirmDoseKeyIsDerivedFromRawWireParamsNotResolvedBasis() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+
+            let carbs = 30.0
+            let freshBg = 120      // host's FRESH reading (becomes the resolved correction basis)
+            let wireBg = 185       // the DIFFERENT bg the remote sent on the wire
+            backend.setLiveIob(1.0)
+            backend.seedFreshGlucose(freshBg, at: Date())   // fresh ⇒ freshCorrectionBG == 120 wins as basis
+
+            // The remote's estimate must match the host recompute off the FRESH basis (120), or the
+            // divergence guard would reject before we ever reach the doseKey.
+            let dose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: freshBg).recommendedUnits
+            await model.presentRemoteBolus(requestId: "wr01", units: 0, carbsGrams: carbs, bgMgdl: wireBg,
+                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            #expect(model.pendingRemoteBolus != nil)
+            await model.confirmRemoteBolus()
+            #expect(rec.last?.status == .delivered)
+            #expect(backend.lastDeliver?.bg == freshBg)   // delivered dose still uses the FROZEN fresh basis (unchanged)
+
+            // The recency index (carried in the value-type ledger snapshot) must be keyed on the WIRE bg.
+            let snap = model.privacyExportLedgerSnapshot
+            let wireKey = RemoteBolusLedger.doseKey(units: 0, carbsGrams: carbs, bgMgdl: wireBg)
+            let resolvedKey = RemoteBolusLedger.doseKey(units: 0, carbsGrams: carbs, bgMgdl: freshBg)
+            #expect(wireKey != resolvedKey)   // the two bases really do produce different keys
+            #expect(snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: wireKey),
+                    "confirm-path doseKey must match remoteDeliver's raw-wire doseKey (WR-01)")
+            #expect(!snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: resolvedKey),
+                    "confirm-path doseKey must NOT be keyed on the resolved correction basis (WR-01)")
+        }
+    }
+
     // MARK: - IN-02: an INDETERMINATE outcome stamps `lastHostDeliveryAt` too (defense-in-depth)
     //
     // Before IN-02, all three phone-side delivery sites stamped `lastHostDeliveryAt` only on `.delivered`,

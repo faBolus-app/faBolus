@@ -595,6 +595,12 @@ public final class AppModel {
         public var iobUnits: Double? = nil       // IOB the calc used (shown to approver)
         public var remoteEstimate: Double? = nil
         public var requestedUnits: Double? = nil // original request units, for the idempotency doseKey
+        /// WR-01: the ORIGINAL wire request carbs/bg, for the idempotency doseKey. These are the raw values
+        /// the remote sent — NOT the resolved/frozen `carbsGrams`/`bgMgdl` above (which drive the delivered
+        /// dose) — so present→confirm derives the SAME doseKey `remoteDeliver` computes for the same wire
+        /// request. Defaults keep the memberwise init back-compatible.
+        public var requestedCarbsGrams: Double? = nil
+        public var requestedBgMgdl: Int? = nil
         public var createdAt: Date = Date()      // freeze time → approval expiry (audit C-02)
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
@@ -2269,6 +2275,9 @@ public final class AppModel {
                                                 carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
                                                 bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
                                                 remoteEstimate: remoteEstimate, requestedUnits: units,
+                                                // WR-01: carry the RAW WIRE carbs/bg (this function's own args,
+                                                // NOT resolved.*) for the idempotency doseKey at confirm time.
+                                                requestedCarbsGrams: carbsGrams, requestedBgMgdl: bgMgdl,
                                                 createdAt: Date(), peerId: peerId, surface: surface,
                                                 usedIncludedStaleBG: resolved.usedIncludedStaleBG)
     }
@@ -2315,8 +2324,14 @@ public final class AppModel {
         let resolved = ResolvedBolus(units: pending.units, carbsGrams: pending.carbsGrams,
                                      recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits,
                                      usedIncludedStaleBG: pending.usedIncludedStaleBG)
-        let dkey = RemoteBolusLedger.doseKey(units: pending.requestedUnits, carbsGrams: pending.carbsGrams,
-                                             bgMgdl: pending.bgMgdl)
+        // WR-01: derive the idempotency doseKey from the ORIGINAL WIRE request params (units + the raw
+        // requested carbs/bg), matching `remoteDeliver` and `executeResolved`'s doc comment — NOT the
+        // resolved/frozen `pending.carbsGrams`/`pending.bgMgdl` (which still drive the delivered dose via
+        // `resolved` below). This keeps present→confirm and one-shot `remoteDeliver` producing the SAME
+        // doseKey for the same wire request, so the recency guard + `begin()` conflict keying can't be
+        // narrowed by the two flows disagreeing. Delivery is unchanged.
+        let dkey = RemoteBolusLedger.doseKey(units: pending.requestedUnits, carbsGrams: pending.requestedCarbsGrams,
+                                             bgMgdl: pending.requestedBgMgdl)
         await executeResolved(resolved, requestId: pending.requestId, peerId: pending.peerId, doseKey: dkey)
     }
 
@@ -2536,8 +2551,11 @@ public final class AppModel {
     }
 
     /// Deliver a frozen `ResolvedBolus` through the durable ledger + validated signed path, echoing status
-    /// to the remote. `doseKey` is derived from the ORIGINAL request params so a retry idempotently replays
-    /// (audit A-02); the delivered dose/carbs/BG are the frozen resolved values.
+    /// to the remote. `doseKey` is derived from the ORIGINAL wire request params (units + raw carbs/bg) so a
+    /// retry idempotently replays (audit A-02); BOTH entry points now honor this — the one-shot
+    /// `remoteDeliver` and the two-step `presentRemoteBolus`→`confirmRemoteBolus` path (WR-01: confirm keys
+    /// off `pending.requestedUnits`/`requestedCarbsGrams`/`requestedBgMgdl`, never the resolved/frozen
+    /// values). The delivered dose/carbs/BG are the frozen resolved values.
     private func executeResolved(_ r: ResolvedBolus, requestId: String, peerId: String, doseKey: String) async {
         guard r.units > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
