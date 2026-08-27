@@ -305,4 +305,44 @@ struct PumpDeviceContextWireTests {
         #expect(b.lastConnectRouteForTesting == .scan,
                 "first-ever pairing (no stored peripheral id) scans, as before")
     }
+
+    // MARK: - WR-01 (REMED-15.5): `reapplyTrustedIdentityIfKnown()` defensively clears `detectedIsMobi` on
+    // a GENUINE peripheral mismatch (`reconnectTargetId != storeId`), but NOT on the nil/"unknown" target
+    // case. Makes the function self-defensive against a future reconnect-state-machine regression that
+    // could leave a stale name-authority value for the wrong peripheral.
+
+    /// Genuine mismatch: the kit is (re)connecting a DIFFERENT peripheral (UUID-B) than the stored one
+    /// (UUID-A). Reapply must clear a stale `detectedIsMobi` before returning.
+    @Test func reapplyClearsStaleDetectedIsMobiOnGenuinePeripheralMismatch() {
+        resetIdentityStores()
+        let uuidA = UUID(), uuidB = UUID()
+        PumpPeripheralStore.set(uuidA)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuidA)
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.armReconnectTargetForTesting(uuidB)   // kit is driving a DIFFERENT peripheral
+        b.detectedIsMobiForTesting = true        // a stale name-authority value from a prior session
+
+        b.applyClientState(.discovering)
+
+        #expect(b.detectedIsMobiForTesting == nil,
+                "WR-01: a genuine peripheral mismatch must defensively clear the stale detectedIsMobi")
+        #expect(b.identityTrustedForTesting == false, "and it must never stamp trust for the mismatched peripheral")
+    }
+
+    /// The nil/"unknown" target case: the kit has no `reconnectTargetId` yet (e.g. a value set at a live
+    /// `didDiscover` this same session). Reapply must be a plain no-op — it must NOT clear `detectedIsMobi`.
+    @Test func reapplyDoesNotClearDetectedIsMobiWhenTargetIsUnknown() {
+        resetIdentityStores()
+        let uuid = UUID()
+        PumpPeripheralStore.set(uuid)
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        // NO armReconnectTargetForTesting → the kit's reconnectTargetId stays nil ("unknown").
+        b.detectedIsMobiForTesting = true
+
+        b.applyClientState(.discovering)
+
+        #expect(b.detectedIsMobiForTesting == true,
+                "WR-01: the nil/unknown target case is a plain return — a live-session detectedIsMobi must be left intact")
+    }
 }

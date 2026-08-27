@@ -280,7 +280,19 @@ final class PumpConnectionLifecycle {
         // Codex C10: the kit must actually be (re)connecting THIS peripheral — a stale trusted record
         // for a different one (pump-swap-mid-reconnect, or a restoration adopting a different
         // peripheral) must never be inherited by the current session.
-        guard let target = client?.reconnectTargetId, target == storeId else { return }
+        //
+        // The `reconnectTargetId == nil` "unknown target" case is a plain no-op (nothing to reapply,
+        // nothing to clear — this is e.g. the very first connection this launch, where a value already
+        // set at a live `didDiscover` this same session must be left intact).
+        guard let target = client?.reconnectTargetId else { return }
+        // WR-01 (REMED-15.5): a GENUINE peripheral mismatch (`target != storeId`, not merely
+        // "unknown") — the kit is driving a DIFFERENT peripheral than the stored one. Defensively
+        // clear `detectedIsMobi` before returning so a future `applyDeviceContext` can never inherit a
+        // stale name-authority value for the WRONG peripheral, even if some other invariant across the
+        // reconnect state machine regresses (the codex-C1-shaped hazard this phase closes). This makes
+        // the function self-defensive rather than relying solely on the cross-file
+        // `linkDroppedCleanup()`/`forgetPairing()` nil-ing convention.
+        guard target == storeId else { detectedIsMobi = nil; return }
         guard let isMobi = TrustedPumpIdentityStore.isMobi(for: storeId) else { return }
         detectedIsMobi = isMobi   // codex C8: restore the app-side name-authority signal
         client?.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
