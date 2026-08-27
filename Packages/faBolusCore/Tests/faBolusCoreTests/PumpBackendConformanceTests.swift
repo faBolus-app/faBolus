@@ -76,6 +76,17 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertTrue(b.activeNotifications.isEmpty, "the default impl must still call the void method once")
     }
 
+    /// 14-10 — a conformer with NO `rawActiveNotifications` override (StubBackend, mirroring a
+    /// community backend with no local-snooze concept) gets the default extension for free: it returns
+    /// EXACTLY `activeNotifications`, non-nil, live-tracking any mutation (not a one-time snapshot).
+    func testDefaultRawActiveNotificationsEqualsActiveNotifications() async {
+        let b = StubBackend()
+        XCTAssertNotNil(b.rawActiveNotifications)
+        XCTAssertEqual(b.rawActiveNotifications, b.activeNotifications)
+        await b.dismissNotification(b.activeNotifications[0])
+        XCTAssertEqual(b.rawActiveNotifications, b.activeNotifications, "the default must keep tracking activeNotifications after it changes")
+    }
+
     /// A backend can be wrapped in a BackendDescriptor + built via its factory.
     func testBackendDescriptorFactory() {
         let d = BackendDescriptor(id: "stub", name: "Stub") { StubBackend() }

@@ -270,6 +270,23 @@
       "type": "boolean",
       "description": "statusRead reply (CX-G-08, 14-09) — DYNAMIC pump-tied capability: true only when the phone build supports the authenticated dismissAck path AND the connected pump honors a remote dismiss (supportsRemoteAlertDismiss == true). Computed fresh every statusRead, never a constant. True (Mobi) ⇒ the watch removes a wearer-dismissed alert ONLY on a correlated authenticated dismissAck; false/absent (t:slim, or a legacy host) ⇒ the watch falls back to the filtered-statusRead reconcile so it is never stranded."
     },
+    "rawAlerts": {
+      "type": "array",
+      "description": "statusRead reply (CX-G-08, 14-10) — the pump's TRUE pre-local-snooze-filter active-alert bitmap for this poll (mirrors `alerts`' item shape exactly), emitted ONLY when supportsRawAlertSnapshot is true AND the host's raw set is known (non-nil). A wearer-dismissed alert ABSENT from a PRESENT rawAlerts (including an empty []) is proof the pump itself dropped it; PRESENT means the pump still has it. Absent (nil) rawAlerts is NO-SIGNAL, never 'zero alerts'. A reconciliation oracle for the wearer's own pending dismissals only — never a display source (the displayed list stays `alerts`).",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "title"],
+        "properties": {
+          "id": { "type": "integer", "description": "Bitmap index / notification id." },
+          "kind": { "type": "integer", "description": "NotificationKind (alert=1, alarm=2, cgmAlert=3)." },
+          "title": { "type": "string" }
+        }
+      }
+    },
+    "supportsRawAlertSnapshot": {
+      "type": "boolean",
+      "description": "statusRead reply (CX-G-08, 14-10) — DYNAMIC pump-tied capability, the exact NEGATION of supportsDismissAck: true only when the phone build supports the raw-snapshot backstop AND the connected pump does NOT honor a remote dismiss (supportsRemoteAlertDismiss == false, e.g. t:slim X2). Computed fresh every statusRead, never a constant. The two capabilities can never both be true for the same connected pump. Emitted unconditionally (mirrors supportsDismissAck) so a Mobi reply carries false; absent ⇒ a legacy host that predates this plan."
+    },
     "activeMode": {
       "type": "string",
       "enum": ["simple", "standard", "advanced"],

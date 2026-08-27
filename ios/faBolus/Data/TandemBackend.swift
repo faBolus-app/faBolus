@@ -71,6 +71,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+    /// CX-G-08 (14-10, D1) — the TRUE pre-`acknowledged`-filter raw pump alert bitmap for THIS poll,
+    /// published atomically alongside `activeNotifications` in `mergeNotifications`. `nil` INITIAL and
+    /// nil-until-first-read: only SET by a real `mergeNotifications` run, and RESET to nil in
+    /// `linkDroppedCleanup` + `resetSnapshotForPumpSwitch` (the opposite of `alarmList`/`malfunctionList`/
+    /// etc., which are never explicitly reset). Overrides the `PumpBackend` default (which would report
+    /// the FILTERED set as raw — a fail-open on the one backend that actually locally filters).
+    public private(set) var rawActiveNotifications: [PumpAlert]? = nil
     /// D-05 (Phase 09.7-02): the gap-sync's current state for the "Pump history sync" UI section.
     /// Initialized from the persisted `historyLastSyncedAt` so a fresh app launch shows the real last-
     /// synced time rather than always reading "Never" until the next connect.
@@ -200,6 +207,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         acknowledged = acknowledged.filter { present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow }
         applyAutoRules(raw, now: now)
         activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map { Self.toAlert($0) }
+        // CX-G-08 (14-10, D1) — the TRUE raw set, published atomically alongside the filtered
+        // `activeNotifications` above (same poll — the composer's same-poll invariant depends on this).
+        // Closure form (`.map { Self.toAlert($0) }`), NOT `.map(Self.toAlert)` — `toAlert` has a
+        // defaulted second param, so the bare function reference does not compile.
+        rawActiveNotifications = raw.map { Self.toAlert($0) }
     }
 
     /// Apply the user's conditional auto-rules (time-of-day / kind / glucose → auto-snooze or
@@ -2063,6 +2075,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// delivery-suspended, cartridge/CGM state, model identity). No `onChange` — `AppModel.refresh`
     /// republishes on the same cycle (a nested notify would re-enter refresh).
     public func resetSnapshotForPumpSwitch() {
+        // CX-G-08 (14-10, D1) — the nil-until-first-read invariant: a different pump's raw bitmap must
+        // never be judged against the PRIOR pump's stale raw set.
+        rawActiveNotifications = nil
         let d = PumpSnapshot()
         snapshot.maxBolusUnits = d.maxBolusUnits
         snapshot.maxBasalUnitsPerHour = d.maxBasalUnitsPerHour
@@ -2330,6 +2345,9 @@ extension TandemBackend: PumpBLEClientDelegate {
     /// and re-arm backfill/model-detection for the next connect. Factored out so `.reconnectExhausted`
     /// gets exactly the same fail-closed behavior as a plain disconnect, not a weaker copy.
     private func linkDroppedCleanup() {
+        // CX-G-08 (14-10, D1) — the nil-until-first-read invariant: a stale raw set from a PRIOR
+        // connection must never be emitted as THIS connection's proof-of-absence oracle.
+        rawActiveNotifications = nil
         // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
         // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
         // path reads them as stale and fails closed. Unconditional (see the note where `readScheduler`

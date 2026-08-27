@@ -20,6 +20,23 @@ public protocol PumpBackend: AnyObject {
     var bolusMarkers: [BolusMarker] { get }
     /// Active pump alerts/alarms/CGM alerts (most severe first), as neutral `PumpAlert`s.
     var activeNotifications: [PumpAlert] { get }
+    /// CX-G-08 (14-10, D1) — the TRUE pre-local-snooze-filter active-alert set: the pump's OWN raw
+    /// bitmap for THIS poll, before any wearer/auto local snooze is subtracted. `nil` until the FIRST
+    /// successful alert read on the current connection (the nil-until-first-read invariant, T-14-41) —
+    /// a backend's underlying source lists may initialize to `[]` and never reset on disconnect, so a
+    /// bare `[]` is ambiguous between "the pump has zero alerts" and "not yet polled"; the optional
+    /// resolves it. This is the raw-snapshot proof-of-absence oracle for a pump that does NOT honor a
+    /// remote dismiss (t:slim X2) — a wearer dismiss is removed on a remote ONLY when it is proven
+    /// absent from this set, never from `activeNotifications`' local-snooze-contaminated absence.
+    ///
+    /// DEFAULT (below): returns `activeNotifications` — correct ONLY for a backend that applies NO
+    /// local-snooze/auto-snooze filter to `activeNotifications` (a backend with no local-snooze concept
+    /// reports its filtered set as always-known raw truth). A future backend that DOES locally filter,
+    /// does NOT override this, and reports `supportsRemoteAlertDismiss == false` would feed its
+    /// CONTAMINATED filtered set as the raw absence-oracle (a fail-open) — such a backend MUST override
+    /// this with its true pre-filter set. `TandemBackend` overrides it (the only backend with a local
+    /// filter today); `MockBackend` has none, so the default is correct for it.
+    var rawActiveNotifications: [PumpAlert]? { get }
     /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.
     var alertDebug: String { get }
     /// Dismiss (clear) one alert on the pump — a signed control command. LEGACY void entry point; kept
@@ -317,6 +334,10 @@ public enum BolusReconciliation: Sendable, Equatable {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    /// CX-G-08 (14-10, D1) default: a conformer with no local-snooze concept reports its filtered set as
+    /// the always-known raw truth — see the protocol requirement's doc comment for the fail-open caveat
+    /// a backend that DOES locally filter must heed by overriding this.
+    var rawActiveNotifications: [PumpAlert]? { activeNotifications }
     /// CX-G-08 (14-09, MEDIUM-D) — the community-default typed dismiss: calls the LEGACY void
     /// `dismissNotification(_:)` exactly ONCE and returns `.notAuthenticated` — never authenticated,
     /// so a community backend that hasn't implemented the typed path can never trigger a Garmin

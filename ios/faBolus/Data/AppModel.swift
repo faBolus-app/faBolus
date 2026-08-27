@@ -23,6 +23,10 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
+    /// CX-G-08 (14-10, D1) — AppModel's own MIRROR of `source.rawActiveNotifications`, refreshed in the
+    /// SAME synchronous block as `activeNotifications` (below) so the two always describe the SAME poll
+    /// (the composer's same-poll invariant). Never read live from `source` at compose time.
+    public private(set) var rawActiveNotifications: [PumpAlert]?
 
     // Phase 16 GO-1 Step 5 (16-05, REMED-16, R24/R29): the persistent-history write-through +
     // identity-diff bookkeeping (`lastPersisted*Keys`, `persistNewHistory`) moved verbatim into
@@ -513,6 +517,8 @@ public final class AppModel {
             bolusBlockReason: avail.reason?.wireToken,
             bolusPasscodeRequired: BolusPasscodeStore.isRequired,
             supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
+            // CX-G-08 (14-10, D1) — the AppModel MIRROR (never a live `source.` read; same-poll invariant).
+            rawActiveNotifications: rawActiveNotifications,
             settings: settings)
         return RemoteStatusComposer.compose(inputs)
     }
@@ -1399,6 +1405,9 @@ public final class AppModel {
         if let ops = source as? PumpHistoryProviding { historySyncState = ops.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
+        // CX-G-08 (14-10, D1) — mirrored in the SAME synchronous block as activeNotifications above
+        // (same-poll invariant); never a live `source.` read at compose time.
+        rawActiveNotifications = source.rawActiveNotifications
         alertDebug = source.alertDebug
         let widgetLock = widgetBolusLock   // A-05: same evaluator delivery routes through
         WidgetPublisher.publish(snapshot, history: glucoseHistory, alerts: activeNotifications.map { $0.title },

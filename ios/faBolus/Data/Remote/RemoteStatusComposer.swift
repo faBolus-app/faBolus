@@ -27,6 +27,12 @@ enum RemoteStatusComposer {
     /// AND with `inputs.supportsRemoteAlertDismiss` below reads exactly like its own doc comment: "build
     /// supports it AND the pump honors it", never a bare pump-capability passthrough.
     static let buildSupportsDismissAck = true
+    /// CX-G-08 (14-10, D1) — this build KNOWS how to consume the raw-snapshot backstop's `rawAlerts`
+    /// payload + `supportsRawAlertSnapshot` capability (the watch-side raw-snapshot tier in AppState.mc
+    /// Task 2 of this same phase). A constant `true` today, mirroring `buildSupportsDismissAck` exactly —
+    /// kept as a named symbol so the dynamic AND with `!inputs.supportsRemoteAlertDismiss` below reads
+    /// like its own doc comment: "build supports it AND the pump does NOT honor a remote dismiss."
+    static let buildSupportsRawSnapshot = true
 
     /// Build the full `statusRead` `RemoteCommand` from a fully-snapshotted set of inputs. Pure:
     /// same inputs -> same output, every time, with no observable side effect.
@@ -127,6 +133,21 @@ enum RemoteStatusComposer {
         // forever once it cuts over to ack-only. Mirrors supportsRemoteAlertDismiss's own unconditional
         // emission (every statusRead), so "absent" can only mean a legacy host.
         cmd.supportsDismissAck = RemoteStatusComposer.buildSupportsDismissAck && inputs.supportsRemoteAlertDismiss
+        // CX-G-08 (14-10, D1) — DYNAMIC, pump-tied, the exact NEGATION of supportsDismissAck: this build
+        // supports the raw-snapshot backstop AND the connected pump does NOT honor a remote dismiss
+        // (t:slim X2). Emitted UNCONDITIONALLY (mirrors supportsDismissAck's own unconditional emission
+        // above) so a Mobi reply carries `false`, never omitted — the two capabilities can never both be
+        // true for the same connected pump.
+        cmd.supportsRawAlertSnapshot = RemoteStatusComposer.buildSupportsRawSnapshot && !inputs.supportsRemoteAlertDismiss
+        // T-14-41 (fail-closed empty/absent/staleness rule): emit `rawAlerts` ONLY when the capability is
+        // true AND the host's raw set is KNOWN (non-nil) — the connected-but-first-poll-not-yet-done
+        // window (raw still nil) OMITS rawAlerts, never fabricating an authoritative empty `[]`. A
+        // non-nil-but-empty raw input DOES emit `rawAlerts == []` (present, authoritative). Deliberately
+        // NOT gated on `snapshot.isLinked` — the nil-until-first-read optional already subsumes it and
+        // additionally closes the connected-but-first-poll-not-done window isLinked alone would not.
+        if cmd.supportsRawAlertSnapshot == true, let raw = inputs.rawActiveNotifications {
+            cmd.rawAlerts = raw.map { RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title) }
+        }
         // P15 §2.3: publish the per-surface bolus enables + whether a passcode is required, so each remote
         // hides its bolus affordance until the phone opts it in (fail-closed on a cold launch — the remote
         // mirror defaults to disabled). Emitted unconditionally so "absent" can only mean a legacy host.
@@ -245,6 +266,12 @@ struct RemoteStatusInputs {
     let bolusPasscodeRequired: Bool
     /// `AppModel.capabilities.supportsRemoteAlertDismiss` at compose time.
     let supportsRemoteAlertDismiss: Bool
+    /// CX-G-08 (14-10, D1) — `AppModel.rawActiveNotifications` (the SAME-POLL mirror of
+    /// `source.rawActiveNotifications`) at compose time. `nil` ⇒ not yet polled this connection (or the
+    /// backend has no raw exposure); a non-nil (possibly empty) value is the pump's known raw set.
+    /// DEFAULTED (not just optional) so `RemoteStatusComposerDismissAckTests`' construction site — which
+    /// predates this field and does not pass it — keeps compiling unchanged.
+    var rawActiveNotifications: [PumpAlert]? = nil
     /// Every `AppSettings.shared` read the original body performed, snapshotted as immutable values.
     let settings: RemoteStatusSettings
 }

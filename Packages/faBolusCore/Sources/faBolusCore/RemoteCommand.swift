@@ -307,6 +307,26 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// ack-only. Absent ⇒ a legacy host that predates this plan; the watch's safe default is the 14-08
     /// fallback (never stuck). Additive; mirrored in the JSON schema + Monkey C.
     public var supportsDismissAck: Bool? = nil
+    /// CX-G-08 (14-10, D1) — the additive PROOF-OF-ABSENCE backstop for a pump that does NOT honor a
+    /// remote dismiss (t:slim X2, `supportsRemoteAlertDismiss == false`). `rawAlerts` mirrors `alerts`
+    /// exactly (same `RemoteAlert` shape) but is the pump's TRUE pre-local-snooze-filter active-alert
+    /// bitmap for THIS poll — a wearer-dismissed alert ABSENT from it is authenticated proof the pump
+    /// itself dropped it; PRESENT (including in a non-empty rawAlerts) means the pump still has it. A
+    /// PRESENT-but-EMPTY `[]` is itself authoritative (zero active pump alerts); an ABSENT (nil)
+    /// `rawAlerts` is NO-SIGNAL (not yet polled this connection, or the capability is false) and must
+    /// never be treated as "zero alerts." Emitted ONLY when `supportsRawAlertSnapshot == true` AND the
+    /// host's raw set is known (non-nil) — see `RemoteStatusComposer.compose`. Never a display source —
+    /// a remote's displayed alert list stays `alerts`; `rawAlerts` is a reconciliation ORACLE for the
+    /// wearer's own pending dismissals only.
+    public var rawAlerts: [RemoteAlert]? = nil
+    /// CX-G-08 (14-10, D1) — DYNAMIC pump-tied capability channel, the exact NEGATION of
+    /// `supportsDismissAck`: true only when the phone build supports the raw-snapshot backstop AND the
+    /// connected pump does NOT honor a remote dismiss (`supportsRemoteAlertDismiss == false`). Computed
+    /// FRESH on every `statusRead` reply, never a constant, so a pump-model change (Mobi ↔ t:slim) flips
+    /// the tier cleanly on the next reply. The two capabilities can never both be true for the same
+    /// connected pump. Emitted UNCONDITIONALLY (like `supportsDismissAck`) so a Mobi reply carries
+    /// `false` and "absent" can only mean a legacy host that predates this plan.
+    public var supportsRawAlertSnapshot: Bool? = nil
 
     /// P14 S4 — the phone's active app MODE (`AppMode.rawValue`: simple / standard / advanced), so a
     /// remote can HIDE an affordance the phone's mode would deny instead of showing-then-failing (owner:
@@ -742,7 +762,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // Array element caps.
         let arrays: [(String, Int?)] = [
             ("history", history?.count), ("historyEpochs", historyEpochs?.count),
-            ("alerts", alerts?.count), ("screenOrder", screenOrder?.count),
+            ("alerts", alerts?.count), ("rawAlerts", rawAlerts?.count), ("screenOrder", screenOrder?.count),
             ("detailsOrder", detailsOrder?.count), ("watchChartRanges", watchChartRanges?.count),
         ]
         for (name, c) in arrays where c != nil {

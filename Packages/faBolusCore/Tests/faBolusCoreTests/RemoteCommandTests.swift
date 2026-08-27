@@ -234,4 +234,53 @@ final class RemoteCommandTests: XCTestCase {
         let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
         XCTAssertNil(bare.supportsDismissAck)
     }
+
+    // MARK: - 14-10: `rawAlerts` snapshot + `supportsRawAlertSnapshot` capability (t:slim proof-of-absence backstop)
+
+    /// A statusRead carrying `rawAlerts` + `supportsRawAlertSnapshot: true` round-trips 1:1 (JSON +
+    /// dictionary) — mirrors `alerts`/`supportsDismissAck` exactly. `validate()` passes (bounds-checked,
+    /// no cross-field rule for these — they ride statusRead, not a command kind).
+    func testRawAlertsAndSupportsRawAlertSnapshotRoundTrip() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.rawAlerts = [.init(id: 5, kind: 1, title: "Auto-off")]
+        cmd.supportsRawAlertSnapshot = true
+        XCTAssertNoThrow(try cmd.validate())
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.rawAlerts?.first?.id, 5)
+        XCTAssertEqual(decoded.rawAlerts?.first?.kind, 1)
+        XCTAssertEqual(decoded.supportsRawAlertSnapshot, true)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.rawAlerts?.first?.id, 5)
+        XCTAssertEqual(back.supportsRawAlertSnapshot, true)
+    }
+
+    /// A PRESENT but EMPTY `rawAlerts` (`[]`) round-trips distinctly from an ABSENT (nil) one — the
+    /// proof-of-absence oracle depends on being able to tell "zero active pump alerts" apart from
+    /// "not yet polled" on the wire, not just in Swift memory.
+    func testRawAlertsPresentEmptyRoundTripsDistinctFromAbsent() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.rawAlerts = []
+        cmd.supportsRawAlertSnapshot = true
+        let json = String(data: try cmd.encoded(), encoding: .utf8) ?? ""
+        XCTAssertTrue(json.contains("\"rawAlerts\":[]"), "an empty-but-present rawAlerts must still be emitted on the wire: \(json)")
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertNotNil(decoded.rawAlerts)
+        XCTAssertEqual(decoded.rawAlerts?.count, 0)
+
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.rawAlerts, "an unset rawAlerts must be omitted from the wire entirely, decoding to nil (not [])")
+        XCTAssertNil(bare.supportsRawAlertSnapshot)
+    }
+
+    /// `rawAlerts` is bounds-checked by `validate()`'s array-count table exactly like `alerts`.
+    func testRawAlertsExceedingMaxArrayCountFailsValidate() {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.rawAlerts = (0..<(RemoteCommand.maxArrayCount + 1)).map { .init(id: $0, kind: 1, title: "x") }
+        XCTAssertThrowsError(try cmd.validate()) { error in
+            guard case RemoteCommand.ValidationError.tooManyElements(let field) = error else {
+                XCTFail("expected .tooManyElements, got \(error)"); return
+            }
+            XCTAssertEqual(field, "rawAlerts")
+        }
+    }
 }
