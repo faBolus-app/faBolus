@@ -86,6 +86,17 @@ func garminSendDisposition(result: GarminSendResult, isEcho: Bool) -> GarminSend
     }
 }
 
+/// I-M2: ConnectIQ-free classification of a `getAppStatus` result onto `GarminDiagnostics.AppInstallState`
+/// — lives OUTSIDE `#if GARMIN` (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so it compiles
+/// and is unit-testable in the default (non-GARMIN) target; no `IQAppStatus` type crosses this boundary,
+/// only the one `Bool?` bit the `#if GARMIN` completion already reduces it to (`nil` when the completion
+/// itself never resolved a status — distinct from an explicit `false`, so a transient probe failure is
+/// never confused with a genuinely-absent/mismatched watch app).
+func garminClassifyAppInstallState(installed: Bool?) -> GarminDiagnostics.AppInstallState {
+    guard let installed else { return .unknown }
+    return installed ? .installed : .notInstalled
+}
+
 /// R2-12 (cross-restart echo persistence): a terminal outcome to re-enqueue as a `bolusStatus` echo on
 /// launch. Pure/ConnectIQ-free (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so the seeding
 /// decision gets unit coverage in the default (non-GARMIN) target.
@@ -266,6 +277,12 @@ final class GarminRemoteBridge: NSObject {
     // file already imports ConnectIQ) and how many times the send-watchdog has fired this session.
     private(set) var lastSendOutcomeForDiagnostics: GarminDiagnostics.SendOutcome = .none
     private(set) var sendWatchdogFireCountForDiagnostics = 0
+    // I-M2: the watch-app install/version state from the most recent `getAppStatus` probe — read-only,
+    // additive diagnostics state mirroring `lastSendOutcomeForDiagnostics` above. Defaults to
+    // `.installed` (matches `GarminDiagnostics.BridgeState`'s own default) so a bridge that hasn't yet
+    // completed its first `registerApp()` probe doesn't misreport a not-installed state it hasn't
+    // actually observed.
+    private(set) var appInstallStateForDiagnostics: GarminDiagnostics.AppInstallState = .installed
 
     init(model: AppModel) {
         self.model = model
@@ -292,6 +309,16 @@ final class GarminRemoteBridge: NSObject {
             self?.sendRaw(["v": 1, "type": "hr_ctl", "on": on])
         }
         restoreDevice()
+    }
+
+    // I-M1: unregister on deallocation — mirrors `registerApp()`'s own unregister-before-register at
+    // the top (below). Without this, a bridge instance that's replaced/deallocated (unlikely in normal
+    // app life — `Self.shared`/`AppModel` hold it for the process lifetime — but real in tests/previews
+    // that construct a fresh instance) would leave its delegate registered against the SDK's singleton
+    // forever, a stale listener that never gets cleaned up.
+    deinit {
+        ConnectIQ.sharedInstance().unregisterForAllDeviceEvents(self)
+        ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
     }
 
     var hasDevice: Bool { device != nil }
@@ -345,6 +372,15 @@ final class GarminRemoteBridge: NSObject {
 
     private func registerApp() {
         guard let device else { return }
+        // I-M1: unregister any PRIOR registration for `self` BEFORE re-registering. `registerApp()` is
+        // called from BOTH `restoreDevice()` (launch) and `handleOpenURL()` (re-select) — with no
+        // unregister, a repeated call STACKS listeners (ConnectIQ.h:220-227/:264-272: "a device/app may
+        // have multiple listeners if this method is called more than once"), causing duplicate
+        // `handle(cmd)` (status flip-flop, duplicate cancel/dismiss) and a stale registration against
+        // the PREVIOUS device on a device switch. `unregisterForAll…` is safe even on the very first
+        // call — a no-op when nothing was registered yet.
+        ConnectIQ.sharedInstance().unregisterForAllDeviceEvents(self)
+        ConnectIQ.sharedInstance().unregisterForAllAppMessages(self)
         // Sideloaded app: store UUID == app UUID.
         let app = IQApp(uuid: Self.watchAppUUID, store: Self.watchAppUUID, device: device)
         self.app = app
@@ -355,16 +391,42 @@ final class GarminRemoteBridge: NSObject {
         // readiness stuck false. Probe the app's status; a reachable, installed IQAppStatus means the
         // device is communicable → arm readiness and drain. (Fail-safe: nil/not-installed keeps it false.)
         ConnectIQ.sharedInstance().getAppStatus(app) { [weak self] appStatus in
-            // Read the one Sendable bit (installed?) HERE, in the nonisolated completion, so only a `Bool`
-            // crosses to the main actor — capturing the non-Sendable `IQAppStatus` into the @MainActor Task
-            // trips Swift 6 "Sending 'appStatus' risks causing data races".
-            let installed = appStatus?.isInstalled == true
+            // Read the one Sendable bit (installed?) HERE, in the nonisolated completion, so only a
+            // `Bool?` crosses to the main actor — capturing the non-Sendable `IQAppStatus` into the
+            // @MainActor Task trips Swift 6 "Sending 'appStatus' risks causing data races". `nil` (the
+            // completion itself never resolved a status) is preserved as its OWN tri-state bit — I-M2's
+            // `garminClassifyAppInstallState` distinguishes it from an explicit `installed == false`.
+            let installed: Bool? = appStatus?.isInstalled
             Task { @MainActor in
-                guard let self, installed else { return }
-                self.readiness.characteristicsDiscovered()
-                self.pump()
+                guard let self else { return }
+                let state = garminClassifyAppInstallState(installed: installed)
+                self.appInstallStateForDiagnostics = state
+                switch state {
+                case .installed:
+                    self.readiness.characteristicsDiscovered()
+                    self.pump()
+                case .notInstalled:
+                    // I-M2: a VISIBLE, actionable state — corrects the "✓" `restoreDevice()`/
+                    // `handleOpenURL()` already set SYNCHRONOUSLY (before this async probe resolves),
+                    // instead of leaving it stand while readiness silently never arms.
+                    // `openConnectIQAppStore()` is exposed below for a future UI "Install" action; never
+                    // auto-invoked here — launching Garmin Connect Mobile unprompted on every cold
+                    // start (registerApp() runs from restoreDevice() at EVERY launch) would be its own
+                    // unwanted surprise, not a fix.
+                    self.model?.garminStatus = state.statusText
+                case .unknown:
+                    break   // fail-safe: no status change, readiness stays false — matches prior behavior
+                }
             }
         }
+    }
+
+    /// I-M2: launches Garmin Connect Mobile's Connect IQ Store page for the paired watch app — the
+    /// store-link a not-installed/wrong-app-id `garminStatus` should OFFER. Exposed for a future UI
+    /// action (out of this plan's file scope); a no-op if no app has been resolved yet.
+    func openConnectIQAppStore() {
+        guard let app else { return }
+        ConnectIQ.sharedInstance().showConnectIQStoreForApp(app)
     }
 
     /// Enqueue a command for the watch. Status pushes are coalesced (latest wins); everything else
@@ -743,6 +805,12 @@ final class GarminRemoteBridge {
     var sendWatchdogFireCountForDiagnostics: Int { 0 }
     var deviceConnectedForDiagnostics: Bool { false }
     var deviceNameForDiagnostics: String? { nil }
+    /// I-M2: mirrors the `#if GARMIN` variant's diagnostics surface — no device, no probe, nothing to
+    /// report; `.unknown` (never `.installed`, which would misreport readiness this stub never has).
+    var appInstallStateForDiagnostics: GarminDiagnostics.AppInstallState { .unknown }
+    /// I-M2: no-op mirror of the `#if GARMIN` variant's store-link action — there's no ConnectIQ SDK
+    /// (and so no `IQApp`/store page) to open in this build.
+    func openConnectIQAppStore() {}
 }
 
 #endif
