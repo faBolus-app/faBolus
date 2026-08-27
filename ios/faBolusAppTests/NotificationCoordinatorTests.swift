@@ -568,6 +568,40 @@ import UserNotifications
         #expect(store.entries["reconcile-watch-r1"] == nil, "withdrawAll(for:) must prune the durable entry")
     }
 
+    /// MD-02 (Phase 13 review fix): `SafetyAlertPoster.post` persists BEFORE the broker decides (the
+    /// T3-01 persist-before-post guarantee). If the user has disabled + acknowledged a trio category, the
+    /// entry is durably stored yet never delivered — and, absent a condition-resolve/toggle, would
+    /// re-load/re-evaluate/re-suppress on every launch forever. Replay must opportunistically prune any
+    /// entry whose replay decision comes back `.categoryDisabled`, while leaving entries that still deliver
+    /// untouched. (Option (b): touches only the replay path, never the persist-before-post ordering.)
+    @Test func replayPrunesEntriesTheBrokerSuppressesAsCategoryDisabled() {
+        let defaults = isolatedStore(#function)
+        // The user has explicitly disabled + acknowledged the `.cgmDataLoss` safety category.
+        var cfg = NotificationBroker.CategorySettings.defaults(for: .cgmDataLoss)
+        cfg.enabled = false
+        cfg.userAcknowledgedSafetyDisable = true
+        let rt = NotificationRuntime(store: defaults, settings: [.cgmDataLoss: cfg])
+        let store = SafetyAlertStore(store: defaults)
+        // A durable entry for that now-disabled category (will decide `.categoryDisabled` on replay) plus
+        // one for an unconfigured category that still delivers (default-enabled) and must be kept.
+        store.record(.init(category: .cgmDataLoss, severity: .warning, title: "t", body: "b",
+                           dedupeKey: "safety.cgmDataLoss", userInfo: [:], categoryIdentifier: "",
+                           issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(.init(category: .pumpDisconnect, severity: .error, title: "t2", body: "b2",
+                           dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
+                           issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("safety-store-\(UUID().uuidString).json")
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
+        // Constructing the coordinator runs `replayPersistedSafetyAlerts()` in its init.
+        let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
+        #expect(store.entries["safety.cgmDataLoss"] == nil,
+                "a replay decision of .categoryDisabled must prune the dead durable entry (MD-02)")
+        #expect(store.entries["safety.pumpDisconnect"] != nil,
+                "an entry that still delivers on replay must NOT be pruned")
+        _ = coordinator
+    }
+
     // MARK: - C2-01: the generic boolean-condition edge-detector
 
     @Test func safetyEdgeGenericEdgeRaisesOnceOnFalseToTrueAndClearsOnceOnTrueToFalse() {

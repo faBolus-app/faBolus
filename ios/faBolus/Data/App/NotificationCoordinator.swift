@@ -496,15 +496,28 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// OS request through the plain (non-recording) poster, so `issuedDate` is never clobbered by a replay.
     private func replayPersistedSafetyAlerts(now: Date = Date()) {
         let allowCritical = AppSettings.shared.criticalAlertsEnabled
+        // MD-02 (Phase 13 review fix): `SafetyAlertPoster.post` persists the durable entry BEFORE the
+        // broker decides (the T3-01 persist-before-post guarantee, which must NOT be weakened for the
+        // enabled case). The one way a never-suppressible entry is still suppressed is the user's own
+        // acknowledged-disable of that trio category — in which case the entry is dead state with no
+        // natural pruning path other than a condition-resolve/toggle. Lower-risk option (b): opportunistically
+        // prune any entry whose replay decision comes back `.categoryDisabled`, so a permanently-unresolved,
+        // user-disabled entry can't be re-loaded/re-evaluated/re-suppressed on every launch forever. This
+        // touches only the replay path — the persist-before-post ordering for the enabled case is unchanged.
+        var suppressedDisabledKeys: [String] = []
         for entry in safetyAlertStore.unresolvedEntries() {
             let msg = NotificationBroker.Message(category: entry.category, severity: entry.severity,
                                                  title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
             let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
-            NotificationPoster.post(msg, runtime: runtime,
+            let decision = NotificationPoster.post(msg, runtime: runtime,
                                     userInfo: entry.userInfo.mapValues { $0 as Any },
                                     categoryId: entry.categoryIdentifier, trigger: trigger,
                                     allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
+            if !decision.deliver, decision.reason == .categoryDisabled {
+                suppressedDisabledKeys.append(entry.dedupeKey)
+            }
         }
+        safetyAlertStore.remove(dedupeKeys: suppressedDisabledKeys)
     }
 
     /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
