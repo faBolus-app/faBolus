@@ -851,7 +851,7 @@ struct RemotesSettingsView: View {
                     }
                 }
             } header: { Text("Garmin bolusing") } footer: {
-                Text("**Read-only overrides everything below**: while on, Garmin shows pump + CGM data only and can't deliver, whatever the other switches say. **Bolusing from Garmin is off by default** — turn it on to let Garmin deliver; you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Garmin bolus can be, on top of your pump's max bolus. The optional **passcode** asks for a 4-digit code instead of tap-to-confirm — a stronger check for a watch with no wrist detection. The iPhone is always unaffected by any switch here — its own read-only mode is separate, under Safety. (faBolus no longer includes an Apple Watch app — see the note below.)")
+                Text("**Read-only overrides everything below**: while on, Garmin shows pump + CGM data only and can't deliver, whatever the other switches say. **Bolusing from Garmin is off by default** — turn it on to let Garmin deliver; you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Garmin bolus can be, on top of your pump's max bolus. The optional **passcode** (shown once you turn bolusing on) asks for a 4-digit code instead of tap-to-confirm — a stronger check for a watch with no wrist detection. The iPhone is always unaffected by any switch here — its own read-only mode is separate, under Safety. (faBolus no longer includes an Apple Watch app — see the note below.)")
             }
             #if GARMIN
             Section {
