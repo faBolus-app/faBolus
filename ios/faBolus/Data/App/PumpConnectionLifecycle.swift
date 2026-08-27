@@ -13,6 +13,18 @@ import os
 /// `cancelPairingWatchdog`/`handleResumeFailure`/`firePairingWatchdog`), `pumpClientDidBecomeReady`'s
 /// pairing-scheme SELECTION, and `didDiscover`'s model-detection body.
 ///
+/// **Two generations of logic now live here (IN-04).** The paragraphs below describe the ORIGINAL
+/// Phase-16 extraction (verbatim moves, ordering preserved, verified by
+/// `PumpConnectionLifecycleCharacterizationTests`). A LATER commit (`8f9768b`, Phase 15.5 /
+/// REMED-15.5's trusted-identity work — CC-06/C1, self-audit C8, cross-check C10) added a SECOND,
+/// independent side effect into `applyClientState`'s `.connecting`/`.discovering` branch:
+/// `reapplyTrustedIdentityIfKnown()` (see its own doc comment) reapplies a peripheral's persisted
+/// TRUSTED identity — restoring `detectedIsMobi` and calling `client.setDeviceContext(...)` — on the
+/// three `didDiscover`-bypass reconnect shapes, before the earliest possible send. This addition is
+/// NOT covered by the Phase-16 characterization tests (their test doubles short-circuit the guard chain
+/// on a nil `client.reconnectTargetId`), so the "verbatim, ordering preserved" claim below is verified
+/// for the Phase-16-era body but NOT re-verified against this later trusted-identity reapply path.
+///
 /// **GATE-ADJACENT — never owns the auth key or the delivery lock.** `TandemBackend` keeps the actual
 /// storage for `authenticationKey`, `coordinator`, `pairingCode`, and `detectedIsMobi`; this type reaches
 /// them ONLY through get/set closure pairs exposed as computed proxy properties below (`authenticationKey`,
