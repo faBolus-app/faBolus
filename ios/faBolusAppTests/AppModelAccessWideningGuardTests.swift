@@ -52,6 +52,13 @@ struct AppModelAccessWideningGuardTests {
     /// The EXACT 17 stored-property declarations widened `private`->`internal` by this carve, held as
     /// their exact declaration-line substrings (not bare property names) so the check is precise and
     /// cannot accidentally match an unrelated occurrence of the same word elsewhere in the file.
+    ///
+    /// IN-01 caveat: `"internal var history: GlucoseHistoryStore?"` was a *stored* property when 16-04
+    /// widened it, but 16-05 (one plan later, same phase) turned `history` into a *computed* property
+    /// (`internal var history: GlucoseHistoryStore? { historyPersistence.store }`). The `source.contains`
+    /// substring match below still holds because the computed declaration line starts with the identical
+    /// prefix — so this array's name ("stored-property") is inaccurate for this one entry only. The guard
+    /// is still proving the `private`->`internal` visibility survives; it is NOT proving stored-vs-computed.
     static let widenedStoredPropertyDeclarations: [String] = [
         "internal var history: GlucoseHistoryStore?",
         "internal var eatingEngine = EatingTriggerEngine(",
