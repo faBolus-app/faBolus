@@ -115,7 +115,13 @@ packages:
     # byte-parity green vs pre-15.5 (MessageProps.isSupported + signed dose wire byte-identical; the gate is a
     # PumpBLEClient-layer policy, off the signed wire). STILL bench-pending: NO-GO for real insulin until the
     # Phase-12 saline bench validates real-pump behavior of the send-gate + trusted-identity fix. apiVersion nil.
-    revision: 11d51b393cdc30063e59af02629df12b10f45169
+    # Pin BUMP 2026-08-27 (tslim-reconnect-loop Phase B): 11d51b3 -> 453e19d. Delta = ONE metadata-only commit
+    # (HighestAamRequest op120 minApi .mobi_v3_5 floor; wire bytes unchanged, OracleParity preserved). NOTE the
+    # companion faBolus VA-06 change (8783cac) now FORWARDS the real negotiated apiVersion into setDeviceContext
+    # (supersedes the "apiVersion nil / CX-T-04 deferred" note above) — the kit minApi floors are now LIVE. op120
+    # itself is deleted from the app (AAM removed, f2be917) so its floor is a backstop only. STILL bench-pending:
+    # NO-GO for real insulin until the Phase-12 saline bench.
+    revision: 453e19d9d59791afdce3be518f72ffed7a33ff7a
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
