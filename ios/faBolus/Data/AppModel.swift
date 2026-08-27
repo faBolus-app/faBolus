@@ -1592,6 +1592,7 @@ public final class AppModel {
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
+            lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
             // REMED-17: an immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
             // AUTHORITATIVE `.bolusReconciliation` post `reconcileUnresolvedDeliveries` issues later for
             // this same durable ledger entry. Distinct dedupe namespace so neither coalesces the other.
@@ -2568,6 +2569,7 @@ public final class AppModel {
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
+            lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
             // Peer wire: this `.unknown` echo message is UNCHANGED — already the locked copy, byte-identical.
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
                                message: Self.indeterminateOutcomeLockedCopy))
@@ -2663,6 +2665,7 @@ public final class AppModel {
             let echoMsg = Self.widgetIndeterminateEchoMessage
             let userMsg = Self.indeterminateOutcomeLockedCopy   // USER-FACING copy converges to the locked copy
             lastError = userMsg
+            lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: echoMsg))
             // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.

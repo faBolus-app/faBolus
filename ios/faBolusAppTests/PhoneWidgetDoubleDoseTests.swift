@@ -254,4 +254,59 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(abs(backend.snapshot.iobUnits - iobAfterWidget) < tol)  // no second pump write
         }
     }
+
+    // MARK: - IN-02: an INDETERMINATE outcome stamps `lastHostDeliveryAt` too (defense-in-depth)
+    //
+    // Before IN-02, all three phone-side delivery sites stamped `lastHostDeliveryAt` only on `.delivered`,
+    // never on `.indeterminate` — even though an indeterminate outcome MAY in fact have delivered. The
+    // durable ledger's global unresolved-delivery block masks this today (it refuses any new delivery while
+    // an entry is unresolved, which is strictly stronger than VA-07 supersession), so these tests assert
+    // the stamp DIRECTLY (the getter is internal via `@testable`) rather than through the supersession
+    // check — the point is to keep VA-07 correct even if that global block is ever narrowed. Each site gets
+    // a FRESH model, since one indeterminate outcome engages the global block for the rest of that ledger.
+
+    /// performLocalBolus `.indeterminate` stamps `lastHostDeliveryAt`.
+    @Test func localBolusIndeterminateStampsLastHostDeliveryAt() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            backend.forceIndeterminateNextDelivery = true
+            await model.deliverBolus(units: 1.0)
+            #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
+            #expect(model.lastHostDeliveryAt != nil, "an indeterminate local bolus must stamp lastHostDeliveryAt (IN-02)")
+        }
+    }
+
+    /// executeResolved `.indeterminate` (remote path) stamps `lastHostDeliveryAt`.
+    @Test func remoteBolusIndeterminateStampsLastHostDeliveryAt() async {
+        try? await withCleanSettings {
+            let (model, backend, rec) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            backend.forceIndeterminateNextDelivery = true
+            await model.remoteDeliver(requestId: "in02-remote", units: 2.0,
+                                      sentAt: Int(Date().timeIntervalSince1970),
+                                      from: .garmin, peerId: "garmin")
+            #expect(rec.last?.status == .unknown)                         // indeterminate echo
+            #expect(model.lastHostDeliveryAt != nil, "an indeterminate remote bolus must stamp lastHostDeliveryAt (IN-02)")
+        }
+    }
+
+    /// deliverWidgetBolus `.indeterminate` stamps `lastHostDeliveryAt`.
+    @Test func widgetBolusIndeterminateStampsLastHostDeliveryAt() async {
+        try? await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            let savedGarmin = AppSettings.shared.garminBolusEnabled
+            AppSettings.shared.garminBolusEnabled = true
+            defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
+            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            backend.forceIndeterminateNextDelivery = true
+            let w = await model.deliverWidgetBolus(requestId: "in02-widget", units: 1.0)
+            #expect(w.delivered == 0)                                     // indeterminate → no confirmed delivery
+            #expect(w.error != nil)
+            #expect(model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt (IN-02)")
+        }
+    }
 }
