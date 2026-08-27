@@ -21,6 +21,12 @@ import faBolusCore
 /// See `RemoteStatusComposerEquivalenceTests` (deterministic decoded-equivalence under an injected
 /// clock) and its composer-purity scan (this file must never contain a live-singleton/clock read).
 enum RemoteStatusComposer {
+    /// CX-G-08 (14-09) — this build KNOWS how to send an authenticated `dismissAck` (Task 2's typed
+    /// CC-08 outcome + `GarminDismissReceiptStore` land in this same phase). A constant `true` today —
+    /// there is no runtime feature-flag for it — kept as a NAMED symbol (not inlined) so the dynamic
+    /// AND with `inputs.supportsRemoteAlertDismiss` below reads exactly like its own doc comment: "build
+    /// supports it AND the pump honors it", never a bare pump-capability passthrough.
+    static let buildSupportsDismissAck = true
 
     /// Build the full `statusRead` `RemoteCommand` from a fully-snapshotted set of inputs. Pure:
     /// same inputs -> same output, every time, with no observable side effect.
@@ -114,6 +120,13 @@ enum RemoteStatusComposer {
         // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
         // stays the enforcement point on the actual dismiss.
         cmd.supportsRemoteAlertDismiss = inputs.supportsRemoteAlertDismiss
+        // CX-G-08 (14-09, checkpoint #5) — DYNAMIC, pump-tied: this build supports the authenticated
+        // dismissAck path AND the connected pump actually honors a remote dismiss. NEVER a constant —
+        // a t:slim pump (supportsRemoteAlertDismiss == false, local-snooze only, no op-184) must resolve
+        // to false so the watch stays on the 14-08 fallback instead of stranding a phantom overlay
+        // forever once it cuts over to ack-only. Mirrors supportsRemoteAlertDismiss's own unconditional
+        // emission (every statusRead), so "absent" can only mean a legacy host.
+        cmd.supportsDismissAck = RemoteStatusComposer.buildSupportsDismissAck && inputs.supportsRemoteAlertDismiss
         // P15 §2.3: publish the per-surface bolus enables + whether a passcode is required, so each remote
         // hides its bolus affordance until the phone opts it in (fail-closed on a cold launch — the remote
         // mirror defaults to disabled). Emitted unconditionally so "absent" can only mean a legacy host.

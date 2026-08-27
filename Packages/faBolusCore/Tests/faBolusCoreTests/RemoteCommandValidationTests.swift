@@ -139,4 +139,38 @@ final class RemoteCommandValidationTests: XCTestCase {
             XCTAssertEqual($0 as? RemoteCommand.ValidationError, .outOfRange("glucosePlotFloor"))
         }
     }
+
+    // MARK: - CX-G-08 (14-09, checkpoint #1/#4): dismissAck cross-field rule
+    //
+    // A dismissAck carries no dedicated schema property (it reuses alertId/alertKind), so nothing in
+    // the JSON schema can require them — this Swift-only rule is the ONLY enforcement (T-14-27). See
+    // scripts/validate-schema-payloads.py's documented cross-field asymmetry note.
+
+    func testDismissAckMissingBothAlertFieldsRejected() {
+        let json = #"{"version":1,"kind":"dismissAck","requestId":"r1"}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .crossField("dismissAck missing alertId/alertKind"))
+        }
+    }
+
+    func testDismissAckMissingAlertKindRejected() {
+        let json = #"{"version":1,"kind":"dismissAck","requestId":"r1","alertId":3}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .crossField("dismissAck missing alertId/alertKind"))
+        }
+    }
+
+    func testDismissAckMissingAlertIdRejected() {
+        let json = #"{"version":1,"kind":"dismissAck","requestId":"r1","alertKind":1}"#
+        XCTAssertThrowsError(try RemoteCommand.decodeValidated(data(json))) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .crossField("dismissAck missing alertId/alertKind"))
+        }
+    }
+
+    func testWellFormedDismissAckWithBothFieldsPasses() throws {
+        let json = #"{"version":1,"kind":"dismissAck","requestId":"r1","alertId":3,"alertKind":1}"#
+        let back = try RemoteCommand.decodeValidated(data(json))
+        XCTAssertEqual(back.alertId, 3)
+        XCTAssertEqual(back.alertKind, 1)
+    }
 }

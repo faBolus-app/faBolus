@@ -40,7 +40,7 @@ VALID = [
         "detailsOrder": ["iob", "reservoir", "cgm"], "watchChartRanges": [3, 6, 12, 24],
         "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
         "glucoseDisplayUnit": "mmol",
-        "supportsRemoteAlertDismiss": True, "activeMode": "advanced",
+        "supportsRemoteAlertDismiss": True, "supportsDismissAck": True, "activeMode": "advanced",
         "garminBolusEnabled": False, "bolusPasscodeRequired": False,
         "controllerVariant": "controlIQPro", "controlIQEnabled": True,
     },
@@ -54,6 +54,14 @@ VALID = [
     {"version": 1, "kind": "cancelBolus", "requestId": "r6"},
     {"version": 1, "kind": "dismissAlert", "requestId": "r7", "alertId": 3, "alertKind": 1},
     {"version": 1, "kind": "suspendPump", "requestId": "r8"},
+    # CX-G-08 (14-09): the phone's correlated, pump-certified dismiss ack — reuses alertId/alertKind
+    # (no new schema property). NOTE the documented cross-field asymmetry: a dismissAck missing
+    # alertId/alertKind is schema-VALID (the JSON schema's `required` is only version/kind/requestId —
+    # neither field is schema-required for any kind), but Swift-INVALID via RemoteCommand.validate()'s
+    # kind-specific cross-field rule. The JSON schema alone is deliberately NOT the enforcement point
+    # here; RemoteCommandValidationTests pins the Swift-side rejection. Do not add the alertId/alertKind-
+    # less variant to INVALID below — it would fail this test (it IS schema-valid).
+    {"version": 1, "kind": "dismissAck", "requestId": "r9", "alertId": 3, "alertKind": 1},
 ]
 
 # --- Deliberately INVALID payloads (must be rejected) ----------------------------------------

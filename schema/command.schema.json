@@ -13,7 +13,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert", "suspendPump", "resumePump"],
+      "enum": ["bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "statusRead", "dismissAlert", "dismissAck", "suspendPump", "resumePump"],
       "description": "Command type. suspendPump/resumePump are remote advanced-control requests; the phone re-confirms them on-device before executing and only honors them when advanced control is enabled for a Mobi."
     },
     "requestId": {
@@ -265,6 +265,10 @@
     "supportsRemoteAlertDismiss": {
       "type": "boolean",
       "description": "statusRead reply — whether the pump firmware actually honors a REMOTE alert dismissal (P13 capability channel). t:slim X2 silently rejects it, so on t:slim a remote's alert action only snoozes the alert locally; Mobi clears it on the pump. A remote uses this to label its alert action 'Clear' (true) vs 'Snooze' (false), matching the phone. Absent ⇒ the remote keeps its safe default (Snooze); the host stays the enforcement point on the actual dismiss."
+    },
+    "supportsDismissAck": {
+      "type": "boolean",
+      "description": "statusRead reply (CX-G-08, 14-09) — DYNAMIC pump-tied capability: true only when the phone build supports the authenticated dismissAck path AND the connected pump honors a remote dismiss (supportsRemoteAlertDismiss == true). Computed fresh every statusRead, never a constant. True (Mobi) ⇒ the watch removes a wearer-dismissed alert ONLY on a correlated authenticated dismissAck; false/absent (t:slim, or a legacy host) ⇒ the watch falls back to the filtered-statusRead reconcile so it is never stranded."
     },
     "activeMode": {
       "type": "string",

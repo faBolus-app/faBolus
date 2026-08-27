@@ -9,6 +9,15 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     public enum Kind: String, Codable, Sendable, CaseIterable {
         case bolusRequest, bolusConfirm, bolusStatus, cancelBolus, statusRead, dismissAlert
+        /// CX-G-08 (14-09, checkpoint #1) — the phone's CORRELATED, pump-certified ack that a
+        /// `dismissAlert` actually cleared on the pump (CC-08 authenticated `status == 0`), echoing back
+        /// the SAME `requestId`/`alertId`/`alertKind` the watch sent — never a new schema property. Emitted
+        /// ONLY on authenticated success (checkpoint #2, absence-only): a rejected/timed-out/unconfirmed
+        /// dismiss sends NO ack, so the watch's fail-closed default (stay visible) is exactly right. The
+        /// SOLE authenticated remover of a wearer-initiated Garmin dismiss (T-14-25/T-14-28) — never a
+        /// filtered-statusRead absence, never a TTL expiry. Semantically distinct from `bolusStatus` (which
+        /// keys off `pendingRequestId`, AppState.mc's bolusStatus branch) — reusing it would collide.
+        case dismissAck
         /// Remote advanced-control requests (suspend/resume). The phone re-confirms on-device and
         /// only honors them when advanced control is enabled for a Mobi.
         case suspendPump, resumePump
@@ -41,7 +50,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
                  .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
                 return true
-            case .bolusStatus, .statusRead,
+            case .bolusStatus, .statusRead, .dismissAck,
                  .authHello, .authChallenge, .authProof, .authResult:
                 return false
             }
@@ -288,6 +297,16 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// "Snooze" to match the phone. Absent ⇒ the remote keeps its safe default (Snooze). Additive,
     /// mirrored in the JSON schema + Monkey C; the host stays the enforcement point on the dismiss.
     public var supportsRemoteAlertDismiss: Bool? = nil
+    /// CX-G-08 (14-09, checkpoint #5) — DYNAMIC pump-tied capability channel: whether the phone build
+    /// supports the authenticated `dismissAck` path AND the connected pump actually honors a remote
+    /// dismiss (`supportsRemoteAlertDismiss == true`). Computed FRESH on every `statusRead` reply
+    /// (`RemoteStatusComposer`) — NEVER a build-time constant — so a t:slim pump (which only ever
+    /// local-snoozes, never emits an authenticated clear) resolves to `false` and the watch stays on the
+    /// 14-08 filtered-reconcile fallback instead of stranding a phantom overlay forever; a Mobi (or any
+    /// pump honoring the remote dismiss) resolves to `true` and the watch cuts over to authenticated-
+    /// ack-only. Absent ⇒ a legacy host that predates this plan; the watch's safe default is the 14-08
+    /// fallback (never stuck). Additive; mirrored in the JSON schema + Monkey C.
+    public var supportsDismissAck: Bool? = nil
 
     /// P14 S4 — the phone's active app MODE (`AppMode.rawValue`: simple / standard / advanced), so a
     /// remote can HIDE an affordance the phone's mode would deny instead of showing-then-failing (owner:
@@ -749,6 +768,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             // request is internally contradictory and must fail closed.
             if includeStaleBG == true, units != nil, carbsGrams == nil {
                 throw ValidationError.crossField("includeStaleBG set on a units-mode bolus (no carbs to correct)")
+            }
+        }
+        // CX-G-08 (14-09, checkpoint #1/#4): a `dismissAck` carries no dedicated schema property — it
+        // reuses `alertId`/`alertKind` — so nothing in the JSON schema itself can require them (a
+        // dismissAck missing either is schema-VALID; see validate-schema-payloads.py's documented
+        // asymmetry). This Swift-only cross-field rule is the ONLY enforcement: an ack that can't name
+        // the alert it authenticated-cleared is meaningless and must fail closed here, before AppState.mc
+        // ever sees it (T-14-27).
+        if kind == .dismissAck {
+            guard alertId != nil, alertKind != nil else {
+                throw ValidationError.crossField("dismissAck missing alertId/alertKind")
             }
         }
     }

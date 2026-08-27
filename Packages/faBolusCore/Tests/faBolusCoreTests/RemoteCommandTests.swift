@@ -189,4 +189,49 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertNil(bare.batteryCharging)
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
+
+    // MARK: - CX-G-08 (14-09): dismissAck kind + supportsDismissAck capability
+
+    /// The new `dismissAck` kind round-trips (JSON + dictionary) carrying the reused
+    /// requestId/alertId/alertKind fields, and is neither pump-mutating nor freshness-sensitive
+    /// (checkpoint #1: it is an observational phone→watch ack, never a pump write).
+    func testDismissAckRoundTripsAndIsNeitherMutatingNorFreshnessSensitive() throws {
+        var cmd = RemoteCommand(kind: .dismissAck, requestId: "req-1")
+        cmd.alertId = 3
+        cmd.alertKind = 1
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.kind, .dismissAck)
+        XCTAssertEqual(decoded.requestId, "req-1")
+        XCTAssertEqual(decoded.alertId, 3)
+        XCTAssertEqual(decoded.alertKind, 1)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.kind, .dismissAck)
+        XCTAssertEqual(back.alertId, 3)
+        XCTAssertFalse(RemoteCommand.Kind.dismissAck.mutatesPumpState,
+                        "an ack is observational, never a pump write")
+        XCTAssertFalse(RemoteCommand.Kind.dismissAck.isFreshnessSensitive,
+                        "a dismiss ack is insulin-neutral, never freshness-gated")
+    }
+
+    /// A well-formed dismissAck (alertId + alertKind present) passes `validate()` — the cross-field
+    /// rejection (missing alertId/alertKind) is pinned separately in RemoteCommandValidationTests.
+    func testWellFormedDismissAckPassesValidate() throws {
+        var cmd = RemoteCommand(kind: .dismissAck, requestId: "req-2")
+        cmd.alertId = 5
+        cmd.alertKind = 2
+        XCTAssertNoThrow(try cmd.validate())
+    }
+
+    /// `supportsDismissAck` round-trips (JSON + dictionary) and, absent on a legacy payload, decodes to
+    /// nil — the watch's safe default is the 14-08 fallback, never a fabricated "ack-mode" claim.
+    func testSupportsDismissAckRoundTripsAndAbsentDecodesToNil() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.supportsDismissAck = true
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded.supportsDismissAck, true)
+        let back = try RemoteCommand.from(try cmd.asDictionary())
+        XCTAssertEqual(back.supportsDismissAck, true)
+        let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
+        XCTAssertNil(bare.supportsDismissAck)
+    }
 }
