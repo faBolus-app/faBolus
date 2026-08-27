@@ -303,7 +303,7 @@ enum SettingsIndex {
     static let entries: [Entry] = [
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
-        .init(title: "Watch & Garmin increments", keywords: "unit bolus carb step remote", category: .bolus),
+        .init(title: "Garmin increments", keywords: "unit bolus carb step remote watch", category: .bolus),
         // Phase 8 (08-01, LOCK-04): trimmed from "Extended bolus & reasoning" — the extended-bolus
         // keywords (combo/square wave/extended/duration) are dropped; "max safe"/"iob" stay (they
         // describe the surviving Reasoning breakdown's own footer copy, not the removed toggle).
@@ -315,8 +315,8 @@ enum SettingsIndex {
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
         .init(title: "Statistics card", keywords: "time in range tir gmi average cv stats a1c", category: .display),
-        .init(title: "Watch details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
-        .init(title: "Watch chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
+        .init(title: "Garmin details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
+        .init(title: "Garmin chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
         // Phase 3 (03-03, REMOTE-03): title/keywords trimmed to Garmin-only — the Apple Watch
         // bolus-enable toggle this row also advertised is removed (hidden-flag pattern); Garmin's
         // own toggle + read-only override stay live in the same section.
@@ -424,11 +424,11 @@ struct BolusSettingsView: View {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-                Picker("Watch/Garmin default mode", selection: $settings.watchDefaultBolusMode) {
+                Picker("Garmin default mode", selection: $settings.watchDefaultBolusMode) {
                     Text("Carbs").tag(BolusMode.carbs)
                     Text("Units").tag(BolusMode.units)
                 }
-            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Watch/Garmin** is independent, for the Garmin bolus screen (the Apple Watch remote is removed).") }
+            } header: { Text("Bolus entry") } footer: { Text("Default entry mode. **Phone** covers the iPhone and the widget; **Garmin** is independent, for the Garmin bolus screen (the Apple Watch remote is removed).") }
             Section {
                 Picker("Unit increment", selection: $settings.bolusIncrement) {
                     ForEach(AppSettings.bolusIncrements, id: \.self) { Text(fmtU($0)).tag($0) }
@@ -500,7 +500,7 @@ struct DisplaySettingsView: View {
                                       shownFooter: "Status pills shown on the dashboard. Drag to reorder, swipe to hide.")
                 } label: { LabeledContent("Dashboard pills", value: "\(settings.pillsOrder.count) shown") }
             } header: { Text("Customize") } footer: {
-                Text("Choose which detail rows and pills appear on the phone dashboard. (Watch details + chart ranges are under Remotes & devices.)")
+                Text("Choose which detail rows and pills appear on the phone dashboard. (Garmin details + chart ranges are under Remotes & devices.)")
             }
         }
         .navigationTitle("Display & chart")
@@ -901,22 +901,22 @@ struct RemotesSettingsView: View {
                 Picker("Carb increment", selection: $settings.watchCarbIncrement) {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
-            } header: { Text("Watch/Garmin bolus") } footer: {
+            } header: { Text("Garmin bolus") } footer: {
                 Text("Default entry mode and increments for the Garmin bolus screen (independent of the iPhone; the Apple Watch remote is removed). Same settings as under Bolus & entry.")
             }
             Section {
                 NavigationLink {
-                    CustomizeListView(title: "Watch details", allIds: AppSettings.detailFields,
+                    CustomizeListView(title: "Garmin details", allIds: AppSettings.detailFields,
                                       label: AppSettings.detailFieldLabel, order: $settings.watchDetailsOrder,
-                                      shownFooter: "Rows shown on the watch/Garmin Details page (independent of the phone). Drag to reorder, swipe to hide.")
-                } label: { LabeledContent("Watch details rows", value: "\(settings.watchDetailsOrder.count) shown") }
+                                      shownFooter: "Rows shown on the Garmin Details page (independent of the phone). Drag to reorder, swipe to hide.")
+                } label: { LabeledContent("Garmin details rows", value: "\(settings.watchDetailsOrder.count) shown") }
                 NavigationLink { WatchChartRangesView(settings: settings) } label: {
-                    LabeledContent("Watch chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
+                    LabeledContent("Garmin chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
                 }
                 // Phase 09.13-02 (D-05): optional small-screen plot Y-axis override — one Picker whose
                 // first row IS "Same as phone" (no separate boolean toggle); the two dependent Pickers
                 // below only appear once "Custom" is selected, mirroring the remoteBolusCeiling reveal.
-                Picker("Watch/Garmin plot range", selection: smallPlotOverrideOn) {
+                Picker("Garmin plot range", selection: smallPlotOverrideOn) {
                     Text("Same as phone").tag(false)
                     Text("Custom").tag(true)
                 }
@@ -932,8 +932,8 @@ struct RemotesSettingsView: View {
                         }
                     }
                 }
-            } header: { Text("Watch display") } footer: {
-                Text("Customize the watch/Garmin Details page and the history-chart tap ranges — separate from the phone. \"Watch/Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. Mirrored to the remotes on the next update.")
+            } header: { Text("Garmin display") } footer: {
+                Text("Customize the Garmin Details page and the history-chart tap ranges — separate from the phone. \"Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. Mirrored to the remotes on the next update.")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
@@ -1197,9 +1197,9 @@ struct WatchChartRangesView: View {
                         }))
                 }
             } footer: {
-                Text("Tapping the watch history chart cycles through the enabled ranges. At least one must stay enabled.")
+                Text("Tapping the Garmin history chart cycles through the enabled ranges. At least one must stay enabled.")
             }
         }
-        .navigationTitle("Watch Chart Ranges")
+        .navigationTitle("Garmin Chart Ranges")
     }
 }
