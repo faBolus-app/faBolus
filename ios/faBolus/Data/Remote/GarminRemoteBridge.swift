@@ -35,14 +35,55 @@ enum GarminSendDisposition: Equatable {
     case reenqueueFront
     /// Explicit failure of a coalescing-safe status snapshot — safe to drop.
     case drop
+    /// I-M3: an UNRECOVERABLE echo failure (`GarminSendResult.permanentFailure` — AppNotFound/
+    /// UnsupportedType/InsufficientMemory, IQConstants.h:34-48). Retrying it forever busy-loops for
+    /// nothing, so it is surfaced (to `GarminDiagnostics`, by the caller) and dropped from the
+    /// in-memory outbox — UNLIKE `.reenqueueFront`, this is NOT retried. The durable
+    /// `RemoteBolusLedger` launch re-seed (`seedTerminalEchoesFromLedger`) remains the terminal-outcome
+    /// backstop, so a permanently-failed echo is not lost forever, only not retried THIS session.
+    case surfaceAndDrop
 }
 
 /// success ⇒ `.ack`; failure of an echo ⇒ `.reenqueueFront`; failure of a non-echo status ⇒ `.drop`.
 /// Both the `#if GARMIN` `sendMessage` completion AND the send-watchdog's `maxSendAttempts`-exhaustion
 /// path route their keep/drop decision through this one helper.
+///
+/// Kept UNCHANGED (never widened/replaced) alongside the granular `GarminSendResult` overload below —
+/// every existing call site and test that only has a boolean success/failure signal (the send-watchdog's
+/// timeout exhaustion has no permanent/transient signal of its own; see `sendWatchdogFired`) still routes
+/// through this exact seam.
 func garminSendDisposition(success: Bool, isEcho: Bool) -> GarminSendDisposition {
     if success { return .ack }
     return isEcho ? .reenqueueFront : .drop
+}
+
+/// I-M3: ConnectIQ-free classification of a Garmin outbound `sendMessage` result with PERMANENT-vs-
+/// TRANSIENT granularity — mirrors the `IQConstants.h` distinction (`AppNotFound`/`UnsupportedType`/
+/// `InsufficientMemory` are permanent; every other failure, including ones we can't individually
+/// characterize, is treated as transient) without any raw `IQSendMessageResult` crossing this boundary.
+enum GarminSendResult: Equatable {
+    case success
+    case transientFailure
+    case permanentFailure
+}
+
+/// success ⇒ `.ack`; TRANSIENT failure of an echo ⇒ `.reenqueueFront` (UNCHANGED never-drop invariant —
+/// identical to the boolean seam above); PERMANENT failure of an echo ⇒ `.surfaceAndDrop` (a NEW
+/// disposition — an unrecoverable error retried forever helps nobody, so surface it once and drop from
+/// the in-memory outbox; the durable ledger re-seed is the backstop); ANY non-echo (coalescing-safe)
+/// status failure ⇒ `.drop`, regardless of permanent/transient — a newer status supersedes it either way.
+///
+/// A SEPARATE overload from `garminSendDisposition(success:isEcho:)` above (different parameter label,
+/// so both coexist without ambiguity) — the `#if GARMIN` `sendMessage` completion routes through THIS
+/// one (it has the real `IQSendMessageResult` to classify); the send-watchdog's timeout-exhaustion path
+/// has no such signal and stays on the plain boolean seam (a timeout is always treated as transient —
+/// the safe default when the actual outcome is unknown).
+func garminSendDisposition(result: GarminSendResult, isEcho: Bool) -> GarminSendDisposition {
+    switch result {
+    case .success: return .ack
+    case .transientFailure: return isEcho ? .reenqueueFront : .drop
+    case .permanentFailure: return isEcho ? .surfaceAndDrop : .drop
+    }
 }
 
 /// R2-12 (cross-restart echo persistence): a terminal outcome to re-enqueue as a `bolusStatus` echo on
@@ -410,19 +451,45 @@ final class GarminRemoteBridge: NSObject {
         sendGeneration &+= 1
         let gen = sendGeneration
         armSendWatchdog(generation: gen)
-        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil) { [weak self] result in
+        // I-L2 (optional, low-priority — SDK 1.8.0): mark coalescing-safe status snapshots
+        // (`!isEcho`) as transient sends, so a busy/backgrounded watch may coalesce/drop a stale one
+        // without holding up delivery of the NEXT (newer) status — a terminal echo (`isEcho == true`)
+        // is NEVER marked transient (it must not be silently coalesced away by the transport itself,
+        // independent of I-M3's own permanent/transient RESULT classification below, which is a
+        // different axis: this `isTransient` flag describes the OUTBOUND send; I-M3 classifies the
+        // INBOUND result).
+        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil, completion: { [weak self] result in
             Task { @MainActor in
                 guard let self, gen == self.sendGeneration else { return }   // watchdog already superseded this send
                 self.sendWatchdog?.invalidate(); self.sendWatchdog = nil
-                // 09.6-04: decode ConnectIQ's raw result onto the neutral, ConnectIQ-free
-                // GarminDiagnostics.SendOutcome vocabulary right at this boundary — no raw
-                // IQSendMessageResult ever crosses into GarminDiagnostics.
-                let success = (result == .success)
-                self.lastSendOutcomeForDiagnostics = success ? .delivered : .failed
-                // R2-12: classify the result. On an EXPLICIT send-failure a terminal command echo must NOT
-                // be dropped — durable-park it to the FRONT of echoQueue so WR-07's readiness-gated
-                // reconnect/discovery drain replays it. A coalesced status snapshot is safe to drop.
-                switch garminSendDisposition(success: success, isEcho: self.inFlight?.isEcho ?? false) {
+                // I-M3: classify onto the neutral, ConnectIQ-free GarminSendResult vocabulary right at
+                // this boundary — no raw IQSendMessageResult ever crosses into GarminDiagnostics or the
+                // disposition helper. Permanent (IQConstants.h:34-48): the device/app itself rejects the
+                // message outright — retrying it can never succeed. Everything else (including timeouts/
+                // busy/internal errors) is transient — may well succeed on a later attempt.
+                let sendResult: GarminSendResult
+                switch result {
+                case .success: sendResult = .success
+                case .failureAppNotFound, .failureUnsupportedType, .failureInsufficientMemory:
+                    sendResult = .permanentFailure
+                default: sendResult = .transientFailure
+                }
+                // 09.6-04: decode onto the neutral, ConnectIQ-free GarminDiagnostics.SendOutcome
+                // vocabulary right at this boundary — no raw IQSendMessageResult ever crosses into
+                // GarminDiagnostics.
+                switch sendResult {
+                case .success: self.lastSendOutcomeForDiagnostics = .delivered
+                case .transientFailure: self.lastSendOutcomeForDiagnostics = .failed
+                case .permanentFailure: self.lastSendOutcomeForDiagnostics = .permanentlyFailed
+                }
+                let isEcho = self.inFlight?.isEcho ?? false
+                // R2-12/I-M3: classify the result. A TRANSIENT failure of a terminal command echo must
+                // NOT be dropped — durable-park it to the FRONT of echoQueue so WR-07's readiness-gated
+                // reconnect/discovery drain replays it. A PERMANENT echo failure is surfaced above
+                // (lastSendOutcomeForDiagnostics) and dropped — NOT re-parked (retrying an unrecoverable
+                // error forever helps nobody); the durable RemoteBolusLedger re-seed remains the
+                // terminal-outcome backstop. A coalesced status snapshot is safe to drop either way.
+                switch garminSendDisposition(result: sendResult, isEcho: isEcho) {
                 case .reenqueueFront:
                     if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
                 case .ack:
@@ -439,21 +506,22 @@ final class GarminRemoteBridge: NSObject {
                             Self.markAlreadyEchoed(rid)
                         }
                     }
-                case .drop:
+                case .drop, .surfaceAndDrop:
                     break
                 }
                 self.inFlight = nil
                 self.sendInFlight = false
-                if success {
+                if sendResult == .success {
                     self.pump()   // drain the next queued message (echo first, else the latest status)
                 } else {
                     // Do NOT synchronously re-pump on an explicit failure — re-sending the just-failed
                     // payload immediately busy-loops. Recovery rides WR-07's readiness-gated reconnect drain
-                    // plus a bounded backoff.
+                    // plus a bounded backoff (a permanent failure has nothing left to re-pump for THIS
+                    // payload, but the backoff still drains whatever else is queued).
                     self.scheduleBackoffPump()
                 }
             }
-        }
+        }, isTransient: !isEcho)
     }
 
     /// Arm (replacing any prior) the send-watchdog for the current in-flight send.
@@ -481,9 +549,12 @@ final class GarminRemoteBridge: NSObject {
             if f.attempts < Self.maxSendAttempts {
                 inFlight = f   // bounded re-attempt
             } else {
-                // R2-12: attempts exhausted. Route through the SAME disposition helper as the completion
-                // path — a terminal echo durable-parks to the FRONT of echoQueue (never dropped) so WR-07's
-                // readiness drain replays it; a coalescing-safe status snapshot is dropped.
+                // R2-12/I-M3: attempts exhausted. A watchdog TIMEOUT carries no permanent/transient
+                // signal of its own (no IQSendMessageResult was ever received) — stays on the plain
+                // boolean seam, always treated as transient (the safe default absent better
+                // information), so a terminal echo durable-parks to the FRONT of echoQueue (never
+                // dropped) exactly like the completion path's transient case; a coalescing-safe status
+                // snapshot is dropped.
                 if garminSendDisposition(success: false, isEcho: f.isEcho) == .reenqueueFront {
                     echoQueue.insert(f.payload, at: 0)
                 }

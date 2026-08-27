@@ -30,6 +30,34 @@ enum GarminDiagnostics {
         case delivered
         case failed
         case timedOut = "timed out"
+        /// I-M3: an UNRECOVERABLE send failure (AppNotFound/UnsupportedType/InsufficientMemory,
+        /// IQConstants.h:34-48) — distinguished from `.failed` (transient; the bridge keeps retrying
+        /// it) so diagnostics can tell "still retrying" apart from "gave up, ledger is the backstop".
+        case permanentlyFailed = "permanently failed (unrecoverable)"
+    }
+
+    /// I-M2: neutral projection of a `getAppStatus` result — `GarminRemoteBridge` maps the raw
+    /// `IQAppStatus?`/`isInstalled` bit onto this vocabulary at the one place it already imports
+    /// ConnectIQ (mirrors `SendOutcome` above). `.unknown` is the fail-safe default when the
+    /// completion itself couldn't determine a status (never treated as `.installed`).
+    enum AppInstallState: String, Equatable {
+        case unknown = "unknown"
+        case installed = "installed"
+        case notInstalled = "not installed / wrong app id"
+
+        /// User-facing status text — used both for `AppModel.garminStatus` (I-M2's visible not-
+        /// installed state) and diagnostics rendering.
+        var statusText: String {
+            switch self {
+            case .installed: return "ready"
+            case .notInstalled:
+                return "Garmin app not installed on the watch (or a beta/official app-id mismatch) — open the Connect IQ Store to install/verify it."
+            case .unknown: return "install status unknown"
+            }
+        }
+        /// Whether the not-installed/mismatch state should offer a Connect IQ Store link — the ONLY
+        /// state that does (installed needs no action; unknown has nothing actionable to offer yet).
+        var offerStoreLink: Bool { self == .notInstalled }
     }
 
     /// The phone's already-tracked Garmin Connect IQ messaging state (read, never recomputed) —
@@ -43,6 +71,11 @@ enum GarminDiagnostics {
         /// Raw device name, if known — redacted to a stable token before it ever reaches the
         /// rendered text; never rendered verbatim.
         let deviceName: String?
+        /// I-M2: the watch-app install/version state — defaults to `.installed` (the pre-19-05
+        /// behavior: no distinct not-installed signal existed) so every EXISTING call site that
+        /// constructs a `BridgeState` without this new field (e.g. `DebugMenuView`) keeps compiling
+        /// and rendering exactly as before.
+        let appInstallState: AppInstallState = .installed
     }
 
     /// Deterministic, non-identifying token for a Garmin device name — same input always yields the
@@ -85,6 +118,12 @@ enum GarminDiagnostics {
             }
         } else {
             lines.append("Device: disconnected")
+        }
+        // I-M2: surface the not-installed/wrong-app state explicitly — never a silent "✓" while
+        // readiness never arms. Only rendered when it's NOT the default "installed" (avoids adding
+        // noise to the common-case output every existing test already pins).
+        if state.appInstallState != .installed {
+            lines.append("App: \(state.appInstallState.statusText)")
         }
         return lines.joined(separator: "\n")
     }
