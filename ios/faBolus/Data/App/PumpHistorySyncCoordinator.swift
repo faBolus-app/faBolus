@@ -1,3 +1,6 @@
+// WR-03 folder note: this is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
+// `Data/Tandem/` — it is gate-adjacent (extracted verbatim from the byte-guarded `TandemBackend`),
+// which is exactly the exclusion in ARCHITECTURE.md's `Data/Tandem/` rule.
 import Foundation
 import faBolusCore
 import TandemMessages

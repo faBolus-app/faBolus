@@ -1,3 +1,6 @@
+// WR-03 folder note: this is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
+// `Data/Tandem/` — it is dose/gate-adjacent (it unblocks the P0 delivery lock after reconnect), which
+// is exactly the exclusion in ARCHITECTURE.md's `Data/Tandem/` rule.
 import Foundation
 import CoreBluetooth
 import TandemMessages

@@ -35,12 +35,20 @@ The app talks only to `PumpBackend`, never to a pump library. A backend supplies
 `activeNotifications` as neutral `PumpAlert`s. It also declares `PumpCapabilities` so the one UI
 adapts (hide carbs mode / cancel / alerts / pairing when unsupported). TandemKit is just the engine
 behind `TandemBackend` — the only app file that `import TandemMessages`; nothing else in the app
-does. `TandemBackend`'s Tandem-only satellite files (BLE transport, read scheduling/catalog,
+does. Most of `TandemBackend`'s Tandem-only satellite files (BLE transport, read scheduling/catalog,
 opcode/unsupported-read stores, response application) live under
 `ios/faBolus/Data/Tandem/` for directory legibility — a folder/group move, not a compiler-enforced
-import boundary: `project.yml` has one application target sourcing all of `ios/faBolus`, and
-`TandemBackend.swift` itself stays at `Data/` root (a byte-identity-guarded dose path) and still
-imports `TandemMessages` directly.
+import boundary: `project.yml` has one application target sourcing all of `ios/faBolus`.
+
+The rule for `Data/Tandem/` is narrower than "every Tandem-importing file": a Tandem-only file lands
+here UNLESS it is dose/gate-adjacent enough to warrant a byte-identity guard, in which case it stays
+OUTSIDE the folder alongside the guarded path it serves. `TandemBackend.swift` itself stays at `Data/`
+root (a byte-identity-guarded dose path) and still imports `TandemMessages` directly; and the two
+gate-adjacent coordinators extracted in Phase 16 — `Data/App/PumpConnectionLifecycle.swift`
+(connection/pairing lifecycle, unblocks the P0 delivery lock after reconnect) and
+`Data/App/PumpHistorySyncCoordinator.swift` (history-log gap sync) — are Tandem-only importers that
+deliberately were NOT relocated in 16-11 for the same reason. So a contributor adding a new Tandem-only
+file puts it in `Data/Tandem/` only if it is clearly NOT dose/gate-adjacent.
 
 `ios/faBolus/Data/` itself is organized by concern (Phase 17-10): `App/` (AppModel extensions,
 backend registration, pump-connection/session infra), `Remote/` (remote-host machinery —
