@@ -332,22 +332,6 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
     }
 
-    // MARK: - AAM read fan-in frames (CC-10, Phase 15 15-04)
-
-    /// op-121 `HighestAamResponse` (11 bytes: aamId = uint32@0, faultId = uint32@4).
-    static func highestAamResponse(aamId: UInt32, faultId: UInt32) -> [UInt8] {
-        frame(opCode: HighestAamResponse.props.opCode,
-              cargo: Bytes.toUint32(aamId) + Bytes.toUint32(faultId) + [UInt8](repeating: 0, count: 3),
-              signed: false)
-    }
-
-    /// op-147 `ActiveAamBitsResponse` (17 bytes: unacknowledgedBitmask = uint64@0, activeBitmask = uint64@8).
-    static func activeAamBitsResponse(unacknowledgedBitmask: UInt64, activeBitmask: UInt64) -> [UInt8] {
-        frame(opCode: ActiveAamBitsResponse.props.opCode,
-              cargo: Bytes.toUint64(unacknowledgedBitmask) + Bytes.toUint64(activeBitmask) + [0],
-              signed: false)
-    }
-
     // MARK: - CC-08 (Phase 13 13-10): remote-dismiss ack fixtures
 
     /// op-69 `AlertStatusResponse` (8-byte little-endian uint64 bitmap; bit N set = notification id N

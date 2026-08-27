@@ -92,22 +92,6 @@ import TandemMessages
         #expect(TandemBackend.safetyClass(kind: K.reminder, id: 0) == .other)
     }
 
-    // MARK: CC-10 (UI half) — AAM-malfunction display readiness
-
-    /// CC-10: today (no AAM fields available — Phase 15's `HighestAamRequest`/`ActiveAamBitsRequest` read
-    /// fan-in isn't wired), the malfunction display stays exactly the generic numbered item the pump's own
-    /// unnamed malfunction bitmap already produces — a no-op, proving this plan changes zero production
-    /// behavior. WHEN a concrete, cross-validated AAM code is present, the display renders the concrete
-    /// code + support guidance instead — proving the readiness is real and unit-testable ahead of Phase 15.
-    @Test func malfunctionDisplayIsANoOpTodayButRendersAConcreteCodeWhenPresent() {
-        let noCode = TandemBackend.malfunctionDisplay(genericTitle: "Malfunction 5", genericDetail: "", aamCode: nil)
-        #expect(noCode.title == "Malfunction 5" && noCode.detail == "",
-               "with no AAM code (today's reality) the display must be unchanged from the generic numbered item")
-        let withCode = TandemBackend.malfunctionDisplay(genericTitle: "Malfunction 5", genericDetail: "", aamCode: 5)
-        #expect(withCode.title == "Pump malfunction — code 5")
-        #expect(withCode.detail.contains("5"), "the support-guidance detail must reference the concrete code")
-    }
-
     // MARK: S7 — pump-disconnect escalation ladder wiring (integration)
 
     /// A unique durable-ledger URL so instances don't share the App Group ledger between serialized tests.

@@ -119,31 +119,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// decoded title/detail through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name
     /// table doesn't yet carry (e.g. Control-IQ High Alert #50) still surface with clean, neutral,
     /// Tandem-sourced copy in the existing mirror — never overriding a name TandemKit already supplies.
-    private static func toAlert(_ n: PumpNotification, aamCode: Int? = nil) -> PumpAlert {
+    private static func toAlert(_ n: PumpNotification) -> PumpAlert {
         let copy = PumpAlertCopyOverlay.resolve(id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
-        // CC-10 (UI half): render the concrete AAM code + support guidance instead of a generic numbered
-        // item WHEN a cross-validated AAM code is present. `aamCode` is always `nil` today — no call site
-        // populates it — so this is a no-op in production; see `malfunctionDisplay`'s doc for the Phase-15
-        // dependency that will eventually supply a real value.
-        let display = Self.malfunctionDisplay(genericTitle: copy.title, genericDetail: copy.detail, aamCode: aamCode)
         return PumpAlert(id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
-                          title: display.title, detail: display.detail, isDismissable: n.dismissable)
-    }
-
-    /// CC-10 (UI half only): the malfunction-display readiness helper. Today the pump's malfunction
-    /// bitmap (`MalfunctionBitmaskStatusResponse`, opcode 119) has NO name table at all
-    /// (`TandemMessages/Notifications.swift`'s `names: [:]`), so every active malfunction renders as a bare
-    /// "Malfunction N" numbered item — not actionable for a support call. A genuine, Tandem-support-
-    /// recognized "AAM" (Active Alarm/Malfunction) code is a DIFFERENT identifier from that bitmap bit
-    /// index; reading the real one requires `HighestAamRequest`/`ActiveAamBitsRequest` (opcodes not yet
-    /// polled by this app) plus cross-validation against the malfunction bitmap — that read fan-in is
-    /// **Phase 15 scope**, not this plan. `aamCode` is therefore `nil` everywhere this plan calls it: this
-    /// function is display READINESS only (pure, unit-testable), inert in production until Phase 15 wires
-    /// a real value through `toAlert`.
-    static func malfunctionDisplay(genericTitle: String, genericDetail: String, aamCode: Int?) -> (title: String, detail: String) {
-        guard let aamCode else { return (genericTitle, genericDetail) }
-        return ("Pump malfunction — code \(aamCode)",
-                "Contact Tandem Support and reference code \(aamCode) to help resolve this issue.")
+                          title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
     }
 
     /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity
@@ -180,15 +159,6 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var alertList: [PumpNotification] = []
     private var cgmAlertList: [PumpNotification] = []
     private var reminderList: [PumpNotification] = []
-    // CC-10 (Phase 15 15-04, review-sharpened HIGH "AAM storage behavior is unspecified"): the active-
-    // alert-malfunction (AAM) read fan-in — NAMED replace-on-read state, mirroring `malfunctionList`'s
-    // shape exactly. Deliberately NOT folded into `mergeNotifications`/`activeNotifications`/`snapshot` —
-    // AAM display + malfunction cross-validation (NotificationBundle.java:184 fan-in) is Phase 13; this
-    // plan only lands the read + response consumption. `alarmList`/`malfunctionList`/etc. above are never
-    // explicitly reset on disconnect (only replaced on the next successful read, per `linkDroppedCleanup`) —
-    // AAM state mirrors that exact (lack of) reset behavior for parity with the pattern it copies.
-    private var highestAam: (aamId: Int, faultId: Int)?
-    private var activeAamBits: (unacknowledged: UInt64, active: UInt64)?
     // Locally-acknowledged (snoozed) alerts: key -> the time the user tapped Clear. Some pump
     // alerts are *condition-based* (e.g. a CGM "high glucose" while glucose is genuinely still
     // high): the signed dismiss is accepted, but the pump re-raises it on the next poll. To match
@@ -209,8 +179,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map { Self.toAlert($0) }
         // CX-G-08 (14-10, D1) — the TRUE raw set, published atomically alongside the filtered
         // `activeNotifications` above (same poll — the composer's same-poll invariant depends on this).
-        // Closure form (`.map { Self.toAlert($0) }`), NOT `.map(Self.toAlert)` — `toAlert` has a
-        // defaulted second param, so the bare function reference does not compile.
         rawActiveNotifications = raw.map { Self.toAlert($0) }
     }
 
@@ -953,13 +921,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.setCGMAlertList = { [weak self] list in self?.cgmAlertList = list }
         responseApplier.setReminderList = { [weak self] list in self?.reminderList = list }
         responseApplier.setMalfunctionList = { [weak self] list in self?.malfunctionList = list }
-        // CC-10: replace-on-read AAM fan-in state, mirroring `setMalfunctionList`'s wiring exactly (read
-        // side only — see the `highestAam`/`activeAamBits` declaration for why this stays out of
-        // mergeNotifications/snapshot).
-        responseApplier.setHighestAam = { [weak self] aamId, faultId in self?.highestAam = (aamId, faultId) }
-        responseApplier.setActiveAamBits = { [weak self] unacknowledged, active in
-            self?.activeAamBits = (unacknowledged, active)
-        }
         responseApplier.noteAlert = { [weak self] key, bmp in self?.noteAlert(key, bmp) }
         responseApplier.mergeNotifications = { [weak self] in self?.mergeNotifications() }
         responseApplier.setLastDismissAck = { [weak self] ack in self?.lastDismissAck = ack }
@@ -1276,11 +1237,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.glucoseDate = date
     }
 
-    /// Test accessor (Phase 15 15-04, CC-10): the NAMED AAM read-fan-in state populated by
-    /// `HighestAamResponse`/`ActiveAamBitsResponse`, since both are `private` outside this file. Read-side
-    /// only — never wired to `snapshot`/`mergeNotifications` (display + cross-validation is Phase 13).
-    var highestAamForTesting: (aamId: Int, faultId: Int)? { highestAam }
-    var activeAamBitsForTesting: (unacknowledged: UInt64, active: UInt64)? { activeAamBits }
     #endif
 
     // MARK: - PumpDataSource

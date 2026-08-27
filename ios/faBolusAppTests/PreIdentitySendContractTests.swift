@@ -20,7 +20,7 @@ import TandemBLE
 /// Capture is bound to `PumpReadScheduler.startPollingForTesting()` (`:846-849`, `#if DEBUG`) + a direct
 /// `alertRead()` call: `startPollingForTesting()`'s `stopAllTimers()` invalidates the `Timer`-based
 /// `pollTimer`/`predictivePollTimer`, but `scheduleAlertRead()` (`:802-808`) arms its deferred burst via
-/// `DispatchQueue.main.asyncAfter`, which `stopAllTimers()` cannot cancel — so `alertRead()`'s 7 messages
+/// `DispatchQueue.main.asyncAfter`, which `stopAllTimers()` cannot cancel — so `alertRead()`'s 5 messages
 /// are captured by calling it directly (it is non-`private`), not by waiting out the real delay.
 @Suite @MainActor
 struct PreIdentitySendContractTests {

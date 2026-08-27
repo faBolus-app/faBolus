@@ -6,15 +6,15 @@ import TandemBLE
 
 /// CX-F-04 regression: a transient op77 `ErrorResponse` on `PumpReadScheduler.alertRead()`'s burst
 /// (`AlertStatusRequest`, `AlarmStatusRequest`, `CGMAlertStatusRequest`, `ReminderStatusRequest`,
-/// `MalfunctionStatusRequest`, and — CC-10, Phase 15 15-04 — `HighestAamRequest`/`ActiveAamBitsRequest`;
-/// 7 total) must never durably blacklist the CGM-alert mirror (or the AAM read fan-in). Mirrors the
+/// `MalfunctionStatusRequest`; 5 total — tslim-reconnect-loop Phase B removed the CC-10 AAM requests from
+/// this burst) must never durably blacklist the CGM-alert mirror. Mirrors the
 /// EXISTING `doseInputReadOpcodes` (R2-10) precedent exactly (see `PumpUnsupportedReadSelfHealTests`/
 /// `PumpLearnedOpcodePersistenceTests`): op74 `CGMAlertStatusRequest` is the confirmed mechanism finding
-/// (CONTEXT.md "Q. CX-F-04"), and its burst-mates share the IDENTICAL exposure — all seven are sent
+/// (CONTEXT.md "Q. CX-F-04"), and its burst-mates share the IDENTICAL exposure — all five are sent
 /// back-to-back with no per-message throttling inside `alertRead()`, so `resolveErrorResponse`'s txId-echo/
 /// FIFO backstop can mis-correlate a single transient error (MESSAGE_BUFFER_FULL / CRC_MISMATCH /
 /// TRANSACTION_ID_MISMATCH — never `BAD_OPCODE`, per the documented API-2.5 `UNDEFINED_ERROR(0)` pairing-loop
-/// fix this must not break) to ANY opcode still outstanding in that same burst. All seven are therefore held
+/// fix this must not break) to ANY opcode still outstanding in that same burst. All five are therefore held
 /// out of the durable store, re-probed every connect, and (op74 only, per Task 2) disclosed via
 /// `safetyDegradedNotes` when currently unavailable.
 @Suite(.serialized) @MainActor
@@ -25,11 +25,6 @@ struct PumpBadOpcodeReprobeTests {
     private var alarmOpcode: UInt8 { AlarmStatusRequest.props.opCode }
     private var reminderOpcode: UInt8 { ReminderStatusRequest.props.opCode }
     private var malfunctionOpcode: UInt8 { MalfunctionStatusRequest.props.opCode }
-    /// CC-10 (Phase 15 15-04): the 2 AAM requests joined `alertRead()`'s SAME unthrottled burst, so they
-    /// inherit the identical CX-F-04 mis-correlation exposure — widened coverage below proves they're
-    /// ALSO held out of the durable store.
-    private var highestAamOpcode: UInt8 { HighestAamRequest.props.opCode }
-    private var activeAamBitsOpcode: UInt8 { ActiveAamBitsRequest.props.opCode }
 
     /// A `PumpBadOpcodeStore` backed by a throwaway `UserDefaults` suite, so no test touches `.standard`
     /// (mirrors `PumpLearnedOpcodePersistenceTests.isolatedStore()`).
@@ -89,17 +84,17 @@ struct PumpBadOpcodeReprobeTests {
     }
 
     /// Widened scope (CONTEXT.md "Q. CX-F-04"): op74's burst-mates share the identical unthrottled-burst
-    /// exposure, so they must ALSO never reach the durable store — including the 2 AAM requests CC-10
-    /// (Phase 15 15-04) added to the SAME burst.
+    /// exposure, so they must ALSO never reach the durable store. (tslim-reconnect-loop Phase B removed the
+    /// 2 CC-10 AAM requests from this burst — they are no longer burst-mates and `alertRead()` never sends
+    /// them; the static registry seeds op120/op146 via `formUnion` and never persists them regardless.)
     @Test func alertReadFamilyBurstMatesAreNeverDurablyPersisted() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
-        for opcode in [alertOpcode, alarmOpcode, cgmAlertOpcode, reminderOpcode, malfunctionOpcode,
-                       highestAamOpcode, activeAamBitsOpcode] {
+        for opcode in [alertOpcode, alarmOpcode, cgmAlertOpcode, reminderOpcode, malfunctionOpcode] {
             store.record(opcode, for: "A", firmware: "3.4")
         }
         #expect(store.learnedOpcodes(for: "A").isEmpty,
-                "none of the alert-read burst's 7 opcodes may ever be durably persisted (CX-F-04 widened scope, CC-10 addition included)")
+                "none of the alert-read burst's 5 opcodes may ever be durably persisted (CX-F-04)")
     }
 
     // MARK: - Test 2 (in-memory skip): op74 is skipped for the rest of THIS session, not re-thrashed

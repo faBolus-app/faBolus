@@ -53,12 +53,13 @@ struct ReadCascadeMembershipGuardTests {
         "CurrentBasalStatusRequest", "BolusCalcDataSnapshotRequest", "TimeSinceResetRequest",
         "ApiVersionRequest", "PumpFeaturesV1Request", "ControlIQInfoV2Request", "BasalLimitSettingsRequest",
     ]
-    // CC-10 (Phase 15 15-04): alertRead() grew 5->7 — HighestAamRequest/ActiveAamBitsRequest appended
-    // AFTER the original 5, in the exact order `alertRead()` emits them; every ordering assertion below
-    // is retained (not weakened), only the count/slice bounds move 21->23.
+    // tslim-reconnect-loop (Phase B, 2026-08-27): alertRead() is back to the original 5 — the CC-10
+    // HighestAamRequest/ActiveAamBitsRequest (op120/op146) fan-in was REMOVED (dead plumbing that also
+    // provoked the API-2.5 reconnect loop). Every ordering assertion below is retained; the count/slice
+    // bounds move 23->21.
     private static let alertReadTier = [
         "AlertStatusRequest", "AlarmStatusRequest", "CGMAlertStatusRequest", "ReminderStatusRequest",
-        "MalfunctionStatusRequest", "HighestAamRequest", "ActiveAamBitsRequest",
+        "MalfunctionStatusRequest",
     ]
 
     /// `startPollingForTesting()` dispatches, synchronously: the bootstrap trio, then fastRead's 6 NON-gated
@@ -83,8 +84,8 @@ struct ReadCascadeMembershipGuardTests {
         #expect(!dispatched.contains("LoadStatusRequest"), "op20 must NOT appear in the pre-version burst — it is identity-gated")
 
         try? await Task.sleep(nanoseconds: 200_000_000)   // let the delayed alertRead() burst land
-        #expect(dispatched.count == 23, "alertRead's 7 (5 + 2 AAM, CC-10) must follow after the alert-read delay (op20 still deferred)")
-        #expect(Array(dispatched[16..<23]) == Self.alertReadTier, "alertRead's 7 must be in this exact order")
+        #expect(dispatched.count == 21, "alertRead's 5 must follow after the alert-read delay (op20 still deferred)")
+        #expect(Array(dispatched[16..<21]) == Self.alertReadTier, "alertRead's 5 must be in this exact order")
 
         // Once the bootstrap version responses identify the pump (a SUPPORTED pump here — default identity),
         // the deferred op20 IS dispatched, restoring it to the read cascade (owner req #2).

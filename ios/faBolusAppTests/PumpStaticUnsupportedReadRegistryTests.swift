@@ -194,24 +194,22 @@ struct PumpStaticUnsupportedReadRegistryTests {
                 "an unidentified pump (isMobi nil) suppresses nothing — never suppress on unknown identity")
     }
 
-    /// End-to-end: the AAM reads are seeded into the never-resend set the instant op33 identifies the bad
-    /// combo, so the DEFERRED `alertRead()` burst SKIPS them — never sent, exactly like op20. This is the
-    /// reproduction of the bench zero-disconnect: the offending post-pair reads no longer reach the pump.
-    @Test func knownBadCombo_seedsAamReads_soDeferredAlertReadSkipsThemNeverSends() async {
+    /// End-to-end (tslim-reconnect-loop Phase B): the AAM fan-in was REMOVED from `alertRead()`, so op120/
+    /// op146 are never SENT on ANY pump — the primary loop fix. The static registry STILL seeds them into
+    /// the never-resend set the instant op33 identifies the bad combo (a harmless belt-and-suspenders
+    /// backstop if AAM is ever re-added), and the deferred `alertRead()` burst never dispatches them.
+    @Test func aamReadsAreNeverDispatched_andStaticBackstopStillSeedsThem() async {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.alertReadDelaySecForTesting = 0.05
-        var dispatched: [UInt8] = []; var skipped: [UInt8] = []
+        var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
-        b.onReadSkippedForTesting = { _, op in skipped.append(op) }
         b.startPollingForTesting()
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // identify bad combo → seed
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // identify bad combo → seed backstop
         #expect(b.badOpcodesForTesting.contains(highestAamOpcode) && b.badOpcodesForTesting.contains(activeAamBitsOpcode),
-                "op120/op146 must be seeded into badOpcodes the instant op33 identifies the API-2.5 t:slim")
+                "backstop: op120/op146 stay seeded into badOpcodes the instant op33 identifies the API-2.5 t:slim")
         try? await Task.sleep(nanoseconds: 200_000_000)   // let the deferred alertRead() burst land
-        #expect(skipped.contains(highestAamOpcode) && skipped.contains(activeAamBitsOpcode),
-                "the deferred alertRead() must SKIP op120/op146 on the bad combo — the change that holds the BLE link")
         #expect(!dispatched.contains(highestAamOpcode) && !dispatched.contains(activeAamBitsOpcode),
-                "op120/op146 must never be SENT on the API-2.5 t:slim — reproducing the bench zero-disconnect")
+                "op120/op146 must never be SENT (the AAM fan-in was removed from alertRead) — the primary loop fix")
     }
 
     /// Guardrail parity: adding the AAM reads keeps the static set READ-ONLY (Guardrail A) — {op20, op120,
