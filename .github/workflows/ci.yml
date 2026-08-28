@@ -216,3 +216,46 @@ jobs:
           set -o pipefail
           xcodebuild -project faBolus.xcodeproj -scheme faBolus \
             -resolvePackageDependencies
+
+  # Style / lint report (advisory). SwiftLint here is a REPORT, never a gate: continue-on-error keeps a
+  # style regression from blocking a dose-path fix. `.swiftlint.yml` records which rules are
+  # deliberately configured away and why (wire-field names, frozen-accessor setters, god-object
+  # metrics). `swift-format lint` proves the tree is still formatted.
+  style:
+    name: Style report (swift-format + SwiftLint, advisory)
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.app || sudo xcode-select -s /Applications/Xcode.app
+
+      - name: swift-format — is the tree formatted?
+        run: |
+          ./scripts/format.sh --lint 2>&1 | tee /tmp/sf.log || true
+          echo "swift-format findings: $(grep -c 'warning:\|error:' /tmp/sf.log || true)"
+
+      - name: SwiftLint
+        run: |
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          swiftlint lint --quiet --reporter github-actions-logging || true
+          swiftlint lint --quiet --reporter csv > /tmp/sl.csv || true
+          echo "SwiftLint findings by rule:"
+          cut -d, -f6 /tmp/sl.csv | sort | uniq -c | sort -rn
+          echo "at error severity: $(cut -d, -f5 /tmp/sl.csv | grep -c -i error || true)"
+
+  # Semgrep — the local `.semgrep/deslop.yml` ruleset only, no marketplace packs. Flags AI-agent
+  # process residue (phase/ticket breadcrumbs, migration notes, drifted line references) and vacuous
+  # tests. Advisory: every hit needs human triage, because a genuine safety comment can match a
+  # residue pattern and a source-scanning guard test can be the last line of defense for a dose path.
+  semgrep:
+    name: Semgrep deslop rules (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (local rules)
+        run: |
+          pipx install semgrep || pip install --user semgrep
+          semgrep --config .semgrep/deslop.yml --metrics=off --error=false .
