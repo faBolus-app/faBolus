@@ -2,11 +2,11 @@ import Foundation
 
 /// **S1 + O3 — pure disclosure of the pump controller's *documented* automatic-correction behavior.**
 ///
-/// Phase 23 (23-01, D-09): the two display entry points this type once exposed — **S1** (`lockoutMessage`,
-/// the "bolusing now pauses automatic correction" caution) and **O3** (`ambientIndicator`, the persistent
-/// "automatic correction is active" line) — were REMOVED (owner-directed phone/Garmin display-copy
-/// declutter). This type SLIMS to its surviving fraction primitive below, which documents the still-frozen
-/// `lockoutUntilEpochSec` wire contract (D-01) and is consumed by wire-fixture/test code only.
+/// Phase 23 (23-01, D-09): the two display entry points this type once exposed — the **S1** lockout-caution
+/// disclosure ("bolusing now pauses automatic correction") and the **O3** ambient "automatic correction is
+/// active" indicator — were REMOVED (owner-directed phone/Garmin display-copy declutter). This type SLIMS
+/// to its surviving fraction primitive below, which documents the still-frozen `lockoutUntilEpochSec` wire
+/// contract (D-01) and is consumed by wire-fixture/test code only.
 ///
 /// **This is a DISCLOSURE fact, not therapy — and it NEVER affects delivery.** Nothing here blocks,
 /// disables, clamps, delays, or resizes a dose; the deliver button is unchanged. The surviving function only
