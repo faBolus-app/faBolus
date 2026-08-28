@@ -127,7 +127,17 @@ packages:
     # regression), 15-WR-03 encoder scope-notes, 15-IN-02 ValidationError LocalizedError, 15.5-WR-03 bench
     # re-wire, 15.5-IN-01 test rename, 14-WR-02 notify-loss contract test (Option 2, NO runtime change).
     # TandemKit swift test 440/54 green. Still NO-GO for real insulin until the Phase-12 saline bench.
-    revision: 7928507fff407f627acc173e74ccf3c2310da841
+    # Pin BUMP 2026-08-28 (debug pump-drop-no-reconnect, symptom 2.1): 7928507 -> 17e1a99. Delta = ONE
+    # commit — BLE-subscription recovery fix. revokeReadiness(lost:) now re-issues setNotifyValue(true) on
+    # the still-live peripheral AND re-arms the establishment watchdog on a post-.ready notify-subscription
+    # loss (isNotifying=false, no CB error — the ATT link stays up so no CB disconnect fires and the reconnect
+    # ladder was never armed), so the link can no longer latch silently in .discovering until force-quit — it
+    # either re-subscribes to .ready or escalates to the reconnect ladder within the establishment window.
+    # PumpBLEClient-layer policy only: NO wire/message bytes changed (JDK-21 OracleParityTests green, wire
+    # oracle NOT required); the 14-WR-02 pinned contract (state==.discovering, writePolicy untouched, in-flight
+    # tx not failed) is preserved. TandemBLETests 442/54 green. STILL bench-pending: on-device UAT (mid-session
+    # notify-loss drop recovers WITHOUT force-quit) is PENDING; NO-GO for real insulin — saline/bench only.
+    revision: 17e1a9971e9bcdface2e6475a5d778ae4e9cfd09
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
