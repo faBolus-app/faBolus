@@ -6,8 +6,9 @@ import Testing
 /// documented lockout window, clamped to [0, 1]) proving the "fraction, never units" safety property
 /// (D-06 guardrail #1) at the unit level, before any UI renders a countdown bar from it. The fraction fills
 /// UP as the lockout expires (0.0 = just started, ~1.0 = about to clear) — it is NOT a draining battery and
-/// NOT a percent-of-ceiling. Mirrors `lockoutMessage`'s exact guard shape (no controller / off / unknown
-/// window) PLUS a guard of its own: nil once the lockout has actually expired (no active lockout to show).
+/// NOT a percent-of-ceiling. Mirrors the same no-controller / off / unknown-window guard shape the removed
+/// S1 lockout disclosure used PLUS a guard of its own: nil once the lockout has actually expired (no active
+/// lockout to show).
 struct AutoCorrectionLockoutFractionTests {
 
     private let sixtyMinutesAgo: (Date, Int) -> Date = { now, minutesAgo in
@@ -74,7 +75,7 @@ struct AutoCorrectionLockoutFractionTests {
         #expect(abs(fraction! - 0.0) < 0.01)
     }
 
-    // MARK: same mechanism gates as lockoutMessage (P16 S1) — always nil, never a stale/frozen bar
+    // MARK: same no-controller/off/unknown-window guard gates (the former S1 lockout disclosure) — always nil, never a stale/frozen bar
 
     @Test func noControllerNeverProducesAFraction() {
         let now = Date()
