@@ -295,6 +295,18 @@ final class PumpConnectionLifecycle {
         guard target == storeId else { detectedIsMobi = nil; return }
         guard let isMobi = TrustedPumpIdentityStore.isMobi(for: storeId) else { return }
         detectedIsMobi = isMobi   // codex C8: restore the app-side name-authority signal
+        // Regression fix (debug `tslim-misidentified-as-mobi`): also restore the PUBLISHED model fields
+        // `applyDidDiscover` sets, not only the private `detectedIsMobi` above. On a `didDiscover`-bypass
+        // fast-path reconnect (cold launch → `connectKnownPeripheral`) the snapshot starts empty
+        // (`pumpModelName == ""` ⇒ `pumpModel == .unknown`) and `didDiscover` never runs to fill it. op33
+        // then SKIPS its own `snapshot.pumpModelName` assignment because it is guarded by
+        // `if detectedIsMobi() == nil` and the line above just made that non-nil — so without restoring the
+        // snapshot HERE, `pumpModel` stays `.unknown` and `validateDeliver`'s family gate
+        // (`snapshot.pumpModel == .tslimX2`) refuses a genuine t:slim with the Mobi-not-supported copy.
+        // This mirrors `applyDidDiscover` exactly (same trusted, name-derived source), so a Mobi still
+        // resolves to `.mobi` (and the MOBI-03 backstop still tears it down) — no reclassification.
+        snapshot.isMobi = isMobi
+        snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
         client?.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
     }
 
