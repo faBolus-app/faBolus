@@ -71,45 +71,6 @@ public final class AppModel {
     @ObservationIgnored internal var lastEatingPositiveAt = Date.distantPast
     internal var eatingNudge: EatingAlert?
 
-    /// Phase 09.18b (D-07/D-09): set by the Garmin bridge — the phone tells the watch when to
-    /// read+append ambient HR to its out-of-band envelope (battery: only while the in-app HR-context
-    /// toggle is on). Mirrors `onWantAccelSensing`; nil in builds without a remote. HR is chart context
-    /// ONLY — this control signal never touches the signed dose path or eating inference.
-    @ObservationIgnored public var onWantHeartRate: ((Bool) -> Void)?
-    /// nil until the first reconcile so the initial toggle state is always pushed once (default is ON,
-    /// unlike accel's default-off, so a nil→true first fire is intended).
-    @ObservationIgnored private var lastWantHR: Bool?
-    /// The most recent Garmin ambient-HR sample from the out-of-band `hr_window` envelope, or nil.
-    /// **Display-only chart context (D-07)** — read by the GraphDetailView HR row; NEVER fed into
-    /// eating inference (`ingestGarminIMUWindow`/`accelPipeline`/`EatingTrigger`) or any dose/meal path.
-    /// Observed (not `@ObservationIgnored`) so the readout refreshes when a new sample lands.
-    public private(set) var latestGarminHeartRate: (bpm: Double, date: Date)?
-
-    /// De-duped setter mirroring `setWantAccelSensing`: fire the watch HR control signal only on an
-    /// actual change so `hr_ctl` isn't spammed. Public so the Smart Assist HR toggle drives it directly
-    /// (D-09 — off → the watch stops appending HR).
-    public func setWantHeartRate(_ on: Bool) {
-        guard on != lastWantHR else { return }
-        lastWantHR = on
-        // IN-03: drop the retained Garmin sample when HR is turned OFF so re-enabling starts clean rather
-        // than flashing an old value before a fresh sample arrives. Display-only state; touches no dose path.
-        if !on { latestGarminHeartRate = nil }
-        onWantHeartRate?(on)
-    }
-
-    /// Reconcile the watch HR-send state to the in-app toggle (D-09). Called on each `refresh()` and on
-    /// toggle change; de-duped, so it's a no-op unless the desired state actually changed.
-    public func reconcileHeartRateWanted() {
-        setWantHeartRate(AppSettings.shared.heartRateContextEnabled)
-    }
-
-    /// Ingest a Garmin ambient-HR sample from the out-of-band `hr_window` envelope (parsed BEFORE the
-    /// signed `RemoteCommand` path in `GarminRemoteBridge`). Chart context ONLY — stores the latest
-    /// sample for the GraphDetailView readout and touches NO eating/dose path (D-07).
-    public func ingestGarminHeartRate(bpm: Double, at date: Date) {
-        latestGarminHeartRate = (bpm, date)
-    }
-
     // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`, and
     // `eatingNudgeActedOn` moved verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE`
     // gates preserved) — see that file. `setupEatingPersonalization()` is still called from `init`
@@ -925,7 +886,6 @@ public final class AppModel {
         refreshEffectsCoordinator.onHealthKitAutoExport = { [weak self] in self?.maybeAutoExportAppleHealth() }
         #endif
         refreshEffectsCoordinator.onUpdateEatingNudge = { [weak self] in self?.updateEatingNudge() }
-        refreshEffectsCoordinator.onReconcileHeartRateWanted = { [weak self] in self?.reconcileHeartRateWanted() }
         refreshEffectsCoordinator.onEvaluateSavePinOffer = { [weak self] in self?.evaluateSavePinOffer() }
         refreshEffectsCoordinator.onAutoSyncPumpTime = { [weak self] in self?.maybeAutoSyncPumpTime() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in

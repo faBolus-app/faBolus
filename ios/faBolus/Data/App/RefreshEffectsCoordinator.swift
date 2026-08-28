@@ -56,7 +56,6 @@ final class RefreshEffectsCoordinator {
     var onHealthKitAutoImport: () -> Void = {}
     var onHealthKitAutoExport: () -> Void = {}
     var onUpdateEatingNudge: () -> Void = {}
-    var onReconcileHeartRateWanted: () -> Void = {}
     var onEvaluateSavePinOffer: () -> Void = {}
     var onAutoSyncPumpTime: () -> Void = {}
     /// Gated by the `canControlModes` input (`ModeAutomation.applyPendingIfDue(using:)` takes the concrete
@@ -163,8 +162,6 @@ final class RefreshEffectsCoordinator {
         #endif
         onUpdateEatingNudge()
         recordStep("updateEatingNudge")
-        onReconcileHeartRateWanted()
-        recordStep("reconcileHeartRateWanted")
         onEvaluateSavePinOffer()
         recordStep("evaluateSavePinOffer")
         onAutoSyncPumpTime()
