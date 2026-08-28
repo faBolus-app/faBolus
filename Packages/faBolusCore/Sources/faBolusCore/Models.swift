@@ -691,6 +691,20 @@ public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIter
         }
     }
 
+    /// Phase 20 (D-01): the salience tier this alert kind maps to on the Garmin alert-intensity wire
+    /// (`RemoteAlert.severity`), consumed by the watch's F3/R4 gate. Pure. Alarms are the pump's most-
+    /// severe, safety-critical notifications ⇒ "critical"; a plain alert or a CGM low/high alert ⇒ "high";
+    /// a reminder ⇒ "info". (The watch fails an ABSENT/unknown severity closed to "critical", so a future
+    /// kind that isn't mapped here is never under-alerted.)
+    public var wireSeverityTier: String {
+        switch self {
+        case .alarm:    return "critical"
+        case .alert:    return "high"
+        case .cgmAlert: return "high"
+        case .reminder: return "info"
+        }
+    }
+
     /// Whether an auto-rule may act on this kind. **Alarms are never auto-dismissed/snoozed** — they
     /// are the pump's most-severe, safety-critical notifications.
     public var isAutoRuleEligible: Bool { self != .alarm }

@@ -156,7 +156,8 @@
         "properties": {
           "id": { "type": "integer", "description": "Bitmap index / notification id." },
           "kind": { "type": "integer", "description": "NotificationKind (alert=1, alarm=2, cgmAlert=3)." },
-          "title": { "type": "string" }
+          "title": { "type": "string" },
+          "severity": { "type": "string", "enum": ["info", "high", "critical"], "description": "Phase 20 (D-01): phone-classified salience tier for the Garmin alert-intensity gate. Optional; a legacy host omits it and the watch treats an absent/unknown severity as 'critical' (highest salience, never suppressed)." }
         }
       }
     },
@@ -215,6 +216,26 @@
       "type": "string",
       "enum": ["numericColor", "stringTrend"],
       "description": "How the Garmin BG complication presents (statusRead reply): numericColor = numeric value with range-coloring + Latin trend in the unit slot; stringTrend = a plain value+trend string, no color."
+    },
+    "garminComplicationSlots": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "Phase 20 (F1, D-02): which pump-status fields fill the Garmin's THREE user-assignable complication slots, in order (statusRead reply). Connect IQ caps an app at 4 complications total, so glucose (fixed) + these ≤3. The watch de-dupes + caps at 3; absent/all-unknown ⇒ the watch keeps its default (iob/reservoir/battery).",
+      "items": { "type": "string", "enum": ["iob", "reservoir", "battery", "basal"] }
+    },
+    "alertIntensityMode": {
+      "type": "string",
+      "enum": ["silent", "vibrate", "audible"],
+      "description": "Phase 20 (R1/R4/F3, D-01): the phone-owned Garmin alert-intensity mode (statusRead reply). DEFAULT 'vibrate' (vibration-only for every severity). 'silent' = phone is the sole alerting surface; 'audible' = tone + backlight at/above alertAudibleMinSeverity. Absent/unrecognized ⇒ the watch fails closed to 'vibrate'."
+    },
+    "alertAudibleMinSeverity": {
+      "type": "string",
+      "enum": ["info", "high", "critical"],
+      "description": "Phase 20 (R1, D-01): in 'audible' mode, the minimum severity tier that plays a tone + backlight (statusRead reply). DEFAULT 'critical'."
+    },
+    "alertCriticalOverridesDnd": {
+      "type": "boolean",
+      "description": "Phase 20 (R4, D-01): whether a CRITICAL Garmin alert may pierce Do-Not-Disturb / vibrateOn=off (statusRead reply). User opt-in, DEFAULT false. In 'silent' mode + false the watch is fully silent for every alert including critical; + true adds a critical-only vibration wrist fallback (never a tone)."
     },
     "clockAnalog": {
       "type": "boolean",

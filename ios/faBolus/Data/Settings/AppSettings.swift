@@ -776,6 +776,64 @@ public final class AppSettings {
         id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
     }
 
+    // MARK: Phase 20 — Garmin alert intensity (R1/R4/F3, D-01) + complication slots (F1, D-02)
+
+    /// The phone-owned Garmin alert-intensity mode, synced to the watch on the statusRead reply. DEFAULT
+    /// "vibrate" (vibration-only for every severity). Frozen 3-token enum; the watch re-validates + fails
+    /// closed. `.display`/`backsUp: true` — SETTINGS-ONLY, never a dose input (C5).
+    private var _garminAlertIntensityMode = Stored<String>(wrappedValue: "vibrate", "garminAlertIntensityMode")
+    public var garminAlertIntensityMode: String {
+        get { _garminAlertIntensityMode.wrappedValue }
+        set { _garminAlertIntensityMode.wrappedValue = newValue }
+    }
+    /// In "audible" mode, the minimum severity tier that plays a tone + backlight. DEFAULT "critical".
+    private var _garminAlertAudibleMinSeverity = Stored<String>(wrappedValue: "critical", "garminAlertAudibleMinSeverity")
+    public var garminAlertAudibleMinSeverity: String {
+        get { _garminAlertAudibleMinSeverity.wrappedValue }
+        set { _garminAlertAudibleMinSeverity.wrappedValue = newValue }
+    }
+    /// Whether a CRITICAL Garmin alert may pierce Do-Not-Disturb / vibrateOn=off. User opt-in, DEFAULT
+    /// false (turn-off-able). In Silent mode + false the watch stays fully silent even for critical.
+    private var _garminAlertCriticalOverridesDnd = Stored<Bool>(wrappedValue: false, "garminAlertCriticalOverridesDnd")
+    public var garminAlertCriticalOverridesDnd: Bool {
+        get { _garminAlertCriticalOverridesDnd.wrappedValue }
+        set { _garminAlertCriticalOverridesDnd.wrappedValue = newValue }
+    }
+    public static let alertIntensityModeOptions = ["silent", "vibrate", "audible"]
+    public static let alertSeverityTierOptions = ["info", "high", "critical"]
+    public static func alertIntensityModeLabel(_ id: String) -> String {
+        switch id {
+        case "silent":  return "Silent (phone alerts only)"
+        case "audible": return "Audible tone + backlight"
+        default:        return "Vibration only"
+        }
+    }
+
+    /// Which pump-status fields (ordered, ≤3) fill the Garmin's three user-assignable complication slots,
+    /// mirrored to the watch. Connect IQ caps an app at 4 complications, so glucose (fixed) + these ≤3.
+    /// DEFAULT iob/reservoir/battery. `.display`/`backsUp: true` — display only, never a dose input.
+    public var garminComplicationSlots: [String] { didSet { d.set(garminComplicationSlots, forKey: "garminComplicationSlots") } }
+    public static let garminComplicationFields = ["iob", "reservoir", "battery", "basal"]
+    public static let garminComplicationSlotsDefault = ["iob", "reservoir", "battery"]
+    public static func garminComplicationFieldLabel(_ id: String) -> String {
+        switch id {
+        case "iob":       return "Active insulin (IOB)"
+        case "reservoir": return "Reservoir units"
+        case "battery":   return "Pump battery %"
+        case "basal":     return "Basal rate"
+        default:          return id
+        }
+    }
+    /// Sanitize a stored/incoming slot list: allowed tokens only, de-duped, order preserved, capped at the
+    /// three available slots; an empty/all-invalid list falls back to the default set.
+    static func sanitizeComplicationSlots(_ stored: [String]?) -> [String] {
+        guard let stored else { return garminComplicationSlotsDefault }
+        var out: [String] = []
+        for s in stored where garminComplicationFields.contains(s) && !out.contains(s) { out.append(s) }
+        if out.isEmpty { return garminComplicationSlotsDefault }
+        return Array(out.prefix(3))
+    }
+
     /// Which detail rows show, and in what order, on the **phone** Details card. Phone-only.
     public var detailsOrder: [String] { didSet { d.set(detailsOrder, forKey: "detailsOrder") } }
     /// Which detail rows show, and in what order, on the **watch/Garmin** Details page — independent
@@ -1018,6 +1076,9 @@ public final class AppSettings {
         let gt = d.string(forKey: "garminTargetApp") ?? "beta"   // default to beta (official listing is dormant)
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
+        // Phase 20 (F1, D-02): restore the Garmin complication-slot selection (valid tokens, de-duped,
+        // capped at 3; default iob/reservoir/battery). didSet does not fire on this init assignment.
+        garminComplicationSlots = Self.sanitizeComplicationSlots(d.array(forKey: "garminComplicationSlots") as? [String])
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.
         pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String] ?? Self.defaultPills, all: Self.pillItems)
         let storedRanges = (d.array(forKey: "watchChartRanges") as? [Int])?
@@ -1059,6 +1120,9 @@ public final class AppSettings {
         _showBolusReasoning.store = defaults
         _garminComplicationDisplay.store = defaults
         _garminClockAnalog.store = defaults
+        _garminAlertIntensityMode.store = defaults       // Phase 20 (D-01)
+        _garminAlertAudibleMinSeverity.store = defaults   // Phase 20 (D-01)
+        _garminAlertCriticalOverridesDnd.store = defaults // Phase 20 (D-01)
         _glucoseBadgeEnabled.store = defaults
         // 17-09 follow-up — repoint the remaining scalar conversions' backing fields at `defaults` too.
         _watchDefaultBolusMode.store = defaults
@@ -1268,6 +1332,11 @@ public final class AppSettings {
             "garminComplicationDisplay": .string(garminComplicationDisplay),
             "garminClockAnalog": .bool(garminClockAnalog),
             "garminTargetApp": .string(garminTargetApp),
+            // Phase 20 (D-01 alert intensity + D-02 complication slots) — phone-owned, backed up.
+            "garminAlertIntensityMode": .string(garminAlertIntensityMode),
+            "garminAlertAudibleMinSeverity": .string(garminAlertAudibleMinSeverity),
+            "garminAlertCriticalOverridesDnd": .bool(garminAlertCriticalOverridesDnd),
+            "garminComplicationSlots": .stringArray(garminComplicationSlots),
             // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled is no longer emitted into the
             // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
             // same posture as requireRemoteBolusApproval (see applyBackup below).
@@ -1403,6 +1472,12 @@ public final class AppSettings {
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
         if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
+        // Phase 20 (D-01 alert intensity + D-02 complication slots): restore with the same fail-closed
+        // validation as init (unrecognized token ⇒ safe default; slots sanitized + capped at 3).
+        if let v = s("garminAlertIntensityMode"), Self.alertIntensityModeOptions.contains(v) { garminAlertIntensityMode = v }
+        if let v = s("garminAlertAudibleMinSeverity"), Self.alertSeverityTierOptions.contains(v) { garminAlertAudibleMinSeverity = v }
+        if let v = b("garminAlertCriticalOverridesDnd") { garminAlertCriticalOverridesDnd = v }
+        if let v = sa("garminComplicationSlots") { garminComplicationSlots = Self.sanitizeComplicationSlots(v) }
         // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` no longer restores from a backup
         // either — belt-and-suspenders option (a). A legacy backup carrying this key (or `true`) is
         // now silently ignored, same tolerance as the `remoteBluetoothEnabled` precedent below; the

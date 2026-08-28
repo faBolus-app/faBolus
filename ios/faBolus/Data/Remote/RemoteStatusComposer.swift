@@ -42,7 +42,10 @@ enum RemoteStatusComposer {
         // The ONLY "clock read" in this type: the already-captured `inputs.now`, never `Date()`.
         let age = s.glucoseDate.map { max(0, inputs.now.timeIntervalSince($0)) }
         let alertList = inputs.activeNotifications.map {
-            RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title)
+            // Phase 20 (D-01): carry the phone-classified salience tier so the watch's F3/R4 gate has a
+            // reliable per-alert signal (the watch fails an absent one closed to "critical").
+            RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title,
+                                      severity: $0.kind.wireSeverityTier)
         }
         let recent = inputs.includeHistory ? Array(inputs.glucoseHistory.suffix(288)) : []
         let history = inputs.includeHistory ? recent.map { $0.mgdl } : nil
@@ -227,6 +230,14 @@ enum RemoteStatusComposer {
         cmd.ciqSleepExerciseAwarenessEnabled = settings.ciqSleepExerciseAwarenessEnabled
         cmd.ciqPlusTempRateEnabled = settings.ciqPlusTempRateEnabled
         cmd.ciqCeilingFlagsEnabled = settings.ciqCeilingFlagsEnabled
+        // Phase 20 (R1/R4/F3, D-01 + F1, D-02): mirror the phone-owned Garmin alert-intensity setting +
+        // the complication-slot selection to the watch on the SAME statusRead channel. Unconditional like
+        // garminComplicationDisplay ⇒ "absent" means a legacy host; the watch fails closed to its safe
+        // defaults (vibration-only; iob/reservoir/battery slots). SETTINGS-ONLY — never a dose input.
+        cmd.alertIntensityMode = settings.alertIntensityMode
+        cmd.alertAudibleMinSeverity = settings.alertAudibleMinSeverity
+        cmd.alertCriticalOverridesDnd = settings.alertCriticalOverridesDnd
+        cmd.garminComplicationSlots = settings.garminComplicationSlots
         if let requestId = inputs.requestId { cmd.requestId = requestId }   // R2-15: echo the incoming statusRead's id for true correlation
         return cmd
     }
@@ -308,4 +319,9 @@ struct RemoteStatusSettings {
     let ciqSleepExerciseAwarenessEnabled: Bool
     let ciqPlusTempRateEnabled: Bool
     let ciqCeilingFlagsEnabled: Bool
+    // Phase 20 (D-01 alert intensity + D-02 complication slots) — phone-owned, watch-synced.
+    let alertIntensityMode: String
+    let alertAudibleMinSeverity: String
+    let alertCriticalOverridesDnd: Bool
+    let garminComplicationSlots: [String]
 }

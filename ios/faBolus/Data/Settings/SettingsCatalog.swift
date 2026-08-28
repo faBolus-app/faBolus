@@ -211,6 +211,11 @@ enum SettingsCatalog {
         .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),
         .init("garminClockAnalog", .remotes, from: .standard, backsUp: true),
         .init("garminTargetApp", .remotes, from: .advanced, backsUp: true),
+        // Phase 20 (D-01 alert intensity + D-02 complication slots) — phone-owned Garmin settings.
+        .init("garminAlertIntensityMode", .remotes, from: .standard, backsUp: true),
+        .init("garminAlertAudibleMinSeverity", .remotes, from: .standard, backsUp: true),
+        .init("garminAlertCriticalOverridesDnd", .remotes, from: .standard, backsUp: true),
+        .init("garminComplicationSlots", .remotes, from: .standard, backsUp: true),
         // Custom alert-rules engine (the "Alerts" descriptor + its editor UI) removed from narrow
         // `main` in Phase 7 (07-05, FEAT-08, SAFETY) — the property is now a getter-level frozen
         // constant (belt-and-suspenders, see AppSettings.swift); no catalog descriptor remains since

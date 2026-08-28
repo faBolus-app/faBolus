@@ -23,7 +23,9 @@ struct RemoteStatusComposerDismissAckTests {
             garminBolusEnabled: false, activeModeRawValue: "advanced",
             ciqStateReadoutsEnabled: true, ciqLockoutCountdownEnabled: true,
             ciqMaxBasalReadoutEnabled: false, ciqSleepExerciseAwarenessEnabled: false,
-            ciqPlusTempRateEnabled: false, ciqCeilingFlagsEnabled: false)
+            ciqPlusTempRateEnabled: false, ciqCeilingFlagsEnabled: false,
+            alertIntensityMode: "vibrate", alertAudibleMinSeverity: "critical",
+            alertCriticalOverridesDnd: false, garminComplicationSlots: ["iob", "reservoir", "battery"])
     }
 
     private func inputs(supportsRemoteAlertDismiss: Bool) -> RemoteStatusInputs {

@@ -73,7 +73,13 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         public var id: Int
         public var kind: Int      // NotificationKind rawValue (alert=1, alarm=2, cgmAlert=3)
         public var title: String
-        public init(id: Int, kind: Int, title: String) { self.id = id; self.kind = kind; self.title = title }
+        /// Phase 20 (D-01): phone-classified salience tier ("info"|"high"|"critical") for the Garmin
+        /// alert-intensity gate. Optional + defaulted nil so every existing call site is source-compatible;
+        /// a legacy host omits it and the watch treats an absent value as "critical" (highest salience).
+        public var severity: String?
+        public init(id: Int, kind: Int, title: String, severity: String? = nil) {
+            self.id = id; self.kind = kind; self.title = title; self.severity = severity
+        }
         /// Stable identity of a pump alert for new-alert detection on a remote — `(kind, id)`.
         public var identity: String { "\(kind)-\(id)" }
     }
@@ -533,6 +539,19 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqPlusTempRateEnabled: Bool? = nil
     public var ciqCeilingFlagsEnabled: Bool? = nil
 
+    /// Phase 20 (R1/R4/F3, D-01): the phone-owned Garmin alert-intensity setting, mirrored to the watch on
+    /// the statusRead reply (the watch's fail-closed gate consumes them). `alertIntensityMode` is a frozen
+    /// 3-token enum ("silent"|"vibrate"|"audible", DEFAULT "vibrate"); `alertAudibleMinSeverity` the audible
+    /// severity floor (DEFAULT "critical"); `alertCriticalOverridesDnd` the critical-DND opt-in (DEFAULT
+    /// false). Additive, auto-Codable, post-init settable (mirrors the ciq* flags). SETTINGS-ONLY — never a
+    /// dose input (C5).
+    public var alertIntensityMode: String? = nil
+    public var alertAudibleMinSeverity: String? = nil
+    public var alertCriticalOverridesDnd: Bool? = nil
+    /// Phase 20 (F1, D-02): which pump-status fields (ordered, ≤3) fill the Garmin's three user-assignable
+    /// complication slots. Absent ⇒ the watch keeps its default (iob/reservoir/battery). Display-only.
+    public var garminComplicationSlots: [String]? = nil
+
     public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
                 carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
                 status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
@@ -751,6 +770,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
             ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
             ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
+            // Phase 20 (D-01): short frozen-enum settings tokens (fail-closed to defaults on the watch).
+            ("alertIntensityMode", alertIntensityMode), ("alertAudibleMinSeverity", alertAudibleMinSeverity),
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }
@@ -764,6 +785,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("history", history?.count), ("historyEpochs", historyEpochs?.count),
             ("alerts", alerts?.count), ("rawAlerts", rawAlerts?.count), ("screenOrder", screenOrder?.count),
             ("detailsOrder", detailsOrder?.count), ("watchChartRanges", watchChartRanges?.count),
+            ("garminComplicationSlots", garminComplicationSlots?.count),   // Phase 20 (F1, D-02)
         ]
         for (name, c) in arrays where c != nil {
             guard c! <= Self.maxArrayCount else { throw ValidationError.tooManyElements(name) }

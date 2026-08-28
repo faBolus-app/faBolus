@@ -267,8 +267,11 @@ struct SettingsCatalogTests {
         // Phase 9 (09-02, MOBI-02): 32 → 31 (`advancedControlEnabled` removed — the "Advanced control"
         // Settings toggle + its `PumpControlView.swift` destination are both deleted; the accessor
         // survives as an ordinary hidden/unregistered flag, so `backedUpKeys.count` below drops by 1).
-        #expect(SettingsCatalog.descriptors.count == 31)
-        #expect(SettingsCatalog.byKey.count == 31)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        // Phase 20: 31 → 35 (four phone-owned Garmin settings added — garminAlertIntensityMode,
+        // garminAlertAudibleMinSeverity, garminAlertCriticalOverridesDnd, garminComplicationSlots; all
+        // `.remotes`/`backsUp: true`, so backedUpKeys below also +4).
+        #expect(SettingsCatalog.descriptors.count == 35)
+        #expect(SettingsCatalog.byKey.count == 35)   // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
         #expect(Set(keys).count == keys.count)       // no duplicate literal
     }
@@ -329,7 +332,8 @@ struct SettingsCatalogTests {
         // unconditional — removed from the catalog AND backupSnapshot/applyBackup).
         // Phase 9 (09-02, MOBI-02): 32 → 31 (`advancedControlEnabled`, unconditional, removed from the
         // catalog AND backupSnapshot/applyBackup — hidden-flag pattern, accessor stays).
-        #expect(SettingsCatalog.backedUpKeys.count == 31)                      // 27 unconditional + 4 conditional
+        // Phase 20: 31 → 35 (four phone-owned Garmin settings added, all unconditional/backsUp:true).
+        #expect(SettingsCatalog.backedUpKeys.count == 35)                      // 31 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 

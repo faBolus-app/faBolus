@@ -494,7 +494,11 @@ struct AppSettingsStoredMigrationTests {
     // MARK: - SettingsCatalog counts unchanged (D4-05 must-have)
 
     @Test func settingsCatalogCountsUnchangedByStoredConversion() {
-        #expect(SettingsCatalog.descriptors.count == 31)
-        #expect(SettingsCatalog.backedUpKeys.count == 31)
+        // 31 → 35: Phase 20 added four phone-owned Garmin settings (garminAlertIntensityMode,
+        // garminAlertAudibleMinSeverity, garminAlertCriticalOverridesDnd, garminComplicationSlots), all
+        // `.remotes`/`backsUp: true`. The D4-05 Stored-conversion invariant this test guards is unchanged;
+        // only the intended new-setting count moved.
+        #expect(SettingsCatalog.descriptors.count == 35)
+        #expect(SettingsCatalog.backedUpKeys.count == 35)
     }
 }

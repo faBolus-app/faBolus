@@ -523,7 +523,11 @@ public final class AppModel {
             ciqMaxBasalReadoutEnabled: AppSettings.shared.ciqMaxBasalReadoutEnabled,
             ciqSleepExerciseAwarenessEnabled: AppSettings.shared.ciqSleepExerciseAwarenessEnabled,
             ciqPlusTempRateEnabled: AppSettings.shared.ciqPlusTempRateEnabled,
-            ciqCeilingFlagsEnabled: AppSettings.shared.ciqCeilingFlagsEnabled)
+            ciqCeilingFlagsEnabled: AppSettings.shared.ciqCeilingFlagsEnabled,
+            alertIntensityMode: AppSettings.shared.garminAlertIntensityMode,
+            alertAudibleMinSeverity: AppSettings.shared.garminAlertAudibleMinSeverity,
+            alertCriticalOverridesDnd: AppSettings.shared.garminAlertCriticalOverridesDnd,
+            garminComplicationSlots: AppSettings.shared.garminComplicationSlots)
         let inputs = RemoteStatusInputs(
             includeHistory: includeHistory,
             requestId: requestId,

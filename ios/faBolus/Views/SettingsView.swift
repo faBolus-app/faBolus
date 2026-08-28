@@ -332,6 +332,8 @@ enum SettingsIndex {
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
+        .init(title: "Garmin complications", keywords: "watch face slots iob reservoir battery basal pump status", category: .remotes),
+        .init(title: "Garmin alert intensity", keywords: "vibrate silent audible tone backlight do not disturb dnd critical alarm sound", category: .remotes),
         .init(title: "Garmin analog clock face", keywords: "analog digital clock face hands watch", category: .remotes),
         .init(title: "Set up Garmin remote", keywords: "connect iq install", category: .remotes),
         .init(title: "Help & documentation", keywords: "docs website fabolus.org support", category: .about),
@@ -932,8 +934,30 @@ struct RemotesSettingsView: View {
                         }
                     }
                 }
+                NavigationLink { GarminComplicationsView(settings: settings) } label: {
+                    LabeledContent("Garmin complications",
+                                   value: settings.garminComplicationSlots.isEmpty ? "None"
+                                        : settings.garminComplicationSlots.map { AppSettings.garminComplicationFieldLabel($0).components(separatedBy: " (").first ?? $0 }.joined(separator: ", "))
+                }
             } header: { Text("Garmin display") } footer: {
-                Text("Customize the Garmin Details page and the history-chart tap ranges — separate from the phone. \"Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. Mirrored to the remotes on the next update.")
+                Text("Customize the Garmin Details page and the history-chart tap ranges — separate from the phone. \"Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. \"Garmin complications\" picks which pump-status readouts fill the watch face's three slots (alongside glucose). Mirrored to the remotes on the next update.")
+            }
+            Section {
+                Picker("Alert intensity", selection: $settings.garminAlertIntensityMode) {
+                    ForEach(AppSettings.alertIntensityModeOptions, id: \.self) {
+                        Text(AppSettings.alertIntensityModeLabel($0)).tag($0)
+                    }
+                }
+                if settings.garminAlertIntensityMode == "audible" {
+                    Picker("Play tone for", selection: $settings.garminAlertAudibleMinSeverity) {
+                        Text("All alerts").tag("info")
+                        Text("High & critical").tag("high")
+                        Text("Critical only").tag("critical")
+                    }
+                }
+                Toggle("Critical alerts override Do Not Disturb", isOn: $settings.garminAlertCriticalOverridesDnd)
+            } header: { Text("Garmin alerts") } footer: {
+                Text("How the Garmin watch alerts you. **Vibration only** (default) buzzes for every alert; **Audible** adds a tone + backlight at/above the level you pick; **Silent** means the watch stays quiet and your phone is the only alert. \"Critical alerts override Do Not Disturb\" is off by default — turn it on to let a critical alert buzz through DND (in Silent mode that adds a vibration for critical alerts, never a tone). The phone always alerts regardless of this setting.")
             }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
@@ -1201,5 +1225,49 @@ struct WatchChartRangesView: View {
             }
         }
         .navigationTitle("Garmin Chart Ranges")
+    }
+}
+
+/// Phase 20 (F1, D-02): pick which pump-status fields fill the Garmin watch face's THREE user-assignable
+/// complication slots (alongside the fixed glucose complication — Connect IQ caps an app at four total).
+/// Three "Slot N" pickers (a field or None); the selection becomes the ordered `garminComplicationSlots`
+/// list, de-duped and capped at three by construction. Mirrored to the watch on its next status update.
+struct GarminComplicationsView: View {
+    @Bindable var settings: AppSettings
+    private let fields = AppSettings.garminComplicationFields   // iob / reservoir / battery / basal
+
+    private func slotBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                let s = settings.garminComplicationSlots
+                return index < s.count ? s[index] : "none"
+            },
+            set: { newValue in
+                var slots = settings.garminComplicationSlots
+                while slots.count < 3 { slots.append("none") }
+                slots[index] = newValue
+                // Rebuild the ordered selection: drop "None", de-dupe (first slot wins), cap at 3.
+                var out: [String] = []
+                for f in slots where f != "none" && !out.contains(f) { out.append(f) }
+                settings.garminComplicationSlots = Array(out.prefix(3))
+            })
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(0..<3, id: \.self) { i in
+                    Picker("Slot \(i + 1)", selection: slotBinding(i)) {
+                        Text("None").tag("none")
+                        ForEach(fields, id: \.self) { f in
+                            Text(AppSettings.garminComplicationFieldLabel(f)).tag(f)
+                        }
+                    }
+                }
+            } header: { Text("Watch face slots") } footer: {
+                Text("Glucose always fills one complication. Connect IQ allows four total, so you can add up to three more pump-status readouts here. On the watch, add each \"faBolus Pump Status\" complication to your face — slot 1 shows your first pick, slot 2 your second, slot 3 your third. Picking the same field twice keeps only the first. Mirrored to the watch on its next update.")
+            }
+        }
+        .navigationTitle("Garmin Complications")
     }
 }
