@@ -1,8 +1,8 @@
 import Foundation
 
-/// The durable-persistence seam the host depends on, so the round-3 §5 fault matrix can inject a store
-/// that fails on demand (save throws at a specific transition, load reports corrupt, etc.) without
-/// touching the filesystem. Production uses `RemoteBolusLedgerStore`; tests use a scripted fake.
+/// The durable-persistence seam the host depends on, so tests can inject a store that fails on
+/// demand (save throws at a specific transition, load reports corrupt, etc.) without touching the
+/// filesystem. Production uses `RemoteBolusLedgerStore`; tests use a scripted fake.
 /// Kept deliberately small — the three operations the host actually calls.
 public protocol RemoteBolusLedgerPersisting: AnyObject {
     func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome
@@ -10,9 +10,9 @@ public protocol RemoteBolusLedgerPersisting: AnyObject {
     func saveBestEffort(_ ledger: RemoteBolusLedger)
 }
 
-/// File-backed persistence for `RemoteBolusLedger` (FB-03). The host loads once at launch and saves after
-/// every state transition — crucially, right after `markDelivering` and BEFORE the first pump write — so
-/// exactly-once survives a crash or relaunch mid-delivery.
+/// File-backed persistence for `RemoteBolusLedger`. The host loads once at launch and saves after
+/// every state transition — crucially, right after `markDelivering` and BEFORE the first pump write —
+/// so exactly-once survives a crash or relaunch mid-delivery.
 ///
 /// Writes are atomic (`Data.write(options: .atomic)`), so a crash mid-save can't leave a truncated ledger.
 /// A missing or corrupt file loads as an empty ledger (fail-safe: an unreadable ledger must not crash the
@@ -27,13 +27,13 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         self.cap = cap
     }
 
-    /// F1 (§13) — the at-rest data-protection class the durable ledger is written with:
+    /// At-rest data-protection class the durable ledger is written with:
     /// `completeUntilFirstUserAuthentication` ("after first unlock"). The file is encrypted at rest but
     /// stays **readable at a locked background relaunch**, so crash-recovery / reconciliation of an
-    /// in-flight delivery still works. This is the LOAD-BEARING safety choice: it is deliberately NOT
-    /// `.completeFileProtection` (which locks the file whenever the device locks) — that class would make
-    /// the ledger unreadable during a locked background relaunch and break reconciliation of a delivery
-    /// that was in flight. Exposed so a test can pin AfterFirstUnlock and assert it is never `.complete`.
+    /// in-flight delivery still works. Deliberately NOT `.completeFileProtection` (which locks the file
+    /// whenever the device locks) — that class would make the ledger unreadable during a locked
+    /// background relaunch and break reconciliation of a delivery that was in flight. Exposed so a
+    /// test can pin AfterFirstUnlock and assert it is never `.complete`.
     public static let fileProtection: Data.WritingOptions = .completeFileProtectionUntilFirstUserAuthentication
 
     /// Convenience: a ledger file inside an App Group container (shared with widgets), else Application
@@ -52,19 +52,19 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
 
     /// Load the persisted ledger, or a fresh empty one if absent/corrupt (legacy convenience; prefer
     /// `loadOutcome()` which distinguishes a never-initialized store from a corrupt one so callers can
-    /// fail closed on corruption — P0).
+    /// fail closed on corruption).
     public func load() -> RemoteBolusLedger { loadOutcome().ledger }
 
     /// The result of a load that separates "no store yet" (safe empty) from "store existed but is
     /// unreadable/corrupt" (must fail closed — an unreadable ledger may be hiding an unresolved delivery,
-    /// so the host must block all delivery until the user verifies on the pump). P0 invariant #9.
+    /// so the host must block all delivery until the user verifies on the pump).
     public struct LoadOutcome: Sendable {
         public let ledger: RemoteBolusLedger
         /// True when a persisted file exists but could not be read/decoded. The returned `ledger` is empty
         /// (so idempotency still functions) but the host MUST treat this as a global delivery block.
         public let failedClosed: Bool
-        /// Public so a test double conforming to `RemoteBolusLedgerPersisting` can construct outcomes
-        /// (the §5 fault matrix). Production builds these inside `loadOutcome()` above.
+        /// Public so a test double conforming to `RemoteBolusLedgerPersisting` can construct outcomes.
+        /// Production builds these inside `loadOutcome()` above.
         public init(ledger: RemoteBolusLedger, failedClosed: Bool) {
             self.ledger = ledger
             self.failedClosed = failedClosed
@@ -90,7 +90,7 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
     /// proceed if its intent couldn't be recorded — see the host's use).
     public func save(_ ledger: RemoteBolusLedger) throws {
         let data = try JSONEncoder().encode(ledger)
-        // F1 (§13): atomic + AfterFirstUnlock at-rest protection. NEVER `.completeFileProtection` — the
+        // Atomic + AfterFirstUnlock at-rest protection. NEVER `.completeFileProtection` — the
         // ledger must be readable at a locked background relaunch for crash-recovery (see `fileProtection`).
         try data.write(to: url, options: [.atomic, Self.fileProtection])
     }

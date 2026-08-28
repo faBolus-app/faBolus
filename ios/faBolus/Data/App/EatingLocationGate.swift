@@ -1,7 +1,7 @@
 import Foundation
 import CoreLocation
 
-/// Optional **location gate** for the eating nudge (Phase 5). Learns the coarse places where you
+/// Optional **location gate** for the eating nudge. Learns the coarse places where you
 /// actually eat (recorded when you act on a nudge / bolus for a meal) and reports whether you're at
 /// one now, so the engine can suppress nudges when you're clearly *not* at a meal place (e.g. driving,
 /// at the gym). Privacy-first: **off by default**, coarse locations only, everything stays on-device,

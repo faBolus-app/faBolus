@@ -1,31 +1,30 @@
 import Foundation
 import os
 
-/// **Insulin Stacking Guard — pure friction/disclosure surface (SG1–SG3b).**
+/// **Insulin Stacking Guard — pure friction/disclosure surface.**
 ///
 /// **These are DISCLOSURE / FRICTION facts, never therapy — and they NEVER affect delivery.** Nothing here
 /// blocks, disables, clamps, delays, resizes, or reorders a dose; the deliver button and the number that
 /// reaches the pump are unchanged. Every function here returns a `Disclosure` — a friction level plus a
 /// string to show, or `nil` — never a units/dose value. This mirrors `AutoCorrectionDisclosure`'s exact
 /// shape: a namespace enum of static pure functions over explicit inputs, mechanism-gated on the pump's OWN
-/// reported values (never a hardcoded clinical constant, C10 §2.4).
+/// reported values (never a hardcoded clinical constant).
 ///
-/// **Structural "never a dose decision" guarantee (task #93, criterion 4):** `Friction` has NO `.block`
+/// **Structural "never a dose decision" guarantee:** `Friction` has NO `.block`
 /// case — it is `Comparable`/`CaseIterable` over exactly four levels, none of which the delivery path is
 /// wired to. No function below returns a units/dose field. A future refactor that tries to thread a
 /// `StackingGuard` result into `attemptDeliver` / `CalcInputGate.decide` / `TandemBackend.validateDeliver`
-/// would have to invent a NEW type to do it — this file gives it nothing to grab (T-01-01).
+/// would have to invent a NEW type to do it — this file gives it nothing to grab.
 ///
 /// **SG1** (`calcOverride`): discloses when the entered dose exceeds the pump's own op-115 calculator
 /// suggestion while glucose is above the pump's own op-115 target — never a fixed clinical threshold.
 /// **SG2** (`maxBolusProximity`): discloses when the entered dose is at or above the pump's own reported
 /// Max-Bolus (op-115 `maxBolusAmount`) — anchored purely on that pump read, never a hardcoded cap.
 /// **SG3a** (`escalation`): composes the SG1/SG2 signals into a single escalating `Friction`
-/// (`.disclose` → `.confirmExtra` → `.reenter`) as the override magnitude crosses §13 owner-confirmable,
+/// (`.disclose` → `.confirmExtra` → `.reenter`) as the override magnitude crosses owner-confirmable,
 /// lock-backed cut-points (`confirmExtraOverrideRatio` / `reenterOverrideRatio`) — still friction/disclosure
 /// only, never a `.block` case, never a units field.
-/// **SG3b** (`tempRateOffer`): a strictly-inert stub — see its doc comment; BLOCKED pending a saline-bench
-/// check, per `PROJECT.md`'s Out-of-Scope entry and `TempRateRequests.swift:3-5`.
+/// **SG3b** (`tempRateOffer`): a strictly-inert stub — see its doc comment.
 public enum StackingGuard {
 
     /// Friction levels a StackingGuard function can report. Ordered (`Comparable` via `rawValue`) so a
@@ -62,7 +61,7 @@ public enum StackingGuard {
     /// suggested, while glucose is above the pump's own op-115 target. Purely informational: it never gates,
     /// clamps, or delays the Deliver button (see `StackingGuardDeliverInvariantTests`).
     ///
-    /// Fires (`.disclose`) when ALL hold: `displaysNumericDose` (§13 Rule-1 — never cite a dose sized off the
+    /// Fires (`.disclose`) when ALL hold: `displaysNumericDose` (never cite a dose sized off the
     /// hardcoded CR/ISF/target guess, mirrors `carbOverrideWarning`'s guard), `enteredUnits > 0`, glucose is
     /// present and strictly above `targetMgdl` (the pump's OWN op-115 target — never a Control-IQ 110 or any
     /// other clinical constant), and `enteredUnits` is strictly greater than `recommendedUnits`.
@@ -106,7 +105,8 @@ public enum StackingGuard {
 
     /// **SG2** — discloses when the entered dose is at or above the pump's OWN reported Max-Bolus
     /// (`snapshot.maxBolusUnits`, a direct op-115 `maxBolusAmount` read) — never a hardcoded cap and never a
-    /// near-band fraction (an 80%-of-max warning is a §13 param, default off, NOT built this phase). Purely
+    /// near-band fraction (an 80%-of-max warning is an owner-confirmable param, default off, not built
+    /// here). Purely
     /// informational: it never gates, clamps, or delays the Deliver button (see
     /// `StackingGuardDeliverInvariantTests`).
     ///
@@ -123,9 +123,9 @@ public enum StackingGuard {
                           message: "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U.")
     }
 
-    // MARK: - insufficientReservoir: out-of-insulin over-request disclosure (D-01)
+    // MARK: - insufficientReservoir: out-of-insulin over-request disclosure
 
-    /// **Out-of-insulin over-request disclosure** (09.9-02, D-01) — discloses when the entered dose exceeds
+    /// **Out-of-insulin over-request disclosure** — discloses when the entered dose exceeds
     /// the pump's OWN reported reservoir remaining (`snapshot.reservoirUnits`, a direct
     /// `InsulinStatusResponse.currentInsulinAmount` read) — never a hardcoded threshold. Purely informational,
     /// a sibling of `maxBolusProximity`: it never gates, clamps, resizes, or delays the Deliver button (see
@@ -149,10 +149,10 @@ public enum StackingGuard {
     // MARK: - SG3a: escalating friction (SG1 override magnitude + SG2 max-proximity)
 
     // Thread-safe backing (mirrors `CalcInputFreshness`'s `OSAllocatedUnfairLock` idiom): set at launch
-    // (or by a future §13-review Settings screen) and read from many isolation domains, so a bare
+    // (or by a future Settings screen) and read from many isolation domains, so a bare
     // `nonisolated(unsafe) static var` would only silence the checker, not make the mutation actually safe.
     //
-    // **Owner-confirmable, subject to §13 review — starting points with no evidence base.** These are the
+    // **Owner-confirmable starting points with no evidence base.** These are the
     // override-ratio (entered ÷ recommended) cut-points at which SG3a escalates the friction tier. They are
     // NOT clinical thresholds; they exist purely to decide how much friction/confirmation to surface before
     // an unusually large override reaches the (unaffected) Deliver button.
@@ -161,7 +161,7 @@ public enum StackingGuard {
 
     /// The override ratio (`enteredUnits / recommendedUnits`) at or above which `escalation` steps up from
     /// `.disclose` to `.confirmExtra` — e.g. the default `1.5` means "50% more than the pump's calculator
-    /// suggested". **Owner-confirmable default, §13-adjustable; not a clinical constant.**
+    /// suggested". **Owner-confirmable default; not a clinical constant.**
     public static var confirmExtraOverrideRatio: Double {
         get { _confirmExtraOverrideRatio.withLock { $0 } }
         set { _confirmExtraOverrideRatio.withLock { $0 = newValue } }
@@ -169,7 +169,7 @@ public enum StackingGuard {
 
     /// The override ratio at or above which `escalation` steps up to the most extreme tier, `.reenter` —
     /// e.g. the default `2.0` means "double the pump's calculator suggestion". Must stay `>=
-    /// confirmExtraOverrideRatio` for the tiers to remain ordered; **owner-confirmable default, §13-adjustable.**
+    /// confirmExtraOverrideRatio` for the tiers to remain ordered; **owner-confirmable default.**
     public static var reenterOverrideRatio: Double {
         get { _reenterOverrideRatio.withLock { $0 } }
         set { _reenterOverrideRatio.withLock { $0 = newValue } }
@@ -241,10 +241,9 @@ public enum StackingGuard {
     /// Control-IQ OFF (`TempRateRequests.swift:3-5`), while SG3b's entire premise — offering the 150%
     /// temp-rate as an alternative to a correction bolus — only makes sense while Control-IQ is ON. That
     /// contradiction means this function can never legitimately fire; it exists ONLY to complete the
-    /// `Friction`/`Disclosure` type surface, documented BLOCKED and not
-    /// schedulable until a saline-bench check of temp-rate-while-Control-IQ-on unblocks it (`PROJECT.md`
-    /// Out-of-Scope). Returns `.none` unconditionally — no default branch, no recommended-dose comparison,
-    /// no units field, under every input.
+    /// `Friction`/`Disclosure` type surface, documented BLOCKED until a saline-bench check of
+    /// temp-rate-while-Control-IQ-on unblocks it. Returns `.none` unconditionally — no default branch,
+    /// no recommended-dose comparison, no units field, under every input.
     public static func tempRateOffer(iobUnits: Double,
                                      glucoseMgdl: Int?,
                                      controlIQEnabled: Bool) -> Disclosure {

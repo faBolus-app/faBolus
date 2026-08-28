@@ -1,26 +1,23 @@
 import Foundation
 
-/// **P16 — S7: the pump-disconnect escalation ladder (pure schedule).**
+/// Pump-disconnect escalation ladder (pure schedule).
 ///
-/// The P9 broker already posts ONE immediate "Pump disconnected" notification on the live→down edge
-/// (`AppModel.refresh` → `postSafety(.pumpDisconnect …)`). That is fine for a user who is looking at
-/// the phone, but a user who has **walked away** (app backgrounded/suspended) gets one banner and then
-/// silence — even though the pump is still unreachable from faBolus and they must fall back to the
-/// pump's own controls. S7 adds a small, **finite** ladder of *delayed re-notifications* with
-/// intensified copy that keep telling them so, each carrying the explicit instruction to use the pump's
-/// own buttons.
+/// The broker already posts one immediate "Pump disconnected" notification on the live→down edge.
+/// That is fine for a user looking at the phone, but a user who has walked away (app backgrounded/
+/// suspended) gets one banner and then silence — even though the pump is still unreachable from
+/// faBolus and they must fall back to the pump's own controls. This adds a small, finite ladder of
+/// delayed re-notifications with intensified copy, each carrying the explicit instruction to use
+/// the pump's own buttons.
 ///
-/// This type is the **single source of truth for the schedule**: which escalation steps exist, at what
-/// elapsed time past the disconnect, and with what copy/severity. It is a pure value (no clock, no OS,
-/// no `UNUserNotificationCenter`) so the ladder is unit-testable and cannot drift between the app wiring
-/// and its tests. The app layer (`NotificationCoordinator`) turns each `Step` into an OS-scheduled
-/// `UNNotificationRequest` (a `UNTimeIntervalNotificationTrigger`) so it fires even while the app is
-/// suspended, in the never-suppressible `.pumpDisconnect` family, and cancels the pending ones the
-/// moment the pump reconnects.
+/// Single source of truth for the schedule: which steps exist, at what elapsed time past the
+/// disconnect, and with what copy/severity. Pure value (no clock, no OS, no
+/// `UNUserNotificationCenter`) so the ladder is unit-testable and cannot drift between app wiring
+/// and tests. `NotificationCoordinator` turns each `Step` into an OS-scheduled
+/// `UNNotificationRequest` so it fires even while the app is suspended, in the never-suppressible
+/// `.pumpDisconnect` family, and cancels the pending ones the moment the pump reconnects.
 ///
-/// **Notification-only.** Nothing here blocks, delays, or affects a dose or any pump command; it only
-/// informs. The steps are `.pumpDisconnect`, a never-suppressible P9 safety category — S7 is on,
-/// Simple-mode, and NOT user-disableable.
+/// Notification-only. Nothing here blocks, delays, or affects a dose or any pump command. The steps
+/// are `.pumpDisconnect` — never-suppressible, not user-disableable.
 public enum DisconnectEscalation {
 
     /// One delayed re-notification: fire `afterSeconds` past the disconnect, with this copy. `id` is a
@@ -67,18 +64,17 @@ public enum DisconnectEscalation {
     public static var stepIds: [String] { steps.map(\.id) }
 }
 
-/// **CX-F-02 — the pre-armed CGM-staleness background watchdog.**
+/// Pre-armed CGM-staleness background watchdog.
 ///
-/// Companion to `DisconnectEscalation` above, reusing the SAME `UNTimeIntervalNotificationTrigger` OS
-/// mechanism (13-PATTERNS.md Pattern E) for a different purpose: instead of a fixed post-disconnect
-/// schedule, `NotificationCoordinator` re-arms a SINGLE delayed notification carrying this copy every
-/// time a fresh glucose datum lands (`StalenessWatchdogEdge`, `NotificationCoordinator.swift`), so it
-/// fires `GlucoseFreshness.staleAfter` seconds past the LAST known-fresh reading unless a fresher one
-/// re-arms it first — this is what catches the case the suspended 15s poll/20s arbiter timer otherwise
-/// misses: a background suspension with no wake event before the staleness window elapses still gets
-/// the pre-armed OS notification, because it was scheduled *before* the process ever stopped running.
-/// Cancelled once the real staleness edge fires for real (`SafetyEdge.freshness` → `.cgmDataLoss`), so a
-/// user who is actually looking at the phone never sees a redundant watchdog after the real alert.
+/// Companion to `DisconnectEscalation`, reusing the same `UNTimeIntervalNotificationTrigger` OS
+/// mechanism for a different purpose: instead of a fixed post-disconnect schedule,
+/// `NotificationCoordinator` re-arms a single delayed notification carrying this copy every time a
+/// fresh glucose datum lands, so it fires `GlucoseFreshness.staleAfter` seconds past the last
+/// known-fresh reading unless a fresher one re-arms it first. That catches a background suspension
+/// with no wake event before the staleness window elapses — the OS notification was scheduled
+/// *before* the process stopped running. Cancelled once the real staleness edge fires
+/// (`SafetyEdge.freshness` → `.cgmDataLoss`), so a user looking at the phone never sees a redundant
+/// watchdog after the real alert.
 public enum StalenessWatchdog {
     public static let dedupeKey = "safety.cgmStalenessWatchdog"
     public static let title = "CGM data may be stale"

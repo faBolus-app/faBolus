@@ -15,7 +15,7 @@ final class PumpResponseApplier {
     /// "pump error ←" line alongside every other pairing/read line TandemBackend logs.
     private static let pairingLog = Logger(subsystem: "com.fabolus.app", category: "ble")
 
-    // MARK: - Injected seams (settable post-construction, D-04 hook pattern)
+    // MARK: - Injected seams (settable post-construction)
 
     /// Bound to a closure that mutates `TandemBackend.snapshot` in place (its setter is `private(set)`,
     /// so only code living in `TandemBackend.swift` — this wiring closure — can write it).
@@ -38,12 +38,12 @@ final class PumpResponseApplier {
     var cgmReadingDate: (UInt32, Date) -> Date? = { _, _ in nil }
     /// Bound to `readScheduler.insertBadOpcode(_:)`.
     var insertBadOpcode: (UInt8) -> Void = { _ in }
-    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)` (debug pump-pairing-loop-api25,
-    /// mechanism B). Resolves an inbound op77 `ErrorResponse` to the TRUE failing opcode — the cargo's
-    /// `requestCodeId` when the pump names it, else the outstanding read correlated by the echoed txId
-    /// (frame[1]) or in-order FIFO — records it in the never-resend `badOpcodes` set, and returns it for
-    /// the standing diagnostic log line (0 when unresolvable, so opcode 0 is never suppressed). The
-    /// default is the pre-mechanism-B behavior (trust the cargo), used only before wiring.
+    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)`. Resolves an inbound
+    /// op77 `ErrorResponse` to the true failing opcode — the cargo's `requestCodeId` when the pump
+    /// names it, else the outstanding read correlated by the echoed txId (frame[1]) or in-order FIFO
+    /// — records it in the never-resend `badOpcodes` set, and returns it for the diagnostic log
+    /// (0 when unresolvable, so opcode 0 is never suppressed). Default trusts the cargo, used only
+    /// before wiring.
     var resolveBadOpcodeForError: (_ requestCodeId: Int, _ txId: UInt8) -> UInt8 = { requestCodeId, _ in
         UInt8(truncatingIfNeeded: requestCodeId)
     }
@@ -51,19 +51,15 @@ final class PumpResponseApplier {
     var beginGapSync: (UInt32, UInt32) -> Void = { _, _ in }
     /// Bound to `{ backfillActive }`.
     var isBackfillActive: () -> Bool = { false }
-    /// Bound to a closure that appends one history-log stream frame's records into the backfill buffers
-    /// and (re)schedules the stream-end debounce — moved verbatim as one TandemBackend-owned action
-    /// (rather than exposing the three backfill buffer arrays individually), since it's tightly coupled
-    /// to the rest of the (unmoved, D-07) gap-sync paging machinery.
+    /// Bound to a closure that appends one history-log stream frame's records into the backfill
+    /// buffers and (re)schedules the stream-end debounce — one TandemBackend-owned action rather
+    /// than exposing the three backfill buffer arrays individually.
     var appendHistoryStreamFrame: (HistoryLogStreamResponse) -> Void = { _ in }
-    /// CC-11 (Phase 14 14-04): notified for EVERY incoming `HistoryLogStreamResponse` frame,
-    /// unconditionally — unlike `appendHistoryStreamFrame` above, this is NOT gated on
-    /// `isBackfillActive()`. `TandemBackend.findBolusInHistory(bolusId:)`'s bounded exact-id search
-    /// issues its OWN `HistoryLogRequest` page(s) independently of the routine gap-sync/backfill state
-    /// machine (never mutating `backfillActive`/`currentGapWindow`/the coverage-crediting bookkeeping,
-    /// which stays exclusively owned by `beginGapSync`/`appendHistoryStreamFrame`/`finishBackfill`), so
-    /// it needs its own always-fires observation point to see a frame regardless of whether a routine
-    /// backfill happens to be active at the same moment. Default no-op so a bare applier is unchanged.
+    /// Notified for EVERY incoming `HistoryLogStreamResponse` frame, unconditionally — unlike
+    /// `appendHistoryStreamFrame`, this is NOT gated on `isBackfillActive()`.
+    /// `TandemBackend.findBolusInHistory(bolusId:)` issues its own `HistoryLogRequest` pages
+    /// independently of the routine gap-sync state machine, so it needs an always-fires observation
+    /// point. Default no-op so a bare applier is unchanged.
     var historyStreamFrameObserved: (HistoryLogStreamResponse) -> Void = { _ in }
     /// Bound to `{ historySyncState }`.
     var historySyncState: () -> HistorySyncState = { .idle(lastSynced: nil) }
@@ -83,31 +79,27 @@ final class PumpResponseApplier {
     var viewedProfileId: () -> Int = { -1 }
     /// Bound to `{ detectedIsMobi }` — set at BLE-name discovery, read-only here.
     var detectedIsMobi: () -> Bool? = { nil }
-    /// debug pump-pairing-loop-api25 (static-registry hardening): called once the bootstrap
-    /// `ApiVersionResponse` (op33) has populated the pump identity (`snapshot.isMobi` + `softwareVersion`),
-    /// so `PumpReadScheduler` can consult the STATIC `PumpKnownUnsupportedReads` registry and dispatch the
-    /// deferred identity-gated read(s) — suppressing op20 BEFORE the first send on a KNOWN-bad combo. Bound
-    /// to `readScheduler.noteBootstrapVersionIdentified`; default no-op so a bare applier is unchanged.
+    /// Called once the bootstrap `ApiVersionResponse` (op33) has populated pump identity
+    /// (`snapshot.isMobi` + `softwareVersion`), so `PumpReadScheduler` can consult the static
+    /// `PumpKnownUnsupportedReads` registry and dispatch deferred identity-gated reads —
+    /// suppressing op20 BEFORE the first send on a known-bad combo. Default no-op.
     var noteBootstrapVersionIdentified: () -> Void = {}
-    /// VA-06: re-wire the kit's device-support MODEL gate (`client.setDeviceContext(model:)`) every connection
-    /// cycle once op33 has identified the pump. `setDeviceContext` resets to nil on every link change and
-    /// `didDiscover` does NOT re-fire on a silent reconnect, so op33 is the robust per-cycle re-wire point.
+    /// Re-wire the kit's device-support MODEL gate (`client.setDeviceContext(model:)`) every
+    /// connection cycle once op33 has identified the pump. `setDeviceContext` resets to nil on
+    /// every link change and `didDiscover` does NOT re-fire on a silent reconnect, so op33 is
+    /// the robust per-cycle re-wire point.
     ///
-    /// CC-06/C1 (REMED-15.5): `trusted` is computed at the op33 call site from `detectedIsMobi() != nil`
-    /// (name available this cycle, whether from a fresh `didDiscover` OR from
-    /// `PumpConnectionLifecycle.reapplyTrustedIdentityIfKnown()`'s C8 restore) BEFORE this closure is
-    /// called, so the op33 API-version heuristic itself is NEVER forwarded as trusted — the codex C1 crux.
+    /// `trusted` is computed at the op33 call site from `detectedIsMobi() != nil` (name available
+    /// this cycle, whether from a fresh `didDiscover` OR from
+    /// `PumpConnectionLifecycle.reapplyTrustedIdentityIfKnown()`) BEFORE this closure is called,
+    /// so the op33 API-version heuristic itself is NEVER forwarded as trusted.
     ///
-    /// VA-06 (tslim-reconnect-loop Phase B, reverses the CX-T-04 deferral): now
-    /// `(isMobi, apiVersion, trusted) -> Void` — the REAL negotiated `ApiVersion` op33 just reported
-    /// (`ApiVersion(major: m.majorVersion, minor: m.minorVersion)`) is forwarded so the kit's device/API
-    /// send-gate floors (`MessageProps.minApi`) actually BITE (they were inert while apiVersion stayed
-    /// nil / fail-open). Blast radius is fail-safe: every auto-sent read is unrestricted (no floor) EXCEPT
-    /// op20 LoadStatus (already statically suppressed on the API-2.5 t:slim; below-floor elsewhere it
-    /// no-sends → cartridgeReadiness discloses `.unknown`, never a functional break); Mobi (API ≥ 3.5)
-    /// passes all its reads. Bound to `{ isMobi, apiVersion, trusted in client.setDeviceContext(model:
-    /// isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted) }`; default no-op so a bare
-    /// applier is unchanged.
+    /// Signature is `(isMobi, apiVersion, trusted)`. The real negotiated `ApiVersion` op33 just
+    /// reported is forwarded so the kit's `MessageProps.minApi` floors actually bite (they were
+    /// inert while apiVersion stayed nil / fail-open). Blast radius is fail-safe: every auto-sent
+    /// read is unrestricted EXCEPT op20 LoadStatus (already statically suppressed on the API-2.5
+    /// t:slim; below-floor elsewhere it no-sends → cartridgeReadiness discloses `.unknown`).
+    /// Mobi (API ≥ 3.5) passes all its reads. Default no-op.
     var applyDeviceContext: (Bool, ApiVersion?, Bool) -> Void = { _, _, _ in }
     /// Bound to `{ pumpFeatureBits = $0 }`.
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
@@ -134,46 +126,43 @@ final class PumpResponseApplier {
     /// `if let c = cgmHwCont { cgmHwCont = nil; c.resume(returning: m) }` this case ran before the move.
     var resumeCGMHardwareInfoContinuation: (CGMHardwareInfoResponse) -> Void = { _ in }
 
-    // MARK: - State exclusively owned by the moved cascades (D-07: never read/written outside them)
+    // MARK: - State exclusively owned by the moved cascades
 
     /// Active IDP id from the last `ProfileStatus` read, to flag the active profile as `IDPSettings`
-    /// arrive. Moved verbatim — used only by the two IDP-cascade cases below.
+    /// arrive. Used only by the two IDP-cascade cases below.
     private var profileActiveIdpId = -1
-    /// Latest CGM reading time seen from the pump (its own clock), used by `applyEgvReading` to detect a
-    /// *new* reading (Bug 5). Moved verbatim — used only by `applyEgvReading`; its
-    /// reset-on-fresh-connection-cycle still runs via `readScheduler`'s injected
-    /// `onStartPollingCycleBegin` hook, now retargeted at `resetCycleState()` below (Phase 09 Wave 4).
+    /// Latest CGM reading time seen from the pump (its own clock), used by `applyEgvReading` to
+    /// detect a *new* reading. Reset on a fresh connection cycle via `readScheduler`'s
+    /// `onStartPollingCycleBegin` hook, retargeted at `resetCycleState()`.
     private var lastCgmPumpSec: UInt32 = 0
-    /// E8: once the pump's OWN `HomeScreenMirrorResponse` trend arrow has ever landed, `applyEgvReading`'s
-    /// client-derived fallback retires permanently. Moved verbatim — used only by these two cases.
+    /// Once the pump's own `HomeScreenMirrorResponse` trend arrow has ever landed,
+    /// `applyEgvReading`'s client-derived fallback retires permanently.
     private var pumpTrendEverReceived = false
 
-    /// Reset the fresh-connection-cycle state this type owns (Phase 09 Wave 3, D-06's
-    /// `onStartPollingCycleBegin` hook — retargeted here in Wave 4 since `lastCgmPumpSec` moved with
+    /// Reset the fresh-connection-cycle state this type owns (`lastCgmPumpSec` lives with
     /// `applyEgvReading`).
     func resetCycleState() { lastCgmPumpSec = 0 }
 
     // MARK: - Entry point
 
-    /// Apply one already-parsed, non-pairing pump message (D-07). `TandemBackend.didReceiveFrame` calls
-    /// this with `parsed.message` after its `.authorization` CRC gate + `ResponseParser.parse` boundary —
-    /// both stay there, untouched. `txId` is `parsed.txId` (frame[1]); consumed only by the op77
-    /// `ErrorResponse` correlation backstop (debug pump-pairing-loop-api25, mechanism B) and ignored by
-    /// every other case.
+    /// Apply one already-parsed, non-pairing pump message. `TandemBackend.didReceiveFrame` calls this
+    /// with `parsed.message` after its `.authorization` CRC gate + `ResponseParser.parse` boundary —
+    /// both stay there. `txId` is `parsed.txId` (frame[1]); consumed only by the op77 `ErrorResponse`
+    /// correlation backstop and ignored by every other case.
     ///
-    /// `characteristic` is the BLE characteristic the frame arrived on (`parsed`'s source). It is consumed
-    /// ONLY by the op77 `ErrorResponse` case (CR-01/WR-01 fix): the pinned kit registers `ErrorResponse`
-    /// on BOTH `.currentStatus` and `.control`, so a NACKed control/delivery WRITE's op77 also reaches this
-    /// method on `.opcodeFIFO` pumps (Mobi/default). Such a `.control` op77 says NOTHING about read support
-    /// and must NEVER mutate the read-only `badOpcodes` set — only a `.currentStatus` op77 (a rejected READ)
-    /// is correlated + recorded. Every other case ignores it (behavior-identical to before this parameter).
+    /// `characteristic` is the BLE characteristic the frame arrived on. Consumed ONLY by the op77
+    /// case: the pinned kit registers `ErrorResponse` on BOTH `.currentStatus` and `.control`, so a
+    /// NACKed control/delivery WRITE's op77 also reaches this method on `.opcodeFIFO` pumps
+    /// (Mobi/default). Such a `.control` op77 says NOTHING about read support and must NEVER mutate
+    /// the read-only `badOpcodes` set — only a `.currentStatus` op77 (a rejected READ) is correlated
+    /// + recorded. Every other case ignores it.
     func apply(_ message: Message, txId: UInt8, characteristic: Characteristic) {
         switch message {
         case let m as ControlIQIOBResponse:
             withSnapshot { snap in
                 snap.iobUnits = m.iobUnits
-                // DIF-core: stamp the receive time so the dose path can prove the active-insulin term is
-                // fresh (mirrors `glucoseDate`).
+                // Stamp receive time so the dose path can prove the active-insulin term is fresh
+                // (mirrors `glucoseDate`).
                 snap.iobDate = Date()
             }
             // Wake any coalesced `refreshCalcInputsNow()` waiter once both the IOB (op-109) and therapy
@@ -194,10 +183,9 @@ final class PumpResponseApplier {
         case let m as CurrentBatteryV2Response:
             withSnapshot { snap in
                 snap.batteryPercent = m.batteryPercent
-                // Phase 09.27 D-01/D-02/D-03: mirror the oracle's `isCharging()` — only a POSITIVE
-                // `chargingStatus == 1` reads as charging; any other/unknown value fails closed to
-                // `false` (no false charging badge). Unconditional assign (never "if let"-preserved),
-                // same shape as `batteryPercent` on this same frame.
+                // Mirror the oracle's `isCharging()` — only a POSITIVE `chargingStatus == 1` reads as
+                // charging; any other/unknown value fails closed to `false`. Unconditional assign
+                // (never "if let"-preserved), same shape as `batteryPercent` on this same frame.
                 snap.batteryCharging = (m.chargingStatus == 1)
             }
         case let m as CGMStatusResponse:
@@ -206,11 +194,10 @@ final class PumpResponseApplier {
             withSnapshot { snap in
                 snap.cartridgeLoadState = m.loadStateId
                 snap.cartridgeLoadActive = m.isLoadingActive
-                // Guardrail B (debug pump-pairing-loop-api25 hardening): a genuine op-20 reply CONFIRMS the
-                // cartridge state, so `cartridgeReadiness` can report `.ready`/`.notReady` (a fact) instead
-                // of the fail-open `.unknown` default. On a pump that auto-excludes op-20 this line never
-                // runs, so readiness stays `.unknown` and the app discloses it relies on the pump's own
-                // protection rather than presenting confirmed-ready.
+                // A genuine op-20 reply CONFIRMS cartridge state, so `cartridgeReadiness` can report
+                // `.ready`/`.notReady` instead of the fail-open `.unknown` default. On a pump that
+                // auto-excludes op-20 this line never runs, so readiness stays `.unknown` and the app
+                // discloses it relies on the pump's own protection rather than presenting confirmed-ready.
                 snap.cartridgeLoadStateConfirmed = true
             }
         case let m as ControlIQInfoV1Response:
@@ -220,8 +207,8 @@ final class PumpResponseApplier {
                 snap.controlIQTotalDailyInsulin = m.totalDailyInsulin
             }
         case let m as ControlIQSleepScheduleResponse:
-            // Universal read (Phase 09.10 D-04) — decode-boundary projection into faBolusCore's
-            // neutral PumpSleepScheduleSlot; TandemKit's SleepSchedule never crosses this boundary.
+            // Universal read — decode-boundary projection into faBolusCore's
+            // PumpSleepScheduleSlot; TandemKit's SleepSchedule never crosses this boundary.
             withSnapshot { snap in
                 snap.sleepSchedules = m.schedules.enumerated().map { i, s in
                     PumpSleepScheduleSlot(slot: i, enabled: s.enabled, activeDays: s.activeDays,
@@ -229,22 +216,18 @@ final class PumpResponseApplier {
                 }
             }
         case let m as SetSleepScheduleResponse:
-            // Write ack (Phase 09.10 D-04). No optimistic mutation of `snapshot.sleepSchedules` — a
-            // follow-up `refreshSleepSchedule()` reflects the actual pump state, mirroring `setControlIQ`.
-            // Copy fixed by UI-SPEC's Copywriting Contract; consumed one-shot by `AppModel.setSleepSchedule`.
+            // Write ack. No optimistic mutation of `snapshot.sleepSchedules` — a follow-up
+            // `refreshSleepSchedule()` reflects the actual pump state, mirroring `setControlIQ`.
             if m.status != 0 {
                 setSleepScheduleWriteError("The pump rejected the sleep-schedule change (status \(m.status)).")
             }
         case let m as ProfileStatusResponse:
             profileActiveIdpId = m.activeIdpId
             withSnapshot { $0.profiles = [] }
-            // Phase 09.2 Task 3 (D-01, gap B3): routed through `tx` (== `client` in production, since
-            // `injectedTransport` is always nil outside tests — byte-identical wire behavior) instead of
-            // `client` directly, so a test can inject a `ProfileStatusResponse` via `FakePumpTransport` and
-            // observe the resulting `IDPSettingsRequest` cascade via `fake.sent` — the same pattern already
-            // used one case below for `HistoryLogStatusRequest`. No other behavior changes: same defaults
-            // (`authenticationKey: []`, `pumpTimeSinceReset: 0`, `allowInsulinDelivery: false`) `client.send`
-            // itself used, same per-id loop/order, same `try?` swallow-on-failure.
+            // Routed through `tx` (== `client` in production) instead of `client` directly, so a
+            // test can inject a `ProfileStatusResponse` via `FakePumpTransport` and observe the
+            // resulting `IDPSettingsRequest` cascade. Same defaults (`authenticationKey: []`,
+            // `pumpTimeSinceReset: 0`, `allowInsulinDelivery: false`) `client.send` itself used.
             for id in m.presentIdpIds where id >= 0 {
                 send(IDPSettingsRequest(idpId: id))
             }
@@ -255,8 +238,8 @@ final class PumpResponseApplier {
                                                      insulinDurationMinutes: m.insulinDuration))
                 snap.profiles.sort { $0.idpId < $1.idpId }
             }
-            // When viewing a specific profile's segments, read each one. Same `tx`-routing note as the
-            // `ProfileStatusResponse` case above (gap B3).
+            // When viewing a specific profile's segments, read each one. Same `tx` routing as
+            // the `ProfileStatusResponse` case above.
             if m.idpId == viewedProfileId() {
                 for i in 0..<max(0, m.numberOfProfileSegments) {
                     send(IDPSegmentRequest(idpId: m.idpId, segmentIndex: i))
@@ -273,20 +256,19 @@ final class PumpResponseApplier {
                 snap.viewedProfileSegments.sort { $0.segmentIndex < $1.segmentIndex }
             }
         case let m as HomeScreenMirrorResponse:
-            // C8 / defect E8: the trend comes from the PUMP, not from us. This is the icon the pump is
-            // showing on its own home screen, so it cannot disagree with the pump — including its
-            // explicit "no arrow" state, which a client-side derivation from `trendRate` cannot express.
+            // Trend comes from the PUMP, not from us. This is the icon the pump is showing on its
+            // own home screen, so it cannot disagree with the pump — including its explicit "no
+            // arrow" state, which a client-side derivation from `trendRate` cannot express.
             withSnapshot { $0.trend = m.cgmTrendArrow }
-            pumpTrendEverReceived = true   // E8: the pump's trend channel is now authoritative — retire the fallback
+            pumpTrendEverReceived = true   // pump's trend channel is now authoritative — retire the fallback
 
         case let m as CurrentEGVGuiDataResponse:
-            // SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the
-            // response to the V1 `CurrentEGVGuiDataRequest` (op34) `fastRead()`/`refreshGlucoseNow()`/
-            // `runPredictiveBurst()` now send exclusively — see `fastRead()`'s doc comment for why V2
-            // (op192) is never sent. This case was MISSING when the V1 send sites were introduced: the
-            // kit parses op35 (`ResponseParser.swift`) and delivers it here, but with no case it fell
-            // through to `default: break`, so every CGM reading was silently discarded. Shares one
-            // applier with the V2 case below, since both responses carry identical cargo semantics.
+            // Response to the V1 `CurrentEGVGuiDataRequest` (op34) that `fastRead()` /
+            // `refreshGlucoseNow()` / `runPredictiveBurst()` send exclusively — see `fastRead()`'s
+            // doc comment for why V2 (op192) is never sent. Without this case the kit still parses
+            // op35 and delivers it here, but it would fall through to `default: break` and every
+            // CGM reading would be silently discarded. Shares one applier with the V2 case below;
+            // both responses carry identical cargo semantics.
             applyEgvReading(hasValidReading: m.hasValidReading,
                             cgmReading: m.cgmReading,
                             pumpSec: UInt32(truncatingIfNeeded: m.bgReadingTimestampSeconds),
@@ -300,8 +282,8 @@ final class PumpResponseApplier {
                             pumpSec: m.bgReadingTimestampSeconds,
                             derivedTrendArrow: m.trendArrow)
         case let m as LastBolusStatusV2Response:
-            // PX-08: normally consumed by the coordinator (awaited via `lastBolusStatus()`); this delegate
-            // path only fires for an UNSOLICITED last-bolus frame, for which we still refresh the snapshot.
+            // Normally consumed by the coordinator (awaited via `lastBolusStatus()`); this path
+            // only fires for an unsolicited last-bolus frame, for which we still refresh the snapshot.
             withSnapshot { snap in
                 snap.lastBolusUnits = m.deliveredUnits
                 if let a = pumpTimeAnchor() {
@@ -318,19 +300,19 @@ final class PumpResponseApplier {
                 snap.carbRatio = m.carbRatioGramsPerUnit
                 snap.isf = m.isf
                 snap.targetBg = m.targetBg
-                // DIF-core: stamp the receive time (one op-115 frame resolves the active profile+segment
+                // Stamp receive time (one op-115 frame resolves the active profile+segment
                 // to a self-consistent CR/ISF/target set).
                 snap.therapyParamsDate = Date()
             }
             // Wake a coalesced `refreshCalcInputsNow()` waiter.
             noteCalcInputArrived(false)
         case let m as TimeSinceResetResponse:
-            // PX-08: awaited time responses are consumed by the coordinator (side-effects applied in
+            // Awaited time responses are consumed by the coordinator (side-effects applied in
             // `applyTimeResponse`); this handles any unsolicited time frame.
             setPumpTimeAnchor((m.currentTime, Date()))
             if !historyStatusRequestedThisConnection() {
                 setHistoryStatusRequestedThisConnection(true)
-                // D-01: same auto-sync gate as `applyTimeResponse` — this handles an UNSOLICITED time
+                // Same auto-sync gate as `applyTimeResponse` — this handles an unsolicited time
                 // frame, but the toggle governs both paths identically.
                 if AppSettings.shared.historySyncEnabled {
                     send(HistoryLogStatusRequest())
@@ -339,9 +321,9 @@ final class PumpResponseApplier {
         case let m as HistoryLogStatusResponse:
             guard !isBackfillActive() else { break }
             guard m.numEntries > 0 else {
-                // D-05: resolve an optimistic `.syncing` (set by `triggerManualHistorySync` before this
-                // response landed) back to idle when the pump reports nothing at all yet — otherwise a
-                // manual "Sync now" against a brand-new pump would leave the busy spinner stuck forever.
+                // Resolve an optimistic `.syncing` (set by `triggerManualHistorySync` before this
+                // response landed) back to idle when the pump reports nothing — otherwise a
+                // "Sync now" against a brand-new pump would leave the spinner stuck forever.
                 if case .syncing = historySyncState() {
                     setHistorySyncState(.idle(lastSynced: AppSettings.shared.historyLastSyncedAt))
                 }
@@ -349,7 +331,7 @@ final class PumpResponseApplier {
             }
             beginGapSync(m.firstSequenceNum, m.lastSequenceNum)
         case let m as HistoryLogStreamResponse:
-            // CC-11: observed unconditionally, independent of the routine backfill's active state —
+            // Observed unconditionally, independent of the routine backfill's active state —
             // see `historyStreamFrameObserved`'s doc comment.
             historyStreamFrameObserved(m)
             guard isBackfillActive() else { break }
@@ -364,9 +346,9 @@ final class PumpResponseApplier {
             setReminderList(m.notifications); noteAlert("r", m.bitmap); mergeNotifications()
         case let m as MalfunctionBitmaskStatusResponse:
             setMalfunctionList(m.notifications); noteAlert("m", m.bitmap); mergeNotifications()
-        // PX-08: BolusPermission / InitiateBolus / CurrentBolusStatus responses are consumed by the
+        // BolusPermission / InitiateBolus / CurrentBolusStatus responses are consumed by the
         // transaction coordinator (awaited in `perform`), so they no longer need a delegate case here.
-        // Workstream B: pump model + basal + Control-IQ status.
+        // Pump model + basal + Control-IQ status.
         case let m as ApiVersionResponse:
             withSnapshot { snap in
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
@@ -379,50 +361,47 @@ final class PumpResponseApplier {
                 }
                 snap.softwareVersion = "\(m.majorVersion).\(m.minorVersion)"
             }
-            // CC-06/C1 (REMED-15.5): the trust bit is computed HERE, before the fallback substitution
-            // below, from whether the name is available THIS cycle (a fresh `didDiscover` OR a C8-restore
-            // from `reapplyTrustedIdentityIfKnown()`). This is the codex C1 crux: the op33 API-version
-            // heuristic (`m.isMobi`, used only when the name is unavailable) is ALWAYS forwarded
-            // UNTRUSTED, so it can never satisfy the kit's trusted-identity send gate.
+            // Trust bit is computed HERE, before the fallback substitution below, from whether
+            // the name is available THIS cycle (a fresh `didDiscover` OR a restore from
+            // `reapplyTrustedIdentityIfKnown()`). The op33 API-version heuristic (`m.isMobi`,
+            // used only when the name is unavailable) is ALWAYS forwarded UNTRUSTED, so it can
+            // never satisfy the kit's trusted-identity send gate.
             let nameAvailableThisCycle = detectedIsMobi() != nil
-            // VA-06: re-wire the MODEL gate AND supply the REAL negotiated apiVersion every connection cycle
-            // (survives a silent reconnect where didDiscover doesn't re-fire). The apiVersion is the exact
-            // major.minor op33 just reported — the same value the snapshot's `softwareVersion` string above
-            // encodes — so the kit's minApi floors bite for THIS pump instead of failing open on nil.
+            // Re-wire the MODEL gate AND supply the real negotiated apiVersion every connection
+            // cycle (survives a silent reconnect where didDiscover doesn't re-fire). Same
+            // major.minor op33 just reported — so the kit's minApi floors bite for THIS pump
+            // instead of failing open on nil.
             applyDeviceContext(detectedIsMobi() ?? m.isMobi,
                                ApiVersion(major: m.majorVersion, minor: m.minorVersion),
                                nameAvailableThisCycle)
-            // debug pump-pairing-loop-api25 (static-registry hardening): the pump is now IDENTIFIED (model
-            // class + firmware just written above), so the scheduler can consult the STATIC known-unsupported
-            // registry and dispatch the deferred identity-gated read(s) (op20) — suppressing op20 before the
-            // first send on the known-bad t:slim X2 sw-2.5 combo. Called AFTER the snapshot write so the
-            // scheduler reads the fresh identity. Idempotent per connection cycle (guarded scheduler-side).
+            // Pump is now IDENTIFIED (model class + firmware just written above), so the
+            // scheduler can consult the static known-unsupported registry and dispatch deferred
+            // identity-gated reads (op20) — suppressing op20 before the first send on the
+            // known-bad t:slim X2 sw-2.5 combo. Called AFTER the snapshot write so the scheduler
+            // reads the fresh identity. Idempotent per connection cycle (guarded scheduler-side).
             noteBootstrapVersionIdentified()
         case let m as ErrorResponse:
-            // SEVENTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #6): the
-            // pump replies with this when it rejects a request (e.g. BAD_OPCODE for an unsupported
-            // opcode) — previously silently discarded by `default: break`, which is exactly why the
-            // pump's own explanation for the teardown that followed was invisible on-device.
+            // The pump replies with this when it rejects a request (e.g. BAD_OPCODE for an
+            // unsupported opcode). Previously silently discarded by `default: break`, which hid
+            // the pump's own explanation for the teardown that followed.
             //
-            // EIGHTH fix cycle (`.planning/debug/pump-pairing-loop-api25.md`, mechanism B): the op192
-            // case named the failing opcode in the cargo (`requestCodeId != 0`), but the API-2.5 t:slim
-            // X2 answers an unsupported currentStatus read with a size-2 cargo of `[0,0]` — NO opcode —
-            // so the old `insertBadOpcode(m.requestCodeId)` recorded the useless opcode 0 and the read
-            // was re-sent every reconnect (the loop). `resolveBadOpcodeForError` recovers the true opcode
-            // by correlating the error to the outstanding read (echoed request txId in frame[1], else
-            // in-order FIFO) so the never-resend guard actually suppresses it — and never records opcode
-            // 0. PHI-safe: requestCodeId/errorCodeId/txId are protocol tokens, never payload/PHI. Logged
-            // PERMANENTLY (standing diagnostic) so any future unsupported-opcode rejection on any pump is
-            // immediately visible.
+            // Some pumps name the failing opcode in the cargo (`requestCodeId != 0`). The API-2.5
+            // t:slim X2 answers an unsupported currentStatus read with a size-2 cargo of `[0,0]` —
+            // NO opcode — so trusting the cargo recorded opcode 0 and the read was re-sent every
+            // reconnect. `resolveBadOpcodeForError` recovers the true opcode by correlating the
+            // error to the outstanding read (echoed request txId in frame[1], else in-order FIFO)
+            // so the never-resend guard actually suppresses it — and never records opcode 0.
+            // requestCodeId/errorCodeId/txId are protocol tokens, never payload/PHI. Logged
+            // permanently so any future unsupported-opcode rejection is immediately visible.
             //
-            // CR-01/WR-01 (debug pump-pairing-loop-api25, deep review): `badOpcodes` governs ONLY the
-            // `.currentStatus` READ path. The pinned kit also registers `ErrorResponse` on `.control`, so a
-            // NACKed control/delivery WRITE's op77 reaches this case too on `.opcodeFIFO` pumps (it doesn't
-            // match a pending delivery transaction). Such a `.control` op77 identifies a failing WRITE, which
-            // says nothing about read support — correlating it (whether by the cargo's `named` opcode, which
-            // may collide with a supported read like op164/op144, or by txId/FIFO against outstanding READS)
-            // would durably blacklist an innocent supported read. So we RESOLVE + RECORD only for
-            // `.currentStatus`; a `.control` op77 is logged for diagnostics but never touches `badOpcodes`.
+            // `badOpcodes` governs ONLY the `.currentStatus` READ path. The pinned kit also
+            // registers `ErrorResponse` on `.control`, so a NACKed control/delivery WRITE's op77
+            // reaches this case too on `.opcodeFIFO` pumps. Such a `.control` op77 identifies a
+            // failing WRITE, which says nothing about read support — correlating it (whether by
+            // the cargo's named opcode, which may collide with a supported read like op164/op144,
+            // or by txId/FIFO against outstanding READS) would durably blacklist an innocent
+            // supported read. Resolve + record only for `.currentStatus`; a `.control` op77 is
+            // logged but never touches `badOpcodes`.
             if characteristic == .currentStatus {
                 let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
                 Self.pairingLog.log("pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode")
@@ -432,18 +411,17 @@ final class PumpResponseApplier {
                 Self.pairingLog.log("pump error ← (\(characteristic.name, privacy: .public)) requestOpcode=\(m.requestCodeId, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — control/non-read error; read never-resend set untouched")
             }
         case let m as PumpFeaturesV1Response:
-            // P13: cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
-            // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus), so it
-            // arrives here with no extra wiring.
+            // Cache the pump's own capability bitmask; `capabilities` derives from it (narrowing
+            // the model preset). Registered in the kit's ResponseParser (op 79/.currentStatus).
             let bits = TandemBackend.featureBits(from: m)
             setPumpFeatureBits(bits)
-            // P13c: surface the controller variant (CIQ vs CIQ+, O7) on the snapshot so the controller
+            // Surface the controller variant (CIQ vs CIQ+) on the snapshot so the controller
             // descriptor is reachable from pump state. Identity only — no capability gate reads it.
             withSnapshot { $0.controllerVariant = bits.controllerVariant }
         case let m as CurrentBasalStatusResponse:
-            // WR-03: mark the basal rate as KNOWN so a genuine 0 U/hr (suspend / zero temp) renders as
-            // "0/hr" in the GraphDetailView readout rather than the unknown em-dash — the default 0 stays
-            // "unknown" until this frame lands.
+            // Mark the basal rate as KNOWN so a genuine 0 U/hr (suspend / zero temp) renders as
+            // "0/hr" rather than the unknown em-dash — the default 0 stays "unknown" until this
+            // frame lands.
             withSnapshot {
                 $0.basalRateUnitsPerHour = m.currentBasalUnitsPerHour
                 $0.basalRateKnown = true
@@ -454,17 +432,16 @@ final class PumpResponseApplier {
             withSnapshot { snap in
                 snap.controlIQMode = m.currentUserModeType
                 snap.controlIQEnabled = m.closedLoopEnabled
-                // Phase 09.15 T1-1 (D-01/D-08, (c) Tandem) — the zone words are Tandem's own labels;
-                // `controlStateType` is already decoded and was simply dropped here. UNVERIFIED GUESS
-                // mapping, see `ControlIQZone.fromControlStateType` — unmapped ⇒ nil ⇒ renders absent.
+                // Zone words are Tandem's own labels; `controlStateType` is already decoded.
+                // UNVERIFIED GUESS mapping, see `ControlIQZone.fromControlStateType` —
+                // unmapped ⇒ nil ⇒ renders absent.
                 snap.ciqZone = ControlIQZone.fromControlStateType(m.controlStateType)?.rawValue
-                // Phase 09.15 T1-2 (D-09.1 fail-closed cause-attribution, (b) pump-communicated fact) —
-                // only assert a Control-IQ-attributed suspend when the pump's OWN control-state says so.
-                // The start instant is captured ONCE at the transition into the attributed state (never
-                // re-stamped on every subsequent op-179 read while it stays true), mirroring
-                // glucoseDate's epoch-not-age convention so elapsed time is computed on draw, never
-                // transmitted. Unconditional assign-or-clear (mirrors ciqZone) — a stale `true` must
-                // never survive past the moment the pump's own state actually changed.
+                // Only assert a Control-IQ-attributed suspend when the pump's OWN control-state
+                // says so. The start instant is captured ONCE at the transition into the
+                // attributed state (never re-stamped on every subsequent op-179 read while it
+                // stays true), mirroring glucoseDate's epoch-not-age convention. Unconditional
+                // assign-or-clear — a stale `true` must never survive past the moment the pump's
+                // own state actually changed.
                 let attributed = ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType: m.controlStateType)
                 if attributed {
                     if snap.ciqSuspendedForLow != true { snap.ciqSuspendStartDate = Date() }
@@ -473,22 +450,17 @@ final class PumpResponseApplier {
                     snap.ciqSuspendedForLow = false
                     snap.ciqSuspendStartDate = nil
                 }
-                // Phase 09.15 T1-9 (D-01, D-08 note, (b) pump-communicated) — the already-decoded
-                // exercise countdown, simply copied (mirrors T1-1/T1-2's "already arrives, applier
-                // just narrows it", TandemKit Responses.swift:60). Gated on the pump's OWN live mode
-                // (never populated outside Exercise) so a stale timer from a PRIOR exercise session
-                // can never leak into another mode — D-06 guardrail #6 and this task's own
-                // mutual-exclusivity requirement (never both Sleep and Exercise facts at once).
+                // Exercise countdown, simply copied. Gated on the pump's OWN live mode (never
+                // populated outside Exercise) so a stale timer from a PRIOR exercise session can
+                // never leak into another mode — never both Sleep and Exercise facts at once.
                 let mode = ControlIQActivity(rawMode: m.currentUserModeType)
                 snap.exerciseTimeRemainingSec = SleepExerciseAwareness.exerciseTimerToStore(
                     mode: mode, rawRemainingSeconds: m.exerciseTimeRemainingSeconds)
                 // Sleep-window derivation — pure minute-of-day/day-of-week math over the
-                // already-decoded `sleepSchedules` (b), never a clinical literal (c/§13 values live
-                // only in `ControllerDescriptor.activityPresets`). Independent of the LIVE mode
-                // (answers "is a configured schedule window active right now", which can be true
-                // even while a different mode happens to be live) — the T1-9 card itself gates
-                // window-text rendering on `controlIQMode == .sleep` via `ciqActivityPreset`'s
-                // single-branch selection, not duplicated here.
+                // already-decoded `sleepSchedules`, never a clinical literal (those live only in
+                // `ControllerDescriptor.activityPresets`). Independent of the LIVE mode (answers
+                // "is a configured schedule window active right now"). The card itself gates
+                // window-text rendering on `controlIQMode == .sleep`, not duplicated here.
                 if let window = SleepWindowDerivation.activeWindow(slots: snap.sleepSchedules) {
                     snap.inSleepWindow = true
                     snap.sleepWindowStartMinute = window.startMinute
@@ -511,16 +483,15 @@ final class PumpResponseApplier {
 
     // MARK: - Helpers moved with the cascades
 
-    // MARK: - CGM reading application (Bug 5)
+    // MARK: - CGM reading application
 
     /// Apply one decoded EGV reading to the snapshot/history/predictive-burst state.
     ///
-    /// SEVENTH fix cycle: shared by BOTH `CurrentEGVGuiDataResponse` (op35, the V1 request `fastRead()`
-    /// now sends exclusively — see its doc comment) and `CurrentEgvGuiDataV2Response` (op193, kept as a
-    /// defensive parse case in case an unsolicited V2 frame ever arrives, though the app itself never
-    /// requests it). The two responses carry identical cargo semantics, so the behaviour must not
-    /// diverge by which one is handled; one applier makes that structural rather than a convention two
-    /// `case` blocks have to keep in sync.
+    /// Shared by BOTH `CurrentEGVGuiDataResponse` (op35, the V1 request `fastRead()` now sends
+    /// exclusively — see its doc comment) and `CurrentEgvGuiDataV2Response` (op193, kept as a
+    /// defensive parse case in case an unsolicited V2 frame ever arrives, though the app itself
+    /// never requests it). The two responses carry identical cargo semantics, so the behaviour
+    /// must not diverge by which one is handled.
     private func applyEgvReading(hasValidReading: Bool,
                                  cgmReading: Int,
                                  pumpSec: UInt32,
@@ -529,7 +500,7 @@ final class PumpResponseApplier {
             snap.cgmActive = hasValidReading
             // Fallback only, and only until the first HomeScreenMirror trend is EVER received: never
             // overwrite the pump's own arrow with a derived one — including its explicit "no arrow" ("")
-            // (E8: the old `snapshot.trend.isEmpty`-only guard conflated "pump says no arrow" with "not
+            // (the old `snapshot.trend.isEmpty`-only guard conflated "pump says no arrow" with "not
             // polled yet", so a derived arrow overwrote the pump's authoritative empty). And never invent
             // one when the rate is unknown (an INVALID/UNAVAILABLE frame carries a sentinel rate).
             if !pumpTrendEverReceived, snap.trend.isEmpty, let derived = derivedTrendArrow { snap.trend = derived }

@@ -5,7 +5,7 @@ import Foundation
 /// This is a faithful Swift port of the vendored Tandem oracle `BolusCalculator.parse()`
 /// (TandemKit `vendor/pumpx2-oracle/.../calculator/BolusCalculator.java`). It replaces four
 /// divergent formulas that previously lived in `TandemBackend`, `RemoteClientModel`, the Garmin
-/// `AppState`, and `MockBackend`. The most important behavior it fixes (audit C-01): a **below-target**
+/// `AppState`, and `MockBackend`. The most important behavior it fixes: a **below-target**
 /// BG correction is kept **signed** and only the *total* is floored at zero — so a low glucose reduces
 /// the dose, instead of the old `max(0, …)` that clamped the correction term before combining and
 /// produced an over-recommendation.
@@ -75,14 +75,14 @@ public enum BolusMath {
             } else if profile.isfMgdlPerUnit <= 0 {
                 bgSanityFail = true     // no ISF present
             } else if !GlucosePlausibility.isPlausible(mgdl: bg) {
-                // D-04 dose-path backstop (independent of the source-level GlucoseSample gate): the
-                // reading ITSELF is outside [40,400] — implausible/corrupt. Treat it as "no BG
+                // Dose-path backstop (independent of the source-level GlucoseSample gate): the
+                // reading itself is outside [40,400] — implausible/corrupt. Treat it as "no BG
                 // correction" — identical to the nil-bg path: `fromBG` stays 0.0 and carbs are
                 // preserved. Deliberately NOT a `bgSanityFail` (that would also zero a valid carb
-                // component — "never a silent dose transform" per D-04). This branch is ordered
-                // STRICTLY AFTER the target/ISF checks so the 3 confounded oracle rows (out-of-range
-                // bg AND out-of-range target) still zero via the existing target check above, keeping
-                // BolusMathParityTests at 563/563 (RESEARCH Pitfall 2). REJECT, never clamp.
+                // component — never a silent dose transform). This branch is ordered STRICTLY AFTER
+                // the target/ISF checks so the 3 confounded oracle rows (out-of-range bg AND
+                // out-of-range target) still zero via the existing target check above, keeping
+                // BolusMathParityTests at 563/563. REJECT, never clamp.
             } else {
                 fromBG = dp(Double(bg - profile.targetBgMgdl) / Double(profile.isfMgdlPerUnit))
             }

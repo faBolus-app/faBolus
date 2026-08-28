@@ -1,20 +1,16 @@
 import Foundation
 import TandemMessages
 
-/// Durable, PER-PUMP memory of the CURRENT_STATUS read opcodes a specific pump has rejected with an op77
-/// `ErrorResponse` (debug pump-pairing-loop-api25 refinement).
+/// Durable, per-pump memory of the CURRENT_STATUS read opcodes a specific pump has rejected with an op77
+/// `ErrorResponse`.
 ///
-/// Background: the API-2.5, non-Control-IQ t:slim X2 answers op20 `LoadStatusRequest` (and possibly
-/// op40/op114/op178/op138) with an opcode-less op77 `[0,0]` and tears the BLE link down. Mechanism B
-/// (`PumpReadScheduler.resolveErrorResponse`) recovers the true failing opcode by txId/FIFO correlation
-/// and records it in the never-resend `badOpcodes` set — but that set was previously in-memory only, so it
-/// re-dropped once on EVERY app relaunch, and was not scoped to a pump identity.
-///
-/// The owner refinement (2026-08-19) restores op20 to the recurring `fastRead()` poll (so the 09.9
-/// `cartridgeReadyForBolus` pre-guard stays LIVE on pumps that DO support op20) and makes the learned set
-/// PERSIST across reconnects AND app relaunches, KEYED TO PUMP IDENTITY — so the API-2.5 pump drops op20
-/// exactly once (first-ever connect), then skips it forever, while a DIFFERENT pump (different key) never
-/// inherits that skip and keeps polling op20.
+/// The API-2.5, non-Control-IQ t:slim X2 answers op20 `LoadStatusRequest` (and possibly
+/// op40/op114/op178/op138) with an opcode-less op77 `[0,0]` and tears the BLE link down.
+/// `PumpReadScheduler.resolveErrorResponse` recovers the true failing opcode by txId/FIFO correlation
+/// and records it in the never-resend `badOpcodes` set. That set must persist across reconnects AND app
+/// relaunches, keyed to pump identity — otherwise the same pump re-drops once on every relaunch, and a
+/// different pump would inherit a skip it never earned. op20 stays in the recurring `fastRead()` poll so
+/// the `cartridgeReadyForBolus` pre-guard stays live on pumps that DO support op20.
 ///
 /// Keying: the pump's CoreBluetooth peripheral UUID (the same durable identity `PumpPeripheralStore`
 /// persists at discovery) — available BEFORE the first `fastRead()` of every connection, so the skip can
@@ -38,11 +34,11 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let storageKey: String
 
-    /// IN-03 (debug pump-pairing-loop-api25, deep review): cap the number of DISTINCT pumps retained, so a
-    /// user who pairs many pumps over time never accumulates stale entries indefinitely (only the
-    /// currently-adopted pump is otherwise pruned, via `forgetPairing` → `reset(for:)`). Each entry is
-    /// bounded (≤ ~21 read opcodes), so this is a small map; the cap is generous. Least-recently-UPDATED
-    /// pumps are evicted first (`Persisted.seq`, a monotonic counter — deterministic, not wall-clock).
+    /// Cap the number of DISTINCT pumps retained, so a user who pairs many pumps over time never
+    /// accumulates stale entries indefinitely (only the currently-adopted pump is otherwise pruned,
+    /// via `forgetPairing` → `reset(for:)`). Each entry is bounded (≤ ~21 read opcodes), so this is a
+    /// small map; the cap is generous. Least-recently-UPDATED pumps are evicted first (`Persisted.seq`,
+    /// a monotonic counter — deterministic, not wall-clock).
     static let maxRetainedPumps = 16
 
     init(defaults: UserDefaults = .standard, storageKey: String = "learnedBadOpcodesByPump") {
@@ -75,24 +71,18 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     /// stamp.
     func record(_ opcode: UInt8, for pumpKey: String, firmware: String?) {
         guard opcode != 0 else { return }
-        // Guardrail A (debug pump-pairing-loop-api25 hardening): defense-in-depth mirror of the op0 guard —
-        // never PERSIST a pure delivery/control-WRITE opcode. `PumpReadScheduler.insertBadOpcode` already
-        // refuses these before calling `persistBadOpcode`, so this is a second, independent choke point so a
-        // future direct caller of the durable store can never seed a delivery opcode that would later
-        // hydrate into `badOpcodes`. Read-colliding opcodes (op164/op144) are NOT in this set, so a
-        // legitimately-learned READ still persists.
+        // Never persist a pure delivery/control-WRITE opcode. `PumpReadScheduler.insertBadOpcode` already
+        // refuses these before calling `persistBadOpcode`; this second choke point so a future direct
+        // caller of the durable store can never seed a delivery opcode that would later hydrate into
+        // `badOpcodes`. Read-colliding opcodes (op164/op144) are NOT in this set, so a legitimately-learned
+        // READ still persists.
         guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
-        // R2-10: defense-in-depth mirror of the write-opcode guard — never PERSIST a dose-input READ
-        // (op108 IOB / op115 therapy). `PumpReadScheduler.insertBadOpcode` already refuses these before
-        // calling `persistBadOpcode`; this second choke point guarantees a future direct caller — or a
-        // foreign/legacy persisted entry replayed through here — can never durably blacklist a dose-input
-        // read and brick the bolus calculator with no re-probe.
+        // Never persist a dose-input READ (op108 IOB / op115 therapy). A durable blacklist would brick
+        // the bolus calculator with no re-probe. `insertBadOpcode` already refuses these; this second
+        // choke point covers a future direct caller or a foreign/legacy persisted entry replayed here.
         guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
-        // CX-F-04: defense-in-depth mirror of the R2-10 guard above — never PERSIST an alert-read burst
-        // opcode (op72-76, incl. op74 `CGMAlertStatusRequest`). `PumpReadScheduler.insertBadOpcode` already
-        // refuses these before calling `persistBadOpcode`; this second choke point guarantees a future
-        // direct caller — or a foreign/legacy persisted entry replayed through here — can never durably
-        // blacklist the CGM-alert mirror and silence it with no re-probe.
+        // Never persist an alert-read burst opcode (op72-76, incl. op74 `CGMAlertStatusRequest`). A
+        // durable blacklist would silence the phone-side CGM-alert mirror with no re-probe.
         guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
@@ -101,7 +91,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         }
         if let firmware { p.fw = firmware }
         if !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
-        // IN-03: stamp this pump as most-recently-updated (monotonic, deterministic) and evict the
+        // Stamp this pump as most-recently-updated (monotonic, deterministic) and evict the
         // least-recently-updated pumps if we now exceed the cap.
         p.seq = (map.values.compactMap { $0.seq }.max() ?? 0) + 1
         map[pumpKey] = p
@@ -109,8 +99,8 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         saveMap(map)
     }
 
-    /// IN-03: keep at most `maxRetainedPumps` entries, evicting the lowest `seq` (least-recently-updated)
-    /// first. A missing `seq` (a pre-IN-03 persisted entry) sorts oldest, so legacy entries are shed first.
+    /// Keep at most `maxRetainedPumps` entries, evicting the lowest `seq` (least-recently-updated)
+    /// first. A missing `seq` (a legacy persisted entry) sorts oldest, so those are shed first.
     private func prunedToCap(_ map: [String: Persisted]) -> [String: Persisted] {
         guard map.count > Self.maxRetainedPumps else { return map }
         let keep = map.sorted { ($0.value.seq ?? 0) > ($1.value.seq ?? 0) }
@@ -119,7 +109,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     }
 
     #if DEBUG
-    /// Test accessor (IN-03): how many distinct pumps the store currently retains.
+    /// Test accessor: how many distinct pumps the store currently retains.
     var retainedPumpCountForTesting: Int { loadMap().count }
     #endif
 
@@ -136,8 +126,8 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
 
     // MARK: - Codable persistence
 
-    /// `seq` (IN-03): a monotonic last-updated stamp for LRU eviction. Optional so a pre-IN-03 persisted
-    /// payload decodes cleanly (nil ⇒ sorts oldest ⇒ evicted first). `fw`/`ops` unchanged.
+    /// `seq`: a monotonic last-updated stamp for LRU eviction. Optional so a legacy persisted payload
+    /// decodes cleanly (nil ⇒ sorts oldest ⇒ evicted first). `fw`/`ops` unchanged.
     private struct Persisted: Codable { var fw: String?; var ops: [Int]; var seq: Int? = nil }
 
     private func loadMap() -> [String: Persisted] {

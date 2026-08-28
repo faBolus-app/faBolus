@@ -24,28 +24,20 @@ struct CgmCredentialsView: View {
     /// one the app will actually use), never the whole set. Empty when no fallback is chosen yet. Pure so
     /// the selected-only contract is unit-testable without the SwiftUI view.
     ///
-    /// KEEP-WITH-COMMENT: this helper has ZERO production call sites (the live Test flow
-    /// observes `AppModel.glucoseSourceProbe` directly), but it is still exercised by
-    /// `CgmSourceValidationTests.testExercisesOnlyTheSelectedSource`, which pins the selected-only
-    /// contract. Deleting it (and `GlucoseSourceRegistry.make(id:)`) is the lower-value / higher-risk
-    /// option under full-hardening scope; do NOT remove either without migrating those test call sites in
-    /// the same change. Kept deliberately.
+    /// No production call site (Test observes `AppModel.glucoseSourceProbe` live), but
+    /// `CgmSourceValidationTests` pins the selected-only contract through this helper. Don't
+    /// delete it without migrating those tests.
     static func sourcesToTest(selectedId: String?) -> [String] {
         guard let id = selectedId, !id.isEmpty else { return [] }
         return [id]
     }
 
-    /// The set of source ids that have a dedicated config section in this view. Pinned by
-    /// `CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection` to equal the full
-    /// `GlucoseSourceRegistry` id set — adding a registry source without a section (or dropping one)
-    /// turns that guard RED, so a source with a hard, non-obvious precondition can never become
-    /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
+    /// Source ids that have a config section here. `CgmConfigSectionCopyGuardTests` pins this
+    /// equal to the registry so a source cannot become selectable with no explainer.
     static let configuredSectionSourceIds: Set<String> = {
         let ids: Set<String> = [
             "dexcom-share",
         ]
-        // Pinned equal to GlucoseSourceRegistry.enabled's id set
-        // (`CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection`).
         return ids
     }()
 
@@ -55,13 +47,10 @@ struct CgmCredentialsView: View {
     /// probe — the Test-flow copy/window branch on THIS, never on `id`-string literals.
     private var probeKind: GlucoseConnectionKind? { model.glucoseSourceProbe?.connectionKind }
 
-    // MARK: - Source-appropriate Test-flow copy, keyed on the typed connectionKind
+    // MARK: - Test-flow copy keyed on typed connectionKind
     //
-    // Pure/static so the per-category copy is unit-testable (`CgmTestFlowStateTests`) without the
-    // SwiftUI view — the same discipline as `testOutcome`/`sourcesToTest`. `.localBLE` keeps the
-    // already-correct confident BLE copy verbatim; `.cloudPoll`/`.localOnDevice` get their own
-    // auth-network / on-device-sync framing and NEVER reuse the BLE "sensor wake cycle" language.
-    // `nonisolated` so the guards are callable from a non-@MainActor test.
+    // BLE copy stays BLE-specific; cloud / on-device never reuse "sensor wake cycle" language.
+    // `nonisolated` so tests can call these off the main actor.
 
     nonisolated static func waitingHeadline(kind: GlucoseConnectionKind, sourceName: String) -> String {
         switch kind {
@@ -102,8 +91,7 @@ struct CgmCredentialsView: View {
         let age = Int(max(0, Date().timeIntervalSince(sample.date)))
         let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
         let stale = GlucoseFreshness.isStale(sample.date) ? " · STALE" : ""
-        // Route through the display-unit funnel — reachable from mainline
-        // Settings ("CGM credentials & testing"), not debug-gated.
+        // Display-unit funnel — this screen is mainline Settings, not debug-gated.
         let bgUnit = AppSettings.shared.glucoseDisplayUnit
         let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
         return "\(bgStr) \(sample.trend?.rawValue ?? "") · \(ageStr)\(stale)"
@@ -162,7 +150,7 @@ struct CgmCredentialsView: View {
                 Picker("Region", selection: $shareRegion) {
                     Text("US").tag("us")
                     Text("Outside US").tag("ous")
-                    // APAC region (writes "apac" → KnownShareServers.APAC / share.dexcom.jp).
+                    // Writes "apac" → KnownShareServers.APAC / share.dexcom.jp.
                     Text("Asia-Pacific (Japan)").tag("apac")
                 }
             } header: {
@@ -184,10 +172,8 @@ struct CgmCredentialsView: View {
                 }
                 .disabled(model.cgmTestInProgress || selectedSourceName == nil)
 
-                // A DETERMINATE waiting state — a linear ProgressView with a
-                // `value` (not the indeterminate spinner variant), an elapsed indicator, and explicit
-                // SUCCESS/TIMEOUT terminal states. `model.cgmTestOutcome`/`cgmTestElapsedSeconds` are
-                // AppModel-owned (not view @State), so this state SURVIVES navigating away and back.
+                // Determinate wait (value + elapsed + success/timeout). Outcome lives on AppModel
+                // so it survives navigating away and back.
                 if let outcome = model.cgmTestOutcome {
                     switch outcome {
                     case .waiting:

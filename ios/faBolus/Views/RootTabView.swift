@@ -14,19 +14,14 @@ struct RootTabView: View {
         await model.autoReconnectIfNeeded()
     }
 
-    /// Tab-strand guard. Only tag `1` (Bolus) is conditionally removed from the TabView when
-    /// `phoneReadOnly` is on — tags 0/2/3/4 are always present. Pure function so it's unit-testable
-    /// without instantiating the TabView (mirrors the `reenterMatches` static-for-test idiom in
-    /// `BolusEntryView`). `internal` (not `private`) so `RootTabSelectionGuardTests`
-    /// (`@testable import faBolus`) can call it directly.
+    /// Don't leave the user on the Bolus tab after read-only hides it. Only tag `1` is conditional;
+    /// 0/2/3/4 always exist. Internal so `RootTabSelectionGuardTests` can call it.
     static func resolveSelection(current: Int, phoneReadOnly: Bool) -> Int {
         (phoneReadOnly && current == 1) ? 0 : current
     }
 
-    /// SwiftUI presents at most one `.alert` per view, so three sibling alerts on the TabView can
-    /// drop the loser when two conditions hold at one render. Resolve a single active alert by
-    /// priority — the high-stakes remote-bolus confirm always wins and is never the one dropped.
-    /// Pure / static so it's unit-testable without the TabView (mirrors the `resolveSelection` idiom).
+    /// SwiftUI presents at most one `.alert` per view. Pick one by priority so the remote-bolus
+    /// confirm is never the alert that gets dropped.
     enum RootAlert { case remoteBolus, remoteControl, pumpSwitch }
     static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool, pumpSwitch: Bool) -> RootAlert? {
         if hasRemoteBolus   { return .remoteBolus }
@@ -69,11 +64,8 @@ struct RootTabView: View {
             // Never strand the user on a tab the toggle just hid.
             selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
         }
-        // `presenting: model.pendingRemoteBolus` captures ONE snapshot of the pending request when
-        // the alert opens and hands that SAME value (`p`) to both closures below — the button label
-        // and every `confirmMessage` part now read from one frozen value instead of two independent
-        // live reads of `model.pendingRemoteBolus`, so the confirmed amount can never drift between
-        // the two even if the model updates while the alert is on screen.
+        // `presenting:` captures one snapshot of the pending request for both closures so the
+        // confirmed amount can't drift if the model updates while the alert is on screen.
         .alert(String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
                presenting: model.pendingRemoteBolus) { p in
             Button(String(format: String(localized: "Deliver %@"), String(format: "%.2f U", p.units)),
@@ -82,16 +74,14 @@ struct RootTabView: View {
             }
             Button(String(localized: "Reject"), role: .cancel) { model.rejectRemoteBolus() }
         } message: { p in
-            // Show the FROZEN dose + the exact inputs it was computed from (audit C-02) — never "0.00 U".
+            // Frozen dose + the inputs it was computed from — never a live 0.00 U re-read.
             var parts = [String(format: String(localized: "A remote requested %@."), String(format: "%.2f U", p.units))]
             if let c = p.carbsGrams, c > 0 {
                 parts.append(String(format: String(localized: "Carbs: %@."), String(format: "%.0f g", c)))
             }
             if let bg = p.bgMgdl {
-                // Route through the display-unit funnel — this dialog is the highest-stakes confirm
-                // flow in the app (approving a remote-triggered insulin delivery); the audit BG
-                // figure must match every other glucose number the user sees, not stay a bare
-                // mg/dL literal.
+                // Display-unit funnel: this confirm approves insulin; BG must match every other
+                // glucose number on screen, never a bare mg/dL literal.
                 let unit = settings.glucoseDisplayUnit
                 let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
                 if let bgDate = p.bgDate {

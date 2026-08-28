@@ -20,9 +20,7 @@ struct StatusRingView: View {
     /// The display-unit funnel this ring's glucose number + caption route through.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
     private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
-    /// Gates ONLY the persistent unit CAPTION drawn below the glucose number (and its no-reading
-    /// placeholder) — never the VoiceOver `a11yLabel` below, which always speaks the unit
-    /// regardless of this flag.
+    /// Gates the on-screen unit caption only — VoiceOver always speaks the unit.
     private var showUnitLabel: Bool { AppSettings.shared.showGlucoseUnitLabels }
 
     var body: some View {
@@ -36,8 +34,7 @@ struct StatusRingView: View {
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut, value: snapshot.connection)
 
-            // Re-evaluate age/staleness on a timer so a fresh reading visibly ages and turns stale
-            // even when no new data arrives.
+            // Re-evaluate age so a reading can turn stale even if no new sample arrives.
             TimelineView(.periodic(from: .now, by: 20)) { context in
                 content(now: context.date)
             }
@@ -45,8 +42,7 @@ struct StatusRingView: View {
         .frame(width: ringSize, height: ringSize)
     }
 
-    /// A stale reading is shown but de-emphasized (gray) with its age called out — "old is worse
-    /// than nothing", so it's never presented as the current in-range/high/low value.
+    /// Stale is shown greyed with age — never as the current in-range/high/low value.
     @ViewBuilder private func content(now: Date) -> some View {
         let present = GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
         let stale = present == .stale
@@ -70,29 +66,24 @@ struct StatusRingView: View {
                         .foregroundStyle(stale ? AppTheme.low : .secondary)
                 }
             } else {
-                // No reading, or past the "hide" delay → show no value.
+                // No reading, or past the hide delay → no value.
                 Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                // With labels hidden, the "no reading yet" placeholder can't fall back to the
-                // (now-gated) unit caption — show a neutral em dash instead, never the unit and
-                // never a blank string.
+                // Labels off: placeholder is "—", never the unit and never blank.
                 Text(snapshot.glucose == nil ? (showUnitLabel ? unitLabel : "—") : "no recent CGM")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text(snapshot.connection.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
-            // When the link is down for a specific reason (Bluetooth off, permission denied, …)
-            // say so, instead of a bare "Disconnected". nil on remotes (`asSnapshot` never sets
-            // it), so this line only appears on the phone that owns the pump link.
+            // Named disconnect reason (Bluetooth off, …) instead of a bare "Disconnected".
+            // Remotes never set this; only the phone that owns the pump link.
             if let detail = snapshot.connectionDetail {
                 Text(Self.humanized(detail))
                     .font(.caption2).foregroundStyle(AppTheme.low)
                     .multilineTextAlignment(.center).lineLimit(2)
             }
             if let f = failover {
-                // Only shown while a failover source is supplying the live value (pump feed stale/
-                // missing). Kept to one line and bounded well inside the 180pt ring so no source name
-                // overruns; the full reason is on the accessibility hint.
+                // Failover source only (pump feed stale/missing). One line; full reason is the hint.
                 Label("via \(f.name)", systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption2).foregroundStyle(.orange)
                     .labelStyle(.titleAndIcon)
@@ -104,10 +95,8 @@ struct StatusRingView: View {
                     .accessibilityHint(f.reason)
             }
         }
-        // VoiceOver: the whole ring reads as ONE element — "Glucose 124 mg/dL, ↑, 2 min ago,
-        // Connected" — rather than five separate swipe stops. `.ignore` (not `.combine`) so the label
-        // reads a proper sentence with the word "Glucose" up front and the word "stale" injected when
-        // the reading is de-emphasized (a signal that is otherwise conveyed only by the grey color).
+        // One VoiceOver element. `.ignore` (not `.combine`) so the spoken sentence can inject
+        // "stale" — otherwise that cue is only the grey color.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(a11yLabel(now: now))
         .accessibilityHint(failover?.reason ?? "")
@@ -121,8 +110,7 @@ struct StatusRingView: View {
         if let g = snapshot.glucose, present != .hidden {
             parts.append("Glucose \(unit.format(mgdl: g)) \(unitLabel)")
             parts.append(snapshot.trend)
-            // Speak the band word too when it's a live (band-colored) reading — the spoken
-            // parallel of the on-screen band label, so the band never depends on color alone.
+            // Speak the band word on a live reading so the band isn't color-only.
             if present == .fresh { parts.append(GlucoseRange.classify(g).shortLabel) }
             if present == .stale { parts.append("stale") }
             if let d = snapshot.glucoseDate { parts.append(GlucoseFreshness.ageLabel(for: d, now: now)) }
@@ -135,12 +123,8 @@ struct StatusRingView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// `TandemBackend.applyClientError` (byte-guarded — not editable here) has one fallback path
-    /// that sets `connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"` when no more
-    /// specific, already-human state string applies. Every OTHER `connectionDetail` assignment in
-    /// TandemBackend is already a curated sentence ("Bluetooth is off", "Couldn't reconnect securely.
-    /// Tap to retry…", …) and passes through this check byte-identical — only the recognizable bare
-    /// "domain#code " token is replaced with one plain fallback sentence.
+    /// Maps the one raw `domain#code` fallback from `applyClientError`. Curated sentences
+    /// ("Bluetooth is off", …) pass through unchanged.
     private static func humanized(_ detail: String) -> String {
         detail.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
             ? "Connection error — try reconnecting"

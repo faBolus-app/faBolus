@@ -20,10 +20,10 @@ struct QuickBolusWidget: Widget {
 
 struct QuickBolusView: View {
     let snap: WidgetSnapshot
-    /// Entry display date — connection-freshness (WR-02) is evaluated against this, not wall-clock
+    /// Entry display date — connection-freshness is evaluated against this, not wall-clock
     /// (mirrors `StatusWidgetView.now`), since in a widget `Date()` is prep time, not display time.
     var now: Date = Date()
-    /// WR-02 (R2-09): treat a snapshot whose publish time (`updatedAt`) has aged past the TTL as
+    /// Treat a snapshot whose publish time (`updatedAt`) has aged past the TTL as
     /// not-connected — a killed host leaves the last snapshot persisted, so `snap.connected` alone would
     /// keep the pad interactive indefinitely. Keyed off `updatedAt` (publish time), not `glucoseDate`.
     private var isConnected: Bool { snap.connected && !snap.isConnectionStale(asOf: now) }
@@ -32,7 +32,7 @@ struct QuickBolusView: View {
     private var draft: Double { WidgetBolusStore.draft }
     private var progress: Int { WidgetBolusStore.progress() }
     private var status: WidgetBolusStatus { WidgetBolusStore.status() }
-    /// A-05: whether bolusing is locked (phone read-only, or child mode with .bolus disallowed). Computed
+    /// Whether bolusing is locked (phone read-only, or child mode with .bolus disallowed). Computed
     /// app-side by the single AccessPolicy evaluator and mirrored to the App Group — the widget only reads
     /// it, never re-deriving the gate. When set, the entry + confirm pad is replaced by a locked notice.
     private var bolusLocked: Bool { WidgetBolusStore.bolusLocked }
@@ -52,14 +52,14 @@ struct QuickBolusView: View {
                                        text: String(format: "Cancelled · %.2f U", status.deliveredUnits))
             case .failed:     doneBody(icon: "exclamationmark.triangle.fill",
                                        text: status.message.isEmpty ? "Bolus failed" : status.message)
-            case .expired:    expiredBody   // CX-F-09: host never finalized — NOT a safe-looking retry
+            case .expired:    expiredBody   // host never finalized — NOT a safe-looking retry
             case .idle:
-                // A-05: a locked gate replaces the interactive pad entirely (takes precedence over the
+                // A locked gate replaces the interactive pad entirely (takes precedence over the
                 // not-connected notice — "locked" is the definitive reason bolusing is unavailable). The
                 // in-flight cases above are untouched: a bolus already delivering keeps its Cancel, which
                 // the evaluator never read-only-blocks.
                 if bolusLocked { lockedBody }
-                else if !isConnected { notConnectedBody }   // WR-02: not-connected OR stale-publish (host killed)
+                else if !isConnected { notConnectedBody }   // not-connected OR stale-publish (host killed)
                 else if stage == "confirm" { confirmBody }
                 else { amountBody }
             }
@@ -116,7 +116,7 @@ struct QuickBolusView: View {
     @ViewBuilder private var deliveringBody: some View {
         HStack(spacing: 5) {
             ProgressView().tint(.white).scaleEffect(0.8)
-            // D2-10: this numeric dose readout has no lineLimit(1)/wrap fallback of its own — without
+            // This numeric dose readout has no lineLimit(1)/wrap fallback of its own — without
             // a scale factor it truncates (not wraps) at large Dynamic Type, silently hiding the
             // in-flight dose amount.
             Text(String(format: "Delivering %.2f U", status.units))
@@ -132,7 +132,7 @@ struct QuickBolusView: View {
         }.buttonStyle(.plain)
     }
 
-    // CX-F-09: the host was killed mid-delivery and never finalized this request. Deliberately distinct
+    // The host was killed mid-delivery and never finalized this request. Deliberately distinct
     // from `doneBody` (checkmark/x/warning) — this must NOT read as a confirmed, safe-to-move-on outcome,
     // and offers no one-tap affordance of any kind (not even a "retry"): the ONLY thing to do is check the
     // pump/history in the app before dosing again.
@@ -155,7 +155,7 @@ struct QuickBolusView: View {
     @ViewBuilder private func doneBody(icon: String, text: String) -> some View {
         Spacer(minLength: 0)
         Image(systemName: icon).font(.title2).foregroundStyle(.white)
-        // D2-10: carries the delivered/cancelled numeric dose amount — scale it down before it
+        // Carries the delivered/cancelled numeric dose amount — scale it down before it
         // truncates at large Dynamic Type (wrapping alone can still clip in the small widget family).
         Text(text).font(.caption).foregroundStyle(.white)
             .multilineTextAlignment(.center).frame(maxWidth: .infinity)
@@ -175,7 +175,7 @@ struct QuickBolusView: View {
         Spacer(minLength: 0)
     }
 
-    // A-05: bolusing is locked host-side (read-only / child mode). No entry or confirm affordances — just
+    // Bolusing is locked host-side (read-only / child mode). No entry or confirm affordances — just
     // a dimmed lock notice that opens the app (where the setting lives). None of the bolus App Intents are
     // reachable from here, so a tap can't start a dose the host would refuse.
     @ViewBuilder private var lockedBody: some View {
@@ -196,10 +196,10 @@ struct QuickBolusView: View {
         Spacer(minLength: 0)
     }
 
-    // − / + amount buttons. D2-05: floored at WidgetA11y.minHitTarget (Apple's documented 44×44pt
-    // minimum tappable size — was a below-minimum 34×34) and VoiceOver-labeled/hinted via the same
-    // WidgetA11y builder the test suite asserts against, so the announced action always matches the
-    // actual mode/step (e.g. "Increase bolus by 5 grams" in carbs mode, "…by 0.05 units" in units mode).
+    // − / + amount buttons. Floored at WidgetA11y.minHitTarget (Apple's documented 44×44pt
+    // minimum tappable size) and VoiceOver-labeled/hinted via the same WidgetA11y builder the test
+    // suite asserts against, so the announced action always matches the actual mode/step (e.g.
+    // "Increase bolus by 5 grams" in carbs mode, "…by 0.05 units" in units mode).
     @ViewBuilder private func stepper(delta: Int, symbol: String) -> some View {
         let carbs = mode == "carbs"
         let step = carbs ? WidgetBolusStore.carbIncrement : WidgetBolusStore.increment
@@ -216,7 +216,7 @@ struct QuickBolusView: View {
         .accessibilityHint(WidgetA11y.stepperHint)
     }
 
-    // Numbered confirm circle. 1 and 2 advance; 3 delivers. D2-05: each carries one grouped VoiceOver
+    // Numbered confirm circle. 1 and 2 advance; 3 delivers. Each carries one grouped VoiceOver
     // element with a full-sentence label/hint (StatusPillsView idiom) instead of speaking the bare
     // digit — "1"/"2"/"3" alone would tell a VoiceOver user nothing about what the tap does.
     @ViewBuilder private func stepButton(_ n: Int) -> some View {

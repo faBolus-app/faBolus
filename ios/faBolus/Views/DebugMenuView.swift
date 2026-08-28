@@ -52,9 +52,7 @@ struct DebugMenuView: View {
                 row("Connection", model.snapshot.connection.rawValue)
             }
             Section("Live snapshot") {
-                // This screen is reachable via an undocumented 7-tap gesture on the Settings
-                // disclaimer footer (not #if DEBUG-gated) — technically user-reachable, not purely a
-                // developer tool. Route through the same funnel as every other mainline glucose surface.
+                // Reachable via 7-tap, not #if DEBUG — same display-unit funnel as every other surface.
                 row("Glucose", model.snapshot.glucose.map { "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")" } ?? "—")
                 row("IOB", String(format: "%.2f U", model.snapshot.iobUnits))
                 row("Basal", String(format: "%.2f U/hr", model.snapshot.basalRateUnitsPerHour))
@@ -100,9 +98,7 @@ struct DebugMenuView: View {
                 } label: {
                     Label(didCopy ? "Copied to clipboard" : "Copy diagnostics", systemImage: "doc.on.doc")
                 }
-                // A second, zero-tooling export path: the OS share sheet (AirDrop/Files/Messages),
-                // sharing the same plaintext diagnosticsText directly. No .fileExporter/BackupDocument
-                // save dialog and no network — mirrors SettingChangeLogView's ShareLink idiom.
+                // Same plaintext via the share sheet — no .fileExporter, no network.
                 ShareLink(item: diagnosticsText) {
                     Label("Share diagnostics", systemImage: "square.and.arrow.up")
                 }
@@ -120,9 +116,8 @@ struct DebugMenuView: View {
         .navigationTitle("Debug")
         .onAppear {
             shareDiagnostics = settings.notificationTelemetryEnabled
-            // Write the export file as soon as the console is opened, so the fixed-name Documents
-            // file exists before anyone runs `devicectl device copy from` — not gated behind a
-            // button tap that may never happen on this install.
+            // Write the export file on open so `devicectl device copy from` has a stable path
+            // without waiting for a button tap.
             writeDiagnosticsExportFile(diagnosticsText)
         }
         .onChange(of: shareDiagnostics) { _, on in
@@ -201,12 +196,8 @@ struct DebugMenuView: View {
         }
     }
 
-    /// Surface the reads this pump has auto-excluded — with human-readable names via the shared
-    /// `PumpReadCatalog` — plus the confirmed/unknown cartridge pre-check state and a user-facing
-    /// safety-degraded note whenever a SAFETY-relevant read (the op-20 cartridge pre-check) is
-    /// unavailable. Ungated on-screen like the "Live snapshot" rows above (local device state, no
-    /// PHI); the same content flows into the opt-in-gated diagnostics export via
-    /// `CapabilityDiagnostics.section`.
+    /// Reads this pump auto-excluded, plus cartridge pre-check. When a safety-relevant read
+    /// (op-20 cartridge) is unavailable, faBolus relies on the pump's own protection.
     @ViewBuilder private var pumpReadExclusionsSection: some View {
         let excluded = model.badOpcodesForDiagnostics
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: excluded)
@@ -257,20 +248,14 @@ struct DebugMenuView: View {
         return "\(sec)s"
     }
 
-    /// Pure `[BLE session log]` diagnostics-text line-builder — extracted so the ring buffer's
-    /// presence in the export — up to `capacity`, oldest dropped first — is unit-testable
-    /// (`BLESessionLogTests`) without instantiating this View. Reads nothing beyond its parameters:
-    /// `entries` already reflects whatever `BLESessionLog` recorded (empty whenever the shared
-    /// opt-in was off, since `BLESessionLog.record` no-ops then).
+    /// BLE session log export lines — extracted so capacity/oldest-dropped is unit-testable.
     static func bleSessionLogExportLines(entries: [BLESessionLog.Entry], capacity: Int) -> String {
         var lines: [String] = ["", "[BLE session log] (in-memory, last \(capacity))"]
         guard !entries.isEmpty else {
             lines.append("—")
             return lines.joined(separator: "\n")
         }
-        // Per-connect durations from the pure helper — matched back onto the disconnect line that
-        // closed each span (spans and entries are both chronological, so a positional walk
-        // suffices; no pairing logic is re-derived here).
+        // Per-connect duration on the disconnect line that closed each span.
         let spans = BLESessionLog.connectDurations(from: entries)
         var spanIndex = 0
         for e in entries {
@@ -285,14 +270,9 @@ struct DebugMenuView: View {
         return lines.joined(separator: "\n")
     }
 
-    /// Best-effort write of `diagnosticsText` verbatim to a FIXED filename in the app's OWN
-    /// Documents directory (no date/timestamp in the name, so `xcrun devicectl device copy from`
-    /// has a stable, predictable path to pull with zero on-device UI).
-    /// `.completeFileProtectionUntilFirstUserAuthentication` is passed EXPLICITLY (not the ambient
-    /// default) so the file stays pullable after the first unlock since boot — do NOT change this
-    /// to `.completeFileProtection` (would make a locked-device pull fail). A write failure is
-    /// swallowed: this is a debug-only affordance and must never surface as a user-facing error.
-    /// No network/upload code — the file never leaves the app's own sandbox.
+    /// Best-effort write to a fixed filename in Documents so `devicectl device copy from` has a
+    /// stable path. Use `.completeFileProtectionUntilFirstUserAuthentication` (not complete) so a
+    /// pull after first unlock still works. Swallow write failures — never a user-facing error.
     private func writeDiagnosticsExportFile(_ text: String) {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let url = docs.appendingPathComponent("faBolus-diagnostics.txt")
@@ -303,19 +283,12 @@ struct DebugMenuView: View {
         }
     }
 
-    /// Plain-text snapshot of everything the console surfaces, for the clipboard-only export.
-    /// The preamble stays a plain document header; every surface below it is assembled as an
-    /// ordered array of already-formatted `[Bracket]` section strings and joined by the pure
-    /// `DiagnosticsBundle.build` aggregator. ShareLink and `writeDiagnosticsExportFile` consume
-    /// this SAME string — no second export path.
+    /// Clipboard/share/file all consume this same string — no second export path.
     private var diagnosticsText: String {
         let t = model.connectionTelemetry.snapshot
         let notif = NotificationRuntime().telemetry
 
-        // [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send queue/watchdog/device-
-        // connection state via its `.shared` app-wide reference; never issues a new ConnectIQ send.
-        // `state` is nil (renders the explicit unreachable empty state) when no Garmin device has
-        // ever been selected/paired.
+        // Already-tracked Garmin state; never issues a new ConnectIQ send.
         let garminState: GarminDiagnostics.BridgeState? = {
             guard let bridge = GarminRemoteBridge.shared, bridge.hasDevice else { return nil }
             return GarminDiagnostics.BridgeState(
@@ -342,17 +315,13 @@ struct DebugMenuView: View {
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
                     (category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed, actedUpon: $0.value.actedUpon)
                 }),
-            // Pure extracted line-builder — proves (via BLESessionLogTests) that the ring buffer's
-            // entries reach this export up to capacity, not silently dropped.
             Self.bleSessionLogExportLines(entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity),
-            // [Capability/opcode] — reads already-cached backend state only, gated on the SAME
-            // shareDiagnostics opt-in as every section here.
+            // Cached backend state, same opt-in as the other gated sections.
             CapabilityDiagnostics.section(
                 capabilities: model.capabilities,
                 badOpcodes: model.badOpcodesForDiagnostics,
                 enabled: shareDiagnostics),
-            // [CGM arbiter] — reads the SAME already-arbitrated provenance the live "via <source>"
-            // badge uses; never re-runs GlucoseArbiter.merge.
+            // Same provenance the live "via <source>" badge uses; never re-runs GlucoseArbiter.merge.
             CgmArbiterDiagnostics.section(
                 provenance: model.glucoseProvenance,
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,

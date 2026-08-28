@@ -1,15 +1,15 @@
 import CoreGraphics
 
 /// Shared accessibility/hit-target constants + VoiceOver label builders for the interactive
-/// Quick-Bolus widget's dose ± steppers and 1-2-3 in-place confirm circles (Phase 17, D2-05).
+/// Quick-Bolus widget's dose ± steppers and 1-2-3 in-place confirm circles.
 ///
 /// Lives here — not inside `faBolusWidgets` — because `faBolusAppTests` depends on `target: faBolus`
 /// + `package: faBolusCore`/`faBolusDesign` (project.yml) but does NOT link the `faBolusWidgets`
 /// app-extension target, so the widget's SwiftUI views are not directly reachable/behaviorally
-/// testable from that suite (17-05-PLAN.md Task 1, Codex MEDIUM finding). `faBolusWidgets` already
-/// links `faBolusDesign` directly (project.yml), so putting the size constant + label copy here lets
-/// `QuickBolusWidgetA11yTests` assert against the EXACT values the widget renders, instead of a
-/// duplicated test-only constant that could silently drift from the real UI.
+/// testable from that suite. `faBolusWidgets` already links `faBolusDesign` directly, so putting the
+/// size constant + label copy here lets `QuickBolusWidgetA11yTests` assert against the EXACT values
+/// the widget renders, instead of a duplicated test-only constant that could silently drift from
+/// the real UI.
 public enum WidgetA11y {
     /// Apple's documented minimum tappable control size (Human Interface Guidelines) — the dose ±
     /// steppers and 1-2-3 confirm circles must each be at least this size on a side.

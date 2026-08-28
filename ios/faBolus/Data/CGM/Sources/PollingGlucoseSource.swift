@@ -2,12 +2,11 @@ import Foundation
 import faBolusCore
 
 /// A below-measurable-range vendor reading (e.g. a Dexcom "LOW" result under 40 mg/dL) detected at the
-/// CGM ingest boundary (C2-05, T-13-07). Advisory/display-only — deliberately NOT a `GlucoseSample`: the
-/// D-05 gate (`GlucoseSample.init?`, `[GlucosePlausibility.minimum, .maximum]`) still rejects the raw
-/// value exactly as before, so it can never reach `latest`, `GlucoseArbiter.merge`,
-/// `PumpSnapshot.glucose`, or `AppModel.freshCorrectionBG` (T-13-07b, the frozen dose path). The
-/// user-facing alarm ON this sentinel is Plan 09 (C2-01, owner-gated) — this type only carries the fact
-/// that an urgent-low reading was seen, for a future display/alert layer to read.
+/// CGM ingest boundary. Advisory/display-only — deliberately NOT a `GlucoseSample`: the plausibility
+/// gate (`GlucoseSample.init?`, `[GlucosePlausibility.minimum, .maximum]` = [40, 400]) still rejects
+/// the raw value exactly as before, so it can never reach `latest`, `GlucoseArbiter.merge`,
+/// `PumpSnapshot.glucose`, or `AppModel.freshCorrectionBG` (the frozen dose path). This type only
+/// carries the fact that an urgent-low reading was seen, for a display/alert layer to read.
 struct UrgentLowSentinel: Sendable, Equatable {
     let date: Date
     let sourceID: String
@@ -20,12 +19,12 @@ struct UrgentLowSentinel: Sendable, Equatable {
 class PollingGlucoseSource: GlucoseSource {
     let id: String
     let priority: Int
-    /// D-06: cloud pollers (Dexcom Share / Nightscout / LibreLinkUp) inherit this classification.
+    /// Cloud pollers (Dexcom Share / Nightscout / LibreLinkUp) inherit this classification.
     let connectionKind: GlucoseConnectionKind = .cloudPoll
     private(set) var latest: GlucoseSample?
     private(set) var history: [GlucoseReading] = []
     private(set) var status: GlucoseSourceStatus = .idle
-    /// C2-05: the most recent below-measurable-range vendor reading seen at ingest, or nil. See
+    /// The most recent below-measurable-range vendor reading seen at ingest, or nil. See
     /// `UrgentLowSentinel` — this is a SEPARATE typed value, never a `GlucoseSample`.
     private(set) var urgentLowSentinel: UrgentLowSentinel?
     var onChange: (@MainActor () -> Void)?
@@ -39,7 +38,7 @@ class PollingGlucoseSource: GlucoseSource {
     private var started = false
     private var primaryHealthy = false
 
-    /// D-07: exponential backoff on consecutive poll failures. A sustained outage or credential
+    /// Exponential backoff on consecutive poll failures. A sustained outage or credential
     /// problem must NOT keep re-hitting the endpoint at the fixed `activeInterval` (as often as every
     /// 60s during failover) — for Dexcom Share that is the self-inflicted `SSO_Authenticate` lockout
     /// risk at the exact moment failover is needed. The retry cadence widens with each consecutive
@@ -97,7 +96,7 @@ class PollingGlucoseSource: GlucoseSource {
             if pollNow { await self.tick() }
             while !Task.isCancelled {
                 let base = self.primaryHealthy ? self.idleInterval : self.activeInterval
-                // D-07: widen the wait on consecutive failures so a broken/locked-out feed isn't
+                // Widen the wait on consecutive failures so a broken/locked-out feed isn't
                 // hammered at the fixed cadence; a success (below) resets `consecutiveFailures` to 0.
                 let delay = self.effectiveInterval(base: base, failures: self.consecutiveFailures)
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -110,13 +109,13 @@ class PollingGlucoseSource: GlucoseSource {
     private func tick() async {
         do {
             let readings = try await poll()   // newest-last
-            recordPollOutcome(success: true)   // D-07: a good poll resets the backoff
+            recordPollOutcome(success: true)   // a good poll resets the backoff
             ingest(readings)
         } catch SourceError.needsSetup {
             // A missing config is not an endpoint failure — don't widen the backoff for it.
             status = .needsSetup; onChange?()
         } catch let e {
-            recordPollOutcome(success: false)   // D-07: repeated auth/fetch failure widens the cadence
+            recordPollOutcome(success: false)   // repeated auth/fetch failure widens the cadence
             status = .error((e as? LocalizedError)?.errorDescription ?? "\(e)")
             onChange?()
         }
@@ -132,7 +131,7 @@ class PollingGlucoseSource: GlucoseSource {
         guard let newest = readings.max(by: { $0.date < $1.date }) else {
             status = .stale; onChange?(); return
         }
-        // C2-02: monotonic-by-timestamp — a late/stale poll must never step `latest` backward in time.
+        // Monotonic-by-timestamp — a late/stale poll must never step `latest` backward in time.
         // Only a STRICTLY newer timestamp replaces the currently-held reading; an older-or-equal
         // timestamp is ignored for `latest` (history below still merges the full poll either way).
         if latest == nil || newest.date > latest!.date {
@@ -144,18 +143,18 @@ class PollingGlucoseSource: GlucoseSource {
         }
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         history = byBucket.values.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
-        // Rule-1: status must describe the reading actually HELD as `latest`, not a just-rejected
+        // Status must describe the reading actually HELD as `latest`, not a just-rejected
         // stale/late poll result — the monotonic guard above can now make these differ.
         status = (latest?.isStale ?? true) ? .stale : .connected
         onChange?()
     }
 
-    /// C2-05 ingest boundary: feed ONE raw vendor reading (mg/dL, not yet a `GlucoseSample`) through the
-    /// D-05 plausibility gate. In-range → normal `ingest` path (unchanged). Below range (< 40, a
-    /// below-measurable-range / "LOW" vendor result) → the D-05 gate still rejects it exactly as before
-    /// (never becomes `latest`/a dose input), but it is ALSO surfaced via `urgentLowSentinel` so a future
-    /// display/alert layer can react to a silently-dropped hypo (T-13-07). Above range (> 400, decode
-    /// garbage) → no sentinel, unchanged silent-drop behavior — only a below-range reading is a genuine
+    /// Ingest-boundary: feed ONE raw vendor reading (mg/dL, not yet a `GlucoseSample`) through the
+    /// [40, 400] plausibility gate. In-range → normal `ingest` path. Below range (< 40, a
+    /// below-measurable-range / "LOW" vendor result) → the gate still rejects it exactly as before
+    /// (never becomes `latest`/a dose input), but it is ALSO surfaced via `urgentLowSentinel` so a
+    /// display/alert layer can react to a silently-dropped hypo. Above range (> 400, decode
+    /// garbage) → no sentinel, unchanged silent-drop — only a below-range reading is a genuine
     /// safety signal worth surfacing.
     func ingestRawReading(mgdl: Int, date: Date) {
         if let sample = GlucoseSample(mgdl: mgdl, date: date, sourceID: id) {

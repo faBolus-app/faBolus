@@ -1,15 +1,10 @@
 import Foundation
 
-/// The faBolus glucose-unit shim for the LoopInsights benign surfaces (D-15). Replaces the mirror
-/// `LoopInsights_GlucoseUnitContext` (which imports LoopKit / LoopKitUI / HealthKit and wraps an
-/// `HKUnit` / `DisplayGlucosePreference`, plus an `aiPromptUnitContext()` AI-prompt builder) with a
-/// thin, dependency-free wrapper over faBolusCore's own [[GlucoseUnit]].
-///
-/// **D-14 (binding):** NO AI-prompt / advisor surface is ported. This type only formats a canonical
-/// mg/dL `Int` into the user's display unit and produces the Time-in-Range range label — everything
-/// the endo report needs, nothing that could feed a model or an advisor. All formatting routes
-/// through `GlucoseUnit.format` / `GlucoseUnit.thresholdLabel` so the mg/dL↔mmol/L conversion factor
-/// and the clinically-rounded threshold labels live in exactly one place (D-05/D-08).
+/// Display-unit helper for LoopInsights report surfaces. Formats a canonical mg/dL `Int` into the
+/// user's unit and the Time-in-Range range label. No AI-prompt / advisor surface is ported — this
+/// only formats numbers a clinician report needs. All formatting routes through `GlucoseUnit.format`
+/// / `GlucoseUnit.thresholdLabel` so the mg/dL↔mmol/L factor and clinically-rounded threshold labels
+/// live in one place.
 public struct InsightsGlucoseUnitContext: Sendable, Equatable {
     public let unit: GlucoseUnit
 
@@ -37,12 +32,12 @@ public struct InsightsGlucoseUnitContext: Sendable, Equatable {
     }
 
     /// The lower TIR threshold (70 mg/dL) as a unit-appropriate label — clinically-rounded in mmol/L
-    /// (D-08: "3.9", not a raw 70/18.0182 conversion).
+    /// ("3.9", not a raw 70/18.0182 conversion).
     public var lowThresholdLabel: String {
         GlucoseUnit.thresholdLabel(GlucoseThresholds.low, unit: unit)
     }
 
-    /// The upper TIR threshold (180 mg/dL) as a unit-appropriate label ("10.0" in mmol/L, D-08).
+    /// The upper TIR threshold (180 mg/dL) as a unit-appropriate label ("10.0" in mmol/L).
     public var highThresholdLabel: String {
         GlucoseUnit.thresholdLabel(GlucoseThresholds.high, unit: unit)
     }

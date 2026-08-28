@@ -20,22 +20,23 @@ public protocol PumpBackend: AnyObject {
     var bolusMarkers: [BolusMarker] { get }
     /// Active pump alerts/alarms/CGM alerts (most severe first), as neutral `PumpAlert`s.
     var activeNotifications: [PumpAlert] { get }
-    /// CX-G-08 (14-10, D1) — the TRUE pre-local-snooze-filter active-alert set: the pump's OWN raw
-    /// bitmap for THIS poll, before any wearer/auto local snooze is subtracted. `nil` until the FIRST
-    /// successful alert read on the current connection (the nil-until-first-read invariant, T-14-41) —
-    /// a backend's underlying source lists may initialize to `[]` and never reset on disconnect, so a
-    /// bare `[]` is ambiguous between "the pump has zero alerts" and "not yet polled"; the optional
-    /// resolves it. This is the raw-snapshot proof-of-absence oracle for a pump that does NOT honor a
-    /// remote dismiss (t:slim X2) — a wearer dismiss is removed on a remote ONLY when it is proven
-    /// absent from this set, never from `activeNotifications`' local-snooze-contaminated absence.
+    /// The TRUE pre-local-snooze-filter active-alert set: the pump's OWN raw bitmap for THIS poll,
+    /// before any wearer/auto local snooze is subtracted. `nil` until the FIRST successful alert read
+    /// on the current connection — a backend's underlying source lists may initialize to `[]` and
+    /// never reset on disconnect, so a bare `[]` is ambiguous between "the pump has zero alerts" and
+    /// "not yet polled"; the optional resolves it. This is the raw-snapshot proof-of-absence oracle
+    /// for a pump that does NOT honor a remote dismiss (t:slim X2) — a wearer dismiss is removed on a
+    /// remote ONLY when it is proven absent from this set, never from `activeNotifications`'
+    /// local-snooze-contaminated absence.
     ///
     /// DEFAULT (below): returns `activeNotifications` — correct ONLY for a backend that applies NO
-    /// local-snooze/auto-snooze filter to `activeNotifications` (a backend with no local-snooze concept
-    /// reports its filtered set as always-known raw truth). A future backend that DOES locally filter,
-    /// does NOT override this, and reports `supportsRemoteAlertDismiss == false` would feed its
-    /// CONTAMINATED filtered set as the raw absence-oracle (a fail-open) — such a backend MUST override
-    /// this with its true pre-filter set. `TandemBackend` overrides it (the only backend with a local
-    /// filter today); `MockBackend` has none, so the default is correct for it.
+    /// local-snooze/auto-snooze filter to `activeNotifications` (a backend with no local-snooze
+    /// concept reports its filtered set as always-known raw truth). A future backend that DOES
+    /// locally filter, does NOT override this, and reports `supportsRemoteAlertDismiss == false`
+    /// would feed its CONTAMINATED filtered set as the raw absence-oracle (a fail-open) — such a
+    /// backend MUST override this with its true pre-filter set. `TandemBackend` overrides it (the
+    /// only backend with a local filter today); `MockBackend` has none, so the default is correct
+    /// for it.
     var rawActiveNotifications: [PumpAlert]? { get }
     /// Diagnostic string (raw alert bitmaps + poll count) for confirming the pump is answering.
     var alertDebug: String { get }
@@ -44,13 +45,13 @@ public protocol PumpBackend: AnyObject {
     /// (below); `TandemBackend` makes THIS method a thin wrapper that calls the typed one once and
     /// discards the outcome (MEDIUM-D: exactly one op-184 body, owned by the typed method).
     func dismissNotification(_ alert: PumpAlert) async
-    /// CX-G-08 (14-09, checkpoint #4) — the TYPED, authenticated outcome of a dismiss. The ONLY
-    /// authenticated success signal is `.authenticatedCleared`, derived EXCLUSIVELY from a signed
-    /// `status == 0` pump response — never inferred from a shared before/after transition on a mutable
-    /// dict (T-14-28: a concurrent auto-snooze/local-snooze mutates the exact same key during the same
-    /// async awaits a dismiss is awaiting on). Every backend gets a safe default for free (below, calls
-    /// the void method once → `.notAuthenticated`); `TandemBackend` overrides it to OWN the single
-    /// op-184 body and return the real outcome from the exact `status == 0` branch.
+    /// The TYPED, authenticated outcome of a dismiss. The ONLY authenticated success signal is
+    /// `.authenticatedCleared`, derived EXCLUSIVELY from a signed `status == 0` pump response —
+    /// never inferred from a shared before/after transition on a mutable dict (a concurrent
+    /// auto-snooze/local-snooze mutates the exact same key during the same async awaits a dismiss
+    /// is awaiting on). Every backend gets a safe default for free (below, calls the void method
+    /// once → `.notAuthenticated`); `TandemBackend` overrides it to OWN the single op-184 body and
+    /// return the real outcome from the exact `status == 0` branch.
     func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome
     /// 6-digit JPAKE pairing code from the pump (ignored by the mock).
     var pairingCode: String { get set }
@@ -90,7 +91,7 @@ public protocol PumpBackend: AnyObject {
     /// carbs; the caller always sizes the units). Use the `deliverBolus(units:)` convenience for
     /// units-only.
     /// `iobUnits` is the **frozen calculator IOB** (the active insulin the dose was computed against),
-    /// recorded on the pump as `bolusIOB` metadata (FB-04). It is the value the calculator used at
+    /// recorded on the pump as `bolusIOB` metadata. It is the value the calculator used at
     /// freeze time — NOT the live snapshot — so it preserves the approved inputs. Metadata only.
     func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double
     /// Deliver an **extended (combo)** bolus: `nowUnits` up front and the remainder over
@@ -105,7 +106,7 @@ public protocol PumpBackend: AnyObject {
     /// Called by the view model to observe changes.
     var onChange: (@MainActor () -> Void)? { get set }
 
-    // MARK: - Durable unknown-outcome recovery (P0)
+    // MARK: - Durable unknown-outcome recovery
 
     /// Called by the backend the instant the pump grants a bolus permission and assigns a bolus id —
     /// **before** any metadata/initiate is written. The host must DURABLY record the id (and its
@@ -189,15 +190,15 @@ public protocol PumpBackend: AnyObject {
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
     func refreshControlIQSettings() async
     /// Read the pump's native Sleep-schedule slots into `snapshot.sleepSchedules`. Universal/unsigned
-    /// read (Phase 09.10 D-04) — NOT capability-gated; sendable and harmless on any connected pump
-    /// model regardless of `PumpCapabilities.supportsSleepScheduleWrite`.
+    /// read — NOT capability-gated; sendable and harmless on any connected pump model regardless of
+    /// `PumpCapabilities.supportsSleepScheduleWrite`.
     func refreshSleepSchedule() async
-    /// Write one native Sleep-schedule slot (Phase 09.10 D-04). Mobi-only by capability
-    /// (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the pump protocol's own MOBI_ONLY device
-    /// scope. Mode-only (L7): the underlying wire write is `.settings` risk, never `.delivery` — this
-    /// call never reaches the dose/delivery path. `activeDays` is the CONFIRMED upstream `MultiDay` bit
-    /// mask (Monday=bit0(1)…Sunday=bit6(64)); `startMinute`/`endMinute` are minute-of-day, clamped to
-    /// 0...1439 by the implementation.
+    /// Write one native Sleep-schedule slot. Mobi-only by capability
+    /// (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the pump protocol's own MOBI_ONLY
+    /// device scope. Mode-only: the underlying wire write is `.settings` risk, never `.delivery` —
+    /// this call never reaches the dose/delivery path. `activeDays` is the confirmed upstream
+    /// `MultiDay` bit mask (Monday=bit0(1)…Sunday=bit6(64)); `startMinute`/`endMinute` are
+    /// minute-of-day, clamped to 0...1439 by the implementation.
     func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
@@ -230,10 +231,10 @@ public protocol PumpBackend: AnyObject {
 /// The prime-cannula bounds the UI allows (defense-in-depth on an insulin-dispensing step).
 public enum FillLimits {
     public static let maxCannulaMilliunits = 1000   // 1.0 U — Tandem cannula prime is ~0.3 U. Deliberate cap
-                                                     // (CX-T-07/Pitfall 4): NOT raised alongside the kit's
+                                                     // (NOT raised alongside the kit's
                                                      // FillCannulaRequest 3000 mU ceiling.
-    /// CX-T-07 (Pitfall 4, upstream-invalid): 0 is never a valid fill — pumpX2's `FillCannulaRequest`
-    /// throws on `primeSizeMilliUnits <= 0`. The app-side clamp must not leave 0 reachable (two-layer
+    /// 0 is never a valid fill — pumpX2's `FillCannulaRequest` throws on
+    /// `primeSizeMilliUnits <= 0`. The app-side clamp must not leave 0 reachable (two-layer
     /// defense: the kit init is the primary boundary, this clamp is the secondary one).
     public static let minCannulaMilliunits = 1
 
@@ -250,63 +251,46 @@ public enum ControlError: Error, LocalizedError {
     public var errorDescription: String? { "This pump doesn't support that action." }
 }
 
-/// The outcome of reconciling a lost-outcome bolus against the pump's authoritative history (P0).
-/// GO-2 Step 1 (16-08, REMED-16) — additive capability protocol naming the read-only history-sync
-/// surface `TandemBackend` exposes (`HistorySyncState`, relocated to this module in this same plan —
-/// see `HistorySyncState.swift`'s doc comment). `PumpBackend` itself gains NOTHING (unchanged, ~50
-/// members); a backend opts in by additionally conforming to this protocol.
-///
-/// **Not yet wired into `AppModel`'s casts.** 16-07 (`TandemOnlyOps`, the app-layer transitional
-/// superset) already carries `historySyncState`/`triggerManualHistorySync`/`cancelHistorySync` and its
-/// own doc comment designates 16-10 as the step that re-narrows those `AppModel` casts from
-/// `TandemOnlyOps` onto this protocol and removes the 3 members from `TandemOnlyOps`. This plan adds
-/// the protocol + conformance only, to avoid contradicting that already-committed sequencing (see the
-/// 16-08-SUMMARY.md "Deviations" section).
+/// The outcome of reconciling a lost-outcome bolus against the pump's authoritative history.
+
+/// Additive capability protocol naming the read-only history-sync surface `TandemBackend` exposes
+/// (`HistorySyncState`). `PumpBackend` itself gains nothing; a backend opts in by additionally
+/// conforming here. `AppModel` already casts to this for `historySyncState` / `triggerManualHistorySync`
+/// / `cancelHistorySync`. `TandemOnlyOps` keeps remaining Tandem-only members.
 @MainActor
 public protocol PumpHistoryProviding: AnyObject {
-    /// D-01/D-05 (Phase 09.7-02): the gap-sync's current state for the "Pump history sync" UI section.
+    /// The gap-sync's current state for the "Pump history sync" UI section.
     var historySyncState: HistorySyncState { get }
-    /// D-05 ("Sync now"): manually run the gap-aware history sync regardless of the automatic-sync
-    /// toggle.
+    /// Manually run the gap-aware history sync regardless of the automatic-sync toggle.
     func triggerManualHistorySync()
-    /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync.
+    /// Abort an in-progress manual/automatic gap sync.
     func cancelHistorySync()
 }
 
-/// GO-2 Step 2 (16-09, REMED-16) — additive capability protocol naming the diagnostics/telemetry-only
-/// hooks `TandemBackend` exposes, pairing with `PumpConnectionLifecycle`'s extraction so `AppModel`'s
-/// diagnostics wiring can eventually depend on a capability slice instead of the concrete type.
-/// `PumpBackend` itself gains NOTHING (unchanged); a backend opts in by additionally conforming here.
-///
-/// **CAPABILITY-OWNERSHIP CONTRACT**: exactly the 3 members `TandemOnlyOps` (16-07, app-layer) already
-/// designates for this protocol in its own doc comment — `onCommandLatency`, `onWillRetryReconnect`,
-/// `badOpcodesForDiagnostics`. `alertDebug` is deliberately NOT here — it's already a plain `PumpBackend`
-/// member (line 24), reached without any cast.
-///
-/// **Not yet wired into `AppModel`'s casts**, mirroring `PumpHistoryProviding`'s (16-08) own precedent:
-/// `TandemOnlyOps`'s doc comment designates 16-10 as the step that re-narrows those 3 `AppModel` casts
-/// off `TandemOnlyOps` onto this protocol and removes the members from `TandemOnlyOps`. This plan adds
-/// the protocol + conformance only, to avoid contradicting that already-committed sequencing (see the
-/// 16-09-SUMMARY.md "Deviations"/decisions section).
+/// Additive capability protocol naming the diagnostics/telemetry-only hooks `TandemBackend`
+/// exposes, so `AppModel`'s diagnostics wiring can depend on a capability slice instead of the
+/// concrete type. `PumpBackend` itself gains nothing; a backend opts in by additionally conforming
+/// here. `AppModel` already casts to this for `onCommandLatency` / `onWillRetryReconnect` /
+/// `badOpcodesForDiagnostics`. `alertDebug` stays a plain `PumpBackend` member — reached without
+/// any cast.
 @MainActor
 public protocol PumpDiagnosticsProviding: AnyObject {
     /// B3a (§5.2.8): observational command round-trip latency sink. Diagnostics-only; never influences
     /// control flow.
     var onCommandLatency: (@MainActor (Double?) -> Void)? { get set }
-    /// D-05: observational reconnect-ladder sink. Diagnostics-only; never influences control flow.
+    /// Observational reconnect-ladder sink. Diagnostics-only; never influences control flow.
     var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)? { get set }
-    /// Part B-a (09.6-01, D-02a): opcodes the connected pump has rejected this connection-lifetime, for
-    /// the `[Capability/opcode]` diagnostics section.
+    /// Opcodes the connected pump has rejected this connection-lifetime, for the
+    /// `[Capability/opcode]` diagnostics section.
     var badOpcodesForDiagnostics: Set<UInt8> { get }
 }
 
-/// CX-G-08 (14-09, checkpoint #4/T-14-28) — the phone's TYPED, authenticated outcome of a signed pump
-/// dismiss (`PumpBackend.dismissNotificationTyped(_:)`). `.authenticatedCleared` is the ONLY case that
-/// authorizes a durable Garmin `dismissAck` (checkpoint #2, absence-only) — it is derived exclusively
-/// from a `status == 0` signed pump response, never from a shared before/after transition on a mutable
-/// dict (a concurrent auto-snooze/local-snooze mutates that exact key during the same async awaits a
-/// dismiss is awaiting on — `acknowledged`/`lastDismissAck` in `TandemBackend`). Every other case fails
-/// closed: no ack, the alert stays visible.
+/// The phone's TYPED, authenticated outcome of a signed pump dismiss
+/// (`PumpBackend.dismissNotificationTyped(_:)`). `.authenticatedCleared` is the ONLY case that
+/// authorizes a durable Garmin `dismissAck` — it is derived exclusively from a `status == 0`
+/// signed pump response, never from a shared before/after transition on a mutable dict (a
+/// concurrent auto-snooze/local-snooze mutates that exact key during the same async awaits a
+/// dismiss is awaiting on). Every other case fails closed: no ack, the alert stays visible.
 public enum DismissOutcome: Sendable, Equatable {
     /// The pump signed-confirmed the clear (`status == 0`). The SOLE authenticated success signal.
     case authenticatedCleared
@@ -334,15 +318,15 @@ public enum BolusReconciliation: Sendable, Equatable {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
-    /// CX-G-08 (14-10, D1) default: a conformer with no local-snooze concept reports its filtered set as
+    /// Default: a conformer with no local-snooze concept reports its filtered set as
     /// the always-known raw truth — see the protocol requirement's doc comment for the fail-open caveat
     /// a backend that DOES locally filter must heed by overriding this.
     var rawActiveNotifications: [PumpAlert]? { activeNotifications }
-    /// CX-G-08 (14-09, MEDIUM-D) — the community-default typed dismiss: calls the LEGACY void
-    /// `dismissNotification(_:)` exactly ONCE and returns `.notAuthenticated` — never authenticated,
-    /// so a community backend that hasn't implemented the typed path can never trigger a Garmin
-    /// `dismissAck` by accident. `TandemBackend` overrides this to own the single op-184 body and
-    /// return the real, authenticated outcome.
+    /// Community-default typed dismiss: calls the LEGACY void `dismissNotification(_:)` exactly ONCE
+    /// and returns `.notAuthenticated` — never authenticated, so a community backend that hasn't
+    /// implemented the typed path can never trigger a Garmin `dismissAck` by accident.
+    /// `TandemBackend` overrides this to own the single op-184 body and return the real,
+    /// authenticated outcome.
     func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome {
         await dismissNotification(alert)
         return .notAuthenticated
@@ -370,7 +354,7 @@ public extension PumpBackend {
         try await deliverBolus(units: units, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
     }
     /// Metadata-carrying convenience with a default `iobUnits: nil`, so callers that don't have a frozen
-    /// IOB (e.g. the widget path) needn't pass it, while the frozen-proposal paths do (FB-04).
+    /// IOB (e.g. the widget path) needn't pass it, while the frozen-proposal paths do.
     func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
         try await deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: nil)
     }
@@ -437,23 +421,22 @@ public extension PumpBackend {
 
 public enum BolusError: Error, LocalizedError {
     case notConnected, exceedsMax(Double), cancelled, pumpRejected(String)
-    /// FB-02: the initiate command WAS written to the pump but its outcome is unknown (the response
+    /// The initiate command WAS written to the pump but its outcome is unknown (the response
     /// was lost to a timeout/disconnect). The bolus may or may not have started — the caller must NOT
     /// treat this as a plain failure/retry; it must reconcile against the pump's bolus history first.
     case indeterminate(String)
-    /// FB-01: the dose was computed from unverified/assumed pump settings and cannot be auto-delivered.
+    /// The dose was computed from unverified/assumed pump settings and cannot be auto-delivered.
     case unverifiedInputs(String)
-    /// Phase 09.9 D-01: the cartridge is mid change/load/prime-tubing (`!PumpSnapshot.cartridgeReadyForBolus`)
+    /// The cartridge is mid change/load/prime-tubing (`!PumpSnapshot.cartridgeReadyForBolus`)
     /// — dosing is physically impossible. Thrown BEFORE any signed frame is written; never a delivered
-    /// value, never a mutation of delivery state (fail-closed, C4 oracle never reports success for this).
+    /// value, never a mutation of delivery state (fail-closed — never reports success for this).
     case noCartridge(String)
-    /// Phase 09.9 D-02: the pump refused a real delivery attempt (nack) while the app's own
-    /// last-known `reservoirUnits` reading was below the requested total. This is a distinct,
-    /// more specific case than the generic `.pumpRejected` — but the wire protocol has no
-    /// insulin-specific nack code (RESEARCH Pitfall 2: `BolusPermissionResponse`/
+    /// The pump refused a real delivery attempt (nack) while the app's own last-known
+    /// `reservoirUnits` reading was below the requested total. Distinct from generic `.pumpRejected`
+    /// — but the wire protocol has no insulin-specific nack code (`BolusPermissionResponse` /
     /// `InitiateBolusResponse` are exhaustive with no reservoir signal), so the cause MUST be
     /// worded as an inference from the app's own reading, never a pump-confirmed fact. A clean
-    /// pre-initiate failure in the existing FB-02 taxonomy (never indeterminate, never delivered).
+    /// pre-initiate failure (never indeterminate, never delivered).
     case possiblyOutOfInsulin(reservoirUnits: Double, nackDetail: String)
     public var errorDescription: String? {
         switch self {
@@ -468,7 +451,7 @@ public enum BolusError: Error, LocalizedError {
             return "Pump refused the bolus (\(nackDetail)); last known reservoir was \(reservoirUnits) u — this may be due to insufficient insulin."
         }
     }
-    /// True for an outcome that must block new deliveries until reconciled (FB-02).
+    /// True for an outcome that must block new deliveries until reconciled.
     public var isIndeterminate: Bool { if case .indeterminate = self { return true } else { return false } }
 }
 
@@ -477,30 +460,27 @@ public enum BolusError: Error, LocalizedError {
 /// absurd amount (the pump also rejects anything over its own limit).
 public enum Interlocks {
     public static let absoluteMaxUnits: Double = 25.0
-    /// CX-T-07 owner decision (2026-08-25, option-a ALIGN UP — see faBolus .planning/phases/
-    /// 15-tandemkit-portfidelity-upstream-adopt/OWNER-DECISIONS.md, 15-05 Task 1): raised from the prior
-    /// 0.05 U (the pump's minimum programming increment) to 1.0 U to match TandemKit's
-    /// `SetMaxBolusLimitRequest` throwing floor (pumpX2's own `MIN_BOLUS_LIMIT_MILLIUNITS`), so a
-    /// legitimate app-originated limit can never throw at the kit boundary after UI confirmation.
-    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1) — not independently bench-confirmed by the app team.
+    /// Raised from the prior 0.05 U (the pump's minimum programming increment) to 1.0 U to match
+    /// TandemKit's `SetMaxBolusLimitRequest` throwing floor (pumpX2's own `MIN_BOLUS_LIMIT_MILLIUNITS`),
+    /// so a legitimate app-originated limit can never throw at the kit boundary after UI confirmation.
+    /// Conservative/unverified (bench-pinnable) — not independently bench-confirmed by the app team.
     public static let minMaxBolusLimitUnits: Double = 1.0
-    /// CX-T-07 owner decision companion: the max-basal **limit** floor, matching TandemKit's
-    /// `SetMaxBasalLimitRequest` throwing floor (pumpX2's `MIN_BASAL_LIMIT_MILLIUNITS`). Before this the
-    /// app clamped max-basal only to `max(0, …)` (`TandemBackend.setMaxBasal`), below the kit's floor.
-    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1).
+    /// The max-basal **limit** floor, matching TandemKit's `SetMaxBasalLimitRequest` throwing floor
+    /// (pumpX2's `MIN_BASAL_LIMIT_MILLIUNITS`). Before this the app clamped max-basal only to
+    /// `max(0, …)` (`TandemBackend.setMaxBasal`), below the kit's floor. Conservative/unverified
+    /// (bench-pinnable).
     public static let minMaxBasalLimitUnitsPerHour: Double = 1.0
     /// The max-basal **limit** ceiling, matching TandemKit's `SetMaxBasalLimitRequest` throwing ceiling
     /// (pumpX2's `MAX_BASAL_LIMIT_MILLIUNITS` = 15000 mU/hr = 15.0 U/hr, byte-verified against
     /// `SetMaxBasalLimitRequest.java`). A faBolusCore-side literal because `Interlocks` doesn't import
     /// `TandemMessages`; without it a request above 15 U/hr throws at the kit boundary instead of clamping.
-    /// CONSERVATIVE/UNVERIFIED (bench-pinnable, T-1).
+    /// Conservative/unverified (bench-pinnable).
     public static let maxMaxBasalLimitUnitsPerHour: Double = 15.0
     /// Clamp a requested max-bolus **limit** into the app's absolute range. The 25 U ceiling is a HARD cap
-    /// (owner-locked, P14 §2.1(5): never a confirmation) — a limit can never be set above it, on ANY
-    /// backend. This is the single definition the funnel (`AppModel.setMaxBolus`) and every backend share,
-    /// so the invariant no longer depends on which backend is active (a `MockBackend` used to skip it).
-    /// Distinct from the per-bolus DELIVERY block (`deliverBolus` throws `.exceedsMax`) — this does not
-    /// replace that.
+    /// (never a confirmation) — a limit can never be set above it, on ANY backend. This is the single
+    /// definition the funnel (`AppModel.setMaxBolus`) and every backend share, so the invariant no
+    /// longer depends on which backend is active (a `MockBackend` used to skip it). Distinct from the
+    /// per-bolus DELIVERY block (`deliverBolus` throws `.exceedsMax`) — this does not replace that.
     public static func clampMaxBolusLimit(_ units: Double) -> Double {
         max(minMaxBolusLimitUnits, min(units, absoluteMaxUnits))
     }

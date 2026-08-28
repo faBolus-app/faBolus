@@ -7,10 +7,9 @@ import Security
 enum CredentialStore {
     private static let service = "com.fabolus.app.cgm.credentials"
 
-    /// Keychain CGM credential account names. Relocated here from `SettingsBackup.swift` (Phase 6,
-    /// 06-01/D-08) so the always-present `AppModel.eraseEverythingFullReset()` — kept LIVE on narrow
-    /// `main` regardless of `FABOLUS_BACKUP` — can enumerate + clear the same accounts the (now
-    /// gated) backup engine backs up, without depending on a `#if FABOLUS_BACKUP`-guarded type.
+    /// Keychain CGM credential account names. Lives here (not behind `#if FABOLUS_BACKUP`) so the
+    /// always-present `AppModel.eraseEverythingFullReset()` can enumerate + clear the same accounts
+    /// the gated backup engine backs up, without depending on a compile-gated type.
     static let cgmSecretAccounts = [
         "librelinkup.password", "dexcomshare.password", "nightscout.token", "nightscout.apisecret",
     ]

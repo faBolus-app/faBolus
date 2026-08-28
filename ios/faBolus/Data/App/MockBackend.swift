@@ -25,18 +25,18 @@ public final class MockBackend: PumpBackend {
         activeNotifications.removeAll { $0.id == alert.id && $0.kind == alert.kind }
         onChange?()
     }
-    // CX-G-08 (14-09, MEDIUM-D): deliberately does NOT override `dismissNotificationTyped` — as the
-    // "reference backend / starting point for a new backend" (see this file's own doc comment), it gets
-    // the same community-default outcome (`.notAuthenticated`, calls the void method above once) any
-    // third-party backend gets for free from `PumpBackend`'s extension. The mock can never fabricate an
-    // `.authenticatedCleared`, so it can never trigger a Garmin dismissAck — only `TandemBackend` owns
-    // the real authenticated (op-184 signed) path.
+    // Deliberately does NOT override `dismissNotificationTyped` — as the reference backend /
+    // starting point for a new backend, it gets the same community-default outcome
+    // (`.notAuthenticated`, calls the void method above once) any third-party backend gets for free
+    // from `PumpBackend`'s extension. The mock can never fabricate an `.authenticatedCleared`, so it
+    // can never trigger a Garmin dismissAck — only `TandemBackend` owns the real authenticated
+    // (op-184 signed) path.
     public var pairingCode: String = ""   // unused by the mock
     public var hasStoredPairing: Bool { false }
     public func forgetPairing() {}
     public var onChange: (@MainActor () -> Void)?
 
-    // MARK: - Durable unknown-outcome recovery (P0)
+    // MARK: - Durable unknown-outcome recovery
     public var commitBolusId: (@MainActor (Int) async -> Bool)?
     /// The next simulated pump-assigned bolus id (mimics `BolusPermissionResponse.bolusId`).
     private var nextBolusId = 1000
@@ -82,7 +82,7 @@ public final class MockBackend: PumpBackend {
         ]
         snapshot.glucose = readings.last?.mgdl
         // Group A: a backend MUST publish the reading's timestamp alongside its value. Leaving this nil
-        // was the live reproducer for defect A1 — the phone correctly read "unknown age ⇒ stale" and
+        // was the live reproducer — the phone correctly read "unknown age ⇒ stale" and
         // showed no recent CGM, while the Garmin watch stamped the same reading "now" and let it dose.
         // Any new backend has the same obligation; see `PumpSnapshot.isGlucoseStale`.
         snapshot.glucoseDate = readings.last?.date
@@ -143,8 +143,8 @@ public final class MockBackend: PumpBackend {
 
     /// Mock calculator: the same oracle-backed `BolusMath` as the real backend, with a fixed mock
     /// profile (carb ratio 10 g/U, ISF 40, target 110). Keeps the simulator in lockstep with the
-    /// production dosing semantics (audit C-01).
-    /// Test knob (FB-01): when true, `recommendBolus` reports the dose as computed from ASSUMED
+    /// production dosing semantics.
+    /// Test knob: when true, `recommendBolus` reports the dose as computed from ASSUMED
     /// (unverified) settings, so callers must fail closed / require the assumptions ack.
     public var forceUnverifiedInputs = false
     /// Test knob (DIF-ux): force the IOB read to read as STALE even after the mock re-stamps it fresh in
@@ -153,7 +153,7 @@ public final class MockBackend: PumpBackend {
     /// Test knob (DIF-ux): force the therapy-params read to read as STALE, for the use-last-known-settings
     /// override path.
     public var forceTherapyStale = false
-    /// Test knob (FB-02): when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
+    /// Test knob: when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
     /// Test knob (WR-02 · VA-22): when set, the NEXT `deliverBolus`/`deliverExtendedBolus` COMMITS only
@@ -174,14 +174,14 @@ public final class MockBackend: PumpBackend {
     public func seedFreshGlucose(_ mgdl: Int, at date: Date = Date()) {
         snapshot.glucose = mgdl; snapshot.glucoseDate = date; onChange?()
     }
-    /// Test knob (FB-04): set the LIVE IOB, so a test can prove a delivery sends the FROZEN calc IOB, not
+    /// Test knob: set the LIVE IOB, so a test can prove a delivery sends the FROZEN calc IOB, not
     /// the live snapshot value.
     public func setLiveIob(_ u: Double) { snapshot.iobUnits = u; onChange?() }
-    /// Test knob (Phase 9 CR-01 gap closure): simulate a MID-SESSION pump-identity change — e.g. a
-    /// Mobi discovered while a t:slim was connected — by flipping `isMobi`/`pumpModelName` post-
-    /// construction and firing `onChange()`, exactly like the protected `TandemBackend` discovery
-    /// callback does for a real peripheral. `MockBackend`'s `isMobi` ctor arg only seeds the INITIAL
-    /// snapshot, so it can't reproduce a transition after `AppModel` already exists — this can, letting
+    /// Test knob: simulate a MID-SESSION pump-identity change — e.g. a Mobi discovered while a
+    /// t:slim was connected — by flipping `isMobi`/`pumpModelName` post-construction and firing
+    /// `onChange()`, exactly like the protected `TandemBackend` discovery callback does for a real
+    /// peripheral. `MockBackend`'s `isMobi` ctor arg only seeds the INITIAL snapshot, so it can't
+    /// reproduce a transition after `AppModel` already exists — this can, letting
     /// `MobiRejectBackstopBoundaryTests` drive `AppModel.refresh()`'s real merge pipeline (via
     /// `source.onChange`) without a live BLE peripheral or a SwiftUI view.
     public func simulatePumpIdentityChange(isMobi: Bool) {
@@ -190,16 +190,15 @@ public final class MockBackend: PumpBackend {
         onChange?()
     }
 
-    /// Additive fidelity fix (Phase 18, GO-1 Step 8): give the reference backend a REAL
-    /// `resetSnapshotForPumpSwitch()` instead of silently inheriting `PumpBackend`'s no-op default. On a
-    /// switch to a DIFFERENT pump, `AppModel.maybeHandlePumpSwitch()` calls this BEFORE `refresh()`'s merge
-    /// reads `source.snapshot`, so the previous pump's therapy/config params can't be shown or dosed
-    /// against in the window before the new pump's reads land — mirroring `TandemBackend`'s real
-    /// implementation (config/therapy fields → `PumpSnapshot()` defaults; every LIVE field preserved). NOT
-    /// test-only: `MockBackend` also ships in the Simulator build. Without this the ordering-trap
-    /// characterization scenario is vacuous (nothing changes on switch), so `carbRatio`/`isf`/`targetBg`
-    /// (seeded 10/40/110, default 0/0/0) are the fields that make the reset observable — `maxBolusUnits`'s
-    /// seed (25) equals its default (25), so it is deliberately NOT the assertion target.
+    /// Give the reference backend a real `resetSnapshotForPumpSwitch()` instead of silently inheriting
+    /// `PumpBackend`'s no-op default. On a switch to a DIFFERENT pump, `AppModel.maybeHandlePumpSwitch()`
+    /// calls this BEFORE `refresh()`'s merge reads `source.snapshot`, so the previous pump's
+    /// therapy/config params can't be shown or dosed against in the window before the new pump's reads
+    /// land — mirroring `TandemBackend`. Not test-only: `MockBackend` also ships in the Simulator
+    /// build. Without this the ordering-trap characterization is vacuous (nothing changes on switch),
+    /// so `carbRatio`/`isf`/`targetBg` (seeded 10/40/110, default 0/0/0) are the fields that make the
+    /// reset observable — `maxBolusUnits`'s seed (25) equals its default (25), so it is deliberately
+    /// NOT the assertion target.
     public func resetSnapshotForPumpSwitch() {
         let d = PumpSnapshot()
         snapshot.maxBolusUnits = d.maxBolusUnits
@@ -217,14 +216,13 @@ public final class MockBackend: PumpBackend {
         snapshot.profiles = d.profiles
         snapshot.viewedProfileSegments = d.viewedProfileSegments
     }
-    /// Test knob (Phase 09.17-01, D-06b): `seedHistory()`'s glucose trace uses `Double.random` so the
-    /// Simulator/SwiftUI-preview experience never looks robotic — but that same randomness makes the
-    /// default `MockBackend()` fixture unusable as a `SnapshotTesting` reference (a golden image must
-    /// render byte-identical content on every run). This replaces ONLY the randomized glucose values
-    /// with a fixed, deterministic trace of the same shape/count and timestamps; `iobHistory`/
-    /// `bolusMarkers`/every other `snapshot` field `seedHistory()` sets were already deterministic
-    /// literals and are left untouched. Additive/opt-in — never called in production or by any other
-    /// existing test.
+    /// Test knob: `seedHistory()`'s glucose trace uses `Double.random` so the Simulator/SwiftUI-preview
+    /// experience never looks robotic — but that same randomness makes the default `MockBackend()`
+    /// fixture unusable as a `SnapshotTesting` reference (a golden image must render byte-identical
+    /// content on every run). This replaces ONLY the randomized glucose values with a fixed,
+    /// deterministic trace of the same shape/count and timestamps; `iobHistory`/`bolusMarkers`/every
+    /// other `snapshot` field `seedHistory()` sets were already deterministic literals and are left
+    /// untouched. Additive/opt-in — never called in production.
     public func seedDeterministicGlucoseForTesting() {
         let now = Date()
         let newest = now.addingTimeInterval(-600)
@@ -240,7 +238,7 @@ public final class MockBackend: PumpBackend {
         snapshot.glucoseDate = readings.last?.date
         onChange?()
     }
-    /// Spy (FB-04): the exact metadata the most recent delivery passed to the backend.
+    /// Spy: the exact metadata the most recent delivery passed to the backend.
     public private(set) var lastDeliver: (units: Double, carbs: Double?, bg: Int?, iob: Double?)?
     /// DIF-core spy: how many times `refreshCalcInputsNow()` was invoked, so a test can prove the dose path
     /// forced a fresh op-115 + op-109 read (the mock's analogue of those pump reads) before recommending.
@@ -300,12 +298,12 @@ public final class MockBackend: PumpBackend {
                                      carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard totalUnits <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
-        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
-        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        // MockBackend has its own guard chain (not shared with TandemBackend) — refuse BEFORE any
+        // bolus id is assigned or state is mutated, so nothing is recorded as delivered.
         guard snapshot.cartridgeReadyForBolus else {
             throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
         }
-        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0).
+        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write.
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
         // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
         if let commit = commitBolusId, await commit(bolusId) == false {
@@ -343,13 +341,13 @@ public final class MockBackend: PumpBackend {
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         guard snapshot.connection == .connected else { throw BolusError.notConnected }
         guard units <= snapshot.maxBolusUnits else { throw BolusError.exceedsMax(snapshot.maxBolusUnits) }
-        // Phase 09.9 D-01: MockBackend has its own guard chain (not shared with TandemBackend) — refuse
-        // BEFORE any bolus id is assigned or state is mutated, so nothing is recorded as delivered.
+        // MockBackend has its own guard chain (not shared with TandemBackend) — refuse BEFORE any
+        // bolus id is assigned or state is mutated, so nothing is recorded as delivered.
         guard snapshot.cartridgeReadyForBolus else {
             throw BolusError.noCartridge("cartridge load state is \(snapshot.cartridgeLoadState) — finish the cartridge change first")
         }
-        lastDeliver = (units, carbsGrams, bgMgdl, iobUnits)   // FB-04 spy: exactly what the caller passed
-        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write (P0), so
+        lastDeliver = (units, carbsGrams, bgMgdl, iobUnits)   // spy: exactly what the caller passed
+        // Simulate the pump granting permission + assigning a bolus id BEFORE the initiate write, so
         // an indeterminate outcome still leaves a reconcilable id in the durable ledger.
         let bolusId = nextBolusId; nextBolusId += 1; lastAssignedBolusId = bolusId
         // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
@@ -387,10 +385,9 @@ public final class MockBackend: PumpBackend {
     // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
     public func suspendDelivery() async throws { snapshot.deliverySuspended = true; onChange?() }
     public func resumeDelivery() async throws { snapshot.deliverySuspended = false; onChange?() }
-    /// 06-01: counts temp-rate writes that reach the backend — mirrors `idpWriteCount`/`controlWriteCount`.
-    /// Phase 7 (07-03, FEAT-05): the original headless-automation caller (`TempRateAutomation`) this
-    /// counter was added for is deleted; `AppModelBehaviorTests` now exercises it via the manual
-    /// `AppModel.setTempBasal` UI path instead — the counter itself stays, still a genuine reader.
+    /// Counts temp-rate writes that reach the backend — mirrors `idpWriteCount`/`controlWriteCount`.
+    /// The original headless-automation caller (`TempRateAutomation`) is gone; `AppModelBehaviorTests`
+    /// now exercises it via the manual `AppModel.setTempBasal` UI path — the counter itself stays.
     public private(set) var tempRateWriteCount = 0
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws { tempRateWriteCount += 1; onChange?() }
     public func stopTempBasal() async throws { onChange?() }
@@ -423,7 +420,7 @@ public final class MockBackend: PumpBackend {
     }
     public func refreshLoadStatus() async {}
 
-    /// P14 S6: counts the therapy-defining control writes (max bolus/basal, Control-IQ) that reach the
+    /// Counts the therapy-defining control writes (max bolus/basal, Control-IQ) that reach the
     /// backend, so a test can prove they are ack-gated the same way `idpWriteCount` proves it for IDP CRUD.
     public private(set) var controlWriteCount = 0
     public func setMaxBolus(units: Double) async throws { controlWriteCount += 1; snapshot.maxBolusUnits = Interlocks.clampMaxBolusLimit(units); onChange?() }   // S9: clamp; S6: counted
@@ -438,10 +435,10 @@ public final class MockBackend: PumpBackend {
     public func refreshControlIQSettings() async {
         if snapshot.controlIQWeightLbs == 0 { snapshot.controlIQWeightLbs = 160; snapshot.controlIQTotalDailyInsulin = 45; onChange?() }
     }
-    /// Phase 09.10 D-04: mirrors `setControlIQ` — counted via `controlWriteCount` (the P14 S6
-    /// therapy-defining-write counter `everyTherapyWriteEntryPointIsCentrallyGated` asserts against),
-    /// clamps minute-of-day to 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates
-    /// (or appends) the written slot in `snapshot.sleepSchedules` so a UI round-trip reflects the write.
+    /// Mirrors `setControlIQ` — counted via `controlWriteCount` (the therapy-defining-write counter
+    /// `everyTherapyWriteEntryPointIsCentrallyGated` asserts against), clamps minute-of-day to
+    /// 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates (or appends) the
+    /// written slot in `snapshot.sleepSchedules` so a UI round-trip reflects the write.
     public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
         controlWriteCount += 1
         let start = max(0, min(startMinute, 1439))
@@ -486,7 +483,7 @@ public final class MockBackend: PumpBackend {
         snapshot.profiles = snapshot.profiles.map { $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0 }; onChange?()
     }
     public func deleteProfile(idpId: Int) async throws { idpWriteCount += 1; snapshot.profiles.removeAll { $0.idpId == idpId }; onChange?() }
-    /// FB-06 test hook: counts IDP / CGM-alert writes that actually reached the backend, so a test can
+    /// Test hook: counts IDP / CGM-alert writes that actually reached the backend, so a test can
     /// prove the central unverified-therapy gate fails **closed** (count stays 0 without an ack).
     public private(set) var idpWriteCount = 0
     public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,

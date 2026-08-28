@@ -10,13 +10,12 @@ public struct GlucoseSourceDescriptor: Identifiable, Sendable {
     public let sensors: [String]
     /// Builds a fresh source instance. `@MainActor` because sources are main-actor bound.
     ///
-    /// `restoreStateEnabled` (D-06): true for the ONE long-lived production instance
-    /// (`GlucoseSourceRegistry.makeSelected()`), false for the ephemeral `CgmCredentialsView` "Test"
-    /// instance (`GlucoseSourceRegistry.make(id:)`). A source that owns a `CBCentralManager` with a
-    /// restore identifier (e.g. `DexcomG6BLESource`) uses this to scope that identifier to at most
-    /// one live manager per process — two managers sharing a restore-identifier string is a
-    /// CoreBluetooth SIGABRT (the dup-restore-identifier crash D-06 fixes). Most descriptor closures
-    /// ignore the flag entirely (`{ _ in SomeSource() }`).
+    /// `restoreStateEnabled`: true for the one long-lived production instance
+    /// (`GlucoseSourceRegistry.makeSelected()`), false for the ephemeral credentials "Test" instance
+    /// (`GlucoseSourceRegistry.make(id:)`). A source that owns a `CBCentralManager` with a restore
+    /// identifier uses this to scope that identifier to at most one live manager per process — two
+    /// managers sharing a restore-identifier string is a CoreBluetooth SIGABRT. Most descriptor
+    /// closures ignore the flag (`{ _ in SomeSource() }`).
     public let make: @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
     public init(id: String, name: String, sensors: [String] = [],
                 make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource) {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// P13c-4 — the pump user-mode bitmap collision, typed away.
+/// The pump user-mode bitmap collision, typed away.
 ///
 /// The Tandem wire protocol overloads small integers in a genuinely dangerous way: the *reported*
 /// Control-IQ activity STATE is `0 = normal, 1 = sleep, 2 = exercise` (`PumpSnapshot.controlIQMode`),
@@ -66,18 +66,18 @@ public enum ControlIQPrecondition {
         controlIQEnabled ? "Turn Control-IQ off to set a temporary basal rate." : nil
     }
 
-    /// P14 S11 (§2.1(7)): the firmware + Control-IQ-version compatibility pre-flight for the
+    /// Firmware + Control-IQ-version compatibility pre-flight for the
     /// `setControlIQ` **configuration** write. Refuses (with a plain reason) BEFORE the write when the
     /// connected pump can't take a remote Control-IQ configuration, rather than letting the pump silently
     /// reject it — mirroring the two inverse preconditions above.
     ///
     /// The authoritative signal is `supportsControlIQConfig` — whether the pump exposes *remote*
     /// Control-IQ configuration at all. It is `false` on t:slim X2 (which runs Control-IQ but Tandem only
-    /// lets you configure it on the pump itself) and on any pump whose P13b feature bitmask / model
+    /// lets you configure it on the pump itself) and on any pump whose feature bitmask / model
     /// doesn't advertise it; `true` on Mobi. `controllerVariant` is used ONLY to make the refusal message
     /// specific — it is **not** a gate, because `.none` is the normal state whenever the pump's feature
     /// bits haven't been read yet (the fallback / pre-`staticRead` path, and the simulator), so blocking
-    /// a configurable pump on `.none` would wrongly refuse a legitimate Mobi write. Per P13's
+    /// a configurable pump on `.none` would wrongly refuse a legitimate Mobi write. Per the
     /// "absent capability ⇒ don't fail-block" rule, a configurable pump proceeds regardless of variant.
     ///
     /// `nil` = the write is compatible; a non-nil string = the reason it's blocked. Applies symmetrically
@@ -93,57 +93,48 @@ public enum ControlIQPrecondition {
     }
 }
 
-/// Phase 09.15 T2-3 (D-04) — the Control-IQ+-only temporary basal-rate option, built as a BENCH-GATED
-/// PLACEHOLDER, never a live write path. Sourced (c) Tandem: current Control-IQ+ documentation states a
-/// temp rate CAN be set while Control-IQ+ stays ON — "If a Temp Rate is set while Control-IQ+ is turned
-/// on, Control-IQ+ will modulate basal and deliver automatic correction boluses even if a Temp Basal Rate
-/// is set to 0%." This is the OPPOSITE precondition from classic Control-IQ's
-/// `ControlIQPrecondition.tempRateBlockReason` above (a temp rate there requires Control-IQ **off**) —
-/// that gate is left byte-identical; this is a SEPARATE, inert path that never touches it and never
-/// re-hardcodes a CIQ-off requirement for Control-IQ+.
+/// Control-IQ+-only temporary basal-rate option, built as a bench-gated placeholder, never a live
+/// write path. Current Control-IQ+ documentation states a temp rate CAN be set while Control-IQ+
+/// stays ON — "If a Temp Rate is set while Control-IQ+ is turned on, Control-IQ+ will modulate basal
+/// and deliver automatic correction boluses even if a Temp Basal Rate is set to 0%." This is the
+/// opposite precondition from classic Control-IQ's `ControlIQPrecondition.tempRateBlockReason` above
+/// (a temp rate there requires Control-IQ **off**) — that gate is left byte-identical; this is a
+/// separate, inert path that never touches it.
 ///
-/// The premise that a real Control-IQ+ pump actually accepts this write is UNVERIFIED — see
-/// `.planning/todos/pending/2026-08-13-temp-rate-while-controliq-plus-on-vs-locked-sg3b-infeasible.md` —
-/// until the Phase-11 saline bench confirms it. So this type ships build-inert (SP-6, the same idiom as
-/// `TempRateAutomation.benchVerifiedDefault` at `ios/faBolus/Data/TempRateAutomation.swift:41`):
-/// `benchVerifiedDefault == false` means "not offered", on every controller variant, regardless of
-/// capability. It is a manual tool a Control-IQ+ user reaches for to manage a short-term glucose
-/// challenge WITHOUT turning off automation ("Control-IQ+ continues to modulate on top of this rate") —
-/// never a "Control-IQ is maxed → set a temp rate" suggestion (D-04) — so once bench-verified,
-/// availability additionally stays capability-scoped to `.controlIQPro` (Control-IQ+) only; classic
-/// Control-IQ (`.controlIQ`) and no-controller (`.none`) never offer it, even after the bench flips.
+/// Whether a real Control-IQ+ pump actually accepts this write is unverified until a saline bench
+/// confirms it. `benchVerifiedDefault == false` means "not offered", on every controller variant.
+/// Once bench-verified, availability stays capability-scoped to `.controlIQPro` (Control-IQ+) only;
+/// classic Control-IQ and `.none` never offer it. Never a "Control-IQ is maxed → set a temp rate"
+/// suggestion.
 public enum CiqPlusTempRate {
-    /// D-04/SP-6: flip to `true` only after the Phase-11 saline bench confirms a Control-IQ+ pump accepts
-    /// a temp-rate write while its controller stays on. Ships `false` so the option is inert regardless
-    /// of the connected controller variant.
+    /// Flip to `true` only after a saline bench confirms a Control-IQ+ pump accepts a temp-rate write
+    /// while its controller stays on. Ships `false` so the option is inert regardless of the connected
+    /// controller variant.
     public static let benchVerifiedDefault = false
 
-    /// `true` only when BOTH the bench has verified the write AND the connected controller is
-    /// Control-IQ+ (`.controlIQPro`) — never `true` for classic Control-IQ (`.controlIQ`) or `.none`,
-    /// even once the bench flips. The UI wraps its ENTIRE option in this predicate so the row/button is
-    /// render-absent (not merely disabled/greyed) while it returns `false` (D-05).
+    /// `true` only when both the bench has verified the write AND the connected controller is
+    /// Control-IQ+ (`.controlIQPro`) — never `true` for classic Control-IQ or `.none`, even once the
+    /// bench flips. The UI wraps its entire option in this predicate so the row/button is
+    /// render-absent (not merely disabled/greyed) while it returns `false`.
     public static func isOffered(benchVerified: Bool = benchVerifiedDefault,
                                   controllerVariant: ControllerVariant) -> Bool {
         benchVerified && controllerVariant == .controlIQPro
     }
 }
 
-/// Phase 09.15 T1-2 (D-09.1, fail-closed cause-attribution) — a pure predicate answering ONE question:
-/// did the PUMP'S OWN control-state say Control-IQ suspended basal delivery to prevent a low? This is
-/// the safety-critical nuance distinguishing T1-2 from the generic `PumpSnapshot.deliverySuspended`
-/// bool: a suspend can also come from a manual user suspend, a cartridge/loading-state block, or any
-/// other cause the generic bool can't distinguish. Only op-179's own `controlStateType` — read directly,
-/// never inferred from context or from `deliverySuspended` itself — may attribute a suspend to
-/// Control-IQ (D-06 guardrail #4/#6: mechanism-gated on a pump value, never app inference).
+/// Fail-closed cause-attribution: did the pump's own control-state say Control-IQ suspended basal
+/// delivery to prevent a low? Distinct from the generic `PumpSnapshot.deliverySuspended` bool — a
+/// suspend can also come from a manual user suspend, a cartridge/loading-state block, or any other
+/// cause that bool cannot distinguish. Only op-179's own `controlStateType` — read directly, never
+/// inferred from context or from `deliverySuspended` itself — may attribute a suspend to Control-IQ.
 ///
-/// Reuses the EXACT SAME raw-byte hypothesis 09.15-01 already established for the T1-1 zone chip
-/// (`ControlIQZone.fromControlStateType`, `docs/UNVERIFIED-GUESSES.md` #8) rather than inventing a
-/// second, independent guess about the same undocumented byte: the "Stops" zone word IS Tandem's own
-/// label for "predicted glucose below ~70 mg/dL, Control-IQ stops basal delivery" — i.e. exactly the
-/// CIQ-paused-for-low state T1-2 describes. Any other zone, or an unmapped/unknown raw value, returns
-/// `false` (fail-closed): never upgrade a generic suspend into a "Control-IQ paused" claim without this
-/// bit explicitly saying so. Display-only, never a dose input (C3) — this predicate is read by the
-/// disclosure surfaces only and never reaches BolusGate/TandemBackend's delivery path.
+/// Reuses the same raw-byte hypothesis as `ControlIQZone.fromControlStateType` (see
+/// `docs/UNVERIFIED-GUESSES.md`) rather than inventing a second guess about the same undocumented
+/// byte: the "Stops" zone word is Tandem's own label for "predicted glucose below ~70 mg/dL,
+/// Control-IQ stops basal delivery". Any other zone, or an unmapped/unknown raw value, returns
+/// `false` (fail-closed): never upgrade a generic suspend into a "Control-IQ paused" claim without
+/// this predicate explicitly saying so. Display-only, never a dose input — disclosure surfaces only;
+/// never reaches BolusGate or the delivery path.
 public enum ControlIQSuspendAttribution {
     /// `true` only for the raw `controlStateType` value that maps to `ControlIQZone.stops`; `false` for
     /// every other mapped zone AND for an unknown/unmapped raw value (fail-closed, never a guess).

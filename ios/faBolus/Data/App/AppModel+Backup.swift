@@ -7,7 +7,7 @@ import HistoryStore
 /// only through the `privacyExportLedgerSnapshot` seam.
 extension AppModel {
 
-    // MARK: WR-01 — SiteAtlas ⇄ unified backup
+    // MARK: SiteAtlas ⇄ unified backup
 #if FABOLUS_BACKUP
 
     /// Snapshot every logged SiteAtlas placement for the unified backup (schema 2+). Reads the SAME
@@ -35,17 +35,17 @@ extension AppModel {
     }
 #endif
 
-    // MARK: 09.18d-02 — caffeine/alcohol benign trackers ⇄ unified backup (D-14/D-17)
+    // MARK: caffeine/alcohol benign trackers ⇄ unified backup
 #if FABOLUS_BACKUP
 
     /// `sourceID` stamped on tracker entries so they are attributable in export/backup (mirrors
-    /// `SiteAtlasStore.sourceID`). Benign log data only. IN-02: aliases the single shared constant on
+    /// `SiteAtlasStore.sourceID`). Benign log data only. Aliases the single shared constant on
     /// `GlucoseHistoryStore` so the literal lives in exactly one place.
     static let trackerSourceID = GlucoseHistoryStore.loopInsightsTrackerSourceID
 
     /// Snapshot every logged caffeine + alcohol entry for the unified backup (schema 3+). Reads the
     /// SAME shared store the tracker log views write and the export reads. Benign fields only — no
-    /// risk inference (D-14). Called by `BackupRestoreView.createBackup()`.
+    /// risk inference. Called by `BackupRestoreView.createBackup()`.
     func trackersBackup() -> TrackerBackup {
         let wide = Date(timeIntervalSince1970: 0)...Date().addingTimeInterval(86400)
         let caffeine = history?.caffeine(in: wide) ?? []
@@ -58,7 +58,7 @@ extension AppModel {
     }
 
     /// Rehydrate caffeine + alcohol tracker entries from a restored backup into the shared store,
-    /// preserving each original stable `entryID`/`date`. L-02: upsert (delete-by-`entryID` then insert)
+    /// preserving each original stable `entryID`/`date`. Upsert (delete-by-`entryID` then insert)
     /// rather than blind-append — SwiftData does not enforce `entryID` uniqueness, so a double restore of
     /// the same backup would otherwise create duplicate rows sharing an id (visible in the log list until
     /// a predicate-delete removes both). Keying on the stable `entryID` makes restore idempotent.
@@ -77,7 +77,7 @@ extension AppModel {
     }
 #endif
 
-    // MARK: F1 (§13) — unified export of on-device health data
+    // MARK: unified export of on-device health data
 #if FABOLUS_BACKUP
 
     /// Assemble the unified on-device health-data export: glucose/insulin/carb history + the setting-change

@@ -1,21 +1,16 @@
 import Foundation
 import faBolusCore
 
-/// Phase 16 GO-1 Step 3 (REMED-16): the CGM "Test" flow's poll-loop state machine, extracted
-/// verbatim out of `AppModel` behind the `DeliveryLedgerCoordinator` closure-binding idiom (D-04).
-///
-/// Depends ONLY on an injected `probe` closure bound to `AppModel.glucoseSourceProbe` (never reads
-/// `glucoseSource` directly — `glucoseSource` stays private, INV-A) plus injected `now`/
-/// `scheduleTick` clock seams (CX-A-08: deterministic under test — no wall-clock `Date()`/
-/// `Task.sleep` call inside the poll-loop logic itself; only the production-bound default of
+/// The CGM "Test" flow's poll-loop state machine. Depends ONLY on an injected `probe` closure bound
+/// to `AppModel.glucoseSourceProbe` (never reads `glucoseSource` directly — `glucoseSource` stays
+/// private) plus injected `now`/`scheduleTick` clock seams (deterministic under test — no wall-clock
+/// `Date()`/`Task.sleep` call inside the poll-loop logic itself; only the production-bound default of
 /// `scheduleTick` uses a real sleep). `AppModel` mirrors this coordinator's published `State` into
-/// its own `@Observable` stored properties via `onStateChanged`, exactly like `deliveryBlockedReason`
-/// mirrors `DeliveryLedgerCoordinator.onDeliveryBlockChanged` — every existing SwiftUI observer
+/// its own `@Observable` stored properties via `onStateChanged`, so every existing SwiftUI observer
 /// (`CgmCredentialsView`/`CgmStatusView` reading `model.cgmTestInProgress`/`cgmTestOutcome`/etc.)
 /// keeps working unchanged.
 ///
-/// This coordinator never doses, never gates, never holds a whole-`AppModel` back-pointer (D-04
-/// rule 1/5).
+/// This coordinator never doses, never gates, never holds a whole-`AppModel` back-pointer.
 @MainActor
 final class CgmTestCoordinator {
 
@@ -25,8 +20,8 @@ final class CgmTestCoordinator {
     /// closure below is wired with zero conversion at the call site.
     typealias Probe = (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)
 
-    /// The 4 fields the Test flow publishes — moved verbatim from `AppModel.swift`'s
-    /// `cgmTestInProgress`/`cgmTestElapsedSeconds`/`cgmTestTimeoutSeconds`/`cgmTestOutcome`.
+    /// The 4 fields the Test flow publishes (`cgmTestInProgress` / `cgmTestElapsedSeconds` /
+    /// `cgmTestTimeoutSeconds` / `cgmTestOutcome`).
     struct State: Equatable {
         var inProgress = false
         var elapsedSeconds = 0
@@ -34,21 +29,21 @@ final class CgmTestCoordinator {
         var outcome: CgmTestOutcome?
     }
 
-    // MARK: - Injected seam bindings + side-effect hooks (D-04)
+    // MARK: - Injected seam bindings + side-effect hooks
     //
     // `var`s with safe no-op defaults, wired by `AppModel` as SEPARATE statements right after
     // construction (Swift's two-phase init forbids a `[weak self]`-capturing closure literal inside
     // the very expression that initializes the property holding it).
 
-    /// Bound to `AppModel.glucoseSourceProbe`. Never reads `glucoseSource` directly (INV-A).
+    /// Bound to `AppModel.glucoseSourceProbe`. Never reads `glucoseSource` directly.
     var probe: () -> Probe? = { nil }
     /// Bound to `AppModel.failoverAutoDisabled != nil`, read at the moment `start()` finds no probe —
     /// composes the same "temporarily disabled" vs. "no fallback source" detail string AppModel used
     /// to build inline.
     var failoverAutoDisabled: () -> Bool = { false }
-    /// CX-A-08 clock seam: production binds this to `Date()`; tests inject a scripted/advancing clock.
+    /// Clock seam: production binds this to `Date()`; tests inject a scripted/advancing clock.
     var now: () -> Date = { Date() }
-    /// CX-A-08 tick seam: production binds this to the pre-existing real 1s `Task.sleep`; tests inject
+    /// Tick seam: production binds this to the pre-existing real 1s `Task.sleep`; tests inject
     /// a deterministic advance (e.g. `{ }` or `{ await Task.yield() }`) — no wall-clock sleep in the
     /// loop body itself.
     var scheduleTick: () async -> Void = { try? await Task.sleep(nanoseconds: 1_000_000_000) }
@@ -56,7 +51,7 @@ final class CgmTestCoordinator {
     /// (mirrors `DeliveryLedgerCoordinator.onDeliveryBlockChanged`).
     var onStateChanged: (State) -> Void = { _ in }
 
-    // MARK: - State (moved verbatim from AppModel.swift's cgmTest* fields)
+    // MARK: - State
 
     private(set) var state = State() {
         didSet { if state != oldValue { onStateChanged(state) } }
@@ -64,8 +59,7 @@ final class CgmTestCoordinator {
     private var pollTask: Task<Void, Never>?
 
     /// How long the Test flow waits before concluding TIMEOUT — keyed on the source's typed
-    /// `connectionKind` (D-06/D-09), NOT on `id`-string literals. Moved verbatim from
-    /// `AppModel.cgmTestTimeout(for:)`.
+    /// `connectionKind`, NOT on `id`-string literals.
     static func cgmTestTimeout(for kind: GlucoseConnectionKind) -> TimeInterval {
         switch kind {
         case .localBLE:      return 6 * 60   // one full Dexcom wake/connect cycle (~5 min) + margin
@@ -74,14 +68,13 @@ final class CgmTestCoordinator {
         }
     }
 
-    /// W-03: the Test poll loop must ABORT when the live probe no longer matches the source the Test
-    /// STARTED against — the user switched or cleared the failover source mid-Test. Moved verbatim
-    /// from `AppModel.cgmTestShouldAbort`.
+    /// The Test poll loop must ABORT when the live probe no longer matches the source the Test
+    /// STARTED against — the user switched or cleared the failover source mid-Test.
     static func cgmTestShouldAbort(startedSourceId: String, currentProbeId: String?) -> Bool {
         currentProbeId != startedSourceId
     }
 
-    /// A single poll-loop decision step (W-03) — pure over `probe()`/`now()` evaluated AT CALL TIME,
+    /// A single poll-loop decision step — pure over `probe()`/`now()` evaluated AT CALL TIME,
     /// so it is directly unit-testable without driving the async `Task` loop below. Returns `true`
     /// when the run reached a terminal state (success/timeout/abort) and the loop should stop;
     /// `false` when it should `await scheduleTick()` and evaluate again.
@@ -89,7 +82,7 @@ final class CgmTestCoordinator {
     func performTick(startedSourceId: String, startedAt: Date, timeout: TimeInterval) -> Bool {
         guard let probeValue = probe(),
               !Self.cgmTestShouldAbort(startedSourceId: startedSourceId, currentProbeId: probeValue.id) else {
-            // W-03: source changed/cleared mid-Test — clear BOTH the in-progress flag AND the
+            // Source changed/cleared mid-Test — clear BOTH the in-progress flag AND the
             // outcome so no frozen stale `.waiting` screen is left behind.
             state.inProgress = false
             state.outcome = nil
@@ -107,8 +100,7 @@ final class CgmTestCoordinator {
 
     /// Start (or restart) the Test flow. OBSERVES `probe()` on a poll instead of building a second
     /// central, so an already-buffered reading resolves `.success` on the very first tick. Reports an
-    /// immediate `.timeout` (not a spin) when no production instance exists — moved verbatim from
-    /// `AppModel.startCgmTest`.
+    /// immediate `.timeout` (not a spin) when no production instance exists.
     func start() {
         pollTask?.cancel()
         guard let probeValue = probe() else {

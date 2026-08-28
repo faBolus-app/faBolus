@@ -3,7 +3,7 @@ import faBolusCore
 import ShareClient
 
 /// Minimal fetch seam over the vendored `ShareClient` so `DexcomShareSource` can be exercised with an
-/// injected fake (the D-07 caching/backoff tests) without a live network — `ShareClient` conforms
+/// injected fake (caching/backoff tests) without a live network — `ShareClient` conforms
 /// as-is, adding no behavior. Counting client constructions == counting login handshakes (a fresh
 /// client starts with a nil token and must re-authenticate).
 protocol ShareGlucoseFetching {
@@ -18,15 +18,13 @@ extension ShareClient: ShareGlucoseFetching {}
 ///
 /// Uses the **vendored `ShareClient`** (LoopKit/dexcom-share-client-swift, MIT) — the validated
 /// implementation Loop uses (login + re-auth + `fetchLast`) — instead of hand-rolled endpoint calls.
-/// See Phase 6 in MIGRATION.md.
 ///
-/// D-07: the `ShareClient` is **cached on the instance across polls** (mirroring the now-removed
-/// LibreLinkUp source's correct `token: String?` pattern) instead of being rebuilt inside `poll()`
-/// every cycle — a rebuild
-/// forces a full 2-request re-auth handshake as often as every 60s during failover, risking Dexcom's
-/// `SSO_Authenticate MaxAttemptsExceeed` lockout at the exact moment the fallback is needed. It is
-/// re-constructed only when the configured credentials change or a fetch error nils it (a
-/// 401-equivalent), and `PollingGlucoseSource`'s backoff widens the retry cadence on repeated failure.
+/// The `ShareClient` is **cached on the instance across polls** instead of being rebuilt inside
+/// `poll()` every cycle — a rebuild forces a full 2-request re-auth handshake as often as every 60s
+/// during failover, risking Dexcom's `SSO_Authenticate MaxAttemptsExceeed` lockout at the exact
+/// moment the fallback is needed. It is re-constructed only when the configured credentials change
+/// or a fetch error nils it (a 401-equivalent), and `PollingGlucoseSource`'s backoff widens the retry
+/// cadence on repeated failure.
 @MainActor
 final class DexcomShareSource: PollingGlucoseSource {
     /// Builds the underlying Share client for a given credential/region set. Injectable so tests can
@@ -34,7 +32,7 @@ final class DexcomShareSource: PollingGlucoseSource {
     typealias ClientFactory = @MainActor (_ user: String, _ pass: String, _ server: KnownShareServers) -> ShareGlucoseFetching
     private let makeClient: ClientFactory
 
-    /// D-07: the cached client + the credentials it was built from. Reused across `poll()` so the
+    /// The cached client + the credentials it was built from. Reused across `poll()` so the
     /// vendored `ShareClient` keeps its own session token warm instead of re-authenticating every
     /// cycle. Rebuilt ONLY on a credential change (below) or when a fetch error nils it.
     private var client: ShareGlucoseFetching?
@@ -48,8 +46,7 @@ final class DexcomShareSource: PollingGlucoseSource {
     }
 
     /// Maps the `dexcomshare.region` config string to a Dexcom Share server. `"apac"` →
-    /// `KnownShareServers.APAC` (`share.dexcom.jp`, D-13 — the source-side half of the APAC coverage
-    /// gap; the picker UI option lands in Plan 04), `"ous"` → the worldwide server, anything else → US.
+    /// `KnownShareServers.APAC` (`share.dexcom.jp`), `"ous"` → the worldwide server, anything else → US.
     static func server(for region: String?) -> KnownShareServers {
         switch region {
         case "apac": return .APAC
@@ -67,20 +64,19 @@ final class DexcomShareSource: PollingGlucoseSource {
         return try await fetch(user: user, pass: pass, server: server)
     }
 
-    /// Testable fetch core (D-07): reuse the cached client unless the credentials changed. The vendored
+    /// Testable fetch core: reuse the cached client unless the credentials changed. The vendored
     /// `ShareClient` caches its own session token across `fetchLast` calls, so a second poll with the
     /// same credentials does NOT trigger a fresh login handshake. A thrown fetch error invalidates the
     /// cached client so the next poll re-logs in (a 401-equivalent), while `PollingGlucoseSource`'s
     /// backoff widens the retry cadence to avoid a fixed-cadence re-auth storm.
     ///
-    /// C2-01 depth (completes 13-03's deferred wiring): the network-callback closure below extracts
-    /// only PLAIN `(mgdl, date, trend)` tuples from each `ShareGlucose` — `ShareGlucose`'s memberwise
-    /// init is `internal` to the vendored `ShareClient` module, so no test in THIS target can construct
-    /// one directly (see `DexcomShareSourceTests`'s existing note); keeping the closure to trivial field
-    /// extraction means the actual GATING decision (`Self.partition`, below) is a pure function over
-    /// plain tuples instead, fully unit-testable without a real `ShareGlucose`. The closure itself still
-    /// touches no `self` (it may run off the `@MainActor` — ShareClient's completion isn't guaranteed to
-    /// land on it), matching the pre-existing "capture the Sendable id, not self" discipline.
+    /// The network-callback closure extracts only PLAIN `(mgdl, date, trend)` tuples from each
+    /// `ShareGlucose` — `ShareGlucose`'s memberwise init is `internal` to the vendored `ShareClient`
+    /// module, so no test in THIS target can construct one directly. Keeping the closure to trivial
+    /// field extraction means the actual gating decision (`Self.partition`, below) is a pure function
+    /// over plain tuples, fully unit-testable without a real `ShareGlucose`. The closure itself still
+    /// touches no `self` (it may run off the `@MainActor` — ShareClient's completion isn't guaranteed
+    /// to land on it).
     func fetch(user: String, pass: String, server: KnownShareServers) async throws -> [GlucoseSample] {
         if client == nil
             || cachedCreds?.user != user
@@ -104,10 +100,10 @@ final class DexcomShareSource: PollingGlucoseSource {
             // Back on the MainActor now (the continuation resumes into this @MainActor-isolated
             // function) — safe to touch `self` again from here on.
             let (samples, belowRange) = Self.partition(readings: raw, sourceID: sid)
-            // C2-01 depth: surface each below-`GlucosePlausibility.minimum` raw reading through 13-03's
-            // ingest-boundary sentinel (`ingestRawReading` re-applies the SAME D-05 gate — this call is
-            // provably a no-op for any in-range value, since `partition` already separated those into
-            // `samples`). Oldest-first so the newest below-range reading is the one left standing in
+            // Surface each below-`GlucosePlausibility.minimum` raw reading through the ingest-boundary
+            // sentinel (`ingestRawReading` re-applies the SAME [40, 400] gate — this call is a no-op
+            // for any in-range value, since `partition` already separated those into `samples`).
+            // Oldest-first so the newest below-range reading is the one left standing in
             // `urgentLowSentinel` (mirrors `PollingGlucoseSource.ingest`'s max-by-date "latest" rule).
             for r in belowRange.sorted(by: { $0.date < $1.date }) { ingestRawReading(mgdl: r.mgdl, date: r.date) }
             return samples
@@ -124,10 +120,10 @@ final class DexcomShareSource: PollingGlucoseSource {
     /// Pure classification of the raw Dexcom Share readings one poll returned — extracted from the
     /// network-callback closure so it is independently unit-testable with plain tuples (see `fetch`'s
     /// doc comment on why `ShareGlucose` itself can't be constructed in this target). Applies the SAME
-    /// D-05 gate as before (`GlucoseSample.init?`) for the in-range half, byte-unchanged; additionally
-    /// buckets a below-`GlucosePlausibility.minimum` raw reading separately (C2-05/C2-01 depth) instead
-    /// of silently discarding it. An above-`.maximum` reading (decode garbage) — or `glucose <= 0` — is
-    /// still silently dropped either way, matching the pre-existing behavior exactly.
+    /// [40, 400] plausibility gate (`GlucoseSample.init?`) for the in-range half; additionally
+    /// buckets a below-`GlucosePlausibility.minimum` raw reading separately instead of silently
+    /// discarding it. An above-`.maximum` reading (decode garbage) — or `glucose <= 0` — is still
+    /// silently dropped either way.
     static func partition(readings: [(mgdl: Int, date: Date, trend: Int)], sourceID: String)
         -> (samples: [GlucoseSample], belowRange: [(mgdl: Int, date: Date)]) {
         var samples: [GlucoseSample] = []

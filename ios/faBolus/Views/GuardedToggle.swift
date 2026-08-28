@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// The ONE guarded-boolean-toggle contract for the whole settings surface (D-05/SC3). Generalized from
-/// `AlertRulesView`'s pre-existing `suppressBinding` Binding-intercept model (09.3-RESEARCH.md
-/// "Recommended extraction", lines 445-476): `get`/`set` name the real backing property; `skipConfirmIf`
-/// lets an already-acknowledged flag bypass the dialog (Shape 2 sites); `requestConfirm` flips whatever
-/// `@State` flag drives the caller's `confirmationDialog`.
+/// The one guarded-boolean-toggle contract for the settings surface. Generalized from
+/// `AlertRulesView`'s `suppressBinding` intercept: `get`/`set` name the real backing property;
+/// `skipConfirmIf` lets an already-acknowledged flag bypass the dialog; `requestConfirm` flips
+/// whatever `@State` flag drives the caller's `confirmationDialog`.
 ///
 /// Contract:
 /// - Reading the binding always returns the real backing value (`get()`) — never a staged value.
@@ -13,11 +12,11 @@ import SwiftUI
 ///   still returns false.
 /// - Enabling when `skipConfirmIf()` is true calls `set(true)` immediately and never touches
 ///   `requestConfirm`.
-/// - Disabling (`false`) always calls `set(false)` immediately — turning OFF is never confirmed, matching
-///   every existing site in this app.
+/// - Disabling (`false`) always calls `set(false)` immediately — turning OFF is never confirmed,
+///   matching every existing site in this app.
 ///
-/// Deliberately a plain function, NOT a property wrapper: the `@State` confirm flag must stay owned by
-/// the View (09.3-RESEARCH.md "Alternatives", lines 138-141).
+/// Deliberately a plain function, not a property wrapper: the `@State` confirm flag must stay owned
+/// by the View.
 func guardedToggle(
     get: @escaping () -> Bool,
     set: @escaping (Bool) -> Void,

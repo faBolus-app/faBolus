@@ -7,21 +7,21 @@ import Security
 /// watch / Apple Watch). When set, it **replaces** the surface's tap-a-sequence / two-button-hold confirm
 /// (it does not stack on top of it): the user confirms the dose by entering the passcode instead.
 ///
-/// This-device-only Keychain store, never the raw PIN. VA-29 hardening: the PIN is derived with a slow KDF
-/// (**PBKDF2-HMAC-SHA256**, versioned `v2:` blob) rather than a single fast SHA-256, and the exponential
-/// soft-lock counters now live in the **Keychain** (not `UserDefaults`) so a plist edit or an unencrypted
-/// backup can no longer reset the backoff. An old `"saltHex:hashHex"` SHA-256 blob is transparently migrated
-/// to `v2:` on the next correct entry (verify-old-then-rehash — no forced re-set). Distinct Keychain
-/// service and lockout account. A wrong entry backs off with **exponential delay** — a soft rate-limit,
-/// never a hard
-/// permanent lock — and it is resettable from the phone (set to `nil`). Validation is phone-side (the host
-/// holds the hash); a remote never sees or checks it.
+/// This-device-only Keychain store, never the raw PIN. The PIN is derived with a slow KDF
+/// (**PBKDF2-HMAC-SHA256**, versioned `v2:` blob) rather than a single fast SHA-256 — a 4-digit PIN
+/// is too small for a fast hash. Exponential soft-lock counters live in the **Keychain** (not
+/// `UserDefaults`) so a plist edit or an unencrypted backup cannot reset the backoff. An old
+/// `"saltHex:hashHex"` SHA-256 blob is transparently migrated to `v2:` on the next correct entry
+/// (verify-old-then-rehash — no forced re-set). Distinct Keychain service and lockout account. A
+/// wrong entry backs off with **exponential delay** — a soft rate-limit, never a hard
+/// permanent lock — and it is resettable from the phone (set to `nil`). Validation is phone-side
+/// (the host holds the hash); a remote never sees or checks it. The phone is the passcode authority.
 enum BolusPasscodeStore {
     private static let service = "com.fabolus.app.bolus-passcode"
     private static let account = "pinHash"
     private static let lockoutAccount = "lockout"
 
-    /// VA-29: PBKDF2 iteration count. A slow KDF is the right hardening for a 4-digit PIN (a single SHA-256 is
+    /// PBKDF2 iteration count. A slow KDF is the right hardening for a 4-digit PIN (a single SHA-256 is
     /// far too fast). Stored in the `v2:` blob so a future bump stays verifiable against older blobs.
     private static let pbkdf2Iterations = 100_000
 
@@ -31,27 +31,27 @@ enum BolusPasscodeStore {
     /// hashing + backoff logic. Compiled out of Release entirely; never set in production.
     nonisolated(unsafe) static var useInMemoryBackingForTests = false
     nonisolated(unsafe) private static var memBlob: String?
-    /// VA-29: the in-memory seam also backs the Keychain-stored lockout item so the `.serialized` tests can
+    /// The in-memory seam also backs the Keychain-stored lockout item so the `.serialized` tests can
     /// exercise the backoff without touching the real Keychain.
     nonisolated(unsafe) private static var memLockout: String?
 
-    /// CX-F-10 test seam: which raw op the last `upsertBlob` call actually took. Lets a test assert the
+    /// Test seam: which raw op the last `upsertBlob` call actually took. Lets a test assert the
     /// REPLACE path used `SecItemUpdate` (never `SecItemAdd` against an existing item, which throws
     /// `errSecDuplicateItem`) and the FIRST-SET path used `SecItemAdd` — without needing the real Keychain.
     enum UpsertOp: Equatable { case update, add }
     nonisolated(unsafe) static var lastUpsertOp: UpsertOp?
-    /// CX-F-10 test seam: force the in-memory-backed `upsertBlob` to behave as if the underlying
+    /// Test seam: force the in-memory-backed `upsertBlob` to behave as if the underlying
     /// `SecItemUpdate`/`SecItemAdd` call had returned this `OSStatus`, so a test can exercise the
     /// store-failure branch of the atomic replace (a generic failure, or — because the real code path
     /// never issues a bare `SecItemAdd` against an existing key — statuses like `errSecDuplicateItem` that
     /// the design specifically avoids). `nil` (the default) means "succeed," matching the always-succeeds
     /// in-memory backing every other test in this file already relies on.
     nonisolated(unsafe) static var injectedUpsertStatus: OSStatus?
-    /// CX-F-10 test seam: force `SecRandomCopyBytes`'s reported status, so a test can exercise the
+    /// Test seam: force `SecRandomCopyBytes`'s reported status, so a test can exercise the
     /// discarded-RNG-result fail-closed path without a real RNG failure (which can't be induced on demand).
     nonisolated(unsafe) static var injectedRNGStatus: OSStatus?
 
-    /// VA-29 test seam: seed a LEGACY (pre-v2) `"saltHex:hashHex"` SHA-256 blob so a test can exercise the
+    /// Test seam: seed a LEGACY (pre-v2) `"saltHex:hashHex"` SHA-256 blob so a test can exercise the
     /// migration path (`setPasscode` only ever writes v2, so there is no other way to produce an old blob).
     /// DEBUG only; never used in production. Uses a fixed salt for determinism. Seeds directly (bypassing
     /// `upsertBlob`) since this is establishing a FIRST item, not exercising the replace logic itself.
@@ -62,16 +62,16 @@ enum BolusPasscodeStore {
     }
     #endif
 
-    /// A valid passcode is **exactly 4 digits** (§2.3). Used to reject bad input before it is ever stored.
+    /// A valid passcode is **exactly 4 digits**. Used to reject bad input before it is ever stored.
     static func isValidFormat(_ pin: String) -> Bool {
         pin.count == 4 && pin.allSatisfy(\.isNumber)
     }
 
-    /// Set (or clear, with `nil`/empty) the passcode. Stores a versioned `v2:saltHex:iterations:hashHex` blob
-    /// (VA-29). A non-empty PIN that is not exactly 4 digits is **rejected** (returns `false`, nothing stored)
+    /// Set (or clear, with `nil`/empty) the passcode. Stores a versioned `v2:saltHex:iterations:hashHex` blob.
+    /// A non-empty PIN that is not exactly 4 digits is **rejected** (returns `false`, nothing stored)
     /// so a malformed value can never become the gate.
     ///
-    /// CX-F-10: this is an ATOMIC replace, never delete-then-add. Format is validated and the RNG result is
+    /// This is an ATOMIC replace, never delete-then-add. Format is validated and the RNG result is
     /// checked BEFORE anything is touched, and the new blob is written via an upsert (`SecItemUpdate` when a
     /// passcode already exists, `SecItemAdd` only when absent) — the OLD blob is never deleted first. On ANY
     /// failure (malformed input, RNG failure, KDF failure, or a store failure) this returns `false` and the
@@ -100,7 +100,8 @@ enum BolusPasscodeStore {
     /// Whether a passcode is currently required for remote bolusing.
     static var isRequired: Bool { load() != nil }
 
-    // Persisted exponential-backoff soft-lock (§2.3 — never a hard lock). VA-29: now Keychain-backed.
+    // Persisted exponential-backoff soft-lock — never a hard lock. Keychain-backed so a plist
+    // edit or unencrypted backup cannot reset the counter.
     static let maxAttemptsBeforeLockout = 5
 
     /// Seconds remaining on the current backoff, or 0 if entry is allowed right now.
@@ -110,8 +111,9 @@ enum BolusPasscodeStore {
 
     /// Check `pin` against the stored hash, enforcing the backoff. A correct PIN clears the counter; a wrong
     /// one increments it and, past the threshold, arms an exponential delay (30 s doubling, capped at 1 h)
-    /// that survives relaunch. Never hard-locks. VA-29: PBKDF2 for `v2:` blobs, with transparent migration of
-    /// an old SHA-256 `"salt:hash"` blob on a successful verify.
+    /// that survives relaunch. Never hard-locks. PBKDF2 for `v2:` blobs, with transparent migration of
+    /// an old SHA-256 `"salt:hash"` blob on a successful verify. The phone is the authority; the remote
+    /// never verifies.
     static func verify(_ pin: String) -> Bool {
         guard lockoutRemaining <= 0 else { return false }        // backing off — don't even hash
         guard let stored = load() else { return false }
@@ -125,7 +127,7 @@ enum BolusPasscodeStore {
                let iterations = Int(parts[2]),
                let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations),
                let storedHash = bytes(String(parts[3])) {
-                // WR-03: constant-time compare over raw hash bytes (not `hex(...) == String`),
+                // Constant-time compare over raw hash bytes (not `hex(...) == String`),
                 // so verification time doesn't leak how many leading hash bytes matched.
                 matched = constantTimeEquals(derived, storedHash)
             }
@@ -135,11 +137,11 @@ enum BolusPasscodeStore {
             let parts = stored.split(separator: ":")
             if parts.count == 2, let salt = bytes(String(parts[0])),
                let storedHash = bytes(String(parts[1])),
-               // WR-03: constant-time compare over raw hash bytes, matching the v2 path.
+               // Constant-time compare over raw hash bytes, matching the v2 path.
                constantTimeEquals(legacyHashBytes(pin: pin, salt: salt), storedHash) {
                 matched = true
-                // VA-29 migration: silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
-                // CX-F-10: the SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
+                // Silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
+                // The SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
                 // legacy blob (which just matched) untouched, so it is still verifiable next time. `matched`
                 // is already `true` regardless of whether this best-effort upgrade succeeds: migration
                 // failure never turns a correct entry into a rejected one, and never opens the gate.
@@ -178,7 +180,7 @@ enum BolusPasscodeStore {
         ]
     }
 
-    /// CX-F-10: atomically replace the stored blob — `SecItemUpdate` when an item already exists at the
+    /// Atomically replace the stored blob — `SecItemUpdate` when an item already exists at the
     /// fixed service/account, `SecItemAdd` only when absent. NEVER delete-then-add (which would leave the
     /// gate briefly/permanently open on a failure) and never store-new-before-delete-old (which would
     /// `errSecDuplicateItem` against the fixed key). Returns `false` on any failure WITHOUT deleting
@@ -233,7 +235,7 @@ enum BolusPasscodeStore {
         return s
     }
 
-    // MARK: - Keychain-backed lockout counter (VA-29 — moved off UserDefaults)
+    // MARK: - Keychain-backed lockout counter
 
     private static var lockoutKeychainBase: [String: Any] {
         [
@@ -289,7 +291,7 @@ enum BolusPasscodeStore {
 
     // MARK: - Hashing
 
-    /// VA-29: build the versioned `v2:saltHex:iterations:hashHex` blob via PBKDF2-HMAC-SHA256.
+    /// Build the versioned `v2:saltHex:iterations:hashHex` blob via PBKDF2-HMAC-SHA256.
     private static func hashV2(pin: String, salt: [UInt8], iterations: Int) -> String? {
         guard let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations) else { return nil }
         return "v2:\(hex(salt)):\(iterations):\(hex(derived))"
@@ -322,7 +324,7 @@ enum BolusPasscodeStore {
         hex(legacyHashBytes(pin: pin, salt: salt))
     }
 
-    /// WR-03: constant-time equality over raw hash bytes. XOR-accumulates every byte and only
+    /// Constant-time equality over raw hash bytes. XOR-accumulates every byte and only
     /// checks the accumulator at the end, so the comparison time does not depend on WHERE (or
     /// whether) the first mismatching byte occurs — a wrong PIN whose hash shares a long prefix
     /// with the stored hash takes the same time as one that differs in byte 0. A length mismatch

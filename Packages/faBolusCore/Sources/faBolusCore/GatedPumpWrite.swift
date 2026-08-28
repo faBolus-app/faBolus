@@ -21,14 +21,14 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // low-risk. `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
     case cancelBolus, dismissNotification
 
-    // Unverified-therapy acknowledgment (`runGatedTherapy`) — IDP-CRUD + CGM-high/low, plus (P14 S6) the
-    // therapy-defining Control-IQ / max-bolus / max-basal writes that previously bypassed the ack.
+    // Unverified-therapy acknowledgment (`runGatedTherapy`) — IDP-CRUD + CGM-high/low, plus the
+    // therapy-defining Control-IQ / max-bolus / max-basal writes (those change how the pump doses).
     case createProfile, setActiveProfile, renameProfile, deleteProfile
     case addProfileSegment, modifyProfileSegment, deleteProfileSegment, setCgmHighLowAlert
     case setControlIQ, setMaxBolus, setMaxBasal
     // The Mobi native Sleep-schedule WRITE. `flag`'s semantic meaning is undocumented and
     // only slot-0 writes were ever captured (slots 1-3 unobserved), so this stays ack-gated like the
-    // other unverified-hardware writes above, even though it is NOT itself insulin-affecting (L7).
+    // other unverified-hardware writes above, even though it is NOT itself insulin-affecting.
     case setSleepSchedule
 
     // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting / operational
@@ -58,10 +58,8 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             return .childOnly
         case .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
              .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
-             // The therapy-DEFINING writes that used to bypass the acknowledgment gate.
              // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
-             // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
-             // S8's refinement; here they gain the same coverage the IDP writes have.)
+             // ack-covered like IDP CRUD.
              .setControlIQ, .setMaxBolus, .setMaxBasal,
              // setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
              // it needs the same one-shot untested-feature ack as the other unverified writes above.
@@ -71,8 +69,8 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
              .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
              .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode, .fillCannula,
              .syncTimeToNow,
-             // Operational alert reminders are self-tier (no therapy-edit ack): they configure WHEN the
-             // pump warns, not how it doses. `setCgmHighLowAlert` is the exception — a glucose threshold —
+             // Operational alert reminders configure WHEN the pump warns, not how it doses, so they
+             // skip the therapy-edit ack. `setCgmHighLowAlert` is the exception — a glucose threshold —
              // and stays ack-gated above. `syncTimeToNow` is a clock sync (its auto-path can't prompt).
              .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
              .setCgmOutOfRangeAlert, .setCgmRiseFallAlert:
@@ -83,9 +81,8 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // MARK: - Evaluator maps (single AccessPolicy). Defaults are the most-restrictive/fail-safe choice,
     // so a newly-added case is never accidentally *less* gated than intended.
 
-    /// The child-mode feature this action requires (matches the `childBlocked(...)` argument each
-    /// AppModel entry point passes today). New control/ack cases default to `.advancedControl` (the
-    /// strictest child gate) — fail-safe.
+    /// The child-mode feature this action requires. New control/ack cases default to `.advancedControl`
+    /// (the strictest child gate) — fail-safe.
     public var requiredChildFeature: ChildFeature {
         switch self {
         case .deliverBolus, .deliverExtendedBolus: return .bolus
@@ -109,13 +106,12 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// The **opt-in axis** (P13 split): whether this action needs the user's advanced-control opt-in
-    /// (`advancedControlEnabled`) at the funnel. This is the former `requiresAdvancedControl`, unchanged
-    /// — the set of writes the app reaches ONLY behind `advancedControlAllowed` (verified against the
-    /// live UI 2026-08-05). Delivery (`.ledgeredDelivery`) and the child-only pair (`.childOnly`) never
-    /// need the opt-in; neither does `syncTimeToNow` — it is reachable on a Mobi from Settings → "Pump
-    /// clock" WITHOUT the opt-in, gated only by its own `supportsTimeSync` capability (see
-    /// `hasRequiredCapability`). Requiring the opt-in for it would tighten shipped Mobi behavior.
+    /// The **opt-in axis**: whether this action needs the user's advanced-control opt-in
+    /// (`advancedControlEnabled`) at the funnel. Delivery (`.ledgeredDelivery`) and the child-only pair
+    /// (`.childOnly`) never need the opt-in; neither does `syncTimeToNow` — it is reachable on a Mobi
+    /// from Settings → "Pump clock" WITHOUT the opt-in, gated only by its own `supportsTimeSync`
+    /// capability (see `hasRequiredCapability`). Requiring the opt-in for it would tighten shipped
+    /// Mobi behavior.
     public var requiresAdvancedControlOptIn: Bool {
         if self == .syncTimeToNow { return false }
         switch gate {
@@ -124,19 +120,17 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// The **capability axis** (P13 split): whether the connected pump's capability set permits this
-    /// action, independent of the opt-in. Splitting this out of `requiresAdvancedControl` removes the
-    /// old hand-carved `if self == .syncTimeToNow` special-case — a Mobi-only-BY-CAPABILITY action can
-    /// now declare its capability (`supportsTimeSync`) cleanly instead of masquerading as "not advanced".
-    /// Capabilities are now pump-derived (P13-1 `PumpCapabilities.derive` reads the pump's own feature
-    /// bitmask), so this axis no longer leans on `isMobi`.
+    /// The **capability axis**: whether the connected pump's capability set permits this action,
+    /// independent of the opt-in. A Mobi-only-by-capability action declares its capability
+    /// (`supportsTimeSync`) instead of masquerading as "not advanced". Capabilities are pump-derived
+    /// (`PumpCapabilities.derive` reads the pump's own feature bitmask), so this axis no longer leans
+    /// on `isMobi`.
     ///
     /// The advanced-control writes require any advanced capability (`supportsAnyAdvancedControl`) —
     /// preserving today's coarse check exactly, EXCEPT for the two limit-set writes below. A finer
-    /// per-action mapping (e.g. `setMode → supportsModes`) is a deliberate follow-up, now feasible because
-    /// P13-1 can produce non-uniform capability sets; it is deferred (still coarse) for the rest of the set
-    /// so this increment stays behavior-preserving on every other reachable path. Delivery and the
-    /// child-only pair require no capability (Gate 5 stays a no-op for them).
+    /// per-action mapping (e.g. `setMode → supportsModes`) is deferred so this stays behavior-preserving
+    /// on every other reachable path. Delivery and the child-only pair require no capability (Gate 5
+    /// stays a no-op for them).
     public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
         if self == .syncTimeToNow { return caps.supportsTimeSync }
         // The write's Mobi-only gate MIRRORS the pump protocol's own device scope — upstream
@@ -145,12 +139,11 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         // Swift port merely dropped those `MessageProps` annotation fields; this per-action arm is the
         // app-side equivalent, keyed on its own dedicated capability (not the coarse advanced-control set).
         if self == .setSleepSchedule { return caps.supportsSleepScheduleWrite }
-        // The per-action refinement is now APPLIED for the two
-        // limit-set writes — `.setMaxBolus`/`.setMaxBasal` key on the dedicated `supportsLimits` bit rather
-        // than the coarse advanced-control set, since a pump could plausibly advertise some other advanced
-        // capability (e.g. Control-IQ settings) without also exposing the basal/bolus-limit feature. Not
-        // reachable via shipped UI today (the UI already gates the limits editor on `supportsLimits`); this
-        // closes the narrow backend access-control gap as defense-in-depth.
+        // `.setMaxBolus`/`.setMaxBasal` key on the dedicated `supportsLimits` bit rather than the coarse
+        // advanced-control set, since a pump could plausibly advertise some other advanced capability
+        // (e.g. Control-IQ settings) without also exposing the basal/bolus-limit feature. Not reachable
+        // via shipped UI today (the UI already gates the limits editor on `supportsLimits`); this closes
+        // the narrow backend access-control gap as defense-in-depth.
         if self == .setMaxBolus || self == .setMaxBasal { return caps.supportsLimits }
         switch gate {
         case .controlInterlock, .unverifiedAck: return caps.supportsAnyAdvancedControl
@@ -158,18 +151,17 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// P14 (Slice 2) — the **mode axis**: the minimum `AppMode` at which this action is available. The
-    /// evaluator's mode gate denies when the active mode ranks below this (`.childOnly` STOPs excepted).
-    /// The default is `.advanced` — the strictest, fail-safe choice, so a newly-added case is never
-    /// accidentally reachable in a lower mode than intended. Only the genuinely-Simple/Standard actions are
-    /// classified explicitly:
+    /// The **mode axis**: the minimum `AppMode` at which this action is available. The evaluator's mode
+    /// gate denies when the active mode ranks below this (`.childOnly` STOPs excepted). The default is
+    /// `.advanced` — the strictest, fail-safe choice, so a newly-added case is never accidentally
+    /// reachable in a lower mode than intended. Only the genuinely-Simple/Standard actions are classified
+    /// explicitly:
     ///   - `.simple`   — bolus is the core function; cancel/dismiss are STOPs (their gate is carved out, so
     ///                   this value is only a fail-safe should the carve-out ever change).
     ///   - `.standard` — routine pump control that isn't full "advanced" (suspend/resume, activity modes,
     ///                   Find-My-Pump).
     ///   - `.advanced` — everything else: temp basal, IDP/profile CRUD, CGM-session control, cartridge/fill,
     ///                   max bolus/basal, time sync, Control-IQ settings, alert config, extended (combo) bolus.
-    /// These are the initial conservative mapping; the S3 Objectives taxonomy refines them (owner review).
     public var requiredMode: AppMode {
         switch self {
         case .deliverBolus, .cancelBolus, .dismissNotification:

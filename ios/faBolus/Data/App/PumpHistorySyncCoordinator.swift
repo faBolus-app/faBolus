@@ -12,7 +12,7 @@ import TandemMessages
 @MainActor
 final class PumpHistorySyncCoordinator {
 
-    // MARK: - Injected seams (settable post-construction, D-04 hook pattern)
+    // MARK: - Injected seams (settable post-construction)
 
     /// Bound to `{ [weak self] msg in try? self?.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0,
     /// allowInsulinDelivery: false) }` — the SAME swallow-on-failure `tx`/`client.send` routing every
@@ -40,7 +40,7 @@ final class PumpHistorySyncCoordinator {
 
     // MARK: - Coverage/paging state (sole store here)
 
-    /// `#if DEBUG` VA-18 test seam: the zone `finishBackfill` re-anchors history records into (production
+    /// `#if DEBUG` test seam: the zone `finishBackfill` re-anchors history records into (production
     /// reads `TimeZone.current`). Forwarded by `TandemBackend.historyBackfillTimeZoneForTesting` so the
     /// existing test-facing API is unchanged.
     #if DEBUG
@@ -55,9 +55,10 @@ final class PumpHistorySyncCoordinator {
     private var backfillEventLogs: [any HistoryLogEvent] = []
     private var pendingGapWindows: [ClosedRange<UInt32>] = []
     private var currentGapWindow: ClosedRange<UInt32>?
-    /// WR-03 (R2-17): the set of sequence numbers whose RESPONSE frames actually arrived for the current
-    /// gap window (recorded from the received records in `appendHistoryStreamFrame`, not the request
-    /// cursor). `creditCurrentWindow()` credits ONLY the top-anchored contiguous received sub-range.
+    /// The set of sequence numbers whose RESPONSE frames actually arrived for the current
+    /// gap window (recorded from the received records in `appendHistoryStreamFrame`, not the
+    /// request cursor). `creditCurrentWindow()` credits ONLY the top-anchored contiguous received
+    /// sub-range.
     private var receivedSeqsThisWindow: Set<UInt32> = []
     private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page within currentGapWindow
     private var backfillFirstSeq: UInt32 = 0    // lower bound of currentGapWindow
@@ -66,14 +67,13 @@ final class PumpHistorySyncCoordinator {
     private static let backfillPageSize = 255   // numberOfLogs is one byte
     private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
 
-    // MARK: - R18: pure gap computation (unit-testable, no BLE)
+    // MARK: - Pure gap computation (unit-testable, no BLE)
 
-    /// Pure gap computation (D-02, RESEARCH Pattern 1) — no BLE, directly unit-testable. Given the pump's
-    /// reported `[pumpFirst, pumpLast]` range, the retention floor (see `retentionFloorSequence`), and the
-    /// locally HELD coverage ranges, returns the ordered list of sequence ranges still missing: both a
-    /// trailing FORWARD gap (records the pump logged during a disconnect) and any INTERIOR/non-sequential
-    /// holes. Generalizes cleanly over any number of held ranges — subtracts each held range from the
-    /// running remainder in turn.
+    /// Pure gap computation — no BLE, directly unit-testable. Given the pump's reported
+    /// `[pumpFirst, pumpLast]` range, the retention floor (see `retentionFloorSequence`), and the
+    /// locally HELD coverage ranges, returns the ordered list of sequence ranges still missing:
+    /// both a trailing FORWARD gap (records the pump logged during a disconnect) and any
+    /// INTERIOR/non-sequential holes. Subtracts each held range from the running remainder in turn.
     static func missingRanges(pumpFirst: UInt32, pumpLast: UInt32, retentionFloor: UInt32,
                               held: [ClosedRange<UInt32>]) -> [ClosedRange<UInt32>] {
         let lower = max(pumpFirst, retentionFloor)
@@ -91,30 +91,29 @@ final class PumpHistorySyncCoordinator {
         return missing
     }
 
-    /// Retention-floor sequence for `missingRanges` (D-03). `historyRetentionDays == 0` means "keep
-    /// everything" (`AppSettings`'s own doc comment / default — Pitfall 1), so it must resolve to
-    /// `pumpFirst` (the full available range), never to a "now"/zero sentinel. For `> 0`, there is no
-    /// sequence↔date mapping available BEFORE any records are fetched, so this deliberately returns
-    /// `pumpFirst` in both cases: a superset fetch, with the EXACT date boundary enforced by the existing
-    /// `AppModel.applyRetention` store-side pruning (the two-place retention design).
+    /// Retention-floor sequence for `missingRanges`. `historyRetentionDays == 0` means "keep
+    /// everything" (`AppSettings`'s own default), so it must resolve to `pumpFirst` (the full
+    /// available range), never to a "now"/zero sentinel. For `> 0`, there is no sequence↔date
+    /// mapping available BEFORE any records are fetched, so this deliberately returns `pumpFirst`
+    /// in both cases: a superset fetch, with the EXACT date boundary enforced by
+    /// `AppModel.applyRetention` store-side pruning.
     static func retentionFloorSequence(pumpFirst: UInt32, pumpLast: UInt32, retentionDays: Int) -> UInt32 {
         pumpFirst
     }
 
     // MARK: - Entry points
 
-    /// Entry point for a gap-aware sync (D-02/D-04): compute the missing windows against the persisted
-    /// coverage map and, if any exist, start paging them. `PumpResponseApplier`'s `HistoryLogStatusResponse`
-    /// case calls this (via `TandemBackend`'s injected `beginGapSync` closure) whenever `m.numEntries > 0`.
+    /// Entry point for a gap-aware sync: compute the missing windows against the persisted
+    /// coverage map and, if any exist, start paging them. `PumpResponseApplier`'s
+    /// `HistoryLogStatusResponse` case calls this whenever `m.numEntries > 0`.
     func beginGapSync(pumpFirst: UInt32, pumpLast: UInt32) {
         let held = AppSettings.shared.historyCoverage.ranges
         let floor = Self.retentionFloorSequence(pumpFirst: pumpFirst, pumpLast: pumpLast,
                                                 retentionDays: AppSettings.shared.historyRetentionDays)
         let windows = Self.missingRanges(pumpFirst: pumpFirst, pumpLast: pumpLast, retentionFloor: floor, held: held)
         guard !windows.isEmpty else {
-            // D-05: already fully synced against the pump's reported range — a check that confirms
-            // nothing was missing is still a completed sync (the UI-SPEC hybrid design's "silent
-            // routine gap-fill" case), not a stuck `.syncing` spinner with nothing left to advance it.
+            // Already fully synced against the pump's reported range — a check that confirms
+            // nothing was missing is still a completed sync, not a stuck `.syncing` spinner.
             AppSettings.shared.historyLastSyncedAt = Date()
             setHistorySyncState(.idle(lastSynced: AppSettings.shared.historyLastSyncedAt))
             return
@@ -124,29 +123,29 @@ final class PumpHistorySyncCoordinator {
         backfillBuffer.removeAll(keepingCapacity: true)
         backfillBoluses.removeAll(keepingCapacity: true)
         backfillEventLogs.removeAll(keepingCapacity: true)
-        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: clean slate at the start of each sync
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // clean slate at the start of each sync
         backfillPages = 0
         pendingGapWindows = windows
         advanceToNextGapWindow()
     }
 
-    /// Pop the next gap window off the queue and start paging it, or finish the sync if the queue is
-    /// empty or the safety cap (T-09.7-02) has already been reached.
+    /// Pop the next gap window off the queue and start paging it, or finish the sync if the queue
+    /// is empty or the safety cap has already been reached.
     private func advanceToNextGapWindow() {
         guard !pendingGapWindows.isEmpty, backfillPages < Self.backfillMaxPages else {
             finishBackfill(); return
         }
         let window = pendingGapWindows.removeFirst()
         currentGapWindow = window
-        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: fresh per-window received-sequence accumulator
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // fresh per-window received-sequence accumulator
         backfillFirstSeq = window.lowerBound
         backfillNextEnd = window.upperBound
         requestBackfillPage()
     }
 
     /// Request one page of the CURRENT gap window (255 records max), walking backward from
-    /// `backfillNextEnd` — unchanged paging shape from the prior single-walk backfill (RESEARCH Pattern
-    /// 2), just driven by the gap-window queue instead of one unconditional range.
+    /// `backfillNextEnd` — unchanged paging shape from the prior single-walk backfill, just
+    /// driven by the gap-window queue instead of one unconditional range.
     private func requestBackfillPage() {
         guard backfillNextEnd >= backfillFirstSeq, backfillPages < Self.backfillMaxPages else {
             creditCurrentWindowAndAdvance(); return
@@ -161,9 +160,8 @@ final class PumpHistorySyncCoordinator {
         scheduleBackfillTick()
     }
 
-    /// Debounce: a page's stream has ended once ~2.5 s pass with no new frames (Pitfall 2: this is
-    /// stream-end DETECTION, not "burst safety pacing" — there is no explicit end-of-page marker in the
-    /// protocol, so silence is the only signal a page is done).
+    /// Debounce: a page's stream has ended once ~2.5 s pass with no new frames. There is no
+    /// explicit end-of-page marker in the protocol, so silence is the only signal a page is done.
     private func scheduleBackfillTick() {
         backfillTimer?.invalidate()
         backfillTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in
@@ -181,10 +179,10 @@ final class PumpHistorySyncCoordinator {
         }
     }
 
-    /// WR-03 (R2-17): record into the persisted coverage map ONLY the sub-range of `currentGapWindow` whose
+    /// Record into the persisted coverage map ONLY the sub-range of `currentGapWindow` whose
     /// response frames were actually RECEIVED — never the request cursor. Pages walk backward from
-    /// `window.upperBound`, so received sequences form a top-anchored contiguous run; walk down from the top
-    /// while each sequence arrived and credit exactly `[lowest ... window.upperBound]`.
+    /// `window.upperBound`, so received sequences form a top-anchored contiguous run; walk down from
+    /// the top while each sequence arrived and credit exactly `[lowest ... window.upperBound]`.
     private func creditCurrentWindow() {
         guard let window = currentGapWindow else { return }
         // Nothing received at the top of the window → credit nothing (never mark an un-received range covered).
@@ -204,10 +202,10 @@ final class PumpHistorySyncCoordinator {
         advanceToNextGapWindow()
     }
 
-    /// Manual "Sync now" trigger (D-05, UI-SPEC assumption 2): runs the SAME gap-sync entry point as the
-    /// on-connect check, regardless of `AppSettings.historySyncEnabled` — the toggle only gates the
-    /// AUTOMATIC on-connect trigger, not an explicit user request. Requires the pump to already be
-    /// connected; a sync already in progress is a no-op rather than restarting mid-fetch.
+    /// Manual "Sync now": runs the SAME gap-sync entry point as the on-connect check, regardless
+    /// of `AppSettings.historySyncEnabled` — the toggle only gates the AUTOMATIC on-connect trigger,
+    /// not an explicit user request. Requires the pump to already be connected; a sync already in
+    /// progress is a no-op rather than restarting mid-fetch.
     func triggerManualHistorySync() {
         guard isConnected(), !backfillActive else { return }
         setHistorySyncState(.syncing)
@@ -215,9 +213,9 @@ final class PumpHistorySyncCoordinator {
         onChange()
     }
 
-    /// "Stop syncing" (D-05, UI-SPEC): user-initiated abort of an in-progress gap sync. Non-destructive —
-    /// only the sub-range of the current window actually fetched is credited to the persisted coverage
-    /// map, exactly like a safety-cap trip.
+    /// User-initiated abort of an in-progress gap sync. Non-destructive — only the sub-range of
+    /// the current window actually fetched is credited to the persisted coverage map, exactly like
+    /// a safety-cap trip.
     func cancelHistorySync() {
         guard backfillActive else { return }
         backfillTimer?.invalidate(); backfillTimer = nil
@@ -229,10 +227,9 @@ final class PumpHistorySyncCoordinator {
         onChange()
     }
 
-    /// D-05: abort the in-progress backfill with a genuine sync-failure error — called from
-    /// `TandemBackend.didReceiveFrame`'s unparseable-`.historyLog`-frame branch (which stays in
-    /// `TandemBackend`, alongside the `.authorization` CRC gate + `ResponseParser.parse` boundary). A
-    /// no-op when no backfill is active, mirroring `cancelHistorySync`'s guard shape.
+    /// Abort the in-progress backfill with a genuine sync-failure error — called from
+    /// `TandemBackend.didReceiveFrame`'s unparseable-`.historyLog`-frame branch. A no-op when no
+    /// backfill is active, mirroring `cancelHistorySync`'s guard shape.
     func abortWithSyncError(_ message: String) {
         guard backfillActive else { return }
         backfillTimer?.invalidate(); backfillTimer = nil
@@ -243,13 +240,13 @@ final class PumpHistorySyncCoordinator {
         onChange()
     }
 
-    /// The history subset of `TandemBackend.linkDroppedCleanup()` (carved out per GO-2 plan section 3) —
-    /// called from the still-in-place `linkDroppedCleanup`. `historyStatusRequestedThisConnection` stays
-    /// TandemBackend's own field and is reset there, not here (this type never touches it).
+    /// The history subset of `TandemBackend.linkDroppedCleanup()` — called from the still-in-place
+    /// `linkDroppedCleanup`. `historyStatusRequestedThisConnection` stays TandemBackend's own field
+    /// and is reset there, not here.
     func linkDropped() {
-        // D-05 (UI-SPEC partial/interrupted state): a sync mid-flight when the link drops is a benign,
-        // resumable pause — the persisted coverage map guarantees the next connect resumes correctly —
-        // never a red error. `.syncing` is the only in-progress state this can interrupt.
+        // A sync mid-flight when the link drops is a benign, resumable pause — the persisted
+        // coverage map guarantees the next connect resumes correctly — never a red error.
+        // `.syncing` is the only in-progress state this can interrupt.
         if case .syncing = historySyncState() { setHistorySyncState(.paused) }
         backfillActive = false
         backfillTimer?.invalidate(); backfillTimer = nil
@@ -261,15 +258,14 @@ final class PumpHistorySyncCoordinator {
     /// `appendHistoryStreamFrame` closure) for every stream frame WHILE a backfill is active. Appends one
     /// frame's records into the backfill buffers and (re)schedules the stream-end debounce.
     func appendHistoryStreamFrame(_ m: HistoryLogStreamResponse) {
-        // CX-F-05 (review-sharpened, MEDIUM "history-stream rejection has no observable API contract"):
-        // app-side defense-in-depth — refuse to append/advance a page when the frame's actual record
-        // count disagrees with its own advertised `numberOfHistoryLogs` header byte.
+        // App-side defense-in-depth — refuse to append/advance a page when the frame's actual
+        // record count disagrees with its own advertised `numberOfHistoryLogs` header byte.
         guard m.records.count == m.numberOfHistoryLogs else { return }
         for r in m.cgmReadings { backfillBuffer.append((r.pumpTimeSec, r.glucoseMgdl)) }
         for b in m.bolusRecords { backfillBoluses.append((b.pumpTimeSec, b.deliveredUnits, b.iobUnits)) }
         backfillEventLogs.append(contentsOf: m.events)
         if backfillEventLogs.count > 2000 { backfillEventLogs.removeFirst(backfillEventLogs.count - 2000) }
-        // WR-03 (R2-17): record every RECEIVED sequence that falls inside the current gap window.
+        // Record every RECEIVED sequence that falls inside the current gap window.
         if let window = currentGapWindow {
             for e in m.events where window.contains(e.sequenceNum) { receivedSeqsThisWindow.insert(e.sequenceNum) }
         }
@@ -286,19 +282,19 @@ final class PumpHistorySyncCoordinator {
         pendingGapWindows.removeAll(); currentGapWindow = nil
         defer { backfillBuffer.removeAll(keepingCapacity: false); backfillBoluses.removeAll(keepingCapacity: false) }
         let now = Date()
-        // VA-18: the pump logs time as local WALL-CLOCK (the clock reading shown on its face), so each
-        // record must be placed using the UTC offset in effect at THAT record's own instant — not a single
-        // offset captured today.
+        // The pump logs time as local WALL-CLOCK (the clock reading shown on its face), so each
+        // record must be placed using the UTC offset in effect at THAT record's own instant — not a
+        // single offset captured today.
         #if DEBUG
-        let pumpTZ = historyBackfillTimeZoneForTesting ?? TimeZone.current   // VA-18 test seam (nil ⇒ TimeZone.current)
+        let pumpTZ = historyBackfillTimeZoneForTesting ?? TimeZone.current   // test seam (nil ⇒ TimeZone.current)
         #else
         let pumpTZ = TimeZone.current
         #endif
         var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
         var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = pumpTZ
-        // CX-F-05 (review-sharpened, HIGH x2): FAILABLE — an un-synced pump clock, west travel, or a
-        // forced-read failure can re-anchor a record's naive wall-clock components into an instant more
-        // than `GlucoseFreshness.futureSkewTolerance` (5 min) beyond `now`. Reject, never clamp-to-now.
+        // FAILABLE — an un-synced pump clock, west travel, or a forced-read failure can re-anchor
+        // a record's naive wall-clock components into an instant more than
+        // `GlucoseFreshness.futureSkewTolerance` (5 min) beyond `now`. Reject, never clamp-to-now.
         let pumpDate: (UInt32) -> Date? = { sec in
             let naive = Date(timeIntervalSince1970: HistoryLog.jan12008UnixEpoch + Double(sec))
             let c = utcCal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: naive)
@@ -311,7 +307,7 @@ final class PumpHistorySyncCoordinator {
             withGlucoseHistory { history in
                 var merged = history
                 for b in backfillBuffer {
-                    guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
+                    guard let date = pumpDate(b.pumpSec) else { continue }   // drop, never clamp
                     merged.append(GlucoseReading(date: date, mgdl: b.mgdl))
                 }
                 merged.sort { $0.date < $1.date }
@@ -324,10 +320,10 @@ final class PumpHistorySyncCoordinator {
                 }
                 if deduped.count > 288 { deduped.removeFirst(deduped.count - 288) }
                 history = deduped
-                // CX-F-05 (review-sharpened, MEDIUM): backfill NEVER writes the live dosing snapshot — a
-                // backfilled/mis-anchored historical record must never taint the latest-glucose dosing
-                // read. The live dosing glucose stays owned exclusively by the live CGM read path
-                // (`PumpResponseApplier.applyEgvReading`); a pre-existing live value is PRESERVED here.
+                // Backfill NEVER writes the live dosing snapshot — a backfilled/mis-anchored
+                // historical record must never taint the latest-glucose dosing read. The live
+                // dosing glucose stays owned exclusively by `PumpResponseApplier.applyEgvReading`;
+                // a pre-existing live value is PRESERVED here.
             }
         }
 
@@ -338,7 +334,7 @@ final class PumpHistorySyncCoordinator {
                     let existingBolus = Set(markers.map { $0.date.timeIntervalSince1970.rounded() })
                     var existingIOB = Set(iob.map { $0.date.timeIntervalSince1970.rounded() })
                     for b in backfillBoluses {
-                        guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
+                        guard let date = pumpDate(b.pumpSec) else { continue }   // drop, never clamp
                         let key = date.timeIntervalSince1970.rounded()
                         if !existingBolus.contains(key) {
                             markers.append(BolusMarker(date: date, units: b.units))
@@ -361,7 +357,7 @@ final class PumpHistorySyncCoordinator {
             withHistoryEvents { events in
                 var seen = Set(events.map { $0.id })
                 for e in backfillEventLogs {
-                    // CX-F-05: drop, never clamp — a future-anchored event is dropped BEFORE `neutralEvent`
+                    // Drop, never clamp — a future-anchored event is dropped BEFORE `neutralEvent`
                     // (which takes a concrete, non-optional `Date`), consistent with the other loops.
                     guard !seen.contains(e.sequenceNum), let date = pumpDate(e.pumpTimeSec),
                           let ne = Self.neutralEvent(e, date: date) else { continue }
@@ -371,9 +367,9 @@ final class PumpHistorySyncCoordinator {
                 if events.count > 500 { events.removeLast(events.count - 500) }
                 finalEvents = events
             }
-            // Phase 09.15 T1-3/T1-4 (D-08): surface the single LATEST instant of each into
-            // PumpSnapshot so it can propagate to remotes as a lightweight marker — `finalEvents` is
-            // already newest-first, so the first match after filtering is the latest.
+            // Surface the single LATEST instant of each into PumpSnapshot so it can propagate to
+            // remotes as a lightweight marker — `finalEvents` is already newest-first, so the first
+            // match after filtering is the latest.
             if let latest = finalEvents.first(where: { $0.category == .autoCorrection }) {
                 withSnapshot { $0.lastAutoCorrectionDate = latest.date }
             }
@@ -381,7 +377,7 @@ final class PumpHistorySyncCoordinator {
                 withSnapshot { $0.ciqLastCouldNotDeliverDate = latest.date }
             }
         }
-        // D-05: a completed gap sync (whether or not this pass actually fetched new records) is a
+        // A completed gap sync (whether or not this pass actually fetched new records) is a
         // successful sync for "Last synced" purposes.
         AppSettings.shared.historyLastSyncedAt = Date()
         setHistorySyncState(.idle(lastSynced: AppSettings.shared.historyLastSyncedAt))
@@ -413,9 +409,8 @@ final class PumpHistorySyncCoordinator {
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
         case let m as BolusDeliveryHistoryLog where m.bolusSource == 7:
-            // Phase 09.15 T1-3 (D-01, D-06 guardrail #4) — (b) pump-communicated fact:
             // `BolusDeliveryHistoryLog` already decodes `bolusSource`; `bolusSource == 7` marks a
-            // Control-IQ auto-correction. Display-only, never a dose input (C3); the latest instant is
+            // Control-IQ auto-correction. Display-only, never a dose input; the latest instant is
             // surfaced into `PumpSnapshot.lastAutoCorrectionDate` above.
             return HistoryEvent(id: seq, date: date, category: .autoCorrection, title: "Control-IQ auto-corrected")
         case let m as BolexCompletedHistoryLog:
@@ -423,8 +418,8 @@ final class PumpHistorySyncCoordinator {
         case let m as CarbEnteredHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs))
         case let m as BGHistoryLog:
-            // WR-02 gap closure (04-07): the Logbook tab is a mainline surface, not debug-only —
-            // route through the display-unit funnel like every other glucose display.
+            // The Logbook tab is a mainline surface, not debug-only — route through the
+            // display-unit funnel like every other glucose display.
             let bgUnit = AppSettings.shared.glucoseDisplayUnit
             let bgStr = "\(bgUnit.format(mgdl: m.bg)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
             return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: bgStr)
@@ -435,10 +430,9 @@ final class PumpHistorySyncCoordinator {
         case is TempRateCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
         case is AaAutoBolusRejectedHistoryLog, is CorrectionDeclinedHistoryLog:
-            // Phase 09.15 T1-4 (D-01) — (b) pump-communicated fact: both already decoded +
-            // registered in `HistoryLogParser` but previously dropped here. Never speculates WHY
-            // (D-06 guardrail #6). The latest instant is surfaced into
-            // `PumpSnapshot.ciqLastCouldNotDeliverDate` above.
+            // Pump-communicated fact: both already decoded + registered in `HistoryLogParser`
+            // but previously dropped here. Never speculates WHY. The latest instant is surfaced
+            // into `PumpSnapshot.ciqLastCouldNotDeliverDate` above.
             return HistoryEvent(id: seq, date: date, category: .couldNotDeliver,
                                  title: "Control-IQ tried and couldn't deliver an automatic correction")
         case let m as PumpingSuspendedHistoryLog:

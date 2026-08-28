@@ -1,11 +1,9 @@
 import Foundation
 
 /// A `UserDefaults`-backed value addressed by an explicit key string, with an optional post-write
-/// side-effect hook (D4-05, CX-A-09). Kills the "rename the property, forget the key string" drift
-/// hazard of the old hand-rolled `{ didSet { d.set(value, forKey: "literal") } }` idiom in
-/// `AppSettings` by keeping the key + the read/write plumbing together in one small, generic,
-/// first-party type — genuinely new (grepped `Data/*.swift` + `faBolusCore/*.swift` for
-/// `@propertyWrapper` before this file: zero prior hits).
+/// side-effect hook. Keeps the key + the read/write plumbing together so renaming a property cannot
+/// silently drift from its stored key (the old `{ didSet { d.set(value, forKey: "literal") } }`
+/// hazard in `AppSettings`).
 ///
 /// ## Why `AppSettings` uses COMPOSITION, not the `@Stored("key") var x: T` attribute-sugar form
 ///
@@ -14,38 +12,15 @@ import Foundation
 ///
 /// - **It fails to compile** — `@Observable`'s `@ObservationTracked` peer macro tries to instrument
 ///   the SAME property the compiler is already transforming for the attached property wrapper
-///   (`_x: Stored<T>`), and the two macro expansions conflict ("property wrapper cannot be applied to
-///   a computed property" / "ambiguous reference to member '_x'").
+///   (`_x: Stored<T>`), and the two macro expansions conflict.
 /// - **If forced to compile via `@ObservationIgnored`,** it SILENTLY disables `@Observable`'s
-///   automatic SwiftUI-view-invalidation tracking for that property — a real behavior regression, not
-///   "internal plumbing only" (every Settings toggle backed this way would stop live-updating other
-///   open views when changed elsewhere).
-///
-/// Verified with a local Swift 6.3 Observation-framework repro (2026-08-25, this plan): a plain
-/// `var plain: Bool` on an `@Observable` class fires a `withObservationTracking { _ = s.plain }
-/// onChange:` closure when mutated; an `@ObservationIgnored @Stored("k") var wrapped: Bool` on the
-/// SAME class compiles but NEVER fires that closure. Un-ignored, the attribute form does not compile
-/// at all (see the reasoning above) — there is no compiling form of the attribute-sugar that also
-/// preserves reactivity on an `@Observable` class.
+///   automatic SwiftUI-view-invalidation tracking for that property — every Settings toggle backed
+///   this way would stop live-updating other open views when changed elsewhere.
 ///
 /// The fix: `AppSettings` never applies `@Stored` as an attribute. Instead it holds a PRIVATE,
 /// ordinary (non-attribute) stored field of type `Stored<T>` and exposes it through a plain computed
-/// property:
-/// ```swift
-/// private var _showIOBAxis = Stored<Bool>(wrappedValue: true, "showIOBAxis")
-/// public var showIOBAxis: Bool {
-///     get { _showIOBAxis.wrappedValue }
-///     set { _showIOBAxis.wrappedValue = newValue }
-/// }
-/// ```
-/// The private field `_showIOBAxis` carries NO attribute — it is a completely ordinary stored
-/// property from `@Observable`'s point of view, so the macro instruments IT (not the public
-/// accessor). Reading/writing the public `showIOBAxis` property still round-trips through
-/// `_showIOBAxis`'s own `@Observable`-generated `access(keyPath:)`/`withMutation(keyPath:)`
-/// accessors, because the getter/setter bodies read/write `_showIOBAxis` directly — reactivity is
-/// preserved exactly as the pre-conversion `didSet` had it (confirmed by the same local repro: a
-/// computed property that reads/writes a private plain-stored `Stored<Bool>` field DOES fire
-/// `withObservationTracking`'s `onChange`).
+/// property. The private field carries NO attribute, so `@Observable` instruments IT. Reading/writing
+/// the public accessor still round-trips through that field, so reactivity is preserved.
 ///
 /// `Stored` stays declared `@propertyWrapper` so it CAN be used with the ordinary attribute-sugar
 /// form on a future NON-`@Observable` type — `AppSettings` itself just doesn't use that sugar.
@@ -70,11 +45,11 @@ public struct Stored<Value> {
     /// `applyFreshness()` reads `glucoseStaleMinutes`, `syncWidgetConfig()` reads `carbIncrement`/
     /// `defaultBolusMode`), firing it from INSIDE this setter would re-enter that property's storage
     /// while `@Observable`'s generated `_modify` accessor still holds an exclusive access on it — a
-    /// genuine Swift runtime "Simultaneous accesses… modification requires exclusive access" crash
-    /// (reproduced by `AppSettingsStoredMigrationTests` during this plan). The caller (`AppSettings`'s
-    /// property setter) instead calls `wrappedValue = newValue` and `onChange?(newValue)` as two
-    /// SEPARATE statements — by the time the second one runs, the first statement's exclusive access
-    /// has already ended, so `onChange` is free to read any property (including this one) safely.
+    /// genuine Swift runtime "Simultaneous accesses… modification requires exclusive access" crash.
+    /// The caller (`AppSettings`'s property setter) instead calls `wrappedValue = newValue` and
+    /// `onChange?(newValue)` as two SEPARATE statements — by the time the second one runs, the first
+    /// statement's exclusive access has already ended, so `onChange` is free to read any property
+    /// (including this one) safely.
     public var onChange: ((Value) -> Void)?
     private let readValue: (UserDefaults, String) -> Value?
     private let writeValue: (UserDefaults, String, Value) -> Void

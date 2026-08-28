@@ -1,27 +1,27 @@
 import Foundation
 
 /// A bounded, **durable** idempotency ledger so a duplicated or retried remote bolus command cannot cause
-/// a second delivery (audit A-02 / FB-03). Remote transports (Watch, Garmin, sealed peers) can redeliver a
-/// message on reconnect/retry, and the sealed-transport replay counter resets on every new session — so
-/// dedup must live above the transport, keyed by authenticated peer identity + the command's `requestId`.
+/// a second delivery. Remote transports (Watch, Garmin, sealed peers) can redeliver a message on
+/// reconnect/retry, and the sealed-transport replay counter resets on every new session — so dedup must
+/// live above the transport, keyed by authenticated peer identity + the command's `requestId`.
 ///
-/// FB-03 makes the ledger survive process restart: entries carry an explicit lifecycle
-/// `State` (`awaiting` → `delivering` → `indeterminate`/`terminal`) and the whole ledger is `Codable`, so a
+/// The ledger survives process restart: entries carry an explicit lifecycle `State`
+/// (`awaiting` → `delivering` → `indeterminate`/`terminal`) and the whole ledger is `Codable`, so a
 /// host persists it (atomically, BEFORE the first pump write) via `RemoteBolusLedgerStore` and restores it
 /// at launch. A relaunch that finds a `delivering`/`indeterminate` entry still blocks a retry of that
 /// request until its outcome is reconciled against the pump.
 ///
 /// Usage (on the `@MainActor` host): `begin` synchronously right before delivering; only `.proceed` may
 /// deliver. `markDelivering` immediately before the first pump write (persist here — the durable point).
-/// On a lost/unknown outcome `markIndeterminate` (FB-02); on a known outcome `settle`. A later duplicate
-/// then gets `.duplicateInFlight` (still working / unknown) or `.replay` (terminal), never a second dose.
+/// On a lost/unknown outcome `markIndeterminate`; on a known outcome `settle`. A later duplicate then
+/// gets `.duplicateInFlight` (still working / unknown) or `.replay` (terminal), never a second dose.
 public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Lifecycle of a tracked request. Anything not `terminal` blocks a re-delivery of the same id.
     public enum State: String, Codable, Sendable {
         case awaiting      // begun, not yet written to the pump
         case delivering    // written to the pump; outcome not yet known
-        case indeterminate // outcome unknown (timeout/disconnect after the initiate write — FB-02)
+        case indeterminate // outcome unknown (timeout/disconnect after the initiate write)
         case terminal      // known outcome recorded
     }
 
@@ -44,15 +44,15 @@ public struct RemoteBolusLedger: Codable, Sendable {
         var deliveredUnits: Double?
         /// The pump-assigned bolus id, once known — used to reconcile an indeterminate outcome.
         var bolusId: Int?
-        /// Round-3 §5: an EXPLICIT phase flag — true once the pump has granted permission and the id was
-        /// durably recorded, i.e. the initiate write is imminent/issued. Reconciliation must NOT infer
+        /// Explicit phase flag — true once the pump has granted permission and the id was durably
+        /// recorded, i.e. the initiate write is imminent/issued. Reconciliation must NOT infer
         /// "not sent" merely from a missing bolus id; a nonterminal record with `sentToPump == true` stays
         /// globally blocked (reconcile by id), while `false` proves pre-initiate (safe to auto-clear).
         var sentToPump: Bool = false
-        /// Addendum B (Option B): DURABLE provenance — true iff this dose's correction basis was the host's
-        /// OWN acknowledged stale CGM reading (the include-stale path). A pure audit sidecar: it is NOT part
-        /// of `doseKey`, never influences the conflict/replay/in-flight decision, and defaults false on a
-        /// carbs-only or fresh-reading dose (and on any ledger persisted before this field existed).
+        /// Durable provenance — true iff this dose's correction basis was the host's OWN acknowledged
+        /// stale CGM reading (the include-stale path). A pure audit sidecar: it is NOT part of `doseKey`,
+        /// never influences the conflict/replay/in-flight decision, and defaults false on a carbs-only or
+        /// fresh-reading dose (and on any ledger persisted before this field existed).
         var usedIncludedStaleBG: Bool = false
 
         init(doseKey: String, state: State, usedIncludedStaleBG: Bool = false) {
@@ -92,7 +92,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// terminal echo — not a coincidental content match from an unrelated actor (e.g. the phone's own
     /// separate local dose happening to use the same units). Still transport/session-independent within
     /// that peer (a peer's authenticated identity survives a BLE reconnect / sealed-transport session
-    /// reset, unlike its requestId), matching CONTEXT.md's "protects all remotes" framing.
+    /// reset, unlike its requestId).
     ///
     /// Deliberately NOT part of `CodingKeys` (in-process only, not persisted): the (peer,requestId)
     /// ledger remains the sole durable-across-restart defense; this recency map only needs to survive the
@@ -132,8 +132,8 @@ public struct RemoteBolusLedger: Codable, Sendable {
     public static let recentDuplicateWindowSec: TimeInterval = RemoteCommandFreshness.maxAgeSec
 
     /// Record intent to deliver. Returns the decision the caller must honor. `usedIncludedStaleBG` is a
-    /// DURABLE provenance sidecar only (Addendum B): it is stored on a freshly-created entry but plays NO
-    /// part in the decision — `doseKey`, conflict, replay, and in-flight logic are all unchanged.
+    /// DURABLE provenance sidecar only: it is stored on a freshly-created entry but plays NO part in the
+    /// decision — `doseKey`, conflict, replay, and in-flight logic are all unchanged.
     public mutating func begin(peerId: String, requestId: String, doseKey: String,
                                usedIncludedStaleBG: Bool = false) -> Decision {
         let k = key(peerId, requestId)
@@ -172,9 +172,9 @@ public struct RemoteBolusLedger: Codable, Sendable {
         mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
     }
 
-    /// Round-3 §5: the pump granted permission and assigned `bolusId` — record it AND flip the explicit
-    /// `sentToPump` phase, together, so a durable save of this transition proves the initiate is
-    /// imminent/issued. The host persists (throwing) right after and only proceeds to initiate on success.
+    /// The pump granted permission and assigned `bolusId` — record it AND flip the explicit `sentToPump`
+    /// phase, together, so a durable save of this transition proves the initiate is imminent/issued. The
+    /// host persists (throwing) right after and only proceeds to initiate on success.
     public mutating func markSent(peerId: String, requestId: String, bolusId: Int) {
         mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
     }
@@ -184,7 +184,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         entries[key(peerId, requestId)]?.sentToPump ?? false
     }
 
-    /// Mark the outcome UNKNOWN (FB-02): a timeout/disconnect after the initiate write. The request is
+    /// Mark the outcome UNKNOWN: a timeout/disconnect after the initiate write. The request is
     /// neither retryable nor confirmed until reconciled against the pump's bolus history by `bolusId`.
     ///
     /// - Parameter now: the ambiguous (may-have-delivered) outcome fail-closes into the
@@ -205,9 +205,8 @@ public struct RemoteBolusLedger: Codable, Sendable {
     ///   (`sentToPump == true` OR `(deliveredUnits ?? 0) > 0`), the doseKey is stamped into the
     ///   content+time recency index at `now` (see `hasRecentlyDeliveredDuplicate`). A clean pre-pump
     ///   failure (`sentToPump == false`, 0/nil units) or a genuine 0 U cancellation before the pump write
-    ///   is deliberately EXCLUDED — it must never block a legitimate retry (Addresses codex HIGH: this
-    ///   method sets `.terminal` for EVERY outcome, so a naive "scan terminal entries" would wrongly flag
-    ///   those too).
+    ///   is deliberately EXCLUDED — it must never block a legitimate retry. This method sets `.terminal`
+    ///   for EVERY outcome, so a naive "scan terminal entries" would wrongly flag those too.
     public mutating func settle(peerId: String, requestId: String, status: String,
                                 message: String? = nil, deliveredUnits: Double? = nil, now: Date = Date()) {
         let k = key(peerId, requestId)
@@ -261,7 +260,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         entries[key(peerId, requestId)]?.state
     }
 
-    /// Addendum B: whether this request's recorded dose used the host's acknowledged stale reading for its
+    /// Whether this request's recorded dose used the host's acknowledged stale reading for its
     /// correction basis (durable provenance; introspection helper). False for unknown/absent requests.
     public func usedIncludedStaleBG(peerId: String, requestId: String) -> Bool {
         entries[key(peerId, requestId)]?.usedIncludedStaleBG ?? false
@@ -288,7 +287,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 
-    /// R2-12: the terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
+    /// The terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
     /// have missed them across an app restart. Read-only; does not mutate ledger state.
     public func terminalOutcomes(peerId: String) -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
         order.compactMap { k in
@@ -312,13 +311,12 @@ public struct RemoteBolusLedger: Codable, Sendable {
 public extension RemoteBolusLedger {
     /// The PURE global delivery-block precedence
     /// `noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, plus the live-in-flight vs
-    /// genuinely-unresolved message split. Lifted verbatim from the app-target
-    /// `DeliveryLedgerCoordinator.computeDeliveryBlockReason()` so the strings have ONE source of truth
-    /// with zero-`AppModel` unit coverage (see `RemoteBolusLedgerTests`). Byte-identical to the copy the
-    /// 09-01 `LedgerBlockPrecedenceGuardTests` pins — this function does not change any wording.
+    /// genuinely-unresolved message split. Same strings as
+    /// `DeliveryLedgerCoordinator.computeDeliveryBlockReason()` so they have one source of truth with
+    /// unit coverage (see `RemoteBolusLedgerTests`).
     ///
     /// - Parameters:
-    ///   - noDurableStore: Round-3 §5.8 — no durable safety-ledger location exists.
+    ///   - noDurableStore: no durable safety-ledger location exists.
     ///   - ledgerFailedClosed: the durable ledger existed but couldn't be read (corrupt/unreadable).
     ///   - terminalSaveFailed: a terminal (or manual-clear) ledger save failed.
     ///   - unresolved: `RemoteBolusLedger.unreconciled()` — mid-flight entries the caller consulted first
@@ -341,7 +339,7 @@ public extension RemoteBolusLedger {
                 + "delivery resumes once the safety ledger is written."
         }
         if !unresolved.isEmpty {
-            // S6 — this global "one delivery at a time" block IS the cross-client mutex: it lives at this
+            // This global "one delivery at a time" block IS the cross-client mutex: it lives at this
             // funnel (not in a PumpBackend, which a second backend would not share) and rejects a
             // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
             // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.

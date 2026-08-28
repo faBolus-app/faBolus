@@ -91,7 +91,7 @@ final class PumpConnectionLifecycle {
         set { setDetectedIsMobi(newValue) }
     }
 
-    /// Bound to `{ [weak self] in await self?.reconcileIndeterminateDelivery() }` (FB-02) — fired once
+    /// Bound to `{ [weak self] in await self?.reconcileIndeterminateDelivery() }` — fired once
     /// from `onPaired`, result discarded, exactly as the pre-move `Task { … }` did.
     var reconcileIndeterminateDelivery: () async -> Void = {}
     /// Bound to `{ [weak self] event in self?.onReliabilityEvent?(event) }`.
@@ -117,9 +117,9 @@ final class PumpConnectionLifecycle {
 
     private var resumeRetryCount = 0
     private static let maxResumeRetries = 2
-    /// C1-01 test seam: which reconnect action `handleResumeFailure()`'s retry branch invoked —
-    /// `.reestablish` (`connectKnownPeripheral`, the fix) or `.disconnect` (the pre-fix bug). Forwarded
-    /// by `TandemBackend.resumeRetryActionForTesting`.
+    /// Which reconnect action `handleResumeFailure()`'s retry branch invoked —
+    /// `.reestablish` (`connectKnownPeripheral`) or `.disconnect` (the pre-fix bug that killed
+    /// the kit's reconnect ladder). Forwarded by `TandemBackend.resumeRetryActionForTesting`.
     enum ResumeRetryAction: Equatable { case reestablish, disconnect }
     private(set) var resumeRetryActionForTesting: ResumeRetryAction?
     /// Forwarded by `TandemBackend.resumeRetryCountForTesting`.
@@ -130,7 +130,7 @@ final class PumpConnectionLifecycle {
     private var pairingWatchdogToken: Any?
     private var pairingWatchdogClearStore = false
     private static let defaultPairingTimeoutSec: Double = 30
-    /// CR-01 test seam: override the pairing-handshake watchdog deadline. Forwarded by
+    /// Test seam: override the pairing-handshake watchdog deadline. Forwarded by
     /// `TandemBackend.pairingTimeoutSecForTesting`.
     var pairingTimeoutSecForTesting: Double?
     private var pairingTimeoutSec: Double {
@@ -147,24 +147,25 @@ final class PumpConnectionLifecycle {
         switch state {
         case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
         case .connecting, .discovering:
-            // CR-02 (R2-05): an unintended BLE drop often surfaces HERE as `.connecting` (the kit skips the
-            // `.disconnected` flicker and goes straight to reconnecting), so `linkDroppedCleanup()` — which
-            // otherwise runs only from the `.disconnected…`/`.reconnectExhausted` cases — never fires across
-            // the reconnect gap. If the link was PREVIOUSLY live, run the shared teardown so the cycle-N
-            // `pollTimer`, an armed `scheduleAlertRead` (via `pollCycleGeneration`), and the prior
-            // `coordinator`/`authenticationKey` don't survive into the gap and inject stale reads / a signed
-            // read into the pre-auth window before `pumpClientDidBecomeReady` rebuilds them. Guard on the
-            // PRE-transition state so a normal first-connect `.scanning → .connecting` climb is untouched.
-            // Keep `.connecting` (not `.disconnected`) so the reconnect-window semantics pinned by
-            // `TandemConnectionStateTests` are preserved. All teardown lives in CR-01's `linkDroppedCleanup()`.
+            // An unintended BLE drop often surfaces HERE as `.connecting` (the kit skips the
+            // `.disconnected` flicker and goes straight to reconnecting), so `linkDroppedCleanup()`
+            // — which otherwise runs only from the `.disconnected…`/`.reconnectExhausted` cases —
+            // never fires across the reconnect gap. If the link was PREVIOUSLY live, run the shared
+            // teardown so the cycle-N `pollTimer`, an armed `scheduleAlertRead`, and the prior
+            // `coordinator`/`authenticationKey` don't survive into the gap and inject stale reads /
+            // a signed read into the pre-auth window before `pumpClientDidBecomeReady` rebuilds
+            // them. Guard on the PRE-transition state so a normal first-connect `.scanning →
+            // .connecting` climb is untouched. Keep `.connecting` (not `.disconnected`) so the
+            // reconnect-window semantics pinned by `TandemConnectionStateTests` are preserved.
             let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
             snapshot.connection = .connecting; snapshot.connectionDetail = nil
             if wasLive { linkDroppedCleanup() }
-            // tslim-reconnect-loop (Phase B, item 5): a live-link → `.connecting` transition IS one
-            // re-pair/re-drop flap cycle — exactly the edge `SafetyEdge.connection` folds to `.none`. Count
-            // them; when a storm crosses the threshold within the window, emit the typed `.connectionUnstable`
-            // edge so `AppModel` raises the non-muteable "can't hold a connection" alert. Observed HERE (every
-            // kit transition), not in the sampled `refresh()` tick, so a fast ~2 s cycle is never missed.
+            // A live-link → `.connecting` transition IS one re-pair/re-drop flap cycle — exactly
+            // the edge `SafetyEdge.connection` folds to `.none`. Count them; when a storm crosses
+            // the threshold within the window, emit the typed `.connectionUnstable` edge so
+            // `AppModel` raises the non-muteable "can't hold a connection" alert. Observed HERE
+            // (every kit transition), not in the sampled `refresh()` tick, so a fast ~2 s cycle
+            // is never missed.
             if wasLive, flapDetector.recordFlap(at: Date()) {
                 onReliabilityEvent?(.connectionUnstable)
             }
@@ -177,34 +178,32 @@ final class PumpConnectionLifecycle {
             // `wasLive`): a restoration silent reconnect can arrive with `wasLive == false`.
             reapplyTrustedIdentityIfKnown()
         case .ready:
-            // CR-01 (R2-01): transport-ready ≠ application-usable. The kit's `.ready` only means the BLE
-            // link is up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
-            // not started. Publish `.connecting` (the not-usable intermediate the UI/gate already treat as
-            // unusable — `isLinked == .connected || .bolusing`), NOT `.connected`. The application-usable
-            // `.connected` state is published at the single "we are now polling" moment via
-            // `markUsableAndStartPolling()`. This closes the ghost-"Connected" window where a lost handshake
-            // frame or a thrown pairing write would otherwise pin a green HUD that never polls and never
-            // escalates staleness. Keep `linkDidBecomeReady()` (transport-level recovery signal).
+            // Transport-ready ≠ application-usable. The kit's `.ready` only means the BLE link is
+            // up; pairing (`onPaired` → `authenticationKey`) has NOT completed yet and polling has
+            // not started. Publish `.connecting` (the not-usable intermediate the UI/gate already
+            // treat as unusable — `isLinked == .connected || .bolusing`), NOT `.connected`. The
+            // application-usable `.connected` state is published at the single "we are now polling"
+            // moment via `markUsableAndStartPolling()`. This closes the ghost-"Connected" window
+            // where a lost handshake frame or a thrown pairing write would otherwise pin a green
+            // HUD that never polls and never escalates staleness.
             snapshot.connection = .connecting; snapshot.connectionDetail = nil
-            bgSession.linkDidBecomeReady()   // debug pump-background-disconnect: reconnect recovered → release the H1 window
+            bgSession.linkDidBecomeReady()   // reconnect recovered → release the H1 window
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
             snapshot.connectionDetail = Self.linkDetail(for: state)
             linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: link down & NOT retrying → release the H1 window
+            bgSession.linkDidTerminate()   // link down & NOT retrying → release the H1 window
         case .reconnectExhausted:
-            // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that never
-            // held `.ready` long enough to count as recovered — see `PumpBLEClient.readyStabilityWindow`).
-            // This is specifically the "pairing keeps looping" case the debug session
-            // (`.planning/debug/pump-pairing-loop.md`) traced to a peer that accepts the connection and
-            // drops it again (real-pump-confirmed: `CBErrorDomain` code 7) — the #1 known cause is the
-            // official t:connect app still holding the pump (one-connection-at-a-time; same guidance
-            // already given during setup, see `MainHUDView`). `.error` (not `.disconnected`) so this
-            // doesn't read as a plain, retryable drop — automatic retry has actually stopped.
+            // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that
+            // never held `.ready` long enough to count as recovered — see
+            // `PumpBLEClient.readyStabilityWindow`). Real-pump-confirmed: `CBErrorDomain` code 7 —
+            // the #1 known cause is the official t:connect app still holding the pump
+            // (one-connection-at-a-time). `.error` (not `.disconnected`) so this doesn't read as a
+            // plain, retryable drop — automatic retry has actually stopped.
             snapshot.connection = .error
             snapshot.connectionDetail = "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
             linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: ladder gave up → release the H1 window
+            bgSession.linkDidTerminate()   // ladder gave up → release the H1 window
         default:
             // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
             // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
@@ -217,31 +216,30 @@ final class PumpConnectionLifecycle {
     /// Reapply a peripheral's persisted TRUSTED identity into the kit on every reconnect shape
     /// that bypasses `didDiscover`, before the earliest possible send.
     ///
-    /// Reads `TrustedPumpIdentityStore` (NOT `PumpModelStore`, NOT the op33 heuristic) — the only writer
-    /// of that store is a genuine BLE-name detection (`applyDidDiscover` below).
+    /// Reads `TrustedPumpIdentityStore` (NOT `PumpModelStore`, NOT the op33 heuristic) — the only
+    /// writer of that store is a genuine BLE-name detection (`applyDidDiscover` below).
     ///
     /// Guard chain, in order: (1) `PumpPeripheralStore.id()` must be present; (2) the kit's own
-    /// `client.reconnectTargetId` must be present AND equal to it (codex C10) — else the kit is actually
+    /// `client.reconnectTargetId` must be present AND equal to it — else the kit is actually
     /// driving a DIFFERENT peripheral (pump-swap-mid-reconnect, or a restoration that adopted a
-    /// different peripheral) and a stale trusted record for the wrong peripheral must never be applied;
-    /// (3) a persisted trusted record must exist for that peripheral — else there is nothing to reapply
-    /// (a genuinely never-discovered-by-name pump, e.g. this is the very first connection this launch).
+    /// different peripheral) and a stale trusted record for the wrong peripheral must never be
+    /// applied; (3) a persisted trusted record must exist for that peripheral — else there is
+    /// nothing to reapply (a genuinely never-discovered-by-name pump).
     ///
     /// For the matching peripheral only:
-    ///   (a) restore `detectedIsMobi` from the persisted (name-derived) value — codex C8, the BLOCKER
-    ///       fix: without this, op33 arriving LATER the same reconnect cycle recomputes
-    ///       `nameTrusted = (detectedIsMobi() != nil) == false` (PumpResponseApplier's op33 case) and
-    ///       CLOBBERS the trust this method just stamped back to `false`, permanently over-gating a
-    ///       legitimate Mobi's Suspend/Resume/SetTempRate/Modes/IDP/Fill after every silent reconnect.
-    ///       Restoring `detectedIsMobi` here means op33 later this cycle sees a non-nil name-authority
-    ///       value, computes `nameTrusted == true`, and forwards `trusted: true` — no clobber, AND op33's
-    ///       own `if detectedIsMobi() == nil` heuristic-overwrite block is skipped (the model is not
-    ///       re-derived from the ambiguous API-version threshold on a session that already knows better).
-    ///   (b) call `client.setDeviceContext(model:, apiVersion: nil, trusted: true)` — apiVersion stays
-    ///       nil (CX-T-04 deferred; MODEL dimension only).
+    ///   (a) restore `detectedIsMobi` from the persisted (name-derived) value. Without this, op33
+    ///       arriving LATER the same reconnect cycle recomputes `nameTrusted =
+    ///       (detectedIsMobi() != nil) == false` and CLOBBERS the trust this method just stamped
+    ///       back to `false`, permanently over-gating a legitimate Mobi's Suspend/Resume/SetTempRate/
+    ///       Modes/IDP/Fill after every silent reconnect. Restoring `detectedIsMobi` here means
+    ///       op33 later this cycle sees a non-nil name-authority value, computes
+    ///       `nameTrusted == true`, and forwards `trusted: true` — no clobber, AND op33's own
+    ///       `if detectedIsMobi() == nil` heuristic-overwrite block is skipped.
+    ///   (b) call `client.setDeviceContext(model:, apiVersion: nil, trusted: true)` — apiVersion
+    ///       stays nil (MODEL dimension only).
     private func reapplyTrustedIdentityIfKnown() {
         guard let storeId = PumpPeripheralStore.id() else { return }
-        // Codex C10: the kit must actually be (re)connecting THIS peripheral — a stale trusted record
+        // The kit must actually be (re)connecting THIS peripheral — a stale trusted record
         // for a different one (pump-swap-mid-reconnect, or a restoration adopting a different
         // peripheral) must never be inherited by the current session.
         //
@@ -253,22 +251,22 @@ final class PumpConnectionLifecycle {
         // "unknown") — the kit is driving a DIFFERENT peripheral than the stored one. Defensively
         // clear `detectedIsMobi` before returning so a future `applyDeviceContext` can never inherit a
         // stale name-authority value for the WRONG peripheral, even if some other invariant across the
-        // reconnect state machine regresses (the codex-C1-shaped hazard this phase closes). This makes
-        // the function self-defensive rather than relying solely on the cross-file
-        // `linkDroppedCleanup()`/`forgetPairing()` nil-ing convention.
+        // reconnect state machine regresses. This makes the function self-defensive rather than
+        // relying solely on the cross-file `linkDroppedCleanup()`/`forgetPairing()` nil-ing convention.
         guard target == storeId else { detectedIsMobi = nil; return }
         guard let isMobi = TrustedPumpIdentityStore.isMobi(for: storeId) else { return }
-        detectedIsMobi = isMobi   // codex C8: restore the app-side name-authority signal
-        // Regression fix (debug `tslim-misidentified-as-mobi`): also restore the PUBLISHED model fields
-        // `applyDidDiscover` sets, not only the private `detectedIsMobi` above. On a `didDiscover`-bypass
-        // fast-path reconnect (cold launch → `connectKnownPeripheral`) the snapshot starts empty
-        // (`pumpModelName == ""` ⇒ `pumpModel == .unknown`) and `didDiscover` never runs to fill it. op33
-        // then SKIPS its own `snapshot.pumpModelName` assignment because it is guarded by
-        // `if detectedIsMobi() == nil` and the line above just made that non-nil — so without restoring the
-        // snapshot HERE, `pumpModel` stays `.unknown` and `validateDeliver`'s family gate
-        // (`snapshot.pumpModel == .tslimX2`) refuses a genuine t:slim with the Mobi-not-supported copy.
-        // This mirrors `applyDidDiscover` exactly (same trusted, name-derived source), so a Mobi still
-        // resolves to `.mobi` (and the MOBI-03 backstop still tears it down) — no reclassification.
+        detectedIsMobi = isMobi   // restore the app-side name-authority signal
+        // Also restore the PUBLISHED model fields `applyDidDiscover` sets, not only the private
+        // `detectedIsMobi` above. On a `didDiscover`-bypass fast-path reconnect (cold launch →
+        // `connectKnownPeripheral`) the snapshot starts empty (`pumpModelName == ""` ⇒
+        // `pumpModel == .unknown`) and `didDiscover` never runs to fill it. op33 then SKIPS its
+        // own `snapshot.pumpModelName` assignment because it is guarded by
+        // `if detectedIsMobi() == nil` and the line above just made that non-nil — so without
+        // restoring the snapshot HERE, `pumpModel` stays `.unknown` and `validateDeliver`'s family
+        // gate (`snapshot.pumpModel == .tslimX2`) refuses a genuine t:slim with the
+        // Mobi-not-supported copy. This mirrors `applyDidDiscover` exactly (same trusted,
+        // name-derived source), so a Mobi still resolves to `.mobi` (and the MOBI-03 backstop
+        // still tears it down) — no reclassification.
         snapshot.isMobi = isMobi
         snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
         client?.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
@@ -286,27 +284,27 @@ final class PumpConnectionLifecycle {
         }
     }
 
-    /// CR-01 (R2-01) shared spine: publish the application-usable `.connected` state and start polling at
-    /// the SINGLE "we are now polling" moment. Every terminal site in `pumpClientDidBecomeReady` that used
-    /// to call `readScheduler.startPolling()` directly now routes through here, so `.connected` is published
+    /// Publish the application-usable `.connected` state and start polling at the SINGLE "we are
+    /// now polling" moment. Every terminal site in `pumpClientDidBecomeReady` that used to call
+    /// `readScheduler.startPolling()` directly now routes through here, so `.connected` is published
     /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
     private func markUsableAndStartPolling() {
         snapshot.connection = .connected
-        // tslim-reconnect-loop (Phase B, item 5): a genuine, application-usable reconnect resolves any flap
-        // storm — clear the flap window + latch so a FRESH storm can escalate again. The non-muteable
-        // "can't hold a connection" alert is WITHDRAWN on the SAME `.clear` connection edge that withdraws
-        // `pumpDisconnect` (RefreshEffectsCoordinator), so no separate withdraw event is needed here.
+        // A genuine, application-usable reconnect resolves any flap storm — clear the flap window
+        // + latch so a FRESH storm can escalate again. The non-muteable "can't hold a connection"
+        // alert is WITHDRAWN on the SAME `.clear` connection edge that withdraws `pumpDisconnect`
+        // (RefreshEffectsCoordinator), so no separate withdraw event is needed here.
         flapDetector.reset()
         onChange?()
         readScheduler.startPolling()
     }
 
-    /// tslim-reconnect-loop (Phase B, item 5): counts live→`.connecting` re-pair/re-drop flap cycles (fed
-    /// from `applyClientState`) and escalates ONCE per storm past the threshold within the window. Reset on
-    /// a genuine reconnect (`markUsableAndStartPolling`).
+    /// Counts live→`.connecting` re-pair/re-drop flap cycles (fed from `applyClientState`) and
+    /// escalates ONCE per storm past the threshold within the window. Reset on a genuine reconnect
+    /// (`markUsableAndStartPolling`).
     private var flapDetector = ConnectionFlapDetector()
 
-    // MARK: - CR-01 (R2-01) pairing-handshake watchdog
+    // MARK: - Pairing-handshake watchdog
     //
     // `PairingCoordinator`/`LegacyPairingCoordinator` (external kit) have NO deadline, and the
     // `onSendRequest` catch-and-log means a lost reply / thrown write never calls `fail`/`onError`. Without
@@ -326,15 +324,14 @@ final class PumpConnectionLifecycle {
         cancelWatchdog(pairingWatchdogToken); pairingWatchdogToken = nil
     }
 
-    /// R2-07: a quick-pair RESUME failed (a handshake `onError` or a watchdog timeout on the resume path).
+    /// A quick-pair RESUME failed (a handshake `onError` or a watchdog timeout on the resume path).
     /// NEVER auto-wipe the stored secret — a transient link glitch must not force a full manual re-pair.
-    /// Retry the resume (bounded, on the live link); when the budget is exhausted, surface a RETRYABLE error
-    /// that KEEPS the derived secret. Only an explicit `forgetPairing()` (R2-06) wipes it. Factored so both
-    /// the `onError` resume branch and `firePairingWatchdog`'s resume branch share one policy (no divergence).
+    /// Retry the resume (bounded, on the live link); when the budget is exhausted, surface a RETRYABLE
+    /// error that KEEPS the derived secret. Only an explicit `forgetPairing()` wipes it. Factored so
+    /// both the `onError` resume branch and `firePairingWatchdog`'s resume branch share one policy.
     ///
-    /// C1-01 (owner-adopted 2026-08-25): the retry branch re-establishes via `client.connectKnownPeripheral`
-    /// (never `client.disconnect()`, which would kill the kit's reconnect ladder — see the pre-move doc
-    /// comment in git history for the full trail).
+    /// The retry branch re-establishes via `client.connectKnownPeripheral` (never `client.disconnect()`,
+    /// which would kill the kit's reconnect ladder).
     private func handleResumeFailure() {
         coordinator = nil
         if resumeRetryCount < Self.maxResumeRetries {
@@ -344,15 +341,15 @@ final class PumpConnectionLifecycle {
             #if DEBUG
             resumeRetryActionForTesting = .reestablish
             #endif
-            // C1-01: re-establish, NEVER disconnect() — see the doc comment above. Mirrors `connect()`'s
-            // cold-launch fast path: re-adopt the known peripheral id directly; fall back to a scan if the
-            // id isn't known yet (shouldn't normally happen mid-resume, but fails safe rather than crashing).
+            // Re-establish, NEVER disconnect() — see the doc comment above. Mirrors `connect()`'s
+            // cold-launch fast path: re-adopt the known peripheral id directly; fall back to a scan
+            // if the id isn't known yet (shouldn't normally happen mid-resume, but fails safe).
             if let id = PumpPeripheralStore.id() {
                 client?.connectKnownPeripheral(identifier: id)
             } else {
                 client?.startScan()
             }
-            // C1-04: this path dies from `.connecting` — `SafetyEdge.connection` never raises here (it only
+            // This path dies from `.connecting` — `SafetyEdge.connection` never raises here (it only
             // fires on a direct `.connected/.bolusing → down` edge) — so alarm explicitly via the typed
             // event AppModel translates into the never-suppressible `.pumpDisconnect` post + escalation.
             onReliabilityEvent?(.resumeRetryFailed)
@@ -371,9 +368,10 @@ final class PumpConnectionLifecycle {
         // If pairing actually completed, do nothing (defensive — `onPaired` already cancels the watchdog).
         guard !isPaired else { return }
         Self.pairingLog.log("pairing outcome → watchdog timeout (fail-closed)")
-        // R2-07: a RESUME timeout (saved material, pairingWatchdogClearStore == true) must NEVER auto-wipe the
-        // stored secret — route to the SAME bounded-retry / retryable-keep-secret path as `onError`. A FRESH
-        // full-pair timeout keeps its existing fail-closed behavior (it never had a stored secret to protect).
+        // A RESUME timeout (saved material, pairingWatchdogClearStore == true) must NEVER auto-wipe
+        // the stored secret — route to the SAME bounded-retry / retryable-keep-secret path as
+        // `onError`. A FRESH full-pair timeout keeps its existing fail-closed behavior (it never
+        // had a stored secret to protect).
         if pairingWatchdogClearStore {
             handleResumeFailure()
         } else {
@@ -392,15 +390,15 @@ final class PumpConnectionLifecycle {
 
     // MARK: - didDiscover model detection (moved off TandemBackend)
 
-    /// Model detection from the BLE advertised name at discovery, plus the VA-06 device-context wire and
+    /// Model detection from the BLE advertised name at discovery, plus the device-context wire and
     /// the connect-forward. Renamed from the raw delegate method (`pumpClient(_:didDiscover:rssi:)` stays
     /// a thin forwarder on `TandemBackend`) since this type doesn't itself conform to
     /// `PumpBLEClientDelegate`.
     func applyDidDiscover(_ c: PumpBLEClient, peripheral: CBPeripheral, rssi: Int) {
-        // R2-11 companion (defense-in-depth): only act on a discovery while we are actually scanning. A
-        // late `didDiscover` that lands after the user cancelled (snapshot moved off `.scanning`) must not
-        // auto-connect. The kit already rejects late discoveries at the source (intentionalDisconnect +
-        // stopScan on cancel); this ensures the app never auto-connects a stray discovery either.
+        // Only act on a discovery while we are actually scanning. A late `didDiscover` that lands
+        // after the user cancelled (snapshot moved off `.scanning`) must not auto-connect. The kit
+        // already rejects late discoveries at the source (intentionalDisconnect + stopScan on
+        // cancel); this ensures the app never auto-connects a stray discovery either.
         guard snapshot.connection == .scanning else { return }
         // Authoritative model detection from the BLE advertised name: the Mobi advertises with
         // "Mobi" in its name; anything else Tandem is a t:slim X2. This directly names the model,
@@ -416,10 +414,10 @@ final class PumpConnectionLifecycle {
             // of TrustedPumpIdentityStore — so `reapplyTrustedIdentityIfKnown()` can re-establish it on a
             // future silent reconnect/restoration that bypasses this delegate callback.
             TrustedPumpIdentityStore.set(isMobi: isMobi, for: peripheral.identifier)
-            // VA-06: wire the identified MODEL into the kit's device-support send gate (a live second layer that
-            // agrees with PumpCapabilities — t:slim never offers the [.mobi] control ops, so this only ever fires on
-            // an isMobi-misdetection). apiVersion DEFERRED (nil → API dimension stays fail-open); see the fix report.
-            // trusted: true — BLE-name detection is the authoritative, TRUSTED source (codex C1).
+            // Wire the identified MODEL into the kit's device-support send gate (a live second layer
+            // that agrees with PumpCapabilities — t:slim never offers the [.mobi] control ops, so
+            // this only ever fires on an isMobi-misdetection). apiVersion stays nil → API dimension
+            // stays fail-open. trusted: true — BLE-name detection is the authoritative, TRUSTED source.
             c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
         }
         // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
@@ -499,12 +497,12 @@ final class PumpConnectionLifecycle {
         coord.onError = { [weak self] _ in
             guard let self else { return }
             Self.pairingLog.log("pairing outcome → error")
-            self.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
+            self.cancelPairingWatchdog()   // pairing resolved (error) — disarm the watchdog
             if onFirstPair == nil {
-                // R2-07: a quick-pair RESUME failed. NEVER auto-wipe the stored secret — a transient link
-                // glitch must not force a full manual re-pair. Retry the resume (bounded, on the live link);
-                // when exhausted, surface a RETRYABLE error that KEEPS the derived secret. Only an explicit
-                // forgetPairing() wipes it.
+                // A quick-pair RESUME failed. NEVER auto-wipe the stored secret — a transient link
+                // glitch must not force a full manual re-pair. Retry the resume (bounded, on the live
+                // link); when exhausted, surface a RETRYABLE error that KEEPS the derived secret.
+                // Only an explicit forgetPairing() wipes it.
                 self.handleResumeFailure()
             } else {
                 // A FRESH full pair failed — no stored secret to protect; keep the prior behavior.
@@ -514,17 +512,17 @@ final class PumpConnectionLifecycle {
         }
         coord.onPaired = { [weak self] key, _ in
             Self.pairingLog.log("pairing outcome → paired")
-            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (success) — disarm the watchdog
-            self?.resumeRetryCount = 0   // R2-07: a successful pair clears the resume-retry budget
+            self?.cancelPairingWatchdog()   // pairing resolved (success) — disarm the watchdog
+            self?.resumeRetryCount = 0   // a successful pair clears the resume-retry budget
             self?.authenticationKey = key
             onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
-            self?.markUsableAndStartPolling()   // CR-01: publish `.connected` + start polling at the single usable moment
-            // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
+            self?.markUsableAndStartPolling()   // publish `.connected` + start polling at the single usable moment
+            // If a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
             // drop), reconcile it against the pump now so new deliveries can unblock.
             Task { [weak self] in await self?.reconcileIndeterminateDelivery() }
         }
         coordinator = coord
-        // CR-01 (R2-01): arm the pairing-handshake watchdog when the handshake starts, so a lost reply /
+        // Arm the pairing-handshake watchdog when the handshake starts, so a lost reply /
         // thrown write can't pin a ghost link forever. `clearStoreOnTimeout` mirrors `onError`'s policy.
         armPairingWatchdog(clearStoreOnTimeout: onFirstPair == nil)
         coord.start()
